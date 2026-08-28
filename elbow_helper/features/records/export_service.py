@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from datetime import timezone
 from pathlib import Path
+import re
+import unicodedata
+from uuid import uuid4
 
 from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
 from elbow_helper.infrastructure.exports import LocalExportStore
@@ -22,6 +25,15 @@ class RecordExport:
     workbook_name: str
     google_link: str | None
     google_warning: str | None
+
+
+def _filename_segment(value: str | None) -> str:
+    normalized = unicodedata.normalize("NFKD", str(value or ""))
+    ascii_value = normalized.encode("ascii", "ignore").decode("ascii")
+    return (
+        re.sub(r"[^a-z0-9]+", "_", ascii_value.casefold()).strip("_")
+        or "member"
+    )
 
 
 class RecordExportService:
@@ -55,9 +67,11 @@ class RecordExportService:
             self._records.links_for,
             records,
         )
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-        workbook_name = f"leadership_records_{timestamp}.xlsx"
-        workbook_path = self._exports.path_for(workbook_name)
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+        scope = _filename_segment(member_name) if member_id is not None else "all"
+        workbook_name = f"leadership_records_{scope}_{timestamp}.xlsx"
+        storage_name = f"leadership_records_{uuid4().hex}.xlsx"
+        workbook_path = self._exports.path_for(storage_name)
         await asyncio.to_thread(
             self._writer.write,
             workbook_path,

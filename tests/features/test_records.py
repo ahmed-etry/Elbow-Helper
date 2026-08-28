@@ -1,14 +1,21 @@
 from __future__ import annotations
 
+import asyncio
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
+from uuid import UUID
 
 from elbow_helper.configuration.roles import LEAD_PLUS
 from elbow_helper.features.records.commands import RecordCommandMixin
 from elbow_helper.features.records.database import RecordRepository
+from elbow_helper.features.records.export_service import RecordExportService
 from elbow_helper.features.records.service import RecordService
+from elbow_helper.infrastructure.exports import LocalExportStore
 
 
 class _AccountLinks:
@@ -24,6 +31,41 @@ class _RecordReader:
     def list(self, **_kwargs):
         self.calls += 1
         return self.records
+
+
+class _RecordLinks:
+    @staticmethod
+    def links_for(_records):
+        return []
+
+
+class _RecordWriter:
+    def write(
+        self,
+        path: Path,
+        records,
+        _links,
+        *,
+        include_empty_categories: bool,
+    ) -> None:
+        path.write_text(
+            f"{records!r}:{include_empty_categories}",
+            encoding="utf-8",
+        )
+
+
+class _RecordPublisher:
+    def __init__(self) -> None:
+        self.calls: list[tuple[Path, str]] = []
+
+    async def upload_workbook(
+        self,
+        path: Path,
+        title: str,
+        **_kwargs,
+    ) -> tuple[None, None]:
+        self.calls.append((path, title))
+        return None, None
 
 
 class RecordServiceTests(unittest.TestCase):
@@ -141,3 +183,63 @@ class RecordAutocompleteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(choices), 1)
         self.assertEqual(choices[0].value, "1")
         self.assertIn("Missed Attack", choices[0].name)
+
+
+class RecordExportTests(unittest.IsolatedAsyncioTestCase):
+    async def test_each_export_owns_a_unique_internal_path(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            publisher = _RecordPublisher()
+            service = RecordExportService(
+                _RecordReader([{"id": 1}]),
+                _RecordLinks(),
+                _RecordWriter(),
+                publisher,
+                LocalExportStore(Path(temporary_directory)),
+            )
+            fixed_time = datetime(2026, 8, 29, 14, 30, 25, tzinfo=timezone.utc)
+            uuids = (
+                UUID("11111111-1111-1111-1111-111111111111"),
+                UUID("22222222-2222-2222-2222-222222222222"),
+            )
+
+            with (
+                patch("elbow_helper.features.records.export_service.datetime") as clock,
+                patch(
+                    "elbow_helper.features.records.export_service.uuid4",
+                    side_effect=uuids,
+                ),
+            ):
+                clock.now.return_value = fixed_time
+                all_records, member_records = await asyncio.gather(
+                    service.create(member_id=None, member_name=None),
+                    service.create(
+                        member_id=10,
+                        member_name="Mémber / Name 🚀",
+                    ),
+                )
+
+            self.assertNotEqual(
+                all_records.workbook_path,
+                member_records.workbook_path,
+            )
+            self.assertEqual(
+                {report.workbook_path.name for report in (all_records, member_records)},
+                {
+                    "leadership_records_11111111111111111111111111111111.xlsx",
+                    "leadership_records_22222222222222222222222222222222.xlsx",
+                },
+            )
+            self.assertEqual(
+                all_records.workbook_name,
+                "leadership_records_all_2026-08-29_14-30-25.xlsx",
+            )
+            self.assertEqual(
+                member_records.workbook_name,
+                "leadership_records_member_name_2026-08-29_14-30-25.xlsx",
+            )
+            self.assertTrue(all_records.workbook_path.is_file())
+            self.assertTrue(member_records.workbook_path.is_file())
+            self.assertEqual(
+                {title for _, title in publisher.calls},
+                {"Leadership Records", "Leadership Records - Mémber / Name 🚀"},
+            )
