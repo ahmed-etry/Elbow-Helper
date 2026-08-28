@@ -1,0 +1,135 @@
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import unittest
+
+from discord.ext import commands
+
+from elbow_helper.app import create_bot
+from elbow_helper.core.lifecycle import ElbowHelperBot
+from elbow_helper.core.lifecycle import RequiredExtensionLoadError
+from elbow_helper.core.lifecycle import load_extensions
+from elbow_helper.core.logging import CompactTransientDuplicateFilter
+from elbow_helper.core.logging import TransientExternalFailurePolicy
+from elbow_helper.core.logging import UnifiedLogFormatter
+from elbow_helper.core.paths import ApplicationPaths
+from elbow_helper.infrastructure.clash import ClashClient
+from elbow_helper.infrastructure.ai import OpenAITextClient
+from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
+from elbow_helper.infrastructure.exports import WorkbookWriter
+
+
+class _ExtensionLoader:
+    def __init__(self, failures: set[str] | None = None):
+        self.failures = failures or set()
+        self.loaded: list[str] = []
+
+    async def load_extension(self, name: str) -> None:
+        if name in self.failures:
+            raise commands.ExtensionNotFound(name)
+        self.loaded.append(name)
+
+
+class ExtensionLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_required_extension_failure_rejects_startup(self) -> None:
+        bot = _ExtensionLoader({"elbow_helper.features.required"})
+
+        with self.assertLogs("elbow.boot", level=logging.ERROR):
+            with self.assertRaises(RequiredExtensionLoadError) as raised:
+                await load_extensions(
+                    bot,  # type: ignore[arg-type]
+                    required=("elbow_helper.features.working", "elbow_helper.features.required"),
+                )
+
+        report = raised.exception.report
+        self.assertEqual(report.loaded, ("elbow_helper.features.working",))
+        self.assertEqual(
+            tuple(failure.name for failure in report.required_failures),
+            ("elbow_helper.features.required",),
+        )
+        self.assertFalse(report.degraded)
+
+    async def test_optional_extension_failure_marks_startup_degraded(self) -> None:
+        bot = _ExtensionLoader({"elbow_helper.features.optional"})
+
+        with self.assertLogs("elbow.boot", level=logging.ERROR):
+            report = await load_extensions(
+                bot,  # type: ignore[arg-type]
+                required=("elbow_helper.features.required",),
+                optional=("elbow_helper.features.optional",),
+            )
+
+        self.assertEqual(report.loaded, ("elbow_helper.features.required",))
+        self.assertEqual(
+            tuple(failure.name for failure in report.optional_failures),
+            ("elbow_helper.features.optional",),
+        )
+        self.assertTrue(report.degraded)
+
+
+class ApplicationAssemblyTests(unittest.TestCase):
+    def test_create_bot_builds_without_loading_extensions(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            paths = ApplicationPaths.from_project_root(Path(temporary_directory))
+
+            clash_client = ClashClient(None)
+            bot = create_bot(
+                paths,
+                clash_client,
+                OpenAITextClient(None),
+                GoogleSheetsPublisher(
+                    client_id=None,
+                    client_secret=None,
+                    refresh_token=None,
+                    folder_id=None,
+                ),
+                WorkbookWriter(),
+            )
+
+        self.assertIsInstance(bot, ElbowHelperBot)
+        self.assertEqual(bot.paths, paths)
+        self.assertIs(bot.clash_client, clash_client)
+        self.assertEqual(bot.extensions, {})
+        self.assertTrue(bot.intents.message_content)
+        self.assertTrue(bot.intents.members)
+
+
+class LoggingPolicyTests(unittest.TestCase):
+    @staticmethod
+    def _warning_record(message: str) -> logging.LogRecord:
+        return logging.LogRecord(
+            name="elbow_helper.features.example",
+            level=logging.WARNING,
+            pathname=__file__,
+            lineno=100,
+            msg=message,
+            args=(),
+            exc_info=None,
+        )
+
+    def test_timeout_is_classified_as_transient(self) -> None:
+        self.assertTrue(
+            TransientExternalFailurePolicy.is_transient_exception(
+                TimeoutError("request timed out")
+            )
+        )
+        self.assertFalse(
+            TransientExternalFailurePolicy.is_transient_exception(
+                ValueError("invalid stored value")
+            )
+        )
+
+    def test_duplicate_transient_records_are_throttled(self) -> None:
+        duplicate_filter = CompactTransientDuplicateFilter(cooldown_seconds=300.0)
+
+        self.assertTrue(duplicate_filter.filter(self._warning_record("connection timed out")))
+        self.assertFalse(duplicate_filter.filter(self._warning_record("connection timed out")))
+
+    def test_formatter_preserves_the_existing_logger_tags(self) -> None:
+        formatter = UnifiedLogFormatter("%(log_tag)s %(message)s")
+
+        rendered = formatter.format(self._warning_record("Example"))
+
+        self.assertEqual(rendered, "[EXAMPLE] Example")

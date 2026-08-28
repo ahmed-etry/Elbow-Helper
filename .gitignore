@@ -1,0 +1,28 @@
+# --- Environment variables ---
+.env
+.env.*
+!.env.example
+
+# --- Runtime data ---
+data/
+
+# --- Local documentation ---
+docs/temp/
+
+# --- Python junk ---
+__pycache__/
+*.py[cod]
+.ruff_cache/
+
+# --- Virtual environments ---
+.venv/
+venv/
+
+# --- Logs ---
+*.log
+
+# --- OS / editor junk ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
