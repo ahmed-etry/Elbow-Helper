@@ -21,6 +21,36 @@ from .database import ClanHealthRepository
 LOGGER = logging.getLogger(__name__)
 
 
+def _validated_clan_members(
+    payload: Dict[str, Any],
+) -> tuple[List[Dict[str, Any]], Optional[int], bool]:
+    raw_members = payload.get("memberList")
+    declared_count = payload.get("members")
+    if (
+        not isinstance(raw_members, list)
+        or isinstance(declared_count, bool)
+        or not isinstance(declared_count, int)
+        or declared_count < 0
+    ):
+        return [], None, False
+
+    members = [
+        member
+        for member in raw_members
+        if isinstance(member, dict) and str(member.get("tag") or "")
+    ]
+    member_tags = {
+        str(member.get("tag") or "")
+        for member in members
+    }
+    complete = (
+        len(raw_members) == declared_count
+        and len(members) == declared_count
+        and len(member_tags) == declared_count
+    )
+    return members, declared_count, complete
+
+
 class ClanHealthCollector:
     """Collect live Clash data and persist normalized Clan Health activity."""
 
@@ -874,11 +904,39 @@ class ClanHealthCollector:
         clan_payload = await self._fetch_coc_json(clan_path)
         if not clan_payload:
             LOGGER.info("Collect failed clan=%s reason=clan_profile_unavailable", clan_code)
-            return {"clan_code": clan_code, "clan_name": clan_name, "players": []}, [f"{clan_code}: clan profile unavailable"]
+            return {
+                "clan_code": clan_code,
+                "clan_name": clan_name,
+                "players": [],
+                "roster_complete": False,
+                "declared_member_count": None,
+                "returned_member_count": 0,
+            }, [f"{clan_code}: clan profile unavailable"]
+
+        members, declared_member_count, roster_complete = (
+            _validated_clan_members(clan_payload)
+        )
+        if not roster_complete:
+            returned_member_count = len(members)
+            expected = (
+                str(declared_member_count)
+                if declared_member_count is not None
+                else "unknown"
+            )
+            warnings.append(
+                f"{clan_code}: clan roster incomplete "
+                f"({returned_member_count}/{expected})"
+            )
+            LOGGER.warning(
+                "Clan roster payload incomplete clan=%s returned=%s declared=%s",
+                clan_code,
+                returned_member_count,
+                declared_member_count,
+            )
 
         # Seed rows from member list first; player endpoint fills deep stats next.
         rows: Dict[str, Dict[str, Any]] = {}
-        for member in clan_payload.get("memberList", []) or []:
+        for member in members:
             tag = str(member.get("tag") or "")
             if not tag:
                 continue
@@ -1108,6 +1166,9 @@ class ClanHealthCollector:
             "clan_code": clan_code,
             "clan_name": clan_name,
             "players": players,
+            "roster_complete": roster_complete,
+            "declared_member_count": declared_member_count,
+            "returned_member_count": len(members),
             "metrics": {
                 "war_cwl_wars_in_window": ended_in_window,
                 "war_cwl_war_refs": len({str(w.get('_warTag') or w.get('warTag') or '') for w in wars if str(w.get('_warTag') or w.get('warTag') or '')}),

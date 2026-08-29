@@ -471,6 +471,8 @@ class ClanHealthRecords:
                 SELECT run_id, created_ts, season_key, partial, cycle_start_ts, cycle_end_ts
                 FROM report_runs
                 WHERE created_ts <= ?
+                  AND scope = 'BACKGROUND_ALL'
+                  AND partial = 0
                 ORDER BY created_ts DESC
                 """,
                 (int(cycle_end_ts),),
@@ -507,7 +509,9 @@ class ClanHealthRecords:
                 SELECT rp.*, rr.created_ts, rr.partial
                 FROM report_players rp
                 JOIN report_runs rr ON rr.run_id = rp.run_id
-                WHERE rp.season_key = ? AND rp.player_tag = ?
+                WHERE rp.season_key = ?
+                  AND rp.player_tag = ?
+                  AND rr.partial = 0
                 ORDER BY rr.created_ts DESC
                 LIMIT 1
                 """,

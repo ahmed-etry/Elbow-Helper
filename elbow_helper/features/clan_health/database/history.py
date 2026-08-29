@@ -237,7 +237,9 @@ class ClanHealthHistory:
                     rr.created_ts
                 FROM report_players rp
                 JOIN report_runs rr ON rr.run_id = rp.run_id
-                WHERE rp.player_tag = ? AND rp.season_key <= ?
+                WHERE rp.player_tag = ?
+                  AND rp.season_key <= ?
+                  AND rr.partial = 0
                 ORDER BY rp.season_key DESC, rr.created_ts DESC
                 """,
                 (player_tag, up_to_season_key),

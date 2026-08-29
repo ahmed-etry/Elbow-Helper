@@ -68,6 +68,8 @@ class ClanHealthSnapshotMixin:
             )
             clan_entries.append(entry)
             warnings.extend(entry_warnings)
+            if entry.get("roster_complete") is not True:
+                partial = True
 
         all_rows: List[Dict[str, Any]] = []
         for entry in clan_entries:
