@@ -13,6 +13,7 @@ from discord.ext import commands
 from elbow_helper.infrastructure.clash import ClashClient
 from elbow_helper.infrastructure.ai import OpenAITextClient
 from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
+from elbow_helper.infrastructure.exports import LocalExportStore
 from elbow_helper.infrastructure.exports import WorkbookWriter
 
 from .logging import log_box
@@ -180,6 +181,7 @@ class ElbowHelperBot(commands.Bot):
         self.text_generator = text_generator
         self.google_publisher = google_publisher
         self.workbook_writer = workbook_writer
+        self.local_exports = LocalExportStore(paths.data_root / ".exports")
         self.required_extensions = required_extensions
         self.optional_extensions = optional_extensions
         self.boot_complete = asyncio.Event()

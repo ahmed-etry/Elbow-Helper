@@ -26,6 +26,7 @@ async def setup(bot: ElbowHelperBot) -> None:
         bot,
         bot.clash_client,
         bot.google_publisher,
+        bot.local_exports,
         repository,
         analyzer,
         collector,

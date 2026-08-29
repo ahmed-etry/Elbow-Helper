@@ -2,13 +2,20 @@ from __future__ import annotations
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
+import os
 import unittest
 from unittest.mock import MagicMock
 from unittest.mock import patch
 import zipfile
 
 from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
+from elbow_helper.infrastructure.exports import LocalExportStore
 from elbow_helper.infrastructure.exports import WorkbookWriter
+from elbow_helper.infrastructure.exports.google_sheets import GOOGLE_EXPORT_OWNER_KEY
+from elbow_helper.infrastructure.exports.google_sheets import GOOGLE_EXPORT_OWNER_VALUE
 
 
 class WorkbookWriterTests(unittest.TestCase):
@@ -43,6 +50,7 @@ class GoogleSheetsPublisherTests(unittest.TestCase):
             "id": "sheet-id",
             "webViewLink": "https://docs.google.com/spreadsheets/d/sheet-id/edit",
         }
+        drive.files.return_value.list.return_value.execute.return_value = {}
         media_upload = MagicMock()
         publisher = GoogleSheetsPublisher(
             client_id="client",
@@ -63,8 +71,6 @@ class GoogleSheetsPublisherTests(unittest.TestCase):
             link, warning = publisher.upload_workbook_sync(
                 Path("report.xlsx"),
                 "Report",
-                cleanup_name_contains="report_",
-                retention_days=0,
             )
 
         self.assertEqual(
@@ -74,7 +80,36 @@ class GoogleSheetsPublisherTests(unittest.TestCase):
         self.assertIsNone(warning)
         create_call = drive.files.return_value.create.call_args.kwargs
         self.assertEqual(create_call["body"]["parents"], ["folder-id"])
+        self.assertEqual(
+            create_call["body"]["appProperties"],
+            {GOOGLE_EXPORT_OWNER_KEY: GOOGLE_EXPORT_OWNER_VALUE},
+        )
         self.assertIs(create_call["media_body"], media_upload)
+        cleanup_query = drive.files.return_value.list.call_args.kwargs["q"]
+        self.assertIn("appProperties has", cleanup_query)
+        self.assertIn(GOOGLE_EXPORT_OWNER_VALUE, cleanup_query)
+        self.assertIn("'folder-id' in parents", cleanup_query)
+
+    def test_cleanup_deletes_only_files_selected_by_the_managed_export_query(self) -> None:
+        drive = MagicMock()
+        drive.files.return_value.list.return_value.execute.return_value = {
+            "files": [{"id": "expired-managed-sheet"}],
+        }
+
+        deleted = GoogleSheetsPublisher._cleanup_exports(
+            drive,
+            folder_id="folder-id",
+        )
+
+        self.assertEqual(deleted, 1)
+        query = drive.files.return_value.list.call_args.kwargs["q"]
+        self.assertIn("appProperties has", query)
+        self.assertIn(GOOGLE_EXPORT_OWNER_VALUE, query)
+        self.assertIn("createdTime <", query)
+        drive.files.return_value.delete.assert_called_once_with(
+            fileId="expired-managed-sheet",
+            supportsAllDrives=True,
+        )
 
     def test_missing_oauth_settings_are_reported_without_google_io(self) -> None:
         publisher = GoogleSheetsPublisher(
@@ -87,12 +122,47 @@ class GoogleSheetsPublisherTests(unittest.TestCase):
         link, warning = publisher.upload_workbook_sync(
             Path("report.xlsx"),
             "Report",
-            cleanup_name_contains="report_",
-            retention_days=0,
         )
 
         self.assertIsNone(link)
         self.assertEqual(warning, "Google Sheets hasn't been set up.")
+
+
+class LocalExportStoreTests(unittest.TestCase):
+    def test_temporary_paths_are_unique_and_delete_stays_inside_store(self) -> None:
+        with TemporaryDirectory() as directory:
+            store = LocalExportStore(Path(directory))
+            first = store.temporary_path("Roster Export")
+            second = store.temporary_path("Roster Export")
+            first.write_bytes(b"first")
+            outside = Path(directory).parent / "outside-export.xlsx"
+
+            self.assertNotEqual(first, second)
+            self.assertIsNone(store.delete(first))
+            self.assertFalse(first.exists())
+            self.assertIn("refused", store.delete(outside) or "")
+
+    def test_cleanup_only_removes_expired_matching_files(self) -> None:
+        with TemporaryDirectory() as directory:
+            store = LocalExportStore(Path(directory), retention_days=1)
+            expired = store.path_for("expired.xlsx")
+            current = store.path_for("current.xlsx")
+            other = store.path_for("note.txt")
+            for path in (expired, current, other):
+                path.write_bytes(b"data")
+            old = (
+                datetime.now(timezone.utc) - timedelta(days=2)
+            ).timestamp()
+            os.utime(expired, (old, old))
+            os.utime(other, (old, old))
+
+            deleted, warning = store.cleanup("*.xlsx")
+
+            self.assertEqual(deleted, 1)
+            self.assertIsNone(warning)
+            self.assertFalse(expired.exists())
+            self.assertTrue(current.exists())
+            self.assertTrue(other.exists())
 
 
 if __name__ == "__main__":

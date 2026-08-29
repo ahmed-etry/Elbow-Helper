@@ -504,8 +504,8 @@ HELP_ENTRIES: tuple[HelpEntry, ...] = (
         summary="Export current roster signups to Google Sheets.",
         details=(
             "Exports each signed-up Clash account with its current name, clan, Town Hall, "
-            "combined hero level, player tag, Discord member, and signup time. The first export "
-            "creates the sheet; later exports update the same link."
+            "combined hero level, player tag, Discord member, and signup time. Every export "
+            "creates a new spreadsheet that can be opened in Google Sheets or downloaded."
         ),
         category=CAT_ROSTERS,
         visible_to=LEAD_PLUS,

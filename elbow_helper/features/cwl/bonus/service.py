@@ -169,7 +169,7 @@ class BonusReportService:
         workbook_name = (
             f"cwl_bonus_{scope.lower()}_{season_slug}_{timestamp}.xlsx"
         )
-        workbook_path = self._exports.path_for(workbook_name)
+        workbook_path = self._exports.temporary_path("cwl_bonus")
         try:
             await asyncio.to_thread(
                 self._workbook_writer.write,
@@ -184,10 +184,9 @@ class BonusReportService:
         except (OSError, TypeError, ValueError) as error:
             raise BonusReportError("workbook") from error
 
-        retention_days = self._exports.retention_days
         deleted, cleanup_warning = await asyncio.to_thread(
             self._exports.cleanup,
-            "cwl_bonus_*.xlsx",
+            "*.xlsx",
         )
         if deleted:
             LOGGER.info("Deleted %s old local export files", deleted)
@@ -201,8 +200,6 @@ class BonusReportService:
             await self._google_publisher.upload_workbook(
                 workbook_path,
                 sheet_title,
-                cleanup_name_contains="cwl_bonus_",
-                retention_days=retention_days,
             )
         )
         return BonusReport(
@@ -218,6 +215,14 @@ class BonusReportService:
             attack_count=len(all_raw),
             warnings=tuple(all_warnings),
         )
+
+    async def discard(self, report: BonusReport) -> None:
+        warning = await asyncio.to_thread(
+            self._exports.delete,
+            report.workbook_path,
+        )
+        if warning:
+            LOGGER.warning("Local cleanup warning: %s", warning)
 
     def _build_sheets(
         self,

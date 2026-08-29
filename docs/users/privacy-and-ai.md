@@ -13,8 +13,9 @@ permissions.
 - recruitment answers and notes, trial status, leadership records, roster
   signups, and support topics.
 
-The bot logs ticket transcripts and saves Google spreadsheet exports to the
-community's Google Drive.
+The bot logs ticket transcripts and saves spreadsheet exports to the
+community's Google Drive. New bot-generated spreadsheets more than 30 days old
+are removed during later exports.
 
 ## AI use
 

@@ -13,7 +13,6 @@ from elbow_helper.configuration.clans import CLANS, CLAN_ORDER
 
 UTC = timezone.utc
 DB_PATH = Path("data/clan_health/clan_health.db")
-EXPORT_DIR = Path("data/.exports")
 SNAPSHOT_LOG_MINUTES = 60
 
 UTILITY_CLANS = {code for code, clan in CLANS.items() if clan.is_utility}

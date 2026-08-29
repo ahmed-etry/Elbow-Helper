@@ -653,7 +653,7 @@ class RosterSettingsSelect(discord.ui.Select):
                 discord.SelectOption(
                     label="Export to Google Sheets",
                     value="export",
-                    description="Create or update the signup sheet.",
+                    description="Create a spreadsheet of the current signups.",
                 ),
                 discord.SelectOption(
                     label=f"{state_action.title()} roster",

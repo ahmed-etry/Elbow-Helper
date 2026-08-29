@@ -214,7 +214,7 @@ class RosterSchemaMigrationTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
 
-    def test_blank_database_receives_supported_v4_schema(self) -> None:
+    def test_blank_database_receives_supported_v5_schema(self) -> None:
         repository = RosterRepository(self.path)
 
         with repository.connect() as connection:
@@ -226,7 +226,7 @@ class RosterSchemaMigrationTests(unittest.TestCase):
                 ).fetchall()
             }
 
-        self.assertEqual(version, 4)
+        self.assertEqual(version, 5)
         self.assertTrue(
             {
                 "rosters",

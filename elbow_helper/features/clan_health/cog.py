@@ -12,6 +12,7 @@ from discord.ext import commands
 
 from elbow_helper.infrastructure.clash import ClashClient
 from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
+from elbow_helper.infrastructure.exports import LocalExportStore
 from elbow_helper.configuration.roles import LEAD_PLUS
 
 from .analysis import ClanHealthAnalyzer
@@ -33,6 +34,7 @@ class ClanHealth(
         bot: commands.Bot,
         clash_client: ClashClient,
         google_publisher: GoogleSheetsPublisher,
+        local_exports: LocalExportStore,
         repository: ClanHealthRepository,
         analyzer: ClanHealthAnalyzer,
         collector: ClanHealthCollector,
@@ -40,6 +42,7 @@ class ClanHealth(
         self.bot = bot
         self.clash_client = clash_client
         self.google_publisher = google_publisher
+        self.local_exports = local_exports
         self.repository = repository
         self.analyzer = analyzer
         self.collector = collector

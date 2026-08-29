@@ -15,7 +15,7 @@ from ..config import ROSTER_PLAYER_COLUMN_MIN_WIDTH
 from ..config import ROSTER_PLAYER_COLUMN_WIDTH
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 _EXPECTED_COLUMNS = {
     "rosters": {
@@ -40,7 +40,6 @@ _EXPECTED_COLUMNS = {
         "active_cycle_id",
         "last_open_cycle_key",
         "last_close_cycle_key",
-        "google_sheet_id",
         "created_ts",
         "updated_ts",
     },
@@ -95,7 +94,7 @@ class RosterSchemaError(RuntimeError):
 
 
 def initialize_roster_schema(connection: sqlite3.Connection) -> None:
-    """Create a blank v4 database or validate an existing v4 database."""
+    """Create a blank v5 database or migrate a supported older database."""
     connection.execute("PRAGMA journal_mode=WAL")
     run_sqlite_migrations(
         connection,
@@ -250,10 +249,24 @@ def _create_supported_schema(connection: sqlite3.Connection) -> None:
     )
 
 
+def _remove_google_sheet_id(connection: sqlite3.Connection) -> None:
+    columns = {
+        str(row[1])
+        for row in connection.execute("PRAGMA table_info(rosters)").fetchall()
+    }
+    if "google_sheet_id" in columns:
+        connection.execute("ALTER TABLE rosters DROP COLUMN google_sheet_id")
+
+
 _MIGRATIONS = (
     SQLiteMigration(
-        version=SCHEMA_VERSION,
+        version=4,
         name="supported Rosters schema baseline",
         apply=_create_supported_schema,
+    ),
+    SQLiteMigration(
+        version=5,
+        name="remove persistent roster spreadsheet links",
+        apply=_remove_google_sheet_id,
     ),
 )

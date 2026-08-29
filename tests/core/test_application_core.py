@@ -91,6 +91,10 @@ class ApplicationAssemblyTests(unittest.TestCase):
         self.assertIsInstance(bot, ElbowHelperBot)
         self.assertEqual(bot.paths, paths)
         self.assertIs(bot.clash_client, clash_client)
+        self.assertEqual(
+            bot.local_exports.directory,
+            paths.data_root / ".exports",
+        )
         self.assertEqual(bot.extensions, {})
         self.assertTrue(bot.intents.message_content)
         self.assertTrue(bot.intents.members)

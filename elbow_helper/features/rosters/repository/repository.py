@@ -370,7 +370,6 @@ class RosterRepository:
             "open_day", "open_time", "close_day", "close_time", "reset_on_open",
             "one_off_open_ts", "one_off_close_ts",
             "active_cycle_id", "last_open_cycle_key", "last_close_cycle_key",
-            "google_sheet_id",
         }
         changes = {key: value for key, value in values.items() if key in allowed}
         if not changes:

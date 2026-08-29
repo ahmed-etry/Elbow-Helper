@@ -30,7 +30,6 @@ class Roster:
     active_cycle_id: int | None
     last_open_cycle_key: str | None
     last_close_cycle_key: str | None
-    google_sheet_id: str | None
 
     @classmethod
     def from_row(cls, row: dict[str, object]) -> "Roster":
@@ -72,7 +71,6 @@ class Roster:
             active_cycle_id=int(row["active_cycle_id"]) if row.get("active_cycle_id") else None,
             last_open_cycle_key=str(row["last_open_cycle_key"]) if row.get("last_open_cycle_key") else None,
             last_close_cycle_key=str(row["last_close_cycle_key"]) if row.get("last_close_cycle_key") else None,
-            google_sheet_id=str(row["google_sheet_id"]) if row.get("google_sheet_id") else None,
         )
 
 

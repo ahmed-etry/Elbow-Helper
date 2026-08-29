@@ -21,6 +21,8 @@ async def setup(bot: ElbowHelperBot) -> None:
         bot,
         bot.clash_client,
         bot.google_publisher,
+        bot.workbook_writer,
+        bot.local_exports,
         repository,
         RosterAccountDirectory(account_links),
         RosterRoleSynchronizer(

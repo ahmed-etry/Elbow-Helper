@@ -168,6 +168,14 @@ class DependencyBoundaryTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertNotIn("aiohttp.ClientSession(", source)
 
+    def test_features_use_the_application_owned_export_store(self) -> None:
+        offenders: list[str] = []
+        for path in FEATURE_ROOT.rglob("*.py"):
+            source = path.read_text(encoding="utf-8-sig")
+            if "LocalExportStore(" in source:
+                offenders.append(str(path))
+        self.assertEqual(offenders, [])
+
     def test_features_schedule_tasks_from_the_running_loop(self) -> None:
         offenders: list[str] = []
         for path in FEATURE_ROOT.rglob("*.py"):

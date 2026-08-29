@@ -209,8 +209,8 @@ class RecordCommandMixin:
             f"Removed record #{record_id} for {user.display_name}.", ephemeral=True
         )
 
-    @staticmethod
     async def _send_record_export(
+        self,
         interaction: discord.Interaction,
         report,
     ) -> None:
@@ -242,32 +242,44 @@ class RecordCommandMixin:
                 )
             )
 
-        lines = ["**Leadership Records Export**"]
-        if report.google_link and view.children:
-            await interaction.followup.send(
-                "\n".join(lines),
-                view=view,
-                ephemeral=True,
-            )
-            return
+        delivered = False
+        try:
+            lines = ["**Leadership Records Export**"]
+            if report.google_link and view.children:
+                await interaction.followup.send(
+                    "\n".join(lines),
+                    view=view,
+                    wait=True,
+                    ephemeral=True,
+                )
+                delivered = True
+                return
 
-        if report.google_warning:
-            lines.append(report.google_warning)
-        message = await interaction.followup.send(
-            "\n".join(lines),
-            wait=True,
-            file=discord.File(
+            if report.google_warning:
+                lines.append(report.google_warning)
+            attachment = discord.File(
                 str(report.workbook_path),
                 filename=report.workbook_name,
-            ),
-            ephemeral=True,
-        )
-        if message.attachments:
-            view.add_item(
-                discord.ui.Button(
-                    label="Download",
-                    style=discord.ButtonStyle.link,
-                    url=message.attachments[0].url,
-                )
             )
-            await message.edit(content="\n".join(lines), view=view)
+            try:
+                message = await interaction.followup.send(
+                    "\n".join(lines),
+                    wait=True,
+                    file=attachment,
+                    ephemeral=True,
+                )
+            finally:
+                attachment.close()
+            delivered = bool(message.attachments)
+            if message.attachments:
+                view.add_item(
+                    discord.ui.Button(
+                        label="Download",
+                        style=discord.ButtonStyle.link,
+                        url=message.attachments[0].url,
+                    )
+                )
+                await message.edit(content="\n".join(lines), view=view)
+        finally:
+            if delivered:
+                await self.exports.discard(report)

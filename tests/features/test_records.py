@@ -205,7 +205,7 @@ class RecordExportTests(unittest.IsolatedAsyncioTestCase):
             with (
                 patch("elbow_helper.features.records.export_service.datetime") as clock,
                 patch(
-                    "elbow_helper.features.records.export_service.uuid4",
+                    "elbow_helper.infrastructure.exports.local.uuid4",
                     side_effect=uuids,
                 ),
             ):

@@ -10,8 +10,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
-from googleapiclient.errors import HttpError as GoogleHttpError
-
 from elbow_helper.features.clan_health.database import ClanHealthRepository
 from elbow_helper.features.cwl.roster.analysis import build_ass_season_metrics
 from elbow_helper.features.cwl.roster.analysis import build_mega_ass_metrics
@@ -25,6 +23,8 @@ from elbow_helper.infrastructure.exports import ExportColumn as RosterColumn
 from elbow_helper.infrastructure.exports import ExportSheet as RosterSheet
 from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
 from elbow_helper.infrastructure.exports import WorkbookWriter
+from elbow_helper.infrastructure.exports.google_sheets import GOOGLE_EXPORT_OWNER_KEY
+from elbow_helper.infrastructure.exports.google_sheets import GOOGLE_EXPORT_OWNER_VALUE
 from elbow_helper.infrastructure.exports.google_sheets import HEADER_HEIGHT_PX
 from elbow_helper.features.cwl.roster.models import profile_for_league
 
@@ -37,38 +37,25 @@ class RosterSheetFormattingTests(unittest.TestCase):
     def test_wrapped_google_sheet_headers_have_room_for_two_lines(self) -> None:
         self.assertGreaterEqual(HEADER_HEIGHT_PX, 44)
 
-    def test_saved_google_sheet_is_cleared_and_updated_in_place(self) -> None:
+    def test_formatted_google_sheet_is_created_and_marked_for_cleanup(self) -> None:
         sheet = RosterSheet(
             title="Roster",
             columns=(RosterColumn("Account", 150),),
             rows=(("Ahmad",),),
             tab_color="3B5B92",
         )
-        existing = {
-            "spreadsheetId": "saved-sheet",
-            "spreadsheetUrl": (
-                "https://docs.google.com/spreadsheets/d/saved-sheet/edit"
-            ),
-            "sheets": [{
-                "properties": {
-                    "sheetId": 42,
-                    "index": 0,
-                    "title": "Old name",
-                    "gridProperties": {
-                        "rowCount": 25,
-                        "columnCount": 15,
-                    },
-                },
-                "basicFilter": {},
-                "conditionalFormats": [{}],
-            }],
-        }
         spreadsheets = MagicMock()
-        spreadsheets.get.return_value.execute.return_value = existing
+        spreadsheets.create.return_value.execute.return_value = {
+            "spreadsheetId": "new-sheet",
+            "spreadsheetUrl": (
+                "https://docs.google.com/spreadsheets/d/new-sheet/edit"
+            ),
+        }
         spreadsheets.batchUpdate.return_value.execute.return_value = {}
         sheets_service = MagicMock()
         sheets_service.spreadsheets.return_value = spreadsheets
         drive_service = MagicMock()
+        drive_service.files.return_value.list.return_value.execute.return_value = {}
 
         with (
             patch("google.oauth2.credentials.Credentials"),
@@ -83,102 +70,30 @@ class RosterSheetFormattingTests(unittest.TestCase):
                 client_secret="secret",
                 refresh_token="refresh",
                 folder_id=None,
-            ).upsert_spreadsheet_sync(
+            ).create_spreadsheet_sync(
                 sheets=[sheet],
                 sheet_title="CWL Sign-up [Roster]",
-                spreadsheet_id="saved-sheet",
-                cleanup_name_contains="[CWL Roster Planner]",
-                retention_days=0,
             )
 
         self.assertEqual(
             link,
-            "https://docs.google.com/spreadsheets/d/saved-sheet/edit",
+            "https://docs.google.com/spreadsheets/d/new-sheet/edit",
         )
         self.assertIsNone(warning)
-        spreadsheets.create.assert_not_called()
-        spreadsheets.get.assert_called_once_with(
-            spreadsheetId="saved-sheet",
-            fields=(
-                "spreadsheetId,spreadsheetUrl,"
-                "sheets(properties(sheetId,index,title,gridProperties),"
-                "basicFilter,conditionalFormats)"
-            ),
-        )
+        spreadsheets.create.assert_called_once()
         update = spreadsheets.batchUpdate.call_args.kwargs
-        self.assertEqual(update["spreadsheetId"], "saved-sheet")
+        self.assertEqual(update["spreadsheetId"], "new-sheet")
         requests = update["body"]["requests"]
-        self.assertTrue(any("clearBasicFilter" in request for request in requests))
-        self.assertTrue(
-            any("deleteConditionalFormatRule" in request for request in requests)
-        )
-        clear = next(
-            request["updateCells"]
-            for request in requests
-            if "updateCells" in request and "rows" not in request["updateCells"]
-        )
-        self.assertEqual(clear["range"]["sheetId"], 42)
         write = next(
             request["updateCells"]
             for request in requests
             if "updateCells" in request and "rows" in request["updateCells"]
         )
-        self.assertEqual(write["start"]["sheetId"], 42)
-
-    def test_deleted_saved_google_sheet_is_recreated(self) -> None:
-        sheet = RosterSheet(
-            title="Roster",
-            columns=(RosterColumn("Account", 150),),
-            rows=(("Ahmad",),),
-            tab_color="3B5B92",
-        )
-        missing_response = MagicMock(status=404, reason="Not Found")
-        spreadsheets = MagicMock()
-        spreadsheets.get.return_value.execute.side_effect = GoogleHttpError(
-            missing_response,
-            b"{}",
-        )
-        spreadsheets.create.return_value.execute.return_value = {
-            "spreadsheetId": "replacement-sheet",
-            "spreadsheetUrl": (
-                "https://docs.google.com/spreadsheets/d/replacement-sheet/edit"
-            ),
-        }
-        spreadsheets.batchUpdate.return_value.execute.return_value = {}
-        sheets_service = MagicMock()
-        sheets_service.spreadsheets.return_value = spreadsheets
-        drive_service = MagicMock()
-
-        with (
-            patch("google.oauth2.credentials.Credentials"),
-            patch("google.auth.transport.requests.Request"),
-            patch(
-                "googleapiclient.discovery.build",
-                side_effect=[sheets_service, drive_service],
-            ),
-        ):
-            link, warning = GoogleSheetsPublisher(
-                client_id="client",
-                client_secret="secret",
-                refresh_token="refresh",
-                folder_id=None,
-            ).upsert_spreadsheet_sync(
-                sheets=[sheet],
-                sheet_title="CWL Sign-up [Roster]",
-                spreadsheet_id="deleted-sheet",
-                cleanup_name_contains="[CWL Roster Planner]",
-                retention_days=0,
-            )
-
+        self.assertEqual(write["start"]["sheetId"], 0)
+        drive_update = drive_service.files.return_value.update.call_args.kwargs
         self.assertEqual(
-            link,
-            "https://docs.google.com/spreadsheets/d/replacement-sheet/edit",
-        )
-        self.assertIsNone(warning)
-        spreadsheets.create.assert_called_once()
-        self.assertEqual(
-            spreadsheets.batchUpdate.call_args.kwargs["spreadsheetId"],
-            "replacement-sheet",
+            drive_update["body"]["appProperties"],
+            {GOOGLE_EXPORT_OWNER_KEY: GOOGLE_EXPORT_OWNER_VALUE},
         )
 
 

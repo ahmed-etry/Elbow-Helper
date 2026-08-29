@@ -186,11 +186,10 @@ class BonusReportServiceTests(unittest.IsolatedAsyncioTestCase):
             return_value=("https://docs.google.com/spreadsheets/d/id/edit", None)
         )
         exports = MagicMock()
-        exports.retention_days = 7
         exports.cleanup.return_value = (0, None)
         with tempfile.TemporaryDirectory() as temp_dir:
-            exports.path_for.side_effect = (
-                lambda filename: Path(temp_dir) / filename
+            exports.temporary_path.side_effect = (
+                lambda prefix: Path(temp_dir) / f"{prefix}.xlsx"
             )
             service = BonusReportService(
                 analysis,
@@ -215,7 +214,7 @@ class BonusReportServiceTests(unittest.IsolatedAsyncioTestCase):
             raw_headers,
         )
         exports.cleanup.assert_called_once_with(
-            "cwl_bonus_*.xlsx"
+            "*.xlsx"
         )
         publisher.upload_workbook.assert_awaited_once()
 

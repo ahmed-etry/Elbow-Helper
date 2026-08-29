@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 from elbow_helper.core.lifecycle import ElbowHelperBot
-from elbow_helper.infrastructure.exports import LocalExportStore
-
-from .config import EXPORT_DIR
 from .database import RecordRepository
 from .export_service import RecordExportService
 from .cog import Records
@@ -25,7 +22,7 @@ async def setup(bot: ElbowHelperBot) -> None:
         service,
         RecordWorkbookWriter(bot.workbook_writer),
         bot.google_publisher,
-        LocalExportStore(EXPORT_DIR),
+        bot.local_exports,
     )
     await bot.add_cog(Records(bot, service, exports))
 

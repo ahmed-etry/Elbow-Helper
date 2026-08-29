@@ -6,6 +6,7 @@ import asyncio
 from datetime import datetime
 from datetime import timezone as dt_timezone
 import logging
+import re
 import sqlite3
 import time
 
@@ -23,6 +24,8 @@ from elbow_helper.configuration.roles import LEAD_PLUS
 from elbow_helper.domain.timezones import canonical_timezone_name
 from elbow_helper.infrastructure.clash import ClashClient
 from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
+from elbow_helper.infrastructure.exports import LocalExportStore
+from elbow_helper.infrastructure.exports import WorkbookWriter
 from elbow_helper.infrastructure.time import fixed_utc_offset_name
 
 from .services.accounts import RosterAccountDirectory
@@ -94,6 +97,8 @@ class Rosters(commands.Cog):
         bot: commands.Bot,
         clash_client: ClashClient,
         google_publisher: GoogleSheetsPublisher,
+        workbook_writer: WorkbookWriter,
+        local_exports: LocalExportStore,
         repository: RosterRepository,
         account_directory: RosterAccountDirectory,
         role_synchronizer: RosterRoleSynchronizer,
@@ -121,6 +126,8 @@ class Rosters(commands.Cog):
             self._repository,
             self.profiles,
             google_publisher,
+            workbook_writer,
+            local_exports,
         )
         self.automation = RosterAutomationService(
             self.bot,
@@ -586,14 +593,8 @@ class Rosters(commands.Cog):
                 roster = await self.service.close(roster)
                 text = f"Closed **{roster.name}**."
             elif action == "export":
-                link, warning = await self.publisher.export(roster)
-                if link:
-                    await interaction.edit_original_response(
-                        content=f"Exported **{roster.name}**.",
-                        view=self._google_sheet_view(link),
-                    )
-                    return
-                text = warning or "I couldn't create the Google Sheet."
+                await self._send_roster_export(interaction, roster)
+                return
             elif action == "toggle_buttons":
                 roster = await self.service.toggle_buttons(roster)
                 text = "Buttons shown." if not roster.buttons_hidden else "Buttons hidden."
@@ -614,12 +615,90 @@ class Rosters(commands.Cog):
         view = discord.ui.View(timeout=None)
         view.add_item(
             discord.ui.Button(
-                label="Open Google Sheet",
+                label="Google Sheet",
                 style=discord.ButtonStyle.link,
                 url=link,
             )
         )
+        match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", link)
+        if match:
+            view.add_item(
+                discord.ui.Button(
+                    label="Download",
+                    style=discord.ButtonStyle.link,
+                    url=(
+                        "https://docs.google.com/spreadsheets/d/"
+                        f"{match.group(1)}/export?format=xlsx"
+                    ),
+                )
+            )
         return view
+
+    async def _send_roster_export(
+        self,
+        interaction: discord.Interaction,
+        roster: Roster,
+    ) -> None:
+        try:
+            report, warning = await self.publisher.export(roster)
+        except (OSError, RuntimeError, TypeError, ValueError):
+            LOGGER.exception("Roster export failed roster_id=%s", roster.id)
+            await interaction.edit_original_response(
+                content="I couldn't create the roster spreadsheet.",
+                view=None,
+            )
+            return
+        if report is None:
+            await interaction.edit_original_response(
+                content=warning or "I couldn't create the roster spreadsheet.",
+                view=None,
+            )
+            return
+
+        delivered = False
+        try:
+            if report.google_link:
+                await interaction.edit_original_response(
+                    content=f"Exported **{roster.name}**.",
+                    view=self._google_sheet_view(report.google_link),
+                )
+                delivered = True
+                return
+
+            lines = [f"Exported **{roster.name}**."]
+            if report.google_warning:
+                lines.append(report.google_warning)
+            attachment = discord.File(
+                str(report.workbook_path),
+                filename=report.workbook_name,
+            )
+            try:
+                message = await interaction.edit_original_response(
+                    content="\n".join(lines),
+                    attachments=[attachment],
+                    view=None,
+                )
+            finally:
+                attachment.close()
+            delivered = bool(message.attachments)
+            if message.attachments:
+                view = discord.ui.View(timeout=None)
+                view.add_item(
+                    discord.ui.Button(
+                        label="Download",
+                        style=discord.ButtonStyle.link,
+                        url=message.attachments[0].url,
+                    )
+                )
+                await message.edit(view=view)
+            else:
+                await message.edit(
+                    content="I couldn't deliver the roster spreadsheet.",
+                    view=None,
+                )
+        finally:
+            if delivered:
+                await self.publisher.discard(report)
 
     @tasks.loop(seconds=SCHEDULER_INTERVAL_SECONDS)
     async def scheduler_loop(self) -> None:
@@ -1017,17 +1096,7 @@ class Rosters(commands.Cog):
             if current is None:
                 await interaction.edit_original_response(content="That roster no longer exists.")
                 return
-            link, warning = await self.publisher.export(current)
-        if link:
-            await interaction.edit_original_response(
-                content=f"Exported **{current.name}**.",
-                view=self._google_sheet_view(link),
-            )
-            return
-        await interaction.edit_original_response(
-            content=warning or "I couldn't create the Google Sheet.",
-            view=None,
-        )
+            await self._send_roster_export(interaction, current)
 
     async def roster_list(self, interaction: discord.Interaction) -> None:
         if not await self._require_lead(interaction):

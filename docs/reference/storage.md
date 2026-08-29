@@ -7,7 +7,7 @@ retain older feature names because existing deployments depend on them.
 |---|---|---|
 | Application | `data/.avatar/` | Avatar file and upload state |
 | Application | `data/.logs/` | Runtime logs |
-| Shared exports | `data/.exports/` | Generated workbooks awaiting cleanup |
+| Shared exports | `data/.exports/` | Temporary workbooks and crash leftovers |
 | Account links | `data/clan_links/links.sqlite3` | Account links, suggestions, and current clan locations |
 | Achievements | `data/achievements/achievements.db` | Achievements, activity, coins, raffles, and rewards |
 | Clan health | `data/clan_health/clan_health.db` | Snapshots, activity, movement, wars, and report evidence |

@@ -16,8 +16,6 @@ import logging
 from elbow_helper.infrastructure.exports import unique_sheet_name
 from elbow_helper.infrastructure.exports import xlsx_column_name
 
-from .config import EXPORT_DIR
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -580,8 +578,15 @@ class ClanHealthExportMixin:
         summary_lines: List[str],
         sheets: List[Tuple[str, List[List[Any]]]],
     ) -> None:
-        EXPORT_DIR.mkdir(parents=True, exist_ok=True)
-        workbook_path = EXPORT_DIR / workbook_name
+        deleted, cleanup_warning = await asyncio.to_thread(
+            self.local_exports.cleanup,
+            "*.xlsx",
+        )
+        if deleted:
+            LOGGER.info("Deleted %s abandoned local export files", deleted)
+        if cleanup_warning:
+            LOGGER.warning("Local cleanup warning: %s", cleanup_warning)
+        workbook_path = self.local_exports.temporary_path("clan_health")
         try:
             await asyncio.to_thread(self._write_health_xlsx_file, workbook_path, sheets)
         except (OSError, TypeError, ValueError) as e:
@@ -589,45 +594,61 @@ class ClanHealthExportMixin:
             await interaction.followup.send("Could not generate the spreadsheet right now. Try again in a moment.")
             return
 
-        google_link = None
-        google_warning = None
-        google_link, google_warning = await self.google_publisher.upload_workbook(
-            workbook_path,
-            workbook_title,
-            cleanup_name_contains="Health",
-            retention_days=0,
-        )
+        delivered = False
+        try:
+            google_link, google_warning = await self.google_publisher.upload_workbook(
+                workbook_path,
+                workbook_title,
+            )
 
-        export_view = discord.ui.View(timeout=None)
-        google_download_link = None
-        if google_link:
-            sheet_match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", google_link)
-            if sheet_match:
-                google_download_link = (
-                    f"https://docs.google.com/spreadsheets/d/{sheet_match.group(1)}/export?format=xlsx"
+            export_view = discord.ui.View(timeout=None)
+            google_download_link = None
+            if google_link:
+                sheet_match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", google_link)
+                if sheet_match:
+                    google_download_link = (
+                        f"https://docs.google.com/spreadsheets/d/{sheet_match.group(1)}/export?format=xlsx"
+                    )
+                export_view.add_item(
+                    discord.ui.Button(label="Google Sheet", style=discord.ButtonStyle.link, url=google_link)
                 )
-            export_view.add_item(
-                discord.ui.Button(label="Google Sheet", style=discord.ButtonStyle.link, url=google_link)
-            )
-        if google_download_link:
-            export_view.add_item(
-                discord.ui.Button(label="Download", style=discord.ButtonStyle.link, url=google_download_link)
-            )
-        if google_link and export_view.children:
-            await interaction.followup.send(content=workbook_title, view=export_view)
-            return
+            if google_download_link:
+                export_view.add_item(
+                    discord.ui.Button(label="Download", style=discord.ButtonStyle.link, url=google_download_link)
+                )
+            if google_link and export_view.children:
+                await interaction.followup.send(
+                    content=workbook_title,
+                    view=export_view,
+                    wait=True,
+                )
+                delivered = True
+                return
 
-        if google_warning:
-            summary_lines.append(google_warning)
-            LOGGER.warning("Google warning: %s", google_warning)
-        msg = await interaction.followup.send(
-            "\n".join(summary_lines),
-            wait=True,
-            file=discord.File(str(workbook_path), filename=workbook_name),
-        )
-        if msg.attachments:
-            export_view.add_item(
-                discord.ui.Button(label="Download", style=discord.ButtonStyle.link, url=msg.attachments[0].url)
-            )
-        if export_view.children:
-            await msg.edit(content=workbook_title, view=export_view)
+            if google_warning:
+                summary_lines.append(google_warning)
+                LOGGER.warning("Google warning: %s", google_warning)
+            attachment = discord.File(str(workbook_path), filename=workbook_name)
+            try:
+                msg = await interaction.followup.send(
+                    "\n".join(summary_lines),
+                    wait=True,
+                    file=attachment,
+                )
+            finally:
+                attachment.close()
+            delivered = bool(msg.attachments)
+            if msg.attachments:
+                export_view.add_item(
+                    discord.ui.Button(label="Download", style=discord.ButtonStyle.link, url=msg.attachments[0].url)
+                )
+            if export_view.children:
+                await msg.edit(content=workbook_title, view=export_view)
+        finally:
+            if delivered:
+                warning = await asyncio.to_thread(
+                    self.local_exports.delete,
+                    workbook_path,
+                )
+                if warning:
+                    LOGGER.warning("Local cleanup warning: %s", warning)

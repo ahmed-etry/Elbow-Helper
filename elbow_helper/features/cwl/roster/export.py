@@ -444,7 +444,7 @@ class CwlRosterExportMixin:
     ) -> None:
         timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
         workbook_name = f"cwl_roster_{timestamp}.xlsx"
-        workbook_path = self.cwl_exports.path_for(workbook_name)
+        workbook_path = self.cwl_exports.temporary_path("cwl_roster")
         try:
             await asyncio.to_thread(
                 self._write_roster_xlsx,
@@ -458,75 +458,93 @@ class CwlRosterExportMixin:
             )
             return
 
-        google_link: Optional[str] = None
-        google_warning: Optional[str] = None
-        guild_name = str(
-            getattr(getattr(interaction, "guild", None), "name", "") or "CWL"
-        )
-        sheet_title = f"{guild_name} [CWL Roster Planner] {timestamp}"
-        google_link, google_warning = (
-            await self.google_publisher.upsert_spreadsheet(
-                sheets=sheets,
-                sheet_title=sheet_title,
-                cleanup_name_contains="[CWL Roster Planner]",
-                retention_days=self.cwl_exports.retention_days,
+        delivered = False
+        try:
+            google_link: Optional[str] = None
+            google_warning: Optional[str] = None
+            guild_name = str(
+                getattr(getattr(interaction, "guild", None), "name", "") or "CWL"
             )
-        )
-
-        _, cleanup_warning = await asyncio.to_thread(
-            self.cwl_exports.cleanup,
-            "cwl_roster_*.xlsx",
-        )
-        if cleanup_warning:
-            LOGGER.warning("Local cleanup warning: %s", cleanup_warning)
-        lines = [
-            f"**CWL Roster Planner ({history_label})**",
-            f"**{signed_member_count}** members • "
-            f"**{signed_account_count}** Clash accounts signed up",
-        ]
-
-        view = discord.ui.View(timeout=None)
-        if google_link:
-            view.add_item(
-                discord.ui.Button(
-                    label="Google Sheet",
-                    style=discord.ButtonStyle.link,
-                    url=google_link,
+            sheet_title = f"{guild_name} [CWL Roster Planner] {timestamp}"
+            google_link, google_warning = (
+                await self.google_publisher.create_spreadsheet(
+                    sheets=sheets,
+                    sheet_title=sheet_title,
                 )
             )
-            match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", google_link)
-            if match:
+
+            _, cleanup_warning = await asyncio.to_thread(
+                self.cwl_exports.cleanup,
+                "*.xlsx",
+            )
+            if cleanup_warning:
+                LOGGER.warning("Local cleanup warning: %s", cleanup_warning)
+            lines = [
+                f"**CWL Roster Planner ({history_label})**",
+                f"**{signed_member_count}** members • "
+                f"**{signed_account_count}** Clash accounts signed up",
+            ]
+
+            view = discord.ui.View(timeout=None)
+            if google_link:
+                view.add_item(
+                    discord.ui.Button(
+                        label="Google Sheet",
+                        style=discord.ButtonStyle.link,
+                        url=google_link,
+                    )
+                )
+                match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", google_link)
+                if match:
+                    view.add_item(
+                        discord.ui.Button(
+                            label="Download",
+                            style=discord.ButtonStyle.link,
+                            url=(
+                                "https://docs.google.com/spreadsheets/d/"
+                                f"{match.group(1)}/export?format=xlsx"
+                            ),
+                        )
+                    )
+                await interaction.followup.send(
+                    "\n".join(lines),
+                    view=view,
+                    wait=True,
+                    ephemeral=True,
+                )
+                delivered = True
+                return
+
+            if google_warning:
+                lines.append(google_warning)
+            attachment = discord.File(
+                str(workbook_path),
+                filename=workbook_name,
+            )
+            try:
+                message = await interaction.followup.send(
+                    "\n".join(lines),
+                    wait=True,
+                    file=attachment,
+                    ephemeral=True,
+                )
+            finally:
+                attachment.close()
+            delivered = bool(message.attachments)
+            if message.attachments:
                 view.add_item(
                     discord.ui.Button(
                         label="Download",
                         style=discord.ButtonStyle.link,
-                        url=(
-                            "https://docs.google.com/spreadsheets/d/"
-                            f"{match.group(1)}/export?format=xlsx"
-                        ),
+                        url=message.attachments[0].url,
                     )
                 )
-            await interaction.followup.send(
-                "\n".join(lines),
-                view=view,
-                ephemeral=True,
-            )
-            return
-
-        if google_warning:
-            lines.append(google_warning)
-        message = await interaction.followup.send(
-            "\n".join(lines),
-            wait=True,
-            file=discord.File(str(workbook_path), filename=workbook_name),
-            ephemeral=True,
-        )
-        if message.attachments:
-            view.add_item(
-                discord.ui.Button(
-                    label="Download",
-                    style=discord.ButtonStyle.link,
-                    url=message.attachments[0].url,
+                await message.edit(content="\n".join(lines), view=view)
+        finally:
+            if delivered:
+                warning = await asyncio.to_thread(
+                    self.cwl_exports.delete,
+                    workbook_path,
                 )
-            )
-            await message.edit(content="\n".join(lines), view=view)
+                if warning:
+                    LOGGER.warning("Local cleanup warning: %s", warning)

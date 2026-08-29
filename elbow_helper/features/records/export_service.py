@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from datetime import timezone
 from pathlib import Path
+import logging
 import re
 import unicodedata
-from uuid import uuid4
 
 from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
 from elbow_helper.infrastructure.exports import LocalExportStore
@@ -17,6 +17,9 @@ from elbow_helper.infrastructure.exports import LocalExportStore
 from .database import RecordReader
 from .service import RecordService
 from .sheets.export import RecordWorkbookWriter
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +62,14 @@ class RecordExportService:
         member_id: int | None,
         member_name: str | None,
     ) -> RecordExport:
+        deleted, cleanup_warning = await asyncio.to_thread(
+            self._exports.cleanup,
+            "*.xlsx",
+        )
+        if deleted:
+            LOGGER.info("Deleted %s abandoned local export files", deleted)
+        if cleanup_warning:
+            LOGGER.warning("Local cleanup warning: %s", cleanup_warning)
         records = await asyncio.to_thread(
             self._reader.list,
             member_id=member_id,
@@ -70,8 +81,7 @@ class RecordExportService:
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
         scope = _filename_segment(member_name) if member_id is not None else "all"
         workbook_name = f"leadership_records_{scope}_{timestamp}.xlsx"
-        storage_name = f"leadership_records_{uuid4().hex}.xlsx"
-        workbook_path = self._exports.path_for(storage_name)
+        workbook_path = self._exports.temporary_path("leadership_records")
         await asyncio.to_thread(
             self._writer.write,
             workbook_path,
@@ -87,8 +97,6 @@ class RecordExportService:
         google_link, google_warning = await self._publisher.upload_workbook(
             workbook_path,
             title,
-            cleanup_name_contains="Leadership Records",
-            retention_days=0,
         )
         return RecordExport(
             workbook_path=workbook_path,
@@ -96,3 +104,11 @@ class RecordExportService:
             google_link=google_link,
             google_warning=google_warning,
         )
+
+    async def discard(self, report: RecordExport) -> None:
+        warning = await asyncio.to_thread(
+            self._exports.delete,
+            report.workbook_path,
+        )
+        if warning:
+            LOGGER.warning("Local cleanup warning: %s", warning)

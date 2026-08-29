@@ -178,44 +178,55 @@ class CwlBonusMixin:
             )
         )
 
-        title = (
-            "**CWL Bonus Estimate "
-            f"({report.scope_label}, {report.season})**"
-        )
-        if report.google_link and view.children:
-            message_lines = [title]
-            if report.warnings:
-                preview = " | ".join(report.warnings[:3])
-                suffix = (
-                    f" (+{len(report.warnings) - 3} more)"
-                    if len(report.warnings) > 3
-                    else ""
-                )
-                message_lines.append(f"Warnings: {preview}{suffix}")
-            message = await interaction.followup.send(
-                "\n".join(message_lines),
-                view=view,
-                wait=True,
+        delivered = False
+        try:
+            title = (
+                "**CWL Bonus Estimate "
+                f"({report.scope_label}, {report.season})**"
             )
-            view.bind_message(message)
-            return
+            if report.google_link and view.children:
+                message_lines = [title]
+                if report.warnings:
+                    preview = " | ".join(report.warnings[:3])
+                    suffix = (
+                        f" (+{len(report.warnings) - 3} more)"
+                        if len(report.warnings) > 3
+                        else ""
+                    )
+                    message_lines.append(f"Warnings: {preview}{suffix}")
+                message = await interaction.followup.send(
+                    "\n".join(message_lines),
+                    view=view,
+                    wait=True,
+                )
+                delivered = True
+                view.bind_message(message)
+                return
 
-        message = await interaction.followup.send(
-            "\n".join(response_lines),
-            wait=True,
-            file=discord.File(
+            attachment = discord.File(
                 str(report.workbook_path),
                 filename=report.workbook_name,
-            ),
-        )
-        if message.attachments:
-            view.add_item(
-                discord.ui.Button(
-                    label="Download",
-                    style=discord.ButtonStyle.link,
-                    url=message.attachments[0].url,
-                )
             )
-        if view.children:
-            await message.edit(content="\n".join(response_lines), view=view)
-            view.bind_message(message)
+            try:
+                message = await interaction.followup.send(
+                    "\n".join(response_lines),
+                    wait=True,
+                    file=attachment,
+                )
+            finally:
+                attachment.close()
+            delivered = bool(message.attachments)
+            if message.attachments:
+                view.add_item(
+                    discord.ui.Button(
+                        label="Download",
+                        style=discord.ButtonStyle.link,
+                        url=message.attachments[0].url,
+                    )
+                )
+            if view.children:
+                await message.edit(content="\n".join(response_lines), view=view)
+                view.bind_message(message)
+        finally:
+            if delivered:
+                await self.bonus_reports.discard(report)

@@ -63,8 +63,9 @@ class ApprovedCopyTests(unittest.IsolatedAsyncioTestCase):
             interaction.followup.send = AsyncMock(return_value=message)
 
             owner = object.__new__(CwlBonusMixin)
+            owner.bonus_reports = MagicMock()
+            owner.bonus_reports.discard = AsyncMock()
             await owner._send_bonus_report(interaction, report)
-            interaction.followup.send.await_args.kwargs["file"].close()
 
         final_content = message.edit.await_args.kwargs["content"]
         self.assertIn(
@@ -72,6 +73,7 @@ class ApprovedCopyTests(unittest.IsolatedAsyncioTestCase):
             final_content,
         )
         self.assertIn("Eligible players: 12", final_content)
+        owner.bonus_reports.discard.assert_awaited_once_with(report)
 
     def test_cwl_bonus_setup_errors_do_not_expose_file_details(self) -> None:
         repository = BonusConfigRepository()

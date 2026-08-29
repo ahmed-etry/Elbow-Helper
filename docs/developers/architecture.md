@@ -38,6 +38,10 @@ All Clash requests use the application-owned
 `elbow_helper.infrastructure.clash.ClashClient`. Player-tag normalization and
 URL encoding use `elbow_helper.domain.player_tags`.
 
+Spreadsheet features share the application-owned `GoogleSheetsPublisher`,
+`WorkbookWriter`, and `LocalExportStore`. Features define report contents;
+infrastructure owns Drive retention and temporary-file cleanup.
+
 ## Shared command groups
 
 The registry assembles `/cwl`, `/roster`, `/transfer`, and `/record` from

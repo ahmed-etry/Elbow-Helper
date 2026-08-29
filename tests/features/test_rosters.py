@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import closing
 from dataclasses import replace
 from datetime import datetime
 from datetime import timedelta
@@ -8,7 +9,10 @@ from datetime import timezone
 from pathlib import Path
 import sqlite3
 import tempfile
+from types import SimpleNamespace
 import unittest
+import zipfile
+from unittest.mock import ANY
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -25,6 +29,7 @@ from elbow_helper.discord.pagination import PREV_PAGE_LABEL
 from elbow_helper.features.rosters.services.accounts import RosterAccountDirectory
 from elbow_helper.features.rosters.services.automation import RosterAutomationService
 from elbow_helper.features.rosters.repository import RosterRepository
+from elbow_helper.features.rosters.repository.migrations import _create_supported_schema
 from elbow_helper.features.rosters.ui.emojis import TownHallEmojiProvider
 from elbow_helper.features.rosters.ui.emojis import TownHallEmojiSet
 from elbow_helper.features.rosters.services.membership import account_count
@@ -63,6 +68,8 @@ from elbow_helper.features.rosters.ui.views import RosterTargetMemberView
 from elbow_helper.infrastructure.time import fixed_utc_offset_name
 from elbow_helper.infrastructure.time import resolve_timezone
 from elbow_helper.infrastructure.clash import ClashClient
+from elbow_helper.infrastructure.exports import LocalExportStore
+from elbow_helper.infrastructure.exports import WorkbookWriter
 
 
 def _membership_service(
@@ -153,6 +160,8 @@ def _wire_roster_service(
         repository,
         cog.profiles,
         google_publisher or MagicMock(),
+        MagicMock(),
+        MagicMock(),
     )
     cog.automation = automation
     cog.service = service
@@ -288,6 +297,7 @@ class RosterRepositoryTests(unittest.TestCase):
         self.assertIn("one_off_close_ts", columns)
         self.assertIn("min_townhall", columns)
         self.assertIn("schedule_utc_offset", columns)
+        self.assertNotIn("google_sheet_id", columns)
         self.assertNotIn("channel_id", columns)
         self.assertNotIn("message_id", columns)
         self.assertEqual(
@@ -305,9 +315,41 @@ class RosterRepositoryTests(unittest.TestCase):
                 "discord_width",
             },
         )
-        self.assertEqual(schema_version, 4)
+        self.assertEqual(schema_version, 5)
         self.assertIsNone(self.roster.min_townhall)
         self.assertEqual(column_types["open_day"], "TEXT")
+
+    def test_v4_database_drops_saved_sheet_id_without_losing_rosters(self) -> None:
+        path = Path(self.temp_dir.name) / "v4-rosters.sqlite3"
+        with closing(sqlite3.connect(path)) as connection:
+            _create_supported_schema(connection)
+            connection.execute(
+                """
+                INSERT INTO rosters(
+                    guild_id, name, google_sheet_id, created_ts, updated_ts
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (1, "Legacy roster", "saved-sheet", 1, 1),
+            )
+            connection.execute("PRAGMA user_version=4")
+            connection.commit()
+
+        migrated = RosterRepository(path)
+        roster = migrated.list_rosters(1)[0]
+        with migrated.connect() as connection:
+            columns = {
+                str(row["name"])
+                for row in connection.execute(
+                    "PRAGMA table_info(rosters)"
+                ).fetchall()
+            }
+            version = int(
+                connection.execute("PRAGMA user_version").fetchone()[0]
+            )
+
+        self.assertEqual(roster.name, "Legacy roster")
+        self.assertNotIn("google_sheet_id", columns)
+        self.assertEqual(version, 5)
 
     def test_roster_can_track_multiple_live_posts(self) -> None:
         first = self.repository.add_post(self.roster.id, 111, 222)
@@ -379,7 +421,6 @@ class RosterRepositoryTests(unittest.TestCase):
             one_off_open_ts=123,
             one_off_close_ts=456,
             reset_on_open=1,
-            google_sheet_id="sheet-id",
         )
         source_layout = self.repository.update_layout(
             source.id,
@@ -428,7 +469,6 @@ class RosterRepositoryTests(unittest.TestCase):
         self.assertIsNone(clone.active_cycle_id)
         self.assertIsNone(clone.last_open_cycle_key)
         self.assertIsNone(clone.last_close_cycle_key)
-        self.assertIsNone(clone.google_sheet_id)
         self.assertEqual(self.repository.list_members(clone.id, clone.active_cycle_id), [])
         self.assertEqual(self.repository.get_layout(clone.id), source_layout)
 
@@ -1888,7 +1928,14 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         cog.service.get = AsyncMock(return_value=roster)
         cog.is_lead = MagicMock(return_value=True)
         cog.publisher = MagicMock()
-        cog.publisher.export = AsyncMock(return_value=("https://sheet", None))
+        report = SimpleNamespace(
+            google_link=(
+                "https://docs.google.com/spreadsheets/d/sheet-id/edit"
+            ),
+            google_warning=None,
+        )
+        cog.publisher.export = AsyncMock(return_value=(report, None))
+        cog.publisher.discard = AsyncMock()
         interaction = MagicMock()
         interaction.response.edit_message = AsyncMock()
         interaction.edit_original_response = AsyncMock()
@@ -1903,7 +1950,66 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         cog.publisher.export.assert_awaited_once_with(roster)
         final = interaction.edit_original_response.await_args.kwargs
         self.assertEqual(final["content"], "Exported **CWL Sign-up**.")
-        self.assertEqual(final["view"].children[0].label, "Open Google Sheet")
+        self.assertEqual(
+            [item.label for item in final["view"].children],
+            ["Google Sheet", "Download"],
+        )
+        cog.publisher.discard.assert_awaited_once_with(report)
+
+    async def test_roster_export_falls_back_to_discord_before_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workbook = Path(directory) / "roster.xlsx"
+            workbook.write_bytes(b"xlsx")
+            report = SimpleNamespace(
+                google_link=None,
+                google_warning="Google Sheets isn't available here.",
+                workbook_path=workbook,
+                workbook_name="cwl_sign_up_roster.xlsx",
+            )
+            roster = SimpleNamespace(id=7, name="CWL Sign-up")
+            message = MagicMock(
+                attachments=[SimpleNamespace(url="https://discord.test/roster.xlsx")]
+            )
+            message.edit = AsyncMock()
+            interaction = MagicMock()
+            interaction.edit_original_response = AsyncMock(return_value=message)
+            cog = object.__new__(Rosters)
+            cog.publisher = MagicMock()
+            cog.publisher.export = AsyncMock(return_value=(report, None))
+            cog.publisher.discard = AsyncMock()
+
+            await cog._send_roster_export(interaction, roster)
+
+        upload = interaction.edit_original_response.await_args.kwargs
+        self.assertEqual(upload["attachments"][0].filename, report.workbook_name)
+        self.assertIn(report.google_warning, upload["content"])
+        cog.publisher.discard.assert_awaited_once_with(report)
+
+    async def test_roster_export_keeps_local_file_when_discord_delivery_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workbook = Path(directory) / "roster.xlsx"
+            workbook.write_bytes(b"xlsx")
+            report = SimpleNamespace(
+                google_link=None,
+                google_warning=None,
+                workbook_path=workbook,
+                workbook_name="roster.xlsx",
+            )
+            roster = SimpleNamespace(id=7, name="CWL Sign-up")
+            interaction = MagicMock()
+            interaction.edit_original_response = AsyncMock(
+                side_effect=RuntimeError("Discord unavailable")
+            )
+            cog = object.__new__(Rosters)
+            cog.publisher = MagicMock()
+            cog.publisher.export = AsyncMock(return_value=(report, None))
+            cog.publisher.discard = AsyncMock()
+
+            with self.assertRaises(RuntimeError):
+                await cog._send_roster_export(interaction, roster)
+            self.assertTrue(workbook.exists())
+
+        cog.publisher.discard.assert_not_awaited()
 
     async def test_clear_confirmation_shows_progress_and_replaces_it(self) -> None:
         cog = object.__new__(Rosters)
@@ -3112,7 +3218,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
             "for month-end timing.",
         )
 
-    async def test_roster_export_keeps_existing_spreadsheet_terms(self) -> None:
+    async def test_roster_export_builds_an_xlsx_snapshot_with_current_terms(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
         repository = RosterRepository(Path(temp_dir.name) / "rosters.sqlite3")
@@ -3138,9 +3244,13 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
             roster.max_members,
         )
         publisher = MagicMock()
-        publisher.upsert_spreadsheet = AsyncMock(
-            return_value=("https://sheet", None)
+        publisher.upload_workbook = AsyncMock(
+            return_value=(
+                "https://docs.google.com/spreadsheets/d/sheet-id/edit",
+                None,
+            )
         )
+        writer = MagicMock()
         bot = MagicMock()
         bot.get_guild.return_value = None
         profiles = RosterProfileService(repository, ClashClient(None))
@@ -3149,13 +3259,17 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
             repository,
             profiles,
             publisher,
+            writer,
+            LocalExportStore(Path(temp_dir.name)),
         )
 
-        await sheet_publisher.export(roster)
+        report, warning = await sheet_publisher.export(roster)
 
-        sheet = publisher.upsert_spreadsheet.await_args.kwargs["sheets"][0]
+        self.assertIsNotNone(report)
+        self.assertIsNone(warning)
+        rows = writer.write.call_args.args[1][0][1]
         self.assertEqual(
-            [column.name for column in sheet.columns],
+            rows[0],
             [
                 "Discord Member",
                 "Account",
@@ -3166,8 +3280,13 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
                 "Signed Up",
             ],
         )
+        self.assertEqual(rows[1][1:6], ["Ahmad", "#ABC", 18, 420, "BEH"])
+        publisher.upload_workbook.assert_awaited_once_with(
+            report.workbook_path,
+            ANY,
+        )
 
-    async def test_roster_export_updates_the_saved_sheet_with_current_profiles(self) -> None:
+    async def test_roster_export_uses_refreshed_profiles_without_saving_a_sheet_id(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
         repository = RosterRepository(Path(temp_dir.name) / "rosters.sqlite3")
@@ -3178,7 +3297,6 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
             role_id=None,
             max_members=500,
         )
-        roster = repository.update_roster(roster.id, google_sheet_id="existing-sheet")
         roster, _ = repository.start_cycle(roster.id, "2026-07")
         repository.add_members(
             roster.id,
@@ -3194,12 +3312,13 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
             roster.max_members,
         )
         publisher = MagicMock()
-        publisher.upsert_spreadsheet = AsyncMock(
+        publisher.upload_workbook = AsyncMock(
             return_value=(
                 "https://docs.google.com/spreadsheets/d/replacement-sheet/edit",
                 None,
             )
         )
+        writer = MagicMock()
         bot = MagicMock()
         bot.get_guild.return_value = None
         profiles = RosterProfileService(repository, ClashClient(None))
@@ -3208,6 +3327,8 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
             repository,
             profiles,
             publisher,
+            writer,
+            LocalExportStore(Path(temp_dir.name)),
         )
         refreshed = LinkedAccount("#ABC", "Current Name", "BE4", 18, 450)
 
@@ -3215,26 +3336,73 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
             "elbow_helper.features.rosters.services.profiles.enrich_accounts",
             new=AsyncMock(return_value=[refreshed]),
         ):
-            link, warning = await sheet_publisher.export(roster)
+            report, warning = await sheet_publisher.export(roster)
 
+        self.assertIsNotNone(report)
         self.assertEqual(
-            link,
+            report.google_link,
             "https://docs.google.com/spreadsheets/d/replacement-sheet/edit",
         )
         self.assertIsNone(warning)
-        call = publisher.upsert_spreadsheet.await_args.kwargs
-        self.assertEqual(call["spreadsheet_id"], "existing-sheet")
-        self.assertEqual(call["sheet_title"], "CWL Sign-up [Roster]")
-        self.assertEqual(call["sheets"][0].rows[0][1:6], (
+        rows = writer.write.call_args.args[1][0][1]
+        self.assertEqual(rows[1][1:6], [
             "Current Name",
             "#ABC",
             18,
             450,
             "BE4",
-        ))
+        ])
         stored = repository.get_roster(roster.id)
         self.assertIsNotNone(stored)
-        self.assertEqual(stored.google_sheet_id, "replacement-sheet")
+        self.assertFalse(hasattr(stored, "google_sheet_id"))
+
+    async def test_roster_export_creates_a_valid_xlsx_fallback(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        repository = RosterRepository(Path(temp_dir.name) / "rosters.sqlite3")
+        roster = repository.create_roster(
+            guild_id=1,
+            name="CWL Sign-up",
+            clan_code="FAMILY",
+            role_id=None,
+            max_members=500,
+        )
+        roster, _ = repository.start_cycle(roster.id, "2026-07")
+        repository.add_members(
+            roster.id,
+            roster.active_cycle_id,
+            10,
+            [{
+                "player_tag": "#ABC",
+                "player_name": "Ahmad",
+                "clan_code": "BEH",
+                "townhall": 18,
+                "hero_sum": 420,
+            }],
+            roster.max_members,
+        )
+        publisher = MagicMock()
+        publisher.upload_workbook = AsyncMock(
+            return_value=(None, "Google Sheets isn't available here.")
+        )
+        local_exports = LocalExportStore(Path(temp_dir.name) / "exports")
+        sheet_publisher = RosterSheetPublisher(
+            MagicMock(),
+            repository,
+            RosterProfileService(repository, ClashClient(None)),
+            publisher,
+            WorkbookWriter(),
+            local_exports,
+        )
+
+        report, warning = await sheet_publisher.export(roster)
+
+        self.assertIsNotNone(report)
+        self.assertIsNone(warning)
+        self.assertTrue(zipfile.is_zipfile(report.workbook_path))
+        self.assertEqual(report.google_warning, "Google Sheets isn't available here.")
+        await sheet_publisher.discard(report)
+        self.assertFalse(report.workbook_path.exists())
 
     async def test_empty_roster_export_does_not_create_a_sheet(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
@@ -3248,7 +3416,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
             max_members=500,
         )
         publisher = MagicMock()
-        publisher.upsert_spreadsheet = AsyncMock()
+        publisher.upload_workbook = AsyncMock()
         bot = MagicMock()
         profiles = RosterProfileService(repository, ClashClient(None))
         sheet_publisher = RosterSheetPublisher(
@@ -3256,13 +3424,15 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
             repository,
             profiles,
             publisher,
+            MagicMock(),
+            LocalExportStore(Path(temp_dir.name)),
         )
 
-        link, warning = await sheet_publisher.export(roster)
+        report, warning = await sheet_publisher.export(roster)
 
-        self.assertIsNone(link)
+        self.assertIsNone(report)
         self.assertEqual(warning, "No accounts are signed up to **CWL Sign-up**.")
-        publisher.upsert_spreadsheet.assert_not_awaited()
+        publisher.upload_workbook.assert_not_awaited()
 
 
 class RosterCommandMetadataTests(unittest.TestCase):

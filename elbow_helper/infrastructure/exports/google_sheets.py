@@ -24,6 +24,9 @@ SPREADSHEET_MIME_TYPE = "application/vnd.google-apps.spreadsheet"
 XLSX_MIME_TYPE = (
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
+GOOGLE_EXPORT_RETENTION_DAYS = 30
+GOOGLE_EXPORT_OWNER_KEY = "managed_by"
+GOOGLE_EXPORT_OWNER_VALUE = "elbow-helper"
 HEADER_FILL = "374151"
 HEADER_HEIGHT_PX = 44
 ZEBRA_FILL = "E6E6E6"
@@ -89,14 +92,17 @@ class GoogleSheetsPublisher:
         drive: Any,
         *,
         folder_id: str,
-        name_contains: str,
-        retention_days: int,
     ) -> int:
-        if retention_days <= 0:
-            return 0
-        cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+        cutoff = datetime.now(timezone.utc) - timedelta(
+            days=GOOGLE_EXPORT_RETENTION_DAYS
+        )
         query_parts = [
-            f"name contains '{name_contains}'",
+            (
+                "appProperties has { "
+                f"key='{GOOGLE_EXPORT_OWNER_KEY}' and "
+                f"value='{GOOGLE_EXPORT_OWNER_VALUE}'"
+                " }"
+            ),
             "trashed = false",
             f"mimeType = '{SPREADSHEET_MIME_TYPE}'",
             f"createdTime < '{cutoff.strftime('%Y-%m-%dT%H:%M:%SZ')}'",
@@ -131,9 +137,6 @@ class GoogleSheetsPublisher:
         self,
         workbook_path: Path,
         sheet_title: str,
-        *,
-        cleanup_name_contains: str,
-        retention_days: int,
     ) -> tuple[str | None, str | None]:
         """Upload and convert an XLSX workbook into a new Google spreadsheet."""
 
@@ -162,6 +165,9 @@ class GoogleSheetsPublisher:
             metadata: dict[str, Any] = {
                 "name": sheet_title,
                 "mimeType": SPREADSHEET_MIME_TYPE,
+                "appProperties": {
+                    GOOGLE_EXPORT_OWNER_KEY: GOOGLE_EXPORT_OWNER_VALUE,
+                },
             }
             if self.folder_id:
                 metadata["parents"] = [self.folder_id]
@@ -182,8 +188,6 @@ class GoogleSheetsPublisher:
                 deleted = self._cleanup_exports(
                     drive,
                     folder_id=self.folder_id,
-                    name_contains=cleanup_name_contains,
-                    retention_days=retention_days,
                 )
                 if deleted:
                     LOGGER.info("Deleted %s old Google export files", deleted)
@@ -205,28 +209,20 @@ class GoogleSheetsPublisher:
         self,
         workbook_path: Path,
         sheet_title: str,
-        *,
-        cleanup_name_contains: str,
-        retention_days: int,
     ) -> tuple[str | None, str | None]:
         return await asyncio.to_thread(
             self.upload_workbook_sync,
             workbook_path,
             sheet_title,
-            cleanup_name_contains=cleanup_name_contains,
-            retention_days=retention_days,
         )
 
-    def upsert_spreadsheet_sync(
+    def create_spreadsheet_sync(
         self,
         *,
         sheets: Sequence[ExportSheet],
         sheet_title: str,
-        spreadsheet_id: str | None = None,
-        cleanup_name_contains: str,
-        retention_days: int,
     ) -> tuple[str | None, str | None]:
-        """Create a formatted spreadsheet or refresh an existing one in place."""
+        """Create a new formatted Google spreadsheet."""
 
         try:
             from google.auth.exceptions import GoogleAuthError
@@ -241,9 +237,7 @@ class GoogleSheetsPublisher:
         credentials = self._credentials(user_credentials)
         if credentials is None:
             return None, "Google Sheets hasn't been set up."
-        requested_id = str(spreadsheet_id or "").strip()
         target_id = ""
-        created_id = ""
         spreadsheet_url = ""
         drive = None
         try:
@@ -276,154 +270,38 @@ class GoogleSheetsPublisher:
                 }
                 for sheet_id, sheet in enumerate(sheets)
             ]
-            requests: list[dict[str, Any]] = []
-            bindings: list[tuple[int, ExportSheet]] = []
-            existing_data: dict[int, dict[str, Any]] = {}
-            if requested_id:
-                try:
-                    existing = sheets_api.spreadsheets().get(
-                        spreadsheetId=requested_id,
-                        fields=(
-                            "spreadsheetId,spreadsheetUrl,"
-                            "sheets(properties(sheetId,index,title,gridProperties),"
-                            "basicFilter,conditionalFormats)"
-                        ),
-                    ).execute()
-                except HttpError as error:
-                    status = int(
-                        getattr(getattr(error, "resp", None), "status", 0) or 0
-                    )
-                    if status not in {404, 410}:
-                        raise
-                    existing = None
-                if existing:
-                    available = sorted(
-                        existing.get("sheets", []),
-                        key=lambda item: int(
-                            item.get("properties", {}).get("index", 0)
-                        ),
-                    )
-                    if len(available) >= len(sheets):
-                        target_id = str(existing.get("spreadsheetId") or "")
-                        spreadsheet_url = str(
-                            existing.get("spreadsheetUrl") or ""
-                        )
-                        for sheet in sheets:
-                            selected = next(
-                                (
-                                    item
-                                    for item in available
-                                    if item.get("properties", {}).get("title")
-                                    == sheet.title
-                                ),
-                                available[0],
-                            )
-                            available.remove(selected)
-                            sheet_id = int(selected["properties"]["sheetId"])
-                            bindings.append((sheet_id, sheet))
-                            existing_data[sheet_id] = selected
-
+            created = sheets_api.spreadsheets().create(
+                body={
+                    "properties": {"title": sheet_title},
+                    "sheets": definitions,
+                },
+                fields="spreadsheetId,spreadsheetUrl",
+            ).execute()
+            target_id = str(created.get("spreadsheetId") or "")
+            spreadsheet_url = str(created.get("spreadsheetUrl") or "")
             if not target_id:
-                created = sheets_api.spreadsheets().create(
-                    body={
-                        "properties": {"title": sheet_title},
-                        "sheets": definitions,
-                    },
-                    fields="spreadsheetId,spreadsheetUrl",
-                ).execute()
-                target_id = str(created.get("spreadsheetId") or "")
-                created_id = target_id
-                spreadsheet_url = str(created.get("spreadsheetUrl") or "")
-                if not target_id:
-                    return None, "I couldn't get a link for the new Google Sheet."
-                bindings = list(enumerate(sheets))
-            else:
-                requests.append(
-                    {
-                        "updateSpreadsheetProperties": {
-                            "properties": {"title": sheet_title},
-                            "fields": "title",
-                        }
+                return None, "I couldn't get a link for the new Google Sheet."
+            drive_update: dict[str, Any] = {
+                "fileId": target_id,
+                "body": {
+                    "appProperties": {
+                        GOOGLE_EXPORT_OWNER_KEY: GOOGLE_EXPORT_OWNER_VALUE,
                     }
-                )
-                for sheet_id, sheet in bindings:
-                    existing_sheet = existing_data[sheet_id]
-                    properties = existing_sheet.get("properties", {})
-                    grid = properties.get("gridProperties", {})
-                    current_rows = max(int(grid.get("rowCount") or 1), 1)
-                    current_columns = max(
-                        int(grid.get("columnCount") or 1),
-                        1,
-                    )
-                    if existing_sheet.get("basicFilter") is not None:
-                        requests.append(
-                            {"clearBasicFilter": {"sheetId": sheet_id}}
-                        )
-                    for rule_index in reversed(
-                        range(
-                            len(
-                                existing_sheet.get("conditionalFormats")
-                                or []
-                            )
-                        )
-                    ):
-                        requests.append(
-                            {
-                                "deleteConditionalFormatRule": {
-                                    "sheetId": sheet_id,
-                                    "index": rule_index,
-                                }
-                            }
-                        )
-                    requests.extend(
-                        [
-                            {
-                                "updateCells": {
-                                    "range": {
-                                        "sheetId": sheet_id,
-                                        "startRowIndex": 0,
-                                        "endRowIndex": current_rows,
-                                        "startColumnIndex": 0,
-                                        "endColumnIndex": current_columns,
-                                    },
-                                    "fields": (
-                                        "userEnteredValue,userEnteredFormat,"
-                                        "note,dataValidation"
-                                    ),
-                                }
-                            },
-                            {
-                                "updateSheetProperties": {
-                                    "properties": {
-                                        "sheetId": sheet_id,
-                                        "title": sheet.title,
-                                        "tabColor": _google_color(
-                                            sheet.tab_color
-                                        ),
-                                        "gridProperties": {
-                                            "rowCount": max(
-                                                current_rows,
-                                                len(sheet.rows) + 1,
-                                                25,
-                                            ),
-                                            "columnCount": max(
-                                                current_columns,
-                                                len(sheet.columns),
-                                                15,
-                                            ),
-                                            "frozenRowCount": 1,
-                                        },
-                                    },
-                                    "fields": (
-                                        "title,tabColor,"
-                                        "gridProperties.rowCount,"
-                                        "gridProperties.columnCount,"
-                                        "gridProperties.frozenRowCount"
-                                    ),
-                                }
-                            },
-                        ]
-                    )
+                },
+                "fields": "id,parents,appProperties",
+                "supportsAllDrives": True,
+            }
+            if self.folder_id:
+                parents = drive.files().get(
+                    fileId=target_id,
+                    fields="parents",
+                    supportsAllDrives=True,
+                ).execute().get("parents", [])
+                drive_update["addParents"] = self.folder_id
+                drive_update["removeParents"] = ",".join(parents)
+            drive.files().update(**drive_update).execute()
+            bindings = list(enumerate(sheets))
+            requests: list[dict[str, Any]] = []
 
             header_fill = _google_color(HEADER_FILL)
             zebra_fill = _google_color(ZEBRA_FILL)
@@ -594,25 +472,10 @@ class GoogleSheetsPublisher:
                 spreadsheetId=target_id,
                 body={"requests": requests},
             ).execute()
-            if self.folder_id and created_id:
-                parents = drive.files().get(
-                    fileId=target_id,
-                    fields="parents",
-                    supportsAllDrives=True,
-                ).execute().get("parents", [])
-                drive.files().update(
-                    fileId=target_id,
-                    addParents=self.folder_id,
-                    removeParents=",".join(parents),
-                    fields="id,parents",
-                    supportsAllDrives=True,
-                ).execute()
             try:
                 self._cleanup_exports(
                     drive,
                     folder_id=self.folder_id,
-                    name_contains=cleanup_name_contains,
-                    retention_days=retention_days,
                 )
             except (HttpError, RuntimeError, TypeError, ValueError) as error:
                 LOGGER.warning("Google export cleanup failed: %s", error)
@@ -624,30 +487,24 @@ class GoogleSheetsPublisher:
         except (RefreshError, GoogleAuthError):
             return None, "Couldn't connect to Google Sheets."
         except (HttpError, OSError, RuntimeError, TypeError, ValueError):
-            if created_id and drive is not None:
+            if target_id and drive is not None:
                 try:
                     drive.files().delete(
-                        fileId=created_id,
+                        fileId=target_id,
                         supportsAllDrives=True,
                     ).execute()
                 except Exception:
                     pass
             return None, "Couldn't create the Google Sheet."
 
-    async def upsert_spreadsheet(
+    async def create_spreadsheet(
         self,
         *,
         sheets: Sequence[ExportSheet],
         sheet_title: str,
-        spreadsheet_id: str | None = None,
-        cleanup_name_contains: str,
-        retention_days: int,
     ) -> tuple[str | None, str | None]:
         return await asyncio.to_thread(
-            self.upsert_spreadsheet_sync,
+            self.create_spreadsheet_sync,
             sheets=sheets,
             sheet_title=sheet_title,
-            spreadsheet_id=spreadsheet_id,
-            cleanup_name_contains=cleanup_name_contains,
-            retention_days=retention_days,
         )

@@ -19,7 +19,6 @@ TRANSFER_STATE_FILE = Path("data/cwl/cwl_transfer_state.json")
 DASHBOARD_STATE_FILE = Path("data/cwl/cwl_dashboard_state.json")
 ROUTER_STATE_FILE = Path("data/cwl/cwl_router_state.json")
 BONUS_CONFIG_FILE = Path("data/cwl/cwl_bonus_config.json")
-CWL_EXPORT_DIR = Path("data/.exports")
 BONUS_DASHBOARD_STATE_FILE = Path("data/cwl/cwl_bonus_dashboard_state.json")
 BONUS_AUTOMATION_START_MONTH_KEY = (2026 * 12) + 5
 
@@ -31,7 +30,6 @@ CWL_HQ_CHANNEL_ID = 1191331025666723941
 STICKY_REFRESH_HOURS = 1
 STICKY_HTTP_RETRY_DELAYS_SECONDS = (1.0, 2.0, 4.0)
 STICKY_HTTP_MAX_RATE_LIMIT_RETRY_SECONDS = 15.0
-CWL_EXPORT_RETENTION_DAYS = 30
 HERO_SUM_CACHE_SECONDS = 6 * 60 * 60
 LEAGUE_NAME_CACHE_SECONDS = 6 * 60 * 60
 MANUAL_DASHBOARD_REFRESH_COOLDOWN_SECONDS = 90

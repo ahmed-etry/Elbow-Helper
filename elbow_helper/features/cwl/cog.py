@@ -16,7 +16,6 @@ from elbow_helper.features.wars.emojis import WarEmojiProvider
 from elbow_helper.domain.cwl import is_cwl_window
 from elbow_helper.infrastructure.clash import ClashClient
 from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
-from elbow_helper.infrastructure.exports import LocalExportStore
 from elbow_helper.infrastructure.exports import WorkbookWriter
 from elbow_helper.configuration.roles import CWL_HELPERS
 from elbow_helper.configuration.roles import LEAD_PLUS
@@ -30,8 +29,6 @@ from .bonus import BonusDashboardStore
 from .bonus import BonusReportService
 from .bonus import BonusWorkbookWriter
 from .config import CLAN_NAME_TO_TAG
-from .config import CWL_EXPORT_DIR
-from .config import CWL_EXPORT_RETENTION_DAYS
 from .config import THREAD_CLAN_CONFIGS
 from .config import THREAD_STATE_FILE
 from .dashboard import CwlDashboardMixin
@@ -106,10 +103,7 @@ class CwlManagement(
         self._sent_keys = set(self._load_sent_keys())
         self.dashboard_state = self._load_dashboard_state()
         self.bonus_config = BonusConfigRepository()
-        self.cwl_exports = LocalExportStore(
-            CWL_EXPORT_DIR,
-            retention_days=CWL_EXPORT_RETENTION_DAYS,
-        )
+        self.cwl_exports = bot.local_exports
         self.bonus_analysis = BonusAnalysisService(
             clash_client,
             clan_health_repository,

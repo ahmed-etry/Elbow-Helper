@@ -189,7 +189,7 @@ class HelpCatalogTests(unittest.TestCase):
         self.assertIn("changed while cloning", HELP_INDEX["/roster clone"].details)
         self.assertIn("min_townhall:16", HELP_INDEX["/roster clone"].examples[1])
         self.assertIn("combined hero level", HELP_INDEX["/roster export"].details)
-        self.assertIn("update the same link", HELP_INDEX["/roster export"].details)
+        self.assertIn("opened in Google Sheets or downloaded", HELP_INDEX["/roster export"].details)
         self.assertNotIn(
             "max_members:150",
             "\n".join(HELP_INDEX["/roster edit"].examples),
