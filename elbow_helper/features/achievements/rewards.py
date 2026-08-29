@@ -14,6 +14,7 @@ import discord
 class RewardBatchResult:
     reward_kind: str
     granted_ids: tuple[int, ...]
+    already_granted_ids: tuple[int, ...]
     skipped: tuple[tuple[int, str], ...]
     elder_grants: tuple[tuple[int, int], ...]
     member_grants: tuple[tuple[int, int], ...]
@@ -65,6 +66,7 @@ class AchievementRewardService:
 
         async def apply(cursor) -> RewardBatchResult:
             granted_ids: list[int] = []
+            already_granted_ids: list[int] = []
             skipped: list[tuple[int, str]] = []
             elder_grants: list[tuple[int, int]] = []
             member_grants: list[tuple[int, int]] = []
@@ -86,6 +88,22 @@ class AchievementRewardService:
                     continue
 
                 amount = 10 if self._owner._is_elder(member) else 5
+                cursor.execute(
+                    """
+                    INSERT OR IGNORE INTO cwl_reward_grants
+                        (reason, user_id, reward_kind, created_at)
+                    VALUES (?, ?, 'coins', ?)
+                    """,
+                    (
+                        reason,
+                        member.id,
+                        int(datetime.now(timezone.utc).timestamp()),
+                    ),
+                )
+                if cursor.rowcount == 0:
+                    already_granted_ids.append(member.id)
+                    skipped.append((member.id, "reward already granted"))
+                    continue
                 await self._owner._add_coins(
                     cursor,
                     member.id,
@@ -105,6 +123,7 @@ class AchievementRewardService:
             return RewardBatchResult(
                 reward_kind=reward_kind,
                 granted_ids=tuple(granted_ids),
+                already_granted_ids=tuple(already_granted_ids),
                 skipped=tuple(skipped),
                 elder_grants=tuple(elder_grants),
                 member_grants=tuple(member_grants),

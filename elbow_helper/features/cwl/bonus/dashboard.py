@@ -756,7 +756,7 @@ class CwlBonusDashboardMixin:
             f"- <@{user_id}>: {reason}"
             for user_id, reason in result.skipped
         )
-        if not result.granted_ids:
+        if not result.granted_ids and not result.already_granted_ids:
             raise RuntimeError(
                 "No eligible members were found in the bonus post."
             )

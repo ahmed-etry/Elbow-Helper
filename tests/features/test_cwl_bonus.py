@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 import zipfile
 
+from elbow_helper.features.achievements.database import COIN_DB_INIT
 from elbow_helper.features.achievements.rewards import AchievementRewardService
 from elbow_helper.features.clan_health.database import ClanHealthRepository
 from elbow_helper.features.cwl.bonus.analysis import BonusAnalysisService
@@ -300,6 +301,13 @@ class _RewardOwner:
                 actor_id INTEGER,
                 created_at INTEGER
             );
+            CREATE TABLE cwl_reward_grants (
+                reason TEXT NOT NULL,
+                user_id INTEGER NOT NULL,
+                reward_kind TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (reason, user_id, reward_kind)
+            );
             """
         )
 
@@ -343,6 +351,45 @@ class _RewardOwner:
         return member.id == 1
 
 
+class AchievementRewardSchemaTests(unittest.TestCase):
+    def test_existing_cwl_coin_transactions_are_claimed_during_upgrade(
+        self,
+    ) -> None:
+        connection = sqlite3.connect(":memory:")
+        self.addCleanup(connection.close)
+        connection.execute(
+            """
+            CREATE TABLE coin_transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                amount INTEGER NOT NULL,
+                type TEXT NOT NULL,
+                reason TEXT,
+                actor_id INTEGER,
+                created_at INTEGER NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO coin_transactions
+                (user_id, amount, type, reason, actor_id, created_at)
+            VALUES (2, 5, 'bonus_cwl', 'cwl_bonus_BEH_1', 99, 1)
+            """
+        )
+
+        for statement in COIN_DB_INIT:
+            connection.execute(statement)
+
+        grants = connection.execute(
+            """
+            SELECT reason, user_id, reward_kind
+            FROM cwl_reward_grants
+            """
+        ).fetchall()
+        self.assertEqual(grants, [("cwl_bonus_BEH_1", 2, "coins")])
+
+
 class AchievementRewardContractTests(unittest.IsolatedAsyncioTestCase):
     async def test_cwl_uses_a_transactional_public_reward_contract(self) -> None:
         owner = _RewardOwner()
@@ -358,9 +405,41 @@ class AchievementRewardContractTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.granted_ids, (1, 2))
+        self.assertEqual(result.already_granted_ids, ())
         self.assertEqual(result.elder_grants, ((1, 10),))
         self.assertEqual(result.member_grants, ((2, 5),))
         self.assertEqual(result.skipped, ((3, "leadership excluded"),))
+        balances = owner.connection.execute(
+            "SELECT user_id, balance FROM user_coins ORDER BY user_id"
+        ).fetchall()
+        self.assertEqual(balances, [(1, 10), (2, 5)])
+
+    async def test_cwl_coin_retry_does_not_grant_twice(self) -> None:
+        owner = _RewardOwner()
+        self.addCleanup(owner.connection.close)
+        service = AchievementRewardService(owner)
+        members = [MagicMock(id=1), MagicMock(id=2)]
+
+        first = await service.grant_cwl_rewards(
+            members,
+            reward_kind="coins",
+            reason="cwl_bonus_BEH_1",
+            actor_id=99,
+        )
+        second = await service.grant_cwl_rewards(
+            members,
+            reward_kind="coins",
+            reason="cwl_bonus_BEH_1",
+            actor_id=99,
+        )
+
+        self.assertEqual(first.granted_ids, (1, 2))
+        self.assertEqual(second.granted_ids, ())
+        self.assertEqual(second.already_granted_ids, (1, 2))
+        self.assertEqual(
+            second.skipped,
+            ((1, "reward already granted"), (2, "reward already granted")),
+        )
         balances = owner.connection.execute(
             "SELECT user_id, balance FROM user_coins ORDER BY user_id"
         ).fetchall()
@@ -388,7 +467,9 @@ class AchievementRewardContractTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(first.granted_ids, (2,))
+        self.assertEqual(first.already_granted_ids, ())
         self.assertEqual(second.granted_ids, ())
+        self.assertEqual(second.already_granted_ids, ())
         self.assertEqual(
             second.skipped,
             ((2, "User already has a ticket this month."),),

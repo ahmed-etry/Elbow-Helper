@@ -42,6 +42,22 @@ COIN_DB_INIT = [
     )
     ''',
     '''
+    CREATE TABLE IF NOT EXISTS cwl_reward_grants (
+        reason TEXT NOT NULL,
+        user_id INTEGER NOT NULL,
+        reward_kind TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (reason, user_id, reward_kind)
+    )
+    ''',
+    '''
+    INSERT OR IGNORE INTO cwl_reward_grants
+        (reason, user_id, reward_kind, created_at)
+    SELECT reason, user_id, 'coins', created_at
+    FROM coin_transactions
+    WHERE type = 'bonus_cwl' AND reason IS NOT NULL
+    ''',
+    '''
     CREATE TABLE IF NOT EXISTS raffle_tickets (
         month_key INTEGER NOT NULL,
         user_id INTEGER PRIMARY KEY
