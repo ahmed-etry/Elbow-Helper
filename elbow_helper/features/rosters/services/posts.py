@@ -373,16 +373,36 @@ class RosterPostService:
             message_id=message.id,
         )
 
-    async def disable_all(self, roster: Roster) -> None:
-        """Remove controls from retained posts before their roster is deleted."""
+    async def disable_all(self, roster: Roster) -> tuple[int, ...]:
+        """Remove controls from every known post and return failures."""
         posts = await asyncio.to_thread(self._repository.list_posts, roster.id)
+        failed_message_ids: list[int] = []
         for post in posts:
-            message = await self.fetch(post)
-            if message is None:
+            channel = self._bot.get_channel(post.channel_id)
+            if channel is None:
+                try:
+                    channel = await self._bot.fetch_channel(post.channel_id)
+                except discord.NotFound:
+                    await self.remove_deleted_message(post.message_id)
+                    continue
+                except (discord.Forbidden, discord.HTTPException):
+                    failed_message_ids.append(post.message_id)
+                    continue
+            if not hasattr(channel, "fetch_message"):
+                failed_message_ids.append(post.message_id)
+                continue
+            try:
+                message = await channel.fetch_message(post.message_id)
+            except discord.NotFound:
+                await self.remove_deleted_message(post.message_id)
+                continue
+            except (discord.Forbidden, discord.HTTPException):
+                failed_message_ids.append(post.message_id)
                 continue
             try:
                 await message.edit(view=None)
-            except (discord.NotFound, discord.Forbidden):
+            except discord.NotFound:
                 await self.remove_deleted_message(post.message_id)
-            except discord.HTTPException:
-                pass
+            except (discord.Forbidden, discord.HTTPException):
+                failed_message_ids.append(post.message_id)
+        return tuple(failed_message_ids)

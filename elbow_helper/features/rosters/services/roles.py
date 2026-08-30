@@ -45,6 +45,8 @@ class RosterRoleSynchronizer:
             return False
         member = guild.get_member(member_id)
         role = guild.get_role(roster.role_id)
+        if not should_have and (member is None or role is None):
+            return True
         if member is None or role is None:
             return False
         try:

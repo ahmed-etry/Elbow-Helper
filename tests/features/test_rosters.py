@@ -36,6 +36,7 @@ from elbow_helper.features.rosters.services.membership import account_count
 from elbow_helper.features.rosters.services.membership import MembershipResult
 from elbow_helper.features.rosters.services.membership import RosterMembershipService
 from elbow_helper.features.rosters.models import LinkedAccount
+from elbow_helper.features.rosters.models import Roster
 from elbow_helper.features.rosters.models import RosterLayout
 from elbow_helper.features.rosters.models import RosterMember
 from elbow_helper.features.rosters.cog import Rosters
@@ -48,6 +49,7 @@ from elbow_helper.features.rosters.services.queries import RosterQueries
 from elbow_helper.features.rosters.ui.rendering import build_roster_embeds
 from elbow_helper.features.rosters.ui.rendering import roster_rows_per_page
 from elbow_helper.features.rosters.services.roles import RosterRoleSynchronizer
+from elbow_helper.features.rosters.services.service import RosterDeleteCleanupError
 from elbow_helper.features.rosters.services.service import RosterService
 from elbow_helper.features.rosters.services.search import RosterSearchCache
 from elbow_helper.features.rosters.services.scheduling import due_window
@@ -123,7 +125,7 @@ def _wire_roster_service(
     if posts is None:
         posts = MagicMock()
         posts.refresh = AsyncMock()
-        posts.disable_all = AsyncMock()
+        posts.disable_all = AsyncMock(return_value=())
         posts.prune_stale = AsyncMock()
         posts.restore_persistent_views = AsyncMock()
         posts.refresh_posts_after_emoji_load = AsyncMock()
@@ -1419,6 +1421,150 @@ class RosterEmojiTests(unittest.IsolatedAsyncioTestCase):
         cog.posts.refresh.assert_awaited_once_with(roster)
 
 
+class RosterDeletionTests(unittest.IsolatedAsyncioTestCase):
+    def _roster_with_signup(self) -> tuple[RosterRepository, Roster]:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        repository = RosterRepository(Path(temp_dir.name) / "rosters.sqlite3")
+        roster = repository.create_roster(
+            guild_id=1,
+            name="CWL Sign-up",
+            clan_code="FAMILY",
+            role_id=123,
+            max_members=50,
+        )
+        roster, _ = repository.start_cycle(roster.id, "2026-07")
+        repository.add_members(
+            roster.id,
+            roster.active_cycle_id,
+            42,
+            [
+                {
+                    "player_tag": "#PLAYER",
+                    "player_name": "Player",
+                    "clan_code": "BEH",
+                    "townhall": 18,
+                    "hero_sum": 420,
+                }
+            ],
+            roster.max_members,
+        )
+        return repository, roster
+
+    @staticmethod
+    def _service(repository, roles, posts, search=None) -> RosterService:
+        return RosterService(
+            repository,
+            search or MagicMock(),
+            roles,
+            posts,
+            MagicMock(),
+        )
+
+    async def test_roster_is_deleted_only_after_discord_cleanup_finishes(self) -> None:
+        repository, roster = self._roster_with_signup()
+        events: list[str] = []
+        roles = MagicMock()
+        roles.sync = AsyncMock(side_effect=lambda *args, **kwargs: events.append("role") or True)
+        posts = MagicMock()
+        posts.disable_all = AsyncMock(side_effect=lambda roster: events.append("posts") or ())
+        search = MagicMock()
+        original_delete = repository.delete_roster
+
+        def delete_roster(roster_id: int) -> None:
+            events.append("delete")
+            original_delete(roster_id)
+
+        repository.delete_roster = MagicMock(side_effect=delete_roster)
+        service = self._service(repository, roles, posts, search)
+
+        await service.delete(roster)
+
+        self.assertEqual(events, ["role", "posts", "delete"])
+        self.assertIsNone(repository.get_roster(roster.id))
+        search.remove.assert_called_once_with(roster)
+
+    async def test_role_cleanup_failure_preserves_roster_and_signups(self) -> None:
+        repository, roster = self._roster_with_signup()
+        roles = MagicMock()
+        roles.sync = AsyncMock(return_value=False)
+        posts = MagicMock()
+        posts.disable_all = AsyncMock(return_value=())
+        service = self._service(repository, roles, posts)
+
+        with self.assertRaises(RosterDeleteCleanupError) as raised:
+            await service.delete(roster)
+
+        self.assertEqual(raised.exception.member_ids, (42,))
+        self.assertIsNotNone(repository.get_roster(roster.id))
+        self.assertEqual(len(repository.list_members(roster.id, roster.active_cycle_id)), 1)
+        posts.disable_all.assert_not_awaited()
+
+    async def test_post_cleanup_failure_preserves_roster_and_signups(self) -> None:
+        repository, roster = self._roster_with_signup()
+        repository.add_post(roster.id, 111, 222)
+        roles = MagicMock()
+        roles.sync = AsyncMock(return_value=True)
+        posts = MagicMock()
+        posts.disable_all = AsyncMock(return_value=(222,))
+        service = self._service(repository, roles, posts)
+
+        with self.assertRaises(RosterDeleteCleanupError) as raised:
+            await service.delete(roster)
+
+        self.assertEqual(raised.exception.message_ids, (222,))
+        self.assertIsNotNone(repository.get_roster(roster.id))
+        self.assertEqual(len(repository.list_members(roster.id, roster.active_cycle_id)), 1)
+
+    async def test_post_cleanup_keeps_unmodified_posts_as_failures(self) -> None:
+        repository, roster = self._roster_with_signup()
+        repository.add_post(roster.id, 111, 222)
+        response = MagicMock(status=500, reason="Internal Server Error")
+        message = MagicMock()
+        message.edit = AsyncMock(
+            side_effect=discord.HTTPException(response, "temporary failure")
+        )
+        channel = MagicMock()
+        channel.fetch_message = AsyncMock(return_value=message)
+        bot = MagicMock()
+        bot.get_channel.return_value = channel
+        posts = RosterPostService(
+            bot,
+            repository,
+            ClashClient(None),
+            MagicMock(),
+            MagicMock(),
+        )
+
+        failed = await posts.disable_all(roster)
+
+        self.assertEqual(failed, (222,))
+        self.assertEqual(len(repository.list_posts(roster.id)), 1)
+
+    async def test_post_cleanup_accepts_messages_that_are_already_gone(self) -> None:
+        repository, roster = self._roster_with_signup()
+        repository.add_post(roster.id, 111, 222)
+        response = MagicMock(status=404, reason="Not Found")
+        channel = MagicMock()
+        channel.fetch_message = AsyncMock(
+            side_effect=discord.NotFound(response, "missing")
+        )
+        bot = MagicMock()
+        bot.get_channel.return_value = channel
+        posts = RosterPostService(
+            bot,
+            repository,
+            ClashClient(None),
+            MagicMock(),
+            MagicMock(),
+        )
+
+        failed = await posts.disable_all(roster)
+
+        self.assertEqual(failed, ())
+        self.assertEqual(repository.list_posts(roster.id), [])
+
+
 class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
     class _Cog:
         pass
@@ -1556,12 +1702,14 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_roster_post_uses_the_command_response_as_the_live_roster(self) -> None:
         cog = object.__new__(Rosters)
+        cog._locks = {}
         cog._require_lead = AsyncMock(return_value=True)
         roster = MagicMock()
         roster.id = 7
         roster.name = "Test Roster"
         cog._resolve_roster = AsyncMock(return_value=roster)
         cog.service = MagicMock()
+        cog.service.get = AsyncMock(return_value=roster)
         cog.service.open = AsyncMock(return_value=roster)
         cog.posts = MagicMock()
         cog.posts.post_interaction_response = AsyncMock()
@@ -1573,12 +1721,60 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         await cog.roster_post(interaction, "7")
 
         interaction.response.defer.assert_awaited_once_with(thinking=True)
+        cog.service.get.assert_awaited_once_with(roster.id)
         cog.service.open.assert_awaited_once_with(roster)
         cog.posts.post_interaction_response.assert_awaited_once_with(
             roster,
             interaction,
         )
         interaction.followup.send.assert_not_awaited()
+
+    async def test_roster_delete_reports_incomplete_cleanup_without_success(self) -> None:
+        cog = object.__new__(Rosters)
+        cog._locks = {}
+        roster = MagicMock()
+        roster.id = 7
+        roster.name = "CWL Sign-up"
+        cog.service = MagicMock()
+        cog.service.get = AsyncMock(return_value=roster)
+        cog.service.delete = AsyncMock(
+            side_effect=RosterDeleteCleanupError(message_ids=(222,))
+        )
+        interaction = MagicMock()
+        interaction.response.defer = AsyncMock()
+        interaction.edit_original_response = AsyncMock()
+
+        await cog.confirm_delete(interaction, roster.id)
+
+        interaction.response.defer.assert_awaited_once_with()
+        interaction.edit_original_response.assert_awaited_once_with(
+            content=(
+                "**CWL Sign-up** was not deleted because one or more signup "
+                "roles or roster posts could not be removed. Try again."
+            ),
+            view=None,
+        )
+
+    async def test_roster_delete_reports_success_after_cleanup(self) -> None:
+        cog = object.__new__(Rosters)
+        cog._locks = {}
+        roster = MagicMock()
+        roster.id = 7
+        roster.name = "CWL Sign-up"
+        cog.service = MagicMock()
+        cog.service.get = AsyncMock(return_value=roster)
+        cog.service.delete = AsyncMock()
+        interaction = MagicMock()
+        interaction.response.defer = AsyncMock()
+        interaction.edit_original_response = AsyncMock()
+
+        await cog.confirm_delete(interaction, roster.id)
+
+        cog.service.delete.assert_awaited_once_with(roster)
+        interaction.edit_original_response.assert_awaited_once_with(
+            content="Deleted **CWL Sign-up**.",
+            view=None,
+        )
 
     async def test_interaction_roster_post_is_registered_for_live_updates(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
@@ -2900,6 +3096,38 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(synced)
         war_manager.war_lineup_needs_role.assert_called_once_with(123, 10)
         member.remove_roles.assert_not_awaited()
+
+    async def test_role_removal_is_complete_when_the_member_or_role_is_gone(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        repository = RosterRepository(Path(temp_dir.name) / "rosters.sqlite3")
+        roster = repository.create_roster(
+            guild_id=1,
+            name="War Sign-up",
+            clan_code="BEH",
+            role_id=123,
+            max_members=500,
+        )
+        guild = MagicMock()
+        bot = MagicMock()
+        bot.get_guild.return_value = guild
+        synchronizer = RosterRoleSynchronizer(
+            bot,
+            repository,
+            MagicMock(return_value=False),
+        )
+
+        guild.get_member.return_value = None
+        guild.get_role.return_value = MagicMock(id=123)
+        self.assertTrue(
+            await synchronizer.sync(roster, 10, should_have=False)
+        )
+
+        guild.get_member.return_value = MagicMock()
+        guild.get_role.return_value = None
+        self.assertTrue(
+            await synchronizer.sync(roster, 10, should_have=False)
+        )
 
     async def test_scheduled_open_updates_state_without_needing_a_post(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()

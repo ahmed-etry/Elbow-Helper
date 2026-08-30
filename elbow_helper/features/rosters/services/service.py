@@ -24,6 +24,18 @@ class RosterCapacityError(ValueError):
         super().__init__(f"Roster has {current_count} current signups")
 
 
+class RosterDeleteCleanupError(RuntimeError):
+    def __init__(
+        self,
+        *,
+        member_ids: tuple[int, ...] = (),
+        message_ids: tuple[int, ...] = (),
+    ) -> None:
+        self.member_ids = member_ids
+        self.message_ids = message_ids
+        super().__init__("Roster Discord cleanup did not complete")
+
+
 class RosterService:
     """Coordinate roster settings, timing, lifecycle, and stored state."""
 
@@ -294,18 +306,25 @@ class RosterService:
         return clone
 
     async def delete(self, roster: Roster) -> None:
-        member_ids = await asyncio.to_thread(
-            self._repository.clear_members,
+        members = await asyncio.to_thread(
+            self._repository.list_members,
             roster.id,
             roster.active_cycle_id,
         )
+        member_ids = tuple(sorted({row.discord_user_id for row in members}))
         for member_id in member_ids:
-            await self._roles.sync(
+            cleaned = await self._roles.sync(
                 roster,
                 member_id,
                 should_have=False,
             )
-        await self._posts.disable_all(roster)
+            if not cleaned:
+                raise RosterDeleteCleanupError(member_ids=(member_id,))
+
+        failed_message_ids = await self._posts.disable_all(roster)
+        if failed_message_ids:
+            raise RosterDeleteCleanupError(message_ids=failed_message_ids)
+
         await asyncio.to_thread(
             self._repository.delete_roster,
             roster.id,

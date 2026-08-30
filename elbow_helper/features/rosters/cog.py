@@ -48,6 +48,7 @@ from .services.queries import RosterQueries
 from .services.roles import RosterRoleSynchronizer
 from .services.search import RosterSearchCache
 from .services.service import RosterCapacityError
+from .services.service import RosterDeleteCleanupError
 from .services.service import RosterService
 from .services.scheduling import due_window
 from .services.scheduling import next_window
@@ -806,7 +807,8 @@ class Rosters(commands.Cog):
             await warn(interaction, "Choose at least one roster setting to change.")
             return
         try:
-            target = await self.service.update(target, changes)
+            async with self._lock(target.id):
+                target = await self.service.update(target, changes)
         except RosterCapacityError as error:
             await warn(
                 interaction,
@@ -1079,8 +1081,15 @@ class Rosters(commands.Cog):
             await warn(interaction, "Run this command in the channel where the roster should appear.")
             return
         await interaction.response.defer(thinking=True)
-        target = await self.service.open(target)
-        await self.posts.post_interaction_response(target, interaction)
+        async with self._lock(target.id):
+            current = await self.service.get(target.id)
+            if current is None:
+                await interaction.edit_original_response(
+                    content="That roster no longer exists.",
+                )
+                return
+            target = await self.service.open(current)
+            await self.posts.post_interaction_response(target, interaction)
 
     @app_commands.autocomplete(roster=roster_autocomplete)
     @app_commands.describe(roster="Roster whose current signups you want to export.")
@@ -1214,9 +1223,33 @@ class Rosters(commands.Cog):
         )
 
     async def confirm_delete(self, interaction: discord.Interaction, roster_id: int) -> None:
-        roster = await self.service.get(roster_id)
-        if roster is None:
-            await interaction.response.edit_message(content="That roster no longer exists.", view=None)
-            return
-        await self.service.delete(roster)
-        await interaction.response.edit_message(content=f"Deleted **{roster.name}**.", view=None)
+        await interaction.response.defer()
+        async with self._lock(roster_id):
+            roster = await self.service.get(roster_id)
+            if roster is None:
+                await interaction.edit_original_response(
+                    content="That roster no longer exists.",
+                    view=None,
+                )
+                return
+            try:
+                await self.service.delete(roster)
+            except RosterDeleteCleanupError as error:
+                LOGGER.warning(
+                    "Roster deletion cleanup incomplete roster_id=%s members=%s messages=%s",
+                    roster.id,
+                    error.member_ids,
+                    error.message_ids,
+                )
+                await interaction.edit_original_response(
+                    content=(
+                        f"**{roster.name}** was not deleted because one or more "
+                        "signup roles or roster posts could not be removed. Try again."
+                    ),
+                    view=None,
+                )
+                return
+        await interaction.edit_original_response(
+            content=f"Deleted **{roster.name}**.",
+            view=None,
+        )
