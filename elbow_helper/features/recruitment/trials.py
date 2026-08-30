@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
@@ -26,7 +27,31 @@ from .views import PersistentEndNowView
 from .views import PersistentEndTrialView
 
 
+@dataclass(frozen=True, slots=True)
+class TrialStartResult:
+    started: bool
+    ticket_renamed: bool = True
+
+
 class TrialMixin:
+
+    async def _rename_trial_ticket(self, channel: discord.TextChannel) -> bool:
+        new_name = rename_ticket_channel(channel, TRIAL_TICKET_PREFIXES_START)
+        if not new_name:
+            return True
+        if not can_rename(channel.guild.id):
+            return False
+        try:
+            await channel.edit(name=new_name)
+            return True
+        except (discord.Forbidden, discord.HTTPException) as error:
+            self.logger.warning(
+                "Failed to rename channel %s (%s): %s",
+                channel.name,
+                channel.id,
+                error,
+            )
+            return False
 
     def _build_trial_tracking_embed(
         self,
@@ -263,23 +288,36 @@ class TrialMixin:
         self,
         channel: discord.TextChannel,
         days: int,
-        applicant_id: Optional[int],
-    ) -> bool:
+        applicant_id: int,
+    ) -> TrialStartResult:
         """Start a trial using the same behavior as /trial, but driven by /accept."""
         async with self._trial_lock:
+            trials = self.state_store.load_trial_data()
+            existing = trials.get(str(channel.id))
+            if isinstance(existing, dict):
+                try:
+                    existing_applicant_id = int(existing.get("applicant_id"))
+                except (TypeError, ValueError):
+                    existing_applicant_id = None
+                if existing_applicant_id == applicant_id:
+                    return TrialStartResult(
+                        started=True,
+                        ticket_renamed=await self._rename_trial_ticket(channel),
+                    )
+                self.logger.error(
+                    "Trial start refused: ticket %s already tracks applicant %s",
+                    channel.id,
+                    existing_applicant_id,
+                )
+                return TrialStartResult(started=False)
+
             tracking_channel = self.bot.get_channel(TRIAL_LIST)
             if not tracking_channel:
                 self.logger.error("Trial start failed: tracking channel not found")
-                return False
+                return TrialStartResult(started=False)
 
-            start_dt = datetime.utcnow().replace(tzinfo=timezone.utc)
+            start_dt = datetime.now(timezone.utc)
             trial_end = start_dt + timedelta(days=days)
-
-            if applicant_id is None:
-                applicant_id = await self._resolve_applicant_id(channel)
-                if applicant_id is None:
-                    self.logger.error("Trial start failed: applicant mention not found in ticket")
-                    return False
 
             # Tracking embed carries trial metadata and actionable controls.
             tracking_embed = self._build_trial_tracking_embed(
@@ -293,17 +331,7 @@ class TrialMixin:
                 view=PersistentEndNowView(channel.guild.id, channel.id, applicant_id),
             )
 
-            new_name = rename_ticket_channel(channel, TRIAL_TICKET_PREFIXES_START)
-            if new_name:
-                guild_id = channel.guild.id
-                if can_rename(guild_id):
-                    try:
-                        await channel.edit(name=new_name)
-                    except (discord.Forbidden, discord.HTTPException) as e:
-                        self.logger.warning("Failed to rename channel %s (%s): %s", channel.name, channel.id, e)
-
             # Persist trial state for loops and persistent views.
-            trials = self.state_store.load_trial_data()
             trial_entry = {
                 "start": start_dt.isoformat(),
                 "days": days,
@@ -312,8 +340,25 @@ class TrialMixin:
                 "tracking_channel_id": tracking_channel.id,
             }
             trials[str(channel.id)] = trial_entry
-            self.state_store.save_trial_data(trials)
-            return True
+            try:
+                self.state_store.save_trial_data(trials)
+            except (OSError, TypeError, ValueError):
+                try:
+                    await tracking_msg.delete()
+                except discord.NotFound:
+                    pass
+                except (discord.Forbidden, discord.HTTPException):
+                    self.logger.warning(
+                        "Could not remove untracked trial message %s for ticket %s",
+                        tracking_msg.id,
+                        channel.id,
+                    )
+                raise
+
+            return TrialStartResult(
+                started=True,
+                ticket_renamed=await self._rename_trial_ticket(channel),
+            )
 
 
     async def end_trial_now(

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable
+from collections.abc import Callable
+import sqlite3
 from typing import Optional
 
 import discord
@@ -32,6 +35,7 @@ from .statements import CHECKUP_TEMPLATE
 from .statements import DECLINE_TEMPLATE
 from .statements import FINALIZE_TEMPLATE
 from .statements import RARE_STATEMENTS
+from .trials import TrialStartResult
 from .views import AcceptConfirmationView
 
 RARE_STATEMENT_META = {
@@ -76,6 +80,25 @@ class RecruitmentCommandMixin:
         if additional_notes:
             embed.add_field(name="Additional Notes", value=additional_notes, inline=False)
         return embed
+
+    async def _apply_accept_member_update(
+        self,
+        action: Callable[[], Awaitable[object]],
+        *,
+        label: str,
+        user_id: int,
+    ) -> bool:
+        try:
+            await action()
+            return True
+        except (discord.Forbidden, discord.HTTPException) as error:
+            self.logger.warning(
+                "%s failed during /accept: user_id=%s error=%s",
+                label,
+                user_id,
+                error,
+            )
+            return False
 
     async def complete_accept_confirmation(
         self,
@@ -174,58 +197,172 @@ class RecruitmentCommandMixin:
                 additional_notes=additional_notes_block,
             )
 
+            failures: list[str] = []
+
+            nickname_updated = await self._apply_accept_member_update(
+                lambda: user.edit(nick=nickname),
+                label="Nickname update",
+                user_id=user.id,
+            )
+            if not nickname_updated:
+                failures.append("Nickname was not changed.")
+
+            guild = user.guild
+
+            applicant_role = guild.get_role(APPLICANT_ROLE_ID)
+            if applicant_role is not None and applicant_role in user.roles:
+                removed = await self._apply_accept_member_update(
+                    lambda: user.remove_roles(applicant_role),
+                    label="Applicant role removal",
+                    user_id=user.id,
+                )
+                if not removed:
+                    failures.append("Applicant role was not removed.")
+
+            trial_role = guild.get_role(TRIAL_ROLE_ID)
+            if trial_role is None:
+                failures.append("Trial role was not added.")
+            elif trial_role not in user.roles:
+                added = await self._apply_accept_member_update(
+                    lambda: user.add_roles(trial_role),
+                    label="Trial role addition",
+                    user_id=user.id,
+                )
+                if not added:
+                    failures.append("Trial role was not added.")
+
+            for clan_code in valid_clans:
+                clan_role_id = CLAN_INFO_BOARDS[clan_code]["clan_role"]
+                clan_role = guild.get_role(clan_role_id)
+                if clan_role is None:
+                    failures.append(f"{clan_code} role was not added.")
+                    continue
+                if clan_role in user.roles:
+                    continue
+                added = await self._apply_accept_member_update(
+                    lambda role=clan_role: user.add_roles(role),
+                    label=f"{clan_code} role addition",
+                    user_id=user.id,
+                )
+                if not added:
+                    failures.append(f"{clan_code} role was not added.")
+
+            failed_tags: list[str] = []
             try:
-                await user.edit(nick=nickname)
-            except discord.Forbidden:
-                self.logger.warning("Nickname update forbidden during /accept: user_id=%s", user.id)
+                player_rows = await self.account_links.lookup_players(player_tags)
+            except (OSError, RuntimeError):
+                self.logger.exception(
+                    "Player lookup failed during /accept for user_id=%s",
+                    user.id,
+                )
+                player_rows = []
+                failed_tags.extend(player_tags)
 
-            try:
-                if APPLICANT_ROLE_ID:
-                    applicant_role = interaction.guild.get_role(APPLICANT_ROLE_ID)
-                    if applicant_role and applicant_role in user.roles:
-                        await user.remove_roles(applicant_role)
-
-                if TRIAL_ROLE_ID:
-                    trial_role = interaction.guild.get_role(TRIAL_ROLE_ID)
-                    if trial_role and trial_role not in user.roles:
-                        await user.add_roles(trial_role)
-
-                for clan_code in valid_clans:
-                    clan_config = CLAN_INFO_BOARDS[clan_code]
-                    if clan_config.get("clan_role"):
-                        clan_role = interaction.guild.get_role(clan_config["clan_role"])
-                        if clan_role and clan_role not in user.roles:
-                            await user.add_roles(clan_role)
-            except discord.Forbidden:
-                self.logger.warning("Role update forbidden during /accept: user_id=%s", user.id)
-
-            player_rows = await self.account_links.lookup_players(player_tags)
             for index, row in enumerate(player_rows):
-                self.account_links.upsert_link(
-                    player_tag=str(row["player_tag"]),
-                    discord_user_id=user.id,
-                    is_primary=index == 0,
-                    player_name_last_seen=str(row["player_name"]),
+                tag = str(row["player_tag"])
+                try:
+                    self.account_links.upsert_link(
+                        player_tag=tag,
+                        discord_user_id=user.id,
+                        is_primary=index == 0,
+                        player_name_last_seen=str(row["player_name"]),
+                    )
+                except (OSError, sqlite3.Error):
+                    self.logger.exception(
+                        "Account link failed during /accept: user_id=%s player_tag=%s",
+                        user.id,
+                        tag,
+                    )
+                    failed_tags.append(tag)
+            if failed_tags:
+                failures.append(
+                    "Clash accounts were not linked: "
+                    + ", ".join(f"`{tag}`" for tag in failed_tags)
+                    + "."
                 )
 
             try:
                 await self.account_links.refresh_linked_boards()
-            except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError):
-                self.logger.exception("Failed refreshing missing-elder boards after /accept for user_id=%s", user.id)
+            except (
+                discord.Forbidden,
+                discord.HTTPException,
+                OSError,
+                RuntimeError,
+            ):
+                self.logger.exception(
+                    "Failed refreshing missing-elder boards after /accept for user_id=%s",
+                    user.id,
+                )
 
-            await target_channel.send(welcome_msg)
-            await self.start_trial_for_accept(target_channel, days, user.id)
+            try:
+                await target_channel.send(welcome_msg)
+            except (discord.Forbidden, discord.HTTPException):
+                self.logger.exception(
+                    "Acceptance message failed during /accept for user_id=%s channel_id=%s",
+                    user.id,
+                    target_channel.id,
+                )
+                failures.append("Welcome message was not posted.")
 
-            await self.achievement_rewards.award_achievement(
-                user.id,
-                "fresh_recruit",
-            )
-            self.logger.info(
-                "Fresh Recruit award requested for user_id=%s",
-                user.id,
-            )
+            try:
+                trial_result = await self.start_trial_for_accept(
+                    target_channel,
+                    days,
+                    user.id,
+                )
+            except (
+                discord.Forbidden,
+                discord.HTTPException,
+                OSError,
+                RuntimeError,
+            ):
+                self.logger.exception(
+                    "Trial start failed during /accept for user_id=%s channel_id=%s",
+                    user.id,
+                    target_channel.id,
+                )
+                trial_result = TrialStartResult(started=False)
+            if not trial_result.started:
+                failures.append("Trial tracking was not started.")
+            elif not trial_result.ticket_renamed:
+                failures.append("Ticket was not renamed for the trial.")
 
-        except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError):
+            try:
+                await self.achievement_rewards.award_achievement(
+                    user.id,
+                    "fresh_recruit",
+                )
+            except (OSError, sqlite3.Error):
+                self.logger.exception(
+                    "Fresh Recruit award failed during /accept for user_id=%s",
+                    user.id,
+                )
+                failures.append("Fresh Recruit achievement was not awarded.")
+            else:
+                self.logger.info(
+                    "Fresh Recruit award requested for user_id=%s",
+                    user.id,
+                )
+
+            if failures:
+                lines = [
+                    f"Acceptance is incomplete for {user.mention}:",
+                    *(f"- {failure}" for failure in failures),
+                    "",
+                    "Other acceptance steps were completed.",
+                ]
+                await warn(interaction, "\n".join(lines))
+                return
+
+        except (
+            discord.Forbidden,
+            discord.HTTPException,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+            sqlite3.Error,
+        ):
             self.logger.exception(
                 "accept_applicant failed: invoker=%s target=%s",
                 interaction.user.id,
