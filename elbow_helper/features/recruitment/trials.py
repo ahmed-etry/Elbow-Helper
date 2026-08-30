@@ -199,31 +199,33 @@ class TrialMixin:
         trial_info: Dict[str, Any],
         *,
         ticket_channel_id: Optional[int] = None,
-    ) -> None:
+    ) -> bool:
         """Delete a trial's tracked message."""
         tracking_msg_id = trial_info.get("tracking_msg_id")
         tracking_channel_id = trial_info.get("tracking_channel_id")
         if not tracking_msg_id or not tracking_channel_id:
-            return
+            return True
 
         applicant_id = trial_info.get("applicant_id")
         channel = self.bot.get_channel(int(tracking_channel_id))
         if not channel:
             try:
                 channel = await self.bot.fetch_channel(int(tracking_channel_id))
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                return
+            except discord.NotFound:
+                return True
+            except (discord.Forbidden, discord.HTTPException):
+                return False
         if not isinstance(channel, discord.TextChannel):
-            return
+            return False
 
         try:
             msg = await channel.fetch_message(int(tracking_msg_id))
             await msg.delete()
-            return
+            return True
         except discord.NotFound:
             pass
         except (discord.Forbidden, discord.HTTPException):
-            return
+            return False
 
         # Recover when the stored message ID no longer resolves.
         try:
@@ -232,7 +234,7 @@ class TrialMixin:
                     continue
                 emb = msg.embeds[0]
                 title = (emb.title or "").lower()
-                if "trial active" not in title:
+                if "active trial" not in title:
                     continue
                 blob = " ".join(
                     [
@@ -243,12 +245,13 @@ class TrialMixin:
                 ).lower()
                 if ticket_channel_id and str(ticket_channel_id) in blob:
                     await msg.delete()
-                    return
-                if applicant_id and str(applicant_id) in blob:
+                    return True
+                if not ticket_channel_id and applicant_id and str(applicant_id) in blob:
                     await msg.delete()
-                    return
+                    return True
         except (discord.Forbidden, discord.HTTPException):
-            return
+            return False
+        return True
 
 
     async def _delete_reminder_entry(self, ticket_channel_id: int) -> None:
@@ -463,15 +466,56 @@ class TrialMixin:
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
-        """Remove trial records if a trial member leaves the server."""
+        """Remove active-trial tracking when its applicant leaves."""
         async with self._trial_lock:
             trials = self.state_store.load_trial_data()
-            to_remove = [cid for cid, info in trials.items() if info.get("applicant_id") == member.id]
-            if not to_remove:
-                return
-            for cid in to_remove:
-                trials.pop(cid, None)
-            self.state_store.save_trial_data(trials)
+            matching: list[tuple[str, Dict[str, Any]]] = []
+            for ticket_id, info in trials.items():
+                if not isinstance(info, dict):
+                    continue
+                try:
+                    applicant_id = int(info.get("applicant_id"))
+                except (TypeError, ValueError):
+                    continue
+                if applicant_id == member.id:
+                    matching.append((ticket_id, dict(info)))
+
+        cleaned: list[tuple[str, Dict[str, Any]]] = []
+        for ticket_id, info in matching:
+            try:
+                removed = await self._delete_tracking_message(
+                    info,
+                    ticket_channel_id=int(ticket_id),
+                )
+            except (OSError, RuntimeError, TypeError, ValueError):
+                self.logger.exception(
+                    "Trial cleanup failed for departed member %s ticket %s",
+                    member.id,
+                    ticket_id,
+                )
+                continue
+            if removed:
+                cleaned.append((ticket_id, info))
+            else:
+                self.logger.warning(
+                    "Trial tracking cleanup incomplete for departed member %s ticket %s",
+                    member.id,
+                    ticket_id,
+                )
+
+        if not cleaned:
+            return
+
+        async with self._trial_lock:
+            trials = self.state_store.load_trial_data()
+            changed = False
+            for ticket_id, original in cleaned:
+                current = trials.get(ticket_id)
+                if current == original:
+                    trials.pop(ticket_id, None)
+                    changed = True
+            if changed:
+                self.state_store.save_trial_data(trials)
 
 
     @tasks.loop(minutes=60)

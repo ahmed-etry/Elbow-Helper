@@ -318,5 +318,51 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         tracking_channel.send.assert_not_awaited()
         rename.assert_awaited_once_with(channel)
 
+    async def test_departed_trial_member_removes_tracking_before_state(self) -> None:
+        owner = TrialMixin()
+        owner._trial_lock = asyncio.Lock()
+        owner.logger = MagicMock()
+        trial_info = {
+            "applicant_id": 42,
+            "tracking_msg_id": 500,
+            "tracking_channel_id": 600,
+        }
+        owner.state_store = MagicMock()
+        owner.state_store.load_trial_data.side_effect = [
+            {"200": dict(trial_info)},
+            {"200": dict(trial_info)},
+        ]
+        owner._delete_tracking_message = AsyncMock(return_value=True)
+        member = SimpleNamespace(id=42)
+
+        await owner.on_member_remove(member)
+
+        owner._delete_tracking_message.assert_awaited_once_with(
+            trial_info,
+            ticket_channel_id=200,
+        )
+        owner.state_store.save_trial_data.assert_called_once_with({})
+
+    async def test_departed_trial_member_keeps_state_when_cleanup_fails(self) -> None:
+        owner = TrialMixin()
+        owner._trial_lock = asyncio.Lock()
+        owner.logger = MagicMock()
+        trial_info = {
+            "applicant_id": 42,
+            "tracking_msg_id": 500,
+            "tracking_channel_id": 600,
+        }
+        owner.state_store = MagicMock()
+        owner.state_store.load_trial_data.return_value = {
+            "200": dict(trial_info)
+        }
+        owner._delete_tracking_message = AsyncMock(return_value=False)
+        member = SimpleNamespace(id=42)
+
+        await owner.on_member_remove(member)
+
+        owner.state_store.save_trial_data.assert_not_called()
+        owner.logger.warning.assert_called_once()
+
 if __name__ == "__main__":
     unittest.main()
