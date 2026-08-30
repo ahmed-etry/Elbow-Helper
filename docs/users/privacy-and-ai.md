@@ -14,8 +14,8 @@ permissions.
   signups, and support topics.
 
 The bot logs ticket transcripts and saves spreadsheet exports to the
-community's Google Drive. New bot-generated spreadsheets more than 30 days old
-are removed during later exports.
+community's Google Drive. Spreadsheet exports older than 30 days are deleted
+during a later export.
 
 ## AI use
 

@@ -28,10 +28,6 @@ application-owned `GoogleSheetsPublisher`. Google OAuth credentials provide
 access. `GOOGLE_DRIVE_FOLDER_ID` selects the destination; if it is empty,
 exports go to the authenticated account's default location.
 
-New bot-generated spreadsheets are marked for shared cleanup. A later export
-removes marked spreadsheets more than 30 days old. Older unmarked exports are
-not deleted automatically.
-
 ## HTML transcripts
 
 Support and hibernation use `chat-exporter` to create HTML transcripts and

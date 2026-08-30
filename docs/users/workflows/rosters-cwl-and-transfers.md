@@ -10,7 +10,7 @@
 4. Run `/roster post` in the channel where the roster should appear.
 5. `/roster list` shows every roster's status, limits, and timing.
 6. `/roster export` creates a spreadsheet with the selected roster's current
-   signups. It can be opened in Google Sheets or downloaded.
+   signups.
 
 Members join the roster with linked Clash accounts.
 [Lead Plus](../../reference/commands-and-permissions.md#access-groups) can
