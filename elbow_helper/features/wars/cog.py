@@ -74,6 +74,7 @@ class WarManager(
         self._startup_sync_done = asyncio.Event()
         self._war_fetch_warning_state: Dict[str, Dict[str, Any]] = {}
         self._war_state_locks: Dict[str, asyncio.Lock] = {}
+        self._war_summary_state_lock = asyncio.Lock()
         self._war_role_locks: Dict[str, asyncio.Lock] = {}
         self._war_role_missing_links: Dict[str, set[str]] = {}
         self._wars_in_flight: Dict[str, set[str]] = {}

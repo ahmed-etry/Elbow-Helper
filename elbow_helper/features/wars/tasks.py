@@ -36,20 +36,21 @@ class TaskMixin:
                 await asyncio.sleep(300)
             except asyncio.CancelledError:
                 break
-            except (asyncio.TimeoutError, discord.HTTPException, RuntimeError, TypeError, ValueError, KeyError) as e:
+            except (asyncio.TimeoutError, discord.HTTPException, OSError, RuntimeError, TypeError, ValueError, KeyError) as e:
                 LOGGER.exception("Error in CoC poll loop: %s", e)
                 await asyncio.sleep(30)
 
     async def _periodic_summary_cleanup(self):
         # Sweep leadership channels hourly and delete final summaries after 48h.
         await self.bot.wait_until_ready()
+        await self._startup_sync_done.wait()
         while True:
             try:
                 await self._cleanup_summary_messages()
                 await asyncio.sleep(3600)
             except asyncio.CancelledError:
                 break
-            except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError) as e:
+            except (discord.Forbidden, discord.HTTPException, OSError, RuntimeError, TypeError, ValueError) as e:
                 LOGGER.exception("Error in periodic summary cleanup: %s", e)
                 await asyncio.sleep(60)
 
@@ -124,6 +125,7 @@ class TaskMixin:
         if keep != self.summary_registry:
             self.summary_registry = keep
             self.cache["summary_messages"] = keep
+            await self._save_cache_async()
 
     async def _sync_war_state_on_startup(self):
         """Restore transition state after restarts without replaying summaries."""
@@ -160,7 +162,7 @@ class TaskMixin:
                     ctx["last_state"] = state
                     self.war_context[clan] = ctx
                     await asyncio.sleep(0.5)
-        except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError, KeyError) as e:
+        except (discord.Forbidden, discord.HTTPException, OSError, RuntimeError, TypeError, ValueError, KeyError) as e:
             LOGGER.exception("Startup war-state sync failed: %s", e)
         finally:
             self._startup_sync_done.set()

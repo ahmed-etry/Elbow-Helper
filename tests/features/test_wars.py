@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 from copy import deepcopy
+from datetime import datetime
+from datetime import timezone
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -18,9 +21,12 @@ from elbow_helper.features.wars.config import NOTICE_TTL
 from elbow_helper.features.wars.config import WAR_BOARD_CLAN_CODES
 from elbow_helper.features.wars.helpers import HelperMixin
 from elbow_helper.features.wars.rendering import build_war_board_embed
+from elbow_helper.features.wars.rendering import build_war_summary_embed
 from elbow_helper.features.wars.roles import WarRoleMixin
 from elbow_helper.features.wars.state import StateMixin
+from elbow_helper.features.wars.state import save_cache
 from elbow_helper.features.wars.tasks import TaskMixin
+from elbow_helper.features.wars.warflow import WarflowMixin
 from elbow_helper.configuration.clans import CLAN_WAR_ROLE_IDS
 from elbow_helper.configuration.channels import CLAN_WAR_CHANNELS
 
@@ -299,6 +305,7 @@ class WarSummaryReplacementTests(unittest.IsolatedAsyncioTestCase):
             "300": {"channel": 8, "sent_at": 3},
         }
         manager.cache = {"summary_messages": dict(manager.summary_registry)}
+        manager._save_cache_async = AsyncMock()
         previous = MagicMock()
         previous.delete = AsyncMock()
         channel = MagicMock()
@@ -320,6 +327,142 @@ class WarSummaryReplacementTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertEqual(manager.cache["summary_messages"], manager.summary_registry)
+        manager._save_cache_async.assert_awaited_once_with()
+
+
+async def _messages(messages):
+    for message in messages:
+        yield message
+
+
+class _WarSummaryManager(WarflowMixin, HelperMixin, StateMixin, TaskMixin):
+    pass
+
+
+def _war_summary_manager() -> tuple[_WarSummaryManager, MagicMock, MagicMock]:
+    manager = _WarSummaryManager()
+    manager.cache = {}
+    manager.summary_registry = {}
+    manager.processed_war_order = []
+    manager.processed_war_ids = set()
+    manager.war_context = {}
+    manager._war_state_locks = {}
+    manager._war_summary_state_lock = asyncio.Lock()
+    manager._wars_in_flight = {}
+    manager.clan_channels = {
+        "Hellbow": {"leadership_channel": 7, "leadership_role": 8}
+    }
+    manager._save_cache_async = AsyncMock()
+    manager.war_emojis = MagicMock()
+    manager.war_emojis.get = AsyncMock(return_value=_war_emojis())
+
+    channel = MagicMock()
+    channel.id = 7
+    channel.send = AsyncMock()
+    channel.fetch_message = AsyncMock()
+    channel.history.side_effect = lambda **kwargs: _messages([])
+
+    message = MagicMock()
+    message.id = 900
+    message.channel = channel
+    message.created_at = datetime(2026, 7, 22, 21, 1, tzinfo=timezone.utc)
+    message.author.id = 99
+    channel.send.return_value = message
+
+    manager.bot = MagicMock()
+    manager.bot.user.id = 99
+    manager.bot.get_channel.return_value = channel
+    manager.bot.fetch_channel = AsyncMock(return_value=channel)
+    return manager, channel, message
+
+
+class WarSummaryDeliveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_summary_is_persisted_before_older_posts_are_cleaned(self) -> None:
+        manager, channel, message = _war_summary_manager()
+        events: list[str] = []
+
+        async def save() -> None:
+            events.append("save")
+
+        async def send(**kwargs):
+            events.append("send")
+            return message
+
+        async def cleanup(*args, **kwargs) -> None:
+            events.append("cleanup")
+
+        manager._save_cache_async.side_effect = save
+        manager._cleanup_previous_summary_messages = AsyncMock(
+            side_effect=cleanup
+        )
+        channel.send.side_effect = send
+
+        await manager._handle_war_state("Hellbow", _war_payload("warEnded"))
+
+        self.assertEqual(events, ["send", "save", "cleanup"])
+        channel.send.assert_awaited_once()
+        self.assertEqual(manager.summary_registry["900"]["channel"], 7)
+        self.assertEqual(len(manager.processed_war_ids), 1)
+
+    async def test_restart_adopts_an_existing_summary_without_posting_again(self) -> None:
+        manager, channel, message = _war_summary_manager()
+        ended_at = datetime(2026, 7, 22, 21, 0, tzinfo=timezone.utc)
+        embed = build_war_summary_embed(
+            _war_payload("warEnded"),
+            _war_emojis(),
+            timestamp=ended_at,
+        )
+        message.embeds = [embed]
+        channel.history.side_effect = lambda **kwargs: _messages([message])
+        war_id = manager._build_war_id(_war_payload("warEnded"))
+
+        await manager._handle_war_state("Hellbow", _war_payload("warEnded"))
+
+        channel.send.assert_not_awaited()
+        self.assertIn(war_id, manager.processed_war_ids)
+        self.assertEqual(manager.summary_registry["900"]["channel"], 7)
+        manager._save_cache_async.assert_awaited_once_with()
+
+    async def test_summary_state_write_failure_is_reconciled_without_resending(self) -> None:
+        manager, channel, message = _war_summary_manager()
+        manager._save_cache_async.side_effect = OSError("disk full")
+        war_id = manager._build_war_id(_war_payload("warEnded"))
+
+        with self.assertRaises(OSError):
+            await manager._handle_war_state("Hellbow", _war_payload("warEnded"))
+
+        channel.send.assert_awaited_once()
+        self.assertNotIn(war_id, manager.processed_war_ids)
+        self.assertNotIn("900", manager.summary_registry)
+
+        ended_at = datetime(2026, 7, 22, 21, 0, tzinfo=timezone.utc)
+        message.embeds = [
+            build_war_summary_embed(
+                _war_payload("warEnded"),
+                _war_emojis(),
+                timestamp=ended_at,
+            )
+        ]
+        channel.history.side_effect = lambda **kwargs: _messages([message])
+        manager._save_cache_async.side_effect = None
+
+        await manager._handle_war_state("Hellbow", _war_payload("warEnded"))
+
+        channel.send.assert_awaited_once()
+        self.assertIn(war_id, manager.processed_war_ids)
+        self.assertEqual(manager.summary_registry["900"]["channel"], 7)
+
+
+class WarCachePersistenceTests(unittest.TestCase):
+    def test_cache_write_failures_are_not_swallowed(self) -> None:
+        with (
+            patch(
+                "elbow_helper.features.wars.state.write_json_atomic",
+                side_effect=OSError("disk full"),
+            ),
+            self.assertRaises(OSError),
+        ):
+            save_cache({"processed_wars": []})
 
 
 class WarBoardRenderingTests(unittest.TestCase):
@@ -361,6 +504,47 @@ class WarBoardRenderingTests(unittest.TestCase):
         self.assertIn("War Ended — Victory", ended.description)
         self.assertIsNone(ended.footer.text)
         self.assertIn("**War Stats**", ended.description)
+
+    def test_leadership_summary_matches_the_war_board_stats_presentation(self) -> None:
+        ended_at = datetime(2026, 7, 22, 21, 0, tzinfo=timezone.utc)
+        summary = build_war_summary_embed(
+            _war_payload("warEnded"),
+            _war_emojis(),
+            timestamp=ended_at,
+        )
+
+        self.assertEqual(summary.title, "Clan War Ended")
+        self.assertIn("**War Against**", summary.description)
+        self.assertIn("Rival Clan (#RIVAL)", summary.description)
+        self.assertIn("**War Stats**", summary.description)
+        self.assertIn("<:war_yellow_star:", summary.description)
+        self.assertIn("<:war_sword:", summary.description)
+        self.assertIn("<:war_fire:", summary.description)
+        self.assertIn("4 left", summary.description)
+        self.assertEqual(summary.timestamp, ended_at)
+        self.assertEqual(
+            summary.author.name,
+            "Hellbow",
+        )
+        self.assertEqual(
+            summary.author.icon_url,
+            "https://example.com/hellbow.png",
+        )
+        self.assertIn("tag=%232Y2PJCVGU", summary.author.url)
+        self.assertIsNone(summary.thumbnail.url)
+
+    def test_missed_attack_copy_uses_the_attack_count(self) -> None:
+        payload = _war_payload("warEnded")
+        payload["clan"]["members"][0]["attacks"] = payload["clan"]["members"][0]["attacks"][:1]
+        payload["clan"]["members"][1]["attacks"] = []
+        helper = HelperMixin()
+
+        missed = helper._compute_missed(payload)
+
+        self.assertEqual(
+            missed,
+            ["Player 1 — 1 attack", "Player 2 — 2 attacks"],
+        )
 
 class WarEmojiTests(unittest.IsolatedAsyncioTestCase):
     async def test_rosters_and_wars_share_one_application_emoji_fetch(self) -> None:

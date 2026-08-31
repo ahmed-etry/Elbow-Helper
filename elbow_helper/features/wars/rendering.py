@@ -211,6 +211,44 @@ def build_war_board_embed(
     return embed
 
 
+def build_war_summary_embed(
+    data: dict[str, Any],
+    emojis: WarEmojiSet,
+    *,
+    timestamp: datetime,
+) -> discord.Embed:
+    clan = data.get("clan") or {}
+    opponent = data.get("opponent") or {}
+    clan_name = discord.utils.escape_markdown(
+        str(clan.get("name") or "Clan")
+    )
+    clan_tag = str(clan.get("tag") or "")
+    opponent_name = discord.utils.escape_markdown(
+        str(opponent.get("name") or "Unknown")
+    )
+    opponent_tag = str(opponent.get("tag") or "")
+    embed = discord.Embed(
+        title="Clan War Ended",
+        description="\n".join(
+            (
+                "**War Against**",
+                f"**[{opponent_name} ({opponent_tag})]({_clan_url(opponent_tag)})**",
+                "",
+                "**War Stats**",
+                _war_stats(data, clan, opponent, emojis),
+            )
+        ),
+        color=discord.Color(WAR_RESULT_COLORS[_war_result(clan, opponent)]),
+        timestamp=timestamp,
+    )
+    embed.set_author(
+        name=clan_name,
+        url=_clan_url(clan_tag),
+        icon_url=_badge_url(clan),
+    )
+    return embed
+
+
 def coc_time_to_datetime(value: object) -> datetime | None:
     if not value:
         return None

@@ -34,6 +34,7 @@ def save_cache(cache: Dict[str, Any]) -> None:
             write_json_atomic(CACHE_FILE, cache, indent=2)
         except (OSError, TypeError) as e:
             LOGGER.error("Failed to save cache %s: %s", CACHE_FILE, e)
+            raise
 
 
 class StateMixin:

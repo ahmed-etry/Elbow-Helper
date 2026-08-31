@@ -69,7 +69,8 @@ class HelperMixin:
             remaining = max(0, per - used)
             if remaining:
                 name = m.get("name") or "Unknown"
-                missed.append(f"{name} ({remaining} missed)")
+                attack_label = "attack" if remaining == 1 else "attacks"
+                missed.append(f"{name} — {remaining} {attack_label}")
         return missed
 
     def _to_superscript(self, value: int) -> str:
@@ -78,7 +79,7 @@ class HelperMixin:
 
     def _add_missed_attack_fields(self, embed: discord.Embed, missed: List[str]) -> None:
         if not missed:
-            embed.add_field(name="Missed Attacks", value="None recorded", inline=False)
+            embed.add_field(name="Missed Attacks", value="None", inline=False)
             return
 
         max_field_value_len = 1024
@@ -115,5 +116,5 @@ class HelperMixin:
 
         for idx, chunk in enumerate(field_chunks, start=1):
             name = "Missed Attacks" if idx == 1 else f"Missed Attacks{self._to_superscript(idx)}"
-            value = "\n".join(chunk) if chunk else "None recorded"
+            value = "\n".join(chunk) if chunk else "None"
             embed.add_field(name=name, value=value, inline=False)

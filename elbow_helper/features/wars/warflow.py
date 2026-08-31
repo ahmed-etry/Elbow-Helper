@@ -10,13 +10,87 @@ from typing import Any, Dict
 import discord
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.clans import CLAN_CODES_BY_NAME
-from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
-from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
+
+from .rendering import build_war_summary_embed
 
 LOGGER = logging.getLogger(__name__)
 
 
 class WarflowMixin:
+
+    async def _find_existing_war_summary(
+        self,
+        channel: discord.abc.Messageable,
+        expected_embed: discord.Embed,
+        ended_at: datetime,
+    ) -> discord.Message | None:
+        bot_user_id = getattr(getattr(self.bot, "user", None), "id", None)
+        if bot_user_id is None:
+            raise RuntimeError("Cannot reconcile war summaries before the bot user is available")
+        async for message in channel.history(
+            limit=None,
+            after=ended_at - timedelta(minutes=5),
+            oldest_first=True,
+        ):
+            if message.author.id != bot_user_id:
+                continue
+            for embed in message.embeds:
+                if (
+                    embed.title != expected_embed.title
+                    or embed.description != expected_embed.description
+                ):
+                    continue
+                if embed.timestamp is None:
+                    continue
+                if int(embed.timestamp.timestamp()) == int(ended_at.timestamp()):
+                    return message
+        return None
+
+    async def _persist_war_summary_completion(
+        self,
+        war_id: str,
+        processed: set[str],
+        message: discord.Message | None,
+    ) -> None:
+        async with self._war_summary_state_lock:
+            previous_order = list(self.processed_war_order)
+            previous_ids = set(self.processed_war_ids)
+            previous_processed_cache = self.cache.get("processed_wars")
+            message_key = str(message.id) if message is not None else None
+            previous_summary = (
+                self.summary_registry.get(message_key)
+                if message_key is not None
+                else None
+            )
+
+            if message is not None and message_key is not None:
+                self.summary_registry[message_key] = {
+                    "channel": message.channel.id,
+                    "sent_at": int(message.created_at.timestamp()),
+                }
+                self.cache["summary_messages"] = self.summary_registry
+            processed.add(war_id)
+            self._record_processed_war(war_id)
+            try:
+                await self._save_cache_async()
+            except (OSError, TypeError):
+                processed.discard(war_id)
+                self.processed_war_order = previous_order
+                self.processed_war_ids = previous_ids
+                if previous_processed_cache is None:
+                    self.cache.pop("processed_wars", None)
+                else:
+                    self.cache["processed_wars"] = previous_processed_cache
+                if message_key is not None:
+                    if previous_summary is None:
+                        self.summary_registry.pop(message_key, None)
+                    else:
+                        self.summary_registry[message_key] = previous_summary
+                    if self.summary_registry:
+                        self.cache["summary_messages"] = self.summary_registry
+                    else:
+                        self.cache.pop("summary_messages", None)
+                raise
 
     async def _handle_war_state(self, clan: str, data: Dict[str, Any]):
         # Main state machine driven by the CoC API
@@ -49,9 +123,6 @@ class WarflowMixin:
                     return
                 in_flight.add(war_id)
                 try:
-                    opponent_name = (data.get("opponent") or {}).get("name") or "Unknown"
-                    clan_score = (data.get("clan") or {}).get("stars")
-                    opp_score = (data.get("opponent") or {}).get("stars")
                     missed = self._compute_missed(data)
                     end_time = self._coctime_to_dt(data.get("endTime"))
                     prep_start = self._coctime_to_dt(data.get("preparationStartTime"))
@@ -64,44 +135,43 @@ class WarflowMixin:
                     mention_txt = f"<@&{leadership_role}>" if leadership_role else ""
                     cwl_note = self._cwl_note_for_end(ended_at, prep_start=prep_start)
 
-                    summary_embed = discord.Embed(
-                        title="\u231b Clan War Ended",
-                        description=f"War against _{opponent_name}_ is over.",
-                        color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
+                    summary_embed = build_war_summary_embed(
+                        data,
+                        await self.war_emojis.get(),
                         timestamp=ended_at,
                     )
-                    summary_embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
-                    if clan_score is not None and opp_score is not None:
-                        summary_embed.add_field(name="\u2b50 Score", value=f"{clan_score} - {opp_score}", inline=True)
                     self._add_missed_attack_fields(summary_embed, missed)
-                    summary_embed.add_field(
-                        name="\U0001f5d3\ufe0f War Ended",
-                        value=f"<t:{int(ended_at.timestamp())}:F> (<t:{int(ended_at.timestamp())}:R>)",
-                        inline=False,
-                    )
 
+                    msg: discord.Message | None = None
                     if leadership_channel:
                         note_line = f"{mention_txt} {cwl_note}".strip()
-                        try:
-                            msg = await leadership_channel.send(content=note_line or None, embed=summary_embed)
-                        except (discord.Forbidden, discord.HTTPException) as e:
-                            LOGGER.warning(
-                                "Failed to send war summary for %s (%s): %s. Marking as processed to avoid retries.",
-                                clan,
-                                war_id,
-                                e,
-                            )
-                        else:
-                            sent_at = int(msg.created_at.replace(tzinfo=timezone.utc).timestamp())
-                            self.summary_registry[str(msg.id)] = {
-                                "channel": msg.channel.id,
-                                "sent_at": sent_at,
-                            }
-                            self.cache["summary_messages"] = self.summary_registry
-                            await self._cleanup_previous_summary_messages(
-                                msg.channel,
-                                keep_message_id=msg.id,
-                            )
+                        msg = await self._find_existing_war_summary(
+                            leadership_channel,
+                            summary_embed,
+                            ended_at,
+                        )
+                        if msg is None:
+                            try:
+                                msg = await leadership_channel.send(
+                                    content=note_line or None,
+                                    embed=summary_embed,
+                                )
+                            except discord.Forbidden as e:
+                                LOGGER.warning(
+                                    "Failed to send war summary for %s (%s): %s. Marking as processed to avoid retries.",
+                                    clan,
+                                    war_id,
+                                    e,
+                                )
+                                msg = None
+                            except discord.HTTPException as e:
+                                LOGGER.warning(
+                                    "War summary delivery for %s (%s) is unresolved and will be reconciled: %s",
+                                    clan,
+                                    war_id,
+                                    e,
+                                )
+                                raise
                     elif leadership_channel_id:
                         LOGGER.warning(
                             "Leadership channel %s for %s was not resolved; marking war %s processed without summary post.",
@@ -121,12 +191,18 @@ class WarflowMixin:
                             clan,
                             war_id,
                         )
-
-                    processed.add(war_id)
-                    self._record_processed_war(war_id)
-                    await self._save_cache_async()
+                    await self._persist_war_summary_completion(
+                        war_id,
+                        processed,
+                        msg,
+                    )
                     ctx["last_state"] = state
                     self.war_context[clan] = ctx
+                    if leadership_channel and msg is not None:
+                        await self._cleanup_previous_summary_messages(
+                            leadership_channel,
+                            keep_message_id=msg.id,
+                        )
                     return
                 finally:
                     in_flight.discard(war_id)
