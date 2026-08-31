@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Coroutine
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -46,6 +47,7 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
         self._normalize_state()
         self._ticket_index_lock = asyncio.Lock()
         self._ticket_index_task: asyncio.Task | None = None
+        self._report_cleanup_tasks: set[asyncio.Task[None]] = set()
         self.invite_cache: dict[str, dict[str, Any]] = {}
         self.weekly_report.start()
         self.applicant_linger_scan.start()
@@ -63,6 +65,32 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
 
     async def _refresh_invite_cache(self, guild: discord.Guild):
         self.invite_cache = await snapshot_invites(guild)
+
+    def _start_report_cleanup(
+        self,
+        coroutine: Coroutine[Any, Any, None],
+        *,
+        message_id: int,
+    ) -> None:
+        task = asyncio.create_task(
+            coroutine,
+            name=f"recruitment-stats-cleanup:{message_id}",
+        )
+        self._report_cleanup_tasks.add(task)
+
+        def finish(completed: asyncio.Task[None]) -> None:
+            self._report_cleanup_tasks.discard(completed)
+            try:
+                completed.result()
+            except asyncio.CancelledError:
+                return
+            except Exception:
+                LOGGER.exception(
+                    "Recruitment stats cleanup failed for message %s",
+                    message_id,
+                )
+
+        task.add_done_callback(finish)
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -88,6 +116,9 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
         self.applicant_linger_scan.cancel()
         if self._ticket_index_task and not self._ticket_index_task.done():
             self._ticket_index_task.cancel()
+        for task in tuple(self._report_cleanup_tasks):
+            if not task.done():
+                task.cancel()
         save_state(self.state)
 
     @commands.Cog.listener()

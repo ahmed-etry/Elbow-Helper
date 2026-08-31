@@ -200,7 +200,7 @@ class ReportsMixin:
                 except (discord.Forbidden, discord.HTTPException):
                     LOGGER.debug("Failed to auto-delete recstats message %s", message.id)
 
-            asyncio.create_task(_cleanup(msg))
+            self._start_report_cleanup(_cleanup(msg), message_id=msg.id)
         except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError):
             LOGGER.exception("Failed building recruitment stats")
             await interaction.followup.send(

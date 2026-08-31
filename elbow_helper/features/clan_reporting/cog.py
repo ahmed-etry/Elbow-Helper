@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Optional
+from collections.abc import Coroutine
+import logging
+from typing import Any, Optional
 
 import discord
 from discord.ext import commands
@@ -17,6 +19,10 @@ from .elders import ClanReportingElderMixin
 from .helpers import ClanReportingHelperMixin
 from .state import load_state
 from .wars import ClanReportingWarMixin
+
+
+LOGGER = logging.getLogger(__name__)
+
 
 class ClanReporting(
     ClanReportingWarMixin,
@@ -40,18 +46,44 @@ class ClanReporting(
         self._board_last_repost_at: dict[str, float] = {}
         self._board_repost_locks: dict[str, asyncio.Lock] = {}
         self._refresh_task: Optional[asyncio.Task] = None
+        self._background_tasks: set[asyncio.Task[None]] = set()
         self._monthly_summary_loop.start()
 
     def cog_unload(self):
         self._monthly_summary_loop.cancel()
-        if self._refresh_task and not self._refresh_task.done():
-            self._refresh_task.cancel()
+        for task in tuple(self._background_tasks):
+            if not task.done():
+                task.cancel()
+
+    def _start_background_task(
+        self,
+        coroutine: Coroutine[Any, Any, None],
+        *,
+        name: str,
+    ) -> asyncio.Task[None]:
+        task = asyncio.create_task(coroutine, name=name)
+        self._background_tasks.add(task)
+
+        def finish(completed: asyncio.Task[None]) -> None:
+            self._background_tasks.discard(completed)
+            try:
+                completed.result()
+            except asyncio.CancelledError:
+                return
+            except Exception:
+                LOGGER.exception("Clan Reporting background task failed: %s", name)
+
+        task.add_done_callback(finish)
+        return task
 
     @commands.Cog.listener()
     async def on_ready(self):
         if self._refresh_task and not self._refresh_task.done():
             return
-        self._refresh_task = asyncio.create_task(self._refresh_all_elder_lists())
+        self._refresh_task = self._start_background_task(
+            self._refresh_all_elder_lists(),
+            name="clan-reporting-ready-refresh",
+        )
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -80,7 +112,10 @@ class ClanReporting(
             return
 
         for clan_code in CLAN_LEADERSHIP_CHANNELS:
-            asyncio.create_task(self._update_missing_elder_message(clan_code))
+            self._start_background_task(
+                self._update_missing_elder_message(clan_code),
+                name=f"missing-elder-refresh:{clan_code}",
+            )
 
     async def refresh_missing_elder_board(self, interaction: discord.Interaction, clan_code: str) -> None:
         try:

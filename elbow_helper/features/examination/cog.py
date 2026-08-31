@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Coroutine
 import logging
 import time
 from datetime import datetime, timezone
@@ -56,6 +57,7 @@ class Examination(
         self._pending_ticket_retries: Dict[int, int] = {}
         self._pending_ticket_notified: Set[int] = set()
         self._pending_ticket_failed: Set[int] = set()
+        self._background_tasks: set[asyncio.Task[None]] = set()
         self._promo_reconcile_lock = asyncio.Lock()
         self._promo_reconcile_last_ts = 0.0
         self._scan_task = asyncio.create_task(self.scan_existing_tickets())
@@ -67,8 +69,32 @@ class Examination(
             self._followup_task.cancel()
         if self._scan_task and not self._scan_task.done():
             self._scan_task.cancel()
+        for task in tuple(self._background_tasks):
+            if not task.done():
+                task.cancel()
         self.organize_tickets.cancel()
         self.cleanup_deprecated_routing_messages.cancel()
+
+    def _start_background_task(
+        self,
+        coroutine: Coroutine[Any, Any, None],
+        *,
+        name: str,
+    ) -> asyncio.Task[None]:
+        task = asyncio.create_task(coroutine, name=name)
+        self._background_tasks.add(task)
+
+        def finish(completed: asyncio.Task[None]) -> None:
+            self._background_tasks.discard(completed)
+            try:
+                completed.result()
+            except asyncio.CancelledError:
+                return
+            except Exception:
+                self.logger.exception("Examination background task failed: %s", name)
+
+        task.add_done_callback(finish)
+        return task
 
     def _save(self) -> None:
         self.state_store.save()

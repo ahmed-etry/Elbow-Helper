@@ -117,7 +117,7 @@ class TicketMixin:
             self.logger.exception("Unexpected auto-rename error for channel %s (%s): %s", channel.name, channel.id, e)
 
         if getattr(channel, "category_id", None) == RECRUITMENT_TICKET_CATEGORY:
-            asyncio.create_task(self._process_applicant_ticket(channel))
+            self._start_applicant_ticket_processing(channel)
 
 
     @tasks.loop(minutes=15)

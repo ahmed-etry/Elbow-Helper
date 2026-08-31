@@ -43,6 +43,7 @@ class Recruitment(HelperMixin, TrialMixin, TicketMixin, AIMixin, RecruitmentComm
         self._reminder_lock = asyncio.Lock()
         self._ticket_reminder_lock = asyncio.Lock()
         self._applicant_ai_lock = asyncio.Lock()
+        self._applicant_ticket_tasks: set[asyncio.Task[None]] = set()
         self.ticket_reminders = self.state_store.load_ticket_activity()
         self.applicant_ai_messages = (
             self.state_store.load_applicant_ai_messages()
@@ -83,6 +84,27 @@ class Recruitment(HelperMixin, TrialMixin, TicketMixin, AIMixin, RecruitmentComm
     def _clear_ticket_reorder_issue(self, *keys: str) -> None:
         self._clear_recurring_issue(*(f"ticket_reorder:{key}" for key in keys))
 
+    def _start_applicant_ticket_processing(self, channel: discord.TextChannel) -> None:
+        task = asyncio.create_task(
+            self._process_applicant_ticket(channel),
+            name=f"recruitment-ticket:{channel.id}",
+        )
+        self._applicant_ticket_tasks.add(task)
+
+        def finish(completed: asyncio.Task[None]) -> None:
+            self._applicant_ticket_tasks.discard(completed)
+            try:
+                completed.result()
+            except asyncio.CancelledError:
+                return
+            except Exception:
+                self.logger.exception(
+                    "Applicant ticket processing failed for channel %s",
+                    channel.id,
+                )
+
+        task.add_done_callback(finish)
+
 
     def cog_unload(self):
         self.check_expired_trials.cancel()
@@ -91,6 +113,9 @@ class Recruitment(HelperMixin, TrialMixin, TicketMixin, AIMixin, RecruitmentComm
         self.check_inactive_tickets.cancel()
         self.cleanup_old_ticket_reminders.cancel()
         self.cleanup_applicant_ai.cancel()
+        for task in tuple(self._applicant_ticket_tasks):
+            if not task.done():
+                task.cancel()
 
 
     @commands.Cog.listener()

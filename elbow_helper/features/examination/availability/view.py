@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import discord
@@ -221,7 +220,10 @@ class AvailabilityPromptView(BaseTimeoutView):
             return
         await interaction.response.defer()
         await self.cog._finalize_availability_prompt(interaction.channel_id)
-        asyncio.create_task(self.cog._maybe_route_after_availability(interaction.channel_id))
+        self.cog._start_background_task(
+            self.cog._maybe_route_after_availability(interaction.channel_id),
+            name=f"exam-availability-route:{interaction.channel_id}",
+        )
 
 
 class AvailabilityRemoveWindowSelect(discord.ui.Select):

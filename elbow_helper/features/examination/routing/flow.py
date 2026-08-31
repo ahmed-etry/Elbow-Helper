@@ -244,7 +244,10 @@ class ExaminationRoutingFlowMixin:
         if retries >= REQUIRED_FIELD_MAX_RETRIES:
             return
         self._pending_ticket_retries[channel_id] = retries + 1
-        asyncio.create_task(self._retry_route_ticket(channel_id, ticket_type))
+        self._start_background_task(
+            self._retry_route_ticket(channel_id, ticket_type),
+            name=f"exam-route-retry:{channel_id}",
+        )
 
     async def _post_missing_data_alert(
         self,
@@ -345,7 +348,10 @@ class ExaminationRoutingFlowMixin:
                 case["routing_inflight"] = False
                 self._save()
                 if not new_th and case.get("field_refreshes", 0) < 3:
-                    asyncio.create_task(self._refresh_case_fields(channel.id))
+                    self._start_background_task(
+                        self._refresh_case_fields(channel.id),
+                        name=f"exam-field-refresh:{channel.id}",
+                    )
                 return
             from_clan = str(case.get("from_clan") or "").upper()
             to_clan = str(case.get("to_clan") or "").upper()
@@ -547,7 +553,10 @@ class ExaminationRoutingFlowMixin:
         self._save()
         if ticket_type != "clan_promo":
             # TicketTool can post the Q/A embed slightly later; retry once to update fields.
-            asyncio.create_task(self._refresh_case_fields(channel.id))
+            self._start_background_task(
+                self._refresh_case_fields(channel.id),
+                name=f"exam-field-refresh:{channel.id}",
+            )
 
     async def _refresh_case_fields(self, channel_id: int) -> None:
         await asyncio.sleep(8)
@@ -570,7 +579,10 @@ class ExaminationRoutingFlowMixin:
         if not fields:
             missing = any(not case.get(key) for key in required_keys)
             if missing and case["field_refreshes"] < 3:
-                asyncio.create_task(self._refresh_case_fields(channel_id))
+                self._start_background_task(
+                    self._refresh_case_fields(channel_id),
+                    name=f"exam-field-refresh:{channel_id}",
+                )
             return
         updated = False
         # Availability is collected via the structured prompt; ignore TicketTool text.
@@ -595,7 +607,10 @@ class ExaminationRoutingFlowMixin:
         missing = any(not case.get(key) for key in required_keys)
         if not updated:
             if missing and case["field_refreshes"] < 3:
-                asyncio.create_task(self._refresh_case_fields(channel_id))
+                self._start_background_task(
+                    self._refresh_case_fields(channel_id),
+                    name=f"exam-field-refresh:{channel_id}",
+                )
             return
         if ticket_type == "clan_promo":
             self._save()

@@ -52,6 +52,7 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         self._board_refresher = None
         self._snapshot_lock = asyncio.Lock()
         self._snapshot_ready = asyncio.Event()
+        self._ready_refresh_task: asyncio.Task[None] | None = None
         self._clan_members: dict[str, dict[str, dict[str, Any]]] = {}
         self._clan_badge_urls: dict[str, str] = {}
         self._player_locations: dict[str, dict[str, Any]] = {}
@@ -66,11 +67,24 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
     def cog_unload(self) -> None:
         if self._poll_clans_loop.is_running():
             self._poll_clans_loop.cancel()
+        if self._ready_refresh_task and not self._ready_refresh_task.done():
+            self._ready_refresh_task.cancel()
+
+    async def _refresh_after_ready(self) -> None:
+        try:
+            await self.refresh_now()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            LOGGER.exception("Account-link ready refresh failed")
 
     @commands.Cog.listener()
     async def on_ready(self) -> None:
-        if not self._snapshot_ready.is_set():
-            asyncio.create_task(self.refresh_now())
+        if self._snapshot_ready.is_set():
+            return
+        if self._ready_refresh_task and not self._ready_refresh_task.done():
+            return
+        self._ready_refresh_task = asyncio.create_task(self._refresh_after_ready())
 
     def _log_clan_fetch_failure(self, key: str, label: str, detail: str, *, transient: bool) -> None:
         now = time.monotonic()
