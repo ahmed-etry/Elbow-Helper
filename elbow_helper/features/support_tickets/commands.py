@@ -287,16 +287,30 @@ class SupportCommandMixin:
                 if transcript_file is not None
                 else f"Ticket log saved to <#{log_channel_id}>"
             )
-            await transcript_status_message.edit(
-                embed=build_status_embed(transcript_saved_text, discord.Color.green())
-            )
-            await channel.send(
-                embed=discord.Embed(
-                    description="```\nSupport Ticket Controls\n```",
-                    color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
-                ),
-                view=self.build_confirm_view(),
-            )
+            try:
+                await transcript_status_message.edit(
+                    embed=build_status_embed(transcript_saved_text, discord.Color.green())
+                )
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError):
+                LOGGER.exception(
+                    "Transcript saved, but its status message could not be updated for support ticket %s",
+                    channel.id,
+                )
+                await safe_followup(transcript_saved_text)
+
+            try:
+                await channel.send(
+                    embed=discord.Embed(
+                        description="```\nSupport Ticket Controls\n```",
+                        color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
+                    ),
+                    view=self.build_confirm_view(),
+                )
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError):
+                LOGGER.exception(
+                    "Transcript saved, but ticket controls could not be restored for support ticket %s",
+                    channel.id,
+                )
         except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError):
             LOGGER.exception("Failed during close flow for channel %s", channel.id)
             if transcript_status_message is not None:
