@@ -300,6 +300,12 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         if self._board_refresher is not None:
             await self._board_refresher.refresh_all_missing_elder_boards_from_links()
 
+    async def _try_refresh_linked_boards(self) -> None:
+        try:
+            await self.refresh_linked_boards()
+        except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError):
+            LOGGER.exception("Failed to refresh Missing Elder Rank boards after account-link changes")
+
     async def refresh_board_for_clan(self, clan_code: str) -> None:
         if self._board_refresher is not None:
             await self._board_refresher.refresh_missing_elder_board_now(
@@ -357,12 +363,14 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
 
             player_rows = await self.lookup_players(valid_tags)
             existing_member_links = self.get_links_for_user(member.id)
+            existing_links = self.get_all_links()
             has_primary = any(bool(row.get("is_primary")) for row in existing_member_links)
             lines: list[str] = []
+            link_rows: list[dict[str, object]] = []
 
             for row in player_rows:
                 tag = str(row["player_tag"])
-                existing = self.get_link_by_tag(tag)
+                existing = existing_links.get(tag)
                 is_primary = False
                 if existing and int(existing["discord_user_id"]) == member.id:
                     is_primary = bool(existing.get("is_primary"))
@@ -370,11 +378,13 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
                     is_primary = True
                     has_primary = True
 
-                self.upsert_link(
-                    player_tag=tag,
-                    discord_user_id=member.id,
-                    is_primary=is_primary,
-                    player_name_last_seen=str(row["player_name"]),
+                link_rows.append(
+                    {
+                        "player_tag": tag,
+                        "discord_user_id": member.id,
+                        "is_primary": is_primary,
+                        "player_name_last_seen": str(row["player_name"]),
+                    }
                 )
 
                 if existing and int(existing["discord_user_id"]) != member.id:
@@ -384,7 +394,8 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
                 else:
                     lines.append(f"- Linked {row['player_name']} (`{tag}`) to {member.mention}")
 
-            await self.refresh_linked_boards()
+            self.upsert_links(link_rows)
+            await self._try_refresh_linked_boards()
 
             if invalid_tags:
                 lines.append(f"- Invalid player tags: {', '.join(invalid_tags)}")
@@ -409,19 +420,20 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
                 await warn(interaction, "None of those player tags were recognized. Check the tags and try again.")
                 return
 
-            removed = False
+            existing_links = self.get_all_links()
+            tags_to_remove: list[str] = []
             lines: list[str] = []
             for tag in valid_tags:
-                existing = self.get_link_by_tag(tag)
+                existing = existing_links.get(tag)
                 if not existing:
                     lines.append(f"- No Discord member linked to `{tag}`")
                     continue
-                self.delete_link(tag)
-                removed = True
+                tags_to_remove.append(tag)
                 lines.append(f"- Removed `{tag}` from <@{int(existing['discord_user_id'])}>")
 
-            if removed:
-                await self.refresh_linked_boards()
+            if tags_to_remove:
+                self.delete_links(tags_to_remove)
+                await self._try_refresh_linked_boards()
 
             if invalid_tags:
                 lines.append(f"- Invalid player tags: {', '.join(invalid_tags)}")

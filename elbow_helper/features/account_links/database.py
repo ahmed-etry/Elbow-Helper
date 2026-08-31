@@ -4,9 +4,29 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import sqlite3
-from typing import Any, Iterator
+from typing import Any, Iterable, Iterator, Mapping
 
 from .config import DB_PATH
+
+
+_LINK_UPSERT_SQL = """
+    INSERT INTO links (
+        player_tag,
+        discord_user_id,
+        is_primary,
+        player_name_last_seen,
+        last_seen_clan_tag,
+        last_seen_clan_code,
+        last_seen_role
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(player_tag) DO UPDATE SET
+        discord_user_id = excluded.discord_user_id,
+        is_primary = excluded.is_primary,
+        player_name_last_seen = excluded.player_name_last_seen,
+        last_seen_clan_tag = excluded.last_seen_clan_tag,
+        last_seen_clan_code = excluded.last_seen_clan_code,
+        last_seen_role = excluded.last_seen_role
+"""
 
 
 class AccountLinksDbMixin:
@@ -89,9 +109,14 @@ class AccountLinksDbMixin:
         return [dict(row) for row in rows]
 
     def delete_link(self, player_tag: str) -> None:
-        with self._db_connect() as conn:
-            conn.execute("DELETE FROM links WHERE player_tag = ?", (player_tag,))
-            conn.commit()
+        self.delete_links([player_tag])
+
+    def delete_links(self, player_tags: Iterable[str]) -> None:
+        values = [(player_tag,) for player_tag in player_tags]
+        if not values:
+            return
+        with self._db_connect() as conn, conn:
+            conn.executemany("DELETE FROM links WHERE player_tag = ?", values)
 
     def upsert_link(
         self,
@@ -104,37 +129,37 @@ class AccountLinksDbMixin:
         last_seen_clan_code: str = "",
         last_seen_role: str = "",
     ) -> None:
-        with self._db_connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO links (
-                    player_tag,
-                    discord_user_id,
-                    is_primary,
-                    player_name_last_seen,
-                    last_seen_clan_tag,
-                    last_seen_clan_code,
-                    last_seen_role
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(player_tag) DO UPDATE SET
-                    discord_user_id = excluded.discord_user_id,
-                    is_primary = excluded.is_primary,
-                    player_name_last_seen = excluded.player_name_last_seen,
-                    last_seen_clan_tag = excluded.last_seen_clan_tag,
-                    last_seen_clan_code = excluded.last_seen_clan_code,
-                    last_seen_role = excluded.last_seen_role
-                """,
-                (
-                    player_tag,
-                    int(discord_user_id),
-                    1 if is_primary else 0,
-                    player_name_last_seen,
-                    last_seen_clan_tag,
-                    last_seen_clan_code,
-                    last_seen_role,
-                ),
+        self.upsert_links(
+            [
+                {
+                    "player_tag": player_tag,
+                    "discord_user_id": discord_user_id,
+                    "is_primary": is_primary,
+                    "player_name_last_seen": player_name_last_seen,
+                    "last_seen_clan_tag": last_seen_clan_tag,
+                    "last_seen_clan_code": last_seen_clan_code,
+                    "last_seen_role": last_seen_role,
+                }
+            ]
+        )
+
+    def upsert_links(self, links: Iterable[Mapping[str, object]]) -> None:
+        values = [
+            (
+                str(link["player_tag"]),
+                int(link["discord_user_id"]),
+                1 if bool(link.get("is_primary")) else 0,
+                str(link.get("player_name_last_seen") or ""),
+                str(link.get("last_seen_clan_tag") or ""),
+                str(link.get("last_seen_clan_code") or ""),
+                str(link.get("last_seen_role") or ""),
             )
-            conn.commit()
+            for link in links
+        ]
+        if not values:
+            return
+        with self._db_connect() as conn, conn:
+            conn.executemany(_LINK_UPSERT_SQL, values)
 
     def update_link_last_seen(
         self,
