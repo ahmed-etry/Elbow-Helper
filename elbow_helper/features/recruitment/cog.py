@@ -8,6 +8,7 @@ import time
 
 import discord
 from discord.ext import commands
+from elbow_helper.core.background import start_resilient_loop
 from elbow_helper.configuration.guild import GUILD_ID
 
 from .ai import AIMixin
@@ -51,12 +52,12 @@ class Recruitment(HelperMixin, TrialMixin, TicketMixin, AIMixin, RecruitmentComm
         
         self.validate_clan_info_boards()
         # Background maintenance loops.
-        self.check_expired_trials.start()
-        self.cleanup_trial_reminders.start()
-        self.organize_tickets.start()
-        self.check_inactive_tickets.start()
-        self.cleanup_old_ticket_reminders.start()
-        self.cleanup_applicant_ai.start()
+        start_resilient_loop(self.check_expired_trials)
+        start_resilient_loop(self.cleanup_trial_reminders)
+        start_resilient_loop(self.organize_tickets)
+        start_resilient_loop(self.check_inactive_tickets)
+        start_resilient_loop(self.cleanup_old_ticket_reminders)
+        start_resilient_loop(self.cleanup_applicant_ai)
 
     def _warn_recurring_issue(
         self,

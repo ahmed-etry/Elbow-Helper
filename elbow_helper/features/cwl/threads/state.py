@@ -14,6 +14,7 @@ from typing import Dict
 from typing import Optional
 from typing import Set
 
+from elbow_helper.core.background import start_resilient_loop
 from elbow_helper.infrastructure.persistence import read_json
 from elbow_helper.infrastructure.persistence import write_json_atomic
 
@@ -47,7 +48,7 @@ class CwlThreadStateMixin:
             self.refresh_sticky_status,
         ):
             if not task_loop.is_running():
-                task_loop.start()
+                start_resilient_loop(task_loop)
 
 
     def stop_thread_tasks(self) -> None:

@@ -6,6 +6,9 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from discord.ext import tasks
+
+from elbow_helper.core.background import start_resilient_loop
 from elbow_helper.features.account_links.cog import AccountLinks
 from elbow_helper.features.clan_reporting.cog import ClanReporting
 from elbow_helper.features.examination.cog import Examination
@@ -26,6 +29,29 @@ async def _blocked(started: asyncio.Event) -> None:
 
 
 class BackgroundTaskLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_recurring_loop_retries_an_unexpected_failure(self) -> None:
+        attempts = 0
+        completed = asyncio.Event()
+
+        @tasks.loop(seconds=0.01)
+        async def recurring_work() -> None:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise RuntimeError("unexpected failure")
+            completed.set()
+
+        with (
+            patch("discord.ext.tasks.ExponentialBackoff.delay", return_value=0),
+            self.assertLogs("discord.ext.tasks", level="ERROR"),
+        ):
+            task = start_resilient_loop(recurring_work)
+            await asyncio.wait_for(completed.wait(), timeout=1)
+            recurring_work.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+        self.assertGreaterEqual(attempts, 2)
+
     async def test_account_ready_refresh_is_deduplicated_and_cancelled(self) -> None:
         cog = object.__new__(AccountLinks)
         cog._snapshot_ready = asyncio.Event()

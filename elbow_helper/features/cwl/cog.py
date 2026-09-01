@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 import discord
 from discord.ext import commands
+from elbow_helper.core.background import start_resilient_loop
 from elbow_helper.features.wars.emojis import WarEmojiProvider
 from elbow_helper.domain.cwl import is_cwl_window
 from elbow_helper.infrastructure.clash import ClashClient
@@ -139,8 +140,8 @@ class CwlManagement(
         self._war_cache: Dict[str, Dict[str, Any]] = {}
 
         self.start_thread_tasks()
-        self.reminder_loop.start()
-        self.dashboard_loop.start()
+        start_resilient_loop(self.reminder_loop)
+        start_resilient_loop(self.dashboard_loop)
         self._transfer_hub_task = asyncio.create_task(
             self._bootstrap_transfer_hub()
         )

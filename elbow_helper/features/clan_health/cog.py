@@ -10,6 +10,7 @@ from typing import Any, List, Optional, Tuple
 import discord
 from discord.ext import commands
 
+from elbow_helper.core.background import start_resilient_loop
 from elbow_helper.infrastructure.clash import ClashClient
 from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
 from elbow_helper.infrastructure.exports import LocalExportStore
@@ -54,8 +55,8 @@ class ClanHealth(
         self._background_lock = asyncio.Lock()
         self._startup_logged = False
         self.repository.initialize()
-        self._war_log_loop.start()
-        self._snapshot_log_loop.start()
+        start_resilient_loop(self._war_log_loop)
+        start_resilient_loop(self._snapshot_log_loop)
 
     async def cog_load(self) -> None:
         from .database.config_store import seed_missing_configs

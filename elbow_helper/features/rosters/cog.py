@@ -18,6 +18,7 @@ from discord.ext import tasks
 from elbow_helper.discord.interactions import deny
 from elbow_helper.discord.interactions import warn
 from elbow_helper.discord.timezones import build_timezone_choices
+from elbow_helper.core.background import start_resilient_loop
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.clans import CLAN_ORDER
 from elbow_helper.configuration.roles import LEAD_PLUS
@@ -152,7 +153,7 @@ class Rosters(commands.Cog):
             self._lock,
             self.posts.refresh,
         )
-        self.scheduler_loop.start()
+        start_resilient_loop(self.scheduler_loop)
 
     async def cog_load(self) -> None:
         await self._get_roster_search().warm()

@@ -7,6 +7,7 @@ import logging
 
 from discord.ext import commands
 
+from elbow_helper.core.background import start_resilient_loop
 from .commands import ClanTransfersCommandMixin
 from .config import CLAN_TRANSFER_QUEUES
 from .queues import ClanTransferQueueMixin
@@ -23,7 +24,7 @@ class ClanTransfers(ClanTransferQueueMixin, ClanTransfersCommandMixin, commands.
         self.state = load_state()
         self.locks = {code: asyncio.Lock() for code in CLAN_TRANSFER_QUEUES}
         self.global_lock = asyncio.Lock()
-        self.request_expiry_loop.start()
+        start_resilient_loop(self.request_expiry_loop)
         self._bootstrap_task = asyncio.create_task(self._bootstrap())
 
     def cog_unload(self) -> None:

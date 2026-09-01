@@ -10,6 +10,7 @@ import aiohttp
 import discord
 from discord.ext import commands
 
+from elbow_helper.core.background import start_resilient_loop
 from elbow_helper.configuration.channels import OVERSEEING_TERRACE, TICKETS_LOG
 from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import APPLICANT_ROLE_ID, HIBERNATING_ROLE_ID
@@ -49,8 +50,8 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
         self._ticket_index_task: asyncio.Task | None = None
         self._report_cleanup_tasks: set[asyncio.Task[None]] = set()
         self.invite_cache: dict[str, dict[str, Any]] = {}
-        self.weekly_report.start()
-        self.applicant_linger_scan.start()
+        start_resilient_loop(self.weekly_report)
+        start_resilient_loop(self.applicant_linger_scan)
 
     def _normalize_state(self) -> None:
         self.state.setdefault("members", {})

@@ -17,6 +17,7 @@ from elbow_helper.discord.interactions import warn
 
 from elbow_helper.domain.player_tags import encode_clash_tag
 from elbow_helper.domain.player_tags import normalize_player_tag
+from elbow_helper.core.background import start_resilient_loop
 from elbow_helper.infrastructure.clash import ClashClient
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.guild import GUILD_ID
@@ -59,7 +60,7 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         self._last_snapshot_complete = False
         self._clan_fetch_warning_state: dict[str, dict[str, Any]] = {}
         self._init_db()
-        self._poll_clans_loop.start()
+        start_resilient_loop(self._poll_clans_loop)
 
     async def cog_load(self) -> None:
         await self.register_pending_suggestion_views()

@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional, Set
 
 import discord
 from discord.ext import commands, tasks
+from elbow_helper.core.background import start_resilient_loop
 from elbow_helper.discord.channel_ordering import move_text_channel_within_category
 
 from elbow_helper.configuration.channels import EXAMINATION_TICKET_CATEGORY
@@ -61,8 +62,8 @@ class Examination(
         self._promo_reconcile_lock = asyncio.Lock()
         self._promo_reconcile_last_ts = 0.0
         self._scan_task = asyncio.create_task(self.scan_existing_tickets())
-        self.organize_tickets.start()
-        self.cleanup_deprecated_routing_messages.start()
+        start_resilient_loop(self.organize_tickets)
+        start_resilient_loop(self.cleanup_deprecated_routing_messages)
 
     def cog_unload(self) -> None:
         if self._followup_task and not self._followup_task.done():

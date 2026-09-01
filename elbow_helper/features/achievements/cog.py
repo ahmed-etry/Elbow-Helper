@@ -9,6 +9,7 @@ import os
 
 import discord
 from discord.ext import commands
+from elbow_helper.core.background import start_resilient_loop
 from elbow_helper.configuration.guild import GUILD_ID
 
 from .achievements import AchievementServiceMixin
@@ -62,11 +63,11 @@ class Achievements(
         self.init_database()
         self.rewards = AchievementRewardService(self)
         self.init_achievements()
-        self.check_time_achievements.start()
-        self.initial_achievement_check.start()
-        self.cleanup_database.start()
-        self.salary_task.start()
-        self.raffle_hub_task.start()
+        start_resilient_loop(self.check_time_achievements)
+        start_resilient_loop(self.initial_achievement_check)
+        start_resilient_loop(self.cleanup_database)
+        start_resilient_loop(self.salary_task)
+        start_resilient_loop(self.raffle_hub_task)
 
     def cog_unload(self):
         for loop in (

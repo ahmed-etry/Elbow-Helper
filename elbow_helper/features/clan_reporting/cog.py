@@ -10,6 +10,7 @@ from typing import Any, Optional
 import discord
 from discord.ext import commands
 
+from elbow_helper.core.background import start_resilient_loop
 from elbow_helper.infrastructure.clash import ClashClient
 from elbow_helper.configuration.channels import CLAN_LEADERSHIP_CHANNELS
 from elbow_helper.configuration.roles import ELDER_ROLE_ID
@@ -47,7 +48,7 @@ class ClanReporting(
         self._board_repost_locks: dict[str, asyncio.Lock] = {}
         self._refresh_task: Optional[asyncio.Task] = None
         self._background_tasks: set[asyncio.Task[None]] = set()
-        self._monthly_summary_loop.start()
+        start_resilient_loop(self._monthly_summary_loop)
 
     def cog_unload(self):
         self._monthly_summary_loop.cancel()
