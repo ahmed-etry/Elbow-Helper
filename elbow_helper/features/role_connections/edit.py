@@ -17,6 +17,7 @@ from elbow_helper.discord.pagination import PREV_PAGE_LABEL
 from elbow_helper.discord.views import BaseTimeoutView
 
 from .config import INVALID_DEPENDENCY_MESSAGE
+from .config import PERSISTENCE_ERROR_MESSAGE
 from .config import SELECTOR_PAGE_SIZE
 from .formatting import _conditions_summary
 from .formatting import _conditions_to_lines
@@ -61,7 +62,14 @@ class RemoveConnectionSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         conn_id = self.values[0]
-        removed = self._parent_view.cog.remove_connection(conn_id)
+        try:
+            removed = self._parent_view.cog.remove_connection(conn_id)
+        except (OSError, TypeError):
+            await interaction.response.send_message(
+                PERSISTENCE_ERROR_MESSAGE,
+                ephemeral=True,
+            )
+            return
         if removed:
             board_message = await self._parent_view.cog.refresh_connections_message(self._parent_view.channel)
             if self._parent_view.page > 0 and self._parent_view.page >= self._parent_view.cog.get_selector_page_count():
@@ -321,7 +329,17 @@ class TargetRoleEditSelect(discord.ui.RoleSelect):
                 ephemeral=True,
             )
             return
-        updated = self._parent_view.cog.update_connection_target(self._parent_view.conn_id, role_id)
+        try:
+            updated = self._parent_view.cog.update_connection_target(
+                self._parent_view.conn_id,
+                role_id,
+            )
+        except (OSError, TypeError):
+            await interaction.response.send_message(
+                PERSISTENCE_ERROR_MESSAGE,
+                ephemeral=True,
+            )
+            return
         if not updated:
             await interaction.response.send_message("That role connection is no longer available.", ephemeral=True)
             return
@@ -384,12 +402,19 @@ class RoleListAddSelect(discord.ui.RoleSelect):
                 ephemeral=True,
             )
             return
-        updated = self._parent_view.cog.add_connection_roles(
-            self._parent_view.conn_id,
-            self._parent_view.list_name,
-            self._parent_view.kind,
-            role_ids,
-        )
+        try:
+            updated = self._parent_view.cog.add_connection_roles(
+                self._parent_view.conn_id,
+                self._parent_view.list_name,
+                self._parent_view.kind,
+                role_ids,
+            )
+        except (OSError, TypeError):
+            await interaction.response.send_message(
+                PERSISTENCE_ERROR_MESSAGE,
+                ephemeral=True,
+            )
+            return
         if not updated:
             await interaction.response.send_message("That role connection is no longer available.", ephemeral=True)
             return
@@ -414,12 +439,19 @@ class RoleListRemoveSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         role_ids = [int(value) for value in self.values]
-        updated = self._parent_view.cog.remove_connection_roles(
-            self._parent_view.conn_id,
-            self._parent_view.list_name,
-            self._parent_view.kind,
-            role_ids,
-        )
+        try:
+            updated = self._parent_view.cog.remove_connection_roles(
+                self._parent_view.conn_id,
+                self._parent_view.list_name,
+                self._parent_view.kind,
+                role_ids,
+            )
+        except (OSError, TypeError):
+            await interaction.response.send_message(
+                PERSISTENCE_ERROR_MESSAGE,
+                ephemeral=True,
+            )
+            return
         if not updated:
             await interaction.response.send_message("That role connection is no longer available.", ephemeral=True)
             return

@@ -9,11 +9,11 @@ from elbow_helper.discord.interactions import edit_bound_view
 from elbow_helper.discord.views import BaseTimeoutView
 
 from .config import INVALID_DEPENDENCY_MESSAGE
+from .config import PERSISTENCE_ERROR_MESSAGE
 from .formatting import _conditions_to_lines
 from .formatting import _format_condition
 from .formatting import _list_label
 from .formatting import _role_mention
-from .state import save_state
 from .view_utils import build_embed
 
 if TYPE_CHECKING:
@@ -145,8 +145,14 @@ class ConditionBuilderView(BaseTimeoutView):
                 ephemeral=True,
             )
             return
-        self.cog.state["connections"].append(connection)
-        save_state(self.cog.state)
+        try:
+            self.cog.add_connection(connection)
+        except (OSError, TypeError):
+            await interaction.response.send_message(
+                PERSISTENCE_ERROR_MESSAGE,
+                ephemeral=True,
+            )
+            return
         board_message = await self.cog.refresh_connections_message(self.channel)
         self.stop()
         await interaction.response.edit_message(

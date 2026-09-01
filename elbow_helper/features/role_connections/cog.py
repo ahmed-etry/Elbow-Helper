@@ -135,11 +135,23 @@ class RoleConnections(commands.Cog):
             return False
         return any(r.id in LEAD for r in getattr(member, "roles", []))
 
+    def _replace_connections(self, connections: List[Dict[str, Any]]) -> None:
+        next_state = copy.deepcopy(self.state)
+        next_state["connections"] = connections
+        save_state(next_state)
+        self.state = next_state
+
+    def add_connection(self, connection: Dict[str, Any]) -> None:
+        connections = copy.deepcopy(self.state["connections"])
+        connections.append(copy.deepcopy(connection))
+        self._replace_connections(connections)
+
     def remove_connection(self, conn_id: str) -> bool:
-        for idx, connection in enumerate(self.state["connections"]):
+        connections = copy.deepcopy(self.state["connections"])
+        for idx, connection in enumerate(connections):
             if connection["id"] == conn_id:
-                self.state["connections"].pop(idx)
-                save_state(self.state)
+                connections.pop(idx)
+                self._replace_connections(connections)
                 return True
         return False
 
@@ -172,40 +184,43 @@ class RoleConnections(commands.Cog):
         return None
 
     def update_connection_target(self, conn_id: str, role_id: int) -> bool:
-        connection = self.get_connection(conn_id)
-        if not connection:
-            return False
-        connection["target_role_id"] = role_id
-        save_state(self.state)
-        return True
+        connections = copy.deepcopy(self.state["connections"])
+        for connection in connections:
+            if connection["id"] == conn_id:
+                connection["target_role_id"] = role_id
+                self._replace_connections(connections)
+                return True
+        return False
 
     def get_connection_list_ids(self, connection: Dict[str, Any], list_name: str, kind: str) -> List[int]:
         key = "has" if kind == "has" else "not"
         return [cond[key] for cond in connection.get(list_name, []) if key in cond]
 
     def add_connection_roles(self, conn_id: str, list_name: str, kind: str, role_ids: List[int]) -> bool:
-        connection = self.get_connection(conn_id)
-        if not connection:
-            return False
-        key = "has" if kind == "has" else "not"
-        target = connection.get(list_name, [])
-        for role_id in role_ids:
-            entry = {key: role_id}
-            if entry not in target:
-                target.append(entry)
-        connection[list_name] = target
-        save_state(self.state)
-        return True
+        connections = copy.deepcopy(self.state["connections"])
+        for connection in connections:
+            if connection["id"] == conn_id:
+                key = "has" if kind == "has" else "not"
+                target = connection.get(list_name, [])
+                for role_id in role_ids:
+                    entry = {key: role_id}
+                    if entry not in target:
+                        target.append(entry)
+                connection[list_name] = target
+                self._replace_connections(connections)
+                return True
+        return False
 
     def remove_connection_roles(self, conn_id: str, list_name: str, kind: str, role_ids: List[int]) -> bool:
-        connection = self.get_connection(conn_id)
-        if not connection:
-            return False
-        key = "has" if kind == "has" else "not"
-        target = connection.get(list_name, [])
-        connection[list_name] = [cond for cond in target if cond.get(key) not in role_ids]
-        save_state(self.state)
-        return True
+        connections = copy.deepcopy(self.state["connections"])
+        for connection in connections:
+            if connection["id"] == conn_id:
+                key = "has" if kind == "has" else "not"
+                target = connection.get(list_name, [])
+                connection[list_name] = [cond for cond in target if cond.get(key) not in role_ids]
+                self._replace_connections(connections)
+                return True
+        return False
 
     def _connection_matches(self, member: discord.Member, connection: Dict[str, Any]) -> bool:
         # `all` must fully match; `any` acts as an optional OR gate.

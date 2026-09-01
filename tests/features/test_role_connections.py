@@ -4,11 +4,15 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
+from unittest.mock import patch
 
 from elbow_helper.features.role_connections.builder import ConditionBuilderView
 from elbow_helper.features.role_connections.config import INVALID_DEPENDENCY_MESSAGE
+from elbow_helper.features.role_connections.config import PERSISTENCE_ERROR_MESSAGE
 from elbow_helper.features.role_connections.cog import RoleConnections
+from elbow_helper.features.role_connections.edit import RemoveConnectionSelect
 from elbow_helper.features.role_connections.edit import RoleListAddSelect
+from elbow_helper.features.role_connections.edit import RoleListRemoveSelect
 from elbow_helper.features.role_connections.edit import TargetRoleEditSelect
 
 
@@ -190,6 +194,192 @@ class RoleConnectionValidationTests(unittest.IsolatedAsyncioTestCase):
             ephemeral=True,
         )
 
+
+class RoleConnectionPersistenceTests(unittest.IsolatedAsyncioTestCase):
+    def test_failed_writes_leave_live_state_unchanged(self) -> None:
+        operations = {
+            "add connection": lambda cog: cog.add_connection(
+                _connection("role-b", 20)
+            ),
+            "remove connection": lambda cog: cog.remove_connection("role-a"),
+            "change target": lambda cog: cog.update_connection_target(
+                "role-a",
+                20,
+            ),
+            "add condition": lambda cog: cog.add_connection_roles(
+                "role-a",
+                "all",
+                "has",
+                [20],
+            ),
+            "remove condition": lambda cog: cog.remove_connection_roles(
+                "role-a",
+                "all",
+                "has",
+                [30],
+            ),
+        }
+
+        for name, operation in operations.items():
+            with self.subTest(operation=name):
+                cog = object.__new__(RoleConnections)
+                cog.state = {
+                    "connections": [
+                        _connection("role-a", 10, has=(30,)),
+                    ]
+                }
+                original_state = cog.state
+                original_connections = list(cog.state["connections"])
+
+                with (
+                    patch(
+                        "elbow_helper.features.role_connections.cog.save_state",
+                        side_effect=OSError("disk unavailable"),
+                    ),
+                    self.assertRaises(OSError),
+                ):
+                    operation(cog)
+
+                self.assertIs(cog.state, original_state)
+                self.assertEqual(
+                    cog.state["connections"],
+                    original_connections,
+                )
+
+    def test_successful_write_replaces_live_state_after_saving(self) -> None:
+        cog = object.__new__(RoleConnections)
+        cog.state = {"connections": []}
+
+        with patch(
+            "elbow_helper.features.role_connections.cog.save_state",
+        ) as save:
+            cog.add_connection(_connection("role-a", 10))
+
+        saved_state = save.call_args.args[0]
+        self.assertIs(cog.state, saved_state)
+        self.assertEqual(
+            cog.state["connections"],
+            [_connection("role-a", 10)],
+        )
+
+    async def test_every_mutation_reports_save_failure(self) -> None:
+        cases = []
+
+        add_connection = MagicMock(side_effect=OSError("disk unavailable"))
+        cases.append(
+            (
+                "add connection",
+                ConditionBuilderView.finish,
+                SimpleNamespace(
+                    cog=SimpleNamespace(
+                        new_connection_id=MagicMock(return_value="role-a"),
+                        connection_change_is_valid=MagicMock(return_value=True),
+                        add_connection=add_connection,
+                    ),
+                    target_role_id=10,
+                    conditions_all=[{"has": 20}],
+                    conditions_any=[],
+                ),
+                add_connection,
+            )
+        )
+
+        remove_connection = MagicMock(side_effect=OSError("disk unavailable"))
+        cases.append(
+            (
+                "remove connection",
+                RemoveConnectionSelect.callback,
+                SimpleNamespace(
+                    values=["role-a"],
+                    _parent_view=SimpleNamespace(
+                        cog=SimpleNamespace(remove_connection=remove_connection),
+                    ),
+                ),
+                remove_connection,
+            )
+        )
+
+        update_target = MagicMock(side_effect=OSError("disk unavailable"))
+        cases.append(
+            (
+                "change target",
+                TargetRoleEditSelect.callback,
+                SimpleNamespace(
+                    values=[SimpleNamespace(id=20)],
+                    _parent_view=SimpleNamespace(
+                        cog=SimpleNamespace(
+                            get_connection=MagicMock(
+                                return_value=_connection("role-a", 10)
+                            ),
+                            connection_change_is_valid=MagicMock(return_value=True),
+                            update_connection_target=update_target,
+                        ),
+                        conn_id="role-a",
+                    ),
+                ),
+                update_target,
+            )
+        )
+
+        add_roles = MagicMock(side_effect=OSError("disk unavailable"))
+        cases.append(
+            (
+                "add condition",
+                RoleListAddSelect.callback,
+                SimpleNamespace(
+                    values=[SimpleNamespace(id=20)],
+                    _parent_view=SimpleNamespace(
+                        cog=SimpleNamespace(
+                            get_connection=MagicMock(
+                                return_value=_connection("role-a", 10)
+                            ),
+                            connection_change_is_valid=MagicMock(return_value=True),
+                            add_connection_roles=add_roles,
+                        ),
+                        conn_id="role-a",
+                        list_name="all",
+                        kind="has",
+                    ),
+                ),
+                add_roles,
+            )
+        )
+
+        remove_roles = MagicMock(side_effect=OSError("disk unavailable"))
+        cases.append(
+            (
+                "remove condition",
+                RoleListRemoveSelect.callback,
+                SimpleNamespace(
+                    values=["20"],
+                    _parent_view=SimpleNamespace(
+                        cog=SimpleNamespace(remove_connection_roles=remove_roles),
+                        conn_id="role-a",
+                        list_name="all",
+                        kind="has",
+                    ),
+                ),
+                remove_roles,
+            )
+        )
+
+        for name, callback, target, operation in cases:
+            with self.subTest(operation=name):
+                interaction = SimpleNamespace(
+                    response=SimpleNamespace(
+                        send_message=AsyncMock(),
+                        edit_message=AsyncMock(),
+                    ),
+                )
+
+                await callback(target, interaction)
+
+                operation.assert_called_once()
+                interaction.response.send_message.assert_awaited_once_with(
+                    PERSISTENCE_ERROR_MESSAGE,
+                    ephemeral=True,
+                )
+                interaction.response.edit_message.assert_not_awaited()
 
 if __name__ == "__main__":
     unittest.main()

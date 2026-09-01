@@ -30,5 +30,6 @@ def save_state(state: dict[str, Any]) -> None:
     try:
         write_json_atomic(STATE_FILE, state, indent=2)
     except (OSError, TypeError) as exc:
-        LOGGER.error("Failed saving %s: %s", STATE_FILE, exc)
+        LOGGER.exception("Failed saving %s: %s", STATE_FILE, exc)
+        raise
 
