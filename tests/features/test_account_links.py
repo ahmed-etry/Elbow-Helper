@@ -184,6 +184,7 @@ class ClanSnapshotTests(unittest.IsolatedAsyncioTestCase):
                     "small": "https://example.com/beh-small.png",
                     "large": "https://example.com/beh-large.png",
                 },
+                "members": 0,
                 "memberList": [],
             }
         )
@@ -194,3 +195,46 @@ class ClanSnapshotTests(unittest.IsolatedAsyncioTestCase):
             links.get_clan_badge_url("BEH"),
             "https://example.com/beh-small.png",
         )
+
+    async def test_incomplete_clan_response_is_rejected(self) -> None:
+        links = object.__new__(AccountLinks)
+        links.clash_client = SimpleNamespace(configured=True)
+        links._clan_badge_urls = {}
+        links._fetch_coc_json = AsyncMock(
+            return_value={
+                "members": 2,
+                "memberList": [
+                    {"tag": "#ONE", "name": "One"},
+                ],
+            }
+        )
+
+        with self.assertLogs(
+            "elbow_helper.features.account_links.cog",
+            level="WARNING",
+        ):
+            members = await links._fetch_clan_members("BEH")
+
+        self.assertIsNone(members)
+
+    async def test_incomplete_clan_response_preserves_the_previous_snapshot(self) -> None:
+        links = object.__new__(AccountLinks)
+        links.clash_client = SimpleNamespace(configured=True)
+        known_member = {
+            "player_tag": "#KNOWN",
+            "player_name": "Known",
+            "clan_code": "BEH",
+        }
+        links._clan_members = {"BEH": {"#KNOWN": known_member}}
+        links._player_locations = {"#KNOWN": known_member}
+        links._fetch_clan_members = AsyncMock(return_value=None)
+
+        with patch(
+            "elbow_helper.features.account_links.cog.TRACKED_CLAN_CODES",
+            ("BEH",),
+        ):
+            await links._rebuild_snapshots()
+
+        self.assertFalse(links._last_snapshot_complete)
+        self.assertEqual(links._clan_members["BEH"], {"#KNOWN": known_member})
+        self.assertEqual(links._player_locations, {"#KNOWN": known_member})

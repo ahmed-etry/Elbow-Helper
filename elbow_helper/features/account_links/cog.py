@@ -174,6 +174,40 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         if payload is None:
             return None
 
+        raw_members = payload.get("memberList")
+        declared_count = payload.get("members")
+        returned_count = len(raw_members) if isinstance(raw_members, list) else 0
+        valid_members = (
+            [
+                member
+                for member in raw_members
+                if isinstance(member, dict) and str(member.get("tag") or "").strip()
+            ]
+            if isinstance(raw_members, list)
+            else []
+        )
+        unique_tags = {
+            str(member.get("tag") or "").strip().upper()
+            for member in valid_members
+        }
+        roster_complete = (
+            isinstance(raw_members, list)
+            and not isinstance(declared_count, bool)
+            and isinstance(declared_count, int)
+            and declared_count >= 0
+            and returned_count == declared_count
+            and len(valid_members) == declared_count
+            and len(unique_tags) == declared_count
+        )
+        if not roster_complete:
+            LOGGER.warning(
+                "Clan member snapshot incomplete clan=%s returned=%s declared=%s",
+                clan_code,
+                returned_count,
+                declared_count,
+            )
+            return None
+
         badge_urls = payload.get("badgeUrls") or {}
         badge_url = next(
             (
@@ -187,7 +221,7 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
             self._clan_badge_urls[clan_code] = badge_url
 
         out: list[dict[str, Any]] = []
-        for member in payload.get("memberList", []) or []:
+        for member in valid_members:
             player_tag = str(member.get("tag") or "").strip().upper()
             if not player_tag:
                 continue
