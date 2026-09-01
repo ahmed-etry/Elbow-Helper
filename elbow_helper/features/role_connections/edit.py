@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import math
 from typing import TYPE_CHECKING
 
@@ -15,6 +16,7 @@ from elbow_helper.discord.pagination import NEXT_PAGE_LABEL
 from elbow_helper.discord.pagination import PREV_PAGE_LABEL
 from elbow_helper.discord.views import BaseTimeoutView
 
+from .config import INVALID_DEPENDENCY_MESSAGE
 from .config import SELECTOR_PAGE_SIZE
 from .formatting import _conditions_summary
 from .formatting import _conditions_to_lines
@@ -304,6 +306,21 @@ class TargetRoleEditSelect(discord.ui.RoleSelect):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         role_id = self.values[0].id
+        connection = self._parent_view.cog.get_connection(self._parent_view.conn_id)
+        if not connection:
+            await interaction.response.send_message("That role connection is no longer available.", ephemeral=True)
+            return
+        candidate = copy.deepcopy(connection)
+        candidate["target_role_id"] = role_id
+        if not self._parent_view.cog.connection_change_is_valid(
+            candidate,
+            replacing_id=self._parent_view.conn_id,
+        ):
+            await interaction.response.send_message(
+                INVALID_DEPENDENCY_MESSAGE,
+                ephemeral=True,
+            )
+            return
         updated = self._parent_view.cog.update_connection_target(self._parent_view.conn_id, role_id)
         if not updated:
             await interaction.response.send_message("That role connection is no longer available.", ephemeral=True)
@@ -347,6 +364,26 @@ class RoleListAddSelect(discord.ui.RoleSelect):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         role_ids = [role.id for role in self.values]
+        connection = self._parent_view.cog.get_connection(self._parent_view.conn_id)
+        if not connection:
+            await interaction.response.send_message("That role connection is no longer available.", ephemeral=True)
+            return
+        candidate = copy.deepcopy(connection)
+        key = "has" if self._parent_view.kind == "has" else "not"
+        target = candidate.setdefault(self._parent_view.list_name, [])
+        for role_id in role_ids:
+            condition = {key: role_id}
+            if condition not in target:
+                target.append(condition)
+        if not self._parent_view.cog.connection_change_is_valid(
+            candidate,
+            replacing_id=self._parent_view.conn_id,
+        ):
+            await interaction.response.send_message(
+                INVALID_DEPENDENCY_MESSAGE,
+                ephemeral=True,
+            )
+            return
         updated = self._parent_view.cog.add_connection_roles(
             self._parent_view.conn_id,
             self._parent_view.list_name,

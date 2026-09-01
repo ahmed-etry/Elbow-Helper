@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import math
 import time
@@ -47,6 +48,76 @@ class RoleConnections(commands.Cog):
         self._role_change_tasks: Dict[int, asyncio.Task] = {}
         self._scan_lock = asyncio.Lock()
         self._scan_tasks: set[asyncio.Task] = set()
+        self._invalid_connection_signature: tuple[str, ...] = ()
+
+    @staticmethod
+    def _invalid_connection_indexes(
+        connections: List[Dict[str, Any]],
+    ) -> set[int]:
+        targets: dict[int, set[int]] = {}
+        references: dict[int, set[int]] = {}
+
+        for index, connection in enumerate(connections):
+            target_role_id = connection.get("target_role_id")
+            if isinstance(target_role_id, bool) or not isinstance(target_role_id, int):
+                continue
+            targets.setdefault(target_role_id, set()).add(index)
+            role_references = references.setdefault(target_role_id, set())
+            for list_name in ("all", "any"):
+                conditions = connection.get(list_name, [])
+                if not isinstance(conditions, list):
+                    continue
+                for condition in conditions:
+                    if not isinstance(condition, dict):
+                        continue
+                    for kind in ("has", "not"):
+                        role_id = condition.get(kind)
+                        if isinstance(role_id, int) and not isinstance(role_id, bool):
+                            role_references.add(role_id)
+
+        managed_roles = set(targets)
+        graph = {
+            target: role_ids & managed_roles
+            for target, role_ids in references.items()
+        }
+
+        def reaches_itself(start: int, current: int, visited: set[int]) -> bool:
+            for dependency in graph.get(current, set()):
+                if dependency == start:
+                    return True
+                if dependency in visited:
+                    continue
+                visited.add(dependency)
+                if reaches_itself(start, dependency, visited):
+                    return True
+            return False
+
+        cyclic_targets = {
+            target
+            for target in managed_roles
+            if reaches_itself(target, target, {target})
+        }
+        return {
+            index
+            for target in cyclic_targets
+            for index in targets.get(target, set())
+        }
+
+    def connection_change_is_valid(
+        self,
+        connection: Dict[str, Any],
+        *,
+        replacing_id: str | None = None,
+    ) -> bool:
+        """Check a proposed rule against every managed-role dependency."""
+
+        prospective = [
+            copy.deepcopy(existing)
+            for existing in self.state["connections"]
+            if replacing_id is None or existing.get("id") != replacing_id
+        ]
+        prospective.append(copy.deepcopy(connection))
+        return not self._invalid_connection_indexes(prospective)
 
     def cog_unload(self) -> None:
         for task in self._role_change_tasks.values():
@@ -162,7 +233,25 @@ class RoleConnections(commands.Cog):
     async def _apply_connections_to_member(self, member: discord.Member, reason: str) -> Tuple[int, int]:
         added = 0
         removed = 0
-        for connection in self.state["connections"]:
+        connections = self.state["connections"]
+        invalid_indexes = self._invalid_connection_indexes(connections)
+        invalid_signature = tuple(
+            str(connections[index].get("id") or index)
+            for index in sorted(invalid_indexes)
+        )
+        if invalid_signature and invalid_signature != getattr(
+            self,
+            "_invalid_connection_signature",
+            (),
+        ):
+            LOGGER.error(
+                "Skipping cyclic role connections: %s",
+                ", ".join(invalid_signature),
+            )
+        self._invalid_connection_signature = invalid_signature
+        for index, connection in enumerate(connections):
+            if index in invalid_indexes:
+                continue
             role = member.guild.get_role(connection["target_role_id"])
             if not role:
                 continue
