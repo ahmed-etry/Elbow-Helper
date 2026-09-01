@@ -153,3 +153,43 @@ class CwlSignupAnnouncementTests(unittest.IsolatedAsyncioTestCase):
                 call(roster.id, "2026-07", "opening"),
             ]
         )
+
+    async def test_reminder_cleanup_preserves_registered_roster_posts(self) -> None:
+        reminder = MagicMock()
+        reminder.id = 101
+        reminder.author.id = 10
+        reminder.delete = AsyncMock()
+        roster_post = MagicMock()
+        roster_post.id = 202
+        roster_post.author.id = 10
+        roster_post.delete = AsyncMock()
+        member_message = MagicMock()
+        member_message.id = 303
+        member_message.author.id = 20
+        member_message.delete = AsyncMock()
+
+        async def history():
+            for message in (reminder, roster_post, member_message):
+                yield message
+
+        channel = MagicMock()
+        channel.history.return_value = history()
+        bot = MagicMock()
+        bot.user.id = 10
+        bot.get_channel.return_value = channel
+
+        cog = object.__new__(CwlAnnouncementMixin)
+        cog.bot = bot
+        cog.roster_queries = MagicMock()
+        cog.roster_queries.post_message_ids_for_channel = AsyncMock(
+            return_value={roster_post.id}
+        )
+
+        await cog._cleanup_reminder_channel()
+
+        cog.roster_queries.post_message_ids_for_channel.assert_awaited_once_with(
+            CWL_SIGNUP
+        )
+        reminder.delete.assert_awaited_once_with()
+        roster_post.delete.assert_not_awaited()
+        member_message.delete.assert_not_awaited()

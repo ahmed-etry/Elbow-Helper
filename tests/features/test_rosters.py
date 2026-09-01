@@ -693,6 +693,8 @@ class RosterQueryContractTests(unittest.IsolatedAsyncioTestCase):
             [{"player_tag": "#A", "player_name": "Ahmad", "townhall": 18}],
             roster.max_members,
         )
+        repository.add_post(roster.id, 500, 1001)
+        repository.add_post(roster.id, 600, 1002)
         queries = RosterQueries(repository)
 
         self.assertEqual(await queries.get(roster.id), roster)
@@ -706,6 +708,10 @@ class RosterQueryContractTests(unittest.IsolatedAsyncioTestCase):
             [roster.id],
         )
         self.assertTrue(await queries.role_has_signup(123, 10))
+        self.assertEqual(
+            await queries.post_message_ids_for_channel(500),
+            {1001},
+        )
         self.assertFalse(hasattr(queries, "repository"))
 
 

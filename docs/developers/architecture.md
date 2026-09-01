@@ -66,6 +66,8 @@ button or menu IDs need a transition for existing Discord messages.
   locations, clan boards, or live-war state.
 - War and roster cleanup must keep a shared role while either workflow still
   requires it.
+- Cross-feature message cleanup must preserve Discord posts registered to
+  another feature.
 
 See [Package map](package-map.md) for feature ownership and
 [Feature loading and restarts](extension-lifecycle.md) for lifecycle rules.

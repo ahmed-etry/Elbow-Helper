@@ -48,3 +48,11 @@ class RosterQueries:
             role_id,
             member_id,
         )
+
+    async def post_message_ids_for_channel(self, channel_id: int) -> set[int]:
+        posts = await asyncio.to_thread(self._repository.list_posts)
+        return {
+            post.message_id
+            for post in posts
+            if post.channel_id == channel_id
+        }
