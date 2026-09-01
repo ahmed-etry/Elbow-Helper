@@ -42,6 +42,7 @@ def save_hibernation_state(data: dict[str, Any]) -> None:
         write_json_atomic(STATE_FILE, data, indent=2)
     except (OSError, TypeError) as exc:
         LOGGER.error("Failed saving %s: %s", STATE_FILE, exc)
+        raise
 
 
 def get_fallback_info_message_id(data: dict[str, Any]) -> int | None:
