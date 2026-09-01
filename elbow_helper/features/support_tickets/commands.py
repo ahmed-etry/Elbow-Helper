@@ -63,6 +63,8 @@ class SupportCommandMixin:
     @app_commands.guilds(discord.Object(id=GUILD_ID))
     async def open_ticket(self, interaction: discord.Interaction, user: discord.Member, topic: str):
         await interaction.response.defer(ephemeral=True)
+        ticket_channel: discord.TextChannel | None = None
+        ticket_saved = False
         try:
             if not any(role.id in LEAD for role in interaction.user.roles):
                 await deny(interaction)
@@ -118,10 +120,21 @@ class SupportCommandMixin:
                 "source": "open",
             }
             save_tickets(tickets)
+            ticket_saved = True
 
             await interaction.followup.send(f"Ticket created for {user.mention}: {ticket_channel.mention}", ephemeral=True)
-        except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError):
+        except (discord.Forbidden, discord.HTTPException, OSError, RuntimeError, TypeError, ValueError):
             LOGGER.exception("Failed to open ticket")
+            if ticket_channel is not None and not ticket_saved:
+                try:
+                    await ticket_channel.delete()
+                except discord.NotFound:
+                    pass
+                except (discord.Forbidden, discord.HTTPException):
+                    LOGGER.exception(
+                        "Failed to remove incomplete support ticket %s",
+                        ticket_channel.id,
+                    )
             try:
                 await fail(interaction)
             except discord.HTTPException:

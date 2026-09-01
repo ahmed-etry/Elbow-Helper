@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from elbow_helper.features.support_tickets.commands import SupportCommandMixin
+from elbow_helper.features.support_tickets.state import save_tickets
 
 
 class _FakeTextChannel:
@@ -123,6 +124,90 @@ class SupportTicketCloseTests(unittest.IsolatedAsyncioTestCase):
             "Transcript saved to <#456>",
             ephemeral=True,
         )
+
+
+class SupportTicketCreationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_state_failure_removes_the_untracked_channel(self) -> None:
+        ticket_channel = SimpleNamespace(
+            id=123,
+            mention="<#123>",
+            edit=AsyncMock(),
+            send=AsyncMock(),
+            delete=AsyncMock(),
+        )
+        guild = SimpleNamespace(
+            default_role=MagicMock(),
+            me=None,
+            get_member=MagicMock(return_value=None),
+            get_role=MagicMock(return_value=None),
+            get_channel=MagicMock(return_value=SimpleNamespace()),
+            create_text_channel=AsyncMock(return_value=ticket_channel),
+        )
+        interaction = SimpleNamespace(
+            user=SimpleNamespace(
+                roles=[SimpleNamespace(id=1)],
+                display_name="Lead",
+                display_avatar=SimpleNamespace(url="https://example.com/avatar.png"),
+            ),
+            guild=guild,
+            response=SimpleNamespace(defer=AsyncMock()),
+            followup=SimpleNamespace(send=AsyncMock()),
+        )
+        member = MagicMock()
+        member.id = 42
+        member.mention = "<@42>"
+        member.display_name = "Member"
+        member.name = "member"
+        commands = SupportCommandMixin()
+        commands.bot = SimpleNamespace(user=SimpleNamespace(id=99))
+        commands.welcome_messages = SimpleNamespace(
+            create=AsyncMock(return_value="Welcome"),
+        )
+
+        with (
+            patch("elbow_helper.features.support_tickets.commands.LEAD", {1}),
+            patch(
+                "elbow_helper.features.support_tickets.commands.load_tickets",
+                return_value={},
+            ),
+            patch(
+                "elbow_helper.features.support_tickets.commands.save_tickets",
+                side_effect=OSError("disk full"),
+            ),
+            patch(
+                "elbow_helper.features.support_tickets.commands.fail",
+                new=AsyncMock(),
+            ) as send_failure,
+            self.assertLogs(
+                "elbow_helper.features.support_tickets.commands",
+                level="ERROR",
+            ),
+        ):
+            await SupportCommandMixin.open_ticket.callback(
+                commands,
+                interaction,
+                member,
+                "Help",
+            )
+
+        ticket_channel.delete.assert_awaited_once_with()
+        send_failure.assert_awaited_once_with(interaction)
+
+
+class SupportTicketStateTests(unittest.TestCase):
+    def test_save_failure_reaches_the_calling_workflow(self) -> None:
+        with (
+            patch(
+                "elbow_helper.features.support_tickets.state.write_json_atomic",
+                side_effect=OSError("disk full"),
+            ),
+            self.assertLogs(
+                "elbow_helper.features.support_tickets.state",
+                level="ERROR",
+            ),
+            self.assertRaisesRegex(OSError, "disk full"),
+        ):
+            save_tickets({"123": {"owner": 42}})
 
 
 if __name__ == "__main__":

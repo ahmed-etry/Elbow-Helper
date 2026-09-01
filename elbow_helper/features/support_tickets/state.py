@@ -26,3 +26,4 @@ def save_tickets(data: dict[str, Any]) -> None:
         write_json_atomic(CREATED_TICKETS_FILE, data, indent=4)
     except (OSError, TypeError) as exc:
         LOGGER.error("Failed to save %s: %s", CREATED_TICKETS_FILE, exc)
+        raise
