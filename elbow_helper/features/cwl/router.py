@@ -42,7 +42,14 @@ class CwlRouterMixin:
                 data = read_json(ROUTER_STATE_FILE)
                 if not isinstance(data, dict):
                     raise TypeError("router state root must be an object")
-                for key in ("rosters", "roster_names", "last_war_tag", "missed_posted", "name_cache"):
+                for key in (
+                    "rosters",
+                    "roster_names",
+                    "last_war_tag",
+                    "missed_posted",
+                    "missed_pending",
+                    "name_cache",
+                ):
                     if not isinstance(data.get(key), dict):
                         data[key] = {}
                 try:
@@ -73,6 +80,7 @@ class CwlRouterMixin:
             "roster_names": {},
             "last_war_tag": {},
             "missed_posted": {},
+            "missed_pending": {},
             "last_poll_ts": int(time.time()),
             "name_cache": {},
             "cwl_board_messages": {},
@@ -80,11 +88,11 @@ class CwlRouterMixin:
 
 
     async def _save_state(self):
-        # Persist state to disk; silent on failure to avoid crashing the loop
         try:
             await write_json_atomic_async(ROUTER_STATE_FILE, self.state, indent=2)
         except (OSError, TypeError) as e:
             LOGGER.warning("Failed saving router state: %s", e)
+            raise
 
 
     async def _fetch_json(self, path: str) -> Optional[Dict]:
@@ -265,6 +273,7 @@ class CwlRouterMixin:
         name_cache = self.state.setdefault("name_cache", {})
         last_tags = self.state.setdefault("last_war_tag", {})
         missed_posted = self.state.setdefault("missed_posted", {})
+        missed_pending = self.state.setdefault("missed_pending", {})
         for clan_key, tag in CWL_CLAN_TAGS.items():
             wars = await self._get_league_wars(clan_key)
             if not wars:
@@ -310,18 +319,49 @@ class CwlRouterMixin:
                         continue
                     posted_key = f"{clan_key}:{ended_tag}"
                     if posted_key in missed_posted:
+                        missed_pending.pop(posted_key, None)
                         continue
                     missed = self._compute_missed_from_war(ended, tag)
                     if missed:
-                        await self._log_missed_api(
+                        pending_entry = missed_pending.get(posted_key)
+                        recovering_delivery = isinstance(pending_entry, dict)
+                        if recovering_delivery:
+                            pending_users = pending_entry.get("users")
+                            delivery_users = (
+                                [str(user) for user in pending_users]
+                                if isinstance(pending_users, list)
+                                else missed
+                            )
+                            delivery_round = pending_entry.get("round_number")
+                            delivery_end_ts = pending_entry.get("end_ts")
+                        else:
+                            delivery_users = missed
+                            delivery_round = ended.get("_round")
+                            delivery_end_ts = end_ts
+                            missed_pending[posted_key] = {
+                                "clan": clan_key,
+                                "war_tag": ended_tag,
+                                "users": delivery_users,
+                                "round_number": delivery_round,
+                                "end_ts": delivery_end_ts,
+                            }
+                            await self._save_state()
+
+                        delivered = await self._log_missed_api(
                             clan_key,
                             ended_tag,
-                            missed,
-                            round_number=ended.get("_round"),
-                            end_ts=end_ts,
+                            delivery_users,
+                            round_number=delivery_round,
+                            end_ts=delivery_end_ts,
+                            check_existing=recovering_delivery,
                         )
+                        if not delivered:
+                            state_dirty = True
+                            continue
                     missed_posted[posted_key] = True
+                    missed_pending.pop(posted_key, None)
                     state_dirty = True
+                    await self._save_state()
 
             rotation_war = prep_war if prep_war is not None else (active_war if state == "preparation" else None)
             rotation_tag = rotation_war.get("_warTag") if rotation_war else None
@@ -366,7 +406,8 @@ class CwlRouterMixin:
                 clan_rosters[rotation_tag] = list(current)
                 clan_roster_names[rotation_tag] = name_map
                 state_dirty = True
-        self.state["last_poll_ts"] = poll_ts
+        if not missed_pending:
+            self.state["last_poll_ts"] = poll_ts
         state_dirty = True
         if state_dirty:
             await self._save_state()
@@ -429,19 +470,20 @@ class CwlRouterMixin:
         *,
         round_number: Optional[int] = None,
         end_ts: Optional[int] = None,
-    ):
+        check_existing: bool = False,
+    ) -> bool:
         # Send missed-attack summary with helper ping
         thread_id = CWL_THREADS.get(clan)
         if not thread_id:
-            return
+            return False
         thread = self.bot.get_channel(thread_id)
         if thread is None:
             try:
                 thread = await self.bot.fetch_channel(thread_id)
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                return
+                return False
         if not isinstance(thread, (discord.TextChannel, discord.Thread)):
-            return
+            return False
         header = f"CWL Round {round_number}" if round_number else "CWL Round"
         if end_ts:
             header = f"{header} - Ended <t:{end_ts}:f>"
@@ -454,8 +496,28 @@ class CwlRouterMixin:
         embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
         helper_role_id = CLAN_CWL_HELPER_ROLE_IDS.get(clan)
         content = f"<@&{helper_role_id}>" if helper_role_id else None
+
+        if check_existing:
+            try:
+                async for message in thread.history(limit=50):
+                    if any(
+                        existing.title == embed.title
+                        and existing.description == embed.description
+                        for existing in message.embeds
+                    ):
+                        return True
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+                LOGGER.warning(
+                    "Failed to recover CWL missed-attacks delivery for %s (%s): %s",
+                    clan,
+                    war_tag or "unknown-war",
+                    e,
+                )
+                return False
+
         try:
             await thread.send(content=content, embed=embed)
+            return True
         except (discord.Forbidden, discord.HTTPException) as e:
             LOGGER.warning(
                 "Failed to post CWL missed-attacks embed for %s (%s): %s",
@@ -463,6 +525,7 @@ class CwlRouterMixin:
                 war_tag or "unknown-war",
                 e,
             )
+            return False
 
 
     @commands.Cog.listener()

@@ -5,6 +5,7 @@ from datetime import datetime
 from datetime import timezone
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -276,6 +277,113 @@ class CwlRotationSnapshotTests(unittest.IsolatedAsyncioTestCase):
             ["#P2", "#P3"],
         )
         manager._log_rotation_api.assert_not_awaited()
+
+
+class CwlMissedAttackDeliveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_failed_delivery_remains_pending_until_confirmed(self) -> None:
+        class FixedDatetime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                current = cls(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
+                return current if tz is not None else current.replace(tzinfo=None)
+
+        war = _cwl_war("warEnded", 1)
+        manager = CwlRouterMixin()
+        manager.state = {
+            "rosters": {},
+            "roster_names": {},
+            "last_war_tag": {},
+            "missed_posted": {},
+            "missed_pending": {},
+            "last_poll_ts": 0,
+            "name_cache": {},
+        }
+        manager._get_league_wars = AsyncMock(return_value=[war])
+        manager._sync_cwl_channel = AsyncMock()
+        manager._log_missed_api = AsyncMock(return_value=False)
+        manager._save_state = AsyncMock()
+
+        with (
+            patch(
+                "elbow_helper.features.cwl.router.CWL_CLAN_TAGS",
+                {"BEH": CLAN_TAGS["BEH"]},
+            ),
+            patch("elbow_helper.features.cwl.router.datetime", FixedDatetime),
+        ):
+            await manager._poll_once()
+
+        delivery_key = "BEH:#WAR1"
+        self.assertNotIn(delivery_key, manager.state["missed_posted"])
+        self.assertIn(delivery_key, manager.state["missed_pending"])
+        self.assertEqual(manager.state["last_poll_ts"], 0)
+        self.assertFalse(
+            manager._log_missed_api.await_args.kwargs["check_existing"]
+        )
+
+        manager._log_missed_api.reset_mock()
+        manager._log_missed_api.return_value = True
+        with (
+            patch(
+                "elbow_helper.features.cwl.router.CWL_CLAN_TAGS",
+                {"BEH": CLAN_TAGS["BEH"]},
+            ),
+            patch("elbow_helper.features.cwl.router.datetime", FixedDatetime),
+        ):
+            await manager._poll_once()
+
+        self.assertTrue(manager.state["missed_posted"][delivery_key])
+        self.assertNotIn(delivery_key, manager.state["missed_pending"])
+        self.assertGreater(manager.state["last_poll_ts"], 0)
+        self.assertTrue(
+            manager._log_missed_api.await_args.kwargs["check_existing"]
+        )
+
+    async def test_pending_delivery_reuses_the_existing_discord_message(self) -> None:
+        class FakeThread:
+            def __init__(self) -> None:
+                self.send = AsyncMock()
+
+            def history(self, *, limit: int):
+                async def messages():
+                    yield SimpleNamespace(
+                        embeds=[
+                            discord.Embed(
+                                title="Missed Attacks - CWL Round 1 - Ended <t:100:f>",
+                                description="Player (1 missed)",
+                            )
+                        ]
+                    )
+
+                return messages()
+
+        thread = FakeThread()
+        manager = CwlRouterMixin()
+        manager.bot = SimpleNamespace(
+            get_channel=MagicMock(return_value=thread),
+            fetch_channel=AsyncMock(),
+        )
+
+        with (
+            patch(
+                "elbow_helper.features.cwl.router.CWL_THREADS",
+                {"BEH": 123},
+            ),
+            patch(
+                "elbow_helper.features.cwl.router.discord.TextChannel",
+                FakeThread,
+            ),
+        ):
+            delivered = await manager._log_missed_api(
+                "BEH",
+                "#WAR1",
+                ["Player (1 missed)"],
+                round_number=1,
+                end_ts=100,
+                check_existing=True,
+            )
+
+        self.assertTrue(delivered)
+        thread.send.assert_not_awaited()
 
 if __name__ == "__main__":
     unittest.main()
