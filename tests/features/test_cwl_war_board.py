@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 import tempfile
 import unittest
@@ -226,6 +228,54 @@ class CwlWarBoardStateTests(unittest.TestCase):
                 }
             },
         )
+
+
+class CwlRotationSnapshotTests(unittest.IsolatedAsyncioTestCase):
+    async def test_incomplete_rotation_roster_preserves_the_previous_baseline(self) -> None:
+        class FixedDatetime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                current = cls(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
+                return current if tz is not None else current.replace(tzinfo=None)
+
+        war = _cwl_war("preparation", 1)
+        war["teamSize"] = 2
+        war["_start_dt"] = FixedDatetime(2026, 9, 2, tzinfo=timezone.utc)
+
+        manager = CwlRouterMixin()
+        manager.state = {
+            "rosters": {"BEH": {"#WAR1": ["#P2", "#P3"]}},
+            "roster_names": {
+                "BEH": {"#WAR1": {"#P2": "Player", "#P3": "Other"}}
+            },
+            "last_war_tag": {"BEH": "#WAR1"},
+            "missed_posted": {},
+            "last_poll_ts": 0,
+            "name_cache": {},
+        }
+        manager._get_league_wars = AsyncMock(return_value=[war])
+        manager._sync_cwl_channel = AsyncMock()
+        manager._log_rotation_api = AsyncMock()
+        manager._save_state = AsyncMock()
+
+        with (
+            patch(
+                "elbow_helper.features.cwl.router.CWL_CLAN_TAGS",
+                {"BEH": CLAN_TAGS["BEH"]},
+            ),
+            patch("elbow_helper.features.cwl.router.datetime", FixedDatetime),
+            self.assertLogs(
+                "elbow_helper.features.cwl.router",
+                level="WARNING",
+            ),
+        ):
+            await manager._poll_once()
+
+        self.assertEqual(
+            manager.state["rosters"]["BEH"]["#WAR1"],
+            ["#P2", "#P3"],
+        )
+        manager._log_rotation_api.assert_not_awaited()
 
 if __name__ == "__main__":
     unittest.main()

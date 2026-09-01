@@ -164,22 +164,57 @@ class CwlRouterMixin:
         return candidates
 
 
-    def _extract_roster(self, war: Dict, clan_tag: str) -> Set[str]:
-        # Return set of member tags for this clan within the war payload
+    def _extract_complete_roster(
+        self,
+        war: Dict,
+        clan_tag: str,
+    ) -> Optional[Tuple[Set[str], Dict[str, str]]]:
+        """Return one complete CWL roster snapshot or reject the payload."""
         clan_block = war.get("clan", {})
         if clan_block.get("tag") != clan_tag:
             clan_block = war.get("opponent", {})
-        members = clan_block.get("members", []) or []
-        return {m.get("tag") for m in members if m.get("tag")}
+        raw_members = clan_block.get("members")
+        team_size = war.get("teamSize")
+        returned_count = len(raw_members) if isinstance(raw_members, list) else 0
+        valid_members = (
+            [
+                member
+                for member in raw_members
+                if isinstance(member, dict) and str(member.get("tag") or "").strip()
+            ]
+            if isinstance(raw_members, list)
+            else []
+        )
+        roster = {
+            str(member.get("tag") or "").strip().upper()
+            for member in valid_members
+        }
+        complete = (
+            clan_block.get("tag") == clan_tag
+            and not isinstance(team_size, bool)
+            and isinstance(team_size, int)
+            and team_size > 0
+            and returned_count == team_size
+            and len(valid_members) == team_size
+            and len(roster) == team_size
+        )
+        if not complete:
+            LOGGER.warning(
+                "CWL rotation roster incomplete clan_tag=%s war=%s returned=%s team_size=%s",
+                clan_tag,
+                war.get("_warTag") or "unknown",
+                returned_count,
+                team_size,
+            )
+            return None
 
-
-    def _extract_roster_names(self, war: Dict, clan_tag: str) -> Dict[str, str]:
-        # Return tag -> name mapping for this clan within the war payload
-        clan_block = war.get("clan", {})
-        if clan_block.get("tag") != clan_tag:
-            clan_block = war.get("opponent", {})
-        members = clan_block.get("members", []) or []
-        return {m.get("tag"): (m.get("name") or m.get("tag") or "Unknown") for m in members if m.get("tag")}
+        names = {
+            str(member.get("tag") or "").strip().upper(): str(
+                member.get("name") or member.get("tag") or "Unknown"
+            )
+            for member in valid_members
+        }
+        return roster, names
 
 
     def _compute_missed_from_war(self, war: Dict, clan_tag: str) -> List[str]:
@@ -295,8 +330,10 @@ class CwlRouterMixin:
                 continue
 
             # Diff roster vs prior snapshot and log changes
-            current = self._extract_roster(rotation_war, tag)
-            name_map = self._extract_roster_names(rotation_war, tag)
+            roster_snapshot = self._extract_complete_roster(rotation_war, tag)
+            if roster_snapshot is None:
+                continue
+            current, name_map = roster_snapshot
             clan_name_cache = name_cache.setdefault(clan_key, {})
             if name_map:
                 clan_name_cache.update(name_map)
