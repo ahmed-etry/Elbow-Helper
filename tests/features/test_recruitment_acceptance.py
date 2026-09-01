@@ -364,5 +364,65 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         owner.state_store.save_trial_data.assert_not_called()
         owner.logger.warning.assert_called_once()
 
+    async def test_end_trial_keeps_state_when_the_ticket_is_unavailable(self) -> None:
+        owner = TrialMixin()
+        owner._trial_lock = asyncio.Lock()
+        owner.bot = MagicMock()
+        owner.bot.get_channel.return_value = None
+        owner.state_store = MagicMock()
+        owner.state_store.load_trial_data.return_value = {
+            "200": {"applicant_id": 42}
+        }
+        interaction = SimpleNamespace(
+            user=SimpleNamespace(roles=[SimpleNamespace(id=1)]),
+            response=SimpleNamespace(
+                is_done=MagicMock(return_value=False),
+                defer=AsyncMock(),
+            ),
+            followup=SimpleNamespace(send=AsyncMock()),
+        )
+
+        with patch.object(trials, "CORE", frozenset({1})):
+            ended = await owner.end_trial_now(interaction, 200, 42)
+
+        self.assertFalse(ended)
+        owner.state_store.save_trial_data.assert_not_called()
+
+    async def test_expired_trial_remains_active_when_reminder_state_fails(self) -> None:
+        owner = TrialMixin()
+        owner._trial_lock = asyncio.Lock()
+        owner._reminder_lock = asyncio.Lock()
+        owner.logger = MagicMock()
+        trial_info = {
+            "start": "2020-01-01T00:00:00+00:00",
+            "days": 7,
+            "applicant_id": 42,
+            "tracking_msg_id": 500,
+            "tracking_channel_id": 600,
+        }
+        owner.state_store = MagicMock()
+        owner.state_store.load_trial_data.return_value = {
+            "200": dict(trial_info)
+        }
+        owner.state_store.load_trial_reminders.return_value = {}
+        owner.state_store.save_trial_reminders.side_effect = OSError("disk full")
+        owner._delete_tracking_message = AsyncMock(return_value=True)
+        owner._build_trial_reminder_embed = MagicMock(return_value=MagicMock())
+
+        reminder_message = SimpleNamespace(id=700, delete=AsyncMock())
+        reminder_channel = SimpleNamespace(id=800, send=AsyncMock(return_value=reminder_message))
+        ticket_channel = SimpleNamespace(id=200, mention="<#200>")
+        owner.bot = MagicMock()
+        owner.bot.get_channel.side_effect = lambda channel_id: (
+            reminder_channel if channel_id == trials.REC_ROOM else ticket_channel
+        )
+
+        with self.assertRaisesRegex(OSError, "disk full"):
+            await TrialMixin.check_expired_trials.coro(owner)
+
+        owner.state_store.save_trial_data.assert_not_called()
+        owner._delete_tracking_message.assert_not_awaited()
+        reminder_message.delete.assert_awaited_once_with()
+
 if __name__ == "__main__":
     unittest.main()

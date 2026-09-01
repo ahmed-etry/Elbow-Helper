@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 import discord
 from discord.ext import commands, tasks
 from elbow_helper.discord.interactions import deny
+from elbow_helper.discord.interactions import fail
 from elbow_helper.configuration.channels import REC_ROOM
 from elbow_helper.configuration.channels import TRIAL_LIST
 from elbow_helper.configuration.guild import GUILD_ID
@@ -382,86 +383,96 @@ class TrialMixin:
         if not interaction.response.is_done():
             await interaction.response.defer(ephemeral=show_success_confirmation)
 
-        trial_info = None
         async with self._trial_lock:
             trial_key = str(ticket_channel_id)
             trials = self.state_store.load_trial_data()
-            # Remove state first to prevent duplicate processing on retries.
-            trial_info = trials.pop(trial_key, None)
+            trial_info = trials.get(trial_key)
             if not trial_info and not allow_missing:
                 await interaction.followup.send("This ticket no longer has an active trial.", ephemeral=True)
                 return False
+
+            ticket_channel = self.bot.get_channel(ticket_channel_id)
+            if not ticket_channel:
+                await interaction.followup.send("The trial ticket is no longer available.", ephemeral=True)
+                return False
+            if not applicant_id:
+                applicant_id = await self._resolve_applicant_id(ticket_channel)
+                if not applicant_id:
+                    await interaction.followup.send(
+                        "The applicant for this ticket couldn't be identified.", ephemeral=True
+                    )
+                    return False
+
+            rename_notice: Optional[str] = None
+            new_name = rename_ticket_channel(ticket_channel, TRIAL_TICKET_PREFIXES_END)
+            if new_name and new_name != ticket_channel.name:
+                guild_id = ticket_channel.guild.id
+                if len(new_name) > 100:
+                    rename_notice = "The channel wasn't renamed because the new name exceeds Discord's 100-character limit."
+                elif can_rename(guild_id):
+                    try:
+                        await ticket_channel.edit(name=new_name)
+                    except discord.Forbidden:
+                        rename_notice = "The channel wasn't renamed because the bot can't manage this channel."
+                    except discord.HTTPException as e:
+                        if e.status == 429:
+                            rename_notice = "Discord temporarily limited channel renames. Try again shortly."
+                        elif e.code == 50035:
+                            rename_notice = "Discord rejected the new channel name, so the channel wasn't renamed."
+                        else:
+                            rename_notice = f"Discord couldn't rename the channel."
+                        self.logger.warning(
+                            "Failed to rename channel %s (%s): %s",
+                            ticket_channel.name,
+                            ticket_channel.id,
+                            e,
+                        )
+                else:
+                    rename_notice = "The channel was renamed too recently. Try again later."
+
             if trial_info:
+                tracking_removed = await self._delete_tracking_message(
+                    trial_info,
+                    ticket_channel_id=ticket_channel_id,
+                )
+                if not tracking_removed:
+                    self.logger.warning(
+                        "Trial end retained state because tracking cleanup failed for ticket %s",
+                        ticket_channel_id,
+                    )
+                    await fail(interaction)
+                    return False
+
+            feedback_notice: Optional[str] = None
+            try:
+                await ticket_channel.send(
+                    f"Hey <@{applicant_id}>, your trial has ended. Are you planning to stay with us? "
+                    "We'd also appreciate any feedback about how it went."
+                )
+            except discord.Forbidden:
+                feedback_notice = "The bot couldn't post the trial follow-up because it can't send messages in the ticket."
+            except discord.HTTPException as e:
+                feedback_notice = f"The bot couldn't post the trial follow-up in the ticket."
+                self.logger.warning(
+                    "Failed to send trial end prompt in channel %s (%s): %s",
+                    ticket_channel.name,
+                    ticket_channel.id,
+                    e,
+                )
+
+            if trial_info:
+                trials.pop(trial_key, None)
                 self.state_store.save_trial_data(trials)
 
-        ticket_channel = self.bot.get_channel(ticket_channel_id)
-        if not ticket_channel:
-            await interaction.followup.send("The trial ticket is no longer available.", ephemeral=True)
-            return False
-        if not applicant_id:
-            applicant_id = await self._resolve_applicant_id(ticket_channel)
-            if not applicant_id:
-                await interaction.followup.send(
-                    "The applicant for this ticket couldn't be identified.", ephemeral=True
-                )
-                return False
+            confirmation_lines = ["Trial ended."] if show_success_confirmation else []
+            if rename_notice:
+                confirmation_lines.append(rename_notice)
+            if feedback_notice:
+                confirmation_lines.append(feedback_notice)
 
-        rename_notice: Optional[str] = None
-        new_name = rename_ticket_channel(ticket_channel, TRIAL_TICKET_PREFIXES_END)
-        if new_name and new_name != ticket_channel.name:
-            guild_id = ticket_channel.guild.id
-            if len(new_name) > 100:
-                rename_notice = "The channel wasn't renamed because the new name exceeds Discord's 100-character limit."
-            elif can_rename(guild_id):
-                try:
-                    await ticket_channel.edit(name=new_name)
-                except discord.Forbidden:
-                    rename_notice = "The channel wasn't renamed because the bot can't manage this channel."
-                except discord.HTTPException as e:
-                    if e.status == 429:
-                        rename_notice = "Discord temporarily limited channel renames. Try again shortly."
-                    elif e.code == 50035:
-                        rename_notice = "Discord rejected the new channel name, so the channel wasn't renamed."
-                    else:
-                        rename_notice = f"Discord couldn't rename the channel."
-                    self.logger.warning(
-                        "Failed to rename channel %s (%s): %s",
-                        ticket_channel.name,
-                        ticket_channel.id,
-                        e,
-                    )
-            else:
-                rename_notice = "The channel was renamed too recently. Try again later."
-
-        if trial_info:
-            await self._delete_tracking_message(trial_info, ticket_channel_id=ticket_channel_id)
-
-        feedback_notice: Optional[str] = None
-        try:
-            await ticket_channel.send(
-                f"Hey <@{applicant_id}>, your trial has ended. Are you planning to stay with us? "
-                "We'd also appreciate any feedback about how it went."
-            )
-        except discord.Forbidden:
-            feedback_notice = "The bot couldn't post the trial follow-up because it can't send messages in the ticket."
-        except discord.HTTPException as e:
-            feedback_notice = f"The bot couldn't post the trial follow-up in the ticket."
-            self.logger.warning(
-                "Failed to send trial end prompt in channel %s (%s): %s",
-                ticket_channel.name,
-                ticket_channel.id,
-                e,
-            )
-
-        confirmation_lines = ["Trial ended."] if show_success_confirmation else []
-        if rename_notice:
-            confirmation_lines.append(rename_notice)
-        if feedback_notice:
-            confirmation_lines.append(feedback_notice)
-
-        if confirmation_lines:
-            await interaction.followup.send("\n".join(confirmation_lines), ephemeral=True)
-        return True
+            if confirmation_lines:
+                await interaction.followup.send("\n".join(confirmation_lines), ephemeral=True)
+            return True
 
 
     @commands.Cog.listener()
@@ -521,12 +532,12 @@ class TrialMixin:
     @tasks.loop(minutes=60)
     async def check_expired_trials(self):
         """Hourly sweep to identify trials past their duration and notify staff."""
-        now = datetime.utcnow().replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
         reminder_channel = self.bot.get_channel(REC_ROOM)
         if not reminder_channel:
             return
 
-        expired = []
+        expired: list[tuple[int, Dict[str, Any]]] = []
         async with self._trial_lock:
             trials = self.state_store.load_trial_data()
             for ticket_id, info in list(trials.items()):
@@ -534,42 +545,76 @@ class TrialMixin:
                     start_dt = datetime.fromisoformat(info["start"]).replace(tzinfo=timezone.utc)
                     days = int(info.get("days", TRIAL_DAYS_DEFAULT))
                     if now >= start_dt + timedelta(days=days):
-                        expired.append((int(ticket_id), info))
+                        expired.append((int(ticket_id), dict(info)))
                 except (KeyError, TypeError, ValueError) as e:
                     self.logger.warning("Skipping invalid trial entry %s: %s", ticket_id, e)
                     continue
-            if expired:
-                for ticket_id, _ in expired:
-                    trials.pop(str(ticket_id), None)
-                self.state_store.save_trial_data(trials)
 
         for ticket_id, info in expired:
-            ticket_channel = self.bot.get_channel(ticket_id)
-            if not ticket_channel:
-                continue
+            async with self._trial_lock:
+                trial_key = str(ticket_id)
+                trials = self.state_store.load_trial_data()
+                if trials.get(trial_key) != info:
+                    continue
 
-            await self._delete_tracking_message(info, ticket_channel_id=ticket_id)
+                ticket_channel = self.bot.get_channel(ticket_id)
+                if not ticket_channel:
+                    self.logger.warning(
+                        "Expired trial retained because ticket %s is unavailable",
+                        ticket_id,
+                    )
+                    continue
 
-            mentions = " ".join(f"<@&{rid}>" for rid in RECRUITERS)
-            mention_prefix = f"{mentions} " if mentions else ""
-            applicant_id = info.get("applicant_id", 0)
-            reminder_embed = self._build_trial_reminder_embed(ticket_id, applicant_id)
-            reminder_msg = await reminder_channel.send(
-                f"{mention_prefix}Trial period ended for {ticket_channel.mention}.",
-                embed=reminder_embed,
-                view=PersistentEndTrialView(ticket_id, applicant_id),
-            )
-            async with self._reminder_lock:
-                reminders = self.state_store.load_trial_reminders()
-                reminders[str(ticket_id)] = {
-                    "channel_id": reminder_channel.id,
-                    "message_id": reminder_msg.id,
-                    "applicant_id": applicant_id,
-                    "created_at": int(datetime.now(timezone.utc).timestamp()),
-                    "resolved_at": None,
-                    "resolved_by": None,
-                }
-                self.state_store.save_trial_reminders(reminders)
+                applicant_id = info.get("applicant_id", 0)
+                async with self._reminder_lock:
+                    reminders = self.state_store.load_trial_reminders()
+                    reminder_entry = reminders.get(trial_key)
+                    if not isinstance(reminder_entry, dict):
+                        mentions = " ".join(f"<@&{rid}>" for rid in RECRUITERS)
+                        mention_prefix = f"{mentions} " if mentions else ""
+                        reminder_embed = self._build_trial_reminder_embed(
+                            ticket_id,
+                            applicant_id,
+                        )
+                        reminder_msg = await reminder_channel.send(
+                            f"{mention_prefix}Trial period ended for {ticket_channel.mention}.",
+                            embed=reminder_embed,
+                            view=PersistentEndTrialView(ticket_id, applicant_id),
+                        )
+                        reminders[trial_key] = {
+                            "channel_id": reminder_channel.id,
+                            "message_id": reminder_msg.id,
+                            "applicant_id": applicant_id,
+                            "created_at": int(datetime.now(timezone.utc).timestamp()),
+                            "resolved_at": None,
+                            "resolved_by": None,
+                        }
+                        try:
+                            self.state_store.save_trial_reminders(reminders)
+                        except (OSError, TypeError, ValueError):
+                            try:
+                                await reminder_msg.delete()
+                            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                                self.logger.warning(
+                                    "Could not remove untracked trial reminder %s for ticket %s",
+                                    reminder_msg.id,
+                                    ticket_id,
+                                )
+                            raise
+
+                tracking_removed = await self._delete_tracking_message(
+                    info,
+                    ticket_channel_id=ticket_id,
+                )
+                if not tracking_removed:
+                    self.logger.warning(
+                        "Expired trial retained because tracking cleanup failed for ticket %s",
+                        ticket_id,
+                    )
+                    continue
+
+                trials.pop(trial_key, None)
+                self.state_store.save_trial_data(trials)
 
 
     @check_expired_trials.before_loop
@@ -597,5 +642,3 @@ class TrialMixin:
     @cleanup_trial_reminders.before_loop
     async def before_cleanup_trial_reminders(self):
         await self.bot.wait_until_ready()
-
-
