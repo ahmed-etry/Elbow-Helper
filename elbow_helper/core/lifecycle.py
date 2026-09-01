@@ -8,6 +8,7 @@ import logging
 import time
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 from elbow_helper.infrastructure.clash import ClashClient
@@ -21,6 +22,8 @@ from .paths import ApplicationPaths
 
 
 LOGGER = logging.getLogger("elbow.boot")
+COMMAND_SYNC_ATTEMPTS = 3
+COMMAND_SYNC_BACKOFF_SECONDS = 1.0
 
 REQUIRED_EXTENSIONS = (
     "elbow_helper.features.support_tickets",
@@ -78,6 +81,39 @@ class RequiredExtensionLoadError(RuntimeError):
         self.report = report
         names = ", ".join(failure.name for failure in report.required_failures)
         super().__init__(f"Required extensions failed to load: {names}")
+
+
+async def sync_guild_commands(
+    tree: app_commands.CommandTree,
+    guild_id: int,
+    *,
+    attempts: int = COMMAND_SYNC_ATTEMPTS,
+) -> tuple[app_commands.AppCommand, ...]:
+    """Synchronize the required guild command interface before connecting."""
+
+    guild = discord.Object(id=guild_id)
+    for attempt in range(1, attempts + 1):
+        try:
+            synced = await tree.sync(guild=guild)
+            return tuple(synced)
+        except discord.HTTPException as error:
+            if attempt >= attempts:
+                LOGGER.exception(
+                    "Slash command sync failed after %s attempts",
+                    attempts,
+                )
+                raise
+            delay = COMMAND_SYNC_BACKOFF_SECONDS * (2 ** (attempt - 1))
+            LOGGER.warning(
+                "Slash command sync attempt %s/%s failed; retrying in %.1fs: %s",
+                attempt,
+                attempts,
+                delay,
+                error,
+            )
+            await asyncio.sleep(delay)
+
+    raise RuntimeError("Slash command synchronization exhausted without a result")
 
 
 async def load_extensions(
@@ -186,6 +222,7 @@ class ElbowHelperBot(commands.Bot):
         self.optional_extensions = optional_extensions
         self.boot_complete = asyncio.Event()
         self.extension_report: ExtensionLoadReport | None = None
+        self.synced_command_count: int | None = None
         self._boot_started_at = 0.0
 
     async def setup_hook(self) -> None:
@@ -195,6 +232,8 @@ class ElbowHelperBot(commands.Bot):
             required=self.required_extensions,
             optional=self.optional_extensions,
         )
+        synced = await sync_guild_commands(self.tree, self.guild_id)
+        self.synced_command_count = len(synced)
 
     async def on_ready(self) -> None:
         if self.boot_complete.is_set():
@@ -203,6 +242,8 @@ class ElbowHelperBot(commands.Bot):
         report = self.extension_report
         if report is None:
             raise RuntimeError("Discord connected before extension startup completed.")
+        if self.synced_command_count is None:
+            raise RuntimeError("Discord connected before slash commands synchronized.")
 
         boot_lines = [
             (
@@ -221,16 +262,8 @@ class ElbowHelperBot(commands.Bot):
             )
         )
 
-        synced_count = 0
-        try:
-            guild = discord.Object(id=self.guild_id)
-            synced = await self.tree.sync(guild=guild)
-            synced_count = len(synced)
-        except discord.HTTPException as error:
-            LOGGER.exception("Slash command sync failed: %s", error)
-
         boot_elapsed_seconds = time.perf_counter() - self._boot_started_at
-        boot_lines.append(f"Slash commands synced: {synced_count}")
+        boot_lines.append(f"Slash commands synced: {self.synced_command_count}")
         boot_lines.append(f"Ready. Boot time: {boot_elapsed_seconds:.2f}s")
         log_box(LOGGER, boot_lines)
         self.boot_complete.set()

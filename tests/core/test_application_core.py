@@ -3,14 +3,19 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import unittest
+from unittest.mock import AsyncMock
+from unittest.mock import patch
 
+import discord
 from discord.ext import commands
 
 from elbow_helper.app import create_bot
 from elbow_helper.core.lifecycle import ElbowHelperBot
 from elbow_helper.core.lifecycle import RequiredExtensionLoadError
 from elbow_helper.core.lifecycle import load_extensions
+from elbow_helper.core.lifecycle import sync_guild_commands
 from elbow_helper.core.logging import CompactTransientDuplicateFilter
 from elbow_helper.core.logging import TransientExternalFailurePolicy
 from elbow_helper.core.logging import UnifiedLogFormatter
@@ -67,6 +72,80 @@ class ExtensionLifecycleTests(unittest.IsolatedAsyncioTestCase):
             ("elbow_helper.features.optional",),
         )
         self.assertTrue(report.degraded)
+
+    async def test_command_sync_retries_before_startup_can_complete(self) -> None:
+        response = SimpleNamespace(
+            status=503,
+            reason="Unavailable",
+            headers={},
+        )
+        error = discord.HTTPException(response, "sync unavailable")
+        tree = SimpleNamespace(
+            sync=AsyncMock(side_effect=[error, error, [SimpleNamespace(name="help")]])
+        )
+
+        with (
+            patch(
+                "elbow_helper.core.lifecycle.asyncio.sleep",
+                new=AsyncMock(),
+            ) as sleep,
+            self.assertLogs("elbow.boot", level=logging.WARNING),
+        ):
+            synced = await sync_guild_commands(tree, 123)
+
+        self.assertEqual(len(synced), 1)
+        self.assertEqual(tree.sync.await_count, 3)
+        self.assertEqual(
+            [call.args[0] for call in sleep.await_args_list],
+            [1.0, 2.0],
+        )
+
+    async def test_command_sync_failure_rejects_startup(self) -> None:
+        response = SimpleNamespace(
+            status=503,
+            reason="Unavailable",
+            headers={},
+        )
+        error = discord.HTTPException(response, "sync unavailable")
+        tree = SimpleNamespace(sync=AsyncMock(side_effect=error))
+
+        with (
+            patch(
+                "elbow_helper.core.lifecycle.asyncio.sleep",
+                new=AsyncMock(),
+            ),
+            self.assertLogs("elbow.boot", level=logging.ERROR),
+            self.assertRaises(discord.HTTPException),
+        ):
+            await sync_guild_commands(tree, 123)
+
+        self.assertEqual(tree.sync.await_count, 3)
+
+    async def test_setup_rejects_command_sync_failure(self) -> None:
+        bot = SimpleNamespace(
+            required_extensions=(),
+            optional_extensions=(),
+            extension_report=None,
+            synced_command_count=None,
+            tree=object(),
+            guild_id=123,
+        )
+        sync_error = RuntimeError("sync failed")
+
+        with (
+            patch(
+                "elbow_helper.core.lifecycle.load_extensions",
+                new=AsyncMock(return_value=SimpleNamespace()),
+            ),
+            patch(
+                "elbow_helper.core.lifecycle.sync_guild_commands",
+                new=AsyncMock(side_effect=sync_error),
+            ),
+            self.assertRaisesRegex(RuntimeError, "sync failed"),
+        ):
+            await ElbowHelperBot.setup_hook(bot)
+
+        self.assertIsNone(bot.synced_command_count)
 
 
 class ApplicationAssemblyTests(unittest.TestCase):
