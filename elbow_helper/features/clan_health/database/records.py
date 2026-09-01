@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from contextlib import closing
 import json
 import sqlite3
 from typing import Any, Dict, List, Optional, Tuple
@@ -20,7 +21,7 @@ class ClanHealthRecords:
     def _store_snapshots(self, captured_ts: int, rows: List[Dict[str, Any]]) -> None:
         if not rows:
             return
-        with sqlite3.connect(self.path, timeout=30) as conn:
+        with closing(sqlite3.connect(self.path, timeout=30)) as conn, conn:
             conn.execute("PRAGMA busy_timeout=30000")
             cursor = conn.cursor()
             cursor.executemany(
@@ -127,7 +128,7 @@ class ClanHealthRecords:
         cycle_end_ts: int,
         rows: List[Dict[str, Any]],
     ) -> None:
-        with sqlite3.connect(self.path, timeout=30) as conn:
+        with closing(sqlite3.connect(self.path, timeout=30)) as conn, conn:
             conn.execute("PRAGMA busy_timeout=30000")
             cursor = conn.cursor()
             # Keep run metadata + player rows in one transaction.
@@ -200,7 +201,7 @@ class ClanHealthRecords:
     def _store_war_activity_rows(self, rows: List[Dict[str, Any]]) -> int:
         if not rows:
             return 0
-        with sqlite3.connect(self.path, timeout=30) as conn:
+        with closing(sqlite3.connect(self.path, timeout=30)) as conn, conn:
             conn.execute("PRAGMA busy_timeout=30000")
             cursor = conn.cursor()
             cursor.executemany(
@@ -238,7 +239,7 @@ class ClanHealthRecords:
         valid_rows = [r for r in rows if r.get("war_id") and r.get("clan_code")]
         if not valid_rows:
             return 0
-        with sqlite3.connect(self.path, timeout=30) as conn:
+        with closing(sqlite3.connect(self.path, timeout=30)) as conn, conn:
             conn.execute("PRAGMA busy_timeout=30000")
             conn.executemany(
                 """
@@ -340,7 +341,7 @@ class ClanHealthRecords:
             key = (str(row["war_id"]), str(row["clan_code"]))
             grouped.setdefault(key, []).append(row)
 
-        with sqlite3.connect(self.path, timeout=30) as conn:
+        with closing(sqlite3.connect(self.path, timeout=30)) as conn, conn:
             conn.execute("PRAGMA busy_timeout=30000")
             cursor = conn.cursor()
             for (war_id, clan_code), roster_rows in grouped.items():
@@ -380,7 +381,7 @@ class ClanHealthRecords:
     def _store_war_attack_rows(self, rows: List[Dict[str, Any]]) -> int:
         if not rows:
             return 0
-        with sqlite3.connect(self.path, timeout=30) as conn:
+        with closing(sqlite3.connect(self.path, timeout=30)) as conn, conn:
             conn.execute("PRAGMA busy_timeout=30000")
             cursor = conn.cursor()
             cursor.executemany(
@@ -424,7 +425,7 @@ class ClanHealthRecords:
     def _store_raid_member_activity_rows(self, rows: List[Dict[str, Any]]) -> int:
         if not rows:
             return 0
-        with sqlite3.connect(self.path, timeout=30) as conn:
+        with closing(sqlite3.connect(self.path, timeout=30)) as conn, conn:
             conn.execute("PRAGMA busy_timeout=30000")
             cursor = conn.cursor()
             cursor.executemany(
@@ -463,7 +464,7 @@ class ClanHealthRecords:
         cycle_end_ts: int,
         selected_clans: List[str],
     ) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
-        with sqlite3.connect(self.path) as conn:
+        with closing(sqlite3.connect(self.path)) as conn, conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute(
@@ -501,7 +502,7 @@ class ClanHealthRecords:
         return None, []
 
     def _load_latest_player_report_row(self, season_key: str, player_tag: str) -> Optional[Dict[str, Any]]:
-        with sqlite3.connect(self.path) as conn:
+        with closing(sqlite3.connect(self.path)) as conn, conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute(

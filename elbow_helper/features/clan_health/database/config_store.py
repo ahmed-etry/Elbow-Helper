@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from contextlib import closing
 import json
 import sqlite3
 from datetime import datetime
@@ -86,7 +87,7 @@ def seed_missing_configs() -> None:
     if player_config is None:
         raise RuntimeError("player_health_config invalid: " + " | ".join(player_errors[:5]))
     now_iso = _utc_now_iso()
-    with _connect() as conn:
+    with closing(_connect()) as conn, conn:
         cursor = conn.cursor()
         for clan_code in CLAN_ORDER:
             template = CLAN_PROFILE_BY_CODE.get(clan_code, "casual")
@@ -109,7 +110,7 @@ def _load_player_config_row(clan_code: str) -> Optional[sqlite3.Row]:
     code = str(clan_code or "").upper()
     if not code:
         return None
-    with _connect() as conn:
+    with closing(_connect()) as conn, conn:
         cursor = conn.cursor()
         cursor.execute(
             "SELECT payload_json, updated_at_utc FROM clan_player_health_config WHERE clan_code = ?",
@@ -159,7 +160,7 @@ def save_player_config(
 
     now_iso = _utc_now_iso()
     actor_id, actor_name = _actor_parts(actor)
-    with _connect() as conn:
+    with closing(_connect()) as conn, conn:
         cursor = conn.cursor()
         cursor.execute(
             "SELECT payload_json, updated_at_utc FROM clan_player_health_config WHERE clan_code = ?",

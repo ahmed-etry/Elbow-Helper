@@ -3,12 +3,13 @@
 
 from __future__ import annotations
 
+from contextlib import closing
 import sqlite3
 
 class ClanHealthSchema:
     def _init_db(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.path) as conn:
+        with closing(sqlite3.connect(self.path)) as conn, conn:
             cursor = conn.cursor()
             # Favor concurrent readers/writers and reduce fsync pressure for background upserts.
             cursor.execute("PRAGMA journal_mode=WAL")

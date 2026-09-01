@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from contextlib import closing
 from datetime import datetime, timedelta
 import sqlite3
 from typing import Any, Dict, List, Optional
@@ -80,7 +81,7 @@ class ClanHealthHistory:
 
     def _latest_activity_season_for_player(self, player_tag: str) -> Optional[str]:
         """Find newest season using any stored activity, not only report rows."""
-        with sqlite3.connect(self.path) as conn:
+        with closing(sqlite3.connect(self.path)) as conn, conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -103,7 +104,7 @@ class ClanHealthHistory:
         return season_key
 
     def _load_snapshot_history(self, player_tag: str, limit: int = 60) -> List[Dict[str, Any]]:
-        with sqlite3.connect(self.path) as conn:
+        with closing(sqlite3.connect(self.path)) as conn, conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute(
@@ -128,7 +129,7 @@ class ClanHealthHistory:
         cycle_end: datetime,
         limit: int = 500,
     ) -> List[Dict[str, Any]]:
-        with sqlite3.connect(self.path) as conn:
+        with closing(sqlite3.connect(self.path)) as conn, conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             if limit and int(limit) > 0:
@@ -180,7 +181,7 @@ class ClanHealthHistory:
         cycle_end: datetime,
         limit: int = 120,
     ) -> List[Dict[str, Any]]:
-        with sqlite3.connect(self.path) as conn:
+        with closing(sqlite3.connect(self.path)) as conn, conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             if limit and int(limit) > 0:
@@ -227,7 +228,7 @@ class ClanHealthHistory:
         up_to_season_key: str,
         limit: int = 6,
     ) -> List[Dict[str, Any]]:
-        with sqlite3.connect(self.path) as conn:
+        with closing(sqlite3.connect(self.path)) as conn, conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute(

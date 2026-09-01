@@ -23,6 +23,7 @@ from elbow_helper.features.rosters.cog import Rosters
 
 FEATURE_ROOT = Path(elbow_helper.features.__file__).parent
 PROJECT_ROOT = FEATURE_ROOT.parents[1]
+CLAN_HEALTH_DATABASE_ROOT = FEATURE_ROOT / "clan_health" / "database"
 
 
 class _RegistryBot:
@@ -181,6 +182,14 @@ class DependencyBoundaryTests(unittest.TestCase):
         for path in FEATURE_ROOT.rglob("*.py"):
             source = path.read_text(encoding="utf-8-sig")
             if ".bot.loop.create_task(" in source:
+                offenders.append(str(path))
+        self.assertEqual(offenders, [])
+
+    def test_clan_health_sqlite_contexts_explicitly_close_connections(self) -> None:
+        offenders: list[str] = []
+        for path in CLAN_HEALTH_DATABASE_ROOT.rglob("*.py"):
+            source = path.read_text(encoding="utf-8-sig")
+            if "with sqlite3.connect(" in source or "with _connect()" in source:
                 offenders.append(str(path))
         self.assertEqual(offenders, [])
 
