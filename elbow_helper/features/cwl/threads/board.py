@@ -34,11 +34,6 @@ CC_STATUS_TEXT = {
     "partial": "CCs partially filled",
     "empty": "CCs empty",
 }
-CC_STATUS_FALLBACK_EMOJIS = {
-    "filled": "✅",
-    "partial": "⚠️",
-    "empty": "❌",
-}
 
 
 def _embed_without_timestamp(embed: discord.Embed) -> dict[str, Any]:
@@ -244,7 +239,7 @@ class CwlThreadBoardMixin:
             icon_url=badge_url,
         )
 
-        clock = emojis.icon("clock", "🕒")
+        sections = []
         if snapshot.battle is not None:
             battle = snapshot.battle
             battle_lines = [
@@ -252,38 +247,41 @@ class CwlThreadBoardMixin:
             ]
             if battle.end_at is not None:
                 battle_lines.append(
-                    f"{clock} Ends {discord.utils.format_dt(battle.end_at, 'R')}"
+                    f"Ends {discord.utils.format_dt(battle.end_at, 'R')}"
                 )
             if battle.missing_attacks:
                 empty_sword = emojis.icon("empty_sword", "⚠️")
                 missing = ", ".join(_escaped(name) for name in battle.missing_attacks)
                 battle_lines.append(f"{empty_sword} Missing: {missing}")
             war_icon = emojis.icon("war", "⚔️")
-            embed.add_field(
-                name=f"{war_icon} Day {battle.round_number} · Battle",
-                value="\n".join(battle_lines),
-                inline=False,
+            sections.append(
+                "\n".join(
+                    (
+                        f"**{war_icon} Day {battle.round_number} · Battle vs "
+                        f"{_escaped(battle.opponent_name)}**",
+                        *battle_lines,
+                    )
+                )
             )
 
         view = None
         if snapshot.preparation is not None and status is not None:
             preparation = snapshot.preparation
-            status_icon = (
-                emojis.icon(status, CC_STATUS_FALLBACK_EMOJIS[status])
-                if status in {"filled", "empty"}
-                else CC_STATUS_FALLBACK_EMOJIS[status]
-            )
-            preparation_lines = [f"{status_icon} {CC_STATUS_TEXT[status]}"]
+            preparation_lines = [CC_STATUS_TEXT[status]]
             if preparation.start_at is not None:
                 preparation_lines.append(
-                    f"{clock} Battle starts "
+                    "Battle starts "
                     f"{discord.utils.format_dt(preparation.start_at, 'R')}"
                 )
             clan_castle = emojis.icon("clan_castle", "🏰")
-            embed.add_field(
-                name=f"{clan_castle} Day {preparation.round_number} · Preparation",
-                value="\n".join(preparation_lines),
-                inline=False,
+            sections.append(
+                "\n".join(
+                    (
+                        f"**{clan_castle} Day {preparation.round_number} · Preparation vs "
+                        f"{_escaped(preparation.opponent_name)}**",
+                        *preparation_lines,
+                    )
+                )
             )
             view = CwlCcStatusView(
                 self,
@@ -292,6 +290,7 @@ class CwlThreadBoardMixin:
                 emojis=emojis,
             )
 
+        embed.description = "\n\n".join(sections)
         embed.set_footer(text="Last updated")
         return embed, view
 
