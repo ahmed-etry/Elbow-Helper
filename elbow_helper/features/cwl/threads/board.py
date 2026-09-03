@@ -234,7 +234,7 @@ class CwlThreadBoardMixin:
             timestamp=self._utc_now(),
         )
         embed.set_author(
-            name=f"{anchor.clan_name} • {anchor.clan_tag}",
+            name=f"{anchor.clan_name}",
             url=CLAN_LINKS.get(clan_code),
             icon_url=badge_url,
         )
