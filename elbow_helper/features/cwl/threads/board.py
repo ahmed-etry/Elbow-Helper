@@ -488,8 +488,12 @@ class CwlThreadBoardMixin:
         board_message_id = thread_data.get("sticky_message_id")
         if not board_message_id:
             return False
-        last_repost_at = self._sticky_last_repost_at.get(thread_key, 0.0)
-        if time.monotonic() - last_repost_at < THREAD_STICKY_REPOST_COOLDOWN_SECONDS:
+        last_repost_at = self._sticky_last_repost_at.get(thread_key)
+        if (
+            last_repost_at is not None
+            and time.monotonic() - last_repost_at
+            < THREAD_STICKY_REPOST_COOLDOWN_SECONDS
+        ):
             return False
 
         newer_human_messages = 0

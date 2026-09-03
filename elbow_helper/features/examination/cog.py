@@ -103,8 +103,8 @@ class Examination(
     def _warn_ticket_reorder_issue(self, key: str, message: str, *args: object) -> None:
         # Escalate blocked reorder conditions to warnings without repeating the same alert every 15 minutes.
         now = time.monotonic()
-        last_logged = self._ticket_reorder_issue_log_times.get(key, 0.0)
-        if (now - last_logged) >= 3600.0:
+        last_logged = self._ticket_reorder_issue_log_times.get(key)
+        if last_logged is None or (now - last_logged) >= 3600.0:
             self._ticket_reorder_issue_log_times[key] = now
             self.logger.warning(message, *args)
             return

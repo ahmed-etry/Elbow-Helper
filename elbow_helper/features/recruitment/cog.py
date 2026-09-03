@@ -68,8 +68,8 @@ class Recruitment(HelperMixin, TrialMixin, TicketMixin, AIMixin, RecruitmentComm
     ) -> None:
         # Surface recurring task blockers at warning level, then downgrade repeats.
         now = time.monotonic()
-        last_logged = self._recurring_issue_log_times.get(key, 0.0)
-        if (now - last_logged) >= cooldown_seconds:
+        last_logged = self._recurring_issue_log_times.get(key)
+        if last_logged is None or (now - last_logged) >= cooldown_seconds:
             self._recurring_issue_log_times[key] = now
             self.logger.warning(message, *args)
             return

@@ -310,8 +310,8 @@ class Rosters(commands.Cog):
 
     async def handle_refresh(self, interaction: discord.Interaction, roster_id: int) -> None:
         now = time.monotonic()
-        last = self._refresh_times.get(roster_id, 0.0)
-        if now - last < REFRESH_COOLDOWN_SECONDS:
+        last = self._refresh_times.get(roster_id)
+        if last is not None and now - last < REFRESH_COOLDOWN_SECONDS:
             await warn(interaction, "This roster was just refreshed. Try again in a moment.")
             return
         roster = await self.service.get(roster_id)

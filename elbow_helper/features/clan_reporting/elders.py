@@ -234,8 +234,12 @@ class ClanReportingElderMixin:
         if trigger_message.id == board_message_id:
             return False
 
-        last_repost_at = self._board_last_repost_at.get(clan_code, 0.0)
-        if (time.monotonic() - last_repost_at) < MISSING_ELDER_STICKY_REPOST_COOLDOWN_SECONDS:
+        last_repost_at = self._board_last_repost_at.get(clan_code)
+        if (
+            last_repost_at is not None
+            and time.monotonic() - last_repost_at
+            < MISSING_ELDER_STICKY_REPOST_COOLDOWN_SECONDS
+        ):
             return False
 
         async def count_newer_messages() -> int:

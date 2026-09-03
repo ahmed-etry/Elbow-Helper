@@ -425,7 +425,11 @@ class CwlThreadLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 )
 
         thread.history = history
-        reposted = await manager._repost_thread_status_from_activity(thread)
+        with patch(
+            "elbow_helper.features.cwl.threads.board.time.monotonic",
+            return_value=60.0,
+        ):
+            reposted = await manager._repost_thread_status_from_activity(thread)
 
         self.assertFalse(reposted)
         manager._repost_existing_thread_status.assert_not_awaited()
@@ -443,7 +447,11 @@ class CwlThreadLifecycleTests(unittest.IsolatedAsyncioTestCase):
             yield SimpleNamespace(id=901, author=SimpleNamespace(bot=False))
 
         thread.history = history
-        reposted = await manager._repost_thread_status_from_activity(thread)
+        with patch(
+            "elbow_helper.features.cwl.threads.board.time.monotonic",
+            return_value=60.0,
+        ):
+            reposted = await manager._repost_thread_status_from_activity(thread)
 
         self.assertTrue(reposted)
         manager._repost_existing_thread_status.assert_awaited_once()
