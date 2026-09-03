@@ -119,7 +119,7 @@ class RosterPostService:
         self._burial_progress.pop(message_id, None)
         view = self._persistent_views.pop(message_id, None)
         if view is not None:
-            self._bot.remove_view(view)
+            view.stop()
         await asyncio.to_thread(self._repository.remove_post, message_id)
 
     async def remove_deleted_messages(self, message_ids: set[int]) -> None:
@@ -127,7 +127,7 @@ class RosterPostService:
             self._burial_progress.pop(message_id, None)
             view = self._persistent_views.pop(message_id, None)
             if view is not None:
-                self._bot.remove_view(view)
+                view.stop()
         await asyncio.to_thread(self._repository.remove_posts, message_ids)
 
     async def remove_deleted_channel(self, channel_id: int) -> None:
@@ -137,7 +137,7 @@ class RosterPostService:
                 self._burial_progress.pop(post.message_id, None)
                 view = self._persistent_views.pop(post.message_id, None)
                 if view is not None:
-                    self._bot.remove_view(view)
+                    view.stop()
         await asyncio.to_thread(
             self._repository.remove_posts_for_channel,
             channel_id,

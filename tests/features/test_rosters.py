@@ -19,6 +19,7 @@ from unittest.mock import patch
 
 import discord
 from discord import app_commands
+from discord.ext import commands
 import elbow_helper
 
 from elbow_helper.configuration.roles import HIBERNATING_ROLE_ID
@@ -1888,7 +1889,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         message = MagicMock(id=222, components=[])
         message.channel = channel
         message.edit = AsyncMock()
-        bot = MagicMock()
+        bot = MagicMock(spec=commands.Bot)
         posts = RosterPostService(
             bot,
             repository,
@@ -1896,14 +1897,15 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
             MagicMock(),
             object.__new__(Rosters),
         )
-        posts._persistent_views[message.id] = MagicMock()
+        view = MagicMock(spec=discord.ui.View)
+        posts._persistent_views[message.id] = view
         posts.fetch = AsyncMock(return_value=message)
         posts.render = AsyncMock()
 
         await posts.refresh(roster)
 
         message.edit.assert_awaited_once_with(view=None)
-        bot.remove_view.assert_called_once()
+        view.stop.assert_called_once_with()
         posts.render.assert_not_awaited()
         self.assertEqual(repository.list_posts(roster.id), [])
         self.assertEqual(channel.history_options["limit"], 100)
