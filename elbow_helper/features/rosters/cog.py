@@ -19,8 +19,9 @@ from elbow_helper.discord.interactions import deny
 from elbow_helper.discord.interactions import warn
 from elbow_helper.discord.timezones import build_timezone_choices
 from elbow_helper.core.background import start_resilient_loop
-from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.clans import CLAN_ORDER
+from elbow_helper.configuration.clans import CLANS
+from elbow_helper.configuration.roles import HIBERNATING_ROLE_ID
 from elbow_helper.configuration.roles import LEAD_PLUS
 from elbow_helper.domain.timezones import canonical_timezone_name
 from elbow_helper.infrastructure.clash import ClashClient
@@ -110,6 +111,7 @@ class Rosters(commands.Cog):
         self._roles = role_synchronizer
         self._locks: dict[int, asyncio.Lock] = {}
         self._refresh_times: dict[int, float] = {}
+        self._membership_reconciled = False
         self._roster_search = RosterSearchCache(self._repository)
         self.queries = RosterQueries(self._repository)
         self.profiles = RosterProfileService(
@@ -168,6 +170,48 @@ class Rosters(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self) -> None:
         await self.posts.refresh_posts_after_emoji_load()
+        if not self._membership_reconciled:
+            await self._reconcile_membership()
+
+    @commands.Cog.listener()
+    async def on_disconnect(self) -> None:
+        self._membership_reconciled = False
+
+    @commands.Cog.listener()
+    async def on_guild_available(self, guild: discord.Guild) -> None:
+        if self.bot.is_ready() and not self._membership_reconciled:
+            await self._reconcile_membership()
+
+    async def _reconcile_membership(self) -> None:
+        reconciled = True
+        for guild in self.bot.guilds:
+            if guild.unavailable:
+                reconciled = False
+                continue
+            if guild.chunked:
+                members = guild.members
+            else:
+                try:
+                    members = await guild.chunk(cache=True)
+                except (discord.ClientException, asyncio.TimeoutError):
+                    LOGGER.warning(
+                        "Could not reconcile roster membership guild=%s",
+                        guild.id,
+                    )
+                    reconciled = False
+                    continue
+            eligible_member_ids = {
+                member.id
+                for member in members
+                if not any(
+                    role.id == HIBERNATING_ROLE_ID for role in member.roles
+                )
+            }
+            await self.membership.reconcile_eligible_members(
+                guild.id,
+                eligible_member_ids,
+            )
+        self._membership_reconciled = reconciled
 
     @commands.Cog.listener()
     async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent) -> None:
@@ -187,6 +231,25 @@ class Rosters(commands.Cog):
     @commands.Cog.listener()
     async def on_thread_delete(self, thread: discord.Thread) -> None:
         await self.posts.remove_deleted_channel(thread.id)
+
+    @commands.Cog.listener()
+    async def on_member_remove(self, member: discord.Member) -> None:
+        await self.membership.remove_ineligible_member(member.guild.id, member.id)
+
+    @commands.Cog.listener()
+    async def on_member_update(
+        self,
+        before: discord.Member,
+        after: discord.Member,
+    ) -> None:
+        was_hibernating = any(
+            role.id == HIBERNATING_ROLE_ID for role in before.roles
+        )
+        is_hibernating = any(
+            role.id == HIBERNATING_ROLE_ID for role in after.roles
+        )
+        if not was_hibernating and is_hibernating:
+            await self.membership.remove_ineligible_member(after.guild.id, after.id)
 
     def _lock(self, roster_id: int) -> asyncio.Lock:
         return self._locks.setdefault(roster_id, asyncio.Lock())

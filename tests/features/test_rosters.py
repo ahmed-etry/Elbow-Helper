@@ -21,6 +21,7 @@ import discord
 from discord import app_commands
 import elbow_helper
 
+from elbow_helper.configuration.roles import HIBERNATING_ROLE_ID
 from elbow_helper.discord.pagination import ADAPTIVE_JUMP_THRESHOLD
 from elbow_helper.discord.pagination import FIRST_PAGE_LABEL
 from elbow_helper.discord.pagination import LAST_PAGE_LABEL
@@ -1404,6 +1405,7 @@ class RosterEmojiTests(unittest.IsolatedAsyncioTestCase):
         )
         roster = MagicMock(id=7)
         cog = object.__new__(Rosters)
+        cog._membership_reconciled = True
         repository = MagicMock()
         repository.list_posts.return_value = [MagicMock(roster_id=7)]
         repository.get_roster.return_value = roster
@@ -1859,6 +1861,341 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
 
         first_message.edit.assert_awaited_once()
         second_message.edit.assert_awaited_once()
+
+    async def test_refresh_retires_post_buried_by_one_hundred_messages(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        repository = RosterRepository(Path(temp_dir.name) / "rosters.sqlite3")
+        roster = repository.create_roster(
+            guild_id=1,
+            name="CWL Sign-up",
+            clan_code="FAMILY",
+            role_id=None,
+            max_members=500,
+        )
+        repository.add_post(roster.id, 111, 222)
+
+        class ActiveChannel:
+            id = 111
+            last_message_id = 999
+
+            async def history(self, **kwargs):
+                self.history_options = kwargs
+                for _ in range(100):
+                    yield object()
+
+        channel = ActiveChannel()
+        message = MagicMock(id=222, components=[])
+        message.channel = channel
+        message.edit = AsyncMock()
+        bot = MagicMock()
+        posts = RosterPostService(
+            bot,
+            repository,
+            ClashClient(None),
+            MagicMock(),
+            object.__new__(Rosters),
+        )
+        posts._persistent_views[message.id] = MagicMock()
+        posts.fetch = AsyncMock(return_value=message)
+        posts.render = AsyncMock()
+
+        await posts.refresh(roster)
+
+        message.edit.assert_awaited_once_with(view=None)
+        bot.remove_view.assert_called_once()
+        posts.render.assert_not_awaited()
+        self.assertEqual(repository.list_posts(roster.id), [])
+        self.assertEqual(channel.history_options["limit"], 100)
+        self.assertIs(channel.history_options["after"], message)
+
+    async def test_refresh_keeps_post_with_fewer_than_one_hundred_newer_messages(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        repository = RosterRepository(Path(temp_dir.name) / "rosters.sqlite3")
+        roster = repository.create_roster(
+            guild_id=1,
+            name="CWL Sign-up",
+            clan_code="FAMILY",
+            role_id=None,
+            max_members=500,
+        )
+        repository.add_post(roster.id, 111, 222)
+
+        class QuietChannel:
+            id = 111
+            last_message_id = 999
+            history_calls = 0
+
+            async def history(self, **kwargs):
+                self.history_calls += 1
+                for _ in range(99):
+                    yield object()
+
+        channel = QuietChannel()
+        message = MagicMock(id=222, components=[])
+        message.channel = channel
+        message.edit = AsyncMock()
+        posts = RosterPostService(
+            MagicMock(),
+            repository,
+            ClashClient(None),
+            MagicMock(),
+            object.__new__(Rosters),
+        )
+        posts.fetch = AsyncMock(return_value=message)
+        posts.render = AsyncMock(return_value=([MagicMock()], 0, 1))
+        posts.message_view = MagicMock(return_value=MagicMock())
+
+        await posts.refresh(roster)
+        await posts.refresh(roster)
+
+        self.assertEqual(message.edit.await_count, 2)
+        self.assertEqual(posts.render.await_count, 2)
+        self.assertEqual(channel.history_calls, 1)
+        self.assertEqual(len(repository.list_posts(roster.id)), 1)
+
+    async def test_burial_scan_resumes_from_cached_progress(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        repository = RosterRepository(Path(temp_dir.name) / "rosters.sqlite3")
+        roster = repository.create_roster(
+            guild_id=1,
+            name="CWL Sign-up",
+            clan_code="FAMILY",
+            role_id=None,
+            max_members=500,
+        )
+        repository.add_post(roster.id, 111, 222)
+
+        class ActiveChannel:
+            id = 111
+            last_message_id = 999
+
+            def __init__(self):
+                self.batch_sizes = iter((99, 1))
+                self.history_options = []
+
+            async def history(self, **kwargs):
+                self.history_options.append(kwargs)
+                for _ in range(next(self.batch_sizes)):
+                    yield object()
+
+        channel = ActiveChannel()
+        message = MagicMock(id=222, components=[])
+        message.channel = channel
+        message.edit = AsyncMock()
+        posts = RosterPostService(
+            MagicMock(),
+            repository,
+            ClashClient(None),
+            MagicMock(),
+            object.__new__(Rosters),
+        )
+        posts.fetch = AsyncMock(return_value=message)
+        posts.render = AsyncMock(return_value=([MagicMock()], 0, 1))
+        posts.message_view = MagicMock(return_value=MagicMock())
+
+        await posts.refresh(roster)
+        channel.last_message_id = 1000
+        await posts.refresh(roster)
+
+        self.assertEqual(len(channel.history_options), 2)
+        self.assertEqual(channel.history_options[1]["limit"], 1)
+        self.assertEqual(channel.history_options[1]["after"].id, 999)
+        posts.render.assert_awaited_once()
+        self.assertEqual(repository.list_posts(roster.id), [])
+
+    async def test_reconciliation_removes_only_ineligible_active_members(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        repository = RosterRepository(Path(temp_dir.name) / "rosters.sqlite3")
+        first = repository.create_roster(
+            guild_id=1,
+            name="First",
+            clan_code="FAMILY",
+            role_id=123,
+            max_members=500,
+        )
+        first, _ = repository.start_cycle(first.id, "old")
+        repository.add_members(
+            first.id,
+            first.active_cycle_id,
+            42,
+            [{"player_tag": "#OLD", "player_name": "Old", "townhall": 18}],
+            first.max_members,
+        )
+        old_cycle_id = first.active_cycle_id
+        first, _ = repository.start_cycle(first.id, "current")
+        repository.add_members(
+            first.id,
+            first.active_cycle_id,
+            42,
+            [{"player_tag": "#A", "player_name": "A", "townhall": 18}],
+            first.max_members,
+        )
+        repository.add_members(
+            first.id,
+            first.active_cycle_id,
+            99,
+            [{"player_tag": "#KEEP", "player_name": "Keep", "townhall": 18}],
+            first.max_members,
+        )
+        second = repository.create_roster(
+            guild_id=1,
+            name="Second",
+            clan_code="BEH",
+            role_id=456,
+            max_members=50,
+        )
+        second, _ = repository.start_cycle(second.id, "current")
+        repository.add_members(
+            second.id,
+            second.active_cycle_id,
+            42,
+            [{"player_tag": "#B", "player_name": "B", "townhall": 17}],
+            second.max_members,
+        )
+        service, roles, refresh_posts = _membership_service(
+            repository,
+            MagicMock(),
+        )
+
+        removed = await service.reconcile_eligible_members(1, {99})
+
+        self.assertEqual(removed, 2)
+        self.assertEqual(
+            [
+                member.player_tag
+                for member in repository.list_members(
+                    first.id,
+                    first.active_cycle_id,
+                )
+            ],
+            ["#KEEP"],
+        )
+        self.assertEqual(repository.list_members(second.id, second.active_cycle_id), [])
+        self.assertEqual(
+            [member.player_tag for member in repository.list_members(first.id, old_cycle_id)],
+            ["#OLD"],
+        )
+        self.assertEqual(roles.sync.await_count, 2)
+        self.assertEqual(refresh_posts.await_count, 2)
+
+    async def test_ready_reconciles_members_once_per_connection(self) -> None:
+        cog = object.__new__(Rosters)
+        cog._membership_reconciled = False
+        cog.posts = MagicMock()
+        cog.posts.refresh_posts_after_emoji_load = AsyncMock()
+        cog.membership = MagicMock()
+        cog.membership.reconcile_eligible_members = AsyncMock(return_value=2)
+        active = MagicMock(id=10, roles=[MagicMock(id=123)])
+        hibernating = MagicMock(
+            id=20,
+            roles=[MagicMock(id=HIBERNATING_ROLE_ID)],
+        )
+        guild = MagicMock(
+            id=1,
+            unavailable=False,
+            chunked=True,
+            members=[active, hibernating],
+        )
+        cog.bot = MagicMock(guilds=[guild])
+
+        await cog.on_ready()
+        await cog.on_ready()
+
+        cog.membership.reconcile_eligible_members.assert_awaited_once_with(
+            1,
+            {10},
+        )
+        guild.chunk.assert_not_called()
+        self.assertTrue(cog._membership_reconciled)
+
+        await cog.on_disconnect()
+        await cog.on_ready()
+
+        self.assertEqual(
+            cog.membership.reconcile_eligible_members.await_count,
+            2,
+        )
+
+    async def test_ready_retries_before_reconciling_an_incomplete_member_cache(self) -> None:
+        cog = object.__new__(Rosters)
+        cog._membership_reconciled = False
+        cog.posts = MagicMock()
+        cog.posts.refresh_posts_after_emoji_load = AsyncMock()
+        cog.membership = MagicMock()
+        cog.membership.reconcile_eligible_members = AsyncMock()
+        guild = MagicMock(id=1, unavailable=False, chunked=False, members=[])
+        guild.chunk = AsyncMock(side_effect=discord.ClientException("no members intent"))
+        cog.bot = MagicMock(guilds=[guild])
+
+        await cog.on_ready()
+
+        guild.chunk.assert_awaited_once_with(cache=True)
+        cog.membership.reconcile_eligible_members.assert_not_awaited()
+        self.assertFalse(cog._membership_reconciled)
+
+        active = MagicMock(id=10, roles=[MagicMock(id=123)])
+        guild.chunk = AsyncMock(return_value=[active])
+
+        await cog.on_ready()
+
+        cog.membership.reconcile_eligible_members.assert_awaited_once_with(
+            1,
+            {10},
+        )
+        self.assertTrue(cog._membership_reconciled)
+
+    async def test_available_guild_retries_membership_reconciliation(self) -> None:
+        cog = object.__new__(Rosters)
+        cog._membership_reconciled = False
+        cog.posts = MagicMock()
+        cog.posts.refresh_posts_after_emoji_load = AsyncMock()
+        cog.membership = MagicMock()
+        cog.membership.reconcile_eligible_members = AsyncMock()
+        guild = MagicMock(id=1, unavailable=True, chunked=False, members=[])
+        cog.bot = MagicMock(guilds=[guild])
+        cog.bot.is_ready.return_value = True
+
+        await cog.on_ready()
+
+        cog.membership.reconcile_eligible_members.assert_not_awaited()
+        self.assertFalse(cog._membership_reconciled)
+
+        active = MagicMock(id=10, roles=[MagicMock(id=123)])
+        guild.unavailable = False
+        guild.chunked = True
+        guild.members = [active]
+
+        await cog.on_guild_available(guild)
+
+        cog.membership.reconcile_eligible_members.assert_awaited_once_with(
+            1,
+            {10},
+        )
+        self.assertTrue(cog._membership_reconciled)
+
+    async def test_member_events_remove_signups_only_on_leave_or_hibernation_entry(self) -> None:
+        cog = object.__new__(Rosters)
+        cog.membership = MagicMock()
+        cog.membership.remove_ineligible_member = AsyncMock()
+        guild = MagicMock(id=1)
+        active_role = MagicMock(id=123)
+        hibernating_role = MagicMock(id=HIBERNATING_ROLE_ID)
+        before = MagicMock(id=42, guild=guild, roles=[active_role])
+        after = MagicMock(id=42, guild=guild, roles=[active_role, hibernating_role])
+
+        await cog.on_member_update(before, before)
+        cog.membership.remove_ineligible_member.assert_not_awaited()
+
+        await cog.on_member_update(before, after)
+        cog.membership.remove_ineligible_member.assert_awaited_once_with(1, 42)
+
+        cog.membership.remove_ineligible_member.reset_mock()
+        await cog.on_member_remove(after)
+        cog.membership.remove_ineligible_member.assert_awaited_once_with(1, 42)
 
     async def test_deleted_roster_message_is_unregistered(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()

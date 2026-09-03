@@ -503,3 +503,68 @@ class RosterMembershipService:
                 ),
                 changed=bool(count),
             )
+
+    async def remove_ineligible_member(
+        self,
+        guild_id: int,
+        member_id: int,
+    ) -> int:
+        return await self.reconcile_eligible_members(
+            guild_id,
+            eligible_member_ids=set(),
+            target_member_ids={member_id},
+        )
+
+    async def reconcile_eligible_members(
+        self,
+        guild_id: int,
+        eligible_member_ids: set[int],
+        *,
+        target_member_ids: set[int] | None = None,
+    ) -> int:
+        rosters = await asyncio.to_thread(self._repository.list_rosters, guild_id)
+        removed_total = 0
+        for listed_roster in rosters:
+            async with self._lock_for(listed_roster.id):
+                roster = await asyncio.to_thread(
+                    self._repository.get_roster,
+                    listed_roster.id,
+                )
+                if roster is None or roster.active_cycle_id is None:
+                    continue
+                members = await asyncio.to_thread(
+                    self._repository.list_members,
+                    roster.id,
+                    roster.active_cycle_id,
+                )
+                ineligible: dict[int, list[str]] = {}
+                for row in members:
+                    if (
+                        target_member_ids is not None
+                        and row.discord_user_id not in target_member_ids
+                    ):
+                        continue
+                    if row.discord_user_id in eligible_member_ids:
+                        continue
+                    ineligible.setdefault(row.discord_user_id, []).append(
+                        row.player_tag
+                    )
+                if not ineligible:
+                    continue
+                roster_removed = 0
+                for member_id, player_tags in ineligible.items():
+                    removed = await asyncio.to_thread(
+                        self._repository.remove_members,
+                        roster.id,
+                        roster.active_cycle_id,
+                        discord_user_id=member_id,
+                        player_tags=player_tags,
+                    )
+                    if not removed:
+                        continue
+                    roster_removed += removed
+                    await self._roles.sync(roster, member_id, should_have=False)
+                if roster_removed:
+                    removed_total += roster_removed
+                    await self._refresh_posts(roster)
+        return removed_total

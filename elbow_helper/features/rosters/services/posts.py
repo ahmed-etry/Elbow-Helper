@@ -16,6 +16,7 @@ from discord.ext import commands
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.infrastructure.clash import ClashClient
 
+from ..config import ROSTER_POST_BURY_AFTER_MESSAGES
 from .accounts import RosterAccountDirectory
 from ..repository import RosterRepository
 from ..ui.emojis import TownHallEmojiProvider
@@ -65,6 +66,8 @@ class RosterPostService:
         self._view_owner = view_owner
         self._emojis = emoji_provider or TownHallEmojiProvider(bot)
         self._emoji_posts_refreshed = False
+        self._burial_progress: dict[int, tuple[int, int]] = {}
+        self._persistent_views: dict[int, RosterMessageView] = {}
 
     async def restore_persistent_views(self) -> None:
         roster_cache: dict[int, Roster] = {}
@@ -85,14 +88,13 @@ class RosterPostService:
                     roster.active_cycle_id,
                 )
                 page_count_cache[roster.id] = roster_page_count(len(members))
-            self._bot.add_view(
-                self.message_view(
-                    roster,
-                    page=0,
-                    page_count=page_count_cache[roster.id],
-                ),
-                message_id=post.message_id,
+            view = self.message_view(
+                roster,
+                page=0,
+                page_count=page_count_cache[roster.id],
             )
+            self._persistent_views[post.message_id] = view
+            self._bot.add_view(view, message_id=post.message_id)
 
     async def refresh_posts_after_emoji_load(self) -> None:
         if self._emoji_posts_refreshed:
@@ -114,12 +116,28 @@ class RosterPostService:
                 await self.refresh(roster)
 
     async def remove_deleted_message(self, message_id: int) -> None:
+        self._burial_progress.pop(message_id, None)
+        view = self._persistent_views.pop(message_id, None)
+        if view is not None:
+            self._bot.remove_view(view)
         await asyncio.to_thread(self._repository.remove_post, message_id)
 
     async def remove_deleted_messages(self, message_ids: set[int]) -> None:
+        for message_id in message_ids:
+            self._burial_progress.pop(message_id, None)
+            view = self._persistent_views.pop(message_id, None)
+            if view is not None:
+                self._bot.remove_view(view)
         await asyncio.to_thread(self._repository.remove_posts, message_ids)
 
     async def remove_deleted_channel(self, channel_id: int) -> None:
+        posts = await asyncio.to_thread(self._repository.list_posts)
+        for post in posts:
+            if post.channel_id == channel_id:
+                self._burial_progress.pop(post.message_id, None)
+                view = self._persistent_views.pop(post.message_id, None)
+                if view is not None:
+                    self._bot.remove_view(view)
         await asyncio.to_thread(
             self._repository.remove_posts_for_channel,
             channel_id,
@@ -305,6 +323,8 @@ class RosterPostService:
             message = await self.fetch(post)
             if message is None:
                 continue
+            if await self._retire_if_buried(post, message):
+                continue
             embeds, page, page_count = await self.render(
                 roster,
                 message_page(message, roster.id),
@@ -329,9 +349,75 @@ class RosterPostService:
                     post.message_id,
                 )
 
+    async def _retire_if_buried(
+        self,
+        post: RosterPost,
+        message: discord.Message,
+    ) -> bool:
+        channel = message.channel
+        last_message_id = getattr(channel, "last_message_id", None)
+        if not isinstance(last_message_id, int) or last_message_id == message.id:
+            return False
+        if not hasattr(channel, "history"):
+            return False
+
+        previous_last_id, newer_messages = self._burial_progress.get(
+            post.message_id,
+            (message.id, 0),
+        )
+        if previous_last_id == last_message_id:
+            return False
+        after: discord.abc.Snowflake = (
+            message
+            if previous_last_id == message.id
+            else discord.Object(id=previous_last_id)
+        )
+        try:
+            async for _ in channel.history(
+                limit=ROSTER_POST_BURY_AFTER_MESSAGES - newer_messages,
+                after=after,
+                oldest_first=True,
+            ):
+                newer_messages += 1
+        except (discord.Forbidden, discord.HTTPException):
+            return False
+        if newer_messages < ROSTER_POST_BURY_AFTER_MESSAGES:
+            self._burial_progress[post.message_id] = (
+                last_message_id,
+                newer_messages,
+            )
+            return False
+
+        try:
+            await message.edit(view=None)
+        except discord.NotFound:
+            pass
+        except discord.Forbidden:
+            LOGGER.warning(
+                "Could not disable buried roster post roster_id=%s channel=%s "
+                "message=%s",
+                post.roster_id,
+                post.channel_id,
+                post.message_id,
+            )
+        except discord.HTTPException:
+            LOGGER.warning(
+                "Could not retire buried roster post roster_id=%s channel=%s "
+                "message=%s",
+                post.roster_id,
+                post.channel_id,
+                post.message_id,
+            )
+            return False
+
+        await self.remove_deleted_message(post.message_id)
+        return True
+
     async def prune_stale(self) -> None:
         for post in await asyncio.to_thread(self._repository.list_posts):
-            await self.fetch(post)
+            message = await self.fetch(post)
+            if message is not None:
+                await self._retire_if_buried(post, message)
 
     async def post_interaction_response(
         self,
@@ -364,14 +450,13 @@ class RosterPostService:
             message.channel.id,
             message.id,
         )
-        self._bot.add_view(
-            self.message_view(
-                roster,
-                page=page,
-                page_count=page_count,
-            ),
-            message_id=message.id,
+        view = self.message_view(
+            roster,
+            page=page,
+            page_count=page_count,
         )
+        self._persistent_views[message.id] = view
+        self._bot.add_view(view, message_id=message.id)
 
     async def disable_all(self, roster: Roster) -> tuple[int, ...]:
         """Remove controls from every known post and return failures."""
