@@ -251,8 +251,8 @@ class CwlThreadBoardMixin:
                 f"{battle.attacks_used}/{battle.attacks_total} attacks"
             ]
             if battle.end_at is not None:
-                battle_lines[0] += (
-                    f" · {clock} Ends {discord.utils.format_dt(battle.end_at, 'R')}"
+                battle_lines.append(
+                    f"{clock} Ends {discord.utils.format_dt(battle.end_at, 'R')}"
                 )
             if battle.missing_attacks:
                 empty_sword = emojis.icon("empty_sword", "⚠️")
@@ -260,10 +260,7 @@ class CwlThreadBoardMixin:
                 battle_lines.append(f"{empty_sword} Missing: {missing}")
             war_icon = emojis.icon("war", "⚔️")
             embed.add_field(
-                name=(
-                    f"{war_icon} Day {battle.round_number} · Battle vs "
-                    f"{_escaped(battle.opponent_name)}"
-                ),
+                name=f"{war_icon} Day {battle.round_number} · Battle",
                 value="\n".join(battle_lines),
                 inline=False,
             )
@@ -276,19 +273,16 @@ class CwlThreadBoardMixin:
                 if status in {"filled", "empty"}
                 else CC_STATUS_FALLBACK_EMOJIS[status]
             )
-            preparation_line = f"{status_icon} {CC_STATUS_TEXT[status]}"
+            preparation_lines = [f"{status_icon} {CC_STATUS_TEXT[status]}"]
             if preparation.start_at is not None:
-                preparation_line += (
-                    f" · {clock} Battle starts "
+                preparation_lines.append(
+                    f"{clock} Battle starts "
                     f"{discord.utils.format_dt(preparation.start_at, 'R')}"
                 )
             clan_castle = emojis.icon("clan_castle", "🏰")
             embed.add_field(
-                name=(
-                    f"{clan_castle} Day {preparation.round_number} · Preparation vs "
-                    f"{_escaped(preparation.opponent_name)}"
-                ),
-                value=preparation_line,
+                name=f"{clan_castle} Day {preparation.round_number} · Preparation",
+                value="\n".join(preparation_lines),
                 inline=False,
             )
             view = CwlCcStatusView(

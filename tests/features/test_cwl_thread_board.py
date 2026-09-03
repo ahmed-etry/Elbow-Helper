@@ -216,7 +216,7 @@ class CwlThreadSnapshotTests(unittest.TestCase):
 
 
 class CwlThreadRenderingTests(unittest.IsolatedAsyncioTestCase):
-    async def test_compact_board_keeps_battle_and_preparation_context_separate(self) -> None:
+    async def test_board_keeps_battle_and_preparation_context_separate(self) -> None:
         manager = ThreadBoardHarness()
         snapshot = CwlThreadSnapshot(
             battle=_round("inwar", 3),
@@ -233,11 +233,13 @@ class CwlThreadRenderingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(embed.author.name, f"Hellbow • {CLAN_TAGS['BEH']}")
         self.assertEqual(embed.author.icon_url, "https://example.com/beh.png")
         self.assertEqual(len(embed.fields), 2)
-        self.assertIn("Day 3 · Battle vs Rival 3", embed.fields[0].name)
-        self.assertIn("27/30 attacks", embed.fields[0].value)
+        self.assertIn("Day 3 · Battle", embed.fields[0].name)
+        self.assertNotIn("Rival 3", embed.fields[0].name)
+        self.assertIn("27/30 attacks\n", embed.fields[0].value)
         self.assertIn("Missing: Player One, Player Two", embed.fields[0].value)
-        self.assertIn("Day 4 · Preparation vs Rival 4", embed.fields[1].name)
-        self.assertIn("CCs empty", embed.fields[1].value)
+        self.assertIn("Day 4 · Preparation", embed.fields[1].name)
+        self.assertNotIn("Rival 4", embed.fields[1].name)
+        self.assertIn("CCs empty\n", embed.fields[1].value)
         self.assertNotIn("Day 1", str(embed.to_dict()))
         self.assertIsNotNone(view)
         self.assertEqual([item.label for item in view.children], ["Filled", "Partial", "Empty"])
