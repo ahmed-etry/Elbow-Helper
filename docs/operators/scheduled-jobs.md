@@ -7,7 +7,7 @@
 | Clan health | Collect wars about every 20 minutes and activity snapshots hourly. |
 | Clan reports | Check whether monthly clan reports are due about every 30 minutes. |
 | Clan transfers | Refresh queues and remove expired requests about every 5 minutes. |
-| CWL | Check reminders and war updates every minute and move status posts below new messages. Refresh dashboards every 20 minutes and status posts hourly. Check thread visibility and the monthly Clan Castle reset daily. |
+| CWL | Check reminders, war updates, and registered-thread status posts every minute. Refresh dashboards every 20 minutes. Check thread visibility and the monthly Clan Castle reset daily. |
 | Events | Refresh every 5 minutes, or every minute near a boundary. |
 | Examinations | Organize tickets every 15 minutes, clean old routing messages every 30 minutes, and check follow-ups about every 10 minutes. |
 | Member lifecycle | Post recruitment-source reports and check for overdue applicants weekly. |

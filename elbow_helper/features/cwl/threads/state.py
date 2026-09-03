@@ -18,6 +18,8 @@ from elbow_helper.core.background import start_resilient_loop
 from elbow_helper.infrastructure.persistence import read_json
 from elbow_helper.infrastructure.persistence import write_json_atomic
 
+from .emojis import CwlThreadEmojiProvider
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -33,19 +35,17 @@ class CwlThreadStateMixin:
 
 
     def init_thread_feature(self) -> None:
-        self.last_message_times: Dict[str, Any] = {}
-        self.conversation_active: Dict[str, bool] = {}
-        self.sticky_repositioned: Dict[str, bool] = {}
         self._sticky_update_locks: Dict[str, asyncio.Lock] = {}
+        self._sticky_last_repost_at: Dict[str, float] = {}
+        self._thread_snapshot_cache: Dict[str, tuple[float, list[dict[str, Any]], Any]] = {}
+        self.cwl_thread_emojis = CwlThreadEmojiProvider(self.bot)
         self.load_data()
 
 
     def start_thread_tasks(self) -> None:
         for task_loop in (
-            self.check_sticky_reposition,
             self.auto_reset_cwl,
             self.maintain_registered_thread_visibility,
-            self.refresh_sticky_status,
         ):
             if not task_loop.is_running():
                 start_resilient_loop(task_loop)
@@ -53,10 +53,8 @@ class CwlThreadStateMixin:
 
     def stop_thread_tasks(self) -> None:
         for task_loop in (
-            self.check_sticky_reposition,
             self.auto_reset_cwl,
             self.maintain_registered_thread_visibility,
-            self.refresh_sticky_status,
         ):
             if task_loop.is_running():
                 task_loop.cancel()
@@ -124,6 +122,17 @@ class CwlThreadStateMixin:
                         else:
                             thread_data.pop("stale_sticky_message_ids", None)
                             data_changed = True
+
+                if not isinstance(thread_data.get("cc_status"), dict):
+                    thread_data["cc_status"] = {}
+                    data_changed = True
+                if not isinstance(thread_data.get("cc_statuses"), dict):
+                    thread_data["cc_statuses"] = {}
+                    data_changed = True
+                active_prep = thread_data.get("active_prep")
+                if active_prep is not None and not isinstance(active_prep, dict):
+                    thread_data.pop("active_prep", None)
+                    data_changed = True
 
                 clan_name = thread_data.get("clan_name")
                 if clan_name not in self.clan_configs:
@@ -223,7 +232,5 @@ class CwlThreadStateMixin:
         """Remove a thread registration and associated in-memory trackers."""
         thread_key = str(thread_id)
         self.data.get("threads", {}).pop(thread_key, None)
-        self.last_message_times.pop(thread_key, None)
-        self.conversation_active.pop(thread_key, None)
-        self.sticky_repositioned.pop(thread_key, None)
+        self._sticky_last_repost_at.pop(thread_key, None)
         self._sticky_update_locks.pop(thread_key, None)

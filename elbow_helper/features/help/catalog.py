@@ -575,21 +575,6 @@ HELP_ENTRIES: tuple[HelpEntry, ...] = (
         notes=(CWL_GUIDE_NOTE,),
     ),
     HelpEntry(
-        path="/cwl cc",
-        summary="Record the Clan Castle status for a CWL day.",
-        details=(
-            "Updates the selected CWL day's Clan Castle status and refreshes the status post "
-            "in the clan's registered CWL thread."
-        ),
-        category=CAT_CWL,
-        visible_to=CWL_HELPERS | LEAD_PLUS,
-        examples=("/cwl cc day:Day 3 status:Filled",),
-        notes=(
-            "📍 Run this inside a registered CWL thread.",
-            CWL_GUIDE_NOTE,
-        ),
-    ),
-    HelpEntry(
         path="/cwl bonus",
         summary="Build a spreadsheet to help assign CWL bonus medals.",
         details=(

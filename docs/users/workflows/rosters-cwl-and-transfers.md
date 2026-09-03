@@ -39,8 +39,6 @@ daylight saving, the roster's local opening and closing times can shift.
   deadlines.
 - `/cwl roster` builds a workbook to help assign CWL signups to clans.
 - `/cwl brief` posts the clan's CWL rules, rotations, and leadership details.
-- `/cwl cc` updates a CWL day's Clan Castle status in the clan's registered
-  thread.
 - `/cwl bonus` builds a workbook to help assign CWL bonus medals.
 
 ## Transfers

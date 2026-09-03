@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import time as dt_time
-from datetime import timedelta
 from datetime import timezone as dt_timezone
 
 import discord
@@ -13,7 +12,6 @@ from discord.ext import tasks
 
 from ..config import STICKY_HTTP_MAX_RATE_LIMIT_RETRY_SECONDS
 from ..config import STICKY_HTTP_RETRY_DELAYS_SECONDS
-from ..config import STICKY_REFRESH_HOURS
 from ..helpers import wait_for_boot_complete
 
 
@@ -21,78 +19,6 @@ LOGGER = logging.getLogger(__name__)
 
 
 class CwlThreadTasksMixin:
-    async def create_sticky_embed(self, thread: discord.Thread) -> discord.Embed:
-        """Create sticky embed for a CWL thread."""
-        thread_data = self.data["threads"].get(str(thread.id), {})
-        clan_name = thread_data.get("clan_name", "Unknown Clan")
-        cc_status = thread_data.get("cc_status", {})
-        war_info = await self._get_war_snapshot(clan_name)
-
-        embed = discord.Embed(
-            title=f"CWL Status — {clan_name}",
-            description="Check this post for round updates and Clan Castle tracking.",
-            color=discord.Color.gold(),
-            timestamp=self._utc_now(),
-        )
-
-        # CC Status section with visual indicators
-        cc_text = ""
-        for day in range(1, 8):
-            status = cc_status.get(str(day), "empty")
-            if status == "filled":
-                cc_text += f"**Day {day}:** ✅ Filled\n"
-            elif status == "empty":
-                cc_text += f"**Day {day}:** ❌ Empty\n"
-            elif status == "partial":
-                cc_text += f"**Day {day}:** ⚠️ Partial\n"
-
-        embed.add_field(
-            name="Clan Castle Status",
-            value=cc_text or "All Clan Castles are empty",
-            inline=False,
-        )
-
-        # Quick actions
-        embed.add_field(
-            name="Update Clan Castles",
-            value="Use `/cwl cc` to update Clan Castle status.",
-            inline=False,
-        )
-
-        if war_info:
-            lines = []
-            if war_info.get("state") == "preparation":
-                lines.append(f"• Prep ends in {war_info['time_left']}")
-            else:
-                lines.append(f"• Attacks used: {war_info['used']}/{war_info['total']}")
-                if war_info.get("show_missing") and war_info.get("missing"):
-                    missing_txt = ", ".join(war_info["missing"])
-                    lines.append(f"• ⚠️ Missing: {missing_txt}")
-                lines.append(f"• Time left: {war_info['time_left']}")
-                if war_info.get("next_prep"):
-                    prep_end_ts = war_info.get("next_prep_end_ts")
-                    if prep_end_ts:
-                        lines.append(
-                            f"• Next round: {war_info['next_prep']} (prep ends <t:{prep_end_ts}:R>)"
-                        )
-                    else:
-                        lines.append(f"• Next round: {war_info['next_prep']} (prep)")
-            embed.add_field(
-                name="Current Round",
-                value="\n".join(lines),
-                inline=False,
-            )
-        else:
-            embed.add_field(
-                name="Current Round",
-                value="No active war data available.",
-                inline=False,
-            )
-
-        embed.set_footer(text="Last updated")
-        return embed
-
-
     async def _resolve_registered_thread(self, thread_id: str) -> discord.Thread | None:
         thread_obj = self.bot.get_channel(int(thread_id))
         if not thread_obj:
@@ -234,46 +160,6 @@ class CwlThreadTasksMixin:
             LOGGER.exception("Error clearing messages in %s (%s): %s", thread.name, thread.id, e)
 
 
-    @tasks.loop(minutes=1)
-    async def check_sticky_reposition(self) -> None:
-        """Check if sticky messages need to be repositioned after conversation ends."""
-        try:
-            current_time = self._utc_now()
-
-            for thread_id in list(self.data.get("threads", {}).keys()):
-                try:
-                    last_message_time = self.last_message_times.get(thread_id)
-                    # Skip threads with no recorded activity timestamp yet.
-                    if not last_message_time:
-                        continue
-
-                    conversation_active = self.conversation_active.get(thread_id, False)
-                    sticky_repositioned = self.sticky_repositioned.get(thread_id, False)
-
-                    # Repost sticky once conversation has gone quiet.
-                    time_since_last_message = current_time - last_message_time
-                    if (
-                        conversation_active
-                        and not sticky_repositioned
-                        and time_since_last_message >= timedelta(seconds=10)
-                    ):
-                        thread = self.bot.get_channel(int(thread_id))
-                        if thread and isinstance(thread, discord.Thread):
-                            await self.update_thread_sticky(thread)
-                            self.conversation_active[thread_id] = False
-                            self.sticky_repositioned[thread_id] = True
-
-                except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError) as e:
-                    LOGGER.warning("Error checking sticky reposition for thread %s: %s", thread_id, e)
-        except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError) as e:
-            LOGGER.exception("Error in check_sticky_reposition task: %s", e)
-
-
-    @check_sticky_reposition.before_loop
-    async def before_check_sticky_reposition(self) -> None:
-        await wait_for_boot_complete(self.bot)
-
-
     async def _open_registered_cwl_threads_for_season(self) -> None:
         if not self._should_keep_registered_cwl_threads_open():
             return
@@ -302,48 +188,6 @@ class CwlThreadTasksMixin:
     async def before_maintain_registered_thread_visibility(self) -> None:
         await wait_for_boot_complete(self.bot)
         await self._open_registered_cwl_threads_for_season()
-
-
-    @tasks.loop(hours=STICKY_REFRESH_HOURS)
-    async def refresh_sticky_status(self) -> None:
-        """Refresh sticky embeds if they have not been updated recently."""
-        await wait_for_boot_complete(self.bot)
-        # Only refresh during CWL window (days 1-11) to avoid unnecessary updates.
-        if not self._is_cwl_window():
-            return
-        await self._refresh_all_sticky_if_stale()
-
-
-    async def _refresh_all_sticky_if_stale(self) -> None:
-        """Update sticky embeds when they are older than the refresh threshold."""
-        now = self._utc_now()
-        refresh_after = timedelta(hours=STICKY_REFRESH_HOURS)
-        for thread_id, thread_data in list(self.data.get("threads", {}).items()):
-            last_updated = self._parse_iso_timestamp(thread_data.get("sticky_last_updated"))
-            if last_updated and now - last_updated < refresh_after:
-                continue
-            try:
-                thread_obj = await self._resolve_registered_thread(str(thread_id))
-                if thread_obj:
-                    was_archived = getattr(thread_obj, "archived", False)
-                    try:
-                        if was_archived:
-                            if not await self._set_registered_thread_archived(
-                                thread_obj,
-                                archived=False,
-                                reason="Update the registered CWL status post",
-                            ):
-                                continue
-                        await self.update_thread_sticky(thread_obj, force=True, move_to_bottom=False)
-                    finally:
-                        if was_archived:
-                            await self._set_registered_thread_archived(
-                                thread_obj,
-                                archived=True,
-                                reason="Restore the CWL thread's archive state after the status update",
-                            )
-            except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError) as e:
-                LOGGER.warning("Error refreshing sticky for thread %s: %s", thread_id, e)
 
 
     @tasks.loop(hours=24)
@@ -383,12 +227,18 @@ class CwlThreadTasksMixin:
                                 continue
                             opened_for_reset = True
 
+                            board_removed = await self._remove_thread_status_board(
+                                str(thread_id),
+                                thread_data,
+                            )
+                            if not board_removed:
+                                all_success = False
                             await self.clear_thread_messages_except_first(thread_obj)
 
                             thread_data["cc_status"] = {}
+                            thread_data["cc_statuses"] = {}
+                            thread_data.pop("active_prep", None)
                             thread_data["last_activity"] = self._utc_now_iso()
-
-                            await self.update_thread_sticky(thread_obj, force=True)
 
                             LOGGER.info("Auto-reset and message clear completed for %s", clan_name)
                         finally:
@@ -401,6 +251,8 @@ class CwlThreadTasksMixin:
                     else:
                         # Keep stored data consistent even if thread lookup fails.
                         thread_data["cc_status"] = {}
+                        thread_data["cc_statuses"] = {}
+                        thread_data.pop("active_prep", None)
                         thread_data["last_activity"] = self._utc_now_iso()
                         all_success = False
                         LOGGER.warning("Auto-reset: thread %s not found; status cleared in data only", thread_id)
@@ -527,6 +379,7 @@ class CwlThreadTasksMixin:
             except discord.NotFound:
                 continue
             except discord.Forbidden:
+                remaining_ids.append(stale_id)
                 LOGGER.warning(
                     "Missing permissions deleting stale sticky for %s (%s): message=%s",
                     thread.name,
@@ -534,6 +387,7 @@ class CwlThreadTasksMixin:
                     stale_id,
                 )
             except discord.HTTPException:
+                remaining_ids.append(stale_id)
                 LOGGER.exception(
                     "Unexpected Discord HTTP error deleting stale sticky for %s (%s): message=%s",
                     thread.name,
@@ -574,96 +428,3 @@ class CwlThreadTasksMixin:
                     return False, None
                 await asyncio.sleep(self._sticky_http_retry_seconds(exc, attempt - 1))
         return False, None
-
-
-    async def update_thread_sticky(
-        self, thread: discord.Thread, force: bool = False, move_to_bottom: bool = True
-    ) -> None:
-        """Update sticky message for a specific thread."""
-        try:
-            thread_id = str(thread.id)
-            thread_data = self.data.get("threads", {}).get(thread_id)
-            if not isinstance(thread_data, dict):
-                return
-            lock = self._get_sticky_lock(thread_id)
-            async with lock:
-                last_updated = self._parse_iso_timestamp(thread_data.get("sticky_last_updated"))
-                now = self._utc_now()
-                if not force and last_updated and not move_to_bottom:
-                    if now - last_updated < timedelta(minutes=2):
-                        return
-
-                old_sticky_id = thread_data.get("sticky_message_id")
-                embed = await self.create_sticky_embed(thread)
-                old_sticky = None
-                if old_sticky_id:
-                    try:
-                        completed, old_sticky = await self._run_sticky_http_operation(
-                            thread,
-                            "fetch previous sticky",
-                            lambda: thread.fetch_message(old_sticky_id),
-                        )
-                        if not completed:
-                            return
-                    except discord.NotFound:
-                        old_sticky = None
-
-                if old_sticky and not move_to_bottom:
-                    # Update in place to avoid creating a new unread message.
-                    try:
-                        completed, _ = await self._run_sticky_http_operation(
-                            thread,
-                            "edit sticky",
-                            lambda: old_sticky.edit(embed=embed),
-                        )
-                    except discord.NotFound:
-                        old_sticky = None
-                    else:
-                        if not completed:
-                            return
-                        thread_data["sticky_last_updated"] = now.isoformat()
-                        await self._cleanup_stale_sticky_messages(
-                            thread,
-                            thread_data,
-                            current_sticky_id=old_sticky.id,
-                        )
-                        self.save_data()
-                        return
-
-                completed, new_sticky = await self._run_sticky_http_operation(
-                    thread,
-                    "send sticky",
-                    lambda: thread.send(embed=embed),
-                )
-                if not completed or new_sticky is None:
-                    return
-                pending_stale_sticky_ids = self._get_pending_stale_sticky_ids(
-                    thread_data,
-                    current_sticky_id=new_sticky.id,
-                )
-                if old_sticky and old_sticky.id not in pending_stale_sticky_ids:
-                    pending_stale_sticky_ids.append(old_sticky.id)
-                thread_data["sticky_message_id"] = new_sticky.id
-                thread_data["sticky_last_updated"] = now.isoformat()
-                self._set_pending_stale_sticky_ids(thread_data, pending_stale_sticky_ids)
-                self.save_data()
-
-                if await self._cleanup_stale_sticky_messages(
-                    thread,
-                    thread_data,
-                    current_sticky_id=new_sticky.id,
-                ):
-                    self.save_data()
-
-        except discord.Forbidden:
-            LOGGER.warning("Missing permissions updating sticky message for %s (%s)", thread.name, thread.id)
-        except discord.NotFound:
-            LOGGER.warning("Sticky update skipped for %s (%s): thread or message no longer exists", thread.name, thread.id)
-        except discord.HTTPException:
-            LOGGER.exception(
-                "Unexpected Discord HTTP error updating sticky message for %s (%s)",
-                thread.name,
-                thread.id,
-            )
-        except RuntimeError as e:
-            LOGGER.exception("Runtime error updating sticky message for %s (%s): %s", thread.name, thread.id, e)

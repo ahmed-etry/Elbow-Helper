@@ -77,12 +77,6 @@ async def setup(bot: commands.Bot) -> None:
                 ),
                 (
                     cwl,
-                    "cc",
-                    "Record the Clan Castle status for a CWL day.",
-                    "cwl_cc",
-                ),
-                (
-                    cwl,
                     "brief",
                     "Post the clan's CWL rules, rotations, and leadership details.",
                     "cwl_brief",

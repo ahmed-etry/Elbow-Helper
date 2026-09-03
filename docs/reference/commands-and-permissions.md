@@ -70,7 +70,6 @@ channel permissions also apply.
 | `/roster announcement` | Share CWL roster and transfer deadlines with the clan family. | Lead |
 | `/cwl brief` | Post the clan's CWL rules, rotations, and leadership details. | Lead Plus or CWL helper |
 | `/transfer reminder` | Notify members who still need to move to their CWL clan. | Lead Plus or CWL helper |
-| `/cwl cc` | Record the Clan Castle status for a CWL day. | Lead Plus or CWL helper |
 | `/cwl bonus` | Build a spreadsheet to help assign CWL bonus medals. | Lead Plus or CWL helper |
 | `/cwl roster` | Build a workbook to help assign CWL signups to clans. | Lead Plus |
 | `/cwl register` | Connect a clan's CWL thread to its status updates. | Core leadership |

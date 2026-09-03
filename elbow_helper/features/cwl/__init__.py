@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from elbow_helper.core.lifecycle import ElbowHelperBot
 from .bonus.dashboard import CwlBonusDashboardView
+from .config import CWL_CLAN_CODES
 from .config import DASHBOARD_THREADS
 from .cog import CwlManagement
+from .threads.views import CwlCcStatusView
 from .views import CwlPrepRefreshView
 from .views import CwlTransferHubView
+
+
 async def setup(bot: ElbowHelperBot) -> None:
     achievements = bot.get_cog("Achievements")
     achievement_rewards = getattr(achievements, "rewards", None)
@@ -52,6 +56,8 @@ async def setup(bot: ElbowHelperBot) -> None:
     await bot.add_cog(cog)
     bot.add_view(CwlBonusDashboardView(cog))
     bot.add_view(CwlTransferHubView(cog, placements_released=False))
+    for clan_code in CWL_CLAN_CODES:
+        bot.add_view(CwlCcStatusView(cog, clan_code))
 
     for clan_code in DASHBOARD_THREADS:
         bot.add_view(CwlPrepRefreshView(cog, clan_code))

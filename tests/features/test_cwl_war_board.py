@@ -115,6 +115,32 @@ class CwlWarSelectionTests(unittest.TestCase):
         self.assertTrue(cwl_board_snapshot_is_complete(battle_and_prep))
 
 
+class CwlLeagueWarFetchTests(unittest.IsolatedAsyncioTestCase):
+    async def test_round_total_includes_future_placeholder_rounds(self) -> None:
+        manager = CwlRouterMixin()
+        manager._leaguegroup_cache = {}
+        manager._war_cache = {}
+        manager._fetch_json = AsyncMock(
+            side_effect=[
+                {
+                    "season": "2026-07",
+                    "rounds": [
+                        {"warTags": ["#WAR1"]},
+                        {"warTags": ["#0"]},
+                        {"warTags": ["#0"]},
+                    ],
+                },
+                _cwl_war("inWar", 1),
+            ]
+        )
+
+        wars = await manager._get_league_wars("BEH")
+
+        self.assertEqual(len(wars), 1)
+        self.assertEqual(wars[0]["_total_rounds"], 3)
+        self.assertEqual(manager._leaguegroup_cache["BEH"]["total_rounds"], 3)
+
+
 class CwlWarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_one_registered_message_contains_battle_and_preparation(self) -> None:
         manager = CwlWarBoardMixin()
@@ -256,6 +282,7 @@ class CwlRotationSnapshotTests(unittest.IsolatedAsyncioTestCase):
         }
         manager._get_league_wars = AsyncMock(return_value=[war])
         manager._sync_cwl_channel = AsyncMock()
+        manager.sync_registered_cwl_thread = AsyncMock(return_value=True)
         manager._log_rotation_api = AsyncMock()
         manager._save_state = AsyncMock()
 
@@ -300,6 +327,7 @@ class CwlMissedAttackDeliveryTests(unittest.IsolatedAsyncioTestCase):
         }
         manager._get_league_wars = AsyncMock(return_value=[war])
         manager._sync_cwl_channel = AsyncMock()
+        manager.sync_registered_cwl_thread = AsyncMock(return_value=True)
         manager._log_missed_api = AsyncMock(return_value=False)
         manager._save_state = AsyncMock()
 

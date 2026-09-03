@@ -46,7 +46,7 @@ class CommandRegistryTests(unittest.IsolatedAsyncioTestCase):
         bot = _RegistryBot()
         guild = discord.Object(id=GUILD_ID)
         expected = {
-            "cwl": ["register", "cc", "brief", "bonus", "roster"],
+            "cwl": ["register", "brief", "bonus", "roster"],
             "roster": [
                 "create",
                 "edit",

@@ -11,19 +11,11 @@ from elbow_helper.discord.interactions import fail
 from elbow_helper.discord.interactions import warn
 
 from elbow_helper.configuration.roles import CORE
+from ..config import CLAN_NAME_TO_CODE
 from ..config import THREAD_CLAN_CHOICES
 
 
 LOGGER = logging.getLogger(__name__)
-THREAD_CC_DAY_CHOICES = [
-    app_commands.Choice(name=f"Day {day}", value=day)
-    for day in range(1, 8)
-]
-THREAD_CC_STATUS_CHOICES = [
-    app_commands.Choice(name="Filled", value="filled"),
-    app_commands.Choice(name="Partial", value="partial"),
-    app_commands.Choice(name="Empty", value="empty"),
-]
 
 
 class CwlThreadCommandMixin:
@@ -66,6 +58,8 @@ class CwlThreadCommandMixin:
             await deny(interaction)
             return
 
+        await interaction.response.defer(ephemeral=True)
+
         try:
             try:
                 thread_id_int = int(thread_id)
@@ -84,7 +78,7 @@ class CwlThreadCommandMixin:
                 except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                     thread = None
             if not thread or not isinstance(thread, discord.Thread):
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "I couldn't find that thread. Check the thread ID and try again.",
                     ephemeral=True,
                 )
@@ -96,14 +90,14 @@ class CwlThreadCommandMixin:
             if isinstance(existing_thread_data, dict):
                 existing_clan_name = str(existing_thread_data.get("clan_name") or "")
                 if existing_clan_name and existing_clan_name != clan:
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"That thread is already linked to {existing_clan_name}.",
                         ephemeral=True,
                     )
                     return
                 if existing_clan_name == clan:
                     self.clan_configs[clan]["thread_id"] = thread.id
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"{clan} is already linked to this thread.",
                         ephemeral=True,
                     )
@@ -111,7 +105,7 @@ class CwlThreadCommandMixin:
 
             for existing_clan, config in self.clan_configs.items():
                 if existing_clan != clan and config.get("thread_id") == thread.id:
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"That thread is already linked to {existing_clan}.",
                         ephemeral=True,
                     )
@@ -131,8 +125,8 @@ class CwlThreadCommandMixin:
                 "sticky_message_id": None,
                 "stale_sticky_message_ids": [],
                 "cc_status": {},
+                "cc_statuses": {},
                 "last_activity": now_iso,
-                "sticky_last_updated": now_iso,
             }
 
             self.save_data()
@@ -142,17 +136,12 @@ class CwlThreadCommandMixin:
                 description="This thread will now receive CWL status updates.",
                 color=discord.Color.green(),
             )
-            welcome_embed.add_field(
-                name="Update Clan Castles",
-                value="Use `/cwl cc` to record a day's Clan Castle status.",
-                inline=False,
-            )
-
             await thread.send(embed=welcome_embed)
+            clan_code = CLAN_NAME_TO_CODE.get(clan)
+            if clan_code is not None:
+                await self.refresh_registered_cwl_status_for_clan(clan_code)
 
-            await self.update_thread_sticky(thread)
-
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"This thread is now linked to {clan} CWL updates.",
                 ephemeral=True,
             )
@@ -166,47 +155,3 @@ class CwlThreadCommandMixin:
                 e,
             )
             await fail(interaction)
-
-
-    @app_commands.choices(
-        day=THREAD_CC_DAY_CHOICES,
-        status=THREAD_CC_STATUS_CHOICES,
-    )
-    @app_commands.describe(
-        day="Which CWL day you are updating.",
-        status="Clan Castle fill status for that day.",
-    )
-    async def cwl_cc(
-        self,
-        interaction: discord.Interaction,
-        day: int,
-        status: str,
-    ) -> None:
-        """Update CC status for a specific day."""
-        if not self.check_permissions(interaction, require_leader=False):
-            await deny(interaction)
-            return
-
-        if not isinstance(interaction.channel, discord.Thread):
-            await interaction.response.send_message("Run this command from the clan's CWL thread.", ephemeral=True)
-            return
-
-        thread_id = str(interaction.channel.id)
-        if thread_id not in self.data["threads"]:
-            await interaction.response.send_message(
-                "This thread isn't set up for CWL. Use `/cwl register` first.",
-                ephemeral=True,
-            )
-            return
-
-        # Acknowledge immediately to avoid "Unknown interaction" when sticky refresh takes time.
-        await interaction.response.defer(ephemeral=True)
-
-        normalized_status = status.lower()
-        self.data["threads"][thread_id]["cc_status"][str(day)] = normalized_status
-        self.data["threads"][thread_id]["last_activity"] = self._utc_now_iso()
-        self.save_data()
-
-        await self.update_thread_sticky(interaction.channel, force=True)
-
-        await interaction.followup.send(f"Day {day} Clan Castles marked **{normalized_status}**.", ephemeral=True)

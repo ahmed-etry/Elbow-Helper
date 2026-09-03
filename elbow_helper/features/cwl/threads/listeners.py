@@ -9,8 +9,10 @@ from discord.ext import commands
 class CwlThreadListenerMixin:
     @commands.Cog.listener()
     async def on_message(self, message):
-        """Track message activity in CWL threads."""
+        """Reposition a buried CWL board only in response to human activity."""
         if not isinstance(message.channel, discord.Thread):
+            return
+        if getattr(message.author, "bot", False):
             return
 
         thread_id = str(message.channel.id)
@@ -21,7 +23,4 @@ class CwlThreadListenerMixin:
         # Ignore the sticky embed itself so refresh/repost actions do not self-trigger.
         if message.id == thread_data.get("sticky_message_id"):
             return
-
-        self.last_message_times[thread_id] = self._utc_now()
-        self.conversation_active[thread_id] = True
-        self.sticky_repositioned[thread_id] = False
+        await self._repost_thread_status_from_activity(message.channel)

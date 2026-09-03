@@ -1,184 +1,242 @@
-"""Thread feature CWL snapshot fetching and formatting."""
+"""Selection and normalization for live CWL thread status boards."""
 
 from __future__ import annotations
 
-from datetime import timedelta
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
-from typing import Dict
-from typing import List
-from typing import Optional
 
-from elbow_helper.domain.player_tags import encode_clash_tag
+from elbow_helper.features.wars.rendering import normalize_war_state
+
 from ..helpers import coc_time_to_dt
 
 
-class CwlThreadSnapshotMixin:
-    async def _fetch_league_war(self, clan_name: str) -> Optional[Dict[str, Any]]:
-        """Fetch the active CWL war (preparation/inWar) for this clan."""
-        if not self.clash_client.configured:
-            return None
-        tag = self.clan_tags.get(clan_name)
-        if not tag:
-            return None
-        group_path = f"/clans/{encode_clash_tag(tag)}/currentwar/leaguegroup"
-        war_tags: List[str] = []
-        group_response = await self.clash_client.get(
-            group_path,
-            attempts=1,
-            timeout_seconds=15,
-        )
-        group = group_response.payload_object
-        if group_response.status != 200 or group is None:
-            return None
-        for round_data in group.get("rounds", []) or []:
-            for war_tag in round_data.get("warTags", []) or []:
-                if war_tag and war_tag != "#0":
-                    war_tags.append(war_tag)
-        prep_candidate = None
-        for war_tag in war_tags:
-            war_response = await self.clash_client.get(
-                f"/clanwarleagues/wars/{encode_clash_tag(war_tag)}",
-                attempts=1,
-                timeout_seconds=15,
-            )
-            war = war_response.payload_object
-            if war_response.status != 200 or war is None:
-                continue
-            state = war.get("state")
-            if state not in {"preparation", "inWar"}:
-                continue
-            clan_data = war.get("clan", {})
-            opp_data = war.get("opponent", {})
-            if clan_data.get("tag") != tag and opp_data.get("tag") != tag:
-                continue
-            war["_warTag"] = war_tag
-            if state == "inWar":
-                return war
-            if prep_candidate is None:
-                prep_candidate = war
-        return prep_candidate
+@dataclass(frozen=True)
+class CwlThreadRound:
+    round_number: int
+    war_tag: str
+    season: str | None
+    clan_name: str
+    clan_tag: str
+    clan_badge_url: str | None
+    opponent_name: str
+    opponent_tag: str
+    state: str
+    start_at: datetime | None
+    end_at: datetime | None
+    attacks_used: int
+    attacks_total: int
+    missing_attacks: tuple[str, ...]
+    is_stale: bool
 
 
-    async def _fetch_next_league_prep(self, clan_name: str) -> Optional[Dict[str, Any]]:
-        """Fetch the next CWL war in preparation (if available)."""
-        if not self.clash_client.configured:
-            return None
-        tag = self.clan_tags.get(clan_name)
-        if not tag:
-            return None
-        group_response = await self.clash_client.get(
-            f"/clans/{encode_clash_tag(tag)}/currentwar/leaguegroup",
-            attempts=1,
-            timeout_seconds=15,
-        )
-        group = group_response.payload_object
-        if group_response.status != 200 or group is None:
-            return None
-        war_tags = []
-        for round_data in group.get("rounds", []) or []:
-            for war_tag in round_data.get("warTags", []) or []:
-                if war_tag and war_tag != "#0":
-                    war_tags.append(war_tag)
-        for war_tag in war_tags:
-            war_response = await self.clash_client.get(
-                f"/clanwarleagues/wars/{encode_clash_tag(war_tag)}",
-                attempts=1,
-                timeout_seconds=15,
-            )
-            war = war_response.payload_object
-            if war_response.status != 200 or war is None:
-                continue
-            if war.get("state") != "preparation":
-                continue
-            clan_data = war.get("clan", {})
-            opp_data = war.get("opponent", {})
-            if clan_data.get("tag") == tag or opp_data.get("tag") == tag:
-                war["_warTag"] = war_tag
-                return war
+@dataclass(frozen=True)
+class CwlThreadSnapshot:
+    battle: CwlThreadRound | None
+    preparation: CwlThreadRound | None
+
+    @property
+    def has_active_round(self) -> bool:
+        return self.battle is not None or self.preparation is not None
+
+
+def _positive_int(value: object) -> int:
+    try:
+        return max(int(value or 0), 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _runtime_state(war: dict[str, Any], now: datetime) -> str:
+    state = normalize_war_state(war.get("_state") or war.get("state"))
+    start_at = coc_time_to_dt(war.get("startTime"))
+    if state == "inwar" and start_at is not None and start_at > now:
+        return "preparation"
+    return state
+
+
+def cwl_thread_snapshot_is_complete(
+    wars: list[dict[str, Any]],
+    *,
+    now: datetime,
+) -> bool:
+    """Reject partial overlap snapshots before they hide useful board sections."""
+    if not wars:
+        return False
+
+    total_rounds = max(
+        (_positive_int(war.get("_total_rounds")) for war in wars),
+        default=0,
+    )
+    if total_rounds <= 0:
+        return False
+
+    battle_rounds = {
+        _positive_int(war.get("_round"))
+        for war in wars
+        if _runtime_state(war, now) == "inwar"
+    }
+    preparation_rounds = {
+        _positive_int(war.get("_round"))
+        for war in wars
+        if _runtime_state(war, now) == "preparation"
+    }
+    ended_rounds = {
+        _positive_int(war.get("_round"))
+        for war in wars
+        if _runtime_state(war, now) == "warended"
+    }
+    if battle_rounds:
+        battle_round = max(battle_rounds)
+        if battle_round < total_rounds and battle_round + 1 not in preparation_rounds:
+            return False
+    if preparation_rounds:
+        preparation_round = min(preparation_rounds)
+        previous_round = preparation_round - 1
+        if (
+            preparation_round > 1
+            and previous_round not in battle_rounds
+            and previous_round not in ended_rounds
+        ):
+            return False
+    if not battle_rounds and not preparation_rounds:
+        if not ended_rounds or max(ended_rounds) < total_rounds:
+            return False
+    return True
+
+
+def _oriented_sides(
+    war: dict[str, Any],
+    clan_tag: str,
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    clan = war.get("clan")
+    opponent = war.get("opponent")
+    if not isinstance(clan, dict) or not isinstance(opponent, dict):
         return None
+    if clan.get("tag") == clan_tag:
+        return clan, opponent
+    if opponent.get("tag") == clan_tag:
+        return opponent, clan
+    return None
 
 
-    async def _get_war_snapshot(self, clan_name: str) -> Optional[Dict[str, Any]]:
-        # Only show during expected CWL window (1st-11th of the month) to avoid regular wars
-        if not self._is_cwl_window():
-            return None
-        tag = self.clan_tags.get(clan_name)
-        if not tag:
-            return None
+def _badge_url(clan: dict[str, Any]) -> str | None:
+    badges = clan.get("badgeUrls") or {}
+    if not isinstance(badges, dict):
+        return None
+    for size in ("small", "medium", "large"):
+        candidate = badges.get(size)
+        if isinstance(candidate, str) and candidate:
+            return candidate
+    return None
 
-        # Use CWL league data only during the CWL window.
-        data = await self._fetch_league_war(clan_name)
-        if not data or data.get("state") in {"notInWar", "warEnded"}:
-            return None
-        state = data.get("state")
-        start_dt = coc_time_to_dt(data.get("startTime"))
-        # CWL round one can report "inWar" early; treat as prep if start time is in the future.
-        if state == "inWar" and start_dt and start_dt > self._utc_now():
-            state = "preparation"
-        # Only show during prep or active war; hide after war ends or if not in war
-        if state not in {"preparation", "inWar"}:
-            return None
 
-        clan = data.get("clan") or {}
-        opponent = data.get("opponent") or {}
-        if clan.get("tag") != tag and opponent.get("tag") == tag:
-            clan = opponent
-        elif clan.get("tag") != tag and opponent.get("tag") != tag:
-            return None
-        members = clan.get("members") or []
-        per = data.get("attacksPerMember") or clan.get("attacksPerMember") or 1
-        used = 0
-        missing: List[str] = []
-
-        time_key = "endTime" if state == "inWar" else "startTime"
-        end_dt = coc_time_to_dt(data.get(time_key))
-        time_left = "N/A"
-        remaining_seconds: Optional[float] = None
-        if end_dt:
-            delta = end_dt - self._utc_now()
-            if delta.total_seconds() < 0:
-                delta = timedelta(seconds=0)
-            remaining_seconds = delta.total_seconds()
-            hours = int(remaining_seconds // 3600)
-            minutes = int((remaining_seconds % 3600) // 60)
-            time_left = f"{hours}h {minutes}m"
-
-        show_missing = (
-            state == "inWar"
-            and remaining_seconds is not None
-            and remaining_seconds <= 2 * 3600
+def _round_from_war(
+    war: dict[str, Any],
+    clan_tag: str,
+    *,
+    state: str,
+    now: datetime,
+) -> CwlThreadRound | None:
+    sides = _oriented_sides(war, clan_tag)
+    if sides is None:
+        return None
+    clan, opponent = sides
+    members = clan.get("members") or []
+    attacks_per_member = _positive_int(
+        war.get("attacksPerMember") or clan.get("attacksPerMember") or 1
+    ) or 1
+    attacks_total = (
+        _positive_int(war.get("teamSize")) or len(members)
+    ) * attacks_per_member
+    attacks_used = _positive_int(clan.get("attacks"))
+    if not attacks_used:
+        attacks_used = sum(
+            len(member.get("attacks") or [])
+            for member in members
+            if isinstance(member, dict)
         )
 
-        if state == "inWar":
-            for member in members:
-                attacks = member.get("attacks") or []
-                used += len(attacks)
-                if show_missing and len(attacks) < per:
-                    missing.append(member.get("name") or "Unknown")
-        total = len(members) * per if members else 0
+    end_at = coc_time_to_dt(war.get("endTime"))
+    show_missing = bool(
+        state == "inwar"
+        and end_at is not None
+        and 0 <= (end_at - now).total_seconds() <= 2 * 3600
+    )
+    missing_attacks = ()
+    if show_missing:
+        missing_attacks = tuple(
+            str(member.get("name") or "Unknown")
+            for member in members
+            if isinstance(member, dict)
+            and len(member.get("attacks") or []) < attacks_per_member
+        )
 
-        next_prep = None
-        next_prep_end_ts = None
-        if state == "inWar":
-            next_war = await self._fetch_next_league_prep(clan_name)
-            if next_war:
-                clan_data = next_war.get("clan", {})
-                opp_data = next_war.get("opponent", {})
-                if clan_data.get("tag") == tag:
-                    next_prep = opp_data.get("name") or "Unknown"
-                elif opp_data.get("tag") == tag:
-                    next_prep = clan_data.get("name") or "Unknown"
-                prep_end_dt = coc_time_to_dt(next_war.get("startTime"))
-                if prep_end_dt:
-                    next_prep_end_ts = int(prep_end_dt.timestamp())
+    raw_war_tag = str(war.get("_warTag") or "")
+    raw_season = war.get("_season")
+    return CwlThreadRound(
+        round_number=_positive_int(war.get("_round")),
+        war_tag=raw_war_tag,
+        season=str(raw_season) if raw_season else None,
+        clan_name=str(clan.get("name") or "Clan"),
+        clan_tag=str(clan.get("tag") or clan_tag),
+        clan_badge_url=_badge_url(clan),
+        opponent_name=str(opponent.get("name") or "Unknown"),
+        opponent_tag=str(opponent.get("tag") or ""),
+        state=state,
+        start_at=coc_time_to_dt(war.get("startTime")),
+        end_at=end_at,
+        attacks_used=attacks_used,
+        attacks_total=attacks_total,
+        missing_attacks=missing_attacks,
+        is_stale=bool(war.get("_snapshot_stale")),
+    )
 
-        return {
-            "state": state,
-            "used": used,
-            "total": total,
-            "time_left": time_left,
-            "missing": missing,
-            "show_missing": show_missing,
-            "next_prep": next_prep,
-            "next_prep_end_ts": next_prep_end_ts,
-        }
+
+def build_cwl_thread_snapshot(
+    wars: list[dict[str, Any]],
+    clan_tag: str,
+    *,
+    now: datetime,
+) -> CwlThreadSnapshot:
+    battle_candidates: list[CwlThreadRound] = []
+    preparation_candidates: list[CwlThreadRound] = []
+    for war in wars:
+        state = _runtime_state(war, now)
+        if state not in {"inwar", "preparation"}:
+            continue
+        normalized = _round_from_war(
+            war,
+            clan_tag,
+            state=state,
+            now=now,
+        )
+        if normalized is None:
+            continue
+        if state == "inwar":
+            battle_candidates.append(normalized)
+        else:
+            preparation_candidates.append(normalized)
+
+    battle = (
+        max(battle_candidates, key=lambda item: item.round_number)
+        if battle_candidates
+        else None
+    )
+    future_preparations = [
+        item
+        for item in preparation_candidates
+        if item.start_at is not None and item.start_at > now
+    ]
+    preparation = None
+    if future_preparations:
+        preparation = min(
+            future_preparations,
+            key=lambda item: (item.start_at, item.round_number),
+        )
+    elif preparation_candidates:
+        preparation = max(
+            preparation_candidates,
+            key=lambda item: item.round_number,
+        )
+    return CwlThreadSnapshot(battle=battle, preparation=preparation)
