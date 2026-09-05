@@ -245,14 +245,13 @@ class CwlThreadBoardMixin:
             battle_lines = [
                 f"{battle.attacks_used}/{battle.attacks_total} attacks"
             ]
+            if battle.missing_attacks:
+                missing = ", ".join(_escaped(name) for name in battle.missing_attacks)
+                battle_lines.append(f"Missing: {missing}")
             if battle.end_at is not None:
                 battle_lines.append(
                     f"Ends {discord.utils.format_dt(battle.end_at, 'R')}"
                 )
-            if battle.missing_attacks:
-                empty_sword = emojis.icon("empty_sword", "⚠️")
-                missing = ", ".join(_escaped(name) for name in battle.missing_attacks)
-                battle_lines.append(f"{empty_sword} Missing: {missing}")
             war_icon = emojis.icon("war", "⚔️")
             sections.append(
                 "\n".join(

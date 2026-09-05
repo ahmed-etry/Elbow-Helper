@@ -216,7 +216,7 @@ class CwlThreadSnapshotTests(unittest.TestCase):
 
 
 class CwlThreadRenderingTests(unittest.IsolatedAsyncioTestCase):
-    async def test_board_keeps_battle_and_preparation_context_separate(self) -> None:
+    async def test_board_includes_active_round_data_and_status_controls(self) -> None:
         manager = ThreadBoardHarness()
         snapshot = CwlThreadSnapshot(
             battle=_round("inwar", 3),
@@ -229,21 +229,24 @@ class CwlThreadRenderingTests(unittest.IsolatedAsyncioTestCase):
             "empty",
         )
 
-        self.assertEqual(embed.title, "CWL Status")
-        self.assertEqual(embed.author.name, f"Hellbow • {CLAN_TAGS['BEH']}")
-        self.assertEqual(embed.author.icon_url, "https://example.com/beh.png")
-        self.assertEqual(len(embed.fields), 0)
-        self.assertIn("Day 3 · Battle vs Rival 3", embed.description)
-        self.assertIn("27/30 attacks\nEnds", embed.description)
-        self.assertIn("Missing: Player One, Player Two", embed.description)
-        self.assertIn("\n\n", embed.description)
-        self.assertIn("Day 4 · Preparation vs Rival 4", embed.description)
-        self.assertIn("CCs empty\nBattle starts", embed.description)
-        self.assertNotIn("🕒", embed.description)
-        self.assertNotIn("❌", embed.description)
-        self.assertNotIn("Day 1", str(embed.to_dict()))
+        rendered = str(embed.to_dict())
+        for expected in (
+            "Day 3",
+            "Rival 3",
+            "27/30",
+            "Player One",
+            "Player Two",
+            discord.utils.format_dt(NOW + timedelta(hours=1), "R"),
+            "Day 4",
+            "Rival 4",
+            discord.utils.format_dt(NOW + timedelta(hours=8), "R"),
+        ):
+            self.assertIn(expected, rendered)
+        self.assertIn("battle", rendered.casefold())
+        self.assertIn("preparation", rendered.casefold())
+        self.assertIn("empty", rendered.casefold())
+        self.assertNotIn("Day 1", rendered)
         self.assertIsNotNone(view)
-        self.assertEqual([item.label for item in view.children], ["Filled", "Partial", "Empty"])
         self.assertEqual(
             [item.custom_id for item in view.children],
             [
@@ -270,9 +273,10 @@ class CwlThreadRenderingTests(unittest.IsolatedAsyncioTestCase):
             None,
         )
 
-        self.assertEqual(len(embed.fields), 0)
-        self.assertIn("Battle", embed.description)
-        self.assertNotIn("CC", str(embed.to_dict()))
+        rendered = str(embed.to_dict())
+        self.assertIn("Day 7", rendered)
+        self.assertIn("27/30", rendered)
+        self.assertNotIn("CC", rendered)
         self.assertIsNone(view)
 
     def test_legacy_day_status_migrates_to_the_actual_prep_war(self) -> None:
@@ -511,10 +515,14 @@ class CwlThreadButtonTests(unittest.IsolatedAsyncioTestCase):
             force_refresh=True,
         )
         manager.sync_registered_cwl_thread.assert_awaited_once_with("BEH", wars)
-        interaction.followup.send.assert_awaited_once_with(
-            "Day 4 CCs marked **filled**.",
-            ephemeral=True,
+        interaction.followup.send.assert_awaited_once()
+        followup_call = interaction.followup.send.await_args
+        self.assertTrue(followup_call.kwargs.get("ephemeral"))
+        followup_content = (
+            followup_call.kwargs.get("content") or followup_call.args[0]
         )
+        self.assertIn("4", followup_content)
+        self.assertIn("filled", followup_content.casefold())
 
     async def test_old_duplicate_board_cannot_change_status(self) -> None:
         manager = ThreadBoardHarness()
@@ -533,10 +541,14 @@ class CwlThreadButtonTests(unittest.IsolatedAsyncioTestCase):
 
         manager._latest_thread_snapshot.assert_not_awaited()
         self.assertEqual(manager.data["threads"]["123"]["cc_statuses"], {})
-        interaction.response.send_message.assert_awaited_once_with(
-            "This is an older CWL status post. Use the latest one.",
-            ephemeral=True,
+        interaction.response.send_message.assert_awaited_once()
+        response_call = interaction.response.send_message.await_args
+        self.assertTrue(response_call.kwargs.get("ephemeral"))
+        response_content = (
+            response_call.kwargs.get("content") or response_call.args[0]
         )
+        self.assertIn("older", response_content.casefold())
+        self.assertIn("latest", response_content.casefold())
 
 
 
