@@ -14,7 +14,8 @@ from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import MEMBERS, PLANNING_HELPERS
 
 from .api import fetch_player
-from .formatting import build_planning_embeds
+from .emojis import AttackPlanEmojiProvider
+from .formatting import build_planning_embeds, required_plan_unit_names
 from .views import PlanningView
 
 
@@ -38,6 +39,7 @@ class Planning(commands.Cog):
         self.bot = bot
         self.clash_client = clash_client
         self.clan_health = clan_health
+        self.plan_emojis = AttackPlanEmojiProvider(bot)
 
     async def player_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
         del interaction
@@ -128,7 +130,14 @@ class Planning(commands.Cog):
             await interaction.followup.send(self._player_fetch_error_text(player), ephemeral=True)
             return
 
-        planning_embeds = build_planning_embeds(interaction, player, strategies, base_image)
+        emoji_set = await self.plan_emojis.get(required_plan_unit_names())
+        planning_embeds = build_planning_embeds(
+            interaction,
+            player,
+            strategies,
+            base_image,
+            emoji_tokens=emoji_set.tokens,
+        )
         mention_roles = " ".join(f"<@&{role_id}>" for role_id in PLANNING_HELPERS) or None
         view = PlanningView(planning_embeds)
 

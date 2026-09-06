@@ -1,10 +1,12 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, List, Sequence
+from typing import Dict, List, Mapping, Sequence
 
 import discord
 
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX, DEFAULT_THUMBNAIL_URL
+
+from .unit_levels import town_hall_max_level
 
 HERO_ORDER: list[tuple[str, str]] = [
     ("Barbarian King", "King"),
@@ -40,36 +42,6 @@ PET_SHORT_NAMES = {
     "Greedy Raven": "Raven",
 }
 PET_NAMES_LOWER = {name.lower() for name in PET_ORDER}
-SUPER_TROOP_NAMES_LOWER = {
-    "super barbarian",
-    "super archer",
-    "super giant",
-    "sneaky goblin",
-    "super wall breaker",
-    "rocket balloon",
-    "super wizard",
-    "inferno dragon",
-    "super minion",
-    "super valkyrie",
-    "super witch",
-    "ice hound",
-    "super bowler",
-    "super dragon",
-    "super miner",
-    "super hog rider",
-    "super yeti",
-}
-SIEGE_MACHINE_NAMES_LOWER = {
-    "wall wrecker",
-    "battle blimp",
-    "stone slammer",
-    "siege barracks",
-    "log launcher",
-    "flame flinger",
-    "battle drill",
-    "troop launcher",
-}
-IGNORED_PLAN_TROOP_NAMES_LOWER = PET_NAMES_LOWER | SUPER_TROOP_NAMES_LOWER | SIEGE_MACHINE_NAMES_LOWER
 
 HERO_EQUIPMENT_ORDER = {
     "Barbarian King": [
@@ -90,6 +62,7 @@ HERO_EQUIPMENT_ORDER = {
         "Frozen Arrow",
         "Magic Mirror",
         "Action Figure",
+        "Monolith Arrow",
     ],
     "Minion Prince": [
         "Henchmen Puppet",
@@ -121,6 +94,9 @@ HERO_EQUIPMENT_ORDER = {
         "Fire Heart",
         "Flame Blower",
         "Stun Blaster",
+        "Electro Fangs",
+        "Rocket Backpack",
+        "Revenge Deck",
     ],
 }
 HERO_EQUIPMENT_LOWER = {
@@ -174,6 +150,7 @@ DARK_TROOP_ORDER = [
     "Apprentice Warden",
     "Druid",
     "Furnace",
+    "Ruin Witch",
 ]
 DARK_TROOP_SHORT_NAMES = {
     "Hog Rider": "Hog",
@@ -208,6 +185,7 @@ DARK_SPELLS_ORDER = [
     "Bat Spell",
     "Overgrowth Spell",
     "Ice Block Spell",
+    "Angry Spell",
 ]
 DARK_SPELL_SHORT_NAMES = {
     "Earthquake Spell": "Quake",
@@ -215,6 +193,38 @@ DARK_SPELL_SHORT_NAMES = {
     "Bat Spell": "Bats",
     "Overgrowth Spell": "Overgrow",
 }
+
+SIEGE_MACHINE_ORDER = [
+    "Wall Wrecker",
+    "Battle Blimp",
+    "Stone Slammer",
+    "Siege Barracks",
+    "Log Launcher",
+    "Flame Flinger",
+    "Battle Drill",
+    "Troop Launcher",
+    "Sky Wagon",
+]
+
+SUPER_TROOP_ORDER = [
+    "Super Barbarian",
+    "Super Archer",
+    "Super Giant",
+    "Sneaky Goblin",
+    "Super Wall Breaker",
+    "Rocket Balloon",
+    "Super Wizard",
+    "Inferno Dragon",
+    "Super Minion",
+    "Super Valkyrie",
+    "Super Witch",
+    "Ice Hound",
+    "Super Bowler",
+    "Super Dragon",
+    "Super Miner",
+    "Super Hog Rider",
+    "Super Yeti",
+]
 
 PAGE_LABELS = ["Overview", "Hero Kit", "Army Kit"]
 ARMY_SECTION_LABELS = {
@@ -254,6 +264,21 @@ def _truncate_text(value: str | None, max_len: int = 900) -> str:
     return text[: max_len - 3].rstrip() + "..."
 
 
+def required_plan_unit_names() -> tuple[str, ...]:
+    """Return every Home Village unit with an attack-plan application emoji."""
+
+    names = (
+        *(hero_name for hero_name, _ in HERO_ORDER),
+        *PET_ORDER,
+        *(equipment for names in HERO_EQUIPMENT_ORDER.values() for equipment in names),
+        *ELIXIR_TROOP_ORDER,
+        *DARK_TROOP_ORDER,
+        *ELIXIR_SPELLS_ORDER,
+        *DARK_SPELLS_ORDER,
+    )
+    return tuple(dict.fromkeys(names))
+
+
 def _collect_home_levels(
     entries: Sequence[dict],
     *,
@@ -280,19 +305,11 @@ def _ordered_names(levels: dict[str, int], preferred_order: Sequence[str]) -> tu
     return ordered, other
 
 
-def _wrap_entries(entries: Sequence[str], *, max_row_width: int) -> list[str]:
-    rows: list[str] = []
-    current = ""
-    for entry in entries:
-        candidate = entry if not current else f"{current} | {entry}"
-        if current and len(candidate) > max_row_width:
-            rows.append(current)
-            current = entry
-        else:
-            current = candidate
-    if current:
-        rows.append(current)
-    return rows
+def _wrap_entries(entries: Sequence[str], *, entries_per_row: int = 4) -> list[str]:
+    return [
+        " ".join(entries[index : index + entries_per_row])
+        for index in range(0, len(entries), entries_per_row)
+    ]
 
 
 def _join_clipped_lines(lines: Sequence[str]) -> str:
@@ -317,56 +334,56 @@ def _join_clipped_lines(lines: Sequence[str]) -> str:
     return "\n".join(clipped_lines)
 
 
+def _format_unit_level(
+    name: str,
+    level: int,
+    max_levels: Mapping[str, int],
+    short_names: Mapping[str, str] | None,
+    emoji_tokens: Mapping[str, str],
+) -> str:
+    label = emoji_tokens.get(name)
+    if label is None:
+        label = short_names.get(name, name) if short_names else name
+    current_text = str(level).rjust(2)
+    max_text = str(max(max_levels.get(name, level), level)).ljust(2)
+    return f"{label} `\u200e{current_text}/{max_text}\u200f`"
+
+
 def _format_level_rows(
     names: Sequence[str],
     levels: dict[str, int],
-    short_names: dict[str, str] | None = None,
+    short_names: Mapping[str, str] | None = None,
     *,
-    max_row_width: int = 40,
+    max_levels: Mapping[str, int] | None = None,
+    emoji_tokens: Mapping[str, str] | None = None,
 ) -> str:
     if not names:
         return "None"
+    tokens = emoji_tokens or {}
+    caps = max_levels or levels
     entries = [
-        f"{short_names.get(name, name) if short_names else name} {levels[name]}"
+        _format_unit_level(name, levels[name], caps, short_names, tokens)
         for name in names
         if levels.get(name, 0) > 0
     ]
-    return _join_clipped_lines(_wrap_entries(entries, max_row_width=max_row_width))
+    return _join_clipped_lines(_wrap_entries(entries))
 
 
 def _format_named_level_rows(
     entries: Sequence[tuple[str, int]],
     *,
-    max_row_width: int = 44,
+    max_levels: Mapping[str, int] | None = None,
+    emoji_tokens: Mapping[str, str] | None = None,
 ) -> str:
     if not entries:
         return "None"
-    rendered = [f"{name} {level}" for name, level in entries]
-    return _join_clipped_lines(_wrap_entries(rendered, max_row_width=max_row_width))
-
-
-def _format_grouped_level_block(
-    groups: Sequence[tuple[str, Sequence[str], dict[str, int], dict[str, str] | None]],
-    *,
-    max_row_width: int = 42,
-) -> str:
-    lines: list[str] = []
-    for label, names, levels, short_names in groups:
-        if not names:
-            continue
-        rendered = [
-            f"{short_names.get(name, name) if short_names else name} {levels[name]}"
-            for name in names
-            if levels.get(name, 0) > 0
-        ]
-        if not rendered:
-            continue
-        lines.append(label)
-        lines.extend(_wrap_entries(rendered, max_row_width=max_row_width))
-        lines.append("")
-    if lines and not lines[-1]:
-        lines.pop()
-    return _join_clipped_lines(lines)
+    tokens = emoji_tokens or {}
+    caps = max_levels or {name: level for name, level in entries}
+    rendered = [
+        _format_unit_level(name, level, caps, None, tokens)
+        for name, level in entries
+    ]
+    return _join_clipped_lines(_wrap_entries(rendered))
 
 
 def _apply_shared_embed_style(
@@ -477,10 +494,17 @@ def build_planning_embeds(
     player: dict,
     strategies: str,
     base_image: discord.Attachment,
+    *,
+    emoji_tokens: Mapping[str, str] | None = None,
 ) -> PlanningEmbeds:
+    tokens = emoji_tokens or {}
     player_name = player.get("name") or "Unknown"
     player_tag = player.get("tag") or "--"
     th_level = player.get("townHallLevel", "N/A")
+    try:
+        town_hall_level = int(th_level)
+    except (TypeError, ValueError):
+        town_hall_level = 0
 
     hero_levels, ordered_heroes = _collect_hero_levels(player)
     pet_levels = _collect_pets(player)
@@ -492,11 +516,14 @@ def build_planning_embeds(
     troop_levels = _collect_home_levels(
         player.get("troops", []),
         village_key="home",
-        excluded_names=IGNORED_PLAN_TROOP_NAMES_LOWER,
+        excluded_names=PET_NAMES_LOWER,
     )
     ordered_troops, unmapped_troops = _ordered_names(
         troop_levels,
-        ELIXIR_TROOP_ORDER + DARK_TROOP_ORDER,
+        ELIXIR_TROOP_ORDER
+        + DARK_TROOP_ORDER
+        + SIEGE_MACHINE_ORDER
+        + SUPER_TROOP_ORDER,
     )
     elixir_troops = [name for name in ordered_troops if name in ELIXIR_TROOP_ORDER]
     dark_troops = [name for name in ordered_troops if name in DARK_TROOP_ORDER]
@@ -508,6 +535,23 @@ def build_planning_embeds(
     )
     elixir_spells = [name for name in ordered_spells if name in ELIXIR_SPELLS_ORDER]
     dark_spells = [name for name in ordered_spells if name in DARK_SPELLS_ORDER]
+
+    current_levels = {
+        **hero_levels,
+        **pet_levels,
+        **troop_levels,
+        **spell_levels,
+        **{
+            name: level
+            for equipment in equipment_by_hero.values()
+            for name, level in equipment
+        },
+        **dict(unmapped_equipment),
+    }
+    hall_max_levels = {
+        name: town_hall_max_level(name, town_hall_level, level)
+        for name, level in current_levels.items()
+    }
 
     static_pages: List[discord.Embed] = []
 
@@ -528,12 +572,24 @@ def build_planning_embeds(
     overview_embed.add_field(name="Strategy Notes", value=_truncate_text(strategies, max_len=700), inline=False)
     overview_embed.add_field(
         name="Heroes",
-        value=_format_level_rows(ordered_heroes, hero_levels, HERO_SHORT_NAMES, max_row_width=46),
+        value=_format_level_rows(
+            ordered_heroes,
+            hero_levels,
+            HERO_SHORT_NAMES,
+            max_levels=hall_max_levels,
+            emoji_tokens=tokens,
+        ),
         inline=False,
     )
     overview_embed.add_field(
         name="Pets",
-        value=_format_level_rows(ordered_pets, pet_levels, PET_SHORT_NAMES, max_row_width=46),
+        value=_format_level_rows(
+            ordered_pets,
+            pet_levels,
+            PET_SHORT_NAMES,
+            max_levels=hall_max_levels,
+            emoji_tokens=tokens,
+        ),
         inline=False,
     )
     static_pages.append(
@@ -552,9 +608,20 @@ def build_planning_embeds(
     if ordered_heroes:
         for hero_name in ordered_heroes:
             hero_level = hero_levels.get(hero_name, 0)
+            hero_label = _format_unit_level(
+                hero_name,
+                hero_level,
+                hall_max_levels,
+                HERO_SHORT_NAMES,
+                tokens,
+            )
             hero_kit_embed.add_field(
-                name=f"{HERO_SHORT_NAMES.get(hero_name, hero_name)} Lv {hero_level}",
-                value=_format_named_level_rows(equipment_by_hero.get(hero_name, []), max_row_width=52),
+                name=hero_label,
+                value=_format_named_level_rows(
+                    equipment_by_hero.get(hero_name, []),
+                    max_levels=hall_max_levels,
+                    emoji_tokens=tokens,
+                ),
                 inline=False,
             )
     else:
@@ -562,7 +629,11 @@ def build_planning_embeds(
     if unmapped_equipment:
         hero_kit_embed.add_field(
             name="Other Equipment",
-            value=_format_named_level_rows(unmapped_equipment, max_row_width=52),
+            value=_format_named_level_rows(
+                unmapped_equipment,
+                max_levels=hall_max_levels,
+                emoji_tokens=tokens,
+            ),
             inline=False,
         )
     static_pages.append(
@@ -579,13 +650,24 @@ def build_planning_embeds(
         description="",
     )
     army_troops_embed.add_field(
-        name="Troops",
-        value=_format_grouped_level_block(
-            [
-                ("Elixir", elixir_troops, troop_levels, ELIXIR_TROOP_SHORT_NAMES),
-                ("Dark", dark_troops, troop_levels, DARK_TROOP_SHORT_NAMES),
-            ],
-            max_row_width=48,
+        name="Elixir Troops",
+        value=_format_level_rows(
+            elixir_troops,
+            troop_levels,
+            ELIXIR_TROOP_SHORT_NAMES,
+            max_levels=hall_max_levels,
+            emoji_tokens=tokens,
+        ),
+        inline=False,
+    )
+    army_troops_embed.add_field(
+        name="Dark Elixir Troops",
+        value=_format_level_rows(
+            dark_troops,
+            troop_levels,
+            DARK_TROOP_SHORT_NAMES,
+            max_levels=hall_max_levels,
+            emoji_tokens=tokens,
         ),
         inline=False,
     )
@@ -595,13 +677,24 @@ def build_planning_embeds(
         description="",
     )
     army_spells_embed.add_field(
-        name="Spells",
-        value=_format_grouped_level_block(
-            [
-                ("Elixir", elixir_spells, spell_levels, ELIXIR_SPELL_SHORT_NAMES),
-                ("Dark", dark_spells, spell_levels, DARK_SPELL_SHORT_NAMES),
-            ],
-            max_row_width=48,
+        name="Elixir Spells",
+        value=_format_level_rows(
+            elixir_spells,
+            spell_levels,
+            ELIXIR_SPELL_SHORT_NAMES,
+            max_levels=hall_max_levels,
+            emoji_tokens=tokens,
+        ),
+        inline=False,
+    )
+    army_spells_embed.add_field(
+        name="Dark Spells",
+        value=_format_level_rows(
+            dark_spells,
+            spell_levels,
+            DARK_SPELL_SHORT_NAMES,
+            max_levels=hall_max_levels,
+            emoji_tokens=tokens,
         ),
         inline=False,
     )
@@ -618,13 +711,23 @@ def build_planning_embeds(
         if unmapped_troops:
             army_unmapped_embed.add_field(
                 name="Troops",
-                value=_format_level_rows(unmapped_troops, troop_levels, max_row_width=34),
+                value=_format_level_rows(
+                    unmapped_troops,
+                    troop_levels,
+                    max_levels=hall_max_levels,
+                    emoji_tokens=tokens,
+                ),
                 inline=False,
             )
         if unmapped_spells:
             army_unmapped_embed.add_field(
                 name="Spells",
-                value=_format_level_rows(unmapped_spells, spell_levels, max_row_width=34),
+                value=_format_level_rows(
+                    unmapped_spells,
+                    spell_levels,
+                    max_levels=hall_max_levels,
+                    emoji_tokens=tokens,
+                ),
                 inline=False,
             )
         army_embeds["unmapped"] = army_unmapped_embed
