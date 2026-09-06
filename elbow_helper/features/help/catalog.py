@@ -68,11 +68,11 @@ HELP_ENTRIES: tuple[HelpEntry, ...] = (
     HelpEntry(
         path="/plan",
         summary="Get help planning an attack.",
-        details="Share a base, your strategy, and your current thinking.",
+        details="Share a base, your strategy screenshot, and your current thinking.",
         category=CAT_GENERAL,
         examples=(
-            "/plan player:#PLAYER strategy:Hydra thinking:Enter from 3 o'clock to reach the Monolith early, "
-            "but I'm open to a different approach. base_image:image",
+            "/plan player:#PLAYER thinking:Enter from 3 o'clock to reach the Monolith early, "
+            "but I'm open to a different approach. strategy_image:image base_image:image",
         ),
     ),
     HelpEntry(

@@ -4,7 +4,6 @@ from typing import Dict, Mapping, Sequence
 import discord
 
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX, DEFAULT_THUMBNAIL_URL
-from elbow_helper.domain.player_tags import encode_clash_tag
 
 from .unit_levels import town_hall_max_level
 
@@ -232,9 +231,13 @@ MAX_FIELD_LEN = 1024
 @dataclass(frozen=True)
 class PlanningEmbeds:
     pages: list[discord.Embed]
+    overview_extras: tuple[discord.Embed, ...] = ()
 
-    def embed_for_page(self, page_index: int) -> discord.Embed:
-        return self.pages[page_index]
+    def embeds_for_page(self, page_index: int) -> list[discord.Embed]:
+        embeds = [self.pages[page_index]]
+        if page_index == 0:
+            embeds.extend(self.overview_extras)
+        return embeds
 
 
 def _truncate_text(value: str | None, max_len: int = 900) -> str:
@@ -466,15 +469,14 @@ def _collect_equipment(
 
 def build_planning_embeds(
     player: dict,
-    strategy: str,
     thinking: str,
+    strategy_image: discord.Attachment,
     base_image: discord.Attachment,
     *,
     emoji_tokens: Mapping[str, str] | None = None,
 ) -> PlanningEmbeds:
     tokens = emoji_tokens or {}
     player_name = player.get("name") or "Unknown"
-    player_tag = str(player.get("tag") or "").strip()
     th_level = player.get("townHallLevel", "N/A")
     try:
         town_hall_level = int(th_level)
@@ -530,18 +532,10 @@ def build_planning_embeds(
 
     pages: list[discord.Embed] = []
 
-    player_url = None
-    if player_tag:
-        player_url = (
-            "https://link.clashofclans.com/en?action=OpenPlayerProfile&tag="
-            f"{encode_clash_tag(player_tag)}"
-        )
     overview_embed = discord.Embed(
         title=f"Attack Plan: {player_name} • TH{th_level}",
-        url=player_url,
         color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
     )
-    overview_embed.add_field(name="Strategy", value=_truncate_text(strategy, max_len=700), inline=False)
     overview_embed.add_field(name="Thinking", value=_truncate_text(thinking, max_len=700), inline=False)
     overview_embed.add_field(
         name="Heroes",
@@ -568,9 +562,11 @@ def build_planning_embeds(
     pages.append(
         _apply_base_image(
             overview_embed,
-            base_image=base_image,
+            base_image=strategy_image,
         )
     )
+    overview_base_embed = discord.Embed(color=discord.Color(DEFAULT_EMBED_COLOR_HEX))
+    overview_base_embed.set_image(url=base_image.url)
 
     hero_kit_embed = discord.Embed(
         title=f"Hero Kit: {player_name} • TH{th_level}",
@@ -688,4 +684,4 @@ def build_planning_embeds(
             )
     pages.append(army_embed)
 
-    return PlanningEmbeds(pages=pages)
+    return PlanningEmbeds(pages=pages, overview_extras=(overview_base_embed,))

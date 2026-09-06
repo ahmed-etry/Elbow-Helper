@@ -32,8 +32,8 @@ class PlanningView(BaseTimeoutView):
                 button.emoji = discord.PartialEmoji.from_str(token)
         self._update_controls()
 
-    def _current_embed(self) -> discord.Embed:
-        return self.planning_embeds.embed_for_page(self.index)
+    def _current_embeds(self) -> list[discord.Embed]:
+        return self.planning_embeds.embeds_for_page(self.index)
 
     def _update_controls(self) -> None:
         for index, button in enumerate(
@@ -51,15 +51,15 @@ class PlanningView(BaseTimeoutView):
                 await interaction.response.defer()
 
             self._update_controls()
-            current_embed = self._current_embed()
+            current_embeds = self._current_embeds()
             if interaction.message:
-                await interaction.message.edit(embed=current_embed, view=self)
+                await interaction.message.edit(embeds=current_embeds, view=self)
             else:
-                await interaction.edit_original_response(embed=current_embed, view=self)
+                await interaction.edit_original_response(embeds=current_embeds, view=self)
         except discord.NotFound as exc:
             if getattr(exc, "code", None) == 10062 and interaction.message:
                 try:
-                    await interaction.message.edit(embed=current_embed, view=self)
+                    await interaction.message.edit(embeds=current_embeds, view=self)
                 except (discord.NotFound, discord.HTTPException):
                     LOGGER.debug("Planning navigation update skipped; message no longer available.")
                 return

@@ -49,10 +49,10 @@ class PlanAutocompleteTests(unittest.IsolatedAsyncioTestCase):
 
 
 class PlanCommandTests(unittest.TestCase):
-    def test_plan_collects_strategy_and_thinking_separately(self) -> None:
+    def test_plan_collects_thinking_and_both_screenshots(self) -> None:
         self.assertEqual(
             [parameter.name for parameter in Planning.planning.parameters],
-            ["player", "strategy", "thinking", "base_image"],
+            ["player", "thinking", "strategy_image", "base_image"],
         )
         self.assertTrue(all(parameter.required for parameter in Planning.planning.parameters))
 
@@ -93,6 +93,7 @@ class PlanEmojiTests(unittest.TestCase):
 
     def test_current_units_render_as_icons_in_their_plan_sections(self) -> None:
         base_image = SimpleNamespace(url="https://example.com/base.png")
+        strategy_image = SimpleNamespace(url="https://example.com/strategy.png")
         player = {
             "name": "Planner",
             "tag": "#PLAYER",
@@ -142,15 +143,14 @@ class PlanEmojiTests(unittest.TestCase):
 
         embeds = build_planning_embeds(
             player,
-            "Hydra",
             "Enter from 3 o'clock.",
+            strategy_image,
             base_image,
             emoji_tokens=tokens,
         )
 
         overview = embeds.pages[0]
         overview_fields = {field.name: field.value for field in overview.fields}
-        self.assertEqual(overview_fields["Strategy"], "Hydra")
         self.assertEqual(overview_fields["Thinking"], "Enter from 3 o'clock.")
         self.assertIn(
             f'{tokens["Archer Queen"]} `\u200e110/',
@@ -188,18 +188,22 @@ class PlanEmojiTests(unittest.TestCase):
         self.assertNotIn("Sky Wagon", army_text)
 
         self.assertEqual(overview.title, "Attack Plan: Planner • TH18")
-        self.assertEqual(
-            overview.url,
-            "https://link.clashofclans.com/en?action=OpenPlayerProfile&tag=%23PLAYER",
-        )
+        self.assertIsNone(overview.url)
         self.assertIsNone(overview.description)
-        self.assertEqual(overview.image.url, base_image.url)
-        for embed in embeds.pages:
+        self.assertEqual(overview.image.url, strategy_image.url)
+        self.assertEqual(
+            [embed.image.url for embed in embeds.embeds_for_page(0)],
+            [strategy_image.url, base_image.url],
+        )
+        for page_index, embed in enumerate(embeds.pages):
             self.assertEqual(embed.thumbnail.url, DEFAULT_THUMBNAIL_URL)
-            self.assertEqual(embed.image.url, base_image.url)
+            if page_index:
+                self.assertEqual(embed.image.url, base_image.url)
+                self.assertEqual(embeds.embeds_for_page(page_index), [embed])
 
     def test_missing_emojis_keep_readable_unit_names(self) -> None:
         base_image = SimpleNamespace(url="https://example.com/base.png")
+        strategy_image = SimpleNamespace(url="https://example.com/strategy.png")
         player = {
             "name": "Planner",
             "tag": "#PLAYER",
@@ -212,8 +216,8 @@ class PlanEmojiTests(unittest.TestCase):
 
         embeds = build_planning_embeds(
             player,
-            "Hydra",
             "Fallback test.",
+            strategy_image,
             base_image,
         )
         army_fields = {
@@ -232,6 +236,7 @@ class PlanEmojiTests(unittest.TestCase):
 
     def test_troop_rows_use_four_clashperk_style_level_entries(self) -> None:
         base_image = SimpleNamespace(url="https://example.com/base.png")
+        strategy_image = SimpleNamespace(url="https://example.com/strategy.png")
         troop_names = ["Barbarian", "Archer", "Giant", "Goblin", "Wall Breaker"]
         tokens = {
             name: f"<:{application_emoji_name(name)}:{index}>"
@@ -256,8 +261,8 @@ class PlanEmojiTests(unittest.TestCase):
         ):
             embeds = build_planning_embeds(
                 player,
-                "Hydra",
                 "Layout test.",
+                strategy_image,
                 base_image,
                 emoji_tokens=tokens,
             )
@@ -278,13 +283,14 @@ class PlanNavigationTests(unittest.IsolatedAsyncioTestCase):
             discord.Embed(title="Hero Kit"),
             discord.Embed(title="Army Kit"),
         ]
+        overview_extra = discord.Embed(title="Overview Base")
         button_tokens = (
             "<:town_hall:123456789012345678>",
             "<:BarbarianKing:123456789012345679>",
             "<:Troops:123456789012345680>",
         )
         view = PlanningView(
-            PlanningEmbeds(pages=pages),
+            PlanningEmbeds(pages=pages, overview_extras=(overview_extra,)),
             button_emoji_tokens=button_tokens,
         )
         response_state = {"done": False}
@@ -320,10 +326,10 @@ class PlanNavigationTests(unittest.IsolatedAsyncioTestCase):
                 await button.callback(interaction)
 
                 response.defer.assert_awaited_once_with()
-                message.edit.assert_awaited_once_with(
-                    embed=pages[selected_index],
-                    view=view,
-                )
+                expected_embeds = [pages[selected_index]]
+                if selected_index == 0:
+                    expected_embeds.append(overview_extra)
+                message.edit.assert_awaited_once_with(embeds=expected_embeds, view=view)
                 self.assertEqual(interaction_events, ["defer", "edit"])
                 self.assertEqual(
                     [item.style for item in view.children],

@@ -93,16 +93,16 @@ class Planning(commands.Cog):
     @app_commands.autocomplete(player=player_autocomplete)
     @app_commands.describe(
         player="Your Clash account for this attack plan.",
-        strategy="The army or strategy you want the plan built around.",
         thinking="Share your current approach and anything else the planner should account for.",
+        strategy_image="Screenshot of the army setup you want to use.",
         base_image="Screenshot of the base you want help attacking.",
     )
     async def planning(
         self,
         interaction: discord.Interaction,
         player: str,
-        strategy: str,
         thinking: str,
+        strategy_image: discord.Attachment,
         base_image: discord.Attachment,
     ) -> None:
         if not any(role.id in MEMBERS for role in interaction.user.roles):
@@ -124,6 +124,9 @@ class Planning(commands.Cog):
         if base_image.content_type and not base_image.content_type.startswith("image/"):
             await interaction.response.send_message("Base screenshot needs to be an image file.", ephemeral=True)
             return
+        if strategy_image.content_type and not strategy_image.content_type.startswith("image/"):
+            await interaction.response.send_message("Strategy screenshot needs to be an image file.", ephemeral=True)
+            return
 
         await interaction.response.defer(ephemeral=False, thinking=True)
 
@@ -141,8 +144,8 @@ class Planning(commands.Cog):
         )
         planning_embeds = build_planning_embeds(
             player,
-            strategy,
             thinking,
+            strategy_image,
             base_image,
             emoji_tokens=emoji_set.tokens,
         )
@@ -158,7 +161,7 @@ class Planning(commands.Cog):
 
         review_message = await interaction.followup.send(
             content=mention_roles,
-            embed=planning_embeds.embed_for_page(0),
+            embeds=planning_embeds.embeds_for_page(0),
             view=view,
             ephemeral=False,
             wait=True,
