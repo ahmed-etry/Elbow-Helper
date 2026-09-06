@@ -133,7 +133,6 @@ class Planning(commands.Cog):
         emoji_set = await self.plan_emojis.get(
             (
                 *required_plan_unit_names(),
-                f"th{player.get('townHallLevel', '')}",
                 "town_hall",
                 "Troops",
             )

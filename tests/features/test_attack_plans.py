@@ -116,7 +116,6 @@ class PlanEmojiTests(unittest.TestCase):
             ],
         }
         icon_names = (
-            "th18",
             "Archer Queen",
             "Dragon Duke",
             "Greedy Raven",
@@ -176,12 +175,12 @@ class PlanEmojiTests(unittest.TestCase):
         self.assertNotIn("Super Barbarian", army_text)
         self.assertNotIn("Sky Wagon", army_text)
 
-        self.assertEqual(overview.title, "Attack Plan")
+        self.assertEqual(overview.title, "Attack Plan: Planner • TH18")
         self.assertEqual(
-            overview.description,
-            f'{tokens["th18"]} [Planner (#PLAYER)]'
-            "(https://link.clashofclans.com/en?action=OpenPlayerProfile&tag=%23PLAYER)",
+            overview.url,
+            "https://link.clashofclans.com/en?action=OpenPlayerProfile&tag=%23PLAYER",
         )
+        self.assertIsNone(overview.description)
         self.assertEqual(overview.image.url, base_image.url)
         for embed in embeds.pages:
             self.assertEqual(embed.thumbnail.url, DEFAULT_THUMBNAIL_URL)

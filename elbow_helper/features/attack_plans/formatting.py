@@ -529,17 +529,15 @@ def build_planning_embeds(
 
     pages: list[discord.Embed] = []
 
-    account_text = f"{player_name} ({player_tag})" if player_tag else player_name
+    player_url = None
     if player_tag:
-        account_text = (
-            f"[{account_text}]"
-            "(https://link.clashofclans.com/en?action=OpenPlayerProfile&tag="
-            f"{encode_clash_tag(player_tag)})"
+        player_url = (
+            "https://link.clashofclans.com/en?action=OpenPlayerProfile&tag="
+            f"{encode_clash_tag(player_tag)}"
         )
-    town_hall_label = tokens.get(f"th{town_hall_level}", f"TH{th_level}")
     overview_embed = discord.Embed(
-        title="Attack Plan",
-        description=f"{town_hall_label} {account_text}",
+        title=f"Attack Plan: {player_name} • TH{th_level}",
+        url=player_url,
         color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
     )
     overview_embed.add_field(name="Strategy Notes", value=_truncate_text(strategies, max_len=700), inline=False)
