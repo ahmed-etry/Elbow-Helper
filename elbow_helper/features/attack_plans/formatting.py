@@ -331,7 +331,7 @@ def _format_unit_level(
         label = short_names.get(name, name) if short_names else name
     current_text = str(level).rjust(2)
     max_text = str(max(max_levels.get(name, level), level)).ljust(2)
-    return f"{label} `\u200e{current_text}/{max_text}\u200f`"
+    return f"{label}\u00a0`\u200e{current_text}/{max_text}\u200f`"
 
 
 def _format_level_rows(

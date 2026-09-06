@@ -153,7 +153,7 @@ class PlanEmojiTests(unittest.TestCase):
         overview_fields = {field.name: field.value for field in overview.fields}
         self.assertEqual(overview_fields["Thinking"], "Enter from 3 o'clock.")
         self.assertIn(
-            f'{tokens["Archer Queen"]} `\u200e110/',
+            f'{tokens["Archer Queen"]}\u00a0`\u200e110/',
             overview_fields["Heroes"],
         )
         self.assertIn(tokens["Greedy Raven"], overview_fields["Pets"])
@@ -181,8 +181,8 @@ class PlanEmojiTests(unittest.TestCase):
         )
         troop_value = army_fields["Dark Elixir Troops"]
         spell_value = army_fields["Dark Spells"]
-        self.assertIn(f'{tokens["Ruin Witch"]} `\u200e 4/', troop_value)
-        self.assertIn(f'{tokens["Angry Spell"]} `\u200e 4/', spell_value)
+        self.assertIn(f'{tokens["Ruin Witch"]}\u00a0`\u200e 4/', troop_value)
+        self.assertIn(f'{tokens["Angry Spell"]}\u00a0`\u200e 4/', spell_value)
         army_text = " ".join(field.value for field in army_kit.fields)
         self.assertNotIn("Super Barbarian", army_text)
         self.assertNotIn("Sky Wagon", army_text)
@@ -226,11 +226,11 @@ class PlanEmojiTests(unittest.TestCase):
         }
 
         self.assertIn(
-            "Ruin Witch `\u200e 4/",
+            "Ruin Witch\u00a0`\u200e 4/",
             army_fields["Dark Elixir Troops"],
         )
         self.assertIn(
-            "Angry Spell `\u200e 4/",
+            "Angry Spell\u00a0`\u200e 4/",
             army_fields["Dark Spells"],
         )
 
@@ -273,7 +273,7 @@ class PlanEmojiTests(unittest.TestCase):
         }
         lines = army_fields["Elixir Troops"].splitlines()
         self.assertEqual([line.count("\u200e") for line in lines], [4, 1])
-        self.assertIn(f'{tokens["Barbarian"]} `\u200e 5/6 \u200f`', lines[0])
+        self.assertIn(f'{tokens["Barbarian"]}\u00a0`\u200e 5/6 \u200f`', lines[0])
 
 
 class PlanNavigationTests(unittest.IsolatedAsyncioTestCase):
