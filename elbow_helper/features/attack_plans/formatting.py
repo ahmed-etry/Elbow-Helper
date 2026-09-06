@@ -466,7 +466,8 @@ def _collect_equipment(
 
 def build_planning_embeds(
     player: dict,
-    notes: str,
+    strategy: str,
+    thinking: str,
     base_image: discord.Attachment,
     *,
     emoji_tokens: Mapping[str, str] | None = None,
@@ -540,7 +541,8 @@ def build_planning_embeds(
         url=player_url,
         color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
     )
-    overview_embed.add_field(name="Planning Notes", value=_truncate_text(notes, max_len=700), inline=False)
+    overview_embed.add_field(name="Strategy", value=_truncate_text(strategy, max_len=700), inline=False)
+    overview_embed.add_field(name="Thinking", value=_truncate_text(thinking, max_len=700), inline=False)
     overview_embed.add_field(
         name="Heroes",
         value=_format_level_rows(

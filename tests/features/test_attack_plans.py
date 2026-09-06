@@ -48,6 +48,15 @@ class PlanAutocompleteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([(choice.name, choice.value) for choice in choices], [("Player - BE1 - TH17 - #PLAYER", "#PLAYER")])
 
 
+class PlanCommandTests(unittest.TestCase):
+    def test_plan_collects_strategy_and_thinking_separately(self) -> None:
+        self.assertEqual(
+            [parameter.name for parameter in Planning.planning.parameters],
+            ["player", "strategy", "thinking", "base_image"],
+        )
+        self.assertTrue(all(parameter.required for parameter in Planning.planning.parameters))
+
+
 class PlanEmojiTests(unittest.TestCase):
     def test_required_emoji_names_exclude_super_troops_and_siege_machines(self) -> None:
         unit_names = required_plan_unit_names()
@@ -133,14 +142,16 @@ class PlanEmojiTests(unittest.TestCase):
 
         embeds = build_planning_embeds(
             player,
-            "Use the new units.",
+            "Hydra",
+            "Enter from 3 o'clock.",
             base_image,
             emoji_tokens=tokens,
         )
 
         overview = embeds.pages[0]
         overview_fields = {field.name: field.value for field in overview.fields}
-        self.assertEqual(overview_fields["Planning Notes"], "Use the new units.")
+        self.assertEqual(overview_fields["Strategy"], "Hydra")
+        self.assertEqual(overview_fields["Thinking"], "Enter from 3 o'clock.")
         self.assertIn(
             f'{tokens["Archer Queen"]} `\u200e110/',
             overview_fields["Heroes"],
@@ -201,6 +212,7 @@ class PlanEmojiTests(unittest.TestCase):
 
         embeds = build_planning_embeds(
             player,
+            "Hydra",
             "Fallback test.",
             base_image,
         )
@@ -244,6 +256,7 @@ class PlanEmojiTests(unittest.TestCase):
         ):
             embeds = build_planning_embeds(
                 player,
+                "Hydra",
                 "Layout test.",
                 base_image,
                 emoji_tokens=tokens,
