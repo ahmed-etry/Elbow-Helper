@@ -132,7 +132,6 @@ class Planning(commands.Cog):
 
         emoji_set = await self.plan_emojis.get(required_plan_unit_names())
         planning_embeds = build_planning_embeds(
-            interaction,
             player,
             strategies,
             base_image,

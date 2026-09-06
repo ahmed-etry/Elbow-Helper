@@ -1,10 +1,9 @@
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Dict, List, Mapping, Sequence
+from typing import Dict, Mapping, Sequence
 
 import discord
 
-from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX, DEFAULT_THUMBNAIL_URL
+from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
 
 from .unit_levels import town_hall_max_level
 
@@ -226,33 +225,15 @@ SUPER_TROOP_ORDER = [
     "Super Yeti",
 ]
 
-PAGE_LABELS = ["Overview", "Hero Kit", "Army Kit"]
-ARMY_SECTION_LABELS = {
-    "troops": "Troops",
-    "spells": "Spells",
-    "unmapped": "Other",
-}
 MAX_FIELD_LEN = 1024
 
 
 @dataclass(frozen=True)
 class PlanningEmbeds:
-    static_pages: List[discord.Embed]
-    page_labels: List[str]
-    army_embeds: dict[str, discord.Embed]
+    pages: list[discord.Embed]
 
-    def embed_for_page(self, page_index: int, army_section: str | None = None) -> discord.Embed:
-        if page_index < len(self.static_pages):
-            return self.static_pages[page_index]
-        if army_section and army_section in self.army_embeds:
-            return self.army_embeds[army_section]
-        return next(iter(self.army_embeds.values()))
-
-    def army_sections(self) -> list[str]:
-        return list(self.army_embeds.keys())
-
-    def default_army_section(self) -> str:
-        return next(iter(self.army_embeds), "troops")
+    def embed_for_page(self, page_index: int) -> discord.Embed:
+        return self.pages[page_index]
 
 
 def _truncate_text(value: str | None, max_len: int = 900) -> str:
@@ -386,35 +367,32 @@ def _format_named_level_rows(
     return _join_clipped_lines(_wrap_entries(rendered))
 
 
-def _apply_shared_embed_style(
+def _apply_base_image(
     embed: discord.Embed,
     *,
     base_image: discord.Attachment,
-    footer_text: str,
+    full_size: bool,
 ) -> discord.Embed:
-    embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
-    embed.set_image(url=base_image.url)
-    embed.set_footer(text=footer_text)
+    if full_size:
+        embed.set_image(url=base_image.url)
+    else:
+        embed.set_thumbnail(url=base_image.url)
     return embed
 
 
-def _build_army_section_embed(
+def _build_army_embed(
     player_name: str,
+    town_hall_level: int | str,
     base_image: discord.Attachment,
-    *,
-    description: str | None = None,
 ) -> discord.Embed:
     embed = discord.Embed(
-        title=f"Army Kit: {player_name}",
+        title=f"Army Kit: {player_name} • TH{town_hall_level}",
         color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
-        timestamp=datetime.now(timezone.utc),
     )
-    if description:
-        embed.description = description
-    return _apply_shared_embed_style(
+    return _apply_base_image(
         embed,
         base_image=base_image,
-        footer_text="Army Kit • Page 3/3",
+        full_size=False,
     )
 
 
@@ -490,7 +468,6 @@ def _collect_equipment(
 
 
 def build_planning_embeds(
-    interaction: discord.Interaction,
     player: dict,
     strategies: str,
     base_image: discord.Attachment,
@@ -553,21 +530,12 @@ def build_planning_embeds(
         for name, level in current_levels.items()
     }
 
-    static_pages: List[discord.Embed] = []
+    pages: list[discord.Embed] = []
 
     overview_embed = discord.Embed(
-        title=f"Attack Plan Request: {player_name}",
+        title=f"Attack Plan: {player_name} • TH{th_level}",
+        description=f"`{player_tag}`",
         color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
-        timestamp=datetime.now(timezone.utc),
-    )
-    overview_embed.add_field(
-        name="Account",
-        value=(
-            f"{player_name} (`{player_tag}`)\n"
-            f"TH {th_level}\n"
-            f"Requested by {interaction.user.mention}"
-        ),
-        inline=False,
     )
     overview_embed.add_field(name="Strategy Notes", value=_truncate_text(strategies, max_len=700), inline=False)
     overview_embed.add_field(
@@ -592,18 +560,17 @@ def build_planning_embeds(
         ),
         inline=False,
     )
-    static_pages.append(
-        _apply_shared_embed_style(
+    pages.append(
+        _apply_base_image(
             overview_embed,
             base_image=base_image,
-            footer_text="Overview • Page 1/3",
+            full_size=True,
         )
     )
 
     hero_kit_embed = discord.Embed(
-        title=f"Hero Kit: {player_name}",
+        title=f"Hero Kit: {player_name} • TH{th_level}",
         color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
-        timestamp=datetime.now(timezone.utc),
     )
     if ordered_heroes:
         for hero_name in ordered_heroes:
@@ -636,20 +603,20 @@ def build_planning_embeds(
             ),
             inline=False,
         )
-    static_pages.append(
-        _apply_shared_embed_style(
+    pages.append(
+        _apply_base_image(
             hero_kit_embed,
             base_image=base_image,
-            footer_text="Hero Kit • Page 2/3",
+            full_size=False,
         )
     )
 
-    army_troops_embed = _build_army_section_embed(
+    army_embed = _build_army_embed(
         player_name,
+        th_level,
         base_image,
-        description="",
     )
-    army_troops_embed.add_field(
+    army_embed.add_field(
         name="Elixir Troops",
         value=_format_level_rows(
             elixir_troops,
@@ -660,7 +627,7 @@ def build_planning_embeds(
         ),
         inline=False,
     )
-    army_troops_embed.add_field(
+    army_embed.add_field(
         name="Dark Elixir Troops",
         value=_format_level_rows(
             dark_troops,
@@ -671,12 +638,7 @@ def build_planning_embeds(
         ),
         inline=False,
     )
-    army_spells_embed = _build_army_section_embed(
-        player_name,
-        base_image,
-        description="",
-    )
-    army_spells_embed.add_field(
+    army_embed.add_field(
         name="Elixir Spells",
         value=_format_level_rows(
             elixir_spells,
@@ -687,7 +649,7 @@ def build_planning_embeds(
         ),
         inline=False,
     )
-    army_spells_embed.add_field(
+    army_embed.add_field(
         name="Dark Spells",
         value=_format_level_rows(
             dark_spells,
@@ -698,19 +660,10 @@ def build_planning_embeds(
         ),
         inline=False,
     )
-    army_embeds: dict[str, discord.Embed] = {
-        "troops": army_troops_embed,
-        "spells": army_spells_embed,
-    }
     if unmapped_troops or unmapped_spells:
-        army_unmapped_embed = _build_army_section_embed(
-            player_name,
-            base_image,
-            description="",
-        )
         if unmapped_troops:
-            army_unmapped_embed.add_field(
-                name="Troops",
+            army_embed.add_field(
+                name="Other Troops",
                 value=_format_level_rows(
                     unmapped_troops,
                     troop_levels,
@@ -720,8 +673,8 @@ def build_planning_embeds(
                 inline=False,
             )
         if unmapped_spells:
-            army_unmapped_embed.add_field(
-                name="Spells",
+            army_embed.add_field(
+                name="Other Spells",
                 value=_format_level_rows(
                     unmapped_spells,
                     spell_levels,
@@ -730,10 +683,6 @@ def build_planning_embeds(
                 ),
                 inline=False,
             )
-        army_embeds["unmapped"] = army_unmapped_embed
+    pages.append(army_embed)
 
-    return PlanningEmbeds(
-        static_pages=static_pages,
-        page_labels=PAGE_LABELS,
-        army_embeds=army_embeds,
-    )
+    return PlanningEmbeds(pages=pages)

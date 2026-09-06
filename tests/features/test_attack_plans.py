@@ -2,14 +2,19 @@ from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from unittest.mock import patch
+
+import discord
 
 from elbow_helper.features.attack_plans.cog import Planning
 from elbow_helper.features.attack_plans.emojis import application_emoji_name
+from elbow_helper.features.attack_plans.formatting import PlanningEmbeds
 from elbow_helper.features.attack_plans.formatting import build_planning_embeds
 from elbow_helper.features.attack_plans.formatting import required_plan_unit_names
 from elbow_helper.features.attack_plans.unit_levels import TOWN_HALL_MAX_LEVELS
 from elbow_helper.features.attack_plans.unit_levels import town_hall_max_level
+from elbow_helper.features.attack_plans.views import PlanningView
 
 
 class _PlanningHarness:
@@ -77,7 +82,6 @@ class PlanEmojiTests(unittest.TestCase):
         self.assertEqual(application_emoji_name("Revenge Deck"), "revenge_deck")
 
     def test_current_units_render_as_icons_in_their_plan_sections(self) -> None:
-        interaction = SimpleNamespace(user=SimpleNamespace(mention="<@123>"))
         base_image = SimpleNamespace(url="https://example.com/base.png")
         player = {
             "name": "Planner",
@@ -127,22 +131,21 @@ class PlanEmojiTests(unittest.TestCase):
         }
 
         embeds = build_planning_embeds(
-            interaction,
             player,
             "Use the new units.",
             base_image,
             emoji_tokens=tokens,
         )
 
-        self.assertEqual(embeds.army_sections(), ["troops", "spells"])
-        overview = embeds.static_pages[0]
+        overview = embeds.pages[0]
+        overview_fields = {field.name: field.value for field in overview.fields}
         self.assertIn(
             f'{tokens["Archer Queen"]} `\u200e110/',
-            overview.fields[2].value,
+            overview_fields["Heroes"],
         )
-        self.assertIn(tokens["Greedy Raven"], overview.fields[3].value)
+        self.assertIn(tokens["Greedy Raven"], overview_fields["Pets"])
 
-        hero_kit = embeds.static_pages[1]
+        hero_kit = embeds.pages[1]
         queen_field = next(
             field for field in hero_kit.fields
             if tokens["Archer Queen"] in field.name
@@ -157,20 +160,30 @@ class PlanEmojiTests(unittest.TestCase):
             self.assertIn(tokens[name], duke_field.value)
             self.assertNotIn(name, duke_field.value)
 
-        troop_value = embeds.army_embeds["troops"].fields[1].value
-        spell_value = embeds.army_embeds["spells"].fields[1].value
+        army_kit = embeds.pages[2]
+        army_fields = {field.name: field.value for field in army_kit.fields}
+        self.assertEqual(
+            list(army_fields),
+            ["Elixir Troops", "Dark Elixir Troops", "Elixir Spells", "Dark Spells"],
+        )
+        troop_value = army_fields["Dark Elixir Troops"]
+        spell_value = army_fields["Dark Spells"]
         self.assertIn(f'{tokens["Ruin Witch"]} `\u200e 4/', troop_value)
         self.assertIn(f'{tokens["Angry Spell"]} `\u200e 4/', spell_value)
-        army_text = " ".join(
-            field.value
-            for embed in embeds.army_embeds.values()
-            for field in embed.fields
-        )
+        army_text = " ".join(field.value for field in army_kit.fields)
         self.assertNotIn("Super Barbarian", army_text)
         self.assertNotIn("Sky Wagon", army_text)
 
+        self.assertEqual(overview.title, "Attack Plan: Planner • TH18")
+        self.assertEqual(overview.description, "`#PLAYER`")
+        self.assertEqual(overview.image.url, base_image.url)
+        self.assertIsNone(overview.thumbnail.url)
+        self.assertEqual(hero_kit.thumbnail.url, base_image.url)
+        self.assertIsNone(hero_kit.image.url)
+        self.assertEqual(army_kit.thumbnail.url, base_image.url)
+        self.assertIsNone(army_kit.image.url)
+
     def test_missing_emojis_keep_readable_unit_names(self) -> None:
-        interaction = SimpleNamespace(user=SimpleNamespace(mention="<@123>"))
         base_image = SimpleNamespace(url="https://example.com/base.png")
         player = {
             "name": "Planner",
@@ -183,23 +196,25 @@ class PlanEmojiTests(unittest.TestCase):
         }
 
         embeds = build_planning_embeds(
-            interaction,
             player,
             "Fallback test.",
             base_image,
         )
+        army_fields = {
+            field.name: field.value
+            for field in embeds.pages[2].fields
+        }
 
         self.assertIn(
             "Ruin Witch `\u200e 4/",
-            embeds.army_embeds["troops"].fields[1].value,
+            army_fields["Dark Elixir Troops"],
         )
         self.assertIn(
             "Angry Spell `\u200e 4/",
-            embeds.army_embeds["spells"].fields[1].value,
+            army_fields["Dark Spells"],
         )
 
     def test_troop_rows_use_four_clashperk_style_level_entries(self) -> None:
-        interaction = SimpleNamespace(user=SimpleNamespace(mention="<@123>"))
         base_image = SimpleNamespace(url="https://example.com/base.png")
         troop_names = ["Barbarian", "Archer", "Giant", "Goblin", "Wall Breaker"]
         tokens = {
@@ -224,13 +239,69 @@ class PlanEmojiTests(unittest.TestCase):
             {"Barbarian": (6,) * 18},
         ):
             embeds = build_planning_embeds(
-                interaction,
                 player,
                 "Layout test.",
                 base_image,
                 emoji_tokens=tokens,
             )
 
-        lines = embeds.army_embeds["troops"].fields[0].value.splitlines()
+        army_fields = {
+            field.name: field.value
+            for field in embeds.pages[2].fields
+        }
+        lines = army_fields["Elixir Troops"].splitlines()
         self.assertEqual([line.count("\u200e") for line in lines], [4, 1])
         self.assertIn(f'{tokens["Barbarian"]} `\u200e 5/6 \u200f`', lines[0])
+
+
+class PlanNavigationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_category_buttons_switch_directly_to_the_selected_page(self) -> None:
+        pages = [
+            discord.Embed(title="Overview"),
+            discord.Embed(title="Hero Kit"),
+            discord.Embed(title="Army Kit"),
+        ]
+        view = PlanningView(PlanningEmbeds(pages=pages))
+        response_state = {"done": False}
+        interaction_events: list[str] = []
+
+        async def defer() -> None:
+            interaction_events.append("defer")
+            response_state["done"] = True
+
+        async def edit(**kwargs: object) -> None:
+            interaction_events.append("edit")
+
+        response = SimpleNamespace(
+            is_done=lambda: response_state["done"],
+            defer=AsyncMock(side_effect=defer),
+        )
+        message = SimpleNamespace(edit=AsyncMock(side_effect=edit))
+        interaction = SimpleNamespace(response=response, message=message)
+
+        labels = ["Overview", "Hero Kit", "Army Kit"]
+        for selected_index, label in enumerate(labels):
+            with self.subTest(label=label):
+                response_state["done"] = False
+                interaction_events.clear()
+                response.defer.reset_mock()
+                message.edit.reset_mock()
+                button = next(item for item in view.children if item.label == label)
+
+                await button.callback(interaction)
+
+                response.defer.assert_awaited_once_with()
+                message.edit.assert_awaited_once_with(
+                    embed=pages[selected_index],
+                    view=view,
+                )
+                self.assertEqual(interaction_events, ["defer", "edit"])
+                self.assertEqual(
+                    [item.style for item in view.children],
+                    [
+                        discord.ButtonStyle.primary
+                        if index == selected_index
+                        else discord.ButtonStyle.secondary
+                        for index in range(len(labels))
+                    ],
+                )
