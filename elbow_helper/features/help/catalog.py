@@ -68,12 +68,12 @@ HELP_ENTRIES: tuple[HelpEntry, ...] = (
     HelpEntry(
         path="/plan",
         summary="Get help planning an attack.",
-        details=(
-            "Share a base and ask for an attack plan that fits your army levels and preferred strategies. "
-            "The selected Clash account supplies the army levels shown with the request."
-        ),
+        details="Share a base and any notes that could help shape the attack plan.",
         category=CAT_GENERAL,
-        examples=("/plan player:#PLAYER strategies:Hydra into core base_image:image",),
+        examples=(
+            "/plan player:#PLAYER notes:I'm considering a Hydra entry from 3 o'clock to reach the Monolith early, "
+            "but I'm open to a different approach. base_image:image",
+        ),
     ),
     HelpEntry(
         path="/transfer request",

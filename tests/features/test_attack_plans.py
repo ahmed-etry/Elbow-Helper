@@ -140,6 +140,7 @@ class PlanEmojiTests(unittest.TestCase):
 
         overview = embeds.pages[0]
         overview_fields = {field.name: field.value for field in overview.fields}
+        self.assertEqual(overview_fields["Planning Notes"], "Use the new units.")
         self.assertIn(
             f'{tokens["Archer Queen"]} `\u200e110/',
             overview_fields["Heroes"],

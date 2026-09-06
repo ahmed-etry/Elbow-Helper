@@ -16,8 +16,8 @@ link is wrong or an account is missing, ask them to check it.
 
 - `/help` shows what you can use or explains one command.
 - `/ping` checks whether the bot is responding.
-- `/plan` lets you share a base and ask for an attack plan that fits your army
-  levels and preferred strategies.
+- `/plan` lets you share a base, your preferred army, and your current thinking
+  to get help shaping the attack plan.
 - `/achievements` shows your progress and rewards.
 - `/achievement leaderboard` ranks members by achievements earned.
 - `/inventory` shows your coins and raffle ticket.

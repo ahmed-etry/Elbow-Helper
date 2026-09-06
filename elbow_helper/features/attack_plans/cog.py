@@ -93,14 +93,14 @@ class Planning(commands.Cog):
     @app_commands.autocomplete(player=player_autocomplete)
     @app_commands.describe(
         player="Your Clash account for this attack plan.",
-        strategies="Armies or strategies you're comfortable with or want to use.",
+        notes="Share your preferred army, current plan, and anything else the planner should account for.",
         base_image="Screenshot of the base you want help attacking.",
     )
     async def planning(
         self,
         interaction: discord.Interaction,
         player: str,
-        strategies: str,
+        notes: str,
         base_image: discord.Attachment,
     ) -> None:
         if not any(role.id in MEMBERS for role in interaction.user.roles):
@@ -139,7 +139,7 @@ class Planning(commands.Cog):
         )
         planning_embeds = build_planning_embeds(
             player,
-            strategies,
+            notes,
             base_image,
             emoji_tokens=emoji_set.tokens,
         )
