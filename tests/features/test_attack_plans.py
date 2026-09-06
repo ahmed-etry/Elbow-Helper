@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import discord
 
+from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
 from elbow_helper.features.attack_plans.cog import Planning
 from elbow_helper.features.attack_plans.emojis import application_emoji_name
 from elbow_helper.features.attack_plans.formatting import PlanningEmbeds
@@ -115,6 +116,7 @@ class PlanEmojiTests(unittest.TestCase):
             ],
         }
         icon_names = (
+            "th18",
             "Archer Queen",
             "Dragon Duke",
             "Greedy Raven",
@@ -174,14 +176,16 @@ class PlanEmojiTests(unittest.TestCase):
         self.assertNotIn("Super Barbarian", army_text)
         self.assertNotIn("Sky Wagon", army_text)
 
-        self.assertEqual(overview.title, "Attack Plan: Planner • TH18")
-        self.assertEqual(overview.description, "`#PLAYER`")
+        self.assertEqual(overview.title, "Attack Plan")
+        self.assertEqual(
+            overview.description,
+            f'{tokens["th18"]} [Planner (#PLAYER)]'
+            "(https://link.clashofclans.com/en?action=OpenPlayerProfile&tag=%23PLAYER)",
+        )
         self.assertEqual(overview.image.url, base_image.url)
-        self.assertIsNone(overview.thumbnail.url)
-        self.assertEqual(hero_kit.thumbnail.url, base_image.url)
-        self.assertIsNone(hero_kit.image.url)
-        self.assertEqual(army_kit.thumbnail.url, base_image.url)
-        self.assertIsNone(army_kit.image.url)
+        for embed in embeds.pages:
+            self.assertEqual(embed.thumbnail.url, DEFAULT_THUMBNAIL_URL)
+            self.assertEqual(embed.image.url, base_image.url)
 
     def test_missing_emojis_keep_readable_unit_names(self) -> None:
         base_image = SimpleNamespace(url="https://example.com/base.png")
@@ -261,7 +265,15 @@ class PlanNavigationTests(unittest.IsolatedAsyncioTestCase):
             discord.Embed(title="Hero Kit"),
             discord.Embed(title="Army Kit"),
         ]
-        view = PlanningView(PlanningEmbeds(pages=pages))
+        button_tokens = (
+            "<:town_hall:123456789012345678>",
+            "<:BarbarianKing:123456789012345679>",
+            "<:Troops:123456789012345680>",
+        )
+        view = PlanningView(
+            PlanningEmbeds(pages=pages),
+            button_emoji_tokens=button_tokens,
+        )
         response_state = {"done": False}
         interaction_events: list[str] = []
 
@@ -280,6 +292,10 @@ class PlanNavigationTests(unittest.IsolatedAsyncioTestCase):
         interaction = SimpleNamespace(response=response, message=message)
 
         labels = ["Overview", "Hero Kit", "Army Kit"]
+        self.assertEqual(
+            [str(item.emoji) for item in view.children],
+            list(button_tokens),
+        )
         for selected_index, label in enumerate(labels):
             with self.subTest(label=label):
                 response_state["done"] = False

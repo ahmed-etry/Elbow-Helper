@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from typing import Sequence
 
 import discord
 from elbow_helper.discord.views import BaseTimeoutView
@@ -14,10 +15,21 @@ if TYPE_CHECKING:
 class PlanningView(BaseTimeoutView):
     """Direct navigation between the attack plan's three categories."""
 
-    def __init__(self, planning_embeds: "PlanningEmbeds"):
+    def __init__(
+        self,
+        planning_embeds: "PlanningEmbeds",
+        *,
+        button_emoji_tokens: Sequence[str | None] = (),
+    ):
         super().__init__(timeout=86400)
         self.planning_embeds = planning_embeds
         self.index = 0
+        for button, token in zip(
+            (self.overview_button, self.hero_kit_button, self.army_kit_button),
+            button_emoji_tokens,
+        ):
+            if token:
+                button.emoji = discord.PartialEmoji.from_str(token)
         self._update_controls()
 
     def _current_embed(self) -> discord.Embed:

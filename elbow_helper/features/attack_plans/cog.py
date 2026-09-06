@@ -130,7 +130,14 @@ class Planning(commands.Cog):
             await interaction.followup.send(self._player_fetch_error_text(player), ephemeral=True)
             return
 
-        emoji_set = await self.plan_emojis.get(required_plan_unit_names())
+        emoji_set = await self.plan_emojis.get(
+            (
+                *required_plan_unit_names(),
+                f"th{player.get('townHallLevel', '')}",
+                "town_hall",
+                "Troops",
+            )
+        )
         planning_embeds = build_planning_embeds(
             player,
             strategies,
@@ -138,7 +145,14 @@ class Planning(commands.Cog):
             emoji_tokens=emoji_set.tokens,
         )
         mention_roles = " ".join(f"<@&{role_id}>" for role_id in PLANNING_HELPERS) or None
-        view = PlanningView(planning_embeds)
+        view = PlanningView(
+            planning_embeds,
+            button_emoji_tokens=(
+                emoji_set.get("town_hall"),
+                emoji_set.get("Barbarian King"),
+                emoji_set.get("Troops"),
+            ),
+        )
 
         review_message = await interaction.followup.send(
             content=mention_roles,

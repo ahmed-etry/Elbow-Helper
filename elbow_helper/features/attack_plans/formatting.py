@@ -3,7 +3,8 @@ from typing import Dict, Mapping, Sequence
 
 import discord
 
-from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
+from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX, DEFAULT_THUMBNAIL_URL
+from elbow_helper.domain.player_tags import encode_clash_tag
 
 from .unit_levels import town_hall_max_level
 
@@ -371,12 +372,9 @@ def _apply_base_image(
     embed: discord.Embed,
     *,
     base_image: discord.Attachment,
-    full_size: bool,
 ) -> discord.Embed:
-    if full_size:
-        embed.set_image(url=base_image.url)
-    else:
-        embed.set_thumbnail(url=base_image.url)
+    embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
+    embed.set_image(url=base_image.url)
     return embed
 
 
@@ -392,7 +390,6 @@ def _build_army_embed(
     return _apply_base_image(
         embed,
         base_image=base_image,
-        full_size=False,
     )
 
 
@@ -476,7 +473,7 @@ def build_planning_embeds(
 ) -> PlanningEmbeds:
     tokens = emoji_tokens or {}
     player_name = player.get("name") or "Unknown"
-    player_tag = player.get("tag") or "--"
+    player_tag = str(player.get("tag") or "").strip()
     th_level = player.get("townHallLevel", "N/A")
     try:
         town_hall_level = int(th_level)
@@ -532,9 +529,17 @@ def build_planning_embeds(
 
     pages: list[discord.Embed] = []
 
+    account_text = f"{player_name} ({player_tag})" if player_tag else player_name
+    if player_tag:
+        account_text = (
+            f"[{account_text}]"
+            "(https://link.clashofclans.com/en?action=OpenPlayerProfile&tag="
+            f"{encode_clash_tag(player_tag)})"
+        )
+    town_hall_label = tokens.get(f"th{town_hall_level}", f"TH{th_level}")
     overview_embed = discord.Embed(
-        title=f"Attack Plan: {player_name} • TH{th_level}",
-        description=f"`{player_tag}`",
+        title="Attack Plan",
+        description=f"{town_hall_label} {account_text}",
         color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
     )
     overview_embed.add_field(name="Strategy Notes", value=_truncate_text(strategies, max_len=700), inline=False)
@@ -564,7 +569,6 @@ def build_planning_embeds(
         _apply_base_image(
             overview_embed,
             base_image=base_image,
-            full_size=True,
         )
     )
 
@@ -607,7 +611,6 @@ def build_planning_embeds(
         _apply_base_image(
             hero_kit_embed,
             base_image=base_image,
-            full_size=False,
         )
     )
 
