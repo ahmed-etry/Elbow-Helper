@@ -59,6 +59,7 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
         self.state.setdefault("platform_counts", {})
         self.state.setdefault("last_weekly_report_iso", None)
         self.state.setdefault("last_applicant_scan_iso", None)
+        self.state.setdefault("overdue_applicant_ids", [])
         self.state.setdefault("applicant_reports", {})
         self.state.setdefault("ticket_owner_links", {})
         self.state.setdefault("ticket_log_last_message_id", None)

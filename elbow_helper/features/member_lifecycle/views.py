@@ -23,7 +23,7 @@ LOGGER = logging.getLogger(__name__)
 class ApplicantCleanupSelect(discord.ui.Select):
     def __init__(self, view: "ApplicantCleanupSelectView", options: list[discord.SelectOption]):
         super().__init__(
-            placeholder="Select applicants to remove from the server",
+            placeholder="Choose applicants to remove",
             min_values=0,
             max_values=len(options),
             options=options,
@@ -62,7 +62,7 @@ class ApplicantCleanupSelectView(BaseTimeoutView):
 
         self.confirm_button = discord.ui.Button(
             style=discord.ButtonStyle.danger,
-            label=f"Confirm Removal ({len(self.selected_ids)})",
+            label=f"Remove Selected ({len(self.selected_ids)})",
         )
         self.confirm_button.callback = self.confirm_kick
         self.add_item(self.confirm_button)
@@ -92,7 +92,7 @@ class ApplicantCleanupSelectView(BaseTimeoutView):
         return options
 
     def update_confirm_label(self) -> None:
-        self.confirm_button.label = f"Confirm Removal ({len(self.selected_ids)})"
+        self.confirm_button.label = f"Remove Selected ({len(self.selected_ids)})"
 
     def refresh_page(self) -> None:
         options = self.page_options()
@@ -110,7 +110,7 @@ class ApplicantCleanupSelectView(BaseTimeoutView):
 
     def content(self) -> str:
         return (
-            "Select applicants to remove from the server. All are pre-selected; deselect anyone to keep.\n"
+            "Choose which applicants to remove. Everyone is selected by default; deselect anyone to keep.\n"
             f"{format_page_footer(self.page_index + 1, self.page_count())} • Selected: {len(self.selected_ids)}"
         )
 
@@ -135,7 +135,7 @@ class ApplicantCleanupSelectView(BaseTimeoutView):
             await interaction.response.send_message("You don't have permission to remove applicants from the server.", ephemeral=True)
             return
         if not self.selected_ids:
-            await interaction.response.send_message("No applicants selected.", ephemeral=True)
+            await interaction.response.send_message("Select at least one applicant to continue.", ephemeral=True)
             return
 
         guild = interaction.guild or self.cog.bot.get_guild(GUILD_ID)
@@ -189,7 +189,7 @@ class ApplicantCleanupView(BaseTimeoutView):
         self.report_message_id = report_message_id
         cleanup_button = discord.ui.Button(
             style=discord.ButtonStyle.primary,
-            label="Remove Applicants",
+            label="Review Applicants",
             custom_id=f"applicant_cleanup:{report_message_id}",
             disabled=disabled,
         )

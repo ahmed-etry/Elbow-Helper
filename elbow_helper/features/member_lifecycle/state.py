@@ -18,6 +18,7 @@ def default_state() -> dict[str, Any]:
         "platform_counts": {},
         "last_weekly_report_iso": None,
         "last_applicant_scan_iso": None,
+        "overdue_applicant_ids": [],
         "applicant_reports": {},
         "ticket_owner_links": {},
         "ticket_log_last_message_id": None,

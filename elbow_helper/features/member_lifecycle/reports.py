@@ -31,6 +31,45 @@ class ReportsMixin:
         except ValueError:
             return now - timedelta(days=fallback_days)
 
+    @staticmethod
+    def _build_applicant_linger_embed(
+        lingering: list[tuple[discord.Member, datetime, int]],
+        owner_links: dict[str, list[str]],
+        now: datetime,
+    ) -> discord.Embed:
+        entries: list[str] = []
+        for index, (member, _, days) in enumerate(
+            lingering[:MAX_OVERDUE_APPLICANTS_DISPLAY],
+            start=1,
+        ):
+            links = owner_links.get(str(member.id), [])
+            latest_ticket_link = links[-1] if links else None
+            ticket_value = (
+                f"[Open ticket log]({latest_ticket_link})"
+                if latest_ticket_link
+                else "No ticket log found"
+            )
+            day_noun = "day" if days == 1 else "days"
+            entries.append(
+                f"**{index}.** {member.mention}\n"
+                f"Joined **{days} {day_noun} ago** · {ticket_value}"
+            )
+
+        embed = discord.Embed(
+            title="🔔 Overdue Applicants",
+            description="\n\n".join(entries),
+            color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
+            timestamp=now,
+        )
+        embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
+
+        if len(lingering) > MAX_OVERDUE_APPLICANTS_DISPLAY:
+            embed.set_footer(
+                text=f"Showing {MAX_OVERDUE_APPLICANTS_DISPLAY} of {len(lingering)} applicants."
+            )
+
+        return embed
+
     @tasks.loop(hours=24)
     async def weekly_report(self):
         await self.bot.wait_until_ready()
@@ -72,15 +111,11 @@ class ReportsMixin:
     async def before_weekly_report(self):
         await self.bot.wait_until_ready()
 
-    @tasks.loop(hours=168)
+    @tasks.loop(hours=24)
     async def applicant_linger_scan(self):
         await self.bot.wait_until_ready()
 
         now = datetime.now(timezone.utc)
-        last = self._load_last_run("last_applicant_scan_iso", now, fallback_days=1000)
-        if (now - last) < timedelta(days=WEEKLY_REPORT_INTERVAL_DAYS):
-            return
-
         guild = self.bot.get_guild(GUILD_ID)
         if not guild:
             return
@@ -110,9 +145,18 @@ class ReportsMixin:
             if joined_at <= cutoff:
                 lingering.append((member, joined_at, (now - joined_at).days))
 
-        self.state["last_applicant_scan_iso"] = now.isoformat()
+        current_overdue_ids = {member.id for member, _, _ in lingering}
+        previous_overdue_ids: set[int] = set()
+        for member_id in self.state.get("overdue_applicant_ids", []):
+            try:
+                previous_overdue_ids.add(int(member_id))
+            except (TypeError, ValueError):
+                continue
+        has_new_overdue_applicants = bool(current_overdue_ids - previous_overdue_ids)
 
-        if not lingering:
+        if not has_new_overdue_applicants:
+            self.state["last_applicant_scan_iso"] = now.isoformat()
+            self.state["overdue_applicant_ids"] = sorted(current_overdue_ids)
             save_state(self.state)
             return
 
@@ -120,27 +164,7 @@ class ReportsMixin:
         owner_links = self.state.get("ticket_owner_links", {})
         lingering.sort(key=lambda row: row[2], reverse=True)
 
-        rows: list[str] = []
-        for member, _, days in lingering:
-            links = owner_links.get(str(member.id), [])
-            latest_ticket_link = links[-1] if links else None
-            ticket_value = f"[Yes]({latest_ticket_link})" if latest_ticket_link else "No"
-            rows.append(f"• {member.mention} — {days}d — Ticket: {ticket_value}")
-
-        display_rows = rows[:MAX_OVERDUE_APPLICANTS_DISPLAY]
-        if len(rows) > MAX_OVERDUE_APPLICANTS_DISPLAY:
-            extra = len(rows) - MAX_OVERDUE_APPLICANTS_DISPLAY
-            noun = "applicant" if extra == 1 else "applicants"
-            display_rows.append(f"+{extra} more {noun}")
-
-        embed = discord.Embed(
-            title="🔔 Overdue Applicants",
-            description=f"Applicants who joined at least {APPLICANT_LINGER_DAYS} days ago.",
-            color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
-            timestamp=now,
-        )
-        embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
-        embed.add_field(name="Applicants", value="\n".join(display_rows), inline=False)
+        embed = self._build_applicant_linger_embed(lingering, owner_links, now)
 
         msg = await overseer.send(embed=embed)
         await msg.edit(view=ApplicantCleanupView(self, msg.id))
@@ -149,6 +173,8 @@ class ReportsMixin:
             "created_iso": now.isoformat(),
             "active": True,
         }
+        self.state["last_applicant_scan_iso"] = now.isoformat()
+        self.state["overdue_applicant_ids"] = sorted(current_overdue_ids)
         save_state(self.state)
 
     @applicant_linger_scan.before_loop
