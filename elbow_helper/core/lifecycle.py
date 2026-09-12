@@ -12,7 +12,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from elbow_helper.infrastructure.clash import ClashClient
-from elbow_helper.infrastructure.ai import OpenAITextClient
+from elbow_helper.infrastructure.ai import TextGenerator
 from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
 from elbow_helper.infrastructure.exports import LocalExportStore
 from elbow_helper.infrastructure.exports import WorkbookWriter
@@ -204,7 +204,7 @@ class ElbowHelperBot(commands.Bot):
         paths: ApplicationPaths,
         guild_id: int,
         clash_client: ClashClient,
-        text_generator: OpenAITextClient,
+        text_generator: TextGenerator,
         google_publisher: GoogleSheetsPublisher,
         workbook_writer: WorkbookWriter,
         required_extensions: tuple[str, ...] = REQUIRED_EXTENSIONS,

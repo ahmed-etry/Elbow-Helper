@@ -26,7 +26,7 @@ class RuntimeSettings:
 
     discord_token: str | None
     coc_api_key: str | None
-    openai_api_key: str | None
+    deepseek_api_key: str | None
     google_oauth_client_id: str | None
     google_oauth_client_secret: str | None
     google_oauth_refresh_token: str | None
@@ -37,7 +37,7 @@ class RuntimeSettings:
         return cls(
             discord_token=_optional_text(values.get("DISCORD_TOKEN")),
             coc_api_key=_optional_text(values.get("COC_API_KEY")),
-            openai_api_key=_optional_text(values.get("OPENAI_API_KEY")),
+            deepseek_api_key=_optional_text(values.get("DEEPSEEK_API_KEY")),
             google_oauth_client_id=_optional_text(
                 values.get("GOOGLE_OAUTH_CLIENT_ID")
             ),

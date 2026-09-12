@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from elbow_helper.infrastructure.ai import GenerationTier
 from elbow_helper.infrastructure.ai import TextGenerationError
 from elbow_helper.infrastructure.ai import TextGenerator
 
@@ -34,9 +35,9 @@ class SupportWelcomeService:
         )
         try:
             response = await self._text_generator.complete(
-                model="gpt-4o-mini",
+                tier=GenerationTier.ROUTINE,
                 prompt=prompt,
-                max_tokens=80,
+                max_output_tokens=80,
                 temperature=0.6,
             )
         except TextGenerationError as error:

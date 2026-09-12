@@ -142,12 +142,16 @@ class DependencyBoundaryTests(unittest.TestCase):
                         positions[consumer],
                     )
 
-    def test_feature_modules_do_not_construct_openai_clients(self) -> None:
+    def test_feature_modules_do_not_construct_external_ai_clients(self) -> None:
         for path in FEATURE_ROOT.rglob("*.py"):
             source = path.read_text(encoding="utf-8-sig")
             with self.subTest(path=path):
                 self.assertNotIn("from openai import", source)
+                self.assertNotIn("DeepSeekTextClient(", source)
                 self.assertNotIn("OPENAI_API_KEY", source)
+                self.assertNotIn("DEEPSEEK_API_KEY", source)
+                self.assertNotIn("deepseek-", source)
+                self.assertNotIn("gpt-", source)
 
     def test_feature_modules_do_not_load_process_settings(self) -> None:
         forbidden = ("os.getenv(", "os.environ[", "load_dotenv(")

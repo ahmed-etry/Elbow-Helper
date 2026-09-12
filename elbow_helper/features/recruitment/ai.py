@@ -12,12 +12,14 @@ from elbow_helper.configuration.channels import REC_ROOM
 from elbow_helper.configuration.channels import RECRUITMENT_TICKET_CATEGORY
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
 from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
+from elbow_helper.infrastructure.ai import GenerationTier
 from elbow_helper.infrastructure.ai import TextGenerationError
 
 from .config import APPLICANT_AI_CLEANUP_HOURS
 
 LOGGER = logging.getLogger(__name__)
-RECRUITMENT_REVIEW_MODEL = "gpt-5.4"
+
+
 class AIMixin:
 
     @staticmethod
@@ -171,13 +173,13 @@ Keep it concise but useful. Total response should stay under 220 words.
 
         try:
             response_text = await self.text_generator.complete(
-                model=RECRUITMENT_REVIEW_MODEL,
+                tier=GenerationTier.ROUTINE,
                 prompt=prompt,
                 temperature=0.2,
-                max_completion_tokens=650,
+                max_output_tokens=650,
             )
         except TextGenerationError as exc:
-            raise RuntimeError("Recruitment AI request failed") from exc
+            raise RuntimeError(f"Recruitment AI request failed: {exc}") from exc
 
         if not response_text:
             raise RuntimeError("Recruitment AI returned no content")
@@ -311,9 +313,10 @@ Max 3 bullets, total <=60 words, concise, no intro/outro.
 
             try:
                 feedback = await self.text_generator.complete(
-                    model=RECRUITMENT_REVIEW_MODEL,
+                    tier=GenerationTier.ROUTINE,
                     prompt=prompt,
                     temperature=0.3,
+                    max_output_tokens=200,
                 )
             except TextGenerationError as exc:
                 self.logger.warning("Applicant review AI request failed: channel_id=%s error=%s", channel.id, exc)

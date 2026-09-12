@@ -41,7 +41,7 @@ class RuntimeSettingsTests(unittest.TestCase):
             {
                 "DISCORD_TOKEN": "  token-value  ",
                 "COC_API_KEY": "  coc-token  ",
-                "OPENAI_API_KEY": "  openai-token  ",
+                "DEEPSEEK_API_KEY": "  deepseek-token  ",
                 "GOOGLE_OAUTH_CLIENT_ID": "  google-client  ",
                 "GOOGLE_OAUTH_CLIENT_SECRET": "  google-secret  ",
                 "GOOGLE_OAUTH_REFRESH_TOKEN": "  google-refresh  ",
@@ -51,7 +51,7 @@ class RuntimeSettingsTests(unittest.TestCase):
 
         self.assertEqual(settings.discord_token, "token-value")
         self.assertEqual(settings.coc_api_key, "coc-token")
-        self.assertEqual(settings.openai_api_key, "openai-token")
+        self.assertEqual(settings.deepseek_api_key, "deepseek-token")
         self.assertEqual(settings.google_oauth_client_id, "google-client")
         self.assertEqual(settings.google_oauth_client_secret, "google-secret")
         self.assertEqual(settings.google_oauth_refresh_token, "google-refresh")
