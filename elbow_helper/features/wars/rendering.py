@@ -10,6 +10,9 @@ from urllib.parse import quote
 
 import discord
 
+from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
+from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
+
 from .emojis import WarEmojiSet
 
 
@@ -238,7 +241,7 @@ def build_war_summary_embed(
                 _war_stats(data, clan, opponent, emojis),
             )
         ),
-        color=discord.Color(WAR_RESULT_COLORS[_war_result(clan, opponent)]),
+        color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
         timestamp=timestamp,
     )
     embed.set_author(
@@ -246,6 +249,7 @@ def build_war_summary_embed(
         url=_clan_url(clan_tag),
         icon_url=_badge_url(clan),
     )
+    embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
     return embed
 
 

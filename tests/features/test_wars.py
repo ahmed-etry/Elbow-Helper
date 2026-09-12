@@ -29,6 +29,8 @@ from elbow_helper.features.wars.tasks import TaskMixin
 from elbow_helper.features.wars.warflow import WarflowMixin
 from elbow_helper.configuration.clans import CLAN_WAR_ROLE_IDS
 from elbow_helper.configuration.channels import CLAN_WAR_CHANNELS
+from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
+from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
 
 
 def _war_payload(
@@ -531,7 +533,8 @@ class WarBoardRenderingTests(unittest.TestCase):
             "https://example.com/hellbow.png",
         )
         self.assertIn("tag=%232Y2PJCVGU", summary.author.url)
-        self.assertIsNone(summary.thumbnail.url)
+        self.assertEqual(summary.color.value, DEFAULT_EMBED_COLOR_HEX)
+        self.assertEqual(summary.thumbnail.url, DEFAULT_THUMBNAIL_URL)
 
     def test_missed_attack_copy_uses_the_attack_count(self) -> None:
         payload = _war_payload("warEnded")
