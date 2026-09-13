@@ -27,6 +27,6 @@ Discord.
 Support tickets use the member's Discord display name and ticket topic to write
 a welcome sentence. The ticket conversation remains in Discord.
 
-These requests are currently processed through the OpenAI API. See
-[OpenAI API data controls](https://developers.openai.com/api/docs/guides/your-data)
-for how OpenAI handles API data.
+These requests are currently processed through the DeepSeek API. See
+[DeepSeek's privacy policy](https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html)
+for how DeepSeek handles API data.

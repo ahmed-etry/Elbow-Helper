@@ -12,7 +12,7 @@ Use `elbow_helper.domain.player_tags` for tag normalization and URL encoding.
 ## AI text generation
 
 Recruitment and Support Tickets request text through `TextGenerator`.
-`elbow_helper.app` creates the `OpenAITextClient` that implements it.
+`elbow_helper.app` creates the `DeepSeekTextClient` that implements it.
 
 - Recruitment uses it to summarize application answers and provide second
   opinions through `/opinion`.
