@@ -12,7 +12,7 @@ from openai import OpenAIError
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL = "deepseek-flash"
-DEFAULT_TIMEOUT_SECONDS = 30.0
+DEFAULT_TIMEOUT_SECONDS = 60.0
 DEFAULT_MAX_RETRIES = 2
 PROVIDER_ERROR_MESSAGE_LIMIT = 500
 
@@ -40,6 +40,7 @@ class TextGenerator(Protocol):
         tier: GenerationTier,
         prompt: str,
         temperature: float,
+        system_prompt: str | None = None,
         max_output_tokens: int | None = None,
     ) -> str | None: ...
 
@@ -69,19 +70,24 @@ class DeepSeekTextClient:
         tier: GenerationTier,
         prompt: str,
         temperature: float,
+        system_prompt: str | None = None,
         max_output_tokens: int | None = None,
     ) -> str | None:
         if self._client is None:
             return None
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
         options: dict[str, Any] = {
             "model": DEEPSEEK_MODEL,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": temperature,
+            "messages": messages,
         }
         if tier is GenerationTier.COMPLEX:
             options["reasoning_effort"] = "high"
             options["extra_body"] = {"thinking": {"type": "enabled"}}
         else:
+            options["temperature"] = temperature
             options["extra_body"] = {"thinking": {"type": "disabled"}}
         if max_output_tokens is not None:
             options["max_tokens"] = max_output_tokens

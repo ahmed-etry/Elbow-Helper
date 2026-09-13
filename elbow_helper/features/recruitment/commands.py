@@ -13,6 +13,7 @@ from elbow_helper.discord.interactions import deny
 from elbow_helper.discord.interactions import fail
 from elbow_helper.discord.interactions import warn
 from elbow_helper.configuration.channels import GET_STARTED_CHANNEL
+from elbow_helper.configuration.channels import RECRUITMENT_TICKET_CATEGORY
 from elbow_helper.configuration.channels import SELF_ROLES
 from elbow_helper.configuration.channels import SERVER_RULES
 from elbow_helper.configuration.clans import CLAN_INFO_BOARDS
@@ -501,14 +502,78 @@ class RecruitmentCommandMixin:
             )
             await fail(interaction)
 
+    async def opinion_ticket_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        member = interaction.user
+        guild = interaction.guild
+        if (
+            guild is None
+            or not isinstance(member, discord.Member)
+            or not self._member_has_any_role(member, CORE | RECRUITERS)
+        ):
+            return []
+
+        query = (current or "").strip().removeprefix("#").casefold()
+        choices: list[app_commands.Choice[str]] = []
+        for channel in guild.text_channels:
+            if channel.category_id != RECRUITMENT_TICKET_CATEGORY:
+                continue
+            if not channel.permissions_for(member).view_channel:
+                continue
+            if query and query not in channel.name.casefold():
+                continue
+            choices.append(
+                app_commands.Choice(
+                    name=f"#{channel.name}"[:100],
+                    value=str(channel.id),
+                )
+            )
+            if len(choices) == 25:
+                break
+        return choices
+
+    @staticmethod
+    def _resolve_opinion_ticket(
+        interaction: discord.Interaction,
+        ticket: str,
+    ) -> discord.TextChannel | None:
+        guild = interaction.guild
+        if guild is None:
+            return None
+        try:
+            channel_id = int(ticket)
+        except (TypeError, ValueError):
+            return None
+
+        channel = guild.get_channel(channel_id)
+        if not isinstance(channel, discord.TextChannel):
+            return None
+        if channel.category_id != RECRUITMENT_TICKET_CATEGORY:
+            return None
+        if not channel.permissions_for(interaction.user).view_channel:
+            return None
+        return channel
+
     @app_commands.command(name="opinion", description="Get an AI second opinion on an applicant ticket.")
+    @app_commands.autocomplete(ticket=opinion_ticket_autocomplete)
     @app_commands.describe(ticket="Applicant ticket containing the original application and conversation.")
     @app_commands.checks.has_any_role(*(CORE | RECRUITERS))
-    async def slash_opinion(self, interaction: discord.Interaction, ticket: discord.TextChannel):
+    async def slash_opinion(self, interaction: discord.Interaction, ticket: str):
         await interaction.response.defer(ephemeral=True)
 
+        ticket_channel = self._resolve_opinion_ticket(interaction, ticket)
+        if ticket_channel is None:
+            await interaction.followup.send(
+                "Choose an applicant ticket.",
+                ephemeral=True,
+            )
+            return
+
         try:
-            opinion_result = await self._build_ticket_second_opinion(ticket)
+            opinion_result = await self._build_ticket_second_opinion(ticket_channel)
             if opinion_result is None:
                 await interaction.followup.send("This ticket has no messages to use for a second opinion.", ephemeral=True)
                 return
@@ -520,7 +585,7 @@ class RecruitmentCommandMixin:
             self.logger.warning(
                 "slash_opinion unavailable: invoker=%s ticket_channel=%s error=%s",
                 interaction.user.id,
-                ticket.id,
+                ticket_channel.id,
                 exc,
             )
             await interaction.followup.send("I couldn't generate an AI second opinion for this ticket.", ephemeral=True)
@@ -528,7 +593,7 @@ class RecruitmentCommandMixin:
             self.logger.exception(
                 "slash_opinion failed: invoker=%s ticket_channel=%s",
                 interaction.user.id,
-                ticket.id,
+                ticket_channel.id,
             )
             await fail(interaction)
 
@@ -873,4 +938,3 @@ class RecruitmentCommandMixin:
                 getattr(channel or interaction.channel, "id", None),
             )
             await fail(interaction)
-

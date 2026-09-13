@@ -58,7 +58,7 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
         constructor.assert_called_once_with(
             api_key="deepseek-token",
             base_url=DEEPSEEK_BASE_URL,
-            timeout=30.0,
+            timeout=60.0,
             max_retries=2,
         )
         transport.chat.completions.create.assert_awaited_once_with(
@@ -84,16 +84,25 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
             await client.complete(
                 tier=GenerationTier.COMPLEX,
                 prompt="hard question",
+                system_prompt="trusted instructions",
                 temperature=0.1,
             )
 
         request = transport.chat.completions.create.await_args.kwargs
         self.assertEqual(request["model"], DEEPSEEK_MODEL)
+        self.assertEqual(
+            request["messages"],
+            [
+                {"role": "system", "content": "trusted instructions"},
+                {"role": "user", "content": "hard question"},
+            ],
+        )
         self.assertEqual(request["reasoning_effort"], "high")
         self.assertEqual(
             request["extra_body"],
             {"thinking": {"type": "enabled"}},
         )
+        self.assertNotIn("temperature", request)
         self.assertNotIn("max_tokens", request)
 
     async def test_provider_error_preserves_useful_diagnostics(self) -> None:
