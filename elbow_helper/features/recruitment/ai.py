@@ -19,7 +19,6 @@ from elbow_helper.infrastructure.ai import TextGenerationError
 from .config import APPLICANT_AI_CLEANUP_HOURS
 
 LOGGER = logging.getLogger(__name__)
-OPINION_MAX_OUTPUT_TOKENS = 3_000
 
 
 class AIMixin:
@@ -172,7 +171,6 @@ Applicant identity: {applicant_identity}
                 system_prompt=system_prompt,
                 prompt=evidence_prompt,
                 temperature=0.2,
-                max_output_tokens=OPINION_MAX_OUTPUT_TOKENS,
             )
         except TextGenerationError as exc:
             raise RuntimeError(f"Recruitment AI request failed: {exc}") from exc

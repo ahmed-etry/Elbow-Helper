@@ -17,9 +17,24 @@ from elbow_helper.infrastructure.ai.client import DEEPSEEK_MODEL
 
 class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
     @staticmethod
-    def _response(content: str) -> SimpleNamespace:
+    def _response(
+        content: str,
+        *,
+        reasoning_content: str | None = None,
+        finish_reason: str = "stop",
+        completion_tokens: int | None = None,
+    ) -> SimpleNamespace:
         return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content=content,
+                        reasoning_content=reasoning_content,
+                    ),
+                    finish_reason=finish_reason,
+                )
+            ],
+            usage=SimpleNamespace(completion_tokens=completion_tokens),
         )
 
     async def test_unconfigured_client_skips_generation(self) -> None:
@@ -123,6 +138,34 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
                 await client.complete(
                     tier=GenerationTier.ROUTINE,
                     prompt="hello",
+                    temperature=0.2,
+                )
+
+    async def test_empty_final_response_preserves_reasoning_diagnostics(
+        self,
+    ) -> None:
+        transport = MagicMock()
+        transport.chat.completions.create = AsyncMock(
+            return_value=self._response(
+                "",
+                reasoning_content="internal reasoning",
+                finish_reason="length",
+                completion_tokens=3_000,
+            )
+        )
+
+        with patch(
+            "elbow_helper.infrastructure.ai.client.AsyncOpenAI",
+            return_value=transport,
+        ):
+            client = DeepSeekTextClient("deepseek-token")
+            with self.assertRaisesRegex(
+                TextGenerationError,
+                r"DeepSeek returned no final content.*finish_reason=length.*reasoning_chars=18.*completion_tokens=3000",
+            ):
+                await client.complete(
+                    tier=GenerationTier.COMPLEX,
+                    prompt="hard question",
                     temperature=0.2,
                 )
 

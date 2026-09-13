@@ -97,8 +97,10 @@ class DeepSeekTextClient:
             message = getattr(choice, "message", None)
             if isinstance(message, dict):
                 content = message.get("content")
+                reasoning_content = message.get("reasoning_content")
             else:
                 content = getattr(message, "content", None)
+                reasoning_content = getattr(message, "reasoning_content", None)
             if not content:
                 content = getattr(choice, "text", None)
         except OpenAIError as error:
@@ -117,7 +119,26 @@ class DeepSeekTextClient:
                 f"DeepSeek returned an invalid response ({type(error).__name__})"
             ) from error
         cleaned = str(content or "").strip()
-        return cleaned or None
+        if cleaned:
+            return cleaned
+
+        details = []
+        finish_reason = getattr(choice, "finish_reason", None)
+        if finish_reason is not None:
+            details.append(f"finish_reason={finish_reason}")
+        if reasoning_content:
+            details.append(f"reasoning_chars={len(str(reasoning_content))}")
+        completion_tokens = getattr(
+            getattr(response, "usage", None),
+            "completion_tokens",
+            None,
+        )
+        if completion_tokens is not None:
+            details.append(f"completion_tokens={completion_tokens}")
+        diagnostic = " ".join(details) or "no response details"
+        raise TextGenerationError(
+            f"DeepSeek returned no final content ({diagnostic})"
+        )
 
     async def close(self) -> None:
         """Close the provider transport when it was configured."""

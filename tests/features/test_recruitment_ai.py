@@ -10,7 +10,6 @@ import discord
 from elbow_helper.configuration.channels import RECRUITMENT_TICKET_CATEGORY
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.recruitment.ai import AIMixin
-from elbow_helper.features.recruitment.ai import OPINION_MAX_OUTPUT_TOKENS
 from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin
 from elbow_helper.infrastructure.ai import GenerationTier
 
@@ -94,10 +93,7 @@ class RecruitmentAITests(unittest.IsolatedAsyncioTestCase):
         )
         request = text_generator.complete.await_args.kwargs
         self.assertEqual(request["tier"], GenerationTier.COMPLEX)
-        self.assertEqual(
-            request["max_output_tokens"],
-            OPINION_MAX_OUTPUT_TOKENS,
-        )
+        self.assertNotIn("max_output_tokens", request)
         self.assertIn(
             "do not merely summarize the ticket or mirror the recruiter's apparent view",
             request["system_prompt"],
