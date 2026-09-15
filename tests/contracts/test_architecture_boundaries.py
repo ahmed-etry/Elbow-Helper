@@ -113,6 +113,10 @@ class DependencyBoundaryTests(unittest.TestCase):
                 "elbow_helper.features.achievements",
                 "elbow_helper.features.account_links",
             ),
+            "elbow_helper.features.agent": (
+                "elbow_helper.features.account_links",
+                "elbow_helper.features.clan_health",
+            ),
             "elbow_helper.features.attack_plans": ("elbow_helper.features.clan_health",),
             "elbow_helper.features.records": ("elbow_helper.features.account_links",),
             "elbow_helper.features.rosters": (

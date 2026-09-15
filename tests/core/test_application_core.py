@@ -154,10 +154,11 @@ class ApplicationAssemblyTests(unittest.TestCase):
             paths = ApplicationPaths.from_project_root(Path(temporary_directory))
 
             clash_client = ClashClient(None)
+            ai_client = DeepSeekTextClient(None)
             bot = create_bot(
                 paths,
                 clash_client,
-                DeepSeekTextClient(None),
+                ai_client,
                 GoogleSheetsPublisher(
                     client_id=None,
                     client_secret=None,
@@ -170,6 +171,8 @@ class ApplicationAssemblyTests(unittest.TestCase):
         self.assertIsInstance(bot, ElbowHelperBot)
         self.assertEqual(bot.paths, paths)
         self.assertIs(bot.clash_client, clash_client)
+        self.assertIs(bot.text_generator, ai_client)
+        self.assertIs(bot.agent_model, ai_client)
         self.assertEqual(
             bot.local_exports.directory,
             paths.data_root / ".exports",

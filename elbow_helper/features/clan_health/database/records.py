@@ -463,6 +463,7 @@ class ClanHealthRecords:
         *,
         cycle_end_ts: int,
         selected_clans: List[str],
+        completed_only: bool = False,
     ) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
         with closing(sqlite3.connect(self.path)) as conn, conn:
             conn.row_factory = sqlite3.Row
@@ -472,11 +473,12 @@ class ClanHealthRecords:
                 SELECT run_id, created_ts, season_key, partial, cycle_start_ts, cycle_end_ts
                 FROM report_runs
                 WHERE created_ts <= ?
+                  AND (? = 0 OR cycle_end_ts <= ?)
                   AND scope = 'BACKGROUND_ALL'
                   AND partial = 0
                 ORDER BY created_ts DESC
                 """,
-                (int(cycle_end_ts),),
+                (int(cycle_end_ts), int(completed_only), int(cycle_end_ts)),
             )
             runs = cursor.fetchall()
             if not runs:
@@ -500,6 +502,24 @@ class ClanHealthRecords:
                         continue
                     return dict(run), [dict(row) for row in rows]
         return None, []
+
+    def completed_player_report(self, player_tag: str, before_ts: int) -> Optional[Dict[str, Any]]:
+        """Return the most recent finished period, regardless of ongoing activity."""
+        with closing(sqlite3.connect(self.path)) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT rp.*, rr.created_ts, rr.cycle_start_ts, rr.cycle_end_ts
+                FROM report_players rp
+                JOIN report_runs rr ON rr.run_id = rp.run_id
+                WHERE rp.player_tag = ? AND rr.partial = 0
+                  AND rr.cycle_end_ts <= ? AND rr.created_ts <= ?
+                ORDER BY rr.cycle_end_ts DESC, rr.created_ts DESC
+                LIMIT 1
+                """,
+                (player_tag, int(before_ts), int(before_ts)),
+            ).fetchone()
+            return dict(row) if row else None
 
     def _load_latest_player_report_row(self, season_key: str, player_tag: str) -> Optional[Dict[str, Any]]:
         with closing(sqlite3.connect(self.path)) as conn, conn:

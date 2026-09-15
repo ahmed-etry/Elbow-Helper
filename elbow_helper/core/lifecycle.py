@@ -11,8 +11,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from elbow_helper.infrastructure.clash import ClashClient
+from elbow_helper.infrastructure.ai import AgentModel
 from elbow_helper.infrastructure.ai import TextGenerator
+from elbow_helper.infrastructure.clash import ClashClient
 from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
 from elbow_helper.infrastructure.exports import LocalExportStore
 from elbow_helper.infrastructure.exports import WorkbookWriter
@@ -41,6 +42,7 @@ REQUIRED_EXTENSIONS = (
     "elbow_helper.features.account_links",
     "elbow_helper.features.recruitment",
     "elbow_helper.features.clan_health",
+    "elbow_helper.features.agent",
     "elbow_helper.features.attack_plans",
     "elbow_helper.features.records",
     "elbow_helper.features.rosters",
@@ -205,6 +207,7 @@ class ElbowHelperBot(commands.Bot):
         guild_id: int,
         clash_client: ClashClient,
         text_generator: TextGenerator,
+        agent_model: AgentModel,
         google_publisher: GoogleSheetsPublisher,
         workbook_writer: WorkbookWriter,
         required_extensions: tuple[str, ...] = REQUIRED_EXTENSIONS,
@@ -215,6 +218,7 @@ class ElbowHelperBot(commands.Bot):
         self.guild_id = guild_id
         self.clash_client = clash_client
         self.text_generator = text_generator
+        self.agent_model = agent_model
         self.google_publisher = google_publisher
         self.workbook_writer = workbook_writer
         self.local_exports = LocalExportStore(paths.data_root / ".exports")

@@ -8,6 +8,8 @@ from unittest.mock import patch
 
 from openai import OpenAIError
 
+from elbow_helper.infrastructure.ai import AgentToolDefinition
+from elbow_helper.infrastructure.ai import AgentToolResult
 from elbow_helper.infrastructure.ai import DeepSeekTextClient
 from elbow_helper.infrastructure.ai import GenerationTier
 from elbow_helper.infrastructure.ai import TextGenerationError
@@ -176,3 +178,112 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertLess(len(rendered), 600)
         self.assertTrue(rendered.endswith("..."))
+
+    async def test_agent_session_preserves_reasoning_and_tool_calls(self) -> None:
+        first_response = SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content="",
+                        reasoning_content="Need server evidence",
+                        tool_calls=[
+                            SimpleNamespace(
+                                id="call-1",
+                                function=SimpleNamespace(
+                                    name="search_messages",
+                                    arguments='{"query":"war rule"}',
+                                ),
+                            )
+                        ],
+                    )
+                )
+            ],
+            usage=SimpleNamespace(
+                prompt_tokens=100,
+                completion_tokens=20,
+                prompt_cache_hit_tokens=80,
+                prompt_cache_miss_tokens=20,
+            ),
+        )
+        second_response = SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content="The decision was recorded here.",
+                        reasoning_content="The evidence answers it",
+                        tool_calls=None,
+                    )
+                )
+            ],
+            usage=SimpleNamespace(
+                prompt_tokens=140,
+                completion_tokens=30,
+                prompt_cache_hit_tokens=120,
+                prompt_cache_miss_tokens=20,
+            ),
+        )
+        transport = MagicMock()
+        transport.chat.completions.create = AsyncMock(
+            side_effect=[first_response, second_response]
+        )
+
+        with patch(
+            "elbow_helper.infrastructure.ai.client.AsyncOpenAI",
+            return_value=transport,
+        ):
+            client = DeepSeekTextClient("deepseek-token")
+            session = client.create_agent_session(
+                system_prompt="trusted",
+                prompt="what was decided?",
+                tools=(
+                    AgentToolDefinition(
+                        name="search_messages",
+                        description="Search messages",
+                        parameters={"type": "object", "properties": {}},
+                    ),
+                ),
+                max_output_tokens=64_000,
+            )
+
+            self.assertIsNotNone(session)
+            first = await session.advance()  # type: ignore[union-attr]
+            second = await session.advance(  # type: ignore[union-attr]
+                (
+                    AgentToolResult(
+                        call_id="call-1",
+                        content='{"matches":[]}',
+                    ),
+                ),
+                allow_tools=False,
+            )
+
+        self.assertEqual(first.tool_calls[0].name, "search_messages")
+        self.assertEqual(first.usage.prompt_cache_hit_tokens, 80)
+        self.assertEqual(second.content, "The decision was recorded here.")
+        first_request = transport.chat.completions.create.await_args_list[0].kwargs
+        self.assertEqual(first_request["tool_choice"], "auto")
+        self.assertEqual(first_request["max_tokens"], 64_000)
+        second_request = transport.chat.completions.create.await_args_list[1].kwargs
+        self.assertIn("tools", second_request)
+        self.assertEqual(second_request["tool_choice"], "none")
+        self.assertIs(second_request["messages"][2], first_response.choices[0].message)
+        self.assertEqual(
+            second_request["messages"][3],
+            {
+                "role": "tool",
+                "tool_call_id": "call-1",
+                "content": '{"matches":[]}',
+            },
+        )
+
+    def test_unconfigured_client_does_not_create_agent_session(self) -> None:
+        with patch("elbow_helper.infrastructure.ai.client.AsyncOpenAI"):
+            client = DeepSeekTextClient(None)
+
+        session = client.create_agent_session(
+            system_prompt="trusted",
+            prompt="hello",
+            tools=(),
+        )
+
+        self.assertIsNone(session)

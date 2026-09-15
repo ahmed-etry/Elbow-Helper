@@ -18,9 +18,9 @@ from .core.lifecycle import ElbowHelperBot
 from .core.logging import configure_logging
 from .core.paths import ApplicationPaths
 from .core.settings import load_runtime_settings
-from .infrastructure.clash import ClashClient
+from .infrastructure.ai import AIClient
 from .infrastructure.ai import DeepSeekTextClient
-from .infrastructure.ai import TextGenerator
+from .infrastructure.clash import ClashClient
 from .infrastructure.exports import GoogleSheetsPublisher
 from .infrastructure.exports import WorkbookWriter
 
@@ -72,7 +72,7 @@ async def handle_app_command_error(
 def create_bot(
     paths: ApplicationPaths,
     clash_client: ClashClient,
-    text_generator: TextGenerator,
+    ai_client: AIClient,
     google_publisher: GoogleSheetsPublisher,
     workbook_writer: WorkbookWriter,
 ) -> ElbowHelperBot:
@@ -82,7 +82,8 @@ def create_bot(
         paths=paths,
         guild_id=GUILD_ID,
         clash_client=clash_client,
-        text_generator=text_generator,
+        text_generator=ai_client,
+        agent_model=ai_client,
         google_publisher=google_publisher,
         workbook_writer=workbook_writer,
     )
@@ -105,12 +106,12 @@ async def main() -> None:
         folder_id=settings.google_drive_folder_id,
     )
     workbook_writer = WorkbookWriter()
-    text_generator = DeepSeekTextClient(settings.deepseek_api_key)
-    async with text_generator, ClashClient(settings.coc_api_key) as clash_client:
+    ai_client = DeepSeekTextClient(settings.deepseek_api_key)
+    async with ai_client, ClashClient(settings.coc_api_key) as clash_client:
         bot = create_bot(
             paths,
             clash_client,
-            text_generator,
+            ai_client,
             google_publisher,
             workbook_writer,
         )

@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from enum import StrEnum
 from typing import Any
 from typing import Protocol
 
 from openai import AsyncOpenAI
 from openai import OpenAIError
+
+from .agent import AgentModel
+from .agent import AgentSession
+from .agent import AgentStep
+from .agent import AgentToolCall
+from .agent import AgentToolDefinition
+from .agent import AgentToolResult
+from .agent import AgentUsage
 
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
@@ -43,6 +52,10 @@ class TextGenerator(Protocol):
         system_prompt: str | None = None,
         max_output_tokens: int | None = None,
     ) -> str | None: ...
+
+
+class AIClient(TextGenerator, AgentModel, Protocol):
+    """Complete shared AI capability owned by the application lifecycle."""
 
 
 class DeepSeekTextClient:
@@ -140,6 +153,26 @@ class DeepSeekTextClient:
             f"DeepSeek returned no final content ({diagnostic})"
         )
 
+    def create_agent_session(
+        self,
+        *,
+        system_prompt: str,
+        prompt: str,
+        tools: Sequence[AgentToolDefinition],
+        max_output_tokens: int | None = None,
+    ) -> AgentSession | None:
+        """Create a tool-capable session without exposing provider messages."""
+
+        if self._client is None:
+            return None
+        return _DeepSeekAgentSession(
+            client=self._client,
+            system_prompt=system_prompt,
+            prompt=prompt,
+            tools=tools,
+            max_output_tokens=max_output_tokens,
+        )
+
     async def close(self) -> None:
         """Close the provider transport when it was configured."""
 
@@ -169,3 +202,143 @@ class DeepSeekTextClient:
                 message = f"{message[:PROVIDER_ERROR_MESSAGE_LIMIT - 3]}..."
             parts.append(f"message={message}")
         return f"DeepSeek text generation failed: {' '.join(parts)}"
+
+
+class _DeepSeekAgentSession:
+    """Keep DeepSeek-specific reasoning and tool state inside infrastructure."""
+
+    def __init__(
+        self,
+        *,
+        client: AsyncOpenAI,
+        system_prompt: str,
+        prompt: str,
+        tools: Sequence[AgentToolDefinition],
+        max_output_tokens: int | None,
+    ):
+        self._client = client
+        self._messages: list[Any] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt},
+        ]
+        self._tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": dict(tool.parameters),
+                },
+            }
+            for tool in tools
+        ]
+        self._max_output_tokens = max_output_tokens
+
+    async def advance(
+        self,
+        tool_results: Sequence[AgentToolResult] = (),
+        *,
+        allow_tools: bool = True,
+    ) -> AgentStep:
+        for result in tool_results:
+            self._messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": result.call_id,
+                    "content": result.content,
+                }
+            )
+
+        options: dict[str, Any] = {
+            "model": DEEPSEEK_MODEL,
+            "messages": self._messages,
+            "reasoning_effort": "high",
+            "extra_body": {"thinking": {"type": "enabled"}},
+        }
+        if self._tools:
+            options["tools"] = self._tools
+            options["tool_choice"] = "auto" if allow_tools else "none"
+        if self._max_output_tokens is not None:
+            options["max_tokens"] = self._max_output_tokens
+
+        try:
+            response = await self._client.chat.completions.create(**options)
+            choice = response.choices[0]
+            message = choice.message
+            content = _message_value(message, "content")
+            raw_tool_calls = _message_value(message, "tool_calls") or ()
+            tool_calls = tuple(
+                _parse_agent_tool_call(raw_tool_call)
+                for raw_tool_call in raw_tool_calls
+            )
+        except OpenAIError as error:
+            raise TextGenerationError(
+                DeepSeekTextClient._format_provider_error(error)
+            ) from error
+        except (
+            AttributeError,
+            IndexError,
+            KeyError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as error:
+            raise TextGenerationError(
+                f"DeepSeek returned an invalid agent response ({type(error).__name__})"
+            ) from error
+
+        # DeepSeek requires the complete assistant message, including its
+        # reasoning_content, on every later tool-calling request.
+        self._messages.append(message)
+
+        cleaned = str(content or "").strip()
+        if not cleaned and not tool_calls:
+            raise TextGenerationError(
+                "DeepSeek returned no agent content or tool calls"
+            )
+
+        usage = getattr(response, "usage", None)
+        return AgentStep(
+            content=cleaned,
+            tool_calls=tool_calls,
+            usage=AgentUsage(
+                prompt_tokens=_usage_value(usage, "prompt_tokens"),
+                completion_tokens=_usage_value(usage, "completion_tokens"),
+                prompt_cache_hit_tokens=_usage_value(
+                    usage,
+                    "prompt_cache_hit_tokens",
+                ),
+                prompt_cache_miss_tokens=_usage_value(
+                    usage,
+                    "prompt_cache_miss_tokens",
+                ),
+            ),
+        )
+
+
+def _message_value(message: object, key: str) -> Any:
+    if isinstance(message, dict):
+        return message.get(key)
+    return getattr(message, key, None)
+
+
+def _parse_agent_tool_call(raw: object) -> AgentToolCall:
+    call_id = _message_value(raw, "id")
+    function = _message_value(raw, "function")
+    name = _message_value(function, "name")
+    arguments = _message_value(function, "arguments")
+    if not call_id or not name:
+        raise ValueError("Tool call is missing an ID or function name")
+    return AgentToolCall(
+        call_id=str(call_id),
+        name=str(name),
+        arguments=str(arguments or "{}"),
+    )
+
+
+def _usage_value(usage: object, key: str) -> int:
+    value = _message_value(usage, key)
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
