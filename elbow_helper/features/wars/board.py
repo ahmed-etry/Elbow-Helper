@@ -242,10 +242,19 @@ class WarBoardMixin:
         clan_code = CLAN_CODES_BY_NAME.get(clan_name)
         if clan_code not in WAR_BOARD_CLAN_CODES:
             return
+        state = normalize_war_state(data.get("state"))
+        observations = getattr(self, "war_observations", None)
+        if not isinstance(observations, dict):
+            observations = {}
+            self.war_observations = observations
+        observations[clan_code] = {
+            "state": "cwl" if data.get("warTag") else state,
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "war_id": build_war_id(data) if not data.get("warTag") and state != "notinwar" else None,
+        }
         if data.get("warTag"):
             await self._remove_war_board_controls(clan_code)
             return
-        state = normalize_war_state(data.get("state"))
         if state == "notinwar":
             await self._remove_war_board_controls(clan_code)
             return

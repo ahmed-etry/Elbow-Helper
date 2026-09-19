@@ -7,6 +7,7 @@ from discord.ext import commands
 from .cog import Examination
 from .routing import ExamRoutingView
 from .state import ExaminationStateStore
+from .queries import ExaminationQueries
 
 
 async def setup(bot: commands.Bot) -> None:
@@ -16,4 +17,4 @@ async def setup(bot: commands.Bot) -> None:
     bot.add_view(ExamRoutingView(cog))
 
 
-__all__ = ["Examination", "setup"]
+__all__ = ["Examination", "ExaminationQueries", "setup"]

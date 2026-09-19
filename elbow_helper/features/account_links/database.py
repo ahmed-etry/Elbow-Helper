@@ -93,6 +93,25 @@ class AccountLinksDbMixin:
             row = conn.execute("SELECT * FROM links WHERE player_tag = ?", (player_tag,)).fetchone()
         return dict(row) if row else None
 
+    def get_links_by_tags(self, player_tags: Iterable[str]) -> dict[str, dict[str, Any] | None]:
+        """Read one consistent ownership snapshot for a bounded tag group."""
+        tags = tuple(dict.fromkeys(str(value) for value in player_tags))
+        result: dict[str, dict[str, Any] | None] = {tag: None for tag in tags}
+        if not tags:
+            return result
+        with self._db_connect() as conn:
+            conn.execute("BEGIN")
+            for start in range(0, len(tags), 500):
+                batch = tags[start:start + 500]
+                placeholders = ",".join("?" for _ in batch)
+                rows = conn.execute(
+                    f"SELECT * FROM links WHERE player_tag IN ({placeholders}) ORDER BY player_tag",
+                    batch,
+                ).fetchall()
+                for row in rows:
+                    result[str(row["player_tag"])] = dict(row)
+        return result
+
     def get_links_for_user(self, discord_user_id: int) -> list[dict[str, Any]]:
         with self._db_connect() as conn:
             rows = conn.execute(
@@ -110,6 +129,27 @@ class AccountLinksDbMixin:
 
     def delete_link(self, player_tag: str) -> None:
         self.delete_links([player_tag])
+
+    def get_links_for_members(self, member_ids: Iterable[int]) -> dict[int, list[dict[str, Any]]]:
+        """Read all links for a member group, including members with no links."""
+        ids = sorted(set(int(value) for value in member_ids))
+        result: dict[int, list[dict[str, Any]]] = {value: [] for value in ids}
+        if not ids:
+            return result
+        with self._db_connect() as conn:
+            # All batches describe one ownership snapshot, even while links move.
+            conn.execute("BEGIN")
+            for start in range(0, len(ids), 500):
+                batch = ids[start:start + 500]
+                placeholders = ",".join("?" for _ in batch)
+                rows = conn.execute(
+                    f"SELECT * FROM links WHERE discord_user_id IN ({placeholders}) "
+                    "ORDER BY discord_user_id, is_primary DESC, player_tag",
+                    batch,
+                ).fetchall()
+                for row in rows:
+                    result[int(row["discord_user_id"])].append(dict(row))
+        return result
 
     def delete_links(self, player_tags: Iterable[str]) -> None:
         values = [(player_tag,) for player_tag in player_tags]

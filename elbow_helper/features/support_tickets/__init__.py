@@ -2,6 +2,7 @@ from elbow_helper.discord.views import TranscriptLinkPromptView
 
 from .ai import SupportWelcomeService
 from .cog import SupportActions
+from .queries import SupportTicketQueries
 
 
 async def setup(bot):

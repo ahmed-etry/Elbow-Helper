@@ -19,6 +19,7 @@ from .api import ClanReportingApiMixin
 from .elders import ClanReportingElderMixin
 from .helpers import ClanReportingHelperMixin
 from .state import load_state
+from .queries import ClanReportingQueries
 from .wars import ClanReportingWarMixin
 
 
@@ -44,6 +45,7 @@ class ClanReporting(
         self.clash_client = clash_client
         self.account_links = account_links
         self.state = load_state()
+        self.queries = ClanReportingQueries(account_links.get_missing_elder_rows)
         self._board_last_repost_at: dict[str, float] = {}
         self._board_repost_locks: dict[str, asyncio.Lock] = {}
         self._refresh_task: Optional[asyncio.Task] = None

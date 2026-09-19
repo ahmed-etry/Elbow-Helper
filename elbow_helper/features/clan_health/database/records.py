@@ -503,6 +503,123 @@ class ClanHealthRecords:
                     return dict(run), [dict(row) for row in rows]
         return None, []
 
+    def _list_completed_clan_report_runs(
+        self,
+        *,
+        clan_code: str,
+        before_run_id: str | None = None,
+        limit: int = 25,
+    ) -> List[Dict[str, Any]]:
+        """List the latest complete background run for each reporting period."""
+        bounded_limit = max(1, min(int(limit), 26))
+        with closing(sqlite3.connect(self.path)) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = None
+            if before_run_id is not None:
+                cursor = conn.execute(
+                    """
+                    SELECT rr.cycle_start_ts, rr.cycle_end_ts, rr.created_ts, rr.run_id
+                    FROM report_runs rr
+                    JOIN report_players rp ON rp.run_id = rr.run_id
+                    WHERE rr.run_id = ? AND rr.scope = 'BACKGROUND_ALL'
+                      AND rr.partial = 0 AND rp.clan_code = ?
+                    LIMIT 1
+                    """,
+                    (before_run_id, clan_code),
+                ).fetchone()
+                if cursor is None:
+                    raise ValueError("Invalid clan-health report cursor")
+                canonical = conn.execute(
+                    """
+                    SELECT rr.run_id
+                    FROM report_runs rr
+                    JOIN report_players rp ON rp.run_id = rr.run_id
+                    WHERE rr.scope = 'BACKGROUND_ALL' AND rr.partial = 0
+                      AND rp.clan_code = ? AND rr.cycle_start_ts = ?
+                      AND rr.cycle_end_ts = ?
+                    GROUP BY rr.run_id
+                    ORDER BY rr.created_ts DESC, rr.run_id DESC
+                    LIMIT 1
+                    """,
+                    (clan_code, cursor["cycle_start_ts"], cursor["cycle_end_ts"]),
+                ).fetchone()
+                if canonical is None or canonical["run_id"] != before_run_id:
+                    raise ValueError("Invalid clan-health report cursor")
+            rows = conn.execute(
+                """
+                WITH grouped AS (
+                    SELECT rr.run_id, rr.created_ts, rr.season_key, rr.scope,
+                           rr.partial, rr.cycle_start_ts, rr.cycle_end_ts,
+                           COUNT(rp.player_tag) AS player_count
+                    FROM report_runs rr
+                    JOIN report_players rp ON rp.run_id = rr.run_id
+                    WHERE rr.scope = 'BACKGROUND_ALL'
+                      AND rr.partial = 0 AND rp.clan_code = ?
+                    GROUP BY rr.run_id
+                ), ranked AS (
+                    SELECT grouped.*,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY cycle_start_ts, cycle_end_ts
+                               ORDER BY created_ts DESC, run_id DESC
+                           ) AS revision_rank
+                    FROM grouped
+                )
+                SELECT run_id, created_ts, season_key, scope, partial,
+                       cycle_start_ts, cycle_end_ts, player_count
+                FROM ranked
+                WHERE revision_rank = 1
+                  AND (
+                    ? IS NULL
+                    OR cycle_end_ts < ?
+                    OR (cycle_end_ts = ? AND created_ts < ?)
+                    OR (cycle_end_ts = ? AND created_ts = ? AND run_id < ?)
+                  )
+                ORDER BY cycle_end_ts DESC, created_ts DESC, run_id DESC
+                LIMIT ?
+                """,
+                (
+                    clan_code, before_run_id,
+                    cursor["cycle_end_ts"] if cursor else None,
+                    cursor["cycle_end_ts"] if cursor else None,
+                    cursor["created_ts"] if cursor else None,
+                    cursor["cycle_end_ts"] if cursor else None,
+                    cursor["created_ts"] if cursor else None,
+                    cursor["run_id"] if cursor else None,
+                    bounded_limit,
+                ),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def _load_completed_clan_report(
+        self, *, run_id: str, clan_code: str,
+    ) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
+        """Read one exact complete background report in one SQLite snapshot."""
+        with closing(sqlite3.connect(self.path)) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN")
+            run = conn.execute(
+                """
+                SELECT run_id, created_ts, season_key, scope, partial,
+                       cycle_start_ts, cycle_end_ts
+                FROM report_runs
+                WHERE run_id = ? AND scope = 'BACKGROUND_ALL' AND partial = 0
+                """,
+                (run_id,),
+            ).fetchone()
+            if run is None:
+                return None, []
+            rows = conn.execute(
+                """
+                SELECT * FROM report_players
+                WHERE run_id = ? AND clan_code = ?
+                ORDER BY player_name COLLATE NOCASE, player_tag
+                """,
+                (run_id, clan_code),
+            ).fetchall()
+            if not rows:
+                return None, []
+            return dict(run), [dict(row) for row in rows]
+
     def completed_player_report(self, player_tag: str, before_ts: int) -> Optional[Dict[str, Any]]:
         """Return the most recent finished period, regardless of ongoing activity."""
         with closing(sqlite3.connect(self.path)) as conn:

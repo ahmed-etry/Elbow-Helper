@@ -242,6 +242,44 @@ def build_mega_ass_metrics(
     return mega_rows
 
 
+def profiles_for_roster_history(
+    wars: Sequence[dict[str, Any]],
+) -> tuple[dict[str, AssProfile], dict[str, str]]:
+    """Resolve the scoring profile and latest known league for each clan."""
+    latest_by_clan: dict[str, dict[str, Any]] = {}
+    for war in wars:
+        clan_code = str(war.get("clan_code") or "")
+        if not clan_code:
+            continue
+        current = latest_by_clan.get(clan_code)
+        war_has_league = bool(str(war.get("cwl_league") or "").strip())
+        current_has_league = bool(
+            str((current or {}).get("cwl_league") or "").strip()
+        )
+        if current is None or (
+            war_has_league
+            and (
+                not current_has_league
+                or int(war.get("end_ts") or 0)
+                > int(current.get("end_ts") or 0)
+            )
+        ) or (
+            not current_has_league
+            and int(war.get("end_ts") or 0)
+            > int(current.get("end_ts") or 0)
+        ):
+            latest_by_clan[clan_code] = war
+    profiles = {
+        clan_code: profile_for_league(str(war.get("cwl_league") or ""))
+        for clan_code, war in latest_by_clan.items()
+    }
+    leagues = {
+        clan_code: str(war.get("cwl_league") or "Unknown")
+        for clan_code, war in latest_by_clan.items()
+    }
+    return profiles, leagues
+
+
 class CwlRosterAnalysisMixin:
     def _load_roster_history(
         self,
@@ -253,38 +291,7 @@ class CwlRosterAnalysisMixin:
     def _profiles_for_roster_history(
         wars: Sequence[dict[str, Any]],
     ) -> tuple[dict[str, AssProfile], dict[str, str]]:
-        latest_by_clan: dict[str, dict[str, Any]] = {}
-        for war in wars:
-            clan_code = str(war.get("clan_code") or "")
-            if not clan_code:
-                continue
-            current = latest_by_clan.get(clan_code)
-            war_has_league = bool(str(war.get("cwl_league") or "").strip())
-            current_has_league = bool(
-                str((current or {}).get("cwl_league") or "").strip()
-            )
-            if current is None or (
-                war_has_league
-                and (
-                    not current_has_league
-                    or int(war.get("end_ts") or 0)
-                    > int(current.get("end_ts") or 0)
-                )
-            ) or (
-                not current_has_league
-                and int(war.get("end_ts") or 0)
-                > int(current.get("end_ts") or 0)
-            ):
-                latest_by_clan[clan_code] = war
-        profiles = {
-            clan_code: profile_for_league(str(war.get("cwl_league") or ""))
-            for clan_code, war in latest_by_clan.items()
-        }
-        leagues = {
-            clan_code: str(war.get("cwl_league") or "Unknown")
-            for clan_code, war in latest_by_clan.items()
-        }
-        return profiles, leagues
+        return profiles_for_roster_history(wars)
 
     def _analyze_roster_history(
         self,

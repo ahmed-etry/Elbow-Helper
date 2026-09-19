@@ -11,6 +11,7 @@ from elbow_helper.core.background import start_resilient_loop
 from .commands import ClanTransfersCommandMixin
 from .config import CLAN_TRANSFER_QUEUES
 from .queues import ClanTransferQueueMixin
+from .queries import ClanTransferQueries
 from .state import load_state
 from .views import ClanTransfersView
 
@@ -22,6 +23,7 @@ class ClanTransfers(ClanTransferQueueMixin, ClanTransfersCommandMixin, commands.
         self.bot = bot
         self.logger = logging.getLogger(__name__)
         self.state = load_state()
+        self.queries = ClanTransferQueries(lambda: self.state, clock=self._now)
         self.locks = {code: asyncio.Lock() for code in CLAN_TRANSFER_QUEUES}
         self.global_lock = asyncio.Lock()
         start_resilient_loop(self.request_expiry_loop)

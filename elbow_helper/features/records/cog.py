@@ -8,6 +8,7 @@ from .commands import RecordCommandMixin
 from .database import RecordReader
 from .export_service import RecordExportService
 from .service import RecordService
+from .queries import LeadershipRecordQueries
 
 
 class Records(RecordCommandMixin, commands.Cog):
@@ -22,4 +23,5 @@ class Records(RecordCommandMixin, commands.Cog):
         self.bot = bot
         self.service = service
         self.reader: RecordReader = service.reader
+        self.queries = LeadershipRecordQueries(self.reader)
         self.exports = exports

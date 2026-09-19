@@ -83,7 +83,9 @@ class ClanHealthCwlReadTests(unittest.TestCase):
                     war_id TEXT,
                     clan_code TEXT,
                     cwl_season TEXT,
+                    cwl_league TEXT,
                     cwl_round INTEGER,
+                    team_size INTEGER,
                     attacks_per_member INTEGER,
                     state TEXT,
                     end_ts INTEGER,
@@ -109,11 +111,13 @@ class ClanHealthCwlReadTests(unittest.TestCase):
                     attack_order INTEGER,
                     defender_tag TEXT,
                     defender_townhall INTEGER,
+                    defender_map_position INTEGER,
                     stars INTEGER,
                     destruction REAL
                 );
                 INSERT INTO wars VALUES (
-                    'CWL:#WAR', 'BEH', '2026-07', 1, 1,
+                    'CWL:#WAR', 'BEH', '2026-07', 'Champion League II',
+                    1, 15, 1,
                     'warEnded', 1, 'CWL'
                 );
                 INSERT INTO war_roster_members VALUES (
@@ -122,7 +126,7 @@ class ClanHealthCwlReadTests(unittest.TestCase):
                 );
                 INSERT INTO war_attacks VALUES (
                     'CWL:#WAR', 'BEH', 'CWL', '#A', 'Ahmad', 1,
-                    '#D', 18, 3, 100
+                    '#D', 18, 1, 3, 100
                 );
                 """
             )

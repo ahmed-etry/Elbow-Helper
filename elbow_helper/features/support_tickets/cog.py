@@ -8,6 +8,7 @@ from .ai import SupportWelcomeService
 from .commands import SupportCommandMixin
 from .routing import RoutingMixin
 from .views import SupportTicketCloseView, SupportTicketConfirmView
+from .queries import SupportTicketQueries
 
 
 class SupportActions(commands.Cog, SupportCommandMixin, RoutingMixin):
@@ -20,6 +21,7 @@ class SupportActions(commands.Cog, SupportCommandMixin, RoutingMixin):
     ):
         self.bot = bot
         self.welcome_messages = welcome_messages
+        self.queries = SupportTicketQueries()
         self._scan_task = asyncio.create_task(self.scan_existing_tickets())
 
     def cog_unload(self):

@@ -8,8 +8,10 @@ from ..config import DB_PATH
 from .aggregates import ClanHealthAggregates
 from .cwl import ClanHealthCwlReads
 from .history import ClanHealthHistory
+from .movements import ClanHealthMovementReads
 from .records import ClanHealthRecords
 from .schema import ClanHealthSchema
+from .wars import ClanHealthWarReads
 
 
 class ClanHealthRepository(
@@ -18,6 +20,8 @@ class ClanHealthRepository(
     ClanHealthAggregates,
     ClanHealthHistory,
     ClanHealthCwlReads,
+    ClanHealthWarReads,
+    ClanHealthMovementReads,
 ):
     """Own all SQL and stored-shape conversion for Clan Health data."""
 
@@ -41,6 +45,12 @@ class ClanHealthRepository(
     )
     latest_player_report = (
         ClanHealthRecords._load_latest_player_report_row
+    )
+    completed_report_runs = (
+        ClanHealthRecords._list_completed_clan_report_runs
+    )
+    completed_clan_report = (
+        ClanHealthRecords._load_completed_clan_report
     )
 
     baseline_snapshot = ClanHealthAggregates._get_baseline_snapshot

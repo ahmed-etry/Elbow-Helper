@@ -7,6 +7,7 @@ from .database import RecordRepository
 from .export_service import RecordExportService
 from .cog import Records
 from .service import RecordService
+from .queries import LeadershipRecordQueries
 from .sheets.export import RecordWorkbookWriter
 
 
@@ -27,4 +28,4 @@ async def setup(bot: ElbowHelperBot) -> None:
     await bot.add_cog(Records(bot, service, exports))
 
 
-__all__ = ["Records", "setup"]
+__all__ = ["LeadershipRecordQueries", "Records", "setup"]

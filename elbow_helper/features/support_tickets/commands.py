@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import logging
-import re
 from datetime import datetime, timezone
 
 import chat_exporter
@@ -20,6 +19,7 @@ from elbow_helper.configuration.roles import LEAD, RECRUITERS
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
 
 from .state import load_tickets, save_tickets
+from .queries import parse_support_owner_id
 from .views import SupportTicketCloseView
 
 LOGGER = logging.getLogger(__name__)
@@ -32,15 +32,7 @@ class SupportCommandMixin:
 
     @staticmethod
     def _extract_owner_id_from_topic(topic: str | None) -> int | None:
-        if not topic:
-            return None
-        match = re.search(r"<@!?(\d+)>", topic)
-        if match:
-            return int(match.group(1))
-        raw = topic.strip()
-        if raw.isdigit():
-            return int(raw)
-        return None
+        return parse_support_owner_id(topic)
 
     def _resolve_support_ticket_owner(
         self,

@@ -113,6 +113,44 @@ class RosterMember:
 
 
 @dataclass(frozen=True)
+class RosterCycle:
+    id: int
+    roster_id: int
+    cycle_key: str
+    opened_ts: int
+    closed_ts: int | None
+
+    @classmethod
+    def from_row(cls, row: dict[str, object]) -> RosterCycle:
+        return cls(
+            id=int(row["id"]), roster_id=int(row["roster_id"]),
+            cycle_key=str(row["cycle_key"]), opened_ts=int(row["opened_ts"]),
+            closed_ts=int(row["closed_ts"]) if row["closed_ts"] is not None else None,
+        )
+
+
+@dataclass(frozen=True)
+class RosterCyclePage:
+    cycles: tuple[RosterCycle, ...]
+    next_before_id: int | None
+
+
+@dataclass(frozen=True)
+class RosterSnapshot:
+    """One consistent stored read, not a refresh of Clash or Discord state.
+
+    Roster settings and posts are current; members belong to the explicit cycle.
+    Historical cycles do not imply historical settings or publication locations.
+    """
+
+    roster: Roster
+    cycle: RosterCycle | None
+    members: tuple[RosterMember, ...]
+    posts: tuple[RosterPost, ...]
+    observed_ts: int
+
+
+@dataclass(frozen=True)
 class RosterLayout:
     show_townhall: bool = True
     show_discord: bool = True

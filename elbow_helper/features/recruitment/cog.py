@@ -15,6 +15,7 @@ from .ai import AIMixin
 from .commands import RecruitmentCommandMixin
 from .helpers import HelperMixin
 from .state import RecruitmentStateStore
+from .queries import RecruitmentQueries
 from .tickets import TicketMixin
 from .trials import TrialMixin
 from .views import PersistentEndNowView
@@ -35,6 +36,7 @@ class Recruitment(HelperMixin, TrialMixin, TicketMixin, AIMixin, RecruitmentComm
         self.account_links = account_links
         self.achievement_rewards = achievement_rewards
         self.state_store = state_store
+        self.queries = RecruitmentQueries(state_store.load_trial_data)
         self.text_generator = bot.text_generator
         self.logger = logging.getLogger(__name__)
         self._recurring_issue_log_times: dict[str, float] = {}

@@ -27,6 +27,7 @@ from .helpers import (
     snapshot_invites,
 )
 from .reports import ReportsMixin
+from .queries import MemberLifecycleQueries
 from .state import load_state, save_state
 from .tickets import TicketIndexMixin
 from .views import ApplicantCleanupView
@@ -46,6 +47,7 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
         self.hibernation_reader = hibernation_reader
         self.state = load_state()
         self._normalize_state()
+        self.queries = MemberLifecycleQueries(lambda: self.state)
         self._ticket_index_lock = asyncio.Lock()
         self._ticket_index_task: asyncio.Task | None = None
         self._report_cleanup_tasks: set[asyncio.Task[None]] = set()

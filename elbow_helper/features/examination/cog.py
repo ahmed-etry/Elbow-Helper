@@ -24,6 +24,7 @@ from .panel import ExaminationPanelMixin, ExaminerPanelView
 from .routing import ExaminationRoutingMixin
 from .routing.fields import TICKET_RENAME
 from .state import ExaminationStateStore
+from .queries import ExaminationQueries
 
 EXAM_TICKET_TYPE_ORDER = ("elder_promo", "clan_promo")
 DEPRECATED_ROUTING_CLEANUP_INTERVAL_MINUTES = 30
@@ -49,6 +50,7 @@ class Examination(
         self._ticket_reorder_issue_log_times: Dict[str, float] = {}
         self.state_store = state_store
         self.state = state_store.state
+        self.queries = ExaminationQueries(state_store.cases)
         self._followup_task: Optional[asyncio.Task] = None
         self._scan_task: Optional[asyncio.Task] = None
         self.panel_view = ExaminerPanelView(self)

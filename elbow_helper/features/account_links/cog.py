@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 import logging
 import time
 from typing import Any
@@ -58,6 +59,11 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         self._clan_badge_urls: dict[str, str] = {}
         self._player_locations: dict[str, dict[str, Any]] = {}
         self._last_snapshot_complete = False
+        self._location_snapshot_observed_at: str | None = None
+        self._location_evidence_snapshot: dict[str, Any] = {
+            "observed_at": None, "complete": False, "locations": {},
+            "location_statuses": {},
+        }
         self._clan_fetch_warning_state: dict[str, dict[str, Any]] = {}
         self._init_db()
         start_resilient_loop(self._poll_clans_loop)
@@ -247,6 +253,34 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         location = self._player_locations.get(player_tag)
         return dict(location) if location is not None else None
 
+    def get_location_snapshot_status(self) -> dict[str, Any]:
+        """Describe the clan-location snapshot without exposing mutable state."""
+        return {
+            "observed_at": self._location_snapshot_observed_at,
+            "complete": bool(self._last_snapshot_complete),
+        }
+
+    def get_player_locations_snapshot(self, player_tags: tuple[str, ...]) -> dict[str, Any]:
+        """Return requested locations and their coverage from one memory generation."""
+        snapshot = getattr(self, "_location_evidence_snapshot", None) or {
+            "observed_at": getattr(self, "_location_snapshot_observed_at", None),
+            "complete": bool(getattr(self, "_last_snapshot_complete", False)),
+            "locations": getattr(self, "_player_locations", {}),
+            "location_statuses": {},
+        }
+        locations = snapshot["locations"]
+        return {
+            "observed_at": snapshot["observed_at"],
+            "complete": bool(snapshot["complete"]),
+            "locations": {
+                tag: dict(locations[tag]) for tag in player_tags if tag in locations
+            },
+            "location_statuses": {
+                tag: snapshot.get("location_statuses", {}).get(tag, "observed_family_clan")
+                for tag in player_tags if tag in locations
+            },
+        }
+
     async def _candidate_members(self) -> list[discord.Member]:
         guild = self.bot.get_guild(GUILD_ID)
         if guild is None:
@@ -271,17 +305,28 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         self._last_snapshot_complete = self.clash_client.configured and all(
             members is not None for _, members in results
         )
+        location_statuses: dict[str, str] = {}
         for clan_code, members in results:
+            carried_forward = members is None
             if members is None:
                 clan_map = dict(self._clan_members.get(clan_code, {}))
             else:
                 clan_map = {str(row["player_tag"]): row for row in members}
             fresh_members[clan_code] = clan_map
             for row in clan_map.values():
-                player_locations[str(row["player_tag"])] = row
+                tag = str(row["player_tag"])
+                player_locations[tag] = row
+                location_statuses[tag] = "stale_family_clan" if carried_forward else "observed_family_clan"
 
         self._clan_members = fresh_members
         self._player_locations = player_locations
+        self._location_snapshot_observed_at = datetime.now(timezone.utc).isoformat()
+        self._location_evidence_snapshot = {
+            "observed_at": self._location_snapshot_observed_at,
+            "complete": bool(self._last_snapshot_complete),
+            "locations": player_locations,
+            "location_statuses": location_statuses,
+        }
 
     async def _prune_departed_suggestions(self) -> None:
         if not self._last_snapshot_complete:

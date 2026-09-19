@@ -8,11 +8,13 @@ from datetime import timezone
 
 import discord
 from elbow_helper.discord.pagination import format_page_footer
-from elbow_helper.configuration.roles import LEAD
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
 from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
 
 from .definitions import COIN_REWARDS
+from .queries import (
+    achievement_leaderboard_eligible, achievement_progress_value,
+)
 from .views import AchievementOverviewView
 
 class AchievementProgressMixin:
@@ -173,8 +175,10 @@ class AchievementProgressMixin:
             member = guild.get_member(user_id)
             if not member:
                 continue
-            has_leader = any(r.id in LEAD for r in member.roles)
-            if not include_leadership and has_leader:
+            if not achievement_leaderboard_eligible(
+                {role.id for role in member.roles},
+                include_leadership=include_leadership,
+            ):
                 continue
             leaderboard.append((member, count))
             if len(leaderboard) >= 10:
@@ -216,79 +220,15 @@ class AchievementProgressMixin:
             else:
                 required_count = details[3] if details[3] is not None else 1
 
-            (message_count, emoji_count, reaction_count, voice_hours, silent_voice_seconds, role_pings,
-             meme_posts, clan_transfer_count, active_channels, activity_streak,
-             weekly_activity_count, monthly_activity_count, early_bird_count, night_owl_count) = user_stats
-            
-            if achievement_id == "chatterbox":
-                return {"completed": False, "current": message_count, "required": required_count}
-            elif achievement_id == "keyboard_warrior":
-                return {"completed": False, "current": message_count, "required": required_count}
-            elif achievement_id == "emoji_enthusiast":
-                return {"completed": False, "current": emoji_count, "required": required_count}
-            elif achievement_id == "react_lord":
-                return {"completed": False, "current": reaction_count, "required": required_count}
-            elif achievement_id == "ping_collector":
-                return {"completed": False, "current": role_pings, "required": required_count}
-            elif achievement_id == "meme_dealer":
-                return {"completed": False, "current": meme_posts, "required": required_count}
-            elif achievement_id == "social_butterfly":
-                channel_count = len(active_channels.split()) if active_channels else 0
-                return {"completed": False, "current": channel_count, "required": required_count}
-            elif achievement_id == "channel_explorer":
-                channel_count = len(active_channels.split()) if active_channels else 0
-                return {"completed": False, "current": channel_count, "required": required_count}
-            elif achievement_id == "daily_streaker":
-                return {"completed": False, "current": activity_streak, "required": required_count}
-            elif achievement_id == "weekly_warrior":
-                return {"completed": False, "current": weekly_activity_count, "required": required_count}
-            elif achievement_id == "monthly_master":
-                return {"completed": False, "current": monthly_activity_count, "required": required_count}
-            elif achievement_id == "early_bird":
-                return {"completed": False, "current": early_bird_count, "required": required_count}
-            elif achievement_id == "night_owl":
-                return {"completed": False, "current": night_owl_count, "required": required_count}
-            elif achievement_id == "marathoner":
-                return {"completed": False, "current": int(voice_hours), "required": required_count}
-            elif achievement_id == "silent_lurker":
-                return {
-                    "completed": False,
-                    "current": round(float(silent_voice_seconds) / 3600.0, 2),
-                    "required": required_count,
-                }
-            elif achievement_id == "clan_hopper":
-                return {"completed": False, "current": clan_transfer_count, "required": required_count}
-            elif achievement_id == "storyteller":
-                return {"completed": False, "current": 0, "required": 1}
-            elif achievement_id == "mic_check":
-                if achievement_id in completed_achievements:
-                    return {"completed": True, "current": 1, "required": 1}
-                else:
-                    return {"completed": False, "current": 0, "required": 1}
-            elif achievement_id == "party_animal":
-                return {"completed": False, "current": 0, "required": 1}
-            elif achievement_id == "fresh_recruit":
-                return {"completed": False, "current": 0, "required": 1}
-            elif achievement_id == "promoted":
-                return {"completed": False, "current": 0, "required": 1}
-            elif achievement_id == "hibernation_survivor":
-                return {"completed": False, "current": 0, "required": 1}
-            elif achievement_id == "random_crit":
-                return {"completed": False, "current": 0, "required": 1}
-            elif achievement_id == "one_of_us":
-                if member.joined_at:
-                    days_in_server = (datetime.now(timezone.utc) - member.joined_at).days
-                    return {"completed": False, "current": days_in_server, "required": required_count}
-                else:
-                    return {"completed": False, "current": 0, "required": required_count}
-            elif achievement_id == "veteran":
-                if member.joined_at:
-                    days_in_server = (datetime.now(timezone.utc) - member.joined_at).days
-                    return {"completed": False, "current": days_in_server, "required": required_count}
-                else:
-                    return {"completed": False, "current": 0, "required": required_count}
-            else:
-                return {"completed": False, "current": 0, "required": 1}
+            current, _ = achievement_progress_value(
+                achievement_id, tuple(user_stats),
+                joined_at=member.joined_at,
+                observed_at=datetime.now(timezone.utc),
+            )
+            return {
+                "completed": False, "current": current,
+                "required": required_count,
+            }
                 
         except (TypeError, ValueError, AttributeError, KeyError, IndexError, ZeroDivisionError) as e:
             self.logger.error(

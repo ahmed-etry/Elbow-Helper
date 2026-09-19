@@ -7,6 +7,7 @@ from elbow_helper.configuration.guild import GUILD_ID
 from .commands import HibernationCommandMixin
 from .state import HibernationStateReader
 from .state import load_hibernation_state, save_hibernation_state
+from .queries import HibernationQueries
 from .tickets import HibernationTicketMixin
 
 
@@ -15,6 +16,7 @@ class Hibernate(commands.Cog, HibernationTicketMixin, HibernationCommandMixin):
         self.bot = bot
         self.achievement_rewards = achievement_rewards
         self.reader = HibernationStateReader()
+        self.queries = HibernationQueries(load_hibernation_state)
         self._fallback_info_ready = False
 
     @commands.Cog.listener()

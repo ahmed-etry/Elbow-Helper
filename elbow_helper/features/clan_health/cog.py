@@ -22,6 +22,7 @@ from .commands import ClanHealthCommandMixin
 from .database import ClanHealthRepository
 from .export import ClanHealthExportMixin
 from .snapshots import ClanHealthSnapshotMixin
+from .queries import ClanHealthQueries
 
 
 class ClanHealth(
@@ -45,6 +46,7 @@ class ClanHealth(
         self.google_publisher = google_publisher
         self.local_exports = local_exports
         self.repository = repository
+        self.queries = ClanHealthQueries(repository)
         self.analyzer = analyzer
         self.collector = collector
         self._last_war_ingest_ts = 0

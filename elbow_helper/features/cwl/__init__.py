@@ -7,6 +7,7 @@ from .bonus.dashboard import CwlBonusDashboardView
 from .config import CWL_CLAN_CODES
 from .config import DASHBOARD_THREADS
 from .cog import CwlManagement
+from .queries import CwlQueries
 from .threads.views import CwlCcStatusView
 from .views import CwlPrepRefreshView
 from .views import CwlTransferHubView

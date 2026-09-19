@@ -7,6 +7,7 @@ import asyncio
 from ..repository import RosterRepository
 from ..models import Roster
 from ..models import RosterMember
+from ..models import RosterCyclePage, RosterSnapshot
 
 
 class RosterQueries:
@@ -17,6 +18,23 @@ class RosterQueries:
 
     async def get(self, roster_id: int) -> Roster | None:
         return await asyncio.to_thread(self._repository.get_roster, roster_id)
+
+    async def cycles(
+        self, guild_id: int, roster_id: int, *, before_id: int | None = None,
+        limit: int = 25,
+    ) -> RosterCyclePage | None:
+        return await asyncio.to_thread(
+            self._repository.list_cycles, guild_id, roster_id,
+            before_id=before_id, limit=limit,
+        )
+
+    async def snapshot(
+        self, guild_id: int, roster_id: int, *, cycle_id: int | None = None,
+    ) -> RosterSnapshot | None:
+        """Return stored cycle evidence; callers still enforce source access."""
+        return await asyncio.to_thread(
+            self._repository.snapshot, guild_id, roster_id, cycle_id,
+        )
 
     async def list_for_guild(self, guild_id: int) -> list[Roster]:
         return await asyncio.to_thread(

@@ -65,8 +65,9 @@ class ClanHealthCwlReads:
                 for row in connection.execute(
                     """
                     SELECT
-                        war_id, clan_code, cwl_season, cwl_round,
-                        attacks_per_member, state, end_ts
+                        war_id, clan_code, cwl_season, cwl_league,
+                        cwl_round, team_size, attacks_per_member,
+                        state, end_ts
                     FROM wars
                     WHERE war_type = 'CWL'
                       AND clan_code = ?
@@ -105,7 +106,8 @@ class ClanHealthCwlReads:
                 f"""
                 SELECT
                     war_id, player_tag, player_name, attack_order,
-                    defender_tag, defender_townhall, stars, destruction
+                    defender_tag, defender_townhall, defender_map_position,
+                    stars, destruction
                 FROM war_attacks
                 WHERE clan_code = ?
                   AND war_type = 'CWL'

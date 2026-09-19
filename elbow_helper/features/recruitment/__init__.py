@@ -3,6 +3,7 @@ from elbow_helper.configuration.guild import GUILD_ID
 
 from .cog import Recruitment
 from .state import RecruitmentStateStore
+from .queries import RecruitmentQueries
 
 
 async def setup(bot) -> None:

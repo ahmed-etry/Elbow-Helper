@@ -12,6 +12,7 @@ from .analysis import ClanHealthAnalyzer
 from .api import ClanHealthCollector
 from .database import ClanHealthRepository
 from .cog import ClanHealth
+from .queries import ClanHealthQueries
 
 
 async def setup(bot: ElbowHelperBot) -> None:
@@ -35,4 +36,4 @@ async def setup(bot: ElbowHelperBot) -> None:
     await bot.add_cog(cog, guild=guild)
 
 
-__all__ = ["ClanHealth", "setup"]
+__all__ = ["ClanHealth", "ClanHealthQueries", "setup"]

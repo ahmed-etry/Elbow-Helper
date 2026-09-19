@@ -32,6 +32,7 @@ from .bonus import BonusWorkbookWriter
 from .config import CLAN_NAME_TO_TAG
 from .config import THREAD_CLAN_CONFIGS
 from .config import THREAD_STATE_FILE
+from .queries import CwlQueries
 from .dashboard import CwlDashboardMixin
 from .roster import CwlRosterAnalysisMixin
 from .roster import CwlRosterExportMixin
@@ -100,7 +101,6 @@ class CwlManagement(
         self.helper_role_ids = set(CWL_HELPERS)
 
         self.init_thread_feature()
-
         self._sent_keys = set(self._load_sent_keys())
         self.dashboard_state = self._load_dashboard_state()
         self.bonus_config = BonusConfigRepository()
@@ -108,6 +108,12 @@ class CwlManagement(
         self.bonus_analysis = BonusAnalysisService(
             clash_client,
             clan_health_repository,
+        )
+        self.queries = CwlQueries(
+            clan_health_repository,
+            lambda: self.data.get("threads", {}),
+            bonus_analysis=self.bonus_analysis,
+            bonus_config=self.bonus_config,
         )
         self.bonus_workbook_writer = BonusWorkbookWriter()
         self.bonus_reports = BonusReportService(

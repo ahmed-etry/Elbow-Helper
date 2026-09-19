@@ -21,6 +21,7 @@ from ..models import Roster
 from ..models import RosterLayout
 from ..models import RosterMember
 from ..models import RosterPost
+from ..models import RosterCycle, RosterCyclePage, RosterSnapshot
 
 
 SQLITE_BUSY_TIMEOUT_SECONDS = 30.0
@@ -493,6 +494,70 @@ class RosterRepository:
             return self.update_roster(roster_id, status="open")
         key = f"manual-{int(time.time())}"
         return self.start_cycle(roster_id, key)[0]
+
+    def list_cycles(
+        self, guild_id: int, roster_id: int, *, before_id: int | None = None,
+        limit: int = 25,
+    ) -> RosterCyclePage | None:
+        """Page newest-created cycles, without inferring seasons from names."""
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("Cycle page limit must be between 1 and 100")
+        if before_id is not None and (type(before_id) is not int or before_id <= 0):
+            raise ValueError("Cycle cursor must be a positive integer")
+        with self.connect() as conn:
+            conn.execute("BEGIN")
+            if conn.execute(
+                "SELECT 1 FROM rosters WHERE id = ? AND guild_id = ?", (roster_id, guild_id),
+            ).fetchone() is None:
+                return None
+            rows = conn.execute(
+                """SELECT * FROM roster_cycles WHERE roster_id = ?
+                AND (? IS NULL OR id < ?) ORDER BY id DESC LIMIT ?""",
+                (roster_id, before_id, before_id, limit + 1),
+            ).fetchall()
+        cycles = tuple(RosterCycle.from_row(dict(row)) for row in rows[:limit])
+        return RosterCyclePage(cycles, cycles[-1].id if len(rows) > limit else None)
+
+    def snapshot(
+        self, guild_id: int, roster_id: int, cycle_id: int | None = None,
+    ) -> RosterSnapshot | None:
+        """Read an exact guild/roster/cycle in one SQLite read transaction.
+
+        None selects the active cycle. An explicit missing/foreign cycle raises
+        KeyError instead of silently falling back to another season's members.
+        Discord source access remains the calling feature's responsibility.
+        """
+        with self.connect() as conn:
+            conn.execute("BEGIN")
+            row = conn.execute(
+                "SELECT * FROM rosters WHERE id = ? AND guild_id = ?",
+                (roster_id, guild_id),
+            ).fetchone()
+            roster = self._roster(row)
+            if roster is None:
+                return None
+            selected_id = roster.active_cycle_id if cycle_id is None else cycle_id
+            cycle = None
+            members = ()
+            if selected_id is not None:
+                row = conn.execute(
+                    "SELECT * FROM roster_cycles WHERE id = ? AND roster_id = ?",
+                    (selected_id, roster_id),
+                ).fetchone()
+                if row is None:
+                    raise KeyError(selected_id)
+                cycle = RosterCycle.from_row(dict(row))
+                members = tuple(RosterMember.from_row(dict(item)) for item in conn.execute(
+                    """SELECT * FROM roster_members WHERE roster_id = ? AND cycle_id = ?
+                    ORDER BY townhall DESC, hero_sum DESC,
+                             player_name COLLATE NOCASE, player_tag""",
+                    (roster_id, selected_id),
+                ))
+            posts = tuple(RosterPost.from_row(dict(item)) for item in conn.execute(
+                "SELECT * FROM roster_posts WHERE roster_id = ? ORDER BY channel_id, message_id",
+                (roster_id,),
+            ))
+            return RosterSnapshot(roster, cycle, members, posts, int(time.time()))
 
     def list_members(self, roster_id: int, cycle_id: int | None) -> list[RosterMember]:
         if cycle_id is None:

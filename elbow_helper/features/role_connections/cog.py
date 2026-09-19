@@ -37,6 +37,7 @@ from .state import load_state
 from .state import save_state
 from .board import ConnectionsView
 from .scan import ScanConfirmView
+from .queries import RoleConnectionQueries, invalid_connection_indexes
 
 LOGGER = logging.getLogger(__name__)
 
@@ -45,6 +46,9 @@ class RoleConnections(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.state = load_state()
+        self.queries = RoleConnectionQueries(
+            lambda: self.state.get("connections", ()),
+        )
         self._role_change_tasks: Dict[int, asyncio.Task] = {}
         self._scan_lock = asyncio.Lock()
         self._scan_tasks: set[asyncio.Task] = set()
@@ -54,54 +58,7 @@ class RoleConnections(commands.Cog):
     def _invalid_connection_indexes(
         connections: List[Dict[str, Any]],
     ) -> set[int]:
-        targets: dict[int, set[int]] = {}
-        references: dict[int, set[int]] = {}
-
-        for index, connection in enumerate(connections):
-            target_role_id = connection.get("target_role_id")
-            if isinstance(target_role_id, bool) or not isinstance(target_role_id, int):
-                continue
-            targets.setdefault(target_role_id, set()).add(index)
-            role_references = references.setdefault(target_role_id, set())
-            for list_name in ("all", "any"):
-                conditions = connection.get(list_name, [])
-                if not isinstance(conditions, list):
-                    continue
-                for condition in conditions:
-                    if not isinstance(condition, dict):
-                        continue
-                    for kind in ("has", "not"):
-                        role_id = condition.get(kind)
-                        if isinstance(role_id, int) and not isinstance(role_id, bool):
-                            role_references.add(role_id)
-
-        managed_roles = set(targets)
-        graph = {
-            target: role_ids & managed_roles
-            for target, role_ids in references.items()
-        }
-
-        def reaches_itself(start: int, current: int, visited: set[int]) -> bool:
-            for dependency in graph.get(current, set()):
-                if dependency == start:
-                    return True
-                if dependency in visited:
-                    continue
-                visited.add(dependency)
-                if reaches_itself(start, dependency, visited):
-                    return True
-            return False
-
-        cyclic_targets = {
-            target
-            for target in managed_roles
-            if reaches_itself(target, target, {target})
-        }
-        return {
-            index
-            for target in cyclic_targets
-            for index in targets.get(target, set())
-        }
+        return invalid_connection_indexes(connections)
 
     def connection_change_is_valid(
         self,

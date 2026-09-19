@@ -31,6 +31,7 @@ from .config import RANGE_FUNCTIONS
 from .config import get_preset_definition
 from .state import ensure_state
 from .state import save_state
+from .queries import EventStatsQueries
 
 LOGGER = logging.getLogger(__name__)
 
@@ -43,6 +44,12 @@ class EventStatsCog(EventStatsCommandsMixin, EventStatsChannelsMixin, commands.C
         self.state = ensure_state()
         self.events: list[dict[str, Any]] = []
         self._reload_events_from_state()
+        self.queries = EventStatsQueries(
+            lambda: tuple(self.events),
+            event_phase=self._event_phase,
+            recurring_range=self._recurring_range,
+            recurring_point=self._recurring_point,
+        )
         self._startup_task = asyncio.create_task(self._startup())
 
     def cog_unload(self) -> None:

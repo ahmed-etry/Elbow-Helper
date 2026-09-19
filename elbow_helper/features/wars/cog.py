@@ -18,6 +18,7 @@ from .roles import RosterRoleClaim
 from .state import StateMixin, load_cache, save_cache
 from .tasks import TaskMixin
 from .warflow import WarflowMixin
+from .queries import WarQueries
 
 
 class WarManager(
@@ -62,6 +63,8 @@ class WarManager(
             self._load_war_board_registry()
         )
         self.war_board_history = self._load_war_board_history()
+        self.war_observations: Dict[str, Dict[str, Any]] = {}
+        self.queries = WarQueries(self)
         (
             self.war_role_lineups,
             self.war_role_managed_members,

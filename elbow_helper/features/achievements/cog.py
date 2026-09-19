@@ -6,6 +6,7 @@ import asyncio
 import contextvars
 import logging
 import os
+from pathlib import Path
 
 import discord
 from discord.ext import commands
@@ -18,6 +19,7 @@ from .database import AchievementsDatabaseMixin
 from .definitions import ALL_ACHIEVEMENTS
 from .economy import AchievementEconomyMixin
 from .progress import AchievementProgressMixin
+from .queries import AchievementQueries
 from .raffle import AchievementRaffleMixin
 from .rewards import AchievementRewardService
 from .tracking import AchievementTrackingMixin
@@ -63,6 +65,7 @@ class Achievements(
         self.init_database()
         self.rewards = AchievementRewardService(self)
         self.init_achievements()
+        self.queries = AchievementQueries(Path(self.db_path))
         start_resilient_loop(self.check_time_achievements)
         start_resilient_loop(self.initial_achievement_check)
         start_resilient_loop(self.cleanup_database)
