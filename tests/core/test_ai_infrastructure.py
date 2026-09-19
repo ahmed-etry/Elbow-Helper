@@ -276,14 +276,11 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(first.provider_duration_ms, 0)
         self.assertEqual(second.content, "The decision was recorded here.")
         first_request = transport.chat.completions.create.await_args_list[0].kwargs
-        self.assertEqual(first_request["tool_choice"], "auto")
+        self.assertNotIn("tool_choice", first_request)
         self.assertEqual(first_request["max_tokens"], 64_000)
         second_request = transport.chat.completions.create.await_args_list[1].kwargs
-        self.assertIn("tools", second_request)
-        self.assertEqual(
-            second_request["tools"][0]["function"]["name"], "read_report",
-        )
-        self.assertEqual(second_request["tool_choice"], "none")
+        self.assertNotIn("tools", second_request)
+        self.assertNotIn("tool_choice", second_request)
         self.assertIs(second_request["messages"][2], first_response.choices[0].message)
         self.assertEqual(
             second_request["messages"][3],
@@ -387,6 +384,32 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(step.tool_calls[0].name, "list_channels")
         self.assertEqual(step.tool_calls[0].arguments, "{}")
+
+    async def test_agent_session_discards_prose_around_dsml_tool_calls(self) -> None:
+        response = self._response(
+            'I will check both channels.\n'
+            '<||DSML|| calls><||DSML|| invoke name="search_messages">'
+            '<||DSML|| parameter name="query" string="true">joins'
+            '</||DSML|| parameter></||DSML|| invoke>'
+            '</||DSML|| calls>',
+        )
+        transport = MagicMock()
+        transport.chat.completions.create = AsyncMock(return_value=response)
+        with patch(
+            "elbow_helper.infrastructure.ai.client.AsyncOpenAI",
+            return_value=transport,
+        ):
+            session = DeepSeekTextClient("token").create_agent_session(
+                system_prompt="trusted", prompt="question",
+                tools=(AgentToolDefinition(
+                    name="search_messages", description="Search",
+                    parameters={"type": "object", "properties": {}},
+                ),),
+            )
+            step = await session.advance()  # type: ignore[union-attr]
+
+        self.assertEqual(step.content, "")
+        self.assertEqual(step.tool_calls[0].name, "search_messages")
 
     def test_unconfigured_client_does_not_create_agent_session(self) -> None:
         with patch("elbow_helper.infrastructure.ai.client.AsyncOpenAI"):

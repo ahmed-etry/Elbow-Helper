@@ -280,9 +280,11 @@ class _DeepSeekAgentSession:
             "reasoning_effort": "high",
             "extra_body": {"thinking": {"type": "enabled"}},
         }
-        if self._tools:
+        # DeepSeek selects tools automatically when definitions are present.
+        # Omit definitions on the final-answer round instead of relying on
+        # tool_choice support in thinking mode.
+        if self._tools and allow_tools:
             options["tools"] = self._tools
-            options["tool_choice"] = "auto" if allow_tools else "none"
         if self._max_output_tokens is not None:
             options["max_tokens"] = self._max_output_tokens
 
@@ -297,13 +299,24 @@ class _DeepSeekAgentSession:
                 _parse_agent_tool_call(raw_tool_call)
                 for raw_tool_call in raw_tool_calls
             )
-            recovered_tool_calls = _parse_dsml_tool_calls(
-                str(content or ""),
-                allowed_names={tool["function"]["name"] for tool in self._tools},
-                sequence=self._text_tool_call_sequence,
+            recovered_tool_calls = (
+                None
+                if tool_calls
+                else _parse_dsml_tool_calls(
+                    str(content or ""),
+                    allowed_names={
+                        tool["function"]["name"] for tool in self._tools
+                    },
+                    sequence=self._text_tool_call_sequence,
+                )
             )
+            if tool_calls and _DSML_MARKER.search(str(content or "")):
+                # Some provider responses duplicate a structured call in the
+                # text field. Keep the structured call and never expose its
+                # control representation as answer text.
+                content = ""
             if recovered_tool_calls is not None:
-                if tool_calls or not allow_tools:
+                if not allow_tools:
                     raise ValueError("Provider control markup is not a final answer")
                 self._text_tool_call_sequence += 1
                 tool_calls = recovered_tool_calls
@@ -340,8 +353,12 @@ class _DeepSeekAgentSession:
             TypeError,
             ValueError,
         ) as error:
+            detail = _diagnostic_text(str(error), maximum=180)
+            description = type(error).__name__
+            if detail:
+                description += f": {detail}"
             raise TextGenerationError(
-                f"DeepSeek returned an invalid agent response ({type(error).__name__})"
+                f"DeepSeek returned an invalid agent response ({description})"
             ) from error
 
         # DeepSeek requires the complete assistant message, including its
@@ -418,8 +435,10 @@ def _parse_dsml_tool_calls(
         rf'</?\s*{_DSML_TAG}\s+calls\s*>', "", remainder,
         flags=re.IGNORECASE,
     ).strip()
-    if remainder:
-        raise ValueError("Provider control markup contains unexpected content")
+    # A model may introduce a call with ordinary prose. It is not a final
+    # answer, so discard it while still rejecting any unparsed control tags.
+    if _DSML_MARKER.search(remainder):
+        raise ValueError("Malformed provider control markup")
 
     calls = []
     for index, invocation in enumerate(invocations):
