@@ -8,7 +8,7 @@ from uuid import uuid4
 from elbow_helper.configuration.channels import OVERSEEING_TERRACE
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
-from ..access import accessible_message_channel, require_evidence_access
+from ..access import accessible_message_channel, can_access_message_channel, require_evidence_access
 from ..reports.base import ArtifactCapacityError, retain_report
 from ..reports.member_lifecycle import MemberLifecycleReport
 from ..models import AgentRequestContext, RegisteredAgentTool
@@ -73,8 +73,18 @@ async def read_member_lifecycle(
     except ValueError:
         return {"error": "Stored member lifecycle observations could not be listed."}
     activity_channels = {}
+    checked_channels: dict[int, bool] = {}
     for registration in registrations:
-        if await accessible_message_channel(context, registration.channel_id) is not None:
+        if registration.channel_id not in checked_channels:
+            # Last-seen records outlive deleted tickets and evicted threads.
+            # This optional observation must not fetch old channels merely to
+            # build a lifecycle snapshot. Explicit history tools can resolve
+            # uncached sources when the request actually calls for them.
+            channel = context.guild.get_channel_or_thread(registration.channel_id)
+            checked_channels[registration.channel_id] = (
+                channel is not None and await can_access_message_channel(context, channel)
+            )
+        if checked_channels[registration.channel_id]:
             activity_channels[registration.member_id] = registration.channel_id
     try:
         snapshot = context.member_lifecycle_queries.snapshot(

@@ -126,8 +126,8 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(any("request=1 channel=100" in line for line in logs.output))
 
     async def test_two_channel_research_reaches_discord_through_real_orchestration(self):
-        for recover_final_call, disappearing_ticket in ((False, False), (True, False), (False, True)):
-            with self.subTest(recover_final_call=recover_final_call, disappearing_ticket=disappearing_ticket):
+        for recover_final_call, ticket_state in ((False, None), (True, None), (False, "disappearing"), (False, "stale")):
+            with self.subTest(recover_final_call=recover_final_call, ticket_state=ticket_state):
                 self.setUp()
                 member = _Member(42, (next(iter(CORE)),))
                 make_message = self._real_handler_scenario(member)
@@ -145,7 +145,7 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
                 message.guild.channels = list(channels.values())
                 message.guild.threads = []
                 message.guild.get_channel_or_thread = channels.get
-                if disappearing_ticket:
+                if ticket_state is not None:
                     channels[OVERSEEING_TERRACE] = SimpleNamespace(
                         id=OVERSEEING_TERRACE, guild=message.guild,
                         permissions_for=message.channel.permissions_for,
@@ -156,7 +156,18 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
                         permissions_for=message.channel.permissions_for,
                     )
                     missing = discord.NotFound(SimpleNamespace(status=404, reason="Not Found"), "Unknown Channel")
-                    self.bot.fetch_channel = AsyncMock(side_effect=[ticket] * 4 + [missing])
+                    self.bot.fetch_channel = AsyncMock(side_effect=missing)
+                    if ticket_state == "disappearing":
+                        checks = 0
+
+                        def channel_lookup(channel_id):
+                            nonlocal checks
+                            if channel_id == 400:
+                                checks += 1
+                                return ticket if checks <= 4 else None
+                            return channels.get(channel_id)
+
+                        message.guild.get_channel_or_thread = channel_lookup
                     self.cog.member_lifecycle_queries = MemberLifecycleQueries(lambda: {
                         "members": {str(member.id): {
                             "platform": "private platform", "joined_at_iso": "2026-09-15T12:00:00+00:00",
@@ -207,7 +218,7 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
                         "channel_ids": [200, 300], "limit": 20,
                     }),
                 ]
-                if disappearing_ticket:
+                if ticket_state is not None:
                     batch = responses[-1].choices[0].message["tool_calls"]
                     batch[:0] = [
                         response(name=name, arguments={}).choices[0].message["tool_calls"][0]
@@ -240,16 +251,26 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(final_request["tool_choice"], "none")
                 results = [item["content"] for item in final_request["messages"] if item.get("role") == "tool"]
                 self.assertTrue(any("Two applicants" in item and "follow-up here" in item for item in results))
-                if disappearing_ticket:
-                    self.assertEqual(self.bot.fetch_channel.await_count, 5)
+                if ticket_state == "disappearing":
+                    self.bot.fetch_channel.assert_awaited_once_with(400)
                     self.assertNotIn("private platform", str(final_request))
                     self.assertEqual([json.loads(item)["error"] for item in results[-3:-1]], ["That lookup failed."] * 2)
+                elif ticket_state == "stale":
+                    self.bot.fetch_channel.assert_not_awaited()
+                    lifecycle = json.loads(results[-3])
+                    self.assertEqual(lifecycle["tracked_current_member_count"], 1)
+                    self.assertEqual(lifecycle["members"][0]["platform"], "private platform")
+                    self.assertIsNone(lifecycle["members"][0]["last_seen_channel_id"])
+                    self.assertIsNone(lifecycle["members"][0]["last_seen_at"])
                 if recover_final_call:
                     self.assertIn("not executed", results[-1])
                 conversation = self.cog._conversations.find(GUILD_ID, 100, 2000)
                 self.assertTrue(conversation.turns[0].record.delivery_complete)
-                self.assertEqual(conversation.turns[0].source_channels, frozenset({100, 200, 300}))
-                if disappearing_ticket:
+                expected_sources = {100, 200, 300}
+                if ticket_state == "stale":
+                    expected_sources.add(OVERSEEING_TERRACE)
+                self.assertEqual(conversation.turns[0].source_channels, frozenset(expected_sources))
+                if ticket_state == "disappearing":
                     self.assertFalse(conversation.reports)
 
     async def test_evidence_access_loss_sends_existing_failure_when_request_channel_remains_accessible(self):
