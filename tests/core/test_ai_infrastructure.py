@@ -279,8 +279,13 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("tool_choice", first_request)
         self.assertEqual(first_request["max_tokens"], 64_000)
         second_request = transport.chat.completions.create.await_args_list[1].kwargs
-        self.assertNotIn("tools", second_request)
-        self.assertNotIn("tool_choice", second_request)
+        self.assertEqual(second_request["tools"][0]["function"]["name"], "read_report")
+        self.assertEqual(second_request["tool_choice"], "none")
+        self.assertEqual(first_request["messages"][0]["content"], "trusted")
+        self.assertIn("Research for this request has ended.", second_request["messages"][0]["content"])
+        self.assertIn("without inventing facts", second_request["messages"][0]["content"])
+        self.assertEqual(len(first_request["messages"]), 2)
+        self.assertEqual(len(second_request["messages"]), 4)
         self.assertIs(second_request["messages"][2], first_response.choices[0].message)
         self.assertEqual(
             second_request["messages"][3],
@@ -338,7 +343,7 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
             "search_messages",
         )
 
-    async def test_agent_session_rejects_dsml_when_tools_are_disabled(self) -> None:
+    async def test_agent_session_returns_disabled_dsml_calls_for_orchestrator_refusal(self) -> None:
         response = self._response(
             '<｜｜DSML｜｜ calls><｜｜DSML｜｜ invoke name="search_messages">'
             '<｜｜DSML｜｜ parameter name="query" string="true">test'
@@ -357,10 +362,11 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
                     parameters={"type": "object", "properties": {}},
                 ),),
             )
-            with self.assertRaisesRegex(
-                TextGenerationError, "invalid agent response",
-            ):
-                await session.advance(allow_tools=False)  # type: ignore[union-attr]
+            step = await session.advance(allow_tools=False)  # type: ignore[union-attr]
+
+        self.assertEqual(step.content, "")
+        self.assertEqual(step.tool_calls[0].name, "search_messages")
+        self.assertEqual(transport.chat.completions.create.await_args.kwargs["tool_choice"], "none")
 
     async def test_agent_session_recovers_parameterless_dsml_tool_call(self) -> None:
         response = self._response(

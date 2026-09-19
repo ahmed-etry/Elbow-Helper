@@ -35,3 +35,19 @@ class ContextBudget:
         prompt = usage.prompt_tokens if usage.prompt_tokens is not None else projected_input
         completion = usage.completion_tokens if usage.completion_tokens is not None else self.output_reserve
         self.next_input_estimate = prompt + completion + 128
+
+    def result_character_limit(
+        self, results: Sequence[AgentToolResult], *, pending_call_ids: Sequence[str],
+        maximum: int,
+    ) -> int:
+        """Fit the next result while retaining answer and remaining reply room."""
+        if self.context_window_tokens is None:
+            return maximum
+        # Reserve final instructions and a small refusal for every outstanding
+        # call. Four UTF-8 bytes per character bounds the next result's tokens.
+        framing = 1024 + sum(estimate_tokens(call_id) + 640 for call_id in pending_call_ids)
+        available = (
+            self.context_window_tokens - self.output_reserve
+            - self.projected_input(results) - framing
+        )
+        return min(maximum, max(0, available // 4))

@@ -21,7 +21,7 @@ from .shared import bounded_text
 from .shared import positive_int
 
 
-SEARCH_RESULT_LIMIT = 10
+SEARCH_RESULT_LIMIT = 25
 CONTEXT_MESSAGE_LIMIT = 50
 HISTORY_PAGE_LIMIT = 25
 

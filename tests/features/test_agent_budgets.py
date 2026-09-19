@@ -33,3 +33,17 @@ class ContextBudgetTests(unittest.TestCase):
         budget = ContextBudget(None, 200, 100)
         self.assertTrue(budget.can_answer(10_000_000))
         self.assertTrue(budget.can_continue_tools(10_000_000, result_reserve=500))
+
+    def test_batch_results_share_context_room_and_reserve_a_final_answer(self):
+        budget = ContextBudget(20_000, 4000, 8000)
+        first_limit = budget.result_character_limit((), pending_call_ids=("one", "two"), maximum=10_000)
+        self.assertGreater(first_limit, 0)
+        first = AgentToolResult("one", "\U0001f600" * first_limit)
+        second_limit = budget.result_character_limit((first,), pending_call_ids=("two",), maximum=10_000)
+        self.assertLess(second_limit, first_limit)
+        second = AgentToolResult("two", "\U0001f600" * second_limit)
+        self.assertTrue(budget.can_answer(budget.projected_input((first, second))))
+
+    def test_no_result_room_returns_zero(self):
+        budget = ContextBudget(1000, 200, 800)
+        self.assertEqual(budget.result_character_limit((), pending_call_ids=("one",), maximum=100), 0)

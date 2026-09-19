@@ -63,6 +63,20 @@ def _thread(context, thread_id, *, name, private=False, archived=True):
 
 
 class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
+    async def test_twenty_results_are_valid_and_reach_discord(self):
+        from elbow_helper.features.agent.tools.discord import discord_tools
+        from elbow_helper.features.agent.service import _valid_arguments
+
+        context = _context()
+        tool = next(tool for tool in discord_tools() if tool.definition.name == "search_discord_messages")
+        arguments = {"query": "joins", "channel_id": 100, "limit": 20}
+        self.assertTrue(_valid_arguments(arguments, tool.definition.parameters))
+        context.message_search.search_page.return_value = DiscordSearchPage(
+            (), 0, 20, 0, None, False, False,
+        )
+        await tool.handler(context, arguments)
+        self.assertEqual(context.message_search.search_page.await_args.kwargs["limit"], 20)
+
     async def test_requested_channel_author_and_period_exclude_unrelated_matches(self):
         context = _context()
         middle = discord.utils.time_snowflake(datetime(2026, 9, 15, tzinfo=timezone.utc))

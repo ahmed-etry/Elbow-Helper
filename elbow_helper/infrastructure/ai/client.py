@@ -28,6 +28,14 @@ DEEPSEEK_CONTEXT_WINDOW_TOKENS = 1_000_000
 DEFAULT_TIMEOUT_SECONDS = 60.0
 DEFAULT_MAX_RETRIES = 2
 PROVIDER_ERROR_MESSAGE_LIMIT = 500
+_FINAL_ANSWER_INSTRUCTION = (
+    "Research for this request has ended. Do not request or simulate any more "
+    "tool calls. Answer the user's request now using the evidence already "
+    "available in this conversation. Give useful supported findings even if "
+    "the investigation is incomplete, and state any material gaps without "
+    "inventing facts or claiming that unperformed work was completed. "
+    "Return only the user-facing answer, without tool-call markup."
+)
 _DSML_TAG = r"[|\uFF5C]{2}DSML[|\uFF5C]{2}"
 _DSML_MARKER = re.compile(_DSML_TAG, re.IGNORECASE)
 _DSML_INVOKE = re.compile(
@@ -274,17 +282,27 @@ class _DeepSeekAgentSession:
                 }
             )
 
+        request_messages = list(self._messages)
+        if not allow_tools:
+            # Keep this trusted instruction in the initial system message;
+            # it describes the runtime phase, not a new user request.
+            request_messages[0] = {
+                **request_messages[0],
+                "content": request_messages[0]["content"]
+                + "\n\n" + _FINAL_ANSWER_INSTRUCTION,
+            }
         options: dict[str, Any] = {
             "model": DEEPSEEK_MODEL,
-            "messages": self._messages,
+            "messages": request_messages,
             "reasoning_effort": "high",
             "extra_body": {"thinking": {"type": "enabled"}},
         }
-        # DeepSeek selects tools automatically when definitions are present.
-        # Omit definitions on the final-answer round instead of relying on
-        # tool_choice support in thinking mode.
-        if self._tools and allow_tools:
+        # Keep the tools parameter so DeepSeek retains earlier reasoning in
+        # context. Disable calls explicitly when the research phase has ended.
+        if self._tools:
             options["tools"] = self._tools
+        if not allow_tools:
+            options["tool_choice"] = "none"
         if self._max_output_tokens is not None:
             options["max_tokens"] = self._max_output_tokens
 
@@ -316,8 +334,9 @@ class _DeepSeekAgentSession:
                 # control representation as answer text.
                 content = ""
             if recovered_tool_calls is not None:
-                if not allow_tools:
-                    raise ValueError("Provider control markup is not a final answer")
+                # Preserve valid calls even when the provider ignores none.
+                # The orchestrator must decline them and can request a final
+                # answer with those refusals; the adapter never executes tools.
                 self._text_tool_call_sequence += 1
                 tool_calls = recovered_tool_calls
                 content = ""

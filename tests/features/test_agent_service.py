@@ -527,6 +527,109 @@ class CoreAgentServiceTests(unittest.IsolatedAsyncioTestCase):
             await CoreAgentService(_AgentModel(session)).answer(question="test", local_context="", context=_context())
         self.assertFalse(session.calls[1][1])
 
+    async def test_final_tool_requests_are_declined_once_without_executing_them(self):
+        for budget_name in ("MAX_TOOL_CALLS", "MAX_MODEL_ROUNDS", "MAX_EVIDENCE_CHARACTERS"):
+            with self.subTest(budget=budget_name):
+                handler = AsyncMock(return_value={"answer": 1})
+                tool = RegisteredAgentTool(AgentToolDefinition("lookup", "test", {"properties": {}}), handler)
+                session = _AgentSession([
+                    AgentStep("", (AgentToolCall("first", "lookup", "{}"),), AgentUsage(100, 20)),
+                    AgentStep("", (AgentToolCall("declined", "lookup", "{}"),), AgentUsage(200, 20)),
+                    AgentStep("Here is what the evidence establishes.", (), AgentUsage(300, 20)),
+                ])
+                with (
+                    patch("elbow_helper.features.agent.service.build_agent_tools", return_value={"lookup": tool}),
+                    patch("elbow_helper.features.agent.service." + budget_name, 2 if budget_name == "MAX_MODEL_ROUNDS" else 1),
+                ):
+                    answer = await CoreAgentService(_AgentModel(session)).answer(question="test", local_context="", context=_context())
+                self.assertEqual(answer, "Here is what the evidence establishes.")
+                self.assertEqual(handler.await_count, 0 if budget_name == "MAX_EVIDENCE_CHARACTERS" else 1)
+                self.assertEqual([allowed for _, allowed in session.calls], [True, False, False])
+                self.assertEqual(session.calls[2][0][0].call_id, "declined")
+                self.assertIn("not executed", session.calls[2][0][0].content)
+
+    async def test_final_answer_recovery_does_not_loop(self):
+        handler = AsyncMock()
+        tool = RegisteredAgentTool(AgentToolDefinition("lookup", "test", {"properties": {}}), handler)
+        session = _AgentSession([
+            AgentStep("", (AgentToolCall(str(index), "lookup", "{}"),), AgentUsage(100, 20))
+            for index in range(2)
+        ])
+        with (
+            patch("elbow_helper.features.agent.service.build_agent_tools", return_value={"lookup": tool}),
+            patch("elbow_helper.features.agent.service.MAX_MODEL_ROUNDS", 1),
+        ):
+            with self.assertRaisesRegex(AgentUnavailableError, "after tool requests were declined"):
+                await CoreAgentService(_AgentModel(session)).answer(question="test", local_context="", context=_context())
+        handler.assert_not_awaited()
+        self.assertEqual(len(session.calls), 2)
+
+    async def test_deepseek_dsml_after_research_limit_recovers_through_real_adapter(self):
+        from elbow_helper.infrastructure.ai.client import DeepSeekTextClient
+
+        dsml = '<||DSML|| calls><||DSML|| invoke name="lookup"></||DSML|| invoke></||DSML|| calls>'
+        responses = [
+            SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(
+                    content=content, tool_calls=None, reasoning_content="retained reasoning",
+                ))],
+                usage=SimpleNamespace(prompt_tokens=100, completion_tokens=20),
+                id=str(index), model="deepseek-flash",
+            )
+            for index, content in enumerate((dsml, dsml, "The verified answer is 7."))
+        ]
+        create = AsyncMock(side_effect=responses)
+        transport = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        handler = AsyncMock(return_value={"answer": 7})
+        tool = RegisteredAgentTool(AgentToolDefinition("lookup", "test", {"properties": {}}), handler)
+        with (
+            patch("elbow_helper.infrastructure.ai.client.AsyncOpenAI", return_value=transport),
+            patch("elbow_helper.features.agent.service.build_agent_tools", return_value={"lookup": tool}),
+            patch("elbow_helper.features.agent.service.MAX_TOOL_CALLS", 1),
+            self.assertLogs("elbow_helper.features.agent.service", level="INFO") as logs,
+        ):
+            answer = await CoreAgentService(DeepSeekTextClient("test-key")).answer(
+                question="check the evidence", local_context="", context=_context(),
+            )
+        self.assertEqual(answer, "The verified answer is 7.")
+        handler.assert_awaited_once()
+        self.assertEqual(create.await_count, 3)
+        final_request = create.await_args.kwargs
+        self.assertEqual(final_request["tool_choice"], "none")
+        self.assertEqual(final_request["messages"][-2]["reasoning_content"], "retained reasoning")
+        self.assertIn("not executed", final_request["messages"][-1]["content"])
+        self.assertEqual(final_request["messages"][-1]["tool_call_id"], "dsml-1-0")
+        self.assertTrue(any("prompt_tokens=300 completion_tokens=60" in line for line in logs.output))
+
+    async def test_research_can_continue_past_old_round_limit(self):
+        handler = AsyncMock(return_value={"answer": 1})
+        tool = RegisteredAgentTool(AgentToolDefinition("lookup", "test", {
+            "properties": {"page": {"type": "integer"}},
+        }), handler)
+        session = _AgentSession([
+            AgentStep("", (AgentToolCall(str(page), "lookup", json.dumps({"page": page})),), AgentUsage(1000, 20))
+            for page in range(1, 13)
+        ] + [AgentStep("Both channels reviewed.", (), AgentUsage(1000, 20))])
+        session.context_window_tokens = 1_000_000
+        with patch("elbow_helper.features.agent.service.build_agent_tools", return_value={"lookup": tool}):
+            answer = await CoreAgentService(_AgentModel(session)).answer(question="test", local_context="", context=_context())
+        self.assertEqual(answer, "Both channels reviewed.")
+        self.assertEqual(handler.await_count, 12)
+        self.assertTrue(all(allowed for _, allowed in session.calls))
+
+    async def test_future_unused_evidence_does_not_prevent_next_lookup(self):
+        handler = AsyncMock(return_value={"answer": 1})
+        tool = RegisteredAgentTool(AgentToolDefinition("lookup", "test", {"properties": {}}), handler)
+        session = _AgentSession([
+            AgentStep("", (AgentToolCall("1", "lookup", "{}"),), AgentUsage(350_000, 1000)),
+            AgentStep("done", (), AgentUsage(360_000, 1000)),
+        ])
+        session.context_window_tokens = 1_000_000
+        with patch("elbow_helper.features.agent.service.build_agent_tools", return_value={"lookup": tool}):
+            await CoreAgentService(_AgentModel(session)).answer(question="test", local_context="", context=_context())
+        self.assertTrue(session.calls[1][1])
+        handler.assert_awaited_once()
+
     async def test_access_revoked_during_lookup_stops_the_request(self):
         context = _context()
         async def revoke(*args):

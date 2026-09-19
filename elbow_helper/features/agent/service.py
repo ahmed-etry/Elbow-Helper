@@ -32,10 +32,10 @@ from .budgets import ContextBudget
 LOGGER = logging.getLogger(__name__)
 # Leave enough bounded continuations for large, paginated requests that combine
 # several capability groups before the required final-answer round.
-MAX_MODEL_ROUNDS = 10
-MAX_TOOL_CALLS = 24
-MAX_TOOL_RESULT_CHARACTERS = 40_000
-MAX_EVIDENCE_CHARACTERS = 150_000
+MAX_MODEL_ROUNDS = 20
+MAX_TOOL_CALLS = 48
+MAX_TOOL_RESULT_CHARACTERS = 64_000
+MAX_EVIDENCE_CHARACTERS = 300_000
 TOOL_TIMEOUT_SECONDS = 30.0
 AGENT_MAX_OUTPUT_TOKENS = 64_000
 
@@ -99,9 +99,13 @@ class CoreAgentService:
         started_at = time.monotonic()
         status = "incomplete"
         rounds = 0
+        final_answer_requested = False
+        final_answer_recovery_used = False
 
         try:
-            for round_index in range(MAX_MODEL_ROUNDS):
+            # One extra generation is available only to decline calls emitted
+            # against the final-answer instruction, never for more research.
+            for round_index in range(MAX_MODEL_ROUNDS + 1):
                 context = replace(context, member=require_access(
                     context.guild, context.member.id, context.source_message.channel,
                 ))
@@ -110,22 +114,37 @@ class CoreAgentService:
                 if not context_budget.can_answer(projected_input):
                     status = "context_exhausted"
                     raise AgentUnavailableError("The agent lacks estimated context room for a complete answer")
-                # Existing evidence limits bound the next tool batch. UTF-8 can
-                # use four bytes per character; include framing for every call.
+                # Reserve one full result, not every possible future lookup.
+                # Each actual batch is bounded against remaining context below.
                 result_reserve = min(
                     MAX_EVIDENCE_CHARACTERS - evidence_characters,
-                    (MAX_TOOL_CALLS - total_tool_calls) * MAX_TOOL_RESULT_CHARACTERS,
+                    MAX_TOOL_RESULT_CHARACTERS,
                 ) * 4 + (MAX_TOOL_CALLS - total_tool_calls) * 128
                 allow_tools = (
-                    round_index < MAX_MODEL_ROUNDS - 1
+                    not final_answer_requested
+                    and round_index < MAX_MODEL_ROUNDS - 1
                     and total_tool_calls < MAX_TOOL_CALLS
                     and evidence_characters < MAX_EVIDENCE_CHARACTERS
                     and context_budget.can_continue_tools(projected_input, result_reserve=result_reserve)
                 )
                 if not allow_tools:
-                    LOGGER.info("Agent final-answer round: request=%s projected_input_tokens=%s remaining_context=%s",
-                                getattr(context.source_message, "id", None), projected_input,
-                                None if context_budget.context_window_tokens is None else context_budget.context_window_tokens - projected_input)
+                    final_answer_requested = True
+                    limits = []
+                    if round_index >= MAX_MODEL_ROUNDS - 1:
+                        limits.append("rounds")
+                    if total_tool_calls >= MAX_TOOL_CALLS:
+                        limits.append("tool_calls")
+                    if evidence_characters >= MAX_EVIDENCE_CHARACTERS:
+                        limits.append("evidence")
+                    if not context_budget.can_continue_tools(projected_input, result_reserve=result_reserve):
+                        limits.append("context")
+                    LOGGER.info(
+                        "Agent final-answer round: request=%s round=%s limits=%s "
+                        "tool_calls=%s evidence_characters=%s projected_input_tokens=%s remaining_context=%s",
+                        getattr(context.source_message, "id", None), round_index + 1,
+                        ",".join(limits) or "finalization", total_tool_calls, evidence_characters, projected_input,
+                        None if context_budget.context_window_tokens is None else context_budget.context_window_tokens - projected_input,
+                    )
                 usage_totals.attempted_rounds += 1
                 round_started_at = time.monotonic()
                 try:
@@ -165,13 +184,23 @@ class CoreAgentService:
                     raise AgentUnavailableError("The agent returned no final answer")
 
                 if not allow_tools:
-                    raise AgentUnavailableError("The agent requested tools after further lookups were disabled")
+                    if final_answer_recovery_used:
+                        raise AgentUnavailableError("The agent did not answer after tool requests were declined")
+                    final_answer_recovery_used = True
+                    pending_results = tuple(
+                        AgentToolResult(call.call_id, _error_result(
+                            "This tool call was not executed. Research has ended. "
+                            "Give your final answer using the available evidence "
+                            "and identify any unanswered parts. Do not call tools again."
+                        )) for call in step.tool_calls
+                    )
+                    continue
                 if not context_budget.can_answer(context_budget.next_input_estimate):
                     status = "context_exhausted"
                     raise AgentUnavailableError("The agent lacks estimated context room for another model round")
 
                 results: list[AgentToolResult] = []
-                for call in step.tool_calls:
+                for call_index, call in enumerate(step.tool_calls):
                     if total_tool_calls >= MAX_TOOL_CALLS:
                         results.append(
                             AgentToolResult(
@@ -251,6 +280,18 @@ class CoreAgentService:
                             )
                         )
                         continue
+                    result_limit = context_budget.result_character_limit(
+                        results,
+                        pending_call_ids=tuple(item.call_id for item in step.tool_calls[call_index:]),
+                        maximum=min(MAX_TOOL_RESULT_CHARACTERS, MAX_EVIDENCE_CHARACTERS - evidence_characters),
+                    )
+                    if result_limit < 512:
+                        final_answer_requested = True
+                        results.append(AgentToolResult(call.call_id, _error_result(
+                            "This lookup was not executed because the remaining context "
+                            "is reserved for your answer. Answer from existing evidence."
+                        )))
+                        continue
                     context = replace(context, member=require_access(
                         context.guild, context.member.id, context.source_message.channel,
                     ))
@@ -267,10 +308,9 @@ class CoreAgentService:
                         arguments=arguments,
                         context=context,
                     )
-                    remaining = MAX_EVIDENCE_CHARACTERS - evidence_characters
                     content = _bound_tool_result(
                         content,
-                        min(MAX_TOOL_RESULT_CHARACTERS, remaining),
+                        result_limit,
                     )
                     evidence_characters += len(content)
                     context.state.evidence.append(json.dumps({"tool": call.name, "arguments": arguments, "result": content}, ensure_ascii=False))
