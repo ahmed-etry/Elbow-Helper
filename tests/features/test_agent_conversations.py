@@ -174,7 +174,11 @@ class ConversationStoreTests(unittest.TestCase):
 
             asyncio.run(verify())
 
-        self.assertIsNone(store.find(1, 10, 101))
+        with patch(
+            "elbow_helper.features.agent.conversation.state.time.monotonic",
+            return_value=30_000,
+        ):
+            self.assertIsNone(store.find(1, 10, 101))
 
     def test_exact_idle_boundary_expires_only_inactive_conversations(self):
         store = ConversationStore()

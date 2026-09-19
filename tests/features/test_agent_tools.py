@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import unittest
 import sqlite3
 from contextlib import closing
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from elbow_helper.discord.message_search import DiscordSearchMessage
 from elbow_helper.configuration.roles import CORE
@@ -62,9 +62,14 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
         selection.activate(["wars"])
         previous = set(selection.active_names)
 
-        result = selection.activate([
-            "discord_research", "members_roles", "cwl", "member_cases",
-        ])
+        with patch(
+            "elbow_helper.features.agent.tool_selection."
+            "MAX_ACTIVE_CAPABILITY_TOOLS",
+            1,
+        ):
+            result = selection.activate([
+                "discord_research", "members_roles", "cwl", "member_cases",
+            ])
 
         self.assertIn("error", result)
         self.assertEqual(selection.active_names, previous)

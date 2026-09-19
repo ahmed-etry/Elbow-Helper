@@ -6,6 +6,7 @@ from typing import Any, Mapping
 from uuid import uuid4
 
 from elbow_helper.configuration.clans import CLAN_ORDER
+from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..access import accessible_message_channel, require_evidence_access

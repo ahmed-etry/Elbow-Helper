@@ -81,7 +81,7 @@ class AgentSpreadsheetContractTests(unittest.TestCase):
     def test_tool_schema_is_registered_with_bounded_literal_cells(self):
         tool = build_agent_tools()["prepare_spreadsheet"].definition
         self.assertEqual(tool.parameters["properties"]["sheets"]["maxItems"], 4)
-        self.assertIn("literal text cells", tool.description)
+        self.assertIn("literal text rows", tool.description)
 
 
 class AgentSpreadsheetToolTests(unittest.IsolatedAsyncioTestCase):

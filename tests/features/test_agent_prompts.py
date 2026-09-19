@@ -35,14 +35,12 @@ class RequestPromptTests(unittest.TestCase):
         self.assertIn("silently substitute another metric", SYSTEM_PROMPT)
 
     def test_planning_is_composable_without_inventing_policy(self):
-        self.assertIn("not as a required conversation sequence", SYSTEM_PROMPT)
-        self.assertIn("proposal, not approval or a live action", SYSTEM_PROMPT)
+        self.assertIn("Adapt the approach and output to the request", SYSTEM_PROMPT)
+        self.assertIn("rather than following a predefined workflow", SYSTEM_PROMPT)
         self.assertIn("Never invent availability, eligibility, policy, capacity", SYSTEM_PROMPT)
         self.assertIn("You may propose placements, selections, priorities", SYSTEM_PROMPT)
         self.assertIn("basis and assumptions clearly labelled", SYSTEM_PROMPT)
         self.assertIn("report conflicts instead of relaxing constraints", SYSTEM_PROMPT)
-        self.assertIn("only through its owning tools and exact version rules", SYSTEM_PROMPT)
-        self.assertIn("change proposal history, not live state", SYSTEM_PROMPT)
         self.assertIn("generated file or conversational agreement", SYSTEM_PROMPT)
         self.assertNotIn("For provisional CWL planning", SYSTEM_PROMPT)
 

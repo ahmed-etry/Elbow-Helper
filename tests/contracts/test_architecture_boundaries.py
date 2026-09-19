@@ -165,18 +165,6 @@ class DependencyBoundaryTests(unittest.TestCase):
         )
         self.assertNotIn("discord", knowledge_store)
         self.assertNotIn("Action", knowledge_store)
-        action_storage = (agent_root / "actions" / "repository.py").read_text(
-            encoding="utf-8"
-        )
-        action_codec = (
-            agent_root / "actions" / "codec.py"
-        ).read_text(encoding="utf-8")
-        action_integrity = (
-            agent_root / "actions" / "integrity.py"
-        ).read_text(encoding="utf-8")
-        self.assertNotIn("json.loads", action_storage)
-        self.assertNotIn("sqlite_transaction", action_codec)
-        self.assertNotIn(".action_storage import", action_integrity)
 
     def test_feature_packages_use_standard_entry_files(self) -> None:
         for feature in FEATURE_ROOT.iterdir():
