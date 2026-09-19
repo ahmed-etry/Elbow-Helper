@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from enum import StrEnum
+import json
+import re
 import time
 from typing import Any
 from typing import Protocol
@@ -26,6 +28,19 @@ DEEPSEEK_CONTEXT_WINDOW_TOKENS = 1_000_000
 DEFAULT_TIMEOUT_SECONDS = 60.0
 DEFAULT_MAX_RETRIES = 2
 PROVIDER_ERROR_MESSAGE_LIMIT = 500
+_DSML_TAG = r"[|\uFF5C]{2}DSML[|\uFF5C]{2}"
+_DSML_MARKER = re.compile(_DSML_TAG, re.IGNORECASE)
+_DSML_INVOKE = re.compile(
+    rf'<\s*{_DSML_TAG}\s+invoke\s+name="([^"]+)"\s*>'
+    rf'(.*?)</\s*{_DSML_TAG}\s+invoke\s*>',
+    re.IGNORECASE | re.DOTALL,
+)
+_DSML_PARAMETER = re.compile(
+    rf'<\s*{_DSML_TAG}\s+parameter\s+name="([^"]+)"'
+    rf'\s+string="(true|false)"\s*>(.*?)'
+    rf'</\s*{_DSML_TAG}\s+parameter\s*>',
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 class TextGenerationError(RuntimeError):
@@ -229,6 +244,7 @@ class _DeepSeekAgentSession:
         ]
         self.replace_tools(tools)
         self._max_output_tokens = max_output_tokens
+        self._text_tool_call_sequence = 0
 
     def replace_tools(self, tools: Sequence[AgentToolDefinition]) -> None:
         self._tools = [
@@ -281,6 +297,37 @@ class _DeepSeekAgentSession:
                 _parse_agent_tool_call(raw_tool_call)
                 for raw_tool_call in raw_tool_calls
             )
+            recovered_tool_calls = _parse_dsml_tool_calls(
+                str(content or ""),
+                allowed_names={tool["function"]["name"] for tool in self._tools},
+                sequence=self._text_tool_call_sequence,
+            )
+            if recovered_tool_calls is not None:
+                if tool_calls or not allow_tools:
+                    raise ValueError("Provider control markup is not a final answer")
+                self._text_tool_call_sequence += 1
+                tool_calls = recovered_tool_calls
+                content = ""
+                message = {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": call.call_id,
+                            "type": "function",
+                            "function": {
+                                "name": call.name,
+                                "arguments": call.arguments,
+                            },
+                        }
+                        for call in tool_calls
+                    ],
+                }
+                reasoning_content = _message_value(
+                    choice.message, "reasoning_content",
+                )
+                if reasoning_content is not None:
+                    message["reasoning_content"] = reasoning_content
         except OpenAIError as error:
             raise TextGenerationError(
                 DeepSeekTextClient._format_provider_error(error)
@@ -353,6 +400,51 @@ def _parse_agent_tool_call(raw: object) -> AgentToolCall:
         name=str(name),
         arguments=str(arguments or "{}"),
     )
+
+
+def _parse_dsml_tool_calls(
+    content: str, *, allowed_names: set[str], sequence: int,
+) -> tuple[AgentToolCall, ...] | None:
+    """Recover DeepSeek control calls emitted as text; reject malformed markup."""
+
+    if _DSML_MARKER.search(content) is None:
+        return None
+    normalized = content.replace("\\</", "</").strip()
+    invocations = list(_DSML_INVOKE.finditer(normalized))
+    if not invocations:
+        raise ValueError("Malformed provider control markup")
+    remainder = _DSML_INVOKE.sub("", normalized)
+    remainder = re.sub(
+        rf'</?\s*{_DSML_TAG}\s+calls\s*>', "", remainder,
+        flags=re.IGNORECASE,
+    ).strip()
+    if remainder:
+        raise ValueError("Provider control markup contains unexpected content")
+
+    calls = []
+    for index, invocation in enumerate(invocations):
+        name, body = invocation.groups()
+        if name not in allowed_names:
+            raise ValueError("Provider requested an unavailable tool")
+        parameters = list(_DSML_PARAMETER.finditer(body))
+        if _DSML_PARAMETER.sub("", body).strip():
+            raise ValueError("Malformed provider tool parameters")
+        arguments: dict[str, Any] = {}
+        for parameter in parameters:
+            parameter_name, is_string, raw_value = parameter.groups()
+            if parameter_name in arguments:
+                raise ValueError("Provider repeated a tool parameter")
+            value = raw_value.strip()
+            if is_string.casefold() == "true":
+                arguments[parameter_name] = value
+            else:
+                arguments[parameter_name] = json.loads(value)
+        calls.append(AgentToolCall(
+            call_id=f"dsml-{sequence}-{index}",
+            name=name,
+            arguments=json.dumps(arguments, ensure_ascii=False),
+        ))
+    return tuple(calls)
 
 
 def _usage_value(usage: object, key: str) -> int | None:

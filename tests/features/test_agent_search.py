@@ -92,6 +92,36 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
         context.message_search.search.assert_not_awaited()
         context.message_search.search_page.assert_not_awaited()
 
+    async def test_multiple_explicit_channels_are_searched_and_rechecked_together(self):
+        context = _context()
+        result = await search_discord_messages(context, {
+            "query": "decision", "channel_ids": [100, 200], "limit": 5,
+        })
+
+        self.assertEqual(
+            context.message_search.search.await_args.kwargs["channel_ids"],
+            (100, 200),
+        )
+        self.assertEqual(context.state.source_channels, {100, 200})
+        self.assertEqual(result["matches"], [])
+        context.message_search.search_page.assert_not_awaited()
+
+    async def test_multiple_channel_search_rejects_mixed_or_inaccessible_scope(self):
+        context = _context()
+        mixed = await search_discord_messages(context, {
+            "query": "decision", "channel_id": 100,
+            "channel_ids": [100, 200],
+        })
+        self.assertIn("error", mixed)
+        context.guild.channels[1].permissions_for = lambda member: SimpleNamespace(
+            view_channel=False, read_message_history=False,
+        )
+        denied = await search_discord_messages(context, {
+            "query": "decision", "channel_ids": [100, 200],
+        })
+        self.assertIn("error", denied)
+        context.message_search.search.assert_not_awaited()
+
     async def test_invalid_period_does_not_call_discord(self):
         for start, end in (("yesterday", "2026-09-15"), ("2026-09-16", "2026-09-15")):
             context = _context()

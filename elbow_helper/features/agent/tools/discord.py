@@ -44,7 +44,7 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                 name="search_discord_messages",
                 description=(
                     "Search accessible Discord history by words or phrases, optionally restricted "
-                    "to a channel, author, or date range. Honour the scope requested by the asker. "
+                    "to one or more channels, an author, or a date range. Honour the scope requested by the asker. "
                     "For one explicit channel, continue with the returned cursor when broader coverage "
                     "is needed. Results are not proof of absence; read surrounding messages when needed."
                 ),
@@ -64,6 +64,12 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                             "default": 5,
                         },
                         "channel_id": {"type": "integer", "minimum": 1},
+                        "channel_ids": {
+                            "type": "array", "minItems": 1, "maxItems": 20,
+                            "uniqueItems": True,
+                            "items": {"type": "integer", "minimum": 1},
+                            "description": "Explicit accessible channels to search together.",
+                        },
                         "cursor": {
                             "type": "string", "maxLength": 64,
                             "description": "Continuation cursor returned by the same channel search and filters.",
@@ -274,7 +280,7 @@ async def search_discord_messages(
     arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
     query = str(arguments.get("query") or "").strip()
-    if not query and not any(arguments.get(key) for key in ("channel_id", "author_id", "after", "before")):
+    if not query and not any(arguments.get(key) for key in ("channel_id", "channel_ids", "author_id", "after", "before")):
         return {"error": "Supply search words, a channel, an author, or a date range."}
     limit = bounded_int(
         arguments.get("limit"),
@@ -283,11 +289,27 @@ async def search_discord_messages(
         maximum=SEARCH_RESULT_LIMIT,
     )
     requested_channel = arguments.get("channel_id")
-    if requested_channel is not None:
-        channel = await accessible_message_channel(context, requested_channel)
-        if channel is None:
-            return {"error": "The asker cannot access that conversation."}
-        channel_ids = (requested_channel,)
+    requested_channels = arguments.get("channel_ids")
+    if requested_channel is not None and requested_channels is not None:
+        return {"error": "Use channel_id or channel_ids, not both."}
+    explicit_channel_ids = (
+        (requested_channel,) if requested_channel is not None
+        else tuple(requested_channels or ())
+    )
+    if explicit_channel_ids:
+        if (
+            len(explicit_channel_ids) > 20
+            or len(set(explicit_channel_ids)) != len(explicit_channel_ids)
+            or any(type(value) is not int or value <= 0 for value in explicit_channel_ids)
+        ):
+            return {"error": "Supply between one and twenty distinct channel IDs."}
+        channels = []
+        for channel_id in explicit_channel_ids:
+            channel = await accessible_message_channel(context, channel_id)
+            if channel is None:
+                return {"error": "The asker cannot access every requested conversation."}
+            channels.append(channel)
+        channel_ids = explicit_channel_ids
     else:
         if arguments.get("cursor") is not None:
             return {
@@ -297,6 +319,11 @@ async def search_discord_messages(
                 )
             }
         channel_ids = searchable_channel_ids(context)
+    paged_channel = channel_ids[0] if len(explicit_channel_ids) == 1 else None
+    if paged_channel is not None:
+        channel = channels[0]
+        if channel is None:
+            return {"error": "The asker cannot access that conversation."}
     try:
         after = _search_date(arguments.get("after"))
         before = _search_date(arguments.get("before"))
@@ -309,7 +336,7 @@ async def search_discord_messages(
     cursor_base_scope = {
         "guild_id": context.guild.id,
         "query": query,
-        "channel_id": requested_channel,
+        "channel_id": paged_channel,
         "author_id": arguments.get("author_id"),
         "min_id": min_id,
         "requested_max_id": requested_max_id,
@@ -317,7 +344,7 @@ async def search_discord_messages(
     offset = 0
     max_id = requested_max_id
     cursor_scope = None
-    if requested_channel is not None:
+    if paged_channel is not None:
         try:
             offset, max_id, cursor_scope = _cursor_state(
                 arguments.get("cursor"),
@@ -334,7 +361,7 @@ async def search_discord_messages(
     if not channel_ids:
         return {"query": query, "matches": [], "search_is_exhaustive": False}
     page = None
-    if requested_channel is not None:
+    if paged_channel is not None:
         page = await context.message_search.search_page(
             guild_id=context.guild.id,
             content=query,
@@ -345,10 +372,10 @@ async def search_discord_messages(
             min_id=min_id,
             max_id=max_id,
         )
-        if await accessible_message_channel(context, requested_channel) is None:
+        if await accessible_message_channel(context, paged_channel) is None:
             return {"error": "The asker cannot access that conversation."}
         if any(
-            result.channel_id != requested_channel
+            result.channel_id != paged_channel
             or (
                 arguments.get("author_id") is not None
                 and result.author_id != arguments["author_id"]
@@ -362,7 +389,7 @@ async def search_discord_messages(
                     "Discord returned results outside the requested search scope."
                 )
             }
-        context.state.source_channels.add(requested_channel)
+        context.state.source_channels.add(paged_channel)
         raw_results = page.messages
     else:
         raw_results = await context.message_search.search(
@@ -374,6 +401,13 @@ async def search_discord_messages(
             min_id=min_id,
             max_id=max_id,
         )
+        if explicit_channel_ids:
+            for channel_id in explicit_channel_ids:
+                if await accessible_message_channel(context, channel_id) is None:
+                    return {"error": "The asker cannot access every requested conversation."}
+            if any(result.channel_id not in explicit_channel_ids for result in raw_results):
+                return {"error": "Discord returned results outside the requested search scope."}
+            context.state.source_channels.update(explicit_channel_ids)
     matches: list[dict[str, Any]] = []
     for result in raw_results:
         if result.channel_id not in channel_ids:

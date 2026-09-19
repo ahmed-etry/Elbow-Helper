@@ -3,10 +3,12 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock
 from unittest.mock import patch
+from urllib.parse import urlencode
 
 from elbow_helper.discord.message_search import DiscordMessageSearch
 from elbow_helper.discord.message_search import DiscordMessageHistoryError
 from elbow_helper.discord.message_search import DiscordMessageSearchError
+from elbow_helper.discord.message_search import MAX_SEARCH_QUERY_STRING_BYTES
 
 
 class DiscordMessageSearchTests(unittest.IsolatedAsyncioTestCase):
@@ -75,6 +77,40 @@ class DiscordMessageSearchTests(unittest.IsolatedAsyncioTestCase):
             request.kwargs["params"],
             [("content", "war rule"), ("limit", 5), ("offset", 0)],
         )
+
+    async def test_broad_channel_filter_is_batched_below_request_line_budget(self):
+        http = AsyncMock()
+        http.request.return_value = {"messages": [], "total_results": 0}
+        channel_ids = tuple(10_000_000_000_000_000 + value for value in range(500))
+
+        results = await DiscordMessageSearch(http).search(
+            guild_id=1, content="x" * 1_024, limit=5,
+            channel_ids=channel_ids,
+        )
+
+        self.assertEqual(results, ())
+        self.assertGreater(http.request.await_count, 1)
+        sent_ids = []
+        for call in http.request.await_args_list:
+            params = call.kwargs["params"]
+            self.assertLessEqual(
+                len(urlencode(params).encode("ascii")),
+                MAX_SEARCH_QUERY_STRING_BYTES,
+            )
+            sent_ids.extend(
+                int(value) for name, value in params if name == "channel_id"
+            )
+        self.assertEqual(sent_ids, list(channel_ids))
+
+    async def test_encoded_query_that_cannot_fit_fails_before_http(self):
+        http = AsyncMock()
+        with self.assertRaisesRegex(
+            DiscordMessageSearchError, "parameters are too large",
+        ):
+            await DiscordMessageSearch(http).search(
+                guild_id=1, content="😀" * 1_024, limit=5,
+            )
+        http.request.assert_not_awaited()
 
     async def test_search_retries_while_discord_indexes_history(self) -> None:
         http = AsyncMock()
