@@ -13,10 +13,15 @@ from discord.http import Route
 
 SEARCH_ATTEMPTS = 3
 MAX_RETRY_DELAY_SECONDS = 2.0
+MAX_SEARCH_OFFSET = 9_975
 
 
 class DiscordMessageSearchError(RuntimeError):
     """Raised when Discord does not return a usable message-search response."""
+
+
+class DiscordMessageHistoryError(RuntimeError):
+    """Raised when Discord does not return a usable channel-history page."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,8 +36,33 @@ class DiscordSearchMessage:
     timestamp: str
 
 
+@dataclass(frozen=True, slots=True)
+class DiscordSearchPage:
+    """One explicit API page plus honest continuation/indexing metadata."""
+
+    messages: tuple[DiscordSearchMessage, ...]
+    offset: int
+    limit: int
+    total_results: int
+    next_offset: int | None
+    deep_historical_indexing: bool
+    offset_limit_reached: bool
+
+
+@dataclass(frozen=True, slots=True)
+class DiscordHistoryPage:
+    """One newest-first channel-history page within fixed snowflake bounds."""
+
+    messages: tuple[DiscordSearchMessage, ...]
+    before_id: int
+    after_id: int
+    limit: int
+    next_before_id: int | None
+    reached_window_start: bool
+
+
 class DiscordMessageSearch:
-    """Search guild messages through the bot-owned Discord HTTP transport."""
+    """Read and search messages through the bot-owned Discord HTTP transport."""
 
     def __init__(self, http: Any):
         self._http = http
@@ -44,10 +74,39 @@ class DiscordMessageSearch:
         content: str,
         limit: int,
         channel_ids: Sequence[int] = (),
+        author_id: int | None = None,
+        min_id: int | None = None,
+        max_id: int | None = None,
     ) -> tuple[DiscordSearchMessage, ...]:
+        page = await self.search_page(
+            guild_id=guild_id,
+            content=content,
+            limit=limit,
+            channel_ids=channel_ids,
+            author_id=author_id,
+            min_id=min_id,
+            max_id=max_id,
+        )
+        return page.messages
+
+    async def search_page(
+        self,
+        *,
+        guild_id: int,
+        content: str,
+        limit: int,
+        offset: int = 0,
+        channel_ids: Sequence[int] = (),
+        author_id: int | None = None,
+        min_id: int | None = None,
+        max_id: int | None = None,
+    ) -> DiscordSearchPage:
         query = str(content or "").strip()
-        if not query:
-            return ()
+        if not query and not (channel_ids or author_id or min_id or max_id):
+            return DiscordSearchPage((), 0, 0, 0, None, False, False)
+
+        if type(offset) is not int or not 0 <= offset <= MAX_SEARCH_OFFSET:
+            raise ValueError("Invalid Discord search offset")
 
         bounded_limit = max(1, min(25, int(limit)))
         route = Route(
@@ -58,9 +117,14 @@ class DiscordMessageSearch:
         payload: Any = None
         for attempt in range(SEARCH_ATTEMPTS):
             params: list[tuple[str, str | int]] = [
-                ("content", query[:1024]),
                 ("limit", bounded_limit),
+                ("offset", offset),
             ]
+            if query:
+                params.insert(0, ("content", query[:1024]))
+            for name, value in (("author_id", author_id), ("min_id", min_id), ("max_id", max_id)):
+                if value is not None:
+                    params.append((name, str(value)))
             params.extend(
                 ("channel_id", str(channel_id))
                 for channel_id in channel_ids[:500]
@@ -86,19 +150,127 @@ class DiscordMessageSearch:
                 "Discord message search omitted its results"
             )
 
+        total_results = payload.get("total_results")
+        deep_indexing = payload.get("doing_deep_historical_index", False)
+        if (
+            type(total_results) is not int
+            or total_results < 0
+            or type(deep_indexing) is not bool
+        ):
+            raise DiscordMessageSearchError(
+                "Discord message search omitted its coverage metadata"
+            )
+
         results: list[DiscordSearchMessage] = []
         seen_ids: set[int] = set()
         for group in raw_groups:
             candidates = group if isinstance(group, list) else [group]
+            parsed_group = 0
             for raw in candidates:
                 result = _parse_search_message(raw)
-                if result is None or result.message_id in seen_ids:
+                if result is None:
                     continue
+                if result.message_id in seen_ids:
+                    raise DiscordMessageSearchError(
+                        "Discord message search repeated a result identity"
+                    )
                 seen_ids.add(result.message_id)
                 results.append(result)
+                parsed_group += 1
                 if len(results) >= bounded_limit:
-                    return tuple(results)
-        return tuple(results)
+                    break
+            if parsed_group == 0:
+                raise DiscordMessageSearchError(
+                    "Discord message search returned an invalid result group"
+                )
+            if len(results) >= bounded_limit:
+                break
+        next_candidate = offset + bounded_limit
+        offset_limited = (
+            next_candidate < total_results
+            and next_candidate > MAX_SEARCH_OFFSET
+        )
+        next_offset = (
+            next_candidate
+            if next_candidate < total_results
+            and next_candidate <= MAX_SEARCH_OFFSET
+            else None
+        )
+        return DiscordSearchPage(
+            messages=tuple(results),
+            offset=offset,
+            limit=bounded_limit,
+            total_results=total_results,
+            next_offset=next_offset,
+            deep_historical_indexing=deep_indexing,
+            offset_limit_reached=offset_limited,
+        )
+
+    async def history_page(
+        self,
+        *,
+        channel_id: int,
+        before_id: int,
+        after_id: int,
+        limit: int,
+    ) -> DiscordHistoryPage:
+        """Read one stable newest-first page, enforcing an exclusive ID window."""
+
+        if any(
+            type(value) is not int or value <= 0
+            for value in (channel_id, before_id, after_id)
+        ) or after_id >= before_id:
+            raise ValueError("Invalid Discord history scope")
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("Invalid Discord history page size")
+
+        route = Route(
+            "GET", "/channels/{channel_id}/messages", channel_id=channel_id,
+        )
+        payload = await self._http.request(
+            route,
+            params=[("limit", limit), ("before", str(before_id))],
+        )
+        if not isinstance(payload, list) or len(payload) > limit:
+            raise DiscordMessageHistoryError(
+                "Discord returned an invalid channel-history response"
+            )
+
+        parsed: list[DiscordSearchMessage] = []
+        previous_id = before_id
+        reached_window_start = len(payload) < limit
+        for raw in payload:
+            message = _parse_search_message(raw)
+            if (
+                message is None
+                or message.channel_id != channel_id
+                or message.message_id >= previous_id
+            ):
+                raise DiscordMessageHistoryError(
+                    "Discord returned an invalid channel-history page"
+                )
+            previous_id = message.message_id
+            if message.message_id <= after_id:
+                reached_window_start = True
+                continue
+            parsed.append(message)
+
+        next_before_id = None
+        if not reached_window_start and parsed:
+            next_before_id = parsed[-1].message_id
+            if next_before_id >= before_id:
+                raise DiscordMessageHistoryError(
+                    "Discord channel-history cursor did not advance"
+                )
+        elif not reached_window_start:
+            raise DiscordMessageHistoryError(
+                "Discord channel-history page did not advance"
+            )
+        return DiscordHistoryPage(
+            messages=tuple(parsed), before_id=before_id, after_id=after_id,
+            limit=limit, next_before_id=next_before_id,
+            reached_window_start=reached_window_start,
+        )
 
 
 def _index_pending(payload: object) -> bool:
@@ -132,7 +304,17 @@ def _parse_search_message(raw: object) -> DiscordSearchMessage | None:
         author_id = int(author.get("id") or 0)
     except (TypeError, ValueError):
         return None
-    if message_id <= 0 or channel_id <= 0:
+    content = raw.get("content")
+    timestamp = raw.get("timestamp")
+    if (
+        message_id <= 0
+        or channel_id <= 0
+        or author_id <= 0
+        or not isinstance(content, str)
+        or not isinstance(timestamp, str)
+        or not timestamp
+        or len(timestamp) > 64
+    ):
         return None
     author_name = str(
         author.get("global_name")
@@ -145,6 +327,6 @@ def _parse_search_message(raw: object) -> DiscordSearchMessage | None:
         channel_id=channel_id,
         author_id=author_id,
         author_name=author_name,
-        content=str(raw.get("content") or ""),
-        timestamp=str(raw.get("timestamp") or ""),
+        content=content,
+        timestamp=timestamp,
     )

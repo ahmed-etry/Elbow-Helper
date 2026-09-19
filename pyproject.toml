@@ -7,12 +7,14 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
   "aiohttp~=3.13.3",
   "chat-exporter~=3.0.1",
+  "defusedxml~=0.7.1",
   "discord.py~=2.6.4",
   "emoji~=2.15.0",
   "google-api-python-client~=2.190.0",
   "google-auth~=2.48.0",
   "matplotlib~=3.10.8",
   "openai~=2.20.0",
+  "openpyxl~=3.1.5",
   "python-dateutil~=2.9.0.post0",
   "python-dotenv~=1.2.1",
 ]
