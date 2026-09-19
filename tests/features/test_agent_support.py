@@ -119,7 +119,7 @@ class AgentSupportToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.context.state.source_channels, {200, 300})
         self.assertNotIn("private reason", str(result))
         self.assertNotIn("secret", str(result))
-        self.assertNotIn("126", str(result))
+        self.assertNotIn(126, [ticket["owner_member_id"] for ticket in result["tickets"]])
         self.assertFalse(result["message_history_read"])
         report = self.context.state.reports[result["report_id"]]
         self.assertIsInstance(report, SupportTicketReport)

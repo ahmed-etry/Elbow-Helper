@@ -178,17 +178,43 @@ class CoreAgent(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
                         LOGGER.debug("Ignoring already delivered agent request: message=%s", message.id)
                         return
                     await self._answer(message, member, question, conversation)
-        except AgentAccessLost:
-            LOGGER.info("Agent access lost: invoker=%s", member.id)
+        except AgentAccessLost as error:
+            LOGGER.warning(
+                "Agent access lost: request=%s invoker=%s channel=%s error=%s",
+                message.id, member.id, message.channel.id, error,
+            )
+            try:
+                require_access(message.guild, member.id, message.channel)
+            except AgentAccessLost:
+                pass
+            else:
+                await self._send_failure(message)
         except AgentDeliveryUnknown:
             LOGGER.warning(
                 "Agent delivery outcome unknown: request=%s invoker=%s",
                 message.id, member.id,
             )
         except TimeoutError:
+            LOGGER.warning(
+                "Agent request timed out: request=%s invoker=%s channel=%s elapsed_ms=%s",
+                message.id, member.id, message.channel.id,
+                int((time.monotonic() - queued_at) * 1_000),
+            )
             await self._send_failure(message)
-        except (discord.DiscordException, OSError, RuntimeError, TypeError, ValueError, sqlite3.Error):
-            LOGGER.exception("Agent request failed: invoker=%s", member.id)
+        except asyncio.CancelledError:
+            LOGGER.warning(
+                "Agent request cancelled: request=%s invoker=%s channel=%s elapsed_ms=%s",
+                message.id, member.id, message.channel.id,
+                int((time.monotonic() - queued_at) * 1_000),
+            )
+            raise
+        except Exception:
+            # This is the Discord event boundary: unexpected failures need the
+            # same reply as known failures, without restarting paid generation.
+            LOGGER.exception(
+                "Agent request failed: request=%s invoker=%s channel=%s",
+                message.id, member.id, message.channel.id,
+            )
             await self._send_failure(message)
         finally:
             if conversation is not None:
@@ -383,7 +409,8 @@ class CoreAgent(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
             raise
         except AgentUnavailableError as error:
             LOGGER.warning(
-                "Core agent unavailable: invoker=%s channel=%s error=%s",
+                "Core agent unavailable: request=%s invoker=%s channel=%s error=%s",
+                message.id,
                 member.id,
                 message.channel.id,
                 error,
