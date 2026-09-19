@@ -200,8 +200,11 @@ class AgentDeliveryMixin:
                 allowed_mentions=discord.AllowedMentions.none(),
                 nonce=_delivery_nonce(message.id, 1_000_000),
             )
-        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
-            LOGGER.debug("Could not send Core agent failure response", exc_info=True)
+        except Exception:
+            LOGGER.warning(
+                "Could not send Core agent failure response: request=%s channel=%s",
+                message.id, message.channel.id, exc_info=True,
+            )
 
 
 def _chunk_response(content: str) -> list[str]:

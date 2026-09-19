@@ -17,7 +17,10 @@ from unittest.mock import ANY
 
 from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import CORE, LEAD_PLUS
-from elbow_helper.features.agent.access import ACCESS_LEAD_PLUS
+from elbow_helper.configuration.channels import OVERSEEING_TERRACE
+from elbow_helper.discord.interactions import DEFAULT_FAILURE_MESSAGE
+from elbow_helper.discord.message_search import DiscordMessageSearch
+from elbow_helper.features.agent.access import ACCESS_LEAD_PLUS, AgentAccessLost
 from elbow_helper.features.agent.cog import CoreAgent
 from elbow_helper.features.agent.delivery import _delivery_nonce
 from elbow_helper.features.agent.message_content import message_text
@@ -30,6 +33,9 @@ from elbow_helper.features.agent.conversation.repository import ConversationRepo
 from elbow_helper.features.agent.conversation.codec import decode_conversation
 from elbow_helper.features.agent.conversation.persistence import ConversationPersistence
 from elbow_helper.features.agent.conversation.context import build_history_checkpoint
+from elbow_helper.features.agent.service import CoreAgentService
+from elbow_helper.infrastructure.ai.client import DeepSeekTextClient
+from elbow_helper.features.member_lifecycle.queries import MemberLifecycleQueries
 
 
 class _Member:
@@ -64,6 +70,202 @@ def _message(*, author: _Member, bot_id: int, content: str):
 
 
 class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unexpected_generation_errors_send_existing_failure_without_retry(self):
+        for error_type in (AttributeError, KeyError, IndexError, ZeroDivisionError):
+            with self.subTest(error=error_type.__name__):
+                self.setUp()
+                member = _Member(42, (next(iter(CORE)),))
+                make_message = self._real_handler_scenario(member)
+                message = make_message(member, 1, "<@999> check #rec-room and #rec-support")
+                self.cog.service.answer.side_effect = error_type("private diagnostic")
+                with (
+                    patch("elbow_helper.features.agent.cog.discord.Member", _Member),
+                    self.assertLogs("elbow_helper.features.agent.cog", level="ERROR") as logs,
+                ):
+                    await self.cog.on_message(message)
+                self.cog.service.answer.assert_awaited_once()
+                message.reply.assert_awaited_once()
+                self.assertEqual(message.reply.await_args.args, (DEFAULT_FAILURE_MESSAGE,))
+                self.assertTrue(any("request=1" in line for line in logs.output))
+                self.assertFalse(self.cog._tasks)
+                conversation = next(value for _, value in self.cog._conversations.entries())
+                self.assertEqual(conversation.pending, 0)
+                self.assertFalse(conversation.turns)
+
+    async def test_generation_timeout_sends_failure_and_logs_request(self):
+        member = _Member(42, (next(iter(CORE)),))
+        make_message = self._real_handler_scenario(member)
+        message = make_message(member, 1, "<@999> check #rec-room and #rec-support")
+
+        async def stalled_generation(**kwargs):
+            await asyncio.Event().wait()
+
+        self.cog.service.answer.side_effect = stalled_generation
+        with (
+            patch("elbow_helper.features.agent.cog.discord.Member", _Member),
+            patch("elbow_helper.features.agent.cog.AGENT_REQUEST_TIMEOUT_SECONDS", 0.01),
+            self.assertLogs("elbow_helper.features.agent.cog", level="WARNING") as logs,
+        ):
+            await self.cog.on_message(message)
+        self.cog.service.answer.assert_awaited_once()
+        message.reply.assert_awaited_once()
+        self.assertEqual(message.reply.await_args.args, (DEFAULT_FAILURE_MESSAGE,))
+        self.assertTrue(any("Agent request timed out: request=1" in line for line in logs.output))
+        self.assertFalse(self.cog._tasks)
+
+    async def test_failure_delivery_errors_are_logged_without_retry(self):
+        for error in (
+            discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"), "Missing Permissions"),
+            OSError("Connection lost"),
+        ):
+            with self.subTest(error=type(error).__name__):
+                message = SimpleNamespace(id=1, channel=SimpleNamespace(id=100), reply=AsyncMock(side_effect=error))
+                with self.assertLogs("elbow_helper.features.agent.delivery", level="WARNING") as logs:
+                    await self.cog._send_failure(message)
+                message.reply.assert_awaited_once()
+                self.assertTrue(any("request=1 channel=100" in line for line in logs.output))
+
+    async def test_two_channel_research_reaches_discord_through_real_orchestration(self):
+        for recover_final_call, disappearing_ticket in ((False, False), (True, False), (False, True)):
+            with self.subTest(recover_final_call=recover_final_call, disappearing_ticket=disappearing_ticket):
+                self.setUp()
+                member = _Member(42, (next(iter(CORE)),))
+                make_message = self._real_handler_scenario(member)
+                message = make_message(member, 1000, (
+                    "<@999> check #rec-room and #rec-support, summarize recruitment "
+                    "activity, and explain what should have been posted"
+                ))
+                channels = {100: message.channel}
+                for channel_id, name in ((200, "rec-room"), (300, "rec-support")):
+                    channels[channel_id] = SimpleNamespace(
+                        id=channel_id, name=name, guild=message.guild,
+                        permissions_for=message.channel.permissions_for,
+                    )
+                message.channel.name = "agent-room"
+                message.guild.channels = list(channels.values())
+                message.guild.threads = []
+                message.guild.get_channel_or_thread = channels.get
+                if disappearing_ticket:
+                    channels[OVERSEEING_TERRACE] = SimpleNamespace(
+                        id=OVERSEEING_TERRACE, guild=message.guild,
+                        permissions_for=message.channel.permissions_for,
+                    )
+                    message.guild.members = [member]
+                    ticket = SimpleNamespace(
+                        id=400, guild=message.guild,
+                        permissions_for=message.channel.permissions_for,
+                    )
+                    missing = discord.NotFound(SimpleNamespace(status=404, reason="Not Found"), "Unknown Channel")
+                    self.bot.fetch_channel = AsyncMock(side_effect=[ticket] * 4 + [missing])
+                    self.cog.member_lifecycle_queries = MemberLifecycleQueries(lambda: {
+                        "members": {str(member.id): {
+                            "platform": "private platform", "joined_at_iso": "2026-09-15T12:00:00+00:00",
+                            "left": False,
+                        }},
+                        "last_seen": {str(member.id): {
+                            "channel_id": 400, "ts_iso": "2026-09-15T12:00:00+00:00",
+                        }},
+                    })
+                http = SimpleNamespace(request=AsyncMock(return_value={
+                    "messages": [[{
+                        "id": str(channel_id + 1), "channel_id": str(channel_id),
+                        "author": {"id": "42", "username": "Recruiter"},
+                        "content": content, "timestamp": "2026-09-15T12:00:00+00:00",
+                    }] for channel_id, content in (
+                        (200, "Two applicants joined the recruitment discussion."),
+                        (300, "Please post the recruitment follow-up here."),
+                    )],
+                    "total_results": 2,
+                }))
+                self.cog.message_search = DiscordMessageSearch(http)
+
+                def response(*, name=None, arguments=None, content=None):
+                    calls = None if name is None else [{
+                        "id": name, "function": {
+                            "name": name, "arguments": json.dumps(arguments),
+                        },
+                    }]
+                    return SimpleNamespace(
+                        choices=[SimpleNamespace(message={
+                            "role": "assistant", "content": content,
+                            "tool_calls": calls, "reasoning_content": "retained reasoning",
+                        })],
+                        usage=SimpleNamespace(prompt_tokens=1000, completion_tokens=100),
+                    )
+
+                answer = (
+                    "Two applicants joined the discussion in #rec-room. "
+                    f"https://discord.com/channels/{GUILD_ID}/200/201\n"
+                    "#rec-support requested a recruitment follow-up. "
+                    f"https://discord.com/channels/{GUILD_ID}/300/301\n"
+                    "Suggested post: a follow-up covering the applicants' next steps."
+                )
+                responses = [
+                    response(name="discover_agent_tools", arguments={"groups": ["discord_research", "member_cases"]}),
+                    response(name="find_discord_channels", arguments={"query": "rec-"}),
+                    response(name="search_discord_messages", arguments={
+                        "channel_ids": [200, 300], "limit": 20,
+                    }),
+                ]
+                if disappearing_ticket:
+                    batch = responses[-1].choices[0].message["tool_calls"]
+                    batch[:0] = [
+                        response(name=name, arguments={}).choices[0].message["tool_calls"][0]
+                        for name in ("read_member_lifecycle", "read_active_recruitment_trials")
+                    ]
+                if recover_final_call:
+                    responses.append(response(content=(
+                        '<||DSML|| calls><||DSML|| invoke name="find_discord_channels">'
+                        '<||DSML|| parameter name="query" string="true">rec-'
+                        '</||DSML|| parameter></||DSML|| invoke></||DSML|| calls>'
+                    )))
+                responses.append(response(content=answer))
+                create = AsyncMock(side_effect=responses)
+                transport = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+                with (
+                    patch("elbow_helper.infrastructure.ai.client.AsyncOpenAI", return_value=transport),
+                    patch("elbow_helper.features.agent.cog.discord.Member", _Member),
+                    patch("elbow_helper.features.agent.service.MAX_MODEL_ROUNDS", 4),
+                ):
+                    self.cog.service = CoreAgentService(DeepSeekTextClient("test-key"))
+                    await self.cog.on_message(message)
+
+                message.reply.assert_awaited_once()
+                self.assertEqual(message.reply.await_args.args, (answer,))
+                self.assertEqual(create.await_count, 5 if recover_final_call else 4)
+                http.request.assert_awaited_once()
+                params = http.request.await_args.kwargs["params"]
+                self.assertEqual([int(value) for key, value in params if key == "channel_id"], [200, 300])
+                final_request = create.await_args.kwargs
+                self.assertEqual(final_request["tool_choice"], "none")
+                results = [item["content"] for item in final_request["messages"] if item.get("role") == "tool"]
+                self.assertTrue(any("Two applicants" in item and "follow-up here" in item for item in results))
+                if disappearing_ticket:
+                    self.assertEqual(self.bot.fetch_channel.await_count, 5)
+                    self.assertNotIn("private platform", str(final_request))
+                    self.assertEqual([json.loads(item)["error"] for item in results[-3:-1]], ["That lookup failed."] * 2)
+                if recover_final_call:
+                    self.assertIn("not executed", results[-1])
+                conversation = self.cog._conversations.find(GUILD_ID, 100, 2000)
+                self.assertTrue(conversation.turns[0].record.delivery_complete)
+                self.assertEqual(conversation.turns[0].source_channels, frozenset({100, 200, 300}))
+                if disappearing_ticket:
+                    self.assertFalse(conversation.reports)
+
+    async def test_evidence_access_loss_sends_existing_failure_when_request_channel_remains_accessible(self):
+        member = _Member(42, (next(iter(CORE)),))
+        make_message = self._real_handler_scenario(member)
+        message = make_message(member, 1, "<@999> check recruitment")
+        self.cog.service.answer.side_effect = AgentAccessLost("private source unavailable")
+        with (
+            patch("elbow_helper.features.agent.cog.discord.Member", _Member),
+            self.assertLogs("elbow_helper.features.agent.cog", level="WARNING"),
+        ):
+            await self.cog.on_message(message)
+        message.reply.assert_awaited_once()
+        self.assertEqual(message.reply.await_args.args, (DEFAULT_FAILURE_MESSAGE,))
+        self.cog.service.answer.assert_awaited_once()
+
     async def test_restricted_report_is_hidden_without_erasure_and_returns_after_role_restore(self):
         core_role = next(iter(CORE))
         lead_role = next(iter(LEAD_PLUS))

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 import json
 import logging
 import sqlite3
@@ -101,6 +101,7 @@ class CoreAgentService:
         rounds = 0
         final_answer_requested = False
         final_answer_recovery_used = False
+        unpublished_snapshot = None
 
         try:
             # One extra generation is available only to decline calls emitted
@@ -109,7 +110,14 @@ class CoreAgentService:
                 context = replace(context, member=require_access(
                     context.guild, context.member.id, context.source_message.channel,
                 ))
-                await require_evidence_access(context)
+                try:
+                    await require_evidence_access(context)
+                except AgentAccessLost:
+                    if unpublished_snapshot is None:
+                        raise
+                    pending_results = tuple(await _discard_unpublished_results(
+                        context, unpublished_snapshot, pending_results,
+                    ))
                 projected_input = context_budget.projected_input(pending_results)
                 if not context_budget.can_answer(projected_input):
                     status = "context_exhausted"
@@ -171,6 +179,7 @@ class CoreAgentService:
                     step.model_identity, len(step.tool_calls),
                 )
                 pending_results = ()
+                unpublished_snapshot = None
                 usage_totals.observe(step.usage)
                 context_budget.observe(step.usage, projected_input=projected_input)
                 if rounds == 1:
@@ -200,6 +209,10 @@ class CoreAgentService:
                     raise AgentUnavailableError("The agent lacks estimated context room for another model round")
 
                 results: list[AgentToolResult] = []
+                # Nothing in this batch has reached the provider yet. If a
+                # newly read source disappears, the whole unpublished batch
+                # can be discarded without contaminating the model context.
+                unpublished_snapshot = _tool_state_snapshot(context)
                 for call_index, call in enumerate(step.tool_calls):
                     if total_tool_calls >= MAX_TOOL_CALLS:
                         results.append(
@@ -295,19 +308,32 @@ class CoreAgentService:
                     context = replace(context, member=require_access(
                         context.guild, context.member.id, context.source_message.channel,
                     ))
-                    await require_evidence_access(context)
+                    try:
+                        await require_evidence_access(context)
+                    except AgentAccessLost:
+                        results = await _discard_unpublished_results(
+                            context, unpublished_snapshot, results,
+                        )
                     cache_key = call.name + json.dumps(arguments, sort_keys=True)
                     if cache_key in completed_lookups:
                         results.append(AgentToolResult(call.call_id, _error_result(
                             "This identical lookup already ran. Use its earlier result."
                         )))
                         continue
-                    content = await self._execute_tool(
-                        name=call.name,
-                        handler=registered.handler,
-                        arguments=arguments,
-                        context=context,
-                    )
+                    try:
+                        content = await self._execute_tool(
+                            name=call.name,
+                            handler=registered.handler,
+                            arguments=arguments,
+                            context=context,
+                        )
+                    except AgentAccessLost:
+                        results = await _discard_unpublished_results(
+                            context, unpublished_snapshot, results,
+                        )
+                        completed_lookups.add(cache_key)
+                        results.append(AgentToolResult(call.call_id, _error_result("That lookup failed.")))
+                        continue
                     content = _bound_tool_result(
                         content,
                         result_limit,
@@ -458,6 +484,7 @@ def _tool_state_snapshot(context: AgentRequestContext) -> dict[str, Any]:
     """Capture request-local state that a failed tool must not partially mutate."""
     state = context.state
     return {
+        "evidence": list(state.evidence),
         "source_channels": set(state.source_channels),
         "reports": dict(state.reports),
         "report_sources": dict(state.report_sources),
@@ -477,6 +504,7 @@ def _restore_tool_state(
 ) -> None:
     """Restore the exact request-local state after an unsuccessful tool call."""
     state = context.state
+    state.evidence[:] = snapshot["evidence"]
     state.source_channels.clear()
     state.source_channels.update(snapshot["source_channels"])
     state.reports.clear()
@@ -496,6 +524,26 @@ def _restore_tool_state(
     state.authorized_checkpoint = snapshot["authorized_checkpoint"]
     state.working = snapshot["working"]
     state.authorized_instructions = snapshot["authorized_instructions"]
+
+
+async def _discard_unpublished_results(
+    context: AgentRequestContext,
+    snapshot: Mapping[str, Any],
+    results: Sequence[AgentToolResult],
+) -> list[AgentToolResult]:
+    """Discard unsent evidence; never continue with revoked model context."""
+    _restore_tool_state(context, snapshot)
+    # This includes Core membership, the request channel, earlier evidence and
+    # role requirements. Loss of anything already in the prompt still aborts.
+    await require_evidence_access(context)
+    LOGGER.warning(
+        "Agent unpublished evidence discarded: request=%s invoker=%s results=%s",
+        getattr(context.source_message, "id", None), context.member.id, len(results),
+    )
+    return [
+        AgentToolResult(result.call_id, _error_result("That lookup failed."))
+        for result in results
+    ]
 
 
 def _parse_arguments(raw: str) -> dict[str, Any] | None:

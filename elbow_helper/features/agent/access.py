@@ -113,4 +113,4 @@ async def require_evidence_access(context: AgentRequestContext) -> None:
     )
     for channel_id in tuple(context.state.source_channels):
         if await accessible_message_channel(context, channel_id) is None:
-            raise AgentAccessLost("Conversation evidence access is no longer available")
+            raise AgentAccessLost(f"Conversation evidence access is no longer available: channel={channel_id}")

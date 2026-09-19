@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import datetime
 from datetime import timezone
 from types import SimpleNamespace
@@ -423,17 +424,17 @@ class CoreAgentServiceTests(unittest.IsolatedAsyncioTestCase):
         tool = RegisteredAgentTool(AgentToolDefinition("lookup", "test", {"properties": {}}), lookup)
         session = _AgentSession([
             AgentStep("", (AgentToolCall("1", "lookup", "{}"),), AgentUsage()),
-            AgentStep("should not run", (), AgentUsage()),
+            AgentStep("The lookup was unavailable.", (), AgentUsage()),
         ])
         with (
             patch("elbow_helper.features.agent.service.build_agent_tools", return_value={"lookup": tool}),
             patch("elbow_helper.features.agent.access.accessible_message_channel", return_value=None),
         ):
-            with self.assertRaises(AgentAccessLost):
-                await CoreAgentService(_AgentModel(session)).answer(
-                    question="look up", local_context="", context=context,
-                )
-        self.assertEqual(len(session.calls), 1)
+            await CoreAgentService(_AgentModel(session)).answer(
+                question="look up", local_context="", context=context,
+            )
+        self.assertEqual(len(session.calls), 2)
+        self.assertEqual(json.loads(session.calls[1][0][0].content), {"error": "That lookup failed."})
         self.assertEqual(context.state.evidence, [])
 
     async def test_source_revoked_between_rounds_is_rechecked_even_after_successful_lookup(self):
@@ -451,7 +452,7 @@ class CoreAgentServiceTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch("elbow_helper.features.agent.service.build_agent_tools", return_value={"lookup": tool}),
             patch("elbow_helper.features.agent.access.accessible_message_channel",
-                  side_effect=[object(), object(), object(), None]),
+                  side_effect=[object(), object(), object(), None, None]),
         ):
             with self.assertRaises(AgentAccessLost):
                 await CoreAgentService(_AgentModel(session)).answer(
@@ -641,6 +642,110 @@ class CoreAgentServiceTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(AgentAccessLost):
                 await CoreAgentService(_AgentModel(session)).answer(question="test", local_context="", context=context)
         self.assertEqual(len(session.calls), 1)
+
+    async def test_lost_unpublished_batch_is_discarded_and_remaining_lookup_continues(self):
+        context = _context()
+        context.state.source_channels = {100}
+        channel = context.source_message.channel
+        channel.guild = context.guild
+        context.guild.get_channel_or_thread = lambda value: channel if value == 100 else None
+        ticket = SimpleNamespace(id=200, guild=context.guild, permissions_for=channel.permissions_for)
+        context = replace(context, bot=SimpleNamespace(fetch_channel=AsyncMock(return_value=ticket)))
+        original = RoleAccountReport("original", "2026-09-17", (), ())
+        context.state.reports["original"] = original
+        context.state.evidence.append("earlier safe evidence")
+
+        async def lifecycle(context, arguments):
+            context.state.source_channels.add(200)
+            context.state.reports.clear()
+            context.state.reports["private"] = RoleAccountReport("private", "2026-09-17", (), ())
+            context.state.attachments.append(AgentAttachment("private.txt", b"private data"))
+            return {"private": "ticket evidence"}
+
+        async def trials(context, arguments):
+            context.bot.fetch_channel.return_value = None
+            from elbow_helper.features.agent.access import require_evidence_access
+            await require_evidence_access(context)
+
+        remaining = AsyncMock(return_value={"channels": "safe research"})
+        handlers = {"lifecycle": lifecycle, "trials": trials, "remaining": remaining}
+        registry = {name: RegisteredAgentTool(AgentToolDefinition(name, "test", {"properties": {}}), handler)
+                    for name, handler in handlers.items()}
+        session = _AgentSession([
+            AgentStep("", tuple(AgentToolCall(name, name, "{}") for name in handlers), AgentUsage()),
+            AgentStep("Safe answer", (), AgentUsage()),
+        ])
+        with patch("elbow_helper.features.agent.service.build_agent_tools", return_value=registry):
+            answer = await CoreAgentService(_AgentModel(session)).answer(question="research", local_context="", context=context)
+        self.assertEqual(answer, "Safe answer")
+        self.assertEqual(len(session.calls), 2)
+        results = session.calls[1][0]
+        self.assertEqual([item.call_id for item in results], list(handlers))
+        self.assertTrue(all("error" in json.loads(item.content) for item in results[:2]))
+        self.assertNotIn("ticket evidence", str(results))
+        self.assertIn("safe research", results[2].content)
+        remaining.assert_awaited_once()
+        self.assertEqual(context.state.source_channels, {100})
+        self.assertEqual(context.state.reports, {"original": original})
+        self.assertEqual(context.state.attachments, [])
+        self.assertEqual(len(context.state.evidence), 2)
+        self.assertNotIn("ticket evidence", str(context.state.evidence))
+
+    async def test_access_loss_for_evidence_already_sent_to_model_still_stops(self):
+        context = _context()
+        channel = context.source_message.channel
+        channel.guild = context.guild
+        context.state.source_channels = {100}
+        allowed = True
+        ticket = SimpleNamespace(id=200, guild=context.guild, permissions_for=lambda _: SimpleNamespace(
+            view_channel=allowed, read_message_history=allowed,
+        ))
+        context.guild.get_channel_or_thread = lambda value: {100: channel, 200: ticket}.get(value)
+
+        async def lookup(context, arguments):
+            nonlocal allowed
+            if arguments["page"] == 1:
+                context.state.source_channels.add(200)
+                return {"private": "already sent"}
+            allowed = False
+            return {"private": "do not send"}
+
+        tool = RegisteredAgentTool(AgentToolDefinition("lookup", "test", {
+            "properties": {"page": {"type": "integer"}},
+        }), lookup)
+        session = _AgentSession([
+            AgentStep("", (AgentToolCall(str(page), "lookup", json.dumps({"page": page})),), AgentUsage())
+            for page in (1, 2)
+        ])
+        with patch("elbow_helper.features.agent.service.build_agent_tools", return_value={"lookup": tool}):
+            with self.assertRaises(AgentAccessLost):
+                await CoreAgentService(_AgentModel(session)).answer(question="research", local_context="", context=context)
+        self.assertEqual(len(session.calls), 2)
+
+    async def test_new_source_lost_before_next_model_round_is_removed_from_pending_results(self):
+        context = _context()
+        channel = context.source_message.channel
+        channel.guild = context.guild
+        context.state.source_channels = {100}
+        context.guild.get_channel_or_thread = lambda value: channel if value == 100 else None
+        ticket = SimpleNamespace(id=200, guild=context.guild, permissions_for=channel.permissions_for)
+        context = replace(context, bot=SimpleNamespace(fetch_channel=AsyncMock(side_effect=[ticket, None])))
+
+        async def lookup(context, arguments):
+            context.state.source_channels.add(200)
+            return {"private": "unsent evidence"}
+
+        tool = RegisteredAgentTool(AgentToolDefinition("lookup", "test", {"properties": {}}), lookup)
+        session = _AgentSession([
+            AgentStep("", (AgentToolCall("1", "lookup", "{}"),), AgentUsage()),
+            AgentStep("The lookup was unavailable.", (), AgentUsage()),
+        ])
+        with patch("elbow_helper.features.agent.service.build_agent_tools", return_value={"lookup": tool}):
+            await CoreAgentService(_AgentModel(session)).answer(question="research", local_context="", context=context)
+        self.assertEqual(len(session.calls), 2)
+        self.assertEqual(json.loads(session.calls[1][0][0].content), {"error": "That lookup failed."})
+        self.assertEqual(context.state.evidence, [])
+        self.assertEqual(context.state.source_channels, {100})
 
     async def test_identical_lookup_runs_once(self):
         handler = AsyncMock(return_value={"answer": 1})
