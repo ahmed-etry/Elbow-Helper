@@ -42,13 +42,13 @@ REQUIRED_EXTENSIONS = (
     "elbow_helper.features.account_links",
     "elbow_helper.features.recruitment",
     "elbow_helper.features.clan_health",
-    "elbow_helper.features.agent",
     "elbow_helper.features.attack_plans",
     "elbow_helper.features.records",
     "elbow_helper.features.rosters",
     "elbow_helper.features.cwl",
-    "elbow_helper.features.clan_reporting",
     "elbow_helper.features.examination",
+    "elbow_helper.features.clan_reporting",
+    "elbow_helper.features.agent",
     "elbow_helper.discord.command_registry",
 )
 OPTIONAL_EXTENSIONS: tuple[str, ...] = ()

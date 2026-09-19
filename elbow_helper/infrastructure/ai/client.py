@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from enum import StrEnum
+import time
 from typing import Any
 from typing import Protocol
 
@@ -21,6 +22,7 @@ from .agent import AgentUsage
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL = "deepseek-flash"
+DEEPSEEK_CONTEXT_WINDOW_TOKENS = 1_000_000
 DEFAULT_TIMEOUT_SECONDS = 60.0
 DEFAULT_MAX_RETRIES = 2
 PROVIDER_ERROR_MESSAGE_LIMIT = 500
@@ -207,6 +209,10 @@ class DeepSeekTextClient:
 class _DeepSeekAgentSession:
     """Keep DeepSeek-specific reasoning and tool state inside infrastructure."""
 
+    @property
+    def context_window_tokens(self) -> int:
+        return DEEPSEEK_CONTEXT_WINDOW_TOKENS
+
     def __init__(
         self,
         *,
@@ -221,6 +227,10 @@ class _DeepSeekAgentSession:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
         ]
+        self.replace_tools(tools)
+        self._max_output_tokens = max_output_tokens
+
+    def replace_tools(self, tools: Sequence[AgentToolDefinition]) -> None:
         self._tools = [
             {
                 "type": "function",
@@ -232,7 +242,6 @@ class _DeepSeekAgentSession:
             }
             for tool in tools
         ]
-        self._max_output_tokens = max_output_tokens
 
     async def advance(
         self,
@@ -261,6 +270,7 @@ class _DeepSeekAgentSession:
         if self._max_output_tokens is not None:
             options["max_tokens"] = self._max_output_tokens
 
+        started_at = time.monotonic()
         try:
             response = await self._client.chat.completions.create(**options)
             choice = response.choices[0]
@@ -313,6 +323,15 @@ class _DeepSeekAgentSession:
                     "prompt_cache_miss_tokens",
                 ),
             ),
+            provider_request_id=_diagnostic_text(
+                getattr(response, "id", None), maximum=200,
+            ),
+            model_identity=_diagnostic_text(
+                getattr(response, "model", None), maximum=100,
+            ) or DEEPSEEK_MODEL,
+            provider_duration_ms=max(
+                0, int((time.monotonic() - started_at) * 1_000),
+            ),
         )
 
 
@@ -336,9 +355,14 @@ def _parse_agent_tool_call(raw: object) -> AgentToolCall:
     )
 
 
-def _usage_value(usage: object, key: str) -> int:
+def _usage_value(usage: object, key: str) -> int | None:
     value = _message_value(usage, key)
-    try:
-        return max(0, int(value or 0))
-    except (TypeError, ValueError):
-        return 0
+    # Do not turn missing/malformed counters into apparently free usage.
+    return value if type(value) is int and value >= 0 else None
+
+
+def _diagnostic_text(value: object, *, maximum: int) -> str | None:
+    if not isinstance(value, str):
+        return None
+    cleaned = " ".join(value.split())
+    return cleaned[:maximum] if cleaned else None

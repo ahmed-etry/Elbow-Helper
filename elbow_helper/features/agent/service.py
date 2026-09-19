@@ -8,6 +8,7 @@ from collections.abc import Mapping
 import json
 import logging
 import sqlite3
+import time
 from typing import Any
 
 import discord
@@ -17,15 +18,22 @@ from elbow_helper.infrastructure.ai import AgentToolResult
 from elbow_helper.infrastructure.ai import TextGenerationError
 
 from .models import AgentRequestContext
-from .access import AgentAccessLost, require_access
+from .access import AgentAccessLost, require_access, require_evidence_access
 from .prompts import SYSTEM_PROMPT
-from .prompts import build_request_prompt
-from .tools import build_agent_tools
+from .conversation.context import compile_context, estimate_tokens
+from .tools import build_agent_tool_groups, build_agent_tools
+from .tool_selection import (
+    DISCOVERY_TOOL_NAME, ToolSelection, encoded_definitions,
+)
+from .usage import RequestUsage
+from .budgets import ContextBudget
 
 
 LOGGER = logging.getLogger(__name__)
-MAX_MODEL_ROUNDS = 6
-MAX_TOOL_CALLS = 12
+# Leave enough bounded continuations for large, paginated requests that combine
+# several capability groups before the required final-answer round.
+MAX_MODEL_ROUNDS = 10
+MAX_TOOL_CALLS = 24
 MAX_TOOL_RESULT_CHARACTERS = 40_000
 MAX_EVIDENCE_CHARACTERS = 150_000
 TOOL_TIMEOUT_SECONDS = 30.0
@@ -48,68 +56,119 @@ class CoreAgentService:
         question: str,
         local_context: str,
         context: AgentRequestContext,
+        conversation_history: str = "",
     ) -> str:
         registry = build_agent_tools()
+        selection = ToolSelection.for_registry(
+            registry, build_agent_tool_groups(),
+        )
+        context.state.request_text = question
+        definitions = (
+            selection.definitions() if selection is not None
+            else tuple(tool.definition for tool in registry.values())
+        )
+        compiled = compile_context(
+            question=question, local_context=local_context, context=context,
+            tools=definitions, conversation_history=conversation_history,
+        )
+        LOGGER.info(
+            "Agent context: request=%s estimated_input_tokens=%s input_bytes=%s omitted_turns=%s exceeds_target=%s estimator=weighted_utf8_v1",
+            getattr(context.source_message, "id", None), compiled.estimated_input_tokens,
+            compiled.input_content_bytes, compiled.omitted_turns, compiled.exceeds_target,
+        )
         session = self._model.create_agent_session(
             system_prompt=SYSTEM_PROMPT,
-            prompt=build_request_prompt(
-                question=question,
-                local_context=local_context,
-                guild_name=context.guild.name,
-                asker_name=context.member.display_name,
-                asked_at=context.source_message.created_at,
-            ),
-            tools=tuple(tool.definition for tool in registry.values()),
+            prompt=compiled.prompt,
+            tools=definitions,
             max_output_tokens=AGENT_MAX_OUTPUT_TOKENS,
         )
         if session is None:
             raise AgentUnavailableError("The AI backend is not configured")
 
+        context_budget = ContextBudget(
+            context_window_tokens=getattr(session, "context_window_tokens", None),
+            output_reserve=AGENT_MAX_OUTPUT_TOKENS,
+            next_input_estimate=compiled.estimated_input_tokens,
+        )
+
         pending_results: tuple[AgentToolResult, ...] = ()
         total_tool_calls = 0
         evidence_characters = 0
         completed_lookups: set[str] = set()
-        usage_totals = {
-            "prompt": 0,
-            "completion": 0,
-            "cache_hit": 0,
-            "cache_miss": 0,
-        }
+        usage_totals = RequestUsage()
+        started_at = time.monotonic()
+        status = "incomplete"
+        rounds = 0
 
         try:
             for round_index in range(MAX_MODEL_ROUNDS):
                 context = replace(context, member=require_access(
                     context.guild, context.member.id, context.source_message.channel,
                 ))
+                await require_evidence_access(context)
+                projected_input = context_budget.projected_input(pending_results)
+                if not context_budget.can_answer(projected_input):
+                    status = "context_exhausted"
+                    raise AgentUnavailableError("The agent lacks estimated context room for a complete answer")
+                # Existing evidence limits bound the next tool batch. UTF-8 can
+                # use four bytes per character; include framing for every call.
+                result_reserve = min(
+                    MAX_EVIDENCE_CHARACTERS - evidence_characters,
+                    (MAX_TOOL_CALLS - total_tool_calls) * MAX_TOOL_RESULT_CHARACTERS,
+                ) * 4 + (MAX_TOOL_CALLS - total_tool_calls) * 128
                 allow_tools = (
                     round_index < MAX_MODEL_ROUNDS - 1
                     and total_tool_calls < MAX_TOOL_CALLS
                     and evidence_characters < MAX_EVIDENCE_CHARACTERS
+                    and context_budget.can_continue_tools(projected_input, result_reserve=result_reserve)
                 )
-                step = await session.advance(
-                    pending_results,
-                    allow_tools=allow_tools,
+                if not allow_tools:
+                    LOGGER.info("Agent final-answer round: request=%s projected_input_tokens=%s remaining_context=%s",
+                                getattr(context.source_message, "id", None), projected_input,
+                                None if context_budget.context_window_tokens is None else context_budget.context_window_tokens - projected_input)
+                usage_totals.attempted_rounds += 1
+                round_started_at = time.monotonic()
+                try:
+                    step = await session.advance(
+                        pending_results,
+                        allow_tools=allow_tools,
+                    )
+                except BaseException:
+                    LOGGER.info(
+                        "Agent model round: request=%s round=%s outcome=failed elapsed_ms=%s",
+                        getattr(context.source_message, "id", None),
+                        round_index + 1,
+                        int((time.monotonic() - round_started_at) * 1_000),
+                    )
+                    raise
+                rounds += 1
+                LOGGER.info(
+                    "Agent model round: request=%s round=%s outcome=completed "
+                    "elapsed_ms=%s provider_duration_ms=%s provider_request_id=%s "
+                    "model=%s tool_calls=%s",
+                    getattr(context.source_message, "id", None), rounds,
+                    int((time.monotonic() - round_started_at) * 1_000),
+                    step.provider_duration_ms, step.provider_request_id,
+                    step.model_identity, len(step.tool_calls),
                 )
                 pending_results = ()
-                usage_totals["prompt"] += step.usage.prompt_tokens
-                usage_totals["completion"] += step.usage.completion_tokens
-                usage_totals["cache_hit"] += step.usage.prompt_cache_hit_tokens
-                usage_totals["cache_miss"] += step.usage.prompt_cache_miss_tokens
+                usage_totals.observe(step.usage)
+                context_budget.observe(step.usage, projected_input=projected_input)
+                if rounds == 1:
+                    LOGGER.info("Agent context calibration: request=%s estimated_input_tokens=%s observed_prompt_tokens=%s",
+                                getattr(context.source_message, "id", None), compiled.estimated_input_tokens, step.usage.prompt_tokens)
 
                 if not step.tool_calls:
                     if step.content:
-                        self._log_completion(
-                            context=context,
-                            rounds=round_index + 1,
-                            tool_calls=total_tool_calls,
-                            evidence_characters=evidence_characters,
-                            usage=usage_totals,
-                        )
+                        status = "completed"
                         return step.content
                     raise AgentUnavailableError("The agent returned no final answer")
 
                 if not allow_tools:
-                    raise AgentUnavailableError("The agent did not finish within its round limit")
+                    raise AgentUnavailableError("The agent requested tools after further lookups were disabled")
+                if not context_budget.can_answer(context_budget.next_input_estimate):
+                    status = "context_exhausted"
+                    raise AgentUnavailableError("The agent lacks estimated context room for another model round")
 
                 results: list[AgentToolResult] = []
                 for call in step.tool_calls:
@@ -125,8 +184,46 @@ class CoreAgentService:
                         )
                         continue
                     total_tool_calls += 1
+                    if selection is not None and call.name == DISCOVERY_TOOL_NAME:
+                        arguments = _parse_arguments(call.arguments)
+                        discovery = selection.definitions()[0]
+                        if (
+                            arguments is None
+                            or not _valid_arguments(arguments, discovery.parameters)
+                        ):
+                            results.append(AgentToolResult(
+                                call_id=call.call_id,
+                                content=_error_result(
+                                    "Arguments must match the tool's declared fields and types."
+                                ),
+                            ))
+                            continue
+                        previous_definitions = definitions
+                        payload = selection.activate(arguments["groups"])
+                        definitions = selection.definitions()
+                        if "error" not in payload:
+                            session.replace_tools(definitions)
+                            definition_delta = (
+                                estimate_tokens(encoded_definitions(definitions))
+                                - estimate_tokens(encoded_definitions(
+                                    previous_definitions,
+                                ))
+                            )
+                            context_budget.next_input_estimate = max(
+                                0, context_budget.next_input_estimate
+                                + definition_delta,
+                            )
+                        results.append(AgentToolResult(
+                            call_id=call.call_id,
+                            content=json.dumps(payload, ensure_ascii=False),
+                        ))
+                        continue
                     registered = registry.get(call.name)
-                    if registered is None:
+                    if (
+                        registered is None
+                        or selection is not None
+                        and call.name not in selection.active_names
+                    ):
                         results.append(
                             AgentToolResult(
                                 call_id=call.call_id,
@@ -157,6 +254,7 @@ class CoreAgentService:
                     context = replace(context, member=require_access(
                         context.guild, context.member.id, context.source_message.channel,
                     ))
+                    await require_evidence_access(context)
                     cache_key = call.name + json.dumps(arguments, sort_keys=True)
                     if cache_key in completed_lookups:
                         results.append(AgentToolResult(call.call_id, _error_result(
@@ -175,13 +273,27 @@ class CoreAgentService:
                         min(MAX_TOOL_RESULT_CHARACTERS, remaining),
                     )
                     evidence_characters += len(content)
+                    context.state.evidence.append(json.dumps({"tool": call.name, "arguments": arguments, "result": content}, ensure_ascii=False))
                     completed_lookups.add(cache_key)
                     results.append(
                         AgentToolResult(call_id=call.call_id, content=content)
                     )
                 pending_results = tuple(results)
         except TextGenerationError as error:
+            status = "provider_error"
             raise AgentUnavailableError(str(error)) from error
+        except asyncio.CancelledError:
+            status = "cancelled"
+            raise
+        except AgentAccessLost:
+            status = "access_lost"
+            raise
+        finally:
+            self._log_completion(
+                context=context, rounds=rounds, tool_calls=total_tool_calls,
+                evidence_characters=evidence_characters, usage=usage_totals,
+                status=status, elapsed_ms=int((time.monotonic() - started_at) * 1000),
+            )
 
         raise AgentUnavailableError("The agent did not finish")
 
@@ -193,15 +305,27 @@ class CoreAgentService:
         arguments: Mapping[str, Any],
         context: AgentRequestContext,
     ) -> str:
+        snapshot = _tool_state_snapshot(context)
+        started_at = time.monotonic()
+        outcome = "failed"
         try:
-            LOGGER.info("Agent lookup: tool=%s invoker=%s", name, context.member.id)
             async with asyncio.timeout(TOOL_TIMEOUT_SECONDS):
                 payload = await handler(context, arguments)
-            require_access(context.guild, context.member.id, context.source_message.channel)
+            _record_report_provenance(context, snapshot["reports"])
+            await require_evidence_access(context)
+            outcome = "completed"
             return json.dumps(payload, ensure_ascii=False, default=str)
         except AgentAccessLost:
+            outcome = "access_lost"
+            _restore_tool_state(context, snapshot)
+            raise
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            _restore_tool_state(context, snapshot)
             raise
         except asyncio.TimeoutError:
+            outcome = "timed_out"
+            _restore_tool_state(context, snapshot)
             LOGGER.warning(
                 "Agent tool timed out: tool=%s invoker=%s",
                 name,
@@ -217,12 +341,25 @@ class CoreAgentService:
             TypeError,
             ValueError,
         ):
+            outcome = "failed"
+            _restore_tool_state(context, snapshot)
             LOGGER.exception(
                 "Agent tool failed: tool=%s invoker=%s",
                 name,
                 context.member.id,
             )
             return _error_result("That lookup failed.")
+        except BaseException:
+            outcome = "failed"
+            _restore_tool_state(context, snapshot)
+            raise
+        finally:
+            LOGGER.info(
+                "Agent tool: tool=%s invoker=%s outcome=%s elapsed_ms=%s",
+                name, context.member.id, outcome,
+                int((time.monotonic() - started_at) * 1_000),
+            )
+
 
     @staticmethod
     def _log_completion(
@@ -231,21 +368,94 @@ class CoreAgentService:
         rounds: int,
         tool_calls: int,
         evidence_characters: int,
-        usage: Mapping[str, int],
+        usage: RequestUsage,
+        status: str,
+        elapsed_ms: int,
     ) -> None:
         LOGGER.info(
-            "Agent completed: invoker=%s channel=%s rounds=%s tools=%s evidence_chars=%s "
-            "prompt_tokens=%s completion_tokens=%s cache_hit_tokens=%s cache_miss_tokens=%s",
-            context.member.id,
+            "Agent usage: request=%s status=%s elapsed_ms=%s invoker=%s channel=%s rounds=%s tools=%s evidence_chars=%s "
+            "prompt_tokens=%s completion_tokens=%s cache_hit_tokens=%s cache_miss_tokens=%s "
+            "attempted_rounds=%s unknown_token_rounds=%s unknown_cache_rounds=%s",
+            getattr(context.source_message, "id", None), status, elapsed_ms, context.member.id,
             context.source_message.channel.id,
             rounds,
             tool_calls,
             evidence_characters,
-            usage["prompt"],
-            usage["completion"],
-            usage["cache_hit"],
-            usage["cache_miss"],
+            usage.prompt_tokens,
+            usage.completion_tokens,
+            usage.cache_hit_tokens,
+            usage.cache_miss_tokens,
+            usage.attempted_rounds,
+            usage.unknown_token_rounds,
+            usage.unknown_cache_rounds,
         )
+
+
+def _record_report_provenance(
+    context: AgentRequestContext,
+    previous: Mapping[str, Any],
+) -> None:
+    """Bind new or replaced artifacts to all evidence access used so far."""
+    for report_id, report in context.state.reports.items():
+        if previous.get(report_id) is not report:
+            context.state.report_sources[report_id] = frozenset(
+                context.state.source_channels
+            )
+            context.state.report_access_requirements[report_id] = frozenset(
+                context.state.required_access
+            )
+    retained = set(context.state.reports)
+    for provenance in (
+        context.state.report_sources,
+        context.state.report_access_requirements,
+    ):
+        for report_id in tuple(provenance):
+            if report_id not in retained:
+                provenance.pop(report_id)
+
+
+def _tool_state_snapshot(context: AgentRequestContext) -> dict[str, Any]:
+    """Capture request-local state that a failed tool must not partially mutate."""
+    state = context.state
+    return {
+        "source_channels": set(state.source_channels),
+        "reports": dict(state.reports),
+        "report_sources": dict(state.report_sources),
+        "report_access_requirements": dict(state.report_access_requirements),
+        "required_access": set(state.required_access),
+        "attachments": list(state.attachments),
+        "history_status": dict(state.history_status),
+        "authorized_history": state.authorized_history,
+        "authorized_checkpoint": state.authorized_checkpoint,
+        "working": state.working,
+        "authorized_instructions": state.authorized_instructions,
+    }
+
+
+def _restore_tool_state(
+    context: AgentRequestContext, snapshot: Mapping[str, Any],
+) -> None:
+    """Restore the exact request-local state after an unsuccessful tool call."""
+    state = context.state
+    state.source_channels.clear()
+    state.source_channels.update(snapshot["source_channels"])
+    state.reports.clear()
+    state.reports.update(snapshot["reports"])
+    state.report_sources.clear()
+    state.report_sources.update(snapshot["report_sources"])
+    state.report_access_requirements.clear()
+    state.report_access_requirements.update(
+        snapshot["report_access_requirements"]
+    )
+    state.required_access.clear()
+    state.required_access.update(snapshot["required_access"])
+    state.attachments[:] = snapshot["attachments"]
+    state.history_status.clear()
+    state.history_status.update(snapshot["history_status"])
+    state.authorized_history = snapshot["authorized_history"]
+    state.authorized_checkpoint = snapshot["authorized_checkpoint"]
+    state.working = snapshot["working"]
+    state.authorized_instructions = snapshot["authorized_instructions"]
 
 
 def _parse_arguments(raw: str) -> dict[str, Any] | None:
@@ -257,12 +467,14 @@ def _parse_arguments(raw: str) -> dict[str, Any] | None:
 
 
 def _valid_arguments(arguments: Mapping[str, Any], schema: Mapping[str, Any]) -> bool:
-    """Validate the flat string/integer schemas used by the beta tools."""
+    """Validate the bounded schemas exposed by the agent catalogue."""
     properties = schema.get("properties", {})
     if set(arguments) - set(properties) or set(schema.get("required", ())) - set(arguments):
         return False
     for name, value in arguments.items():
         field = properties[name]
+        if "enum" in field and value not in field["enum"]:
+            return False
         if field.get("type") == "string":
             if not isinstance(value, str) or not value.strip():
                 return False
@@ -272,6 +484,19 @@ def _valid_arguments(arguments: Mapping[str, Any], schema: Mapping[str, Any]) ->
             if type(value) is not int:
                 return False
             if not field.get("minimum", 1) <= value <= field.get("maximum", 2**64 - 1):
+                return False
+        elif field.get("type") == "boolean":
+            if type(value) is not bool:
+                return False
+        elif field.get("type") == "array":
+            if not isinstance(value, list) or not field.get("minItems", 0) <= len(value) <= field.get("maxItems", 20):
+                return False
+            if any(not _valid_arguments({"item": item}, {"properties": {"item": field["items"]}}) for item in value):
+                return False
+            if field.get("uniqueItems") and len(set(value)) != len(value):
+                return False
+        elif field.get("type") == "object":
+            if not isinstance(value, Mapping) or not _valid_arguments(value, field):
                 return False
         else:
             return False

@@ -181,6 +181,8 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_agent_session_preserves_reasoning_and_tool_calls(self) -> None:
         first_response = SimpleNamespace(
+            id="request\nfirst",
+            model="deepseek-flash\n",
             choices=[
                 SimpleNamespace(
                     message=SimpleNamespace(
@@ -206,6 +208,8 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
         second_response = SimpleNamespace(
+            id="request-second",
+            model="deepseek-flash",
             choices=[
                 SimpleNamespace(
                     message=SimpleNamespace(
@@ -246,7 +250,14 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
             )
 
             self.assertIsNotNone(session)
+            self.assertEqual(session.context_window_tokens, 1_000_000)
             first = await session.advance()  # type: ignore[union-attr]
+            session.replace_tools((  # type: ignore[union-attr]
+                AgentToolDefinition(
+                    name="read_report", description="Read report",
+                    parameters={"type": "object", "properties": {}},
+                ),
+            ))
             second = await session.advance(  # type: ignore[union-attr]
                 (
                     AgentToolResult(
@@ -259,12 +270,19 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(first.tool_calls[0].name, "search_messages")
         self.assertEqual(first.usage.prompt_cache_hit_tokens, 80)
+        self.assertEqual(first.provider_request_id, "request first")
+        self.assertEqual(first.model_identity, DEEPSEEK_MODEL)
+        self.assertIsInstance(first.provider_duration_ms, int)
+        self.assertGreaterEqual(first.provider_duration_ms, 0)
         self.assertEqual(second.content, "The decision was recorded here.")
         first_request = transport.chat.completions.create.await_args_list[0].kwargs
         self.assertEqual(first_request["tool_choice"], "auto")
         self.assertEqual(first_request["max_tokens"], 64_000)
         second_request = transport.chat.completions.create.await_args_list[1].kwargs
         self.assertIn("tools", second_request)
+        self.assertEqual(
+            second_request["tools"][0]["function"]["name"], "read_report",
+        )
         self.assertEqual(second_request["tool_choice"], "none")
         self.assertIs(second_request["messages"][2], first_response.choices[0].message)
         self.assertEqual(

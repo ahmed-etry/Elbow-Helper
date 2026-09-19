@@ -84,6 +84,100 @@ class CommandRegistryTests(unittest.IsolatedAsyncioTestCase):
 
 
 class DependencyBoundaryTests(unittest.TestCase):
+    def test_agent_large_module_responsibilities_remain_separated(self) -> None:
+        agent_root = FEATURE_ROOT / "agent"
+        attachment_tools = (
+            agent_root / "tools" / "attachments.py"
+        ).read_text(encoding="utf-8")
+        storage_codec = (agent_root / "conversation" / "codec.py").read_text(
+            encoding="utf-8"
+        )
+        research_reports = (agent_root / "reports" / "research.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertNotIn("normalize_cwl_table", attachment_tools)
+        self.assertNotIn("CwlImportReport", attachment_tools)
+        self.assertIn("decode_report", storage_codec)
+        self.assertNotIn("RosterSnapshot(", storage_codec)
+        self.assertNotIn("CwlImportData(", storage_codec)
+        self.assertNotIn("from .jobs import", research_reports)
+        research_runner = (agent_root / "research" / "runner.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn(".tools.research", research_runner)
+        spreadsheet_tools = (
+            agent_root / "tools" / "spreadsheets.py"
+        ).read_text(encoding="utf-8")
+        export_delivery = (agent_root / "files" / "delivery.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("WorkbookWriter", spreadsheet_tools)
+        self.assertNotIn("LocalExportStore", spreadsheet_tools)
+        self.assertNotIn("features.cwl", export_delivery)
+        self.assertNotIn("RoleAccountReport", export_delivery)
+        cwl_tools = (agent_root / "tools" / "cwl.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("roster.analysis", cwl_tools)
+        self.assertNotIn("clan_health.database", cwl_tools)
+        self.assertNotIn("BonusAnalysisService", cwl_tools)
+        cwl_scoring_tools = (
+            agent_root / "tools" / "cwl_scoring.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("roster.analysis", cwl_scoring_tools)
+        self.assertNotIn("clan_health.database", cwl_scoring_tools)
+        self.assertNotIn("BonusAnalysisService", cwl_scoring_tools)
+        achievement_tools = (
+            agent_root / "tools" / "achievements.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("sqlite3", achievement_tools)
+        self.assertNotIn("features.achievements.database", achievement_tools)
+        self.assertNotIn("features.achievements.cog", achievement_tools)
+        event_tools = (
+            agent_root / "tools" / "events.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("features.event_stats.cog", event_tools)
+        self.assertNotIn("features.event_stats.state", event_tools)
+        self.assertNotIn("save_state", event_tools)
+        lifecycle_tools = (
+            agent_root / "tools" / "member_lifecycle.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("features.member_lifecycle.cog", lifecycle_tools)
+        self.assertNotIn("features.member_lifecycle.state", lifecycle_tools)
+        self.assertNotIn("save_state", lifecycle_tools)
+        clan_reporting_tools = (
+            agent_root / "tools" / "clan_reporting.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("features.clan_reporting.cog", clan_reporting_tools)
+        self.assertNotIn("features.account_links", clan_reporting_tools)
+        self.assertNotIn("refresh", clan_reporting_tools.split(
+            "def clan_reporting_tools", 1,
+        )[0])
+        knowledge_tools = (
+            agent_root / "tools" / "knowledge.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn(".actions", knowledge_tools)
+        self.assertNotIn(".action_storage", knowledge_tools)
+        self.assertNotIn("attachments", knowledge_tools)
+        knowledge_store = (agent_root / "knowledge" / "store.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("discord", knowledge_store)
+        self.assertNotIn("Action", knowledge_store)
+        action_storage = (agent_root / "actions" / "repository.py").read_text(
+            encoding="utf-8"
+        )
+        action_codec = (
+            agent_root / "actions" / "codec.py"
+        ).read_text(encoding="utf-8")
+        action_integrity = (
+            agent_root / "actions" / "integrity.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("json.loads", action_storage)
+        self.assertNotIn("sqlite_transaction", action_codec)
+        self.assertNotIn(".action_storage import", action_integrity)
+
     def test_feature_packages_use_standard_entry_files(self) -> None:
         for feature in FEATURE_ROOT.iterdir():
             if not feature.is_dir() or feature.name == "__pycache__":
@@ -111,9 +205,19 @@ class DependencyBoundaryTests(unittest.TestCase):
             "elbow_helper.features.account_links": ("elbow_helper.features.wars",),
             "elbow_helper.features.recruitment": (
                 "elbow_helper.features.achievements",
+                "elbow_helper.features.event_stats",
                 "elbow_helper.features.account_links",
             ),
             "elbow_helper.features.agent": (
+                "elbow_helper.features.achievements",
+                "elbow_helper.features.hibernation",
+                "elbow_helper.features.clan_transfers",
+                "elbow_helper.features.support_tickets",
+                "elbow_helper.features.recruitment",
+                "elbow_helper.features.examination",
+                "elbow_helper.features.records",
+                "elbow_helper.features.member_lifecycle",
+                "elbow_helper.features.clan_reporting",
                 "elbow_helper.features.account_links",
                 "elbow_helper.features.clan_health",
             ),
@@ -176,6 +280,23 @@ class DependencyBoundaryTests(unittest.TestCase):
             source = path.read_text(encoding="utf-8-sig")
             with self.subTest(path=path):
                 self.assertNotIn("aiohttp.ClientSession(", source)
+
+    def test_role_agent_tool_uses_feature_owned_account_refresh(self) -> None:
+        source = (
+            FEATURE_ROOT / "agent" / "tools" / "roles.py"
+        ).read_text(encoding="utf-8-sig")
+        self.assertIn("refresh_account_locations", source)
+        self.assertNotIn("clash_client", source)
+        self.assertIn("compare_reports", source)
+        self.assertNotIn("ownership_changed", source)
+
+    def test_thread_discovery_transport_stays_out_of_agent_tools(self) -> None:
+        source = (
+            FEATURE_ROOT / "agent" / "tools" / "threads.py"
+        ).read_text(encoding="utf-8-sig")
+        self.assertNotIn("guild.active_threads(", source)
+        self.assertNotIn("parent.archived_threads(", source)
+        self.assertNotIn("._state.http", source)
 
     def test_features_use_the_application_owned_export_store(self) -> None:
         offenders: list[str] = []

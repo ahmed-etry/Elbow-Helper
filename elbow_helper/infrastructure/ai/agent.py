@@ -37,12 +37,12 @@ class AgentToolResult:
 
 @dataclass(frozen=True, slots=True)
 class AgentUsage:
-    """Provider-reported token usage for one model round."""
+    """Provider-reported token usage; None means unreported, not free."""
 
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    prompt_cache_hit_tokens: int = 0
-    prompt_cache_miss_tokens: int = 0
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    prompt_cache_hit_tokens: int | None = None
+    prompt_cache_miss_tokens: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,10 +52,18 @@ class AgentStep:
     content: str
     tool_calls: tuple[AgentToolCall, ...]
     usage: AgentUsage
+    provider_request_id: str | None = None
+    model_identity: str | None = None
+    provider_duration_ms: int | None = None
 
 
 class AgentSession(Protocol):
     """A provider-owned conversation that preserves tool-call continuation state."""
+
+    @property
+    def context_window_tokens(self) -> int | None: ...
+
+    def replace_tools(self, tools: Sequence[AgentToolDefinition]) -> None: ...
 
     async def advance(
         self,
