@@ -106,6 +106,30 @@ class AgentMemberLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, {"error": "The member lifecycle source is not accessible."})
         self.assertEqual(self.context.state.reports, {})
 
+    async def test_stale_activity_channel_is_not_fetched_or_retained_as_evidence(self):
+        stale = self.guild.get_channel_or_thread(200)
+        stale.permissions_for = lambda _: SimpleNamespace(view_channel=True, read_message_history=True)
+        del self.permissions[200]
+        # Even if REST could return an old channel, an incidental last-seen
+        # reference must not reintroduce it into this recruitment snapshot.
+        self.context.bot.fetch_channel.return_value = stale
+
+        result = await read_member_lifecycle(self.context, {})
+
+        self.context.bot.fetch_channel.assert_not_awaited()
+        self.assertEqual(result["tracked_current_member_count"], 2)
+        self.assertEqual(result["platform_counts"], [{"platform": "Reddit", "count": 1}])
+        rows = {row["member_id"]: row for row in result["members"]}
+        self.assertIsNone(rows[7]["last_seen_channel_id"])
+        self.assertIsNone(rows[7]["last_seen_at"])
+        self.assertEqual(rows[7]["platform"], "Reddit")
+        self.assertEqual(self.context.state.source_channels, {OVERSEEING_TERRACE})
+        report = self.context.state.reports[result["report_id"]]
+        self.assertEqual(report.source_channels, frozenset({OVERSEEING_TERRACE}))
+        retained = await read_member_lifecycle_report(self.context, {"report_id": result["report_id"]})
+        self.assertEqual(retained["platform_counts"], result["platform_counts"])
+        self.context.bot.fetch_channel.assert_not_awaited()
+
     async def test_activity_permission_loss_hides_retained_snapshot(self):
         first = await read_member_lifecycle(self.context, {})
         self.permissions[200] = False
