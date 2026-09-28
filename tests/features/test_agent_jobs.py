@@ -16,7 +16,7 @@ from elbow_helper.discord.message_search import (
     DiscordHistoryPage, DiscordSearchMessage, DiscordSearchPage,
 )
 import elbow_helper.features.agent.research.repository as research_job_storage
-from elbow_helper.features.agent.access import AgentAccessLost
+from elbow_helper.features.agent.access import AgentAccessLost, AgentDisclosureDenied
 from elbow_helper.features.agent.research.repository import (
     ResearchJobBusy, ResearchJobConflict, ResearchJobRepository,
     ResearchJobScope,
@@ -609,6 +609,8 @@ class _Channel:
     def __init__(self, channel_id=100, name="lead-chat"):
         self.id = channel_id
         self.name = name
+        self.type = discord.ChannelType.text
+        self.overwrites = {}
         self.denied = set()
         self.guild = None
 
@@ -638,6 +640,8 @@ class ResearchJobToolTests(unittest.IsolatedAsyncioTestCase):
         }
         guild = SimpleNamespace(
             id=1, me=self.bot_member,
+            default_role=SimpleNamespace(id=1),
+            roles=[SimpleNamespace(id=1), *self.member.roles],
             get_member=lambda value: self.member if value == self.member.id else None,
             get_channel_or_thread=self.channels.get,
         )
@@ -841,6 +845,23 @@ class ResearchJobToolTests(unittest.IsolatedAsyncioTestCase):
             ).fetchone()[0]
         self.assertEqual(count, 0)
 
+    async def test_research_job_is_not_created_for_source_that_cannot_be_disclosed_here(self):
+        self.channels[200].denied.add(self.guild.default_role.id)
+        with self.assertRaises(AgentDisclosureDenied):
+            await start_discord_research_job(self.context, {
+                "channel_id": 200, "query": "decision",
+            })
+        with self.assertRaises(AgentDisclosureDenied):
+            await start_discord_research_batch(self.context, {
+                "channel_ids": [100, 200], "kind": "search",
+                "query": "decision",
+            })
+        with self.repository.connect() as connection:
+            count = connection.execute(
+                "SELECT COUNT(*) FROM research_jobs",
+            ).fetchone()[0]
+        self.assertEqual(count, 0)
+
     async def test_multi_channel_batch_cancels_all_on_post_create_access_loss(self):
         with patch(
             "elbow_helper.features.agent.tools.research_batches.accessible_message_channel",
@@ -1002,7 +1023,7 @@ class ResearchJobToolTests(unittest.IsolatedAsyncioTestCase):
         self.search.search_page.assert_not_awaited()
 
     async def test_role_loss_during_creation_cancels_the_job(self):
-        access = AsyncMock(side_effect=(None, AgentAccessLost("role removed")))
+        access = AsyncMock(side_effect=({100: self.channel}, AgentAccessLost("role removed")))
         with patch(
             "elbow_helper.features.agent.tools.research.require_evidence_access",
             access,

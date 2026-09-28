@@ -9,9 +9,12 @@ from uuid import uuid4
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
-from ..access import AgentAccessLost, accessible_message_channel, require_evidence_access
+from ..access import (
+    AgentAccessLost, accessible_message_channel, require_destination_access,
+    require_evidence_access,
+)
 from ..reports.base import ArtifactCapacityError, retain_report
-from ..models import AgentRequestContext, RegisteredAgentTool
+from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..research.execution import advance_discord_research_job
 from ..reports.research import DiscordResearchReport
 from .discord import (
@@ -117,6 +120,11 @@ def research_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             handler,
+            AgentCapabilityEffect.STATE if name in {
+                "start_discord_research_job", "start_discord_history_job",
+                "continue_discord_research_job", "retain_discord_research_report",
+                "cancel_discord_research_job",
+            } else AgentCapabilityEffect.READ,
         )
         for name, description, properties, required, handler in definitions
     ) + research_batch_tools()
@@ -126,14 +134,16 @@ async def start_discord_research_job(
     context: AgentRequestContext,
     arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
-    await require_evidence_access(context)
+    sources = await require_evidence_access(context)
     if context.research_jobs is None or context.conversation_root_id is None:
         return {"error": "Durable research jobs are not available."}
     channel_id = arguments.get("channel_id")
     if type(channel_id) is not int or channel_id <= 0:
         return {"error": "A valid channel ID is required."}
-    if await accessible_message_channel(context, channel_id) is None:
+    source = await accessible_message_channel(context, channel_id)
+    if source is None:
         return {"error": "The asker cannot access that conversation."}
+    require_destination_access(context, {**sources, channel_id: source})
     query = str(arguments.get("query") or "").strip()
     author_id = arguments.get("author_id")
     if author_id is not None and (type(author_id) is not int or author_id <= 0):
@@ -173,7 +183,7 @@ async def start_discord_research_job(
         if await accessible_message_channel(context, channel_id) is None:
             raise AgentAccessLost("Research source access changed")
         context.state.source_channels.add(channel_id)
-        await require_evidence_access(context)
+        require_destination_access(context, await require_evidence_access(context))
     except AgentAccessLost:
         await asyncio.to_thread(
             context.research_jobs.cancel,
@@ -190,7 +200,7 @@ async def start_discord_history_job(
     context: AgentRequestContext,
     arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
-    await require_evidence_access(context)
+    sources = await require_evidence_access(context)
     if context.research_jobs is None or context.conversation_root_id is None:
         return {"error": "Durable research jobs are not available."}
     channel_id = arguments.get("channel_id")
@@ -199,8 +209,10 @@ async def start_discord_history_job(
         return {"error": "A valid channel ID is required."}
     if author_id is not None and (type(author_id) is not int or author_id <= 0):
         return {"error": "A valid author ID is required."}
-    if await accessible_message_channel(context, channel_id) is None:
+    source = await accessible_message_channel(context, channel_id)
+    if source is None:
         return {"error": "The asker cannot access that conversation."}
+    require_destination_access(context, {**sources, channel_id: source})
     try:
         after = _search_date(arguments.get("after"))
         before = _search_date(arguments.get("before")) or _message_time(context)
@@ -233,7 +245,7 @@ async def start_discord_history_job(
         if await accessible_message_channel(context, channel_id) is None:
             raise AgentAccessLost("Research source access changed")
         context.state.source_channels.add(channel_id)
-        await require_evidence_access(context)
+        require_destination_access(context, await require_evidence_access(context))
     except AgentAccessLost:
         await asyncio.to_thread(
             context.research_jobs.cancel,

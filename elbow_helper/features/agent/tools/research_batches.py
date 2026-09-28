@@ -8,8 +8,11 @@ from typing import Any, Mapping
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
-from ..access import AgentAccessLost, accessible_message_channel, require_evidence_access
-from ..models import AgentRequestContext, RegisteredAgentTool
+from ..access import (
+    AgentAccessLost, accessible_message_channel, require_destination_access,
+    require_evidence_access,
+)
+from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..research.contracts import (
     DiscordResearchJob, MAX_RESEARCH_BATCH_JOBS, ResearchJobDefinition,
 )
@@ -77,6 +80,8 @@ def research_batch_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             handler,
+            AgentCapabilityEffect.STATE if name == "start_discord_research_batch"
+            else AgentCapabilityEffect.READ,
         )
         for name, description, properties, required, handler in definitions
     )
@@ -86,7 +91,7 @@ async def start_discord_research_batch(
     context: AgentRequestContext,
     arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
-    await require_evidence_access(context)
+    sources = await require_evidence_access(context)
     repository = context.research_jobs
     root_id = context.conversation_root_id
     if repository is None or root_id is None:
@@ -130,8 +135,11 @@ async def start_discord_research_batch(
         return {"error": f"Use a page size from 1 to {maximum_page_size}."}
     ordered_channel_ids = tuple(sorted(channel_ids))
     for channel_id in ordered_channel_ids:
-        if await accessible_message_channel(context, channel_id) is None:
+        source = await accessible_message_channel(context, channel_id)
+        if source is None:
             return {"error": "The asker cannot access every research source."}
+        sources[channel_id] = source
+    require_destination_access(context, sources)
     definitions = tuple(ResearchJobDefinition(
         source_channel_id=channel_id,
         query=query,
@@ -153,7 +161,7 @@ async def start_discord_research_batch(
             if await accessible_message_channel(context, channel_id) is None:
                 raise AgentAccessLost("Research source access changed")
             context.state.source_channels.add(channel_id)
-        await require_evidence_access(context)
+        require_destination_access(context, await require_evidence_access(context))
     except AgentAccessLost:
         await asyncio.to_thread(
             repository.cancel_many,
