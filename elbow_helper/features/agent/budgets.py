@@ -13,6 +13,14 @@ class ContextBudget:
     context_window_tokens: int | None
     output_reserve: int
     next_input_estimate: int
+    final_answer_reserve: int | None = None
+
+    @property
+    def final_reserve(self) -> int:
+        return (
+            self.output_reserve if self.final_answer_reserve is None
+            else self.final_answer_reserve
+        )
 
     def projected_input(self, results: Sequence[AgentToolResult]) -> int:
         return self.next_input_estimate + sum(
@@ -24,10 +32,10 @@ class ContextBudget:
         return self.context_window_tokens is None or projected_input + self.output_reserve <= self.context_window_tokens
 
     def can_continue_tools(self, projected_input: int, *, result_reserve: int) -> bool:
-        # Reserve one tool-calling output, bounded tool evidence, then a final
-        # answer. The reserve does not reduce the model's output allowance.
+        # Reserve this round, one bounded result, then a final answer.
         return (self.context_window_tokens is None
-                or projected_input + 2 * self.output_reserve + result_reserve <= self.context_window_tokens)
+                or projected_input + self.output_reserve
+                + self.final_reserve + result_reserve <= self.context_window_tokens)
 
     def observe(self, usage: AgentUsage, *, projected_input: int) -> None:
         # Completion usage includes continuation text/reasoning held by the
@@ -47,7 +55,7 @@ class ContextBudget:
         # call. Four UTF-8 bytes per character bounds the next result's tokens.
         framing = 1024 + sum(estimate_tokens(call_id) + 640 for call_id in pending_call_ids)
         available = (
-            self.context_window_tokens - self.output_reserve
+            self.context_window_tokens - self.final_reserve
             - self.projected_input(results) - framing
         )
         return min(maximum, max(0, available // 4))

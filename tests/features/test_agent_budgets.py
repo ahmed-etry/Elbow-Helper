@@ -34,6 +34,18 @@ class ContextBudgetTests(unittest.TestCase):
         self.assertTrue(budget.can_answer(10_000_000))
         self.assertTrue(budget.can_continue_tools(10_000_000, result_reserve=500))
 
+    def test_tool_admission_uses_current_round_and_final_answer_reserves(self):
+        budget = ContextBudget(
+            128_000, 8_000, 30_000, final_answer_reserve=16_000,
+        )
+        self.assertTrue(budget.can_continue_tools(
+            30_000, result_reserve=2_048 * 4,
+        ))
+        budget.output_reserve = 32_000
+        self.assertFalse(budget.can_continue_tools(
+            80_000, result_reserve=2_048 * 4,
+        ))
+
     def test_batch_results_share_context_room_and_reserve_a_final_answer(self):
         budget = ContextBudget(20_000, 4000, 8000)
         first_limit = budget.result_character_limit((), pending_call_ids=("one", "two"), maximum=10_000)
