@@ -69,7 +69,9 @@ def model_result(
     truncated = truncated or data.get("truncated") is True or existing.get("truncated") is True
     complete = not truncated and error is None and existing.get("status") not in ("failed", "partial", "refused") and all(
         data.get(field) is not False for field in ("complete", "complete_snapshot")
-    ) and data.get("status") != "partial"
+    ) and data.get("status") != "partial" and all(
+        data.get(field) is None for field in ("next_offset", "next_cursor")
+    )
     flags: dict[str, Any] = {**existing,
         "status": "complete" if complete else "partial",
         "truncated": truncated,

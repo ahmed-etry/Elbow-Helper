@@ -64,6 +64,15 @@ class ModelResultTests(unittest.TestCase):
         self.assertEqual(result["offered"], ["202"])
         self.assertNotIn("error", result)
 
+    def test_every_page_cursor_marks_the_model_view_partial(self):
+        for field, value in (("next_offset", 7), ("next_cursor", "synthetic-cursor")):
+            with self.subTest(field=field):
+                result = model_result({"rows": [7], "complete_snapshot": True, field: value})
+                self.assertEqual(result["flags"]["status"], "partial")
+                self.assertTrue(result["complete_snapshot"])
+                self.assertEqual(result[field], value)
+                self.assertEqual(model_result(result), result)
+
 
 class ResultHandlerTests(unittest.IsolatedAsyncioTestCase):
     async def test_registered_boundary_returns_flags_for_errors(self):
