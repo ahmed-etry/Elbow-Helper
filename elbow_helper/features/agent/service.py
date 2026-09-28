@@ -31,10 +31,10 @@ from .conversation.context import compile_context, estimate_tokens
 from .tools import build_agent_tools
 from .usage import RequestUsage
 from .budgets import ContextBudget
-from .semantic import (
-    SemanticBindError, compile_capability_call, require_source_provenance,
+from .capabilities import (
+    CapabilityBindError, compile_capability_call, require_source_provenance,
 )
-from .semantic import CONTRACTS
+from .capabilities import CONTRACTS
 from .access import can_disclose_provenance
 from .plan.checker import _kind, _periods, _source_check, _time_check, _valid_arguments, check_plan
 from .plan.executor import execute_plan, resolve_arguments
@@ -85,7 +85,7 @@ class AgentService:
         name: str,
         handler: Any,
         arguments: Mapping[str, Any],
-        semantic_scope: Mapping[str, Any] | None = None,
+        capability_scope: Mapping[str, Any] | None = None,
         context: AgentRequestContext,
     ) -> str:
         snapshot = _tool_state_snapshot(context)
@@ -93,7 +93,7 @@ class AgentService:
         outcome = "failed"
         result_characters = 0
         try:
-            required_access = frozenset((semantic_scope or {}).get("required_access", ()))
+            required_access = frozenset((capability_scope or {}).get("required_access", ()))
             if required_access:
                 require_access_requirements(
                     context.guild, context.member.id, required_access,
@@ -101,12 +101,12 @@ class AgentService:
             async with asyncio.timeout(TOOL_TIMEOUT_SECONDS):
                 payload = await handler(context, arguments)
             if not isinstance(payload, Mapping):
-                raise SemanticBindError("The lookup did not return a structured result.")
+                raise CapabilityBindError("The lookup did not return a structured result.")
             failed = "error" in payload or payload.get("flags", {}).get("status") == "failed"
             if not failed:
                 context.state.required_access.update(required_access)
                 require_source_provenance(
-                    semantic_scope or {}, arguments,
+                    capability_scope or {}, arguments,
                     context.state.source_channels, payload,
                 )
             _record_report_provenance(context, snapshot["reports"])
@@ -120,7 +120,7 @@ class AgentService:
             outcome = "disclosure_denied"
             _restore_tool_state(context, snapshot)
             return _error_result("That source cannot be shared in this channel.")
-        except SemanticBindError:
+        except CapabilityBindError:
             outcome = "unbound_source"
             _restore_tool_state(context, snapshot)
             LOGGER.warning("Agent tool omitted source provenance: tool=%s", name)
@@ -377,11 +377,11 @@ class AgentService:
                     if issue:
                         return {"error": issue}
                 try:
-                    semantic_scope = compile_capability_call(tool, arguments)
-                except SemanticBindError as error:
+                    capability_scope = compile_capability_call(tool, arguments)
+                except CapabilityBindError as error:
                     return {"error": str(error)}
                 if retained:
-                    semantic_scope["bound_source_channels"] = sorted(ledger.channels(retained))
+                    capability_scope["bound_source_channels"] = sorted(ledger.channels(retained))
                 issue = await disclosure_issue({**step, "arguments": arguments})
                 if issue:
                     return {"error": issue}
@@ -411,7 +411,7 @@ class AgentService:
                 await require_evidence_access(local)
                 raw = await self._execute_tool(
                     name=name, handler=tool.handler, arguments=arguments,
-                    semantic_scope=semantic_scope, context=local,
+                    capability_scope=capability_scope, context=local,
                 )
                 try:
                     raw_payload = json.loads(raw)
@@ -446,7 +446,7 @@ class AgentService:
                         call_id=step["id"], tool=name, arguments=arguments,
                         result=content, raw_result_characters=len(model_content),
                         result_complete=content == model_content,
-                        semantic_scope=semantic_scope, context=context,
+                        capability_scope=capability_scope, context=context,
                     ))
                 try:
                     return json.loads(content)
@@ -606,7 +606,7 @@ class AgentService:
 def _evidence_record(
     *, call_id: str, tool: str, arguments: Mapping[str, Any],
     result: str, raw_result_characters: int, result_complete: bool,
-    semantic_scope: Mapping[str, Any] | None = None,
+    capability_scope: Mapping[str, Any] | None = None,
     context: AgentRequestContext,
 ) -> str:
     """Keep the model view's exact scope and access provenance for reuse."""
@@ -632,7 +632,7 @@ def _evidence_record(
         "result_status": status,
         "raw_result_characters": raw_result_characters,
         "result_complete": status == "complete",
-        "semantic_scope": dict(semantic_scope or {
+        "capability_scope": dict(capability_scope or {
             "precision": "schema_only", "capability": tool,
         }),
         "observed_at": datetime.now(timezone.utc).isoformat(),

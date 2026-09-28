@@ -18,7 +18,7 @@ from elbow_helper.features.agent.models import AgentRequestContext
 from elbow_helper.configuration.roles import CORE, LEAD, LEAD_PLUS
 from elbow_helper.features.agent.prompts import SYSTEM_PROMPT
 from elbow_helper.features.agent.service import AgentService
-from elbow_helper.features.agent.semantic import compile_capability_call
+from elbow_helper.features.agent.capabilities import compile_capability_call
 from elbow_helper.features.agent.tools import build_agent_tools
 from elbow_helper.features.agent.service import _valid_arguments, _bound_tool_result, _evidence_record
 from elbow_helper.features.agent.access import ACCESS_LEAD_PLUS, AgentAccessLost
@@ -101,7 +101,7 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AgentAccessLost):
             await AgentService._execute_tool(
                 name="read_role_connections", handler=handler, arguments={},
-                semantic_scope=scope, context=context,
+                capability_scope=scope, context=context,
             )
         handler.assert_not_awaited()
         self.assertEqual(context.state.required_access, set())
@@ -111,7 +111,7 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
         context.guild.roles.append(lead_role)
         result = await AgentService._execute_tool(
             name="read_role_connections", handler=handler, arguments={},
-            semantic_scope=scope, context=context,
+            capability_scope=scope, context=context,
         )
         handler.assert_awaited_once()
         self.assertIn("error", json.loads(result))
@@ -136,7 +136,7 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
 
         result = await AgentService._execute_tool(
             name="read_role_connections", handler=handler, arguments={},
-            semantic_scope=scope, context=context,
+            capability_scope=scope, context=context,
         )
         self.assertEqual(json.loads(result), {"report_id": report.report_id})
         self.assertEqual(context.state.required_access, {"lead"})

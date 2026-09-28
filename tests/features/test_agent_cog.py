@@ -35,7 +35,7 @@ from elbow_helper.features.agent.service import AgentService
 from elbow_helper.infrastructure.ai.client import DeepSeekTextClient
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from elbow_helper.features.agent.models import RegisteredAgentTool
-from elbow_helper.features.agent.semantic import CapabilityContract
+from elbow_helper.features.agent.capabilities import CapabilityContract
 
 
 class _Member:
@@ -208,7 +208,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                     patch("elbow_helper.infrastructure.ai.client.AsyncOpenAI", return_value=transport),
                     patch("elbow_helper.features.agent.cog.discord.Member", _Member),
                     patch("elbow_helper.features.agent.service.build_agent_tools", return_value=registry),
-                    patch.dict("elbow_helper.features.agent.semantic.CONTRACTS", {"read_value": contract}),
+                    patch.dict("elbow_helper.features.agent.capabilities.CONTRACTS", {"read_value": contract}),
                     patch("elbow_helper.features.agent.service.MAX_MODEL_ROUNDS", 2),
                 ):
                     self.cog.service = AgentService(DeepSeekTextClient("test-key"))

@@ -8,7 +8,7 @@ import json
 import re
 import unicodedata
 from typing import Any, Mapping, Sequence
-from ..copy import SPREADSHEET_FILENAME_STEM
+from ..wording import SPREADSHEET_FILENAME_STEM
 
 
 MAX_SPREADSHEET_SHEETS = 4

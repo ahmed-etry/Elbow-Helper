@@ -13,7 +13,7 @@ from .access import ACCESS_LEAD, ACCESS_LEAD_PLUS, KNOWN_ACCESS_REQUIREMENTS
 from .models import RegisteredAgentTool
 
 
-class SemanticBindError(ValueError):
+class CapabilityBindError(ValueError):
     """A structurally valid call does not identify a supported data scope."""
 
 
@@ -235,19 +235,19 @@ def validate_contract_catalogue(registry: Mapping[str, RegisteredAgentTool]) -> 
     """Catch descriptor drift when a feature changes an exposed query schema."""
     missing_tools = set(CONTRACTS) - set(registry)
     if missing_tools:
-        raise ValueError(f"Semantic contracts name missing tools: {sorted(missing_tools)}")
+        raise ValueError(f"Capability contracts name missing tools: {sorted(missing_tools)}")
     missing_contracts = set(registry) - set(CONTRACTS)
     if missing_contracts:
-        raise ValueError(f"Agent tools lack semantic contracts: {sorted(missing_contracts)}")
+        raise ValueError(f"Agent tools lack capability contracts: {sorted(missing_contracts)}")
     for name, contract in CONTRACTS.items():
         if not isinstance(contract.required_access, frozenset) or not contract.required_access <= KNOWN_ACCESS_REQUIREMENTS:
-            raise ValueError(f"Invalid access requirements in semantic contract: {name}")
+            raise ValueError(f"Invalid access requirements in capability contract: {name}")
 
         def check_unique(labels: tuple[str, ...], category: str) -> None:
             if any(not isinstance(label, str) or not label.strip() for label in labels) or len(
                 labels
             ) != len(set(labels)):
-                raise ValueError(f"Invalid {category} in semantic contract: {name}")
+                raise ValueError(f"Invalid {category} in capability contract: {name}")
 
         for category, labels in (
             ("entity fields", tuple(field for field, _ in contract.entity_fields)),
@@ -268,11 +268,11 @@ def validate_contract_catalogue(registry: Mapping[str, RegisteredAgentTool]) -> 
             ("result channel list keys", contract.result_channel_lists),
         ):
             if any(not isinstance(value, str) or not value.strip() for _, value in pairs):
-                raise ValueError(f"Invalid {category} in semantic contract: {name}")
+                raise ValueError(f"Invalid {category} in capability contract: {name}")
         if bool(contract.scope_field) != bool(contract.scope_variants):
-            raise ValueError(f"Incomplete scope variants in semantic contract: {name}")
+            raise ValueError(f"Incomplete scope variants in capability contract: {name}")
         if contract.scope_field is not None and not contract.scope_field.strip():
-            raise ValueError(f"Invalid scope field in semantic contract: {name}")
+            raise ValueError(f"Invalid scope field in capability contract: {name}")
         for _, selectors in contract.scope_variants:
             check_unique(selectors, "scope selectors")
 
@@ -286,7 +286,7 @@ def validate_contract_catalogue(registry: Mapping[str, RegisteredAgentTool]) -> 
             | set(contract.filter_fields)
         )
         if not described <= fields:
-            raise ValueError(f"Semantic contract and query fields differ: {name}")
+            raise ValueError(f"Capability contract and query fields differ: {name}")
         if not set(contract.latest_fields) <= set(contract.time_fields):
             raise ValueError(f"Latest selectors differ from time fields: {name}")
         if not set(contract.retained_fields) <= {field for field, _ in contract.entity_fields}:
@@ -301,7 +301,7 @@ def validate_contract_catalogue(registry: Mapping[str, RegisteredAgentTool]) -> 
         if not set(contract.bounded_fields) <= set(contract.time_fields) or contract.bounded_fields and contract.time_window is None:
             raise ValueError(f"Bounded selectors differ from time fields: {name}")
         if not fields <= described | MECHANICAL_FIELDS:
-            raise ValueError(f"Agent query fields lack semantic classification: {name}")
+            raise ValueError(f"Agent query fields lack capability classification: {name}")
         if contract.scope_field is not None:
             scope_schema = registry[name].definition.parameters["properties"][contract.scope_field]
             if set(scope_schema.get("enum", ())) != {
@@ -316,7 +316,7 @@ def validate_contract_catalogue(registry: Mapping[str, RegisteredAgentTool]) -> 
                 or window[2] not in {"iso_utc", "unix_seconds"}
                 or not set(window[:2]) <= set(contract.time_fields)
             ):
-                raise ValueError(f"Invalid time window in semantic contract: {name}")
+                raise ValueError(f"Invalid time window in capability contract: {name}")
             expected_type = "string" if window[2] == "iso_utc" else "integer"
             properties = registry[name].definition.parameters["properties"]
             if any(properties[field].get("type") != expected_type for field in window[:2]):
@@ -344,22 +344,22 @@ def bound_time_window(
         value = arguments[field]
         if encoding == "iso_utc":
             if not isinstance(value, str):
-                raise SemanticBindError("The selected time boundaries must be ISO dates.")
+                raise CapabilityBindError("The selected time boundaries must be ISO dates.")
             try:
                 parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
             except ValueError as error:
-                raise SemanticBindError("The selected time boundaries must be ISO dates.") from error
+                raise CapabilityBindError("The selected time boundaries must be ISO dates.") from error
             return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
         if type(value) is not int or value < 0:
-            raise SemanticBindError("The selected end-time boundaries must be UTC Unix seconds.")
+            raise CapabilityBindError("The selected end-time boundaries must be UTC Unix seconds.")
         try:
             return datetime.fromtimestamp(value, tz=timezone.utc)
         except (OSError, OverflowError, ValueError) as error:
-            raise SemanticBindError("The selected end-time boundaries must be UTC Unix seconds.") from error
+            raise CapabilityBindError("The selected end-time boundaries must be UTC Unix seconds.") from error
 
     lower, upper = decode(lower_field), decode(upper_field)
     if lower is not None and upper is not None and lower >= upper:
-        raise SemanticBindError(
+        raise CapabilityBindError(
             "The selected time window must be increasing."
             if encoding == "iso_utc" else
             "The selected end-time window must be increasing."
@@ -384,16 +384,16 @@ def compile_capability_call(
         if kind == "clash_account":
             value = normalize_player_tag(value)
             if value is None:
-                raise SemanticBindError("The account key is not a valid Clash player tag.")
+                raise CapabilityBindError("The account key is not a valid Clash player tag.")
         elif kind == "clash_account_set":
             if not isinstance(value, list):
-                raise SemanticBindError("Account keys must be a list of Clash player tags.")
+                raise CapabilityBindError("Account keys must be a list of Clash player tags.")
             normalized = [
                 normalize_player_tag(item) if isinstance(item, str) else None
                 for item in value
             ]
             if any(item is None for item in normalized):
-                raise SemanticBindError("An account key is not a valid Clash player tag.")
+                raise CapabilityBindError("An account key is not a valid Clash player tag.")
             value = normalized
         entities.append({"kind": kind, "field": field, "key": value})
 
@@ -403,17 +403,17 @@ def compile_capability_call(
     }
     for field, pattern in contract.value_patterns:
         if field in arguments and (not isinstance(arguments[field], str) or re.fullmatch(pattern, arguments[field]) is None):
-            raise SemanticBindError(f"The selected {field} does not match {pattern}.")
+            raise CapabilityBindError(f"The selected {field} does not match {pattern}.")
     bound_time_window(contract, arguments)
     if contract.scope_field:
         selected = arguments.get(contract.scope_field)
         variants = dict(contract.scope_variants)
         if selected not in variants:
-            raise SemanticBindError("The selected scope is unavailable for this metric.")
+            raise CapabilityBindError("The selected scope is unavailable for this metric.")
         expected = set(variants[selected])
         selectors = {field for fields in variants.values() for field in fields}
         if any((field in arguments) != (field in expected) for field in selectors):
-            raise SemanticBindError("The selected scope needs its exact round or war key.")
+            raise CapabilityBindError("The selected scope needs its exact round or war key.")
     bound_sources: tuple[int, ...] = ()
     if contract.source_scope in {
         "retained_channel_evidence", "retained_attachment",
@@ -459,51 +459,51 @@ def compile_capability_call(
 
 
 def require_source_provenance(
-    semantic_scope: Mapping[str, Any], arguments: Mapping[str, Any],
+    capability_scope: Mapping[str, Any], arguments: Mapping[str, Any],
     source_channels: set[int], payload: Mapping[str, Any],
 ) -> None:
     """A successful channel read must bind every explicitly selected source."""
-    if semantic_scope.get("source_scope") not in {
+    if capability_scope.get("source_scope") not in {
         "channel_messages", "channel_status", "retained_channel_evidence",
         "request_attachment", "retained_attachment",
     }:
         return
     requested: set[int] = set()
-    for field in semantic_scope.get("channel_fields", ()):
+    for field in capability_scope.get("channel_fields", ()):
         value = arguments.get(field)
         if type(value) is int:
             requested.add(value)
         elif isinstance(value, list):
             requested.update(item for item in value if type(item) is int)
     if not requested <= source_channels:
-        raise SemanticBindError("The lookup omitted its requested channel provenance.")
+        raise CapabilityBindError("The lookup omitted its requested channel provenance.")
     returned: set[int] = set()
-    for field in semantic_scope.get("result_channel_fields", ()):
+    for field in capability_scope.get("result_channel_fields", ()):
         value = payload.get(field)
         if type(value) is not int:
-            raise SemanticBindError("The lookup returned an unbound source identity.")
+            raise CapabilityBindError("The lookup returned an unbound source identity.")
         returned.add(value)
-    for collection, field in semantic_scope.get("result_channel_lists", ()):
+    for collection, field in capability_scope.get("result_channel_lists", ()):
         rows = payload.get(collection)
         if not isinstance(rows, list):
-            raise SemanticBindError("The lookup omitted its source-bearing result rows.")
+            raise CapabilityBindError("The lookup omitted its source-bearing result rows.")
         for row in rows:
             value = row.get(field) if isinstance(row, Mapping) else None
             if type(value) is not int:
-                raise SemanticBindError("The lookup returned an unbound source identity.")
+                raise CapabilityBindError("The lookup returned an unbound source identity.")
             returned.add(value)
-    bound_sources = set(semantic_scope.get("bound_source_channels", ()))
+    bound_sources = set(capability_scope.get("bound_source_channels", ()))
     if not returned <= source_channels or (
         bound_sources and not returned <= bound_sources
     ) or (
-        requested and semantic_scope.get("result_sources_within_query")
+        requested and capability_scope.get("result_sources_within_query")
         and not returned <= requested
     ):
-        raise SemanticBindError("The lookup returned evidence outside its bound source scope.")
+        raise CapabilityBindError("The lookup returned evidence outside its bound source scope.")
 
 
 __all__ = [
-    "CapabilityContract", "CONTRACTS", "SemanticBindError",
+    "CapabilityContract", "CONTRACTS", "CapabilityBindError",
     "bound_time_window", "compile_capability_call", "require_source_provenance",
     "validate_contract_catalogue",
 ]

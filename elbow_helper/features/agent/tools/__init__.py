@@ -31,7 +31,7 @@ from .transfers import transfer_tools
 from .wars import war_tools
 from .working_state import working_state_tools
 from ..models import RegisteredAgentTool
-from ..semantic import validate_contract_catalogue
+from ..capabilities import validate_contract_catalogue
 from ..plan.results import result_handler
 
 

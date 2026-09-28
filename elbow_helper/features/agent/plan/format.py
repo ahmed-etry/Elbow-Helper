@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..models import AgentCapabilityEffect, RegisteredAgentTool
-from ..semantic import CONTRACTS
+from ..capabilities import CONTRACTS
 
 
 PLAN_TOOL_NAME = "submit_request_plan"

@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..models import RegisteredAgentTool
-from ..semantic import CONTRACTS, SemanticBindError, bound_time_window, compile_capability_call, entity_kind
+from ..capabilities import CONTRACTS, CapabilityBindError, bound_time_window, compile_capability_call, entity_kind
 from .format import output_forms
 
 
@@ -180,7 +180,7 @@ def _time_check(
         else:
             try:
                 lower, upper = bound_time_window(contract, arguments)
-            except SemanticBindError as error:
+            except CapabilityBindError as error:
                 return str(error)
             if not any(start <= lower and upper <= end for start, end in ranges):
                 return "The time window is outside the declared periods."
@@ -293,7 +293,7 @@ def check_plan(
                 if not references:
                     try:
                         compile_capability_call(tool, arguments)
-                    except SemanticBindError as error:
+                    except CapabilityBindError as error:
                         return _error(str(error), step_id)
             earlier.add(step_id)
         for entity in raw["entities"]:
