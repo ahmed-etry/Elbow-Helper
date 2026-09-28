@@ -25,6 +25,21 @@ MECHANICAL_FIELDS = frozenset({
     "winner_offset", "query",
 })
 
+ENTITY_KINDS = {
+    "source_clan": "clan", "destination_clan": "clan",
+    "current_clan": "clan", "discord_channel": "discord_channel",
+    "parent_discord_channel": "discord_channel",
+    "examination_ticket_channel": "discord_channel",
+    "recruitment_ticket_channel": "discord_channel",
+    "support_ticket_channel": "discord_channel",
+}
+
+
+def entity_kind(kind: str) -> str:
+    if kind.endswith("_set"):
+        kind = kind[:-4]
+    return ENTITY_KINDS.get(kind, kind)
+
 
 @dataclass(frozen=True, slots=True)
 class CapabilityContract:
@@ -43,6 +58,9 @@ class CapabilityContract:
     required_access: frozenset[str] = frozenset()
     latest_fields: tuple[str, ...] = ()
     bounded_fields: tuple[str, ...] = ()
+    period_results: tuple[tuple[str, ...], ...] = ()
+    value_patterns: tuple[tuple[str, str], ...] = ()
+    retained_fields: tuple[str, ...] = ()
 
     def catalogue_entry(self) -> dict[str, Any]:
         return {
@@ -60,6 +78,7 @@ class CapabilityContract:
             "time_window": self.time_window,
             "latest_fields": self.latest_fields,
             "bounded_fields": self.bounded_fields,
+            "period_results": self.period_results,
         }
 
 
@@ -68,7 +87,7 @@ CONTRACTS: Mapping[str, CapabilityContract] = {
     "find_discord_channels": CapabilityContract((), (), source_scope='channel_locator'),
     "search_discord_messages": CapabilityContract((('channel_id', 'discord_channel'), ('channel_ids', 'discord_channel_set'), ('author_id', 'discord_member')), ('after', 'before', 'cursor'), source_scope='channel_messages', channel_fields=('channel_id', 'channel_ids'), result_channel_lists=(('matches', 'channel_id'),), result_sources_within_query=True, time_window=('after', 'before', 'iso_utc')),
     "read_discord_channel_history": CapabilityContract((('channel_id', 'discord_channel'), ('author_id', 'discord_member')), ('after', 'before', 'cursor'), source_scope='channel_messages', channel_fields=('channel_id',), result_channel_lists=(('messages', 'channel_id'),), result_sources_within_query=True, time_window=('after', 'before', 'iso_utc')),
-    "read_message_context": CapabilityContract((('channel_id', 'discord_channel'), ('message_id', 'discord_message')), (), source_scope='channel_messages', channel_fields=('channel_id',), result_channel_fields=('channel_id',), result_sources_within_query=True),
+    "read_message_context": CapabilityContract((('channel_id', 'discord_channel'), ('message_id', 'discord_message')), ('after', 'before'), source_scope='channel_messages', channel_fields=('channel_id',), result_channel_fields=('channel_id',), result_sources_within_query=True, time_window=('after', 'before', 'iso_utc')),
     "find_discord_threads": CapabilityContract((('parent_channel_id', 'discord_channel'),), ('cursor',), source_scope='channel_messages', channel_fields=('parent_channel_id',), result_channel_lists=(('threads', 'thread_id'),), filter_fields=('state', 'visibility')),
     "start_discord_research_job": CapabilityContract((('channel_id', 'discord_channel'), ('author_id', 'discord_member')), ('after', 'before'), source_scope='channel_messages', channel_fields=('channel_id',), result_channel_fields=('source_channel_id',), result_sources_within_query=True, time_window=('after', 'before', 'iso_utc')),
     "start_discord_history_job": CapabilityContract((('channel_id', 'discord_channel'), ('author_id', 'discord_member')), ('after', 'before'), source_scope='channel_messages', channel_fields=('channel_id',), result_channel_fields=('source_channel_id',), result_sources_within_query=True, time_window=('after', 'before', 'iso_utc')),
@@ -176,10 +195,36 @@ _BOUNDED_FIELDS = {
     "read_discord_channel_history": ("cursor",),
     "read_historical_regular_wars": ("before_war_id",),
 }
+_PERIOD_RESULTS = {
+    "list_roster_cycles": (("cycles", "*", "id"),),
+    "list_clan_health_reports": (("reports", "*", "run_id"),),
+    "list_cwl_ass_seasons": (("seasons", "*"), ("latest_seven_war_season",)),
+}
+_VALUE_PATTERNS = {
+    "read_raffle": (("month", r"20\d{2}-(0[1-9]|1[0-2])"),),
+    "read_cwl_performance": (("season", r"20\d{2}-(0[1-9]|1[0-2])"),),
+    "read_cwl_performance_report": (("season", r"20\d{2}-(0[1-9]|1[0-2])"),),
+    "read_cwl_ass_scope": (("season", r"20\d{2}-(0[1-9]|1[0-2])"),),
+    "read_cwl_bonus_scope": (("season", r"20\d{2}-(0[1-9]|1[0-2])"),),
+}
+_RETAINED_KINDS = frozenset({
+    "discord_research_job", "discord_research_job_set", "discord_research_report",
+    "role_account_report", "achievement_progress_report", "achievement_leaderboard_report",
+    "coin_transaction_report", "raffle_report", "event_schedule_report", "missing_elder_report",
+    "clan_health_report", "family_movement_report", "regular_war_report", "historical_war_report",
+    "roster_report", "cwl_performance_report", "cwl_ass_report", "cwl_bonus_report",
+    "pending_transfer_report", "member_lifecycle_report", "hibernation_report",
+    "support_ticket_report", "recruitment_trial_report", "examination_case_report",
+    "leadership_record_report", "csv_import", "xlsx_import", "text_import",
+    "approved_knowledge_report",
+})
 CONTRACTS = {
     name: replace(
         contract, latest_fields=_LATEST_FIELDS.get(name, ()),
         bounded_fields=_BOUNDED_FIELDS.get(name, ()),
+        period_results=_PERIOD_RESULTS.get(name, ()),
+        value_patterns=_VALUE_PATTERNS.get(name, ()),
+        retained_fields=tuple(field for field, kind in contract.entity_fields if kind in _RETAINED_KINDS),
     )
     for name, contract in CONTRACTS.items()
 }
@@ -243,6 +288,15 @@ def validate_contract_catalogue(registry: Mapping[str, RegisteredAgentTool]) -> 
             raise ValueError(f"Semantic contract and query fields differ: {name}")
         if not set(contract.latest_fields) <= set(contract.time_fields):
             raise ValueError(f"Latest selectors differ from time fields: {name}")
+        if not set(contract.retained_fields) <= {field for field, _ in contract.entity_fields}:
+            raise ValueError(f"Retained selectors differ from entity fields: {name}")
+        if not {field for field, _ in contract.value_patterns} <= fields:
+            raise ValueError(f"Value formats differ from query fields: {name}")
+        for _, pattern in contract.value_patterns:
+            re.compile(pattern)
+        if any(not path or any(not isinstance(part, str) or not part for part in path)
+               for path in contract.period_results):
+            raise ValueError(f"Invalid period result path: {name}")
         if not set(contract.bounded_fields) <= set(contract.time_fields) or contract.bounded_fields and contract.time_window is None:
             raise ValueError(f"Bounded selectors differ from time fields: {name}")
         if not fields <= described | MECHANICAL_FIELDS:
@@ -346,11 +400,9 @@ def compile_capability_call(
         field: arguments[field]
         for field in contract.time_fields if field in arguments
     }
-    for month_field in ("season", "month"):
-        if month_field in temporal_scope and re.fullmatch(
-            r"20\d{2}-(0[1-9]|1[0-2])", temporal_scope[month_field],
-        ) is None:
-            raise SemanticBindError("The selected month must be YYYY-MM.")
+    for field, pattern in contract.value_patterns:
+        if field in arguments and (not isinstance(arguments[field], str) or re.fullmatch(pattern, arguments[field]) is None):
+            raise SemanticBindError(f"The selected {field} does not match {pattern}.")
     bound_time_window(contract, arguments)
     if contract.scope_field:
         selected = arguments.get(contract.scope_field)

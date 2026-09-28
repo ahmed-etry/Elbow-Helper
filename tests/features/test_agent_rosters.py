@@ -10,7 +10,8 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
-from elbow_helper.features.agent.service import CoreAgentService
+from elbow_helper.features.agent.service import AgentService
+from tests.features.agent_plan_helpers import plan_call
 from elbow_helper.features.agent.reports.roles import RoleAccountReport
 from elbow_helper.features.agent.tools.rosters import compare_roster_reports, find_rosters, list_roster_cycles, read_roster, read_roster_report
 from elbow_helper.features.agent.reports.roster import RosterReport, compare_roster_reports as compare_reports
@@ -103,29 +104,32 @@ class AgentRosterTests(unittest.IsolatedAsyncioTestCase):
         pages = []
         rounds = 0
 
-        async def advance(results=(), *, allow_tools=True):
+        planned = plan_call(
+            AgentToolCall("first", "read_roster", json.dumps({"roster_id": self.roster.id})),
+            AgentToolCall("second", "read_roster_report", json.dumps({
+                "report_id": {"step": "first", "path": ["report_id"]},
+                "offset": {"step": "first", "path": ["next_offset"]},
+            })),
+            entities=({"kind": "roster", "value": self.roster.id},),
+            dependencies={"second": ("first",)},
+        )
+
+        async def advance(results=(), *, allow_tools=True, reasoning_effort=None,
+                          max_output_tokens=None):
             nonlocal rounds
             rounds += 1
             if rounds == 1:
-                return AgentStep("", (AgentToolCall(
-                    "discover", "discover_agent_tools",
-                    '{"groups":["rosters"]}',
-                ),), AgentUsage())
-            if rounds == 2:
-                return AgentStep("", (AgentToolCall("first", "read_roster", json.dumps({"roster_id": self.roster.id})),), AgentUsage())
-            page = json.loads(results[0].content)
-            pages.append(page)
-            if len(pages) == 1:
-                return AgentStep("", (AgentToolCall("second", "read_roster_report", json.dumps({
-                    "report_id": page["report_id"], "offset": page["next_offset"],
-                })),), AgentUsage())
+                return AgentStep("", (planned,), AgentUsage())
+            result = json.loads(results[-1].content)["results"]
+            pages.extend((result["first"], result["second"]))
             return AgentStep("Thirty accounts belonging to one member.", (), AgentUsage())
 
         model = SimpleNamespace(create_agent_session=lambda **kwargs: SimpleNamespace(
             advance=advance, replace_tools=lambda tools: None,
         ))
-        result = await CoreAgentService(model).answer(question="Read the signup roster", local_context="", context=self.context)
+        result = await AgentService(model).answer(question="Read the signup roster", local_context="", context=self.context)
         self.assertIn("Thirty accounts", result)
+        self.assertEqual(rounds, 2)
         self.assertEqual(sum(len(page["accounts"]) for page in pages), 30)
         self.assertEqual(pages[0]["report_id"], pages[1]["report_id"])
 

@@ -10,9 +10,8 @@ import sqlite3
 
 import discord
 
-from elbow_helper.discord.interactions import DEFAULT_FAILURE_MESSAGE
-
-from .access import require_evidence_access
+from .access import require_disclosure_access
+from .copy import FAILURE_MESSAGE, LONG_REPLY_FILENAME
 from .conversation.state import Conversation
 from .conversation.transcripts import archive_write
 from .models import AgentAttachment, AgentDelivery, AgentRequestContext
@@ -28,7 +27,7 @@ class AgentDeliveryUnknown(RuntimeError):
 
 
 class AgentDeliveryMixin:
-    """Delivery side of CoreAgent; owns no conversation or provider lifecycle."""
+    """Agent delivery; owns no conversation or provider lifecycle."""
 
     async def _send_response(
         self,
@@ -56,7 +55,7 @@ class AgentDeliveryMixin:
         )
         files = [discord.File(io.BytesIO(item.data), filename=item.filename) for item in attachments]
         if len(response) > MAX_RESPONSE_CHARACTERS or "```" in response:
-            files.append(discord.File(io.BytesIO(response.encode("utf-8")), filename="Elbow Helper.txt"))
+            files.append(discord.File(io.BytesIO(response.encode("utf-8")), filename=LONG_REPLY_FILENAME))
             chunks = [None]
         else:
             chunks = _chunk_response(response)
@@ -65,7 +64,7 @@ class AgentDeliveryMixin:
         active_delivery = delivery or AgentDelivery()
         try:
             if context is not None:
-                await require_evidence_access(context)
+                await require_disclosure_access(context)
             options = {"files": files} if files else {}
             nonce = _delivery_nonce(message.id, 0)
             sent = await self._send_delivery_part(
@@ -82,7 +81,7 @@ class AgentDeliveryMixin:
             await self._archive_reply(message.id, sent.id, response if chunks == [None] else (chunks[0] if chunks else ""))
             for index, chunk in enumerate(chunks[1:], start=1):
                 if context is not None:
-                    await require_evidence_access(context)
+                    await require_disclosure_access(context)
                 nonce = _delivery_nonce(message.id, index)
                 sent = await self._send_delivery_part(
                     message.channel.send, message.channel, nonce,
@@ -195,14 +194,14 @@ class AgentDeliveryMixin:
     async def _send_failure(message: discord.Message) -> None:
         try:
             await message.reply(
-                DEFAULT_FAILURE_MESSAGE,
+                FAILURE_MESSAGE,
                 mention_author=False,
                 allowed_mentions=discord.AllowedMentions.none(),
                 nonce=_delivery_nonce(message.id, 1_000_000),
             )
         except Exception:
             LOGGER.warning(
-                "Could not send Core agent failure response: request=%s channel=%s",
+                "Could not send agent failure response: request=%s channel=%s",
                 message.id, message.channel.id, exc_info=True,
             )
 

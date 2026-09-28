@@ -1,4 +1,4 @@
-"""Fixed read-tool catalogue for the Core agent beta."""
+"""Fixed read-tool catalogue for the agent."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from .achievements import achievement_tools
 from .achievement_economy import achievement_economy_tools
 from .clan_health import clan_health_tools
 from .clan_reporting import clan_reporting_tools
+from .commands import command_tools
 from .cwl import cwl_tools
 from .discord import discord_tools
 from .examination import examination_tools
@@ -29,12 +30,14 @@ from .transfers import transfer_tools
 from .wars import war_tools
 from .working_state import working_state_tools
 from ..models import RegisteredAgentTool
+from ..semantic import validate_contract_catalogue
 
 
 def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
-    """Build cohesive capability groups for model-directed discovery."""
+    """Group the registered read capabilities."""
 
     return {
+        "commands": command_tools(),
         "discord_research": (*discord_tools(), *thread_tools(), *research_tools()),
         "members_roles": (
             *member_tools(), *role_tools(), *role_connection_tools(),
@@ -65,7 +68,11 @@ def build_agent_tools() -> dict[str, RegisteredAgentTool]:
         for group in build_agent_tool_groups().values()
         for tool in group
     )
-    return {tool.definition.name: tool for tool in tools}
+    registry = {tool.definition.name: tool for tool in tools}
+    if len(registry) != len(tools):
+        raise ValueError("Duplicate agent capability")
+    validate_contract_catalogue(registry)
+    return registry
 
 
 __all__ = ["build_agent_tool_groups", "build_agent_tools"]

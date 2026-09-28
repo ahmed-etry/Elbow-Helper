@@ -8,6 +8,7 @@ import json
 import re
 import unicodedata
 from typing import Any, Mapping, Sequence
+from ..copy import SPREADSHEET_FILENAME_STEM
 
 
 MAX_SPREADSHEET_SHEETS = 4
@@ -53,7 +54,7 @@ class AgentSpreadsheet:
                 else "-" for character in normalized
             ),
         ).strip("-")[:60].rstrip("-")
-        return f"{slug or 'spreadsheet'}.xlsx"
+        return f"{slug or SPREADSHEET_FILENAME_STEM}.xlsx"
 
     def workbook(self) -> tuple[tuple[str, Sequence[Sequence[Any]]], ...]:
         return tuple(

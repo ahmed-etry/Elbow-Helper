@@ -6,7 +6,7 @@ import asyncio
 from dataclasses import replace
 import logging
 
-from ..access import accessible_message_channel, has_access_requirements
+from ..access import accessible_message_channel, can_disclose_provenance, has_access_requirements
 from ..models import AgentRequestContext, AgentTurnState
 from ..reports.base import retain_report
 from ..reports.knowledge import KnowledgeReport
@@ -17,7 +17,7 @@ LOGGER = logging.getLogger("elbow_helper.features.agent.cog")
 
 
 class ConversationContextMixin:
-    """CoreAgent context preparation; never calls the provider or sends replies."""
+    """Agent context preparation; never calls the provider or sends replies."""
 
     async def _conversation_history(self, conversation: Conversation, context: AgentRequestContext) -> str:
         access: dict[int, bool] = {}
@@ -37,7 +37,10 @@ class ConversationContextMixin:
             if (all(access[channel_id] for channel_id in turn.source_channels)
                     and (not turn.required_access or has_access_requirements(
                         context.guild, context.member.id, turn.required_access,
-                    ))):
+                    ))
+                    and await can_disclose_provenance(
+                        context, turn.source_channels, turn.required_access,
+                    )):
                 stale_references = {
                     reference for reference in turn.knowledge_refs
                     if (
@@ -77,6 +80,10 @@ class ConversationContextMixin:
                     context.guild, context.member.id,
                     checkpoint.required_access,
                 )
+                and await can_disclose_provenance(
+                    context, checkpoint.source_channels,
+                    checkpoint.required_access,
+                )
                 and not any(
                     set(turn.knowledge_refs) & context.state.stale_knowledge_refs
                     for turn in conversation.turns[:checkpoint.covered_turn_count]
@@ -90,7 +97,9 @@ class ConversationContextMixin:
             channel_id = instruction.source_channel_id
             if channel_id not in access:
                 access[channel_id] = await accessible_message_channel(context, channel_id) is not None
-            if access[channel_id]:
+            if access[channel_id] and await can_disclose_provenance(
+                context, frozenset({channel_id}), frozenset(),
+            ):
                 instructions.append(instruction)
         context.state.authorized_instructions = tuple(instructions)
         context.state.history_status = {
@@ -172,6 +181,9 @@ class ConversationContextMixin:
                 all(access[channel_id] for channel_id in sources)
                 and has_access_requirements(
                     context.guild, context.member.id, requirements,
+                )
+                and await can_disclose_provenance(
+                    context, sources, requirements,
                 )
             )
             if authorized:

@@ -17,11 +17,9 @@ from unittest.mock import ANY
 
 from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import CORE, LEAD_PLUS
-from elbow_helper.configuration.channels import OVERSEEING_TERRACE
 from elbow_helper.discord.interactions import DEFAULT_FAILURE_MESSAGE
-from elbow_helper.discord.message_search import DiscordMessageSearch
 from elbow_helper.features.agent.access import ACCESS_LEAD_PLUS, AgentAccessLost
-from elbow_helper.features.agent.cog import CoreAgent
+from elbow_helper.features.agent.cog import AgentCog
 from elbow_helper.features.agent.delivery import _delivery_nonce
 from elbow_helper.features.agent.message_content import message_text
 from elbow_helper.features.agent.conversation.state import ConversationTurn
@@ -33,9 +31,11 @@ from elbow_helper.features.agent.conversation.repository import ConversationRepo
 from elbow_helper.features.agent.conversation.codec import decode_conversation
 from elbow_helper.features.agent.conversation.persistence import ConversationPersistence
 from elbow_helper.features.agent.conversation.context import build_history_checkpoint
-from elbow_helper.features.agent.service import CoreAgentService
+from elbow_helper.features.agent.service import AgentService
 from elbow_helper.infrastructure.ai.client import DeepSeekTextClient
-from elbow_helper.features.member_lifecycle.queries import MemberLifecycleQueries
+from elbow_helper.infrastructure.ai import AgentToolDefinition
+from elbow_helper.features.agent.models import RegisteredAgentTool
+from elbow_helper.features.agent.semantic import CapabilityContract
 
 
 class _Member:
@@ -49,6 +49,8 @@ class _Member:
 def _message(*, author: _Member, bot_id: int, content: str):
     channel = SimpleNamespace(
         id=100,
+        type=discord.ChannelType.text,
+        overwrites={},
         permissions_for=lambda actor: SimpleNamespace(
             view_channel=True, read_message_history=True,
         ),
@@ -69,7 +71,7 @@ def _message(*, author: _Member, bot_id: int, content: str):
     )
 
 
-class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
+class AgentCogTests(unittest.IsolatedAsyncioTestCase):
     async def test_unexpected_generation_errors_send_existing_failure_without_retry(self):
         for error_type in (AttributeError, KeyError, IndexError, ZeroDivisionError):
             with self.subTest(error=error_type.__name__):
@@ -125,153 +127,112 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
                 message.reply.assert_awaited_once()
                 self.assertTrue(any("request=1 channel=100" in line for line in logs.output))
 
-    async def test_two_channel_research_reaches_discord_through_real_orchestration(self):
-        for recover_final_call, ticket_state in ((False, None), (True, None), (False, "disappearing"), (False, "stale")):
-            with self.subTest(recover_final_call=recover_final_call, ticket_state=ticket_state):
+    async def test_checked_source_reads_reach_discord_through_real_orchestration(self):
+        for extra_final_call in (False, True):
+            with self.subTest(extra_final_call=extra_final_call):
                 self.setUp()
                 member = _Member(42, (next(iter(CORE)),))
                 make_message = self._real_handler_scenario(member)
-                message = make_message(member, 1000, (
-                    "<@999> check #rec-room and #rec-support, summarize recruitment "
-                    "activity, and explain what should have been posted"
-                ))
+                message = make_message(member, 1000, "<@999> read #source-one and #source-two")
                 channels = {100: message.channel}
-                for channel_id, name in ((200, "rec-room"), (300, "rec-support")):
+                for channel_id, name in ((200, "source-one"), (300, "source-two")):
                     channels[channel_id] = SimpleNamespace(
                         id=channel_id, name=name, guild=message.guild,
+                        type=discord.ChannelType.text, overwrites={},
                         permissions_for=message.channel.permissions_for,
                     )
-                message.channel.name = "agent-room"
+                message.channel.name = "request-room"
                 message.guild.channels = list(channels.values())
                 message.guild.threads = []
                 message.guild.get_channel_or_thread = channels.get
-                if ticket_state is not None:
-                    channels[OVERSEEING_TERRACE] = SimpleNamespace(
-                        id=OVERSEEING_TERRACE, guild=message.guild,
-                        permissions_for=message.channel.permissions_for,
-                    )
-                    message.guild.members = [member]
-                    ticket = SimpleNamespace(
-                        id=400, guild=message.guild,
-                        permissions_for=message.channel.permissions_for,
-                    )
-                    missing = discord.NotFound(SimpleNamespace(status=404, reason="Not Found"), "Unknown Channel")
-                    self.bot.fetch_channel = AsyncMock(side_effect=missing)
-                    if ticket_state == "disappearing":
-                        checks = 0
+                calls = []
 
-                        def channel_lookup(channel_id):
-                            nonlocal checks
-                            if channel_id == 400:
-                                checks += 1
-                                return ticket if checks <= 4 else None
-                            return channels.get(channel_id)
+                async def read_value(context, arguments):
+                    source_id = arguments["channel_id"]
+                    calls.append(source_id)
+                    context.state.source_channels.add(source_id)
+                    return {"channel_id": source_id, "value": source_id}
 
-                        message.guild.get_channel_or_thread = channel_lookup
-                    self.cog.member_lifecycle_queries = MemberLifecycleQueries(lambda: {
-                        "members": {str(member.id): {
-                            "platform": "private platform", "joined_at_iso": "2026-09-15T12:00:00+00:00",
-                            "left": False,
-                        }},
-                        "last_seen": {str(member.id): {
-                            "channel_id": 400, "ts_iso": "2026-09-15T12:00:00+00:00",
-                        }},
-                    })
-                http = SimpleNamespace(request=AsyncMock(return_value={
-                    "messages": [[{
-                        "id": str(channel_id + 1), "channel_id": str(channel_id),
-                        "author": {"id": "42", "username": "Recruiter"},
-                        "content": content, "timestamp": "2026-09-15T12:00:00+00:00",
-                    }] for channel_id, content in (
-                        (200, "Two applicants joined the recruitment discussion."),
-                        (300, "Please post the recruitment follow-up here."),
-                    )],
-                    "total_results": 2,
-                }))
-                self.cog.message_search = DiscordMessageSearch(http)
+                registry = {"read_value": RegisteredAgentTool(
+                    AgentToolDefinition("read_value", "Read a selected value.", {
+                        "type": "object", "properties": {
+                            "channel_id": {"type": "integer", "minimum": 1},
+                        }, "required": ["channel_id"],
+                    }), read_value,
+                )}
+                contract = CapabilityContract(
+                    (("channel_id", "discord_channel"),), (),
+                    source_scope="channel_messages", channel_fields=("channel_id",),
+                    result_channel_fields=("channel_id",),
+                )
+                plan = {
+                    "goal": "Read selected values", "effort": "low", "output": "text",
+                    "periods": [], "entities": [
+                        {"kind": "discord_channel", "value": channel_id}
+                        for channel_id in (200, 300)
+                    ],
+                    "steps": [
+                        {"id": str(channel_id), "capability": "read_value",
+                         "arguments": {"channel_id": channel_id},
+                         "reason": "Read selected source", "depends_on": []}
+                        for channel_id in (200, 300)
+                    ],
+                }
 
-                def response(*, name=None, arguments=None, content=None):
-                    calls = None if name is None else [{
-                        "id": name, "function": {
-                            "name": name, "arguments": json.dumps(arguments),
-                        },
-                    }]
+                def response(*, content=None, tool_calls=None):
                     return SimpleNamespace(
                         choices=[SimpleNamespace(message={
                             "role": "assistant", "content": content,
-                            "tool_calls": calls, "reasoning_content": "retained reasoning",
+                            "tool_calls": tool_calls, "reasoning_content": "retained reasoning",
                         })],
                         usage=SimpleNamespace(prompt_tokens=1000, completion_tokens=100),
                     )
 
-                answer = (
-                    "Two applicants joined the discussion in #rec-room. "
-                    f"https://discord.com/channels/{GUILD_ID}/200/201\n"
-                    "#rec-support requested a recruitment follow-up. "
-                    f"https://discord.com/channels/{GUILD_ID}/300/301\n"
-                    "Suggested post: a follow-up covering the applicants' next steps."
-                )
-                responses = [
-                    response(name="discover_agent_tools", arguments={"groups": ["discord_research", "member_cases"]}),
-                    response(name="find_discord_channels", arguments={"query": "rec-"}),
-                    response(name="search_discord_messages", arguments={
-                        "channel_ids": [200, 300], "limit": 20,
-                    }),
-                ]
-                if ticket_state is not None:
-                    batch = responses[-1].choices[0].message["tool_calls"]
-                    batch[:0] = [
-                        response(name=name, arguments={}).choices[0].message["tool_calls"][0]
-                        for name in ("read_member_lifecycle", "read_active_recruitment_trials")
-                    ]
-                if recover_final_call:
-                    responses.append(response(content=(
-                        '<||DSML|| calls><||DSML|| invoke name="find_discord_channels">'
-                        '<||DSML|| parameter name="query" string="true">rec-'
-                        '</||DSML|| parameter></||DSML|| invoke></||DSML|| calls>'
-                    )))
+                planned = response(tool_calls=[{
+                    "id": "plan", "function": {
+                        "name": "submit_request_plan", "arguments": json.dumps(plan),
+                    },
+                }])
+                answer = "Both selected values are ready."
+                responses = [planned]
+                if extra_final_call:
+                    responses.append(response(tool_calls=[{
+                        "id": "extra", "function": {
+                            "name": "submit_request_plan", "arguments": json.dumps(plan),
+                        },
+                    }]))
                 responses.append(response(content=answer))
                 create = AsyncMock(side_effect=responses)
                 transport = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
                 with (
                     patch("elbow_helper.infrastructure.ai.client.AsyncOpenAI", return_value=transport),
                     patch("elbow_helper.features.agent.cog.discord.Member", _Member),
-                    patch("elbow_helper.features.agent.service.MAX_MODEL_ROUNDS", 4),
+                    patch("elbow_helper.features.agent.service.build_agent_tools", return_value=registry),
+                    patch.dict("elbow_helper.features.agent.semantic.CONTRACTS", {"read_value": contract}),
+                    patch("elbow_helper.features.agent.service.MAX_MODEL_ROUNDS", 2),
                 ):
-                    self.cog.service = CoreAgentService(DeepSeekTextClient("test-key"))
+                    self.cog.service = AgentService(DeepSeekTextClient("test-key"))
                     await self.cog.on_message(message)
 
                 message.reply.assert_awaited_once()
                 self.assertEqual(message.reply.await_args.args, (answer,))
-                self.assertEqual(create.await_count, 5 if recover_final_call else 4)
-                http.request.assert_awaited_once()
-                params = http.request.await_args.kwargs["params"]
-                self.assertEqual([int(value) for key, value in params if key == "channel_id"], [200, 300])
-                final_request = create.await_args.kwargs
-                self.assertEqual(final_request["tool_choice"], "none")
-                results = [item["content"] for item in final_request["messages"] if item.get("role") == "tool"]
-                self.assertTrue(any("Two applicants" in item and "follow-up here" in item for item in results))
-                if ticket_state == "disappearing":
-                    self.bot.fetch_channel.assert_awaited_once_with(400)
-                    self.assertNotIn("private platform", str(final_request))
-                    self.assertEqual([json.loads(item)["error"] for item in results[-3:-1]], ["That lookup failed."] * 2)
-                elif ticket_state == "stale":
-                    self.bot.fetch_channel.assert_not_awaited()
-                    lifecycle = json.loads(results[-3])
-                    self.assertEqual(lifecycle["tracked_current_member_count"], 1)
-                    self.assertEqual(lifecycle["members"][0]["platform"], "private platform")
-                    self.assertIsNone(lifecycle["members"][0]["last_seen_channel_id"])
-                    self.assertIsNone(lifecycle["members"][0]["last_seen_at"])
-                if recover_final_call:
-                    self.assertIn("not executed", results[-1])
+                self.assertEqual(sorted(calls), [200, 300])
+                self.assertEqual(create.await_count, 3 if extra_final_call else 2)
+                self.assertEqual(create.await_args_list[0].kwargs["reasoning_effort"], "low")
+                self.assertEqual([
+                    item["function"]["name"]
+                    for item in create.await_args_list[0].kwargs["tools"]
+                ], ["submit_request_plan"])
+                answer_request = create.await_args_list[1].kwargs
+                self.assertEqual(answer_request["tool_choice"], "none")
+                result = next(item["content"] for item in answer_request["messages"]
+                              if item.get("role") == "tool")
+                self.assertIn('"200"', result)
+                self.assertIn('"300"', result)
                 conversation = self.cog._conversations.find(GUILD_ID, 100, 2000)
                 self.assertTrue(conversation.turns[0].record.delivery_complete)
-                expected_sources = {100, 200, 300}
-                if ticket_state == "stale":
-                    expected_sources.add(OVERSEEING_TERRACE)
-                self.assertEqual(conversation.turns[0].source_channels, frozenset(expected_sources))
-                if ticket_state == "disappearing":
-                    self.assertFalse(conversation.reports)
+                self.assertEqual(conversation.turns[0].source_channels,
+                                 frozenset({100, 200, 300}))
 
     async def test_evidence_access_loss_sends_existing_failure_when_request_channel_remains_accessible(self):
         member = _Member(42, (next(iter(CORE)),))
@@ -287,12 +248,29 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(message.reply.await_args.args, (DEFAULT_FAILURE_MESSAGE,))
         self.cog.service.answer.assert_awaited_once()
 
-    async def test_restricted_report_is_hidden_without_erasure_and_returns_after_role_restore(self):
+    async def test_restricted_report_survives_temporary_role_loss_in_private_channel(self):
         core_role = next(iter(CORE))
         lead_role = next(iter(LEAD_PLUS))
         lead = _Member(42, (core_role, lead_role))
-        core_only = _Member(43, (core_role,))
-        make_message = self._real_handler_scenario(lead, core_only)
+        make_message = self._real_handler_scenario(lead)
+        first = make_message(lead, 1, "<@999> restricted")
+        channel = first.channel
+        guild = first.guild
+        default_role = SimpleNamespace(id=1)
+        allowed_role = type("Role", (), {"id": lead_role})()
+        guild.default_role = default_role
+        guild.roles = [default_role, SimpleNamespace(id=core_role), allowed_role]
+        channel.overwrites = {allowed_role: SimpleNamespace(
+            view_channel=True, read_message_history=True,
+        )}
+
+        def permissions_for(actor):
+            visible = actor.id == 999 or any(
+                role.id == lead_role for role in getattr(actor, "roles", ())
+            )
+            return SimpleNamespace(view_channel=visible, read_message_history=visible)
+
+        channel.permissions_for = permissions_for
         report = RoleAccountReport("restricted", "2026-09-17", (), ())
         observed = []
 
@@ -312,11 +290,13 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
 
         self.cog.service.answer.side_effect = answer
         with patch("elbow_helper.features.agent.cog.discord.Member", _Member):
-            await self.cog.on_message(make_message(lead, 1, "<@999> restricted"))
-            await self.cog.on_message(make_message(core_only, 2, "continue", reply_to=1001))
-            await self.cog.on_message(make_message(lead, 3, "continue", reply_to=1002))
+            await self.cog.on_message(first)
+            lead.roles = [role for role in lead.roles if role.id != lead_role]
+            await self.cog.on_message(make_message(lead, 2, "continue", reply_to=1001))
+            lead.roles.append(SimpleNamespace(id=lead_role))
+            await self.cog.on_message(make_message(lead, 3, "continue", reply_to=1001))
 
-        self.assertEqual(observed, [(), (), ("restricted",)])
+        self.assertEqual(observed, [(), ("restricted",)])
         conversation = self.cog._conversations.find(GUILD_ID, 100, 1003)
         self.assertIn("restricted", conversation.reports)
         self.assertEqual(
@@ -334,7 +314,7 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
             self.cog.persistence = ConversationPersistence(repository)
             with patch("elbow_helper.features.agent.cog.discord.Member", _Member):
                 await self.cog.on_message(make_message(member, 1, "<@999> first request"))
-            self.cog = CoreAgent(self.bot, account_links=object(), clan_health=object(),
+            self.cog = AgentCog(self.bot, account_links=object(), clan_health=object(),
                                  message_search=object(), roster_queries=object(), transcript_archive=archive,
                                  persistence=ConversationPersistence(ConversationRepository(repository.path)))
             make_message = self._real_handler_scenario(member)
@@ -404,6 +384,8 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
         """Exercise the Discord handler with only network/model boundaries faked."""
         channel = SimpleNamespace(
             id=100,
+            type=discord.ChannelType.text,
+            overwrites={},
             typing=lambda: nullcontext(),
             permissions_for=lambda actor: SimpleNamespace(
                 view_channel=True, read_message_history=True,
@@ -411,15 +393,23 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
             send=AsyncMock(return_value=SimpleNamespace(id=9000)),
         )
         by_id = {member.id: member for member in members}
+        default_role = SimpleNamespace(id=1)
         guild = SimpleNamespace(
             id=GUILD_ID,
             name="Brown Elbow",
             me=SimpleNamespace(id=999),
+            default_role=default_role,
+            roles=[default_role, *(
+                SimpleNamespace(id=role_id)
+                for role_id in sorted({
+                    role.id for member in members for role in member.roles
+                })
+            )],
             get_member=by_id.get,
             get_channel_or_thread=lambda value: channel if value == channel.id else None,
         )
         channel.guild = guild
-        self.cog._answer = CoreAgent._answer.__get__(self.cog, CoreAgent)
+        self.cog._answer = AgentCog._answer.__get__(self.cog, AgentCog)
         self.cog._build_local_context = AsyncMock(return_value="Nearby discussion")
         self.cog._resolve_referenced_message = AsyncMock(return_value=None)
         self.cog.service.answer = AsyncMock(return_value="Answer")
@@ -547,7 +537,7 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
         message = _message(author=member, bot_id=999, content="<@999> hello")
         started = asyncio.Event()
 
-        async def wait_for_cancellation(*args):
+        async def wait_for_cancellation(*args, **kwargs):
             started.set()
             await asyncio.Event().wait()
 
@@ -846,7 +836,7 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
         guild = SimpleNamespace(id=GUILD_ID, name="Brown Elbow", me=member, get_member=lambda value: member,
                                 get_channel_or_thread=lambda value: channel if value == 100 else None)
         channel.guild = guild
-        self.cog._answer = CoreAgent._answer.__get__(self.cog, CoreAgent)
+        self.cog._answer = AgentCog._answer.__get__(self.cog, AgentCog)
         self.cog._build_local_context = AsyncMock(return_value="Nearby discussion")
         self.cog._resolve_referenced_message = AsyncMock(return_value=None)
         async def answer(**kwargs):
@@ -883,7 +873,10 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
         message.reference = SimpleNamespace(channel_id=100, message_id=91)
         with patch("elbow_helper.features.agent.cog.discord.Member", _Member):
             await self.cog.on_message(message)
-        self.cog._answer.assert_awaited_once_with(message, member, message.content, conversation)
+        self.cog._answer.assert_awaited_once_with(
+            message, member, message.content, conversation,
+            deadline_monotonic=ANY,
+        )
         message.reference.message_id = 92
         self.assertFalse(self.cog._is_agent_request(message))
 
@@ -897,7 +890,7 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
             message.reference = SimpleNamespace(channel_id=100, message_id=91)
         started, release = asyncio.Event(), asyncio.Event()
         order = []
-        async def answer(message, *args):
+        async def answer(message, *args, **kwargs):
             order.append(message.content)
             if message is first:
                 started.set()
@@ -915,6 +908,7 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.cog._tasks)
         self.assertEqual(conversation.pending, 0)
 
+    @patch("elbow_helper.features.agent.conversation.preparation.can_disclose_provenance", new=AsyncMock(return_value=True))
     async def test_history_from_newly_inaccessible_sources_is_not_replayed(self):
         conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
         conversation.turns = [ConversationTurn("permitted", frozenset({100})),
@@ -933,6 +927,7 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.state.history_status["included_turns"], 1)
         self.assertEqual(context.state.history_status["older_retained_turns_available"], 0)
 
+    @patch("elbow_helper.features.agent.conversation.preparation.can_disclose_provenance", new=AsyncMock(return_value=True))
     async def test_history_requiring_a_removed_role_is_not_replayed(self):
         core_only = _Member(42, (next(iter(CORE)),))
         conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
@@ -958,6 +953,7 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
             context.state.authorized_history, (conversation.turns[0],),
         )
 
+    @patch("elbow_helper.features.agent.conversation.preparation.can_disclose_provenance", new=AsyncMock(return_value=True))
     async def test_checkpoint_requires_every_source_and_role_at_use_time(self):
         core_only = _Member(42, (next(iter(CORE)),))
         conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
@@ -1005,6 +1001,7 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
             await self.cog._conversation_history(conversation, context)
         self.assertIs(context.state.authorized_checkpoint, conversation.checkpoint)
 
+    @patch("elbow_helper.features.agent.conversation.preparation.can_disclose_provenance", new=AsyncMock(return_value=True))
     async def test_changed_knowledge_is_historical_even_after_report_eviction(self):
         reference = ("cwl_policy@v1", "a" * 64)
         conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
@@ -1038,6 +1035,7 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.state.stale_knowledge_refs, {reference})
         self.assertIsNone(context.state.authorized_checkpoint)
 
+    @patch("elbow_helper.features.agent.conversation.preparation.can_disclose_provenance", new=AsyncMock(return_value=True))
     async def test_current_knowledge_remains_usable_as_context(self):
         reference = ("cwl_policy@v2", "b" * 64)
         conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
@@ -1155,6 +1153,7 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
             context.state.stale_knowledge_report_ids, {"knowledge"},
         )
 
+    @patch("elbow_helper.features.agent.conversation.preparation.can_disclose_provenance", new=AsyncMock(return_value=True))
     async def test_history_preparation_preserves_all_authorized_candidates_for_compilation(self):
         conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
         conversation.turns = [ConversationTurn("older " + "x" * 60_000, frozenset({100})),
@@ -1197,14 +1196,14 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
         context = self.cog.service.answer.await_args.kwargs["context"]
         self.assertEqual(context.state.authorized_instructions[0].quote, "Keep together")
 
-    async def test_timeout_includes_waiting_for_capacity(self):
+    async def test_queue_wait_has_its_own_timeout(self):
         self.cog._semaphore = asyncio.Semaphore(0)
         self.cog._send_failure = AsyncMock()
         member = _Member(42, (next(iter(CORE)),))
         message = _message(author=member, bot_id=999, content="<@999> hello")
         with (
             patch("elbow_helper.features.agent.cog.discord.Member", _Member),
-            patch("elbow_helper.features.agent.cog.AGENT_REQUEST_TIMEOUT_SECONDS", 0.01),
+            patch("elbow_helper.features.agent.cog.AGENT_QUEUE_WAIT_TIMEOUT_SECONDS", 0.01),
         ):
             await self.cog.on_message(message)
         self.cog._answer.assert_not_awaited()
@@ -1235,6 +1234,30 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("text-0", result)
         self.assertLess(result.index("text-12"), result.index("text-19"))
 
+    async def test_local_context_anchors_old_reply_at_referenced_message(self):
+        anchors = []
+        old = SimpleNamespace(
+            id=10, content="original point", attachments=[], embeds=[],
+            author=SimpleNamespace(id=41, bot=False, display_name="Member"),
+            created_at=datetime.now(timezone.utc), jump_url="source/10",
+        )
+        nearby = SimpleNamespace(
+            id=9, content="relevant context", attachments=[], embeds=[],
+            author=old.author, created_at=old.created_at, jump_url="source/9",
+        )
+        async def history(*, limit, before, oldest_first):
+            anchors.append(before)
+            yield nearby
+        message = SimpleNamespace(
+            id=100, channel=SimpleNamespace(id=100, history=history), mentions=[],
+        )
+
+        result = await self.cog._build_local_context(message, old)
+
+        self.assertEqual(anchors, [old])
+        self.assertIn("relevant context", result)
+        self.assertIn("original point", result)
+
     async def test_long_reply_preserves_complete_answer_as_attachment(self):
         message = SimpleNamespace(id=1, mentions=[], reply=AsyncMock())
         response = "answer " * 3000
@@ -1248,7 +1271,7 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
             user=SimpleNamespace(id=999),
             agent_model=MagicMock(),
         )
-        self.cog = CoreAgent(
+        self.cog = AgentCog(
             self.bot,
             account_links=object(),
             clan_health=object(),
@@ -1274,6 +1297,7 @@ class CoreAgentCogTests(unittest.IsolatedAsyncioTestCase):
             member,
             "tell this guy to piss off",
             ANY,
+            deadline_monotonic=ANY,
         )
 
     async def test_non_core_mention_is_silently_ignored(self) -> None:

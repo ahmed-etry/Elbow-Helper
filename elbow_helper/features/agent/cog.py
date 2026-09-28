@@ -1,8 +1,9 @@
-"""Mention-driven Discord surface for the Core agent beta."""
+"""Mention-driven Discord surface for the agent."""
 
 from __future__ import annotations
 
 import asyncio
+from contextlib import AsyncExitStack
 import json
 import logging
 import re
@@ -14,18 +15,17 @@ import discord
 from discord.ext import commands
 
 from elbow_helper.configuration.guild import GUILD_ID
-from elbow_helper.configuration.roles import CORE
 
 from .conversation.preparation import ConversationContextMixin
 from .delivery import AgentDeliveryMixin, AgentDeliveryUnknown
-from .access import AgentAccessLost, require_access, require_evidence_access
+from .access import AgentAccessLost, has_agent_entry_access, require_access, require_disclosure_access
 from .conversation.state import (
     Conversation, ConversationRecord, ConversationStore, ConversationTurn,
 )
 from .message_content import message_text
 from .models import AgentDelivery, AgentRequestContext, AgentTurnState
 from .reports.knowledge import KnowledgeReport
-from .service import AgentUnavailableError, CoreAgentService
+from .service import AgentUnavailableError, AgentService
 from .conversation.transcripts import TranscriptArchive, archive_write
 from .conversation.persistence import ConversationPersistence
 
@@ -34,12 +34,13 @@ LOGGER = logging.getLogger(__name__)
 LOCAL_CONTEXT_MESSAGES = 8
 LOCAL_MESSAGE_CHARACTER_LIMIT = 1_200
 AGENT_REQUEST_TIMEOUT_SECONDS = 480.0
+AGENT_QUEUE_WAIT_TIMEOUT_SECONDS = 120.0
 AGENT_CONCURRENCY = 4
 MAX_PENDING_REQUESTS = 64
 
 
-class CoreAgent(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
-    """Answer direct mentions from Core members without changing server state."""
+class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
+    """Answer eligible direct mentions without changing server state."""
 
     def __init__(
         self,
@@ -94,7 +95,7 @@ class CoreAgent(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
         self.transcript_archive = transcript_archive
         self.persistence = persistence
         self._cleanup_task: asyncio.Task | None = None
-        self.service = CoreAgentService(bot.agent_model)
+        self.service = AgentService(bot.agent_model)
         self._conversations = ConversationStore()
         self._member_locks: WeakValueDictionary[int, asyncio.Lock] = WeakValueDictionary()
         self._tasks: set[asyncio.Task] = set()
@@ -132,7 +133,7 @@ class CoreAgent(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
         member = message.author
         if not isinstance(member, discord.Member):
             return
-        if not any(role.id in CORE for role in member.roles):
+        if not has_agent_entry_access(member):
             return
         question = self._extract_question(message)
         if not question:
@@ -150,8 +151,13 @@ class CoreAgent(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
             )
             conversation.pending += 1
             member_lock = self._member_locks.setdefault(member.id, asyncio.Lock())
-            async with asyncio.timeout(AGENT_REQUEST_TIMEOUT_SECONDS):
-                async with conversation.lock, member_lock, self._semaphore:
+            async with AsyncExitStack() as locks:
+                async with asyncio.timeout(AGENT_QUEUE_WAIT_TIMEOUT_SECONDS):
+                    await locks.enter_async_context(conversation.lock)
+                    await locks.enter_async_context(member_lock)
+                    await locks.enter_async_context(self._semaphore)
+                request_started_at = time.monotonic()
+                async with asyncio.timeout(AGENT_REQUEST_TIMEOUT_SECONDS):
                     LOGGER.info(
                         "Agent queue: request=%s invoker=%s wait_ms=%s",
                         message.id, member.id,
@@ -177,7 +183,10 @@ class CoreAgent(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
                     if conversation.record_for_request(message.id) is not None:
                         LOGGER.debug("Ignoring already delivered agent request: message=%s", message.id)
                         return
-                    await self._answer(message, member, question, conversation)
+                    await self._answer(
+                        message, member, question, conversation,
+                        deadline_monotonic=request_started_at + AGENT_REQUEST_TIMEOUT_SECONDS,
+                    )
         except AgentAccessLost as error:
             LOGGER.warning(
                 "Agent access lost: request=%s invoker=%s channel=%s error=%s",
@@ -259,7 +268,7 @@ class CoreAgent(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
             or reference is None
             or reference.message_id is None
             or reference.channel_id not in (None, message.channel.id)
-            or not any(role.id in CORE for role in getattr(message.author, "roles", ()))
+            or not has_agent_entry_access(message.author)
         ):
             return False
         try:
@@ -288,6 +297,8 @@ class CoreAgent(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
         member: discord.Member,
         question: str,
         conversation: Conversation,
+        *,
+        deadline_monotonic: float | None = None,
     ) -> None:
         member = require_access(message.guild, member.id, message.channel)
         referenced = await self._resolve_referenced_message(message)
@@ -326,6 +337,7 @@ class CoreAgent(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
             research_jobs=self.research_jobs,
             conversation_root_id=root_id,
             attachment_sources=tuple(item for item in (message, referenced) if item is not None),
+            deadline_monotonic=deadline_monotonic,
         )
         await self._load_authorized_reports(conversation, context)
         await self._check_sources(context)
@@ -409,7 +421,7 @@ class CoreAgent(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
             raise
         except AgentUnavailableError as error:
             LOGGER.warning(
-                "Core agent unavailable: request=%s invoker=%s channel=%s error=%s",
+                "Agent unavailable: request=%s invoker=%s channel=%s error=%s",
                 message.id,
                 member.id,
                 message.channel.id,
@@ -419,7 +431,7 @@ class CoreAgent(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
 
     @staticmethod
     async def _check_sources(context: AgentRequestContext) -> None:
-        await require_evidence_access(context)
+        await require_disclosure_access(context)
 
     async def _build_local_context(
         self,
@@ -428,11 +440,12 @@ class CoreAgent(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
     ) -> str:
         recent: list[discord.Message] = []
         try:
+            anchor = referenced if referenced is not None else message
             recent = [
                 item
                 async for item in message.channel.history(
                     limit=LOCAL_CONTEXT_MESSAGES,
-                    before=message,
+                    before=anchor,
                     oldest_first=False,
                 )
             ]

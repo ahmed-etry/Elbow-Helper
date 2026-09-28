@@ -1,14 +1,16 @@
 from datetime import datetime, timezone
 import json
+from tests.features.agent_plan_helpers import plan_call
 from types import SimpleNamespace
 import unittest
+import discord
 from unittest.mock import AsyncMock
 
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.conversation.state import ConversationRecord, ConversationTurn
 from elbow_helper.features.agent.models import AgentRequestContext
-from elbow_helper.features.agent.service import CoreAgentService, _valid_arguments
+from elbow_helper.features.agent.service import AgentService, _valid_arguments
 from elbow_helper.features.agent.tools import build_agent_tools
 from elbow_helper.features.agent.tools.history import _document, read_conversation_history
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
@@ -27,10 +29,18 @@ def _turn(message_id, question="original restriction", *, source=100, answer="de
 def _context(*turns):
     member = SimpleNamespace(id=42, display_name="Core tester", roles=[SimpleNamespace(id=next(iter(CORE)))])
     allowed = {100, 200}
-    guild = SimpleNamespace(id=1, name="Brown Elbow", me=member, get_member=lambda _: member)
-    channels = {value: SimpleNamespace(id=value, guild=guild, permissions_for=lambda _: SimpleNamespace(
-        view_channel=True, read_message_history=True,
-    )) for value in allowed}
+    default_role = SimpleNamespace(id=1)
+    guild = SimpleNamespace(
+        id=1, name="Brown Elbow", me=member,
+        default_role=default_role, roles=[default_role, *member.roles],
+        get_member=lambda _: member,
+    )
+    channels = {value: SimpleNamespace(
+        id=value, guild=guild, type=discord.ChannelType.text, overwrites={},
+        permissions_for=lambda _: SimpleNamespace(
+            view_channel=True, read_message_history=True,
+        ),
+    ) for value in allowed}
     guild.get_channel_or_thread = lambda value: channels.get(value) if value in allowed else None
     bot = SimpleNamespace(fetch_channel=AsyncMock(return_value=None))
     context = AgentRequestContext(
@@ -129,13 +139,14 @@ class AgentHistoryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_actual_service_can_retrieve_history_and_continue_answer(self):
         context, _ = _context(_turn(1, "Keep these two accounts together", source=200))
+        lookup = AgentToolCall("lookup", "read_conversation_history", '{"query":"accounts"}')
         session = SimpleNamespace(advance=AsyncMock(side_effect=[
-            AgentStep("", (AgentToolCall("lookup", "read_conversation_history", '{"query":"accounts"}'),), AgentUsage()),
+            AgentStep("", (plan_call(lookup),), AgentUsage()),
             AgentStep("I will keep those accounts together.", (), AgentUsage()),
         ]))
         model = SimpleNamespace(create_agent_session=lambda **kwargs: session)
-        answer = await CoreAgentService(model).answer(question="Use the earlier restriction", local_context="", context=context)
+        answer = await AgentService(model).answer(question="Use the earlier restriction", local_context="", context=context)
         self.assertIn("together", answer)
-        self.assertIn("Keep these two accounts together", session.advance.await_args_list[1].args[0][0].content)
+        self.assertIn("Keep these two accounts together", session.advance.await_args_list[1].args[0][-1].content)
         self.assertEqual(context.state.source_channels, {200})
         self.assertEqual(len(context.state.evidence), 1)

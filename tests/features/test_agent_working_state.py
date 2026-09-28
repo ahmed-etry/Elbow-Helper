@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -7,9 +8,10 @@ from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.conversation.context import compile_context
 from elbow_helper.features.agent.conversation.state import ConversationTurn
 from elbow_helper.features.agent.models import AgentRequestContext
-from elbow_helper.features.agent.service import CoreAgentService
+from elbow_helper.features.agent.service import AgentService
 from elbow_helper.features.agent.conversation.instructions import WorkingState
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
+from tests.features.agent_plan_helpers import plan_call
 
 
 def _remember(state, quote="Keep these accounts together", **changes):
@@ -82,20 +84,18 @@ class WorkingInstructionIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_model_loop_remembers_exact_instruction_without_authorizing_actions(self):
         context = self.context()
+        lookup = AgentToolCall("record", "remember_task_instruction", '{"label":"Group","quote":"Keep these accounts together"}')
         session = SimpleNamespace(
             replace_tools=MagicMock(),
             advance=AsyncMock(side_effect=[
-            AgentStep("", (AgentToolCall(
-                "discover", "discover_agent_tools",
-                '{"groups":["planning_output"]}',
-            ),), AgentUsage()),
-            AgentStep("", (AgentToolCall("record", "remember_task_instruction", '{"label":"Group","quote":"Keep these accounts together"}'),), AgentUsage()),
+            AgentStep("", (plan_call(lookup),), AgentUsage()),
             AgentStep("I will keep those accounts together in this draft.", (), AgentUsage()),
         ]))
         model = SimpleNamespace(create_agent_session=lambda **kwargs: session)
-        await CoreAgentService(model).answer(question="Keep these accounts together", local_context="", context=context)
+        await AgentService(model).answer(question="Keep these accounts together", local_context="", context=context)
         self.assertEqual(context.state.working.instructions[0].quote, "Keep these accounts together")
-        self.assertIn('"action_authorized": false', session.advance.await_args_list[2].args[0][0].content)
+        result = json.loads(session.advance.await_args_list[1].args[0][-1].content)
+        self.assertIs(result["results"]["record"]["action_authorized"], False)
 
     async def test_pinned_instruction_survives_context_pressure(self):
         context = self.context()

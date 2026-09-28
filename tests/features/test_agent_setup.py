@@ -91,7 +91,7 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
             queries=role_connection_queries,
         )
         bot = SimpleNamespace(get_cog=dependencies.get, add_cog=AsyncMock(), http=object(), paths=SimpleNamespace(data_root=Path("unused")))
-        with (patch("elbow_helper.features.agent.CoreAgent") as factory,
+        with (patch("elbow_helper.features.agent.AgentCog") as factory,
               patch("elbow_helper.features.agent.TranscriptArchive") as archive,
               patch("elbow_helper.features.agent.ConversationRepository") as repository,
               patch("elbow_helper.features.agent.ResearchJobRepository") as jobs):

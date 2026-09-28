@@ -1,4 +1,4 @@
-"""Core-only mention-driven agent feature."""
+"""Mention-driven agent feature with separately configured rollout access."""
 
 from __future__ import annotations
 import asyncio
@@ -7,7 +7,7 @@ from elbow_helper.discord.message_search import DiscordMessageSearch
 from elbow_helper.discord.thread_discovery import DiscordThreadDiscovery
 from elbow_helper.configuration.guild import GUILD_ID
 
-from .cog import CoreAgent
+from .cog import AgentCog
 from .conversation.transcripts import TranscriptArchive
 from .conversation.repository import ConversationRepository
 from .conversation.persistence import ConversationPersistence
@@ -56,7 +56,7 @@ async def setup(bot) -> None:
             or clan_reporting_queries is None
             or role_connection_queries is None):
         raise RuntimeError(
-            "Core agent requires AccountLinks, ClanHealth, Wars, Rosters, CWL, "
+            "Agent requires AccountLinks, ClanHealth, Wars, Rosters, CWL, "
             "ClanTransfers, Hibernation, SupportActions, Recruitment, Examination, "
             "Records, Achievements, EventStats, MemberLifecycle, ClanReporting "
             "and RoleConnections"
@@ -77,7 +77,7 @@ async def setup(bot) -> None:
         bot.paths.data_root / "agent" / "knowledge",
     )
     await bot.add_cog(
-        CoreAgent(
+        AgentCog(
             bot,
             account_links=account_links,
             clan_health=clan_health_queries,

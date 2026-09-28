@@ -147,6 +147,8 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                     "properties": {
                         "channel_id": {"type": "integer", "minimum": 1},
                         "message_id": {"type": "integer", "minimum": 1},
+                        "after": {"type": "string", "maxLength": 40},
+                        "before": {"type": "string", "maxLength": 40},
                         "limit": {
                             "type": "integer",
                             "minimum": 3,
@@ -641,14 +643,31 @@ async def read_message_context(
         minimum=3,
         maximum=CONTEXT_MESSAGE_LIMIT,
     )
-    messages = [
-        message
-        async for message in history(
-            limit=limit,
-            around=discord.Object(id=message_id),
-            oldest_first=True,
-        )
-    ]
+    try:
+        after = _search_date(arguments.get("after"))
+        before = _search_date(arguments.get("before"))
+    except ValueError:
+        return {"error": "invalid_period"}
+    if after is not None or before is not None:
+        if after is None or before is None or after >= before:
+            return {"error": "invalid_period"}
+        lower = discord.utils.time_snowflake(after) - 1
+        upper = discord.utils.time_snowflake(before)
+        if not lower < message_id < upper:
+            return {"error": "message_out_of_period"}
+        preceding = [message async for message in history(
+            limit=limit // 2 + 1, after=discord.Object(id=lower),
+            before=discord.Object(id=message_id + 1), oldest_first=False,
+        )]
+        following = [message async for message in history(
+            limit=limit - len(preceding), after=discord.Object(id=message_id),
+            before=discord.Object(id=upper), oldest_first=True,
+        )]
+        messages = [*reversed(preceding), *following]
+    else:
+        messages = [message async for message in history(
+            limit=limit, around=discord.Object(id=message_id), oldest_first=True,
+        )]
     if await accessible_message_channel(context, channel_id) is None:
         return {"error": "The asker cannot access that conversation."}
     context.state.source_channels.add(channel_id)
