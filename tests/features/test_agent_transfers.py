@@ -126,6 +126,31 @@ class AgentTransferToolTests(unittest.IsolatedAsyncioTestCase):
             clan_codes=("BEH", "BE4"),
         )
 
+    async def test_exact_clan_selection_reads_only_that_queue(self):
+        result = await read_pending_transfer_requests(
+            self.context, {"clan_code": "BEH"},
+        )
+        self.assertEqual(result["selected_clan_code"], "BEH")
+        self.assertEqual(result["registered_queue_count"], 1)
+        self.assertEqual(result["accessible_queue_count"], 1)
+        self.assertEqual(result["pending_request_count"], 1)
+        self.assertEqual(self.context.state.source_channels, {self.beh.id})
+        self.queries.pending_snapshot.assert_called_once_with(
+            clan_codes=("BEH",),
+        )
+
+    async def test_inaccessible_selected_clan_reports_coverage_without_other_queue_data(self):
+        result = await read_pending_transfer_requests(
+            self.context, {"clan_code": "BEC"},
+        )
+        self.assertEqual(result["selected_clan_code"], "BEC")
+        self.assertEqual(result["registered_queue_count"], 1)
+        self.assertEqual(result["accessible_queue_count"], 0)
+        self.assertEqual(result["omitted_inaccessible_count"], 1)
+        self.assertEqual(result["pending_request_count"], 0)
+        self.assertEqual(self.context.state.source_channels, set())
+        self.queries.pending_snapshot.assert_called_once_with(clan_codes=())
+
     async def test_empty_accessible_queues_return_coverage_without_artifact(self):
         self.snapshot = _snapshot(active=False)
         result = await read_pending_transfer_requests(self.context, {})

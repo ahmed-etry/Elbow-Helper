@@ -156,6 +156,32 @@ class AgentExaminationToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(filtered["cases"][0]["ticket_channel_id"], 300)
         self.assertEqual(self.queries.case_snapshot.call_count, 1)
 
+    async def test_exact_ticket_read_limits_projection_and_sources(self):
+        result = await read_accessible_examination_cases(
+            self.context, {"ticket_channel_id": 300},
+        )
+
+        self.queries.case_snapshot.assert_called_once_with(
+            ticket_channel_ids=(300,),
+        )
+        self.assertEqual(self.context.state.source_channels,
+                         {EXAMINATION_ROOM, 300})
+        self.assertEqual(result["selected_ticket_channel_id"], 300)
+        self.assertEqual([row["ticket_channel_id"] for row in result["cases"]],
+                         [300])
+
+    async def test_unknown_and_inaccessible_exact_tickets_have_same_result(self):
+        unknown = await read_accessible_examination_cases(
+            self.context, {"ticket_channel_id": 500},
+        )
+        inaccessible = await read_accessible_examination_cases(
+            self.context, {"ticket_channel_id": 400},
+        )
+
+        self.assertEqual(unknown, inaccessible)
+        self.queries.case_snapshot.assert_not_called()
+        self.assertEqual(self.context.state.source_channels, set())
+
     async def test_empty_accessible_status_has_no_hidden_counts_or_artifact(self):
         self.first.allowed = False
         self.second.allowed = False

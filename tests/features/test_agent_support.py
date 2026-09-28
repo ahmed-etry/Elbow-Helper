@@ -134,6 +134,31 @@ class AgentSupportToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(filtered["tickets"][0]["channel_id"], 200)
         self.assertEqual(self.queries.metadata_snapshot.call_count, 1)
 
+    async def test_exact_channel_selection_reads_one_authorized_ticket(self):
+        result = await read_accessible_support_tickets(
+            self.context, {"channel_id": 200},
+        )
+        self.assertEqual(result["selected_channel_id"], 200)
+        self.assertEqual(result["registered_ticket_count"], 1)
+        self.assertEqual(result["accessible_ticket_count"], 1)
+        self.assertEqual([row["channel_id"] for row in result["tickets"]], [200])
+        self.assertEqual(self.context.state.source_channels, {200})
+        selected = self.queries.metadata_snapshot.call_args.args[0]
+        self.assertEqual([channel.id for channel in selected], [200])
+
+    async def test_exact_channel_selection_does_not_reveal_inaccessible_registration(self):
+        for channel_id in (400, 999):
+            with self.subTest(channel_id=channel_id):
+                result = await read_accessible_support_tickets(
+                    self.context, {"channel_id": channel_id},
+                )
+                self.assertEqual(result, {
+                    "error": "That support ticket is not accessible.",
+                })
+                self.assertEqual(self.context.state.source_channels, set())
+                self.assertEqual(self.context.state.reports, {})
+        self.queries.metadata_snapshot.assert_not_called()
+
     async def test_empty_accessible_inventory_has_coverage_without_artifact(self):
         self.first.allowed = False
         self.second.allowed = False

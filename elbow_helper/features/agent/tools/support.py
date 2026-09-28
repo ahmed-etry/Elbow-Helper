@@ -20,8 +20,8 @@ def support_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
         (
             "read_accessible_support_tickets",
-            "Read and retain metadata for current support-ticket channels the requester and bot can access. This includes owner/send and channel activity timestamps, but does not read messages or decide whether a question was answered.",
-            {},
+            "Read and retain metadata for current support-ticket channels the requester and bot can access. An optional channel ID narrows the read to one ticket. This includes owner/send and channel activity timestamps, but does not read messages or decide whether a question was answered.",
+            {"channel_id": {"type": "integer", "minimum": 1}},
             (),
             read_accessible_support_tickets,
         ),
@@ -65,12 +65,19 @@ def support_tools() -> tuple[RegisteredAgentTool, ...]:
 async def read_accessible_support_tickets(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
-    del arguments
     await require_evidence_access(context)
     if context.support_queries is None:
         return {"error": "Support ticket metadata is not available."}
+    selected_channel_id = arguments.get("channel_id")
+    if selected_channel_id is not None and (
+        type(selected_channel_id) is not int or selected_channel_id <= 0
+    ):
+        return {"error": "A valid support ticket channel ID is required."}
     try:
-        registrations = context.support_queries.ticket_registrations(context.guild)
+        registrations = tuple(
+            row for row in context.support_queries.ticket_registrations(context.guild)
+            if selected_channel_id is None or row.channel_id == selected_channel_id
+        )
     except ValueError:
         return {"error": "Support ticket channels could not be listed."}
     accessible = []
@@ -78,6 +85,8 @@ async def read_accessible_support_tickets(
         channel = await accessible_message_channel(context, registration.channel_id)
         if channel is not None:
             accessible.append(channel)
+    if selected_channel_id is not None and not accessible:
+        return {"error": "That support ticket is not accessible."}
     try:
         snapshot = context.support_queries.metadata_snapshot(tuple(accessible))
         if {row.channel_id for row in snapshot.tickets} != {
@@ -96,7 +105,8 @@ async def read_accessible_support_tickets(
     context.state.source_channels.update(row.channel_id for row in snapshot.tickets)
     await require_evidence_access(context)
     if not report.snapshot.tickets:
-        return {**report.manifest(), "report_id": None}
+        return {**report.manifest(), "report_id": None, "tickets": [],
+                "selected_channel_id": selected_channel_id}
     try:
         retain_report(context.state.reports, report)
     except ArtifactCapacityError:
@@ -106,7 +116,7 @@ async def read_accessible_support_tickets(
                 "in this conversation."
             )
         }
-    return report.page()
+    return {**report.page(), "selected_channel_id": selected_channel_id}
 
 
 async def read_support_ticket_report(

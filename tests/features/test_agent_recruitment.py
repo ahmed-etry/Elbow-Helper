@@ -137,6 +137,31 @@ class AgentRecruitmentToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(filtered["trials"][0]["ticket_channel_id"], 300)
         self.assertEqual(self.queries.active_trial_snapshot.call_count, 1)
 
+    async def test_exact_ticket_read_limits_projection_and_sources(self):
+        result = await read_active_recruitment_trials(
+            self.context, {"ticket_channel_id": 300},
+        )
+
+        self.queries.active_trial_snapshot.assert_called_once_with(
+            ticket_channel_ids=(300,),
+        )
+        self.assertEqual(self.context.state.source_channels, {300})
+        self.assertEqual(result["selected_ticket_channel_id"], 300)
+        self.assertEqual([row["ticket_channel_id"] for row in result["trials"]],
+                         [300])
+
+    async def test_unknown_and_inaccessible_exact_tickets_have_same_result(self):
+        unknown = await read_active_recruitment_trials(
+            self.context, {"ticket_channel_id": 500},
+        )
+        inaccessible = await read_active_recruitment_trials(
+            self.context, {"ticket_channel_id": 400},
+        )
+
+        self.assertEqual(unknown, inaccessible)
+        self.queries.active_trial_snapshot.assert_not_called()
+        self.assertEqual(self.context.state.source_channels, set())
+
     async def test_empty_accessible_status_returns_coverage_without_artifact(self):
         self.first.allowed = False
         self.second.allowed = False

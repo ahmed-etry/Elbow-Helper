@@ -27,8 +27,8 @@ def examination_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
         (
             "read_accessible_examination_cases",
-            "Read and retain status-only promotion examination cases when the requester and bot can access the examination room and each included ticket. Returns workflow flags without message content, application answers, availability, examiner matches or outcomes. This does not change examinations.",
-            {},
+            "Read and retain status-only promotion examination cases when the requester and bot can access the examination room and each included ticket. An optional ticket channel ID narrows the source read. Returns workflow flags without message content, application answers, availability, examiner matches or outcomes. This does not change examinations.",
+            {"ticket_channel_id": {"type": "integer", "minimum": 1}},
             (),
             read_accessible_examination_cases,
         ),
@@ -75,7 +75,6 @@ async def read_accessible_examination_cases(
     context: AgentRequestContext,
     arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
-    del arguments
     await require_evidence_access(context)
     if context.examination_queries is None:
         return {"error": "Examination case status is not available."}
@@ -85,8 +84,16 @@ async def read_accessible_examination_cases(
                 "Examination case status is not accessible from this conversation."
             )
         }
+    selected_ticket_id = arguments.get("ticket_channel_id")
+    if selected_ticket_id is not None and (
+        type(selected_ticket_id) is not int or selected_ticket_id <= 0
+    ):
+        return {"error": "A valid ticket channel ID is required."}
     try:
-        registrations = context.examination_queries.case_registrations()
+        registrations = tuple(
+            row for row in context.examination_queries.case_registrations()
+            if selected_ticket_id is None or row.ticket_channel_id == selected_ticket_id
+        )
     except ValueError:
         return {"error": "Stored examination cases could not be listed."}
     accessible_ids = []
@@ -100,6 +107,8 @@ async def read_accessible_examination_cases(
             and getattr(channel, "type", None) == discord.ChannelType.text
         ):
             accessible_ids.append(registration.ticket_channel_id)
+    if selected_ticket_id is not None and not accessible_ids:
+        return {"error": "That examination case is not accessible."}
     try:
         snapshot = context.examination_queries.case_snapshot(
             ticket_channel_ids=tuple(accessible_ids),
@@ -114,7 +123,8 @@ async def read_accessible_examination_cases(
     context.state.source_channels.update((EXAMINATION_ROOM, *accessible_ids))
     await require_evidence_access(context)
     if not report.snapshot.cases:
-        return {**report.manifest(), "report_id": None}
+        return {**report.manifest(), "report_id": None, "cases": [],
+                "selected_ticket_channel_id": selected_ticket_id}
     try:
         retain_report(context.state.reports, report)
     except ArtifactCapacityError:
@@ -124,7 +134,7 @@ async def read_accessible_examination_cases(
                 "in this conversation."
             )
         }
-    return report.page()
+    return {**report.page(), "selected_ticket_channel_id": selected_ticket_id}
 
 
 async def read_examination_case_report(

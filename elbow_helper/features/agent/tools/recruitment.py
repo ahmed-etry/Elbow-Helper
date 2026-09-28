@@ -23,8 +23,8 @@ def recruitment_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
         (
             "read_active_recruitment_trials",
-            "Read and retain status-only active recruitment trials from ticket channels the requester and bot can access. Returns applicant and configured trial dates; ticket content, reminders, recruiter notes and outcomes are excluded. This does not change recruitment.",
-            {},
+            "Read and retain status-only active recruitment trials from ticket channels the requester and bot can access. An optional ticket channel ID narrows the source read. Returns applicant and configured trial dates; ticket content, reminders, recruiter notes and outcomes are excluded. This does not change recruitment.",
+            {"ticket_channel_id": {"type": "integer", "minimum": 1}},
             (),
             read_active_recruitment_trials,
         ),
@@ -68,12 +68,19 @@ async def read_active_recruitment_trials(
     context: AgentRequestContext,
     arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
-    del arguments
     await require_evidence_access(context)
     if context.recruitment_queries is None:
         return {"error": "Recruitment trial status is not available."}
+    selected_ticket_id = arguments.get("ticket_channel_id")
+    if selected_ticket_id is not None and (
+        type(selected_ticket_id) is not int or selected_ticket_id <= 0
+    ):
+        return {"error": "A valid ticket channel ID is required."}
     try:
-        registrations = context.recruitment_queries.active_trial_registrations()
+        registrations = tuple(
+            row for row in context.recruitment_queries.active_trial_registrations()
+            if selected_ticket_id is None or row.ticket_channel_id == selected_ticket_id
+        )
     except ValueError:
         return {"error": "Stored recruitment trials could not be listed."}
     accessible_ids = []
@@ -87,6 +94,8 @@ async def read_active_recruitment_trials(
             and getattr(channel, "type", None) == discord.ChannelType.text
         ):
             accessible_ids.append(registration.ticket_channel_id)
+    if selected_ticket_id is not None and not accessible_ids:
+        return {"error": "That recruitment trial is not accessible."}
     try:
         snapshot = context.recruitment_queries.active_trial_snapshot(
             ticket_channel_ids=tuple(accessible_ids),
@@ -101,7 +110,8 @@ async def read_active_recruitment_trials(
     context.state.source_channels.update(accessible_ids)
     await require_evidence_access(context)
     if not report.snapshot.trials:
-        return {**report.manifest(), "report_id": None}
+        return {**report.manifest(), "report_id": None, "trials": [],
+                "selected_ticket_channel_id": selected_ticket_id}
     try:
         retain_report(context.state.reports, report)
     except ArtifactCapacityError:
@@ -111,7 +121,7 @@ async def read_active_recruitment_trials(
                 "in this conversation."
             )
         }
-    return report.page()
+    return {**report.page(), "selected_ticket_channel_id": selected_ticket_id}
 
 
 async def read_active_recruitment_trial_report(
