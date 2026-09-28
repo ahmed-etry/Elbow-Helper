@@ -70,3 +70,19 @@ class ScopeLedger:
             if issue:
                 return issue
         return ""
+
+    def channels(self, identities: list[str]) -> set[int]:
+        result: set[int] = set()
+        for identity in identities:
+            origin = self.reports.get(identity)
+            if origin is None:
+                continue
+            name, arguments = origin
+            contract = CONTRACTS.get(name)
+            if contract is None:
+                continue
+            for field in contract.channel_fields:
+                value = arguments.get(field)
+                result.update(item for item in (value if isinstance(value, list) else [value])
+                              if type(item) is int)
+        return result

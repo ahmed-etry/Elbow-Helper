@@ -563,3 +563,38 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         with patch("elbow_helper.features.agent.service.MAX_SCOPE_REVISIONS", 0):
             await self._answer(session)
         self.assertEqual(self.events.count("read"), 5)
+
+    async def test_retained_pages_keep_the_original_source_through_service(self):
+        context = _context()
+        context.state.source_channels.add(202)
+        async def read(local, arguments):
+            local.state.source_channels.add(arguments["channel_id"])
+            return {"resource_id": "synthetic-id", "channel_id": arguments["channel_id"]}
+        page = AsyncMock(return_value={"channel_id": 91, "value": 7})
+        self.registry = {
+            "read_value": RegisteredAgentTool(AgentToolDefinition("read_value", "Read a value.", {
+                "type": "object", "properties": {"channel_id": {"type": "integer"}}, "required": ["channel_id"]}), read),
+            "read_page": RegisteredAgentTool(AgentToolDefinition("read_page", "Read a page.", {
+                "type": "object", "properties": {"resource_id": {"type": "string"}}, "required": ["resource_id"]}), page)}
+        contracts = {
+            "read_value": CapabilityContract((("channel_id", "discord_channel"),), (), channel_fields=("channel_id",),
+                result_channel_fields=("channel_id",), source_scope="channel_messages", result_sources_within_query=True),
+            "read_page": CapabilityContract((("resource_id", "synthetic_report"),), (), retained_fields=("resource_id",),
+                result_channel_fields=("channel_id",), source_scope="retained_channel_evidence")}
+        output = {**_step("page", {"resource_id": {"step": "first", "path": ["resource_id"]}}, ["first"]), "capability": "read_page"}
+        plan = _plan([_step("first", {"channel_id": 91}), output])
+        plan["entities"] = [{"kind": "discord_channel", "value": 91}]
+        for source in (91, 202):
+            page.return_value = {"channel_id": source, "value": 7}
+            page.reset_mock()
+            session = _Session([_model_step(plan), AgentStep("Ready.", (), AgentUsage())], self.events)
+            context.state.evidence.clear()
+            with (patch.dict("elbow_helper.features.agent.semantic.CONTRACTS", contracts),
+                  patch("elbow_helper.features.agent.service.named_sources", return_value={"discord_channel": frozenset({91})})):
+                await self._answer(session, context)
+            page.assert_awaited_once()
+            result = json.loads(session.calls[1][0][0].content)["results"]["page"]
+            self.assertEqual(result["flags"]["status"], "complete" if source == 91 else "failed")
+            self.assertEqual(json.loads(context.state.evidence[-1])["semantic_scope"]["bound_source_channels"], [91])
+            if source == 202:
+                self.assertNotIn('"value": 7', session.calls[1][0][0].content)

@@ -331,6 +331,7 @@ class AgentService:
                 name = step["capability"]
                 tool = registry[name]
                 contract = CONTRACTS.get(name)
+                retained = []
                 if not _valid_arguments(arguments, tool.definition.parameters):
                     return {"error": "Arguments must match the capability schema."}
                 bound_periods = []
@@ -379,6 +380,8 @@ class AgentService:
                     semantic_scope = compile_capability_call(tool, arguments)
                 except SemanticBindError as error:
                     return {"error": str(error)}
+                if retained:
+                    semantic_scope["bound_source_channels"] = sorted(ledger.channels(retained))
                 issue = await disclosure_issue({**step, "arguments": arguments})
                 if issue:
                     return {"error": issue}
