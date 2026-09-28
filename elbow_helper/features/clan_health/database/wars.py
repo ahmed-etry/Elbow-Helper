@@ -11,6 +11,8 @@ class ClanHealthWarReads:
     def regular_war_history(
         self, *, clan_code: str, history_limit: int,
         before_war_id: str | None = None,
+        ended_from_ts: int | None = None,
+        ended_before_ts: int | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
         limit = max(1, min(int(history_limit), 21))
         with closing(sqlite3.connect(self.path, timeout=30)) as connection:
@@ -37,6 +39,8 @@ class ClanHealthWarReads:
                        start_ts, end_ts, last_seen_ts, source
                 FROM wars
                 WHERE clan_code = ? AND war_type = 'REG' AND state = 'warEnded'
+                  AND (? IS NULL OR end_ts >= ?)
+                  AND (? IS NULL OR end_ts < ?)
                   AND (
                     ? IS NULL OR end_ts < ?
                     OR (end_ts = ? AND war_id < ?)
@@ -45,7 +49,8 @@ class ClanHealthWarReads:
                 LIMIT ?
                 """,
                 (
-                    clan_code, before_war_id,
+                    clan_code, ended_from_ts, ended_from_ts,
+                    ended_before_ts, ended_before_ts, before_war_id,
                     cursor["end_ts"] if cursor else None,
                     cursor["end_ts"] if cursor else None,
                     cursor["war_id"] if cursor else None,

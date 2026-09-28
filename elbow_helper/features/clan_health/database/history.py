@@ -11,9 +11,14 @@ from typing import Any, Dict, List, Optional
 from ..config import UTC
 from ..seasons import _season_key_for_datetime
 class ClanHealthHistory:
-    def _search_health_players(self, current: str, limit: int = 25) -> List[Dict[str, Any]]:
+    def _search_health_players(
+        self, current: str, limit: int = 25, *, offset: int = 0,
+        clan_code: str | None = None,
+    ) -> List[Dict[str, Any]]:
         needle = str(current or "").strip().lower()
-        bounded_limit = max(1, min(25, int(limit)))
+        bounded_limit = max(1, min(26, int(limit)))
+        if type(offset) is not int or not 0 <= offset <= 10000:
+            raise ValueError("Invalid player-directory search offset")
         conn = sqlite3.connect(self.path, timeout=0.25)
         try:
             conn.row_factory = sqlite3.Row
@@ -22,12 +27,13 @@ class ClanHealthHistory:
             if not needle:
                 cursor.execute(
                     """
-                    SELECT player_tag, player_name, clan_code, townhall
+                    SELECT player_tag, player_name, clan_code, townhall, last_seen_ts
                     FROM player_directory
+                    WHERE (? IS NULL OR clan_code = ?)
                     ORDER BY last_seen_ts DESC, player_name_search, player_tag
-                    LIMIT ?
+                    LIMIT ? OFFSET ?
                     """,
-                    (bounded_limit,),
+                    (clan_code, clan_code, bounded_limit, offset),
                 )
                 return [dict(row) for row in cursor.fetchall()]
 
@@ -40,12 +46,14 @@ class ClanHealthHistory:
                     player_tag,
                     player_name,
                     clan_code,
-                    townhall
+                    townhall,
+                    last_seen_ts
                 FROM player_directory
-                WHERE
+                WHERE (? IS NULL OR clan_code = ?) AND (
                     (player_name_search >= ? AND player_name_search < ?)
                     OR (player_tag_search >= ? AND player_tag_search < ?)
                     OR (clan_code_search >= ? AND clan_code_search < ?)
+                )
                 ORDER BY
                     CASE
                         WHEN player_tag_search = ? THEN 0
@@ -57,9 +65,11 @@ class ClanHealthHistory:
                     last_seen_ts DESC,
                     player_name_search,
                     player_tag
-                LIMIT ?
+                LIMIT ? OFFSET ?
                 """,
                 (
+                    clan_code,
+                    clan_code,
                     needle,
                     upper_bound,
                     tag_needle,
@@ -73,6 +83,7 @@ class ClanHealthHistory:
                     needle,
                     upper_bound,
                     bounded_limit,
+                    offset,
                 )
             )
             return [dict(row) for row in cursor.fetchall()]

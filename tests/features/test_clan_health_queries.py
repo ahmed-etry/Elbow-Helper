@@ -69,6 +69,31 @@ class ClanHealthQueryTests(unittest.IsolatedAsyncioTestCase):
             cycle_end_ts=end, rows=rows,
         )
 
+    async def test_player_directory_search_filters_last_seen_clan_before_paging(self):
+        self.repository.store_snapshots(100, [
+            {"player_tag": "#P0", "player_name": "Alice", "clan_code": "BEH"},
+            {"player_tag": "#P2", "player_name": "Alice Two", "clan_code": "BEH"},
+            {"player_tag": "#P8", "player_name": "Alice Three", "clan_code": "BEH"},
+        ])
+        self.repository.store_snapshots(200, [
+            {"player_tag": "#P0", "player_name": "Alice", "clan_code": "BEC"},
+        ])
+
+        first = await self.queries.search_players(
+            "ali", limit=1, clan_code="BEH",
+        )
+        second = await self.queries.search_players(
+            "ali", limit=1, offset=1, clan_code="BEH",
+        )
+        self.assertEqual([row["player_tag"] for row in (*first, *second)],
+                         ["#P8", "#P2"])
+        self.assertTrue(all(row["last_seen_ts"] == 100 for row in (*first, *second)))
+        self.assertEqual((await self.queries.search_players(
+            "ali", limit=1,
+        ))[0]["player_tag"], "#P0")
+        with self.assertRaises(ValueError):
+            await self.queries.search_players("ali", clan_code="UNKNOWN")
+
     async def test_run_history_uses_latest_complete_run_per_period_and_pages(self):
         self.store("old-original", created=141, start=100, end=140,
                    rows=[_row("#P0"), _row("#P2")])
@@ -151,6 +176,23 @@ class ClanHealthQueryTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.queries.regular_war_history(
                 "BEH", history_limit=1, before_war_id="missing",
+            )
+
+    async def test_regular_war_history_filters_end_time_before_loading_war_rows(self):
+        self.repository.store_wars([
+            _war("old", 100), _war("selected", 200), _war("new", 300),
+        ])
+        history = await self.queries.regular_war_history(
+            "BEH", ended_from_ts=150, ended_before_ts=250,
+        )
+        self.assertEqual([war.war_id for war in history.wars], ["selected"])
+        self.assertEqual(history.ended_from_ts, 150)
+        self.assertEqual(history.ended_before_ts, 250)
+        self.assertIsNone(history.next_before_war_id)
+
+        with self.assertRaisesRegex(ValueError, "increasing"):
+            await self.queries.regular_war_history(
+                "BEH", ended_from_ts=250, ended_before_ts=150,
             )
 
     async def test_regular_war_history_rejects_noncanonical_duplicate_accounts(self):

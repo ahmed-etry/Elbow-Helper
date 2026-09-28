@@ -16,9 +16,11 @@ class _History:
     def __init__(self, dataset):
         self.dataset = dataset
         self.limits = []
+        self.scopes = []
 
-    def roster_history(self, history_limit):
+    def roster_history(self, history_limit, *, season=None, clan_code=None):
         self.limits.append(history_limit)
+        self.scopes.append((season, clan_code))
         return self.dataset
 
     def bonus_seasons(self, clan_codes=None):
@@ -27,6 +29,20 @@ class _History:
             str(war["cwl_season"]) for war in self.dataset["wars"]
             if not codes or str(war["clan_code"]) in codes
         }, reverse=True)
+
+    def cwl_season_coverage(self, clan_code):
+        groups = {}
+        for war in self.dataset["wars"]:
+            if war["clan_code"] != clan_code:
+                continue
+            group = groups.setdefault(war["cwl_season"], {"ids": set(), "end_ts": 0})
+            group["ids"].add(war["war_id"])
+            group["end_ts"] = max(group["end_ts"], war["end_ts"])
+        return [
+            {"season": season, "ended_wars": len(group["ids"]),
+             "latest_end_ts": group["end_ts"]}
+            for season, group in groups.items()
+        ]
 
     def bonus_wars(self, clan_code, season):
         result = []
@@ -104,6 +120,20 @@ def _dataset():
 
 
 class CwlQueriesTests(unittest.TestCase):
+    def test_season_coverage_keeps_partial_season_distinct_from_seven_war_history(self):
+        dataset = _dataset()
+        dataset["wars"].append({
+            "war_id": "new-partial", "cwl_season": "2026-09",
+            "clan_code": "BEH", "end_ts": 2000,
+        })
+        snapshot = self.bonus_queries(dataset).ass_season_coverage(clan_code="BEH")
+        self.assertEqual([row.season for row in snapshot.seasons],
+                         ["2026-09", "2026-08"])
+        self.assertEqual([row.ended_wars for row in snapshot.seasons], [1, 7])
+        self.assertEqual([row.seven_wars_recorded for row in snapshot.seasons],
+                         [False, True])
+        self.assertEqual(snapshot.latest_seven_war_season, "2026-08")
+
     def bonus_queries(self, dataset=None, *, config=None):
         history = _History(dataset or _dataset())
         return CwlQueries(
@@ -348,4 +378,3 @@ class CwlQueriesTests(unittest.TestCase):
             unavailable.bonus_scope(
                 clan_code="BEH", season="2026-08", scope_type="season",
             )
-

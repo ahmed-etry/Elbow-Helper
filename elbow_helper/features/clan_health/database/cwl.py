@@ -12,6 +12,33 @@ from typing import Iterable
 class ClanHealthCwlReads:
     """Expose completed CWL data without leaking the database path or SQL."""
 
+    def cwl_season_coverage(self, clan_code: str) -> list[dict[str, Any]]:
+        """Count distinct ended wars per stored season for one clan."""
+        if not self.path.exists():
+            raise RuntimeError("CWL history is unavailable")
+        try:
+            with closing(sqlite3.connect(self.path, timeout=5)) as connection:
+                rows = connection.execute(
+                    """
+                    SELECT cwl_season, COUNT(DISTINCT war_id), MAX(end_ts)
+                    FROM wars
+                    WHERE war_type = 'CWL' AND state = 'warEnded'
+                      AND clan_code = ? AND cwl_season != ''
+                    GROUP BY cwl_season
+                    ORDER BY MAX(end_ts) DESC, cwl_season DESC
+                    """,
+                    (clan_code,),
+                ).fetchall()
+        except sqlite3.Error as error:
+            raise RuntimeError("CWL season coverage could not be read") from error
+        return [
+            {
+                "season": str(season), "ended_wars": int(ended_wars),
+                "latest_end_ts": int(latest_end_ts or 0),
+            }
+            for season, ended_wars, latest_end_ts in rows
+        ]
+
     def bonus_seasons(
         self,
         clan_codes: list[str] | None = None,
@@ -139,6 +166,9 @@ class ClanHealthCwlReads:
     def roster_history(
         self,
         history_limit: int | None,
+        *,
+        season: str | None = None,
+        clan_code: str | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
         if not self.path.exists():
             return self._empty_roster_history()
@@ -147,8 +177,16 @@ class ClanHealthCwlReads:
         ) as connection:
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA busy_timeout=30000")
+            filters = []
+            parameters: list[str] = []
+            if season is not None:
+                filters.append("AND cwl_season = ?")
+                parameters.append(season)
+            if clan_code is not None:
+                filters.append("AND clan_code = ?")
+                parameters.append(clan_code)
             completed_rows = connection.execute(
-                """
+                f"""
                 SELECT
                     cwl_season,
                     clan_code,
@@ -157,9 +195,11 @@ class ClanHealthCwlReads:
                 WHERE war_type = 'CWL'
                   AND state = 'warEnded'
                   AND cwl_season != ''
+                  {' '.join(filters)}
                 GROUP BY cwl_season, clan_code
                 HAVING COUNT(DISTINCT war_id) >= 7
-                """
+                """,
+                parameters,
             ).fetchall()
             groups_by_clan: dict[str, list[sqlite3.Row]] = defaultdict(list)
             for row in completed_rows:

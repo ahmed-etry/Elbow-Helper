@@ -108,6 +108,8 @@ class HistoricalRegularWarHistory:
     wars: tuple[HistoricalRegularWar, ...]
     members: tuple[HistoricalRegularWarMember, ...]
     next_before_war_id: str | None
+    ended_from_ts: int | None = None
+    ended_before_ts: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,9 +161,17 @@ class ClanHealthQueries:
     def __init__(self, repository: ClanHealthRepository):
         self._repository = repository
 
-    async def search_players(self, query: str, *, limit: int = 10) -> tuple[Mapping[str, Any], ...]:
+    async def search_players(
+        self, query: str, *, limit: int = 10, offset: int = 0,
+        clan_code: str | None = None,
+    ) -> tuple[Mapping[str, Any], ...]:
+        if clan_code is not None and clan_code not in CLANS:
+            raise ValueError("Unknown Brown Elbow clan code")
+        if type(offset) is not int or not 0 <= offset <= 10000:
+            raise ValueError("Invalid player-directory search offset")
         rows = await asyncio.to_thread(
-            self._repository.search_players, query, max(1, min(limit, 25)),
+            self._repository.search_players, query, max(1, min(limit, 26)),
+            offset=offset, clan_code=clan_code,
         )
         return tuple(rows)
 
@@ -249,6 +259,8 @@ class ClanHealthQueries:
     async def regular_war_history(
         self, clan_code: str, *, history_limit: int = 10,
         before_war_id: str | None = None,
+        ended_from_ts: int | None = None,
+        ended_before_ts: int | None = None,
     ) -> HistoricalRegularWarHistory:
         if clan_code not in CLANS:
             raise ValueError("Unknown Brown Elbow clan code")
@@ -259,10 +271,19 @@ class ClanHealthQueries:
             or len(before_war_id) > 300
         ):
             raise ValueError("Invalid regular-war history cursor")
+        for bound in (ended_from_ts, ended_before_ts):
+            if bound is not None and (type(bound) is not int or bound < 0):
+                raise ValueError("Invalid regular-war end-time boundary")
+        if (
+            ended_from_ts is not None and ended_before_ts is not None
+            and ended_from_ts >= ended_before_ts
+        ):
+            raise ValueError("Regular-war end-time window must be increasing")
         data = await asyncio.to_thread(
             self._repository.regular_war_history,
             clan_code=clan_code, history_limit=history_limit + 1,
             before_war_id=before_war_id,
+            ended_from_ts=ended_from_ts, ended_before_ts=ended_before_ts,
         )
         raw_wars = data["wars"]
         has_more = len(raw_wars) > history_limit
@@ -378,6 +399,7 @@ class ClanHealthQueries:
             read_at=datetime.now(timezone.utc).isoformat(), clan_code=clan_code,
             wars=tuple(wars), members=tuple(members),
             next_before_war_id=(wars[-1].war_id if has_more and wars else None),
+            ended_from_ts=ended_from_ts, ended_before_ts=ended_before_ts,
         )
 
     async def family_movement_history(

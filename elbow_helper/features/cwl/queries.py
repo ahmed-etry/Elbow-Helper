@@ -21,7 +21,14 @@ MAX_HISTORY_SEASONS = 12
 
 
 class CwlHistorySource(Protocol):
-    def roster_history(self, history_limit: int | None) -> dict[str, list[dict[str, Any]]]: ...
+    def cwl_season_coverage(
+        self, clan_code: str,
+    ) -> list[dict[str, Any]]: ...
+
+    def roster_history(
+        self, history_limit: int | None, *, season: str | None = None,
+        clan_code: str | None = None,
+    ) -> dict[str, list[dict[str, Any]]]: ...
 
     def bonus_seasons(
         self, clan_codes: list[str] | None = None,
@@ -56,6 +63,22 @@ class CwlClanSeasonSummary:
     attacks: int
     attacks_expected: int
     complete: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CwlSeasonCoverage:
+    season: str
+    ended_wars: int
+    latest_end_ts: int
+    seven_wars_recorded: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CwlSeasonCoverageSnapshot:
+    observed_at: str
+    clan_code: str
+    seasons: tuple[CwlSeasonCoverage, ...]
+    latest_seven_war_season: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -237,10 +260,22 @@ class CwlQueries:
         self._bonus_config = bonus_config
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
-    def performance(self, *, history_limit: int = 3) -> CwlPerformanceSnapshot:
+    def performance(
+        self, *, history_limit: int = 3, season: str | None = None,
+        clan_code: str | None = None,
+    ) -> CwlPerformanceSnapshot:
         if type(history_limit) is not int or not 1 <= history_limit <= MAX_HISTORY_SEASONS:
             raise ValueError("Invalid CWL history limit")
-        dataset = self._history.roster_history(history_limit)
+        if season is not None and (
+            not isinstance(season, str)
+            or re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", season) is None
+        ):
+            raise ValueError("Invalid CWL season")
+        if clan_code is not None and clan_code not in CWL_CLAN_NAMES:
+            raise ValueError("Invalid CWL clan code")
+        dataset = self._history.roster_history(
+            history_limit, season=season, clan_code=clan_code,
+        ) if season is not None or clan_code is not None else self._history.roster_history(history_limit)
         seasons = tuple(str(row["key"]) for row in dataset["seasons"])
         season_order = {
             season: index for index, season in enumerate(reversed(seasons), start=1)
@@ -253,7 +288,7 @@ class CwlQueries:
         multi_season = {
             (metric.clan_code, metric.player_tag): metric
             for metric in build_mega_ass_metrics(metrics)
-        }
+        } if season is None else {}
         groups: dict[tuple[str, str], list[Any]] = defaultdict(list)
         for metric in metrics:
             groups[(metric.season, metric.clan_code)].append(metric)
@@ -314,6 +349,39 @@ class CwlQueries:
             if isinstance(season, str)
             and re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", season)
         ))
+
+    def ass_season_coverage(self, *, clan_code: str) -> CwlSeasonCoverageSnapshot:
+        """Distinguish seasons with any ended war from seven-war seasons."""
+        if clan_code not in CWL_CLAN_NAMES:
+            raise ValueError("Invalid CWL clan code")
+        rows = self._history.cwl_season_coverage(clan_code)
+        seasons = []
+        seen = set()
+        for row in rows:
+            season = row["season"]
+            ended_wars = row["ended_wars"]
+            latest_end_ts = row["latest_end_ts"]
+            if (
+                not isinstance(season, str)
+                or re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", season) is None
+                or season in seen
+                or type(ended_wars) is not int or ended_wars < 1
+                or type(latest_end_ts) is not int or latest_end_ts < 0
+            ):
+                raise RuntimeError("Invalid stored CWL season coverage")
+            seen.add(season)
+            seasons.append(CwlSeasonCoverage(
+                season, ended_wars, latest_end_ts, ended_wars >= 7,
+            ))
+        seasons.sort(key=lambda row: (row.latest_end_ts, row.season), reverse=True)
+        observed = self._clock()
+        if observed.tzinfo is None:
+            observed = observed.replace(tzinfo=timezone.utc)
+        return CwlSeasonCoverageSnapshot(
+            observed.astimezone(timezone.utc).isoformat(), clan_code,
+            tuple(seasons),
+            next((row.season for row in seasons if row.seven_wars_recorded), None),
+        )
 
     def ass_scope(
         self, *, clan_code: str, season: str, scope_type: str,

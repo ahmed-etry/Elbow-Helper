@@ -380,11 +380,31 @@ class AssAnalysisTests(unittest.TestCase):
                     )
                 conn.commit()
             dataset = ClanHealthRepository(path).roster_history(3)
+            with closing(sqlite3.connect(path)) as conn:
+                for day in range(1, 8):
+                    conn.execute(
+                        "INSERT INTO wars VALUES (?, 'CWL', 'BE4', '2026-08', "
+                        "'Master League I', ?, 15, 1, 'warEnded', ?)",
+                        (f"newer-war-{day}", day, 200 + day),
+                    )
+                conn.commit()
+            old_scope = ClanHealthRepository(path).roster_history(
+                1, season="2026-06", clan_code="BE4",
+            )
+            latest_scope = ClanHealthRepository(path).roster_history(1)
+            coverage = ClanHealthRepository(path).cwl_season_coverage("BE4")
 
         self.assertEqual([row["key"] for row in dataset["seasons"]], ["2026-06"])
         self.assertEqual(len(dataset["wars"]), 7)
         self.assertEqual(len(dataset["roster"]), 7)
         self.assertEqual(len(dataset["attacks"]), 7)
+        self.assertEqual([row["key"] for row in old_scope["seasons"]], ["2026-06"])
+        self.assertEqual(len(old_scope["wars"]), 7)
+        self.assertEqual([row["key"] for row in latest_scope["seasons"]], ["2026-08"])
+        self.assertEqual(
+            [(row["season"], row["ended_wars"]) for row in coverage],
+            [("2026-08", 7), ("2026-06", 7)],
+        )
 
     def test_db_loader_ignores_incomplete_seasons(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -422,9 +442,12 @@ class AssAnalysisTests(unittest.TestCase):
                 )
                 conn.commit()
             dataset = ClanHealthRepository(path).roster_history(3)
+            coverage = ClanHealthRepository(path).cwl_season_coverage("BE4")
 
         self.assertEqual(dataset["seasons"], [])
         self.assertEqual(dataset["wars"], [])
+        self.assertEqual(coverage[0]["season"], "2026-07")
+        self.assertEqual(coverage[0]["ended_wars"], 1)
 
 
 class CandidateTests(unittest.IsolatedAsyncioTestCase):
