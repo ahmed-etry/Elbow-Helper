@@ -194,9 +194,7 @@ class DiscordResearchReport:
             ),
             "complete_retained_snapshot": True,
             "interpretation": (
-                "Messages are exact retained results from the stated channel and scope. "
-                "Coverage describes what was searched or traversed. Missing results do "
-                "not prove that no other message ever existed."
+                ['exact_retained_messages', 'query_coverage', 'absence_unproven']
             ),
         }
 

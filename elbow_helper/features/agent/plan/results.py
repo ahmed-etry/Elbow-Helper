@@ -15,11 +15,15 @@ LIMIT_FIELDS = frozenset({
 
 def _flag(value: Any) -> str:
     text = str(value).casefold()
+    if re.fullmatch(r"[a-z0-9_]+", text):
+        return text
+    if "not configured" in text or "not set up" in text:
+        return "missing_setup"
     if "expired" in text:
         return "expired"
     if "timed out" in text:
         return "timeout"
-    if "not accessible" in text or "not authorized" in text or "permission" in text:
+    if "not accessible" in text or "not authorized" in text or "permission" in text or "cannot access" in text:
         return "access_denied"
     if "named source" in text or "other sources" in text or "filter this read" in text:
         return "source_out_of_scope"
@@ -46,24 +50,31 @@ def model_result(
     truncated: bool = False,
 ) -> dict[str, Any]:
     data = dict(payload)
-    limits = []
+    existing = data.pop("flags", {})
+    if not isinstance(existing, Mapping):
+        data["data_flags"] = existing
+        existing = {}
+    limits = list(existing.get("limits", ()))
     for field in LIMIT_FIELDS:
         value = data.pop(field, None)
+        if isinstance(value, Mapping):
+            data[field] = dict(value)
+            continue
         if value:
             items = value if isinstance(value, (list, tuple)) else [value]
             limits.extend(_flag(item) for item in items)
     error = data.pop("error", None)
     if error is not None:
         limits.append(_flag(error))
-    truncated = truncated or data.get("truncated") is True
-    complete = not truncated and error is None and all(
+    truncated = truncated or data.get("truncated") is True or existing.get("truncated") is True
+    complete = not truncated and error is None and existing.get("status") not in ("failed", "partial", "refused") and all(
         data.get(field) is not False for field in ("complete", "complete_snapshot")
-    )
-    flags: dict[str, Any] = {
+    ) and data.get("status") != "partial"
+    flags: dict[str, Any] = {**existing,
         "status": "complete" if complete else "partial",
         "truncated": truncated,
     }
-    if error is not None:
+    if error is not None or existing.get("status") == "failed":
         flags["status"] = "failed"
     if limits:
         flags["limits"] = sorted(set(limits))
@@ -71,3 +82,13 @@ def model_result(
         flags["coverage_dates"] = dict(coverage_dates)
     data["flags"] = flags
     return data
+
+
+def result_handler(handler):
+    """Normalize every registered lookup at the model boundary."""
+    from functools import wraps
+    @wraps(handler)
+    async def wrapped(context, arguments):
+        return model_result(await handler(context, arguments))
+    wrapped.normalizes_results = True
+    return wrapped

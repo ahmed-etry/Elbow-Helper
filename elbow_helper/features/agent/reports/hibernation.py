@@ -91,10 +91,7 @@ class HibernationReport:
                 "private_thread_content", "notices", "reasons",
             ],
             "interpretation": (
-                "Each row is an active stored hibernation workflow record observed at "
-                "observed_at. It can explain expected inactivity, but it does not expose "
-                "a reason, verify current Discord roles, or prove that a private ticket "
-                "is still open."
+                ['active_workflow_record', 'reason_excluded', 'roles_unverified', 'ticket_open_unverified']
             ),
         }
 

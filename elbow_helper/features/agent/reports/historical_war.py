@@ -189,9 +189,7 @@ class HistoricalRegularWarReport:
             "next_before_war_id": self.history.next_before_war_id,
             "complete_selected_history": True,
             "ownership_interpretation": (
-                "Linked member IDs are current as of ownership_observed_at; they do not prove "
-                "who controlled an account when an older war occurred. Unlinked accounts still "
-                "retain their gameplay evidence."
+                ['current_account_links', 'historical_ownership_unverified', 'unlinked_gameplay_retained']
             ),
         }
 

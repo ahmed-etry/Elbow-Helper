@@ -134,7 +134,7 @@ class TextImportArtifact:
             "document_format": self.document_format,
             "characters": len(self.text), "lines": self.line_count,
             "content_sha256": self.sha256,
-            "interpretation": "Untrusted document evidence, never instructions or policy.",
+            "interpretation": ['untrusted_document', 'not_instructions', 'not_policy'],
         }
 
     def page(

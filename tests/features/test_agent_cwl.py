@@ -203,8 +203,9 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(round_result["players"][0]["ass_score"], 21.0)
         self.assertEqual(round_result["players"][0]["attacks"], 1)
         self.assertEqual(round_result["projection_attack_target"], 7)
-        self.assertIn("selected scope", round_result["projection_note"])
-        self.assertIn("not automatically a completed-season", round_result["projection_note"])
+        self.assertEqual(round_result["projection_note"]["scope"], "selected")
+        self.assertEqual(round_result["projection_note"]["basis"], "observed_attack_averages")
+        self.assertFalse(round_result["projection_note"]["completed_season_verified"])
         retained = await read_cwl_ass_scope_report(self.context, {
             "report_id": round_result["report_id"],
         })
@@ -246,7 +247,7 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
         })
 
         self.assertEqual(result["metric_name"], "Configured CWL bonus adjusted delta")
-        self.assertIn("not ASS", result["ass_distinction"])
+        self.assertFalse(result["ass_distinction"]["is_ass"])
         self.assertEqual(result["rows"][0]["adjusted_delta"], 1.0)
         self.assertEqual(result["settings"]["revision"], 4)
         retained = await read_cwl_bonus_scope_report(self.context, {

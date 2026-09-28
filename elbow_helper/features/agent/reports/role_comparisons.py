@@ -119,8 +119,7 @@ def compare_role_account_reports(
         "ignored_account_fields": list(IGNORED_ACCOUNT_FIELDS),
         "complete_comparison": True,
         "cause_scope": (
-            "Changes describe retained snapshots only. They do not establish why "
-            "a role, link, owner or observed location changed."
+            ['retained_snapshots', 'cause_unverified']
         ),
     }
 

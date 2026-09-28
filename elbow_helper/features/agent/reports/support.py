@@ -100,9 +100,7 @@ class SupportTicketReport:
                 "message content", "message authors", "attachments", "ticket topic text",
             ],
             "interpretation": (
-                "Last activity is derived from the channel's last-message ID and does not "
-                "identify a meaningful reply, who should respond next, whether a question "
-                "was answered, or whether the ticket is stale under an approved policy."
+                ['activity_from_last_message_id', 'reply_meaning_unverified', 'next_actor_unverified', 'answer_unverified', 'staleness_unverified']
             ),
         }
 

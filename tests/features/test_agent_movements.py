@@ -101,7 +101,8 @@ class AgentMovementToolTests(unittest.IsolatedAsyncioTestCase):
         linked = next(row for row in result["owner_summaries"]
                       if row["linked_member_id"] == 42)
         self.assertEqual(linked["player_tags"], ("#P0", "#P2"))
-        self.assertIn("not transfer intent", result["ownership_interpretation"])
+        self.assertIn("intent_unverified", result["ownership_interpretation"])
+        self.assertIn("historical_ownership_unverified", result["ownership_interpretation"])
         report = self.context.state.reports[result["report_id"]]
         self.assertIsInstance(report, FamilyMovementReport)
 

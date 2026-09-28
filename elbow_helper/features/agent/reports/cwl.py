@@ -197,19 +197,14 @@ class CwlAssScopeReport:
             **self.manifest(),
             "metric_name": "Selected-scope projected ASS",
             "metric_definition": (
-                "ASS is a standardized measure of how an account's attacks "
-                "contributed relative to teammates in the selected same-clan "
-                "scope. It is not a universal skill score."
+                {'basis': 'same_clan_relative_attack_contribution', 'universal_skill_score': False}
             ),
             "formula": (
                 "(projected stars + missed adjustment + difficulty "
                 "adjustment) x average destruction rate"
             ),
             "projection_note": (
-                "Each account's observed attack averages in the selected "
-                "scope are projected to seven attacks. The result is labelled "
-                "with that scope and sample; it is not automatically a "
-                "completed-season score."
+                {'basis': 'observed_attack_averages', 'scope': 'selected', 'target_attacks': 7, 'completed_season_verified': False}
             ),
             "matching_rows": len(rows),
             "players": [asdict(row) for row in rows[offset:offset + limit]],

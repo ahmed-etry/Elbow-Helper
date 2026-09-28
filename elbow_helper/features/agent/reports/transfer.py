@@ -118,10 +118,7 @@ class TransferQueueReport:
             "queue_summaries": summaries,
             "complete_accessible_queue_snapshot": True,
             "interpretation": (
-                "Pending rows are unresolved requests still within the queue's expiry "
-                "window at observed_at. They claim a destination, not approval or a "
-                "completed in-game transfer. Expired stored rows are counted but omitted; "
-                "cleared and expired request history is not retained by this feature."
+                ['pending_unexpired_requests', 'destination_claim', 'approval_unverified', 'completion_unverified', 'expired_rows_omitted', 'cleared_history_unavailable']
             ),
         }
 

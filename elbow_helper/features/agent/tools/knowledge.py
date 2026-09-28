@@ -97,8 +97,7 @@ async def search_approved_knowledge(
             "matched_sections": 0,
             "unknown_policy": True,
             "interpretation": (
-                "No currently effective approved section visible to this "
-                "requester answered the lookup."
+                ['no_effective_approved_section']
             ),
         }
     requirements = frozenset(

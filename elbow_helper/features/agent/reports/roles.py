@@ -113,9 +113,7 @@ class RoleAccountReport:
             "matching_members": len(selected),
             "members": selected[offset:offset + limit],
             "next_offset": offset + limit if offset + limit < len(selected) else None,
-            "note": "The report retains all matching members. This response is one page. "
-                    "Use read_role_account_report for other pages or filters. "
-                    "No links means membership is unverified, not absent.",
+            "note": ['complete_retained_report', 'paged_result', 'unlinked_membership_unverified'],
         }
 
 

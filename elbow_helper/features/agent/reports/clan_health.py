@@ -171,8 +171,7 @@ def compare_clan_health_reports(
         "next_offset": offset + limit if offset + limit < len(changes) else None,
         "complete_comparison": True,
         "interpretation": (
-            "Added and removed mean presence in these stored clan reports; they do not by "
-            "themselves prove a clan join, departure, ownership change, or inactivity."
+            ['snapshot_presence', 'cause_unverified']
         ),
     }
 

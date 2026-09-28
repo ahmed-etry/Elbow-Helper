@@ -381,4 +381,3 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Do not search their history", SYSTEM_PROMPT)
         self.assertIn("Do not search broadly", SYSTEM_PROMPT)
         self.assertIn("Do not call several tools when one result answers", SYSTEM_PROMPT)
-

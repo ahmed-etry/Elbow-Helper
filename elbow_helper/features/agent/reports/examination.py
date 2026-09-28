@@ -107,10 +107,7 @@ class ExaminationCaseReport:
                 "review outcome",
             ],
             "interpretation": (
-                "Status is derived only from the examination feature's stored workflow "
-                "flags. A recorded response means the feature observed a qualifying "
-                "non-applicant ticket message or linked routing response; it does not "
-                "prove a question was answered, an exam occurred, or an outcome was decided."
+                ['stored_workflow_flags', 'qualifying_message_observed', 'answer_unverified', 'exam_unverified', 'outcome_unverified']
             ),
         }
 

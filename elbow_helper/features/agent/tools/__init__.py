@@ -1,6 +1,7 @@
 """Fixed read-tool catalogue for the agent."""
 
 from __future__ import annotations
+from dataclasses import replace
 
 from .attachments import attachment_tools
 from .achievements import achievement_tools
@@ -31,6 +32,7 @@ from .wars import war_tools
 from .working_state import working_state_tools
 from ..models import RegisteredAgentTool
 from ..semantic import validate_contract_catalogue
+from ..plan.results import result_handler
 
 
 def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
@@ -72,7 +74,8 @@ def build_agent_tools() -> dict[str, RegisteredAgentTool]:
     if len(registry) != len(tools):
         raise ValueError("Duplicate agent capability")
     validate_contract_catalogue(registry)
-    return registry
+    return {name: replace(tool, handler=result_handler(tool.handler))
+            for name, tool in registry.items()}
 
 
 __all__ = ["build_agent_tool_groups", "build_agent_tools"]

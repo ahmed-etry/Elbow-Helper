@@ -92,9 +92,7 @@ class RecruitmentTrialReport:
                 "trial outcome",
             ],
             "interpretation": (
-                "These are stored active trial records. A due expected end does not "
-                "prove the trial is unresolved, decide its outcome, or show whether "
-                "a reminder or follow-up was sent."
+                ['active_workflow_record', 'due_date_not_outcome', 'resolution_unverified', 'followup_unverified']
             ),
         }
 

@@ -96,7 +96,8 @@ class AgentService:
                 payload = await handler(context, arguments)
             if not isinstance(payload, Mapping):
                 raise SemanticBindError("The lookup did not return a structured result.")
-            if "error" not in payload:
+            failed = "error" in payload or payload.get("flags", {}).get("status") == "failed"
+            if not failed:
                 context.state.required_access.update(required_access)
                 require_source_provenance(
                     semantic_scope or {}, arguments,

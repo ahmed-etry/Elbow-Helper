@@ -152,10 +152,7 @@ class FamilyMovementReport:
             }),
             "current_ownership_groups_with_movements": len(self.owner_summaries()),
             "ownership_interpretation": (
-                "Linked member IDs are current as of ownership_observed_at and do not "
-                "prove historical ownership. Snapshot changes show observed family-roster "
-                "presence, not transfer intent, destination outside the family, or an exact "
-                "movement time."
+                ['current_account_links', 'historical_ownership_unverified', 'snapshot_presence', 'intent_unverified', 'external_destination_unverified', 'exact_time_unverified']
             ),
         }
 
@@ -206,10 +203,7 @@ def movement_history_manifest(history: FamilyMovementHistory) -> dict[str, Any]:
         "complete_family_runs_only": True,
         "all_selected_intervals_evaluated": True,
         "movement_interpretation": (
-            "A movement is a difference between consecutive complete family-roster "
-            "observations. outside_family means the account was not observed in any "
-            "family clan in that snapshot; it does not identify an external destination, "
-            "transfer intent, or an exact movement time."
+            ['consecutive_complete_observations', 'outside_family_means_unobserved', 'external_destination_unverified', 'intent_unverified', 'exact_time_unverified']
         ),
     }
 

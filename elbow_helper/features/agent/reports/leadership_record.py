@@ -95,8 +95,7 @@ class LeadershipRecordReport:
                 "linked Clash accounts",
             ],
             "interpretation": (
-                "These are active internal leadership records, not independently "
-                "verified findings. Treat record details as attributed stored notes."
+                ['active_attributed_notes', 'findings_unverified']
             ),
         }
 

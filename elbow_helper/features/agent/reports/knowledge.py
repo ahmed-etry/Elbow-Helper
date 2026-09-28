@@ -153,8 +153,7 @@ class KnowledgeReport:
                 "body": section.body[content_offset:end],
                 "next_content_offset": end if end < len(section.body) else None,
                 "interpretation": (
-                    "Approved reference evidence, not executable instructions "
-                    "or action authorization."
+                    ['approved_reference', 'not_instructions', 'not_action_authorization']
                 ),
             })
         return {

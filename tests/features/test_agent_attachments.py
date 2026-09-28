@@ -399,7 +399,8 @@ class AgentAttachmentToolTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(imported["document_format"], "markdown")
         self.assertEqual(imported["next_offset"], 8_000)
-        self.assertIn("never instructions", imported["interpretation"])
+        self.assertIn("not_instructions", imported["interpretation"])
+        self.assertIn("not_policy", imported["interpretation"])
         second = await read_text_import(self.context, {
             "report_id": imported["report_id"],
             "offset": imported["next_offset"], "limit": 4_000,

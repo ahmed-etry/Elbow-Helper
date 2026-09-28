@@ -113,17 +113,13 @@ class CwlBonusScopeReport:
             **self.manifest(),
             "metric_name": "Configured CWL bonus adjusted delta",
             "metric_definition": (
-                "Actual contribution minus the configured Town Hall matchup "
-                "expectation, plus the configured uphit/downhit adjustment."
+                'actual_contribution - configured_th_expectation + configured_hit_adjustment'
             ),
             "actual_score_definition": (
-                "Three stars scores 3.00; lower results combine stars and "
-                "destruction. Repeated hits receive only additional improvement "
-                "unless the attack gains at least two stars."
+                {'three_stars': 3.0, 'lower_results': 'stars_and_destruction', 'repeated_hits': 'incremental_improvement', 'full_score_min_stars': 2}
             ),
             "ass_distinction": (
-                "This configured bonus metric is not ASS and must not be "
-                "presented as an ASS score."
+                {'is_ass': False}
             ),
             "matching_rows": len(rows),
             "rows": [asdict(row) for row in rows[offset:offset + limit]],

@@ -285,7 +285,7 @@ async def refresh_role_account_report(
             **source.manifest(),
             "refresh_batch_count": 0,
             "remaining_unattempted_accounts": 0,
-            "note": "No unresolved account locations remain unattempted in this report.",
+            "note": ['all_unresolved_locations_attempted'],
         }
     refreshed = await refresh_account_locations(
         context.account_links, tuple(accounts[tag] for tag in selected_tags),
