@@ -42,6 +42,10 @@ COIN_DB_INIT = [
     )
     ''',
     '''
+    CREATE INDEX IF NOT EXISTS coin_transactions_member_time_idx
+    ON coin_transactions (user_id, created_at)
+    ''',
+    '''
     CREATE TABLE IF NOT EXISTS cwl_reward_grants (
         reason TEXT NOT NULL,
         user_id INTEGER NOT NULL,

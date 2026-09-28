@@ -49,6 +49,8 @@ class CoinTransactionSnapshot:
     total_transactions: int
     rows: tuple[CoinTransactionRow, ...]
     complete: bool
+    after: int | None = None
+    before: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,25 +140,43 @@ class AchievementEconomyQueries:
             bool(row is not None and row[1] == month_key), month_key,
         )
 
-    def coin_transactions(self, member_id: int) -> CoinTransactionSnapshot:
+    def coin_transactions(
+        self, member_id: int, *, after: int | None = None,
+        before: int | None = None,
+    ) -> CoinTransactionSnapshot:
         if type(member_id) is not int or member_id <= 0:
             raise ValueError("Invalid coin-history member")
+        if (
+            after is not None and (type(after) is not int or after < 0)
+            or before is not None and (type(before) is not int or before < 0)
+            or after is not None and before is not None and after > before
+        ):
+            raise ValueError("Invalid coin-history time window")
         observed = self._observed()
+        predicate = "user_id = ?"
+        parameters = [member_id]
+        if after is not None:
+            predicate += " AND created_at >= ?"
+            parameters.append(after)
+        if before is not None:
+            predicate += " AND created_at < ?"
+            parameters.append(before)
         try:
             with closing(self._connect()) as connection:
+                connection.execute("BEGIN")
                 total = int(connection.execute(
-                    "SELECT COUNT(*) FROM coin_transactions WHERE user_id = ?",
-                    (member_id,),
+                    f"SELECT COUNT(*) FROM coin_transactions WHERE {predicate}",
+                    parameters,
                 ).fetchone()[0])
                 rows = connection.execute(
-                    """
+                    f"""
                     SELECT id, amount, type, reason, actor_id, created_at
                     FROM coin_transactions
-                    WHERE user_id = ?
+                    WHERE {predicate}
                     ORDER BY id DESC
                     LIMIT ?
                     """,
-                    (member_id, MAX_COIN_TRANSACTIONS),
+                    (*parameters, MAX_COIN_TRANSACTIONS),
                 ).fetchall()
         except sqlite3.Error as error:
             raise RuntimeError("Coin history could not be read") from error
@@ -185,7 +205,7 @@ class AchievementEconomyQueries:
             parsed_rows.append(parsed)
         return CoinTransactionSnapshot(
             observed.isoformat(), member_id, total, tuple(parsed_rows),
-            total == len(parsed_rows),
+            total == len(parsed_rows), after, before,
         )
 
     def raffle(self, month: str | None = None) -> RaffleSnapshot:

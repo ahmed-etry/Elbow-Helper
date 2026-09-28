@@ -212,8 +212,13 @@ class AchievementQueries:
     def member_inventory(self, member_id: int) -> MemberInventorySnapshot:
         return self.economy.member_inventory(member_id)
 
-    def coin_transactions(self, member_id: int) -> CoinTransactionSnapshot:
-        return self.economy.coin_transactions(member_id)
+    def coin_transactions(
+        self, member_id: int, *, after: int | None = None,
+        before: int | None = None,
+    ) -> CoinTransactionSnapshot:
+        return self.economy.coin_transactions(
+            member_id, after=after, before=before,
+        )
 
     def raffle(self, month: str | None = None) -> RaffleSnapshot:
         return self.economy.raffle(month)

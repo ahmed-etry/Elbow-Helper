@@ -243,6 +243,27 @@ class AchievementQueriesTests(unittest.TestCase):
         self.assertEqual(snapshot.rows[0].amount, -100)
         self.assertEqual(snapshot.rows[0].actor_id, 42)
 
+    def test_coin_history_filters_before_retention_limit_and_counts_selected_window(self):
+        with closing(sqlite3.connect(self.path)) as connection:
+            connection.executemany(
+                "INSERT INTO coin_transactions "
+                "(user_id, amount, type, reason, actor_id, created_at) "
+                "VALUES (42, 1, 'daily', NULL, NULL, 2000)",
+                [() for _ in range(MAX_COIN_TRANSACTIONS + 1)],
+            )
+            connection.commit()
+
+        queries = AchievementQueries(self.path)
+        selected = queries.coin_transactions(42, after=1000, before=1002)
+        self.assertEqual(selected.total_transactions, 2)
+        self.assertTrue(selected.complete)
+        self.assertEqual([row.created_at for row in selected.rows], [1001, 1000])
+        self.assertEqual((selected.after, selected.before), (1000, 1002))
+        self.assertEqual(queries.coin_transactions(42, after=1001, before=1002).total_transactions, 1)
+        self.assertEqual(queries.coin_transactions(42, after=1002, before=1002).total_transactions, 0)
+        with self.assertRaisesRegex(ValueError, "time window"):
+            queries.coin_transactions(42, after=1003, before=1002)
+
     def test_coin_history_reports_bounded_coverage(self):
         with closing(sqlite3.connect(self.path)) as connection:
             connection.executemany(
