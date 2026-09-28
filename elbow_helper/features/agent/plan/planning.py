@@ -31,6 +31,7 @@ async def read_request(
     session: AgentSession, registry: Mapping[str, RegisteredAgentTool],
     named_sources: Mapping[str, frozenset[Any]], request_id: int | None,
     validate_step: Callable[[Mapping[str, Any]], Awaitable[str]] | None = None,
+    validate_plan: Callable[[Mapping[str, Any]], str] | None = None,
     advance: Callable[..., Awaitable[Any]] | None = None,
 ) -> ReadDecision:
     rounds = []
@@ -56,6 +57,10 @@ async def read_request(
             except (TypeError, ValueError):
                 plan = None
             check = check_plan(plan, registry, named_sources)
+            if check.ok and validate_plan is not None:
+                issue = validate_plan(plan)
+                if issue:
+                    check = type(check)(False, issue)
             if check.ok and validate_step is not None:
                 for planned_step in plan["steps"]:
                     issue = await validate_step(planned_step)

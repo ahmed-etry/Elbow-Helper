@@ -77,6 +77,7 @@ def build_command_capabilities(
                 "type": "object",
                 "properties": {option.name: _option_schema(option) for option in options},
                 "required": [],
+                "x-command-required": [option.name for option in options if option.required],
                 "additionalProperties": False,
             },
         )

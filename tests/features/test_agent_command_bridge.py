@@ -8,6 +8,7 @@ from elbow_helper.features.agent.commands.bridge import build_command_tools, che
 from elbow_helper.features.agent.commands.outcomes import CommandOutcome
 from elbow_helper.features.agent.commands.registry import CommandAdapter
 from elbow_helper.features.agent.models import AgentTurnState, AgentCapabilityEffect
+from elbow_helper.features.agent.models import AgentAttachment
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 
 
@@ -51,6 +52,21 @@ class CommandBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("private synthetic data", str(result))
         self.assertEqual(context.state.command_outcomes[0].private_parts, ("private synthetic data",))
         self.run.assert_awaited_once_with(context, {"target": 101})
+
+    async def test_private_text_and_files_never_enter_public_delivery_state(self):
+        self.run.return_value = CommandOutcome(
+            "complete", "private", text="synthetic private text",
+            attachments=(AgentAttachment("synthetic.txt", b"private bytes"),),
+        )
+        with self.patches[0], self.patches[1]:
+            tools, _ = build_command_tools(object(), (self.adapter,))
+        context = SimpleNamespace(state=AgentTurnState())
+        result = await next(iter(tools.values())).handler(context, {"target": 101})
+        self.assertNotIn("synthetic private text", str(result))
+        self.assertNotIn("private bytes", str(result))
+        self.assertEqual(context.state.attachments, [])
+        self.assertEqual(context.state.command_outcomes[0].private_parts,
+                         ("synthetic private text",))
 
     async def test_named_sources_are_checked_before_execution(self):
         with self.patches[0], self.patches[1]:

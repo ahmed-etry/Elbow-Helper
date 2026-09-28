@@ -43,6 +43,9 @@ from .plan.planning import read_request
 from .plan.results import model_result, plan_feedback
 from .plan.sources import named_sources
 from .plan.scope import ScopeLedger, resource_ids
+from .commands.adapters import enabled_adapters
+from .commands.bridge import build_command_tools, check_command_plan
+from .commands.outcomes import command_reply
 from .reports.base import retain_reports
 
 
@@ -54,6 +57,7 @@ MAX_TOOL_CALLS = 48
 MAX_TOOL_RESULT_CHARACTERS = 64_000
 MAX_EVIDENCE_CHARACTERS = 300_000
 TOOL_TIMEOUT_SECONDS = 30.0
+COMMAND_TIMEOUT_SECONDS = 180.0
 MODEL_ROUND_TIME_RESERVE_SECONDS = 15.0
 FINAL_ANSWER_TIME_RESERVE_SECONDS = 45.0
 DELIVERY_TIME_RESERVE_SECONDS = 15.0
@@ -76,8 +80,9 @@ class AgentUnavailableError(RuntimeError):
 class AgentService:
     """Plan checked reads and answer from their results."""
 
-    def __init__(self, model: AgentModel):
+    def __init__(self, model: AgentModel, *, commands_enabled: bool = False):
         self._model = model
+        self._commands_enabled = commands_enabled
 
     @staticmethod
     async def _execute_tool(
@@ -87,6 +92,7 @@ class AgentService:
         arguments: Mapping[str, Any],
         capability_scope: Mapping[str, Any] | None = None,
         context: AgentRequestContext,
+        timeout_seconds: float = TOOL_TIMEOUT_SECONDS,
     ) -> str:
         snapshot = _tool_state_snapshot(context)
         started_at = time.monotonic()
@@ -98,7 +104,7 @@ class AgentService:
                 require_access_requirements(
                     context.guild, context.member.id, required_access,
                 )
-            async with asyncio.timeout(TOOL_TIMEOUT_SECONDS):
+            async with asyncio.timeout(timeout_seconds):
                 payload = await handler(context, arguments)
             if not isinstance(payload, Mapping):
                 raise CapabilityBindError("The lookup did not return a structured result.")
@@ -206,13 +212,20 @@ class AgentService:
         context: AgentRequestContext, conversation_history: str = "",
     ) -> str:
         registry = build_agent_tools()
+        command_capabilities = {}
+        if self._commands_enabled:
+            command_tools, command_capabilities = build_command_tools(
+                context.bot, enabled_adapters(),
+            )
+            registry.update(command_tools)
         visible_channels = (
             *getattr(context.guild, "channels", ()),
             *getattr(context.guild, "threads", ()),
         )
         sources = named_sources(question, visible_channels)
+        command_check = lambda plan: check_command_plan(plan, command_capabilities, sources)
         definition = plan_definition(registry)
-        system_prompt = system_instructions(registry)
+        system_prompt = system_instructions(registry, commands_enabled=self._commands_enabled)
         context.state.request_text = question
         compiled = compile_context(
             question=question, local_context=local_context, context=context,
@@ -334,6 +347,13 @@ class AgentService:
                 retained = []
                 if not _valid_arguments(arguments, tool.definition.parameters):
                     return {"error": "Arguments must match the capability schema."}
+                if tool.effect is AgentCapabilityEffect.COMMAND:
+                    issue = check_command_plan(
+                        {**plan, "steps": [{**step, "arguments": arguments}]},
+                        command_capabilities, sources,
+                    )
+                    if issue:
+                        return {"error": issue}
                 bound_periods = []
                 for kind, value, extra in periods:
                     if kind != "resolved":
@@ -394,7 +414,8 @@ class AgentService:
                     if evidence_characters >= MAX_EVIDENCE_CHARACTERS:
                         return {"error": "The request reached its evidence limit."}
                     if context.deadline_monotonic is not None and (
-                        time.monotonic() + TOOL_TIMEOUT_SECONDS
+                        time.monotonic() + (COMMAND_TIMEOUT_SECONDS if tool.effect is AgentCapabilityEffect.COMMAND
+                                            else TOOL_TIMEOUT_SECONDS)
                         + FINAL_ANSWER_TIME_RESERVE_SECONDS
                         + DELIVERY_TIME_RESERVE_SECONDS >= context.deadline_monotonic
                     ):
@@ -412,6 +433,8 @@ class AgentService:
                 raw = await self._execute_tool(
                     name=name, handler=tool.handler, arguments=arguments,
                     capability_scope=capability_scope, context=local,
+                    timeout_seconds=(COMMAND_TIMEOUT_SECONDS if tool.effect is AgentCapabilityEffect.COMMAND
+                                     else TOOL_TIMEOUT_SECONDS),
                 )
                 try:
                     raw_payload = json.loads(raw)
@@ -479,6 +502,7 @@ class AgentService:
             await require_disclosure_access(context)
             decision = await read_request(
                 session, registry, sources, request_id, validate_step=disclosure_issue,
+                validate_plan=command_check,
                 advance=advance_model,
             )
             if decision.answer is not None:
@@ -491,6 +515,10 @@ class AgentService:
             scope = _scope_entries(plan)
             while rounds < MAX_MODEL_ROUNDS:
                 results = await run_plan(plan)
+                if context.state.command_outcomes:
+                    await require_disclosure_access(context)
+                    status = "completed"
+                    return command_reply(context.state.command_outcomes)
                 pending = (AgentToolResult(
                     decision.rounds[-1].tool_calls[0].call_id,
                     json.dumps({"results": results, "instruction": "Answer now from these results. Submit another plan only for a remaining gap."},
@@ -548,6 +576,10 @@ class AgentService:
                 except (TypeError, ValueError):
                     raise AgentUnavailableError("The agent returned an invalid plan") from None
                 check = check_plan(next_plan, registry, sources)
+                if check.ok:
+                    command_issue = command_check(next_plan)
+                    if command_issue:
+                        check = type(check)(False, command_issue)
                 LOGGER.info("Agent plan: request=%s revision=%s plan=%s", request_id,
                             revisions + 1, json.dumps(next_plan, ensure_ascii=False, default=str))
                 LOGGER.info("Agent plan check: request=%s revision=%s ok=%s step=%s error=%s",
@@ -709,6 +741,7 @@ def _merge_tool_state(target: AgentRequestContext, local: AgentRequestContext, p
     target.state.authorized_instructions = local.state.authorized_instructions
     target.state.stale_knowledge_report_ids.update(local.state.stale_knowledge_report_ids)
     target.state.stale_knowledge_refs.update(local.state.stale_knowledge_refs)
+    target.state.command_outcomes.extend(local.state.command_outcomes)
 
 
 def _tool_state_snapshot(context: AgentRequestContext) -> dict[str, Any]:

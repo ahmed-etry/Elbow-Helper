@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from typing import Any
 
 from elbow_helper.domain.player_tags import normalize_player_tag
@@ -24,7 +25,11 @@ def build_command_tools(
                        else await selected.adapter.run(context, values))
             if not isinstance(outcome, CommandOutcome):
                 raise TypeError("Command adapter returned an invalid result")
+            if outcome.visibility == "private" and outcome.text:
+                outcome = replace(outcome, text="", private_parts=(outcome.text, *outcome.private_parts))
             context.state.command_outcomes.append(outcome)
+            if outcome.visibility == "public":
+                context.state.attachments.extend(outcome.attachments)
             return {"command": selected.adapter.path, "status": outcome.status,
                     "visibility": outcome.visibility}
         tools[name] = RegisteredAgentTool(

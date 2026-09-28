@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..models import AgentAttachment
+from ..wording import COMMAND_EMPTY, COMMAND_MISSING_VALUE, COMMAND_PRIVATE_NOTE, COMMAND_UNAVAILABLE
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,3 +24,19 @@ class CommandOutcome:
     @classmethod
     def unavailable(cls) -> "CommandOutcome":
         return cls("unavailable")
+
+
+def command_reply(outcomes: list[CommandOutcome]) -> str:
+    missing = next((item.missing for item in outcomes if item.status == "needs_input"), "")
+    if missing:
+        return COMMAND_MISSING_VALUE.format(value=missing.replace("_", " "))
+    parts = [item.text for item in outcomes
+             if item.status == "complete" and item.visibility == "public" and item.text]
+    if any(item.visibility == "private" and (item.private_parts or item.attachments)
+           for item in outcomes):
+        parts.append(COMMAND_PRIVATE_NOTE)
+    if parts:
+        return "\n\n".join(parts)
+    if any(item.status == "empty" for item in outcomes):
+        return COMMAND_EMPTY
+    return COMMAND_UNAVAILABLE

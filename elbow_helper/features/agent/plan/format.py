@@ -13,9 +13,11 @@ from ..capabilities import CONTRACTS
 PLAN_TOOL_NAME = "submit_request_plan"
 
 
-def system_instructions(registry: Mapping[str, RegisteredAgentTool]) -> str:
-    from ..prompts import SYSTEM_PROMPT
-    return (SYSTEM_PROMPT + "\n\n" + PLANNING_INSTRUCTIONS
+def system_instructions(registry: Mapping[str, RegisteredAgentTool], *, commands_enabled: bool = False) -> str:
+    from ..prompts import COMMAND_SYSTEM_PROMPT, SYSTEM_PROMPT
+    prompt = COMMAND_SYSTEM_PROMPT if commands_enabled else SYSTEM_PROMPT
+    command_rules = COMMAND_PLANNING_INSTRUCTIONS if commands_enabled else ""
+    return (prompt + "\n\n" + PLANNING_INSTRUCTIONS + command_rules
             + "\n\n<capabilities>\n" + capability_list(registry) + "\n</capabilities>")
 
 
@@ -45,7 +47,7 @@ def capability_list(registry: Mapping[str, RegisteredAgentTool]) -> str:
         tool = registry[name]
         contract = CONTRACTS.get(name)
         schema = tool.definition.parameters
-        required = set(schema.get("required", ()))
+        required = set(schema.get("required", ())) | set(schema.get("x-command-required", ()))
         arguments = [
             f"{field}:{_argument(detail)}{'*' if field in required else ''}"
             for field, detail in schema.get("properties", {}).items()
@@ -116,3 +118,8 @@ A plan has one goal, low or high answer effort, an available output form, explic
 For a utc_range, write kind, start and exclusive end in UTC. For a key, write kind, field and value using a registered time field. For a resolved period, write kind, step, selector and the exact result path advertised by the owning capability. Entities have kind and value; a value may use the same earlier-result reference as an argument. Declare resolved entities before later reads. Use the catalogue argument types, required fields, choices and bounds. Use a period key only when its owning capability defines it. To select a latest or current period, plan an earlier lookup that returns the key, declare a resolved period, then refer to that result. Empty periods mean current state; latest-N selectors are allowed only then. Name the sources the requester named. Offer other sources in the answer instead of reading them. Never broaden a period or source to make a lookup work.
 
 Use low effort unless the answer needs substantial synthesis. After checked results arrive, answer from those results. Request more steps only for a remaining gap, and stay inside the declared scope unless a revision is needed. Mention a limit only if it changes the conclusion."""
+
+
+COMMAND_PLANNING_INSTRUCTIONS = """
+
+When a listed command matches the request, include its command capability as a step. Use its registered option types and choices. Omit a required value when the member has not supplied or resolved it; the command will ask for that value. Never guess an ambiguous value. A command's result is delivered by code at that command's visibility."""

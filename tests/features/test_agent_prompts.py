@@ -1,10 +1,18 @@
 from datetime import datetime, timezone
 import unittest
 
-from elbow_helper.features.agent.prompts import SYSTEM_PROMPT, build_request_prompt
+from elbow_helper.features.agent.prompts import COMMAND_SYSTEM_PROMPT, SYSTEM_PROMPT, build_request_prompt
 
 
 class RequestPromptTests(unittest.TestCase):
+    def test_command_switch_changes_only_command_authority_text(self):
+        self.assertIn("cannot change live Discord, roster, role, or other bot data", SYSTEM_PROMPT)
+        self.assertIn("You cannot edit Discord or bot data directly", COMMAND_SYSTEM_PROMPT)
+        self.assertIn("You can run the bot commands listed among your capabilities", COMMAND_SYSTEM_PROMPT)
+        self.assertIn("only after the member confirms it", COMMAND_SYSTEM_PROMPT)
+        self.assertNotEqual(SYSTEM_PROMPT, COMMAND_SYSTEM_PROMPT)
+        self.assertNotIn("You can run the bot commands", SYSTEM_PROMPT)
+
     def test_approved_knowledge_is_evidence_not_policy_execution(self):
         self.assertIn("Use search_approved_knowledge", SYSTEM_PROMPT)
         self.assertIn("cite the exact section and version", SYSTEM_PROMPT)

@@ -16,6 +16,10 @@ import discord
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.models import AgentRequestContext, RegisteredAgentTool, AgentCapabilityEffect
 from elbow_helper.features.agent.service import AgentService, AgentUnavailableError
+from elbow_helper.features.agent.commands.bridge import build_command_tools
+from elbow_helper.features.agent.commands.outcomes import CommandOutcome
+from elbow_helper.features.agent.commands.registry import CommandAdapter
+from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.capabilities import CapabilityContract
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentToolDefinition, AgentUsage
@@ -676,3 +680,99 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(json.loads(context.state.evidence[-1])["capability_scope"]["bound_source_channels"], [91])
             if source == 202:
                 self.assertNotIn('"value": 7', session.calls[1][0][0].content)
+
+    async def test_disabled_commands_keep_the_read_only_catalogue(self):
+        session = _Session([AgentStep("Ready.", (), AgentUsage())], self.events)
+        with patch("elbow_helper.features.agent.service.build_command_tools") as commands:
+            _, model = await self._answer(session)
+        commands.assert_not_called()
+        self.assertNotIn("run_command_", model.request["system_prompt"])
+
+    async def test_enabled_command_asks_once_then_runs_on_reply(self):
+        run = AsyncMock(return_value=CommandOutcome("complete", text="Synthetic result"))
+        path = "/synthetic"
+        command = DiscoveredCommand(
+            path, "registered", (ParameterInfo(
+                "value", "A required value.", True, "integer"),))
+        help_entry = SimpleNamespace(path=path, summary="Get a synthetic result.", details="Uses a value.")
+        with (patch("elbow_helper.features.agent.commands.registry.discover_commands", return_value={path: command}),
+              patch("elbow_helper.features.agent.commands.registry.HELP_ENTRIES", (help_entry,))):
+            tools, capabilities = build_command_tools(object(), (CommandAdapter(path, "public", run),))
+        command_name = next(iter(tools))
+        async def answer(plan, history=""):
+            session = _Session([_model_step(plan)], self.events)
+            model = _Model(session)
+            context = _context()
+            with (patch("elbow_helper.features.agent.service.build_agent_tools", return_value=self.registry),
+                  patch("elbow_helper.features.agent.service.build_command_tools",
+                        return_value=(tools, capabilities))):
+                response = await AgentService(model, commands_enabled=True).answer(
+                    question="synthetic request", local_context="", context=context,
+                    conversation_history=history)
+            return response, session, context, model
+        incomplete = _plan([{**_step("command"), "capability": command_name}])
+        question, session, context, model = await answer(incomplete)
+        self.assertEqual(question, "Which value should I use?")
+        self.assertEqual(len(session.calls), 1)
+        self.assertIn(command_name, model.request["system_prompt"])
+        self.assertIn("You can run the bot commands", model.request["system_prompt"])
+        run.assert_not_awaited()
+        complete = _plan([{**_step("command", {"value": 7}), "capability": command_name}])
+        response, session, context, _ = await answer(complete, history=question)
+        self.assertEqual(response, "Synthetic result")
+        self.assertEqual(len(session.calls), 1)
+        self.assertEqual(context.state.command_outcomes[0].text, "Synthetic result")
+        run.assert_awaited_once()
+
+    async def test_private_command_data_never_reaches_public_reply_or_model(self):
+        run = AsyncMock(return_value=CommandOutcome(
+            "complete", "private", private_parts=("synthetic private data",)))
+        path = "/synthetic"
+        help_entry = SimpleNamespace(path=path, summary="Get a result.", details="Uses no options.")
+        with (patch("elbow_helper.features.agent.commands.registry.discover_commands",
+                    return_value={path: DiscoveredCommand(path, "registered", ())}),
+              patch("elbow_helper.features.agent.commands.registry.HELP_ENTRIES", (help_entry,))):
+            tools, capabilities = build_command_tools(object(), (CommandAdapter(path, "private", run),))
+        plan = _plan([{**_step("command"), "capability": next(iter(tools))}])
+        session = _Session([_model_step(plan)], self.events)
+        context = _context()
+        with (patch("elbow_helper.features.agent.service.build_agent_tools", return_value=self.registry),
+              patch("elbow_helper.features.agent.service.build_command_tools",
+                    return_value=(tools, capabilities))):
+            answer = await AgentService(_Model(session), commands_enabled=True).answer(
+                question="synthetic request", local_context="", context=context)
+        self.assertNotIn("synthetic private data", answer)
+        self.assertNotIn("synthetic private data", str(context.state.evidence))
+        self.assertEqual(context.state.command_outcomes[0].private_parts,
+                         ("synthetic private data",))
+        self.assertEqual(len(session.calls), 1)
+
+    async def test_command_reference_cannot_escape_named_sources(self):
+        run = AsyncMock(return_value=CommandOutcome("complete", text="Unexpected"))
+        path = "/synthetic"
+        command = DiscoveredCommand(path, "registered", (
+            ParameterInfo("target", "Select a target.", True, "integer"),
+        ))
+        help_entry = SimpleNamespace(path=path, summary="Get a result.", details="Uses one target.")
+        with (patch("elbow_helper.features.agent.commands.registry.discover_commands",
+                    return_value={path: command}),
+              patch("elbow_helper.features.agent.commands.registry.HELP_ENTRIES", (help_entry,))):
+            tools, capabilities = build_command_tools(object(), (
+                CommandAdapter(path, "public", run,
+                               entity_options=(("target", "synthetic_source"),)),
+            ))
+        command_step = {**_step("command", {"target": {"step": "first", "path": ["value"]}},
+                                ["first"]), "capability": next(iter(tools))}
+        plan = _plan([_step("first", {"value": 202}), command_step])
+        plan["entities"] = [{"kind": "synthetic_source", "value": 101}]
+        session = _Session([_model_step(plan), AgentStep("Refused.", (), AgentUsage())], self.events)
+        with (patch("elbow_helper.features.agent.service.build_agent_tools", return_value=self.registry),
+              patch("elbow_helper.features.agent.service.build_command_tools",
+                    return_value=(tools, capabilities)),
+              patch("elbow_helper.features.agent.service.named_sources",
+                    return_value={"synthetic_source": frozenset({101})})):
+            await AgentService(_Model(session), commands_enabled=True).answer(
+                question="synthetic request", local_context="", context=_context())
+        run.assert_not_awaited()
+        data = json.loads(session.calls[1][0][0].content)["results"]
+        self.assertEqual(data["command"]["flags"]["status"], "failed")

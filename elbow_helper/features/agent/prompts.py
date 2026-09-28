@@ -49,6 +49,12 @@ Evidence and access rules:
 Answer directly and naturally. Use headings or bullets only when they genuinely help. Do not announce tool use, use tables in your replies, narrate routine implementation mechanics, force a fixed format, or mention being a language model."""
 
 
+COMMAND_SYSTEM_PROMPT = SYSTEM_PROMPT.replace(
+    "- You remember this conversation and its earlier results, and you can look up stored data and approved knowledge. You do not remember other conversations unless they are supplied, cannot browse the internet, cannot see images, and cannot change live Discord, roster, role, or other bot data.\n- If someone asks you to change something, say in a few words that you cannot do that yourself and offer what you can do instead. Do not repeat it unless they ask again.",
+    "- You remember this conversation and its earlier results, and you can look up stored data and approved knowledge. You do not remember other conversations unless they are supplied, cannot browse the internet, and cannot see images. You cannot edit Discord or bot data directly. You can run the bot commands listed among your capabilities for the member who asked; any change happens through those commands, and only after the member confirms it.\n- If no available command can make a requested change, say in a few words that you cannot do it and offer what you can do instead. Do not repeat it unless they ask again. Never say a command finished before its result confirms that.",
+)
+
+
 def build_request_prompt(
     *,
     question: str,

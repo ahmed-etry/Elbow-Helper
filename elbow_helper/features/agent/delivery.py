@@ -16,6 +16,7 @@ from .conversation.state import Conversation
 from .conversation.transcripts import archive_write
 from .models import AgentAttachment, AgentDelivery, AgentRequestContext
 from .service import AgentUnavailableError
+from .commands.private_view import PrivateCommandView
 
 LOGGER = logging.getLogger(__name__)
 DISCORD_MESSAGE_LIMIT = 2_000
@@ -66,6 +67,18 @@ class AgentDeliveryMixin:
             if context is not None:
                 await require_disclosure_access(context)
             options = {"files": files} if files else {}
+            private_parts = tuple(
+                part for outcome in (context.state.command_outcomes if context else ())
+                if outcome.visibility == "private" for part in outcome.private_parts
+            )
+            private_files = tuple(
+                item for outcome in (context.state.command_outcomes if context else ())
+                if outcome.visibility == "private" for item in outcome.attachments
+            )
+            private_view = (PrivateCommandView(message.author.id, private_parts, private_files)
+                            if private_parts or private_files else None)
+            if private_view is not None:
+                options["view"] = private_view
             nonce = _delivery_nonce(message.id, 0)
             sent = await self._send_delivery_part(
                 message.reply, getattr(message, "channel", None), nonce,
@@ -74,6 +87,8 @@ class AgentDeliveryMixin:
                 mention_author=False, allowed_mentions=allowed_mentions,
                 **options,
             )
+            if private_view is not None:
+                private_view.message = sent
             if delivery is not None:
                 delivery.record(sent.id, response if chunks == [None] else (chunks[0] if chunks else ""))
             if conversation is not None:

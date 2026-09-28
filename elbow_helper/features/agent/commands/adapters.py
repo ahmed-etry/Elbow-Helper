@@ -60,7 +60,7 @@ async def run_health_player(context: Any, values: Mapping[str, Any]) -> CommandO
         return CommandOutcome.needs_input("account")
     mode = values.get("period", "last_30d")
     if mode == "custom" and (not values.get("date_from") or not values.get("date_to")):
-        return CommandOutcome.needs_input("date_from and date_to")
+        return CommandOutcome.needs_input("start and end dates")
     selected, issue = prepare_player_health_window(
         mode, date_from=values.get("date_from"), date_to=values.get("date_to"),
     )
