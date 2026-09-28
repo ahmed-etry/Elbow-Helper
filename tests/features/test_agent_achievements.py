@@ -62,16 +62,21 @@ class _Queries:
             "2026-09-18T12:00:00+00:00", member_id, 125, True, 24321,
         )
 
-    def coin_transactions(self, member_id):
-        return CoinTransactionSnapshot(
-            "2026-09-18T12:00:00+00:00", member_id, 2,
-            (
-                CoinTransactionRow(
-                    2, -100, "raffle_purchase", "ticket", member_id, 1001,
-                ),
-                CoinTransactionRow(1, 5, "daily", None, None, 1000),
+    def coin_transactions(self, member_id, *, after=None, before=None):
+        rows = (
+            CoinTransactionRow(
+                2, -100, "raffle_purchase", "ticket", member_id, 1001,
             ),
-            True,
+            CoinTransactionRow(1, 5, "daily", None, None, 1000),
+        )
+        selected = tuple(
+            row for row in rows
+            if (after is None or row.created_at >= after)
+            and (before is None or row.created_at < before)
+        )
+        return CoinTransactionSnapshot(
+            "2026-09-18T12:00:00+00:00", member_id, len(selected),
+            selected, True, after, before,
         )
 
     def raffle(self, month=None):
@@ -269,6 +274,31 @@ class AgentAchievementTests(unittest.IsolatedAsyncioTestCase):
             "offset": first["next_offset"],
         })
         self.assertEqual(second["transactions"][0]["transaction_id"], 1)
+
+    async def test_coin_history_retains_exact_time_window_across_pages(self):
+        first = await read_member_coin_history(self.context, {
+            "member_id": self.target.id,
+            "after": "1970-01-01T00:16:41Z",
+            "before": "1970-01-01T00:16:42Z",
+        })
+        self.assertEqual(first["total_transactions"], 1)
+        self.assertEqual(first["after_inclusive_ts"], 1001)
+        self.assertEqual(first["before_exclusive_ts"], 1002)
+        self.assertEqual(first["transactions"][0]["created_at"], 1001)
+        second = await read_member_coin_history_report(self.context, {
+            "report_id": first["report_id"],
+        })
+        self.assertEqual(second["after_inclusive_ts"], 1001)
+        self.assertEqual(second["total_transactions"], 1)
+
+        empty = await read_member_coin_history(self.context, {
+            "member_id": self.target.id,
+            "after": "1970-01-01T00:16:40.1Z",
+            "before": "1970-01-01T00:16:40.2Z",
+        })
+        self.assertEqual(empty["total_transactions"], 0)
+        self.assertEqual(empty["after_inclusive_ts"], 1001)
+        self.assertEqual(empty["before_exclusive_ts"], 1001)
 
     async def test_coin_history_permission_loss_hides_retained_report(self):
         first = await read_member_coin_history(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from typing import Any, Mapping
 from uuid import uuid4
 
@@ -12,6 +13,7 @@ from ..access import ACCESS_LEAD, require_access_requirements, require_evidence_
 from ..reports.achievement import CoinTransactionReport, RaffleReport
 from ..reports.base import ArtifactCapacityError, retain_report
 from ..models import AgentRequestContext, RegisteredAgentTool
+from ..semantic import CONTRACTS, bound_time_window
 
 
 def achievement_economy_tools() -> tuple[RegisteredAgentTool, ...]:
@@ -32,8 +34,13 @@ def achievement_economy_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         (
             "read_member_coin_history",
-            "Read and retain one current member's newest coin earnings and spending. Returns the exact total and explicitly reports if the retained history is bounded rather than complete. This performs no economy or raffle action.",
-            {"member_id": {"type": "integer", "minimum": 1}, "limit": limit},
+            "Read and retain one current member's newest coin earnings and spending, optionally within an ISO UTC interval (after inclusive, before exclusive). The total and completeness apply to that interval. This performs no economy or raffle action.",
+            {
+                "member_id": {"type": "integer", "minimum": 1},
+                "after": {"type": "string", "minLength": 1},
+                "before": {"type": "string", "minLength": 1},
+                "limit": limit,
+            },
             ("member_id",), read_member_coin_history,
         ),
         (
@@ -149,9 +156,12 @@ async def read_member_coin_history(
     member_id = arguments["member_id"]
     if context.guild.get_member(member_id) is None:
         return {"error": "That member is not currently in this server."}
+    after, before = bound_time_window(CONTRACTS["read_member_coin_history"], arguments)
     try:
         snapshot = await asyncio.to_thread(
             context.achievement_queries.coin_transactions, member_id,
+            after=math.ceil(after.timestamp()) if after is not None else None,
+            before=math.ceil(before.timestamp()) if before is not None else None,
         )
     except (RuntimeError, ValueError):
         return {"error": "Coin history could not be read completely."}
