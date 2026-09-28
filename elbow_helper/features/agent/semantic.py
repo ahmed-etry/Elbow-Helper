@@ -181,6 +181,7 @@ CONTRACTS: Mapping[str, CapabilityContract] = {
 
 
 _LATEST_FIELDS = {
+    "list_roster_cycles": ("before_id",),
     "find_discord_threads": ("cursor",),
     "get_player_health": ("days",),
     "list_clan_health_reports": ("before_run_id",),

@@ -54,7 +54,8 @@ def _plan_for(name, tool, contract, selected_field=None):
     periods = []
     if contract.time_window and (any(field in arguments for field in contract.time_window[:2])
                                 or selected_field in contract.bounded_fields
-                                or selected_field in contract.time_window[:2]):
+                                or selected_field in contract.time_window[:2]
+                                or not contract.latest_fields):
         lower, upper, encoding = contract.time_window
         arguments[lower], arguments[upper] = ((100, 200) if encoding == "unix_seconds" else
                                             ("2026-01-02T00:00:00Z", "2026-01-03T00:00:00Z"))
@@ -246,3 +247,10 @@ class PlanContractTests(unittest.TestCase):
             self.assertIsInstance(check.ok, bool)
             if not check.ok:
                 self.assertTrue(check.error)
+
+    def test_historical_windows_cannot_default_to_unbounded_reads(self):
+        for name, contract in CONTRACTS.items():
+            if contract.time_window and not contract.latest_fields:
+                with self.subTest(capability=name):
+                    self.assertTrue(_time_check(contract, {}, (), set()))
+                    self.assertTrue(_time_check(contract, {}, (("key", "synthetic-key", "selected"),), set()))

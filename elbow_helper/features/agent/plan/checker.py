@@ -109,9 +109,10 @@ def _has_reference(value: Any) -> bool:
 
 def _reference(value: Any, earlier: set[str]) -> bool:
     return (isinstance(value, dict) and set(value) == {"step", "path"}
-            and value["step"] in earlier and isinstance(value["path"], list)
+            and isinstance(value["step"], str) and value["step"] in earlier and isinstance(value["path"], list)
             and 1 <= len(value["path"]) <= 8
-            and all(type(part) in (str, int) for part in value["path"]))
+            and all(isinstance(part, str) and part or type(part) is int and part >= 0
+                    for part in value["path"]))
 
 
 def _kind(kind: str) -> str:
@@ -157,6 +158,8 @@ def _time_check(
 ) -> str:
     used = {field: arguments[field] for field in contract.time_fields if field in arguments}
     if not used:
+        if contract.time_window and not contract.latest_fields:
+            return "Declare a period and both time boundaries for this read."
         return "Declare the time field that bounds this read." if periods and contract.time_fields else ""
     if not periods:
         if set(used) <= set(contract.latest_fields):
@@ -251,7 +254,7 @@ def check_plan(
             dependencies = step["depends_on"]
             if not isinstance(dependencies, list) or any(dep not in earlier for dep in dependencies):
                 return _error("Depend only on earlier steps.", step_id)
-            if not isinstance(step["reason"], str) or not step["reason"].strip():
+            if not isinstance(step["reason"], str) or not 1 <= len(step["reason"].strip()) <= 240:
                 return _error("Give the step a short reason.", step_id)
             tool = registry[capability]
             arguments = step["arguments"]
