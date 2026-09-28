@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import asdict
 from typing import Any, Mapping
 from uuid import uuid4
 
@@ -22,9 +23,10 @@ def cwl_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
         (
             "list_cwl_ass_seasons",
-            "List seasons with stored completed CWL wars for one clan so an "
-            "unfamiliar ASS request can resolve its exact scope. This does not "
-            "calculate a score or poll Clash.",
+            "List seasons with stored ended CWL wars for one clan, including "
+            "the distinct ended-war count and whether seven wars are recorded. "
+            "Use this to resolve an exact season without treating a partial "
+            "season as complete. This does not calculate a score or poll Clash.",
             {"clan_code": {
                 "type": "string", "enum": list(CWL_CLAN_CODES),
             }},
@@ -130,17 +132,23 @@ async def list_cwl_ass_seasons(
     if context.cwl_queries is None:
         return {"error": "CWL performance data is not available."}
     try:
-        seasons = await asyncio.to_thread(
-            context.cwl_queries.ass_seasons,
+        snapshot = await asyncio.to_thread(
+            context.cwl_queries.ass_season_coverage,
             clan_code=arguments["clan_code"],
         )
     except ValueError as error:
         return {"error": str(error)}
+    except RuntimeError:
+        return {"error": "CWL season coverage is unavailable."}
     await require_evidence_access(context)
     return {
-        "clan_code": arguments["clan_code"],
-        "seasons": list(seasons), "season_count": len(seasons),
-        "coverage": "stored_completed_cwl_wars",
+        "observed_at": snapshot.observed_at,
+        "clan_code": snapshot.clan_code,
+        "seasons": [row.season for row in snapshot.seasons],
+        "season_count": len(snapshot.seasons),
+        "season_coverage": [asdict(row) for row in snapshot.seasons],
+        "latest_seven_war_season": snapshot.latest_seven_war_season,
+        "coverage": "distinct_stored_ended_wars; roster_and_attack_completeness_not_proven",
     }
 
 

@@ -22,7 +22,7 @@ from elbow_helper.features.cwl.queries import (
     CwlAssScopeRow, CwlAssScopeSnapshot, CwlBonusAttackScore,
     CwlBonusScopeSnapshot, CwlBonusSettings, CwlClanSeasonSummary,
     CwlPerformanceRow, CwlPerformanceSnapshot,
-    CwlThreadRegistration,
+    CwlSeasonCoverage, CwlSeasonCoverageSnapshot, CwlThreadRegistration,
 )
 
 
@@ -46,21 +46,28 @@ class _Queries:
     def __init__(self):
         self.snapshot = _snapshot()
         self.calls = []
+        self.scopes = []
         self.threads = (
             CwlThreadRegistration("BEH", "Brown Elbow Heroes", "#P0", 100, "now"),
             CwlThreadRegistration("BEC", "Brown Elbow Clan", "#P2", 200, None),
         )
 
-    def performance(self, *, history_limit):
+    def performance(self, *, history_limit, season=None, clan_code=None):
         self.calls.append(history_limit)
+        self.scopes.append((season, clan_code))
         return self.snapshot
 
     def registered_threads(self):
         return self.threads
 
-    def ass_seasons(self, *, clan_code):
-        self.calls.append(("ass_seasons", clan_code))
-        return ("2026-08",)
+    def ass_season_coverage(self, *, clan_code):
+        self.calls.append(("ass_season_coverage", clan_code))
+        return CwlSeasonCoverageSnapshot(
+            "2026-09-17T12:00:00+00:00", clan_code,
+            (CwlSeasonCoverage("2026-09", 1, 2000, False),
+             CwlSeasonCoverage("2026-08", 7, 1007, True)),
+            "2026-08",
+        )
 
     def ass_scope(
         self, *, clan_code, season, scope_type, cwl_round=None, war_id=None,
@@ -140,6 +147,13 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(report, self.context.state.reports[first["report_id"]])
         self.assertEqual(self.queries.calls, [3])
 
+    async def test_performance_source_receives_requested_period_and_clan(self):
+        await read_cwl_performance(self.context, {
+            "season": "2026-08", "clan_code": "BEH", "player_tag": "#P0",
+        })
+
+        self.assertEqual(self.queries.scopes, [("2026-08", "BEH")])
+
     async def test_report_filters_and_rejects_invalid_tag_or_kind(self):
         first = await read_cwl_performance(self.context, {})
         filtered = await read_cwl_performance_report(self.context, {
@@ -175,7 +189,10 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
             "scope_type": "round", "cwl_round": 1,
         })
 
-        self.assertEqual(seasons["seasons"], ["2026-08"])
+        self.assertEqual(seasons["seasons"], ["2026-09", "2026-08"])
+        self.assertEqual(seasons["latest_seven_war_season"], "2026-08")
+        self.assertEqual(seasons["season_coverage"][0]["ended_wars"], 1)
+        self.assertFalse(seasons["season_coverage"][0]["seven_wars_recorded"])
         self.assertEqual(
             season["scoring_status"], "calculated_from_selected_scope",
         )

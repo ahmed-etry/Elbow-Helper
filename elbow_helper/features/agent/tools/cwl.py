@@ -26,7 +26,7 @@ def cwl_tools() -> tuple[RegisteredAgentTool, ...]:
         "offset": offset, "limit": limit,
     }
     definitions = (
-        ("read_cwl_performance", "Read completed historical CWL performance using the established ASS profiles. Results retain one complete dated snapshot; use read_cwl_performance_report for more pages or filters. Missing attacks and missing data are different.",
+        ("read_cwl_performance", "Read completed historical CWL performance using the established ASS profiles. Season and clan filters narrow the source read before scoring; account filtering keeps the full selected season for ranking. Exact season can be older than the history limit. A single-season read has no multi-season score. Results retain one complete dated snapshot; use read_cwl_performance_report for more pages or filters. Missing attacks and missing data are different.",
          {"history_limit": {"type": "integer", "minimum": 1, "maximum": 12}, **filters}, (), read_cwl_performance),
         ("read_cwl_performance_report", "Read another page or filter of a retained CWL performance report from this conversation without repeating the database lookup.",
          {"report_id": {"type": "string", "maxLength": 32}, **filters}, ("report_id",), read_cwl_performance_report),
@@ -50,6 +50,7 @@ async def read_cwl_performance(
         return {"error": "That player tag is not valid."}
     snapshot = await asyncio.to_thread(
         context.cwl_queries.performance, history_limit=arguments.get("history_limit", 3),
+        season=arguments.get("season"), clan_code=arguments.get("clan_code"),
     )
     await require_evidence_access(context)
     report = CwlPerformanceReport(uuid4().hex, context.guild.id, snapshot)

@@ -36,10 +36,14 @@ def war_tools() -> tuple[RegisteredAgentTool, ...]:
           "limit": {"type": "integer", "minimum": 1, "maximum": 25}},
          ("report_id",), read_regular_war_report),
         ("read_historical_regular_wars",
-         "Read and retain a bounded page of completed regular wars from Clan Health storage, including final roster and missed-attack evidence. Current account links are joined in one separately dated snapshot and do not prove historical ownership. This does not refresh war or account data.",
+         "Read completed regular wars from Clan Health storage within optional exact UTC war-end boundaries, including final roster and missed-attack evidence. Current account links are joined in one separately dated snapshot and do not prove historical ownership. This does not refresh war or account data.",
          {"clan_code": {"type": "string", "description": "Brown Elbow clan code such as BEH or BE4."},
           "history_limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 10},
-          "before_war_id": {"type": "string", "minLength": 1, "maxLength": 300}},
+          "before_war_id": {"type": "string", "minLength": 1, "maxLength": 300},
+          "ended_from_ts": {"type": "integer", "minimum": 0,
+                            "description": "Inclusive UTC Unix second when the war ended."},
+          "ended_before_ts": {"type": "integer", "minimum": 0,
+                              "description": "Exclusive UTC Unix second when the war ended."}},
          ("clan_code",), read_historical_regular_wars),
         ("read_historical_regular_war_report",
          "Read member summaries or account-war rows from a retained historical regular-war report without repeating database reads. Optional exact account-tag or current-member filters apply only to war rows.",
@@ -127,6 +131,8 @@ async def read_historical_regular_wars(
         history = await context.clan_health.regular_war_history(
             clan_code, history_limit=arguments.get("history_limit", 10),
             before_war_id=arguments.get("before_war_id"),
+            ended_from_ts=arguments.get("ended_from_ts"),
+            ended_before_ts=arguments.get("ended_before_ts"),
         )
     except ValueError:
         return {"error": "Stored regular-war history for that clan could not be read."}
@@ -135,6 +141,8 @@ async def read_historical_regular_wars(
         return {
             "clan_code": clan_code, "war_count": 0,
             "next_before_war_id": None, "report_id": None,
+            "ended_from_ts": history.ended_from_ts,
+            "ended_before_ts": history.ended_before_ts,
             "complete_selected_history": True,
         }
     tags = tuple(dict.fromkeys(row.player_tag for row in history.members))

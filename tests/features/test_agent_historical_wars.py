@@ -91,6 +91,7 @@ class AgentHistoricalWarToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.links.calls, 1)
         self.queries.regular_war_history.assert_awaited_once_with(
             "BEH", history_limit=2, before_war_id=None,
+            ended_from_ts=None, ended_before_ts=None,
         )
         self.assertEqual(result["war_count"], 2)
         self.assertEqual(result["attacks_missed"], 3)
@@ -120,6 +121,7 @@ class AgentHistoricalWarToolTests(unittest.IsolatedAsyncioTestCase):
         })
         self.queries.regular_war_history.assert_awaited_once_with(
             "BEH", history_limit=2, before_war_id="cursor",
+            ended_from_ts=None, ended_before_ts=None,
         )
         filtered = await read_historical_regular_war_report(self.context, {
             "report_id": result["report_id"], "member_id": 42,

@@ -39,8 +39,11 @@ def clan_health_tools() -> tuple[RegisteredAgentTool, ...]:
     }
     definitions = (
         ("find_clan_health_players",
-         "Find stored clan-health players by player name, tag, or clan code before requesting detailed health evidence.",
-         {"query": {"type": "string", "minLength": 1, "maxLength": 100}},
+         "Search the last-seen Clan Health player directory by name, tag, or clan-code prefix. An exact clan filter and result offset narrow the source read. The returned last_seen_ts is an observation time, not proof of current clan membership.",
+         {"query": {"type": "string", "minLength": 1, "maxLength": 100},
+          "clan_code": {"type": "string", "enum": sorted(CLANS)},
+          "offset": {"type": "integer", "minimum": 0, "maximum": 10000},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 25}},
          ("query",), find_clan_health_players),
         ("get_player_health",
          "Get stored activity, war, raid, progression, movement, and report evidence for one exact Clash player tag over a bounded recent window.",
@@ -102,9 +105,22 @@ async def find_clan_health_players(
     query = str(arguments.get("query") or "").strip()
     if not query:
         return {"error": "A player name, tag, or clan code is required."}
-    rows = await context.clan_health.search_players(query, limit=HEALTH_PLAYER_RESULT_LIMIT)
+    clan_code = None
+    if "clan_code" in arguments:
+        clan_code = _clan_code(arguments)
+        if clan_code is None:
+            return _unknown_clan()
+    offset = arguments.get("offset", 0)
+    limit = arguments.get("limit", HEALTH_PLAYER_RESULT_LIMIT)
+    rows = await context.clan_health.search_players(
+        query, limit=limit + 1, offset=offset, clan_code=clan_code,
+    )
     await require_evidence_access(context)
-    return {"query": query, "players": list(rows)}
+    return {
+        "query": query, "clan_code": clan_code,
+        "players": list(rows[:limit]),
+        "next_offset": offset + limit if len(rows) > limit else None,
+    }
 
 
 async def get_player_health(
