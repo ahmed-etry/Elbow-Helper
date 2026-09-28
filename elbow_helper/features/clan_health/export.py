@@ -20,6 +20,24 @@ LOGGER = logging.getLogger(__name__)
 
 
 class ClanHealthExportMixin:
+    async def write_health_workbook(
+        self, sheets: List[Tuple[str, List[List[Any]]]],
+    ) -> Path:
+        deleted, cleanup_warning = await asyncio.to_thread(
+            self.local_exports.cleanup, "*.xlsx",
+        )
+        if deleted:
+            LOGGER.info("Deleted %s abandoned local export files", deleted)
+        if cleanup_warning:
+            LOGGER.warning("Local cleanup warning: %s", cleanup_warning)
+        workbook_path = self.local_exports.temporary_path("clan_health")
+        try:
+            await asyncio.to_thread(self._write_health_xlsx_file, workbook_path, sheets)
+        except (OSError, TypeError, ValueError):
+            LOGGER.exception("Export write failed for %s", workbook_path)
+            raise
+        return workbook_path
+
     def _build_health_sheet_xml(self, _sheet_name: str, rows: List[List[Any]]) -> str:
         max_cols = max((len(row) for row in rows), default=1)
         row_count = max(len(rows), 1)
@@ -578,19 +596,9 @@ class ClanHealthExportMixin:
         summary_lines: List[str],
         sheets: List[Tuple[str, List[List[Any]]]],
     ) -> None:
-        deleted, cleanup_warning = await asyncio.to_thread(
-            self.local_exports.cleanup,
-            "*.xlsx",
-        )
-        if deleted:
-            LOGGER.info("Deleted %s abandoned local export files", deleted)
-        if cleanup_warning:
-            LOGGER.warning("Local cleanup warning: %s", cleanup_warning)
-        workbook_path = self.local_exports.temporary_path("clan_health")
         try:
-            await asyncio.to_thread(self._write_health_xlsx_file, workbook_path, sheets)
-        except (OSError, TypeError, ValueError) as e:
-            LOGGER.exception("Export write failed for %s: %s", workbook_path, e)
+            workbook_path = await self.write_health_workbook(sheets)
+        except (OSError, TypeError, ValueError):
             await interaction.followup.send("Could not generate the spreadsheet right now. Try again in a moment.")
             return
 
