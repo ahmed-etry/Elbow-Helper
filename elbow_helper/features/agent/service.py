@@ -40,7 +40,7 @@ from .plan.checker import _kind, _periods, _source_check, _time_check, _valid_ar
 from .plan.executor import execute_plan, resolve_arguments
 from .plan.format import PLAN_TOOL_NAME, plan_definition, system_instructions
 from .plan.planning import read_request
-from .plan.results import model_result
+from .plan.results import model_result, plan_feedback
 from .plan.sources import named_sources
 from .plan.scope import ScopeLedger, resource_ids
 from .reports.base import retain_reports
@@ -549,8 +549,8 @@ class AgentService:
                     correction_used = True
                     corrected = await advance_model((AgentToolResult(
                         model_step.tool_calls[0].call_id,
-                        json.dumps({"error": check.error, "step_id": check.step_id,
-                                    "offered": check.offered, "instruction": "Correct the plan once."}),
+                        json.dumps(plan_feedback(check.error, step_id=check.step_id,
+                                                 offered=check.offered)),
                     ),), reasoning_effort=AgentReasoningEffort(plan["effort"]))
                     if not corrected.tool_calls and corrected.content:
                         status = "completed"

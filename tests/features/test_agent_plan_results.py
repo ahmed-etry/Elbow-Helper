@@ -2,7 +2,7 @@
 
 import unittest
 
-from elbow_helper.features.agent.plan.results import model_result, result_handler
+from elbow_helper.features.agent.plan.results import model_result, result_handler, plan_feedback
 from elbow_helper.features.agent.tools import build_agent_tools
 from unittest.mock import AsyncMock
 
@@ -56,6 +56,13 @@ class ModelResultTests(unittest.TestCase):
     def test_feature_flags_are_preserved(self):
         result = model_result({"flags": ["synthetic_data_flag"]})
         self.assertEqual(result["data_flags"], ["synthetic_data_flag"])
+
+    def test_plan_feedback_preserves_rule_and_offered_values_as_data(self):
+        result = plan_feedback("Use the registered value.", step_id="second", offered=["202"])
+        self.assertEqual(result["flags"], {"status": "refused", "rule": "use_the_registered_value"})
+        self.assertEqual(result["step_id"], "second")
+        self.assertEqual(result["offered"], ["202"])
+        self.assertNotIn("error", result)
 
 
 class ResultHandlerTests(unittest.IsolatedAsyncioTestCase):

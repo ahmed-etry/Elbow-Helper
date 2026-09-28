@@ -92,3 +92,10 @@ def result_handler(handler):
         return model_result(await handler(context, arguments))
     wrapped.normalizes_results = True
     return wrapped
+
+
+def plan_feedback(error: str, *, step_id: str = "", offered=()) -> dict[str, Any]:
+    return {"flags": {"status": "refused",
+                      "rule": re.sub(r"[^a-z0-9]+", "_", error.casefold()).strip("_")},
+            "step_id": step_id, "offered": list(offered),
+            "instruction": "Correct the plan once or offer the refused sources without reading them."}

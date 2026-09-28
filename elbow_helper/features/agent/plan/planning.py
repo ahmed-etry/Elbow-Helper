@@ -14,6 +14,7 @@ from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort, AgentSess
 from ..models import RegisteredAgentTool
 from .checker import check_plan
 from .format import PLAN_TOOL_NAME
+from .results import plan_feedback
 
 
 LOGGER = logging.getLogger(__name__)
@@ -71,8 +72,7 @@ async def read_request(
             step_id, offered = check.step_id, check.offered
         if attempt:
             raise ValueError(issue)
-        pending = tuple(AgentToolResult(call.call_id, json.dumps({
-            "error": issue, "step_id": step_id, "offered": offered,
-            "instruction": "Correct the plan once or offer the refused sources without reading them.",
-        })) for call in step.tool_calls)
+        pending = tuple(AgentToolResult(call.call_id, json.dumps(plan_feedback(
+            issue, step_id=step_id, offered=offered,
+        ))) for call in step.tool_calls)
     raise ValueError("A checked plan is required.")
