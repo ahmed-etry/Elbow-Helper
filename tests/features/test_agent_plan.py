@@ -5,6 +5,8 @@ from __future__ import annotations
 import random
 import unittest
 import copy
+import string
+from re import _parser, _constants
 from datetime import datetime, timezone
 
 from elbow_helper.features.agent.plan import capability_list, check_plan, plan_definition
@@ -36,6 +38,29 @@ def _sample(schema):
     raise AssertionError(kind)
 
 
+def _matching_value(pattern):
+    def build(nodes):
+        result = ""
+        for kind, value in nodes:
+            if kind is _constants.LITERAL:
+                result += chr(value)
+            elif kind is _constants.IN:
+                first, item = value[0]
+                result += chr(item[0] if first is _constants.RANGE else item) if first in (_constants.RANGE, _constants.LITERAL) else "0"
+            elif kind in (_constants.MAX_REPEAT, _constants.MIN_REPEAT):
+                result += build(value[2]) * value[0]
+            elif kind is _constants.SUBPATTERN:
+                result += build(value[-1])
+            elif kind is _constants.BRANCH:
+                result += build(value[1][0])
+            elif kind is _constants.CATEGORY:
+                result += "0"
+            elif kind is not _constants.AT:
+                raise AssertionError(kind)
+        return result
+    return build(_parser.parse(pattern, 0))
+
+
 def _plan_for(name, tool, contract, selected_field=None):
     schema = tool.definition.parameters
     arguments = {field: _sample(schema["properties"][field]) for field in schema.get("required", ())}
@@ -48,9 +73,9 @@ def _plan_for(name, tool, contract, selected_field=None):
         arguments[contract.scope_field] = chosen
         for field in variants[chosen]:
             arguments[field] = _sample(schema["properties"][field])
-    for field, _ in contract.value_patterns:
+    for field, pattern in contract.value_patterns:
         if field in arguments:
-            arguments[field] = "2026-01"
+            arguments[field] = _matching_value(pattern)
     periods = []
     if contract.time_window and (any(field in arguments for field in contract.time_window[:2])
                                 or selected_field in contract.bounded_fields
@@ -254,3 +279,28 @@ class PlanContractTests(unittest.TestCase):
                 with self.subTest(capability=name):
                     self.assertTrue(_time_check(contract, {}, (), set()))
                     self.assertTrue(_time_check(contract, {}, (("key", "synthetic-key", "selected"),), set()))
+
+    def test_words_never_become_utc_boundaries(self):
+        from elbow_helper.features.agent.plan.checker import _utc
+        generator = random.Random(7291)
+        for _ in range(1000):
+            value = " ".join("".join(generator.choices(string.ascii_letters, k=generator.randrange(1, 12)))
+                             for _ in range(generator.randrange(1, 5)))
+            with self.assertRaises(ValueError):
+                _utc(value)
+
+    def test_nested_malformed_steps_return_fixable_errors(self):
+        generator = random.Random(7364)
+        atoms = [None, True, 0, "", [], {}, [1, {}], {"step": [], "path": [{}]}]
+        base = _plan_for(next(iter(self.registry)), next(iter(self.registry.values())),
+                         CONTRACTS[next(iter(self.registry))])
+        for _ in range(2000):
+            plan = copy.deepcopy(base)
+            step = plan["steps"][0]
+            field = generator.choice(tuple(step))
+            value = generator.choice(atoms)
+            step[field] = value
+            check = check_plan(plan, self.registry)
+            self.assertEqual(check.ok, value == base["steps"][0][field])
+            if not check.ok:
+                self.assertTrue(check.error)
