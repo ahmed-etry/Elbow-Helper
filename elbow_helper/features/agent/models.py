@@ -95,6 +95,7 @@ class AgentTurnState:
     request_text: str = ""
     stale_knowledge_report_ids: set[str] = field(default_factory=set)
     stale_knowledge_refs: set[tuple[str, str]] = field(default_factory=set)
+    command_outcomes: list[Any] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,6 +143,7 @@ class AgentCapabilityEffect(StrEnum):
     READ = "read"
     STATE = "conversation_state"
     ARTIFACT = "artifact"
+    COMMAND = "command"
 
 
 @dataclass(frozen=True, slots=True)
