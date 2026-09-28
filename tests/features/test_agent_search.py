@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
@@ -63,6 +64,74 @@ def _thread(context, thread_id, *, name, private=False, archived=True):
 
 
 class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
+    async def _history_review(self, contents, *, limit=None, author_id=None):
+        context = _context()
+        upper = discord.utils.time_snowflake(context.source_message.created_at)
+        context.source_message.id = upper
+        rows = tuple(
+            DiscordSearchMessage(upper - index - 1, 100, 1 + index % 2,
+                                 "Member", content, "2026-09-16T00:00:00+00:00")
+            for index, content in enumerate(contents)
+        )
+
+        async def page(**kwargs):
+            remaining = [row for row in rows if kwargs["after_id"] < row.message_id < kwargs["before_id"]]
+            selected = tuple(remaining[:kwargs["limit"]])
+            next_id = selected[-1].message_id if len(selected) == kwargs["limit"] else None
+            return DiscordHistoryPage(selected, kwargs["before_id"], kwargs["after_id"], kwargs["limit"], next_id, next_id is None)
+
+        context.message_search.history_page.side_effect = page
+        arguments = {"channel_id": 100, "after": "2026-09-01"}
+        if limit is not None:
+            arguments["limit"] = limit
+        if author_id is not None:
+            arguments["author_id"] = author_id
+        results = []
+        for _ in range(len(rows) + 1):
+            result = await read_discord_channel_history(context, arguments)
+            self.assertNotIn("error", result)
+            results.append(result)
+            cursor = result["coverage"]["next_cursor"]
+            if cursor is None:
+                self.assertTrue(result["coverage"]["reached_requested_start"])
+                break
+            self.assertFalse(result["coverage"]["reached_requested_start"])
+            arguments["cursor"] = cursor
+        else:
+            self.fail("History traversal did not finish")
+        self.assertEqual(context.state.source_channels, {100})
+        return results, rows
+
+    async def test_larger_history_page_reads_same_evidence_with_fewer_tool_calls(self):
+        from elbow_helper.features.agent.tools.discord import discord_tools
+        from elbow_helper.features.agent.service import _valid_arguments
+
+        tool = next(tool for tool in discord_tools() if tool.definition.name == "read_discord_channel_history")
+        self.assertTrue(_valid_arguments({"channel_id": 100, "after": "2026-09-01", "limit": 100}, tool.definition.parameters))
+        small, _ = await self._history_review([f"Recruitment discussion {i}" for i in range(80)])
+        large, rows = await self._history_review([f"Recruitment discussion {i}" for i in range(80)], limit=100)
+        self.assertEqual(len(small), 4)
+        self.assertEqual(len(large), 1)
+        self.assertEqual([item for page in small for item in page["messages"]], large[0]["messages"])
+        self.assertEqual([item["message_id"] for item in large[0]["messages"]], [row.message_id for row in rows])
+
+    async def test_long_history_pages_keep_every_matching_message_and_continuation(self):
+        from elbow_helper.features.agent.service import MAX_TOOL_RESULT_CHARACTERS, _bound_tool_result
+
+        for author_id in (None, 1):
+            with self.subTest(author_id=author_id):
+                results, rows = await self._history_review(['"\\\n' * 500 for _ in range(80)], author_id=author_id, limit=100)
+                self.assertGreater(len(results), 1)
+                actual = [item["message_id"] for result in results for item in result["messages"]]
+                expected = [row.message_id for row in rows if author_id is None or row.author_id == author_id]
+                self.assertEqual(actual, expected)
+                self.assertEqual(len(set(actual)), len(actual))
+                self.assertEqual(sum(result["coverage"]["scanned_messages_in_window"] for result in results), len(rows))
+                for result in results:
+                    encoded = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
+                    self.assertLess(len(encoded), MAX_TOOL_RESULT_CHARACTERS)
+                    self.assertEqual(_bound_tool_result(encoded, MAX_TOOL_RESULT_CHARACTERS), encoded)
+
     async def test_twenty_results_are_valid_and_reach_discord(self):
         from elbow_helper.features.agent.tools.discord import discord_tools
         from elbow_helper.features.agent.service import _valid_arguments

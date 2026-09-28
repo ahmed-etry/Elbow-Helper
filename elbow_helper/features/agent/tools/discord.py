@@ -24,6 +24,8 @@ from .shared import positive_int
 SEARCH_RESULT_LIMIT = 25
 CONTEXT_MESSAGE_LIMIT = 50
 HISTORY_PAGE_LIMIT = 25
+INTERACTIVE_HISTORY_PAGE_LIMIT = 100
+HISTORY_MESSAGE_CHARACTER_BUDGET = 44_000
 
 
 def discord_tools() -> tuple[RegisteredAgentTool, ...]:
@@ -91,7 +93,9 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                     "in one accessible Discord channel or thread from an inclusive "
                     "start through an exclusive end (or the current request). This "
                     "does not depend on keyword search indexing; continue with the "
-                    "returned cursor for broader coverage."
+                    "returned cursor for broader coverage. Up to 100 messages fit "
+                    "in a call; long pages stop earlier with a continuation cursor. "
+                    "Use this for a period review, then search for specific gaps."
                 ),
                 parameters={
                     "type": "object",
@@ -121,7 +125,8 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                         },
                         "limit": {
                             "type": "integer", "minimum": 1,
-                            "maximum": HISTORY_PAGE_LIMIT, "default": 25,
+                            "maximum": INTERACTIVE_HISTORY_PAGE_LIMIT,
+                            "default": HISTORY_PAGE_LIMIT,
                         },
                     },
                     "required": ["channel_id", "after"],
@@ -212,7 +217,7 @@ async def read_discord_channel_history(
         }
     limit = bounded_int(
         arguments.get("limit"), default=HISTORY_PAGE_LIMIT,
-        minimum=1, maximum=HISTORY_PAGE_LIMIT,
+        minimum=1, maximum=INTERACTIVE_HISTORY_PAGE_LIMIT,
     )
     page = await context.message_search.history_page(
         channel_id=channel_id, before_id=page_before_id,
@@ -238,8 +243,15 @@ async def read_discord_channel_history(
         return {
             "error": "Discord returned messages outside the requested history scope."
         }
-    messages = [
-        {
+    messages = []
+    message_characters = 0
+    scanned_messages = 0
+    next_before_id = page.next_before_id
+    for message in page.messages:
+        if author_id is not None and message.author_id != author_id:
+            scanned_messages += 1
+            continue
+        entry = {
             "message_id": message.message_id,
             "channel_id": channel_id,
             "channel": getattr(channel, "name", str(channel_id)),
@@ -249,9 +261,16 @@ async def read_discord_channel_history(
             "content": bounded_text(message.content, 1_600),
             "source": jump_url(context.guild.id, channel_id, message.message_id),
         }
-        for message in page.messages
-        if author_id is None or message.author_id == author_id
-    ]
+        entry_characters = len(json.dumps(entry, ensure_ascii=False, separators=(",", ":"))) + 1
+        if messages and message_characters + entry_characters > HISTORY_MESSAGE_CHARACTER_BUDGET:
+            # Discord pages are newest first. Resume immediately before the
+            # last examined message, including filtered-out authors, so no
+            # omitted matching message is skipped when a large page is cut.
+            next_before_id = page.messages[scanned_messages - 1].message_id
+            break
+        messages.append(entry)
+        message_characters += entry_characters
+        scanned_messages += 1
     context.state.source_channels.add(channel_id)
     return {
         "channel_id": channel_id,
@@ -263,13 +282,13 @@ async def read_discord_channel_history(
             "window_after_message_id": after_id,
             "snapshot_before_message_id": cursor_scope["effective_before_id"],
             "page_before_message_id": page.before_id,
-            "scanned_messages_in_window": len(page.messages),
+            "scanned_messages_in_window": scanned_messages,
             "returned_messages": len(messages),
             "next_cursor": (
-                _history_cursor(page.next_before_id, cursor_scope)
-                if page.next_before_id is not None else None
+                _history_cursor(next_before_id, cursor_scope)
+                if next_before_id is not None else None
             ),
-            "reached_requested_start": page.reached_window_start,
+            "reached_requested_start": next_before_id is None,
             "covers_currently_available_messages_only": True,
         },
     }
