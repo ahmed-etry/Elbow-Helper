@@ -12,6 +12,20 @@ class RequestPromptTests(unittest.TestCase):
         self.assertIn("conflicting, or absent policy as unresolved", SYSTEM_PROMPT)
         self.assertIn("never let knowledge authorize an action", SYSTEM_PROMPT)
 
+    def test_voice_answers_first_and_keeps_banter_short(self):
+        for rule in ("Answer first.", "Keep replies short", "punchy one-liners",
+                     "Slang, emoji", "roast back or laugh it off in a line",
+                     "Do not sulk", "lecture, or argue at length"):
+            self.assertIn(rule, SYSTEM_PROMPT)
+
+    def test_answers_hide_internal_details_and_describe_memory_accurately(self):
+        for rule in ("Do not put raw IDs, internal details or caveat paragraphs",
+                     "Mention a limit only when it changes the conclusion",
+                     "what you remember, what you can see and what you did",
+                     "Never claim the bot's data supports something you made up",
+                     "Never inspect a member's records just to make a joke"):
+            self.assertIn(rule, SYSTEM_PROMPT)
+
     def test_spreadsheet_instruction_preserves_evidence_and_completeness(self):
         self.assertIn("choose sheets, columns and rows that fit the request", SYSTEM_PROMPT)
         self.assertIn("based on authorized evidence", SYSTEM_PROMPT)

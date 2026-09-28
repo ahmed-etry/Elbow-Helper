@@ -378,6 +378,6 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("he asked for another reminder", model.request["prompt"])
 
     def test_prompt_keeps_casual_context_narrow(self) -> None:
-        self.assertIn("Do not search their history", SYSTEM_PROMPT)
+        self.assertIn("Never inspect a member's records just to make a joke", SYSTEM_PROMPT)
         self.assertIn("Do not search broadly", SYSTEM_PROMPT)
         self.assertIn("Do not call several tools when one result answers", SYSTEM_PROMPT)
