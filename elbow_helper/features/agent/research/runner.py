@@ -11,9 +11,7 @@ from uuid import uuid4
 
 import discord
 
-from elbow_helper.configuration.roles import CORE
-
-from ..access import AgentAccessLost
+from ..access import AgentAccessLost, has_agent_entry_access
 from .repository import ResearchJobBusy, ResearchJobConflict, ResearchJobRepository
 from ..models import AgentRequestContext
 from .execution import advance_discord_research_job
@@ -115,7 +113,7 @@ class ResearchJobRunner:
         if guild is None:
             return None
         member = guild.get_member(scope.requester_id)
-        if member is None or not any(role.id in CORE for role in member.roles):
+        if member is None or not has_agent_entry_access(member):
             return None
         channel = guild.get_channel_or_thread(scope.source_channel_id)
         if channel is None:
