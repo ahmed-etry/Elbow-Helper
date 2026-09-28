@@ -221,6 +221,12 @@ def check_plan(
         if raw["output"] not in output_forms(registry):
             return _error("Choose an available output form.")
         periods = _periods(raw["periods"])
+        key_fields = {field for name in registry if (contract := CONTRACTS.get(name)) is not None
+                      for field in contract.time_fields
+                      if field not in (*contract.latest_fields, *contract.bounded_fields,
+                                       *(contract.time_window[:2] if contract.time_window else ()))}
+        if any(kind == "key" and field not in key_fields for kind, _, field in periods):
+            return _error("Use a period key defined by a registered capability.")
         if not isinstance(raw["entities"], list) or len(raw["entities"]) > 32:
             return _error("List at most 32 entities.")
         entities: dict[str, set[str]] = {}

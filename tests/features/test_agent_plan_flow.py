@@ -147,10 +147,15 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(session.calls), 2)
 
     async def test_scope_revisions_stop_after_two(self):
-        plans = [_plan([_step("first")], periods=[{"kind": "key", "field": "period", "value": n}])
+        self.registry["read_value"] = replace(self.registry["read_value"], definition=AgentToolDefinition(
+            "read_value", "Read a value.", {"type": "object", "properties": {
+                "period": {"type": "integer", "minimum": 0}}, "required": ["period"]}))
+        plans = [_plan([_step("first", {"period": n})], periods=[{"kind": "key", "field": "period", "value": n}])
                  for n in range(4)]
         session = _Session([_model_step(plan) for plan in plans], self.events)
-        with self.assertRaisesRegex(AgentUnavailableError, "revision limit"):
+        with patch.dict("elbow_helper.features.agent.semantic.CONTRACTS", {
+            "read_value": CapabilityContract((), ("period",))
+        }), self.assertRaisesRegex(AgentUnavailableError, "revision limit"):
             await self._answer(session)
         self.assertEqual(len(session.calls), 4)
 
@@ -548,3 +553,13 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                                            if message["role"] == "tool")["content"])
         prompts = [call.kwargs["messages"][0]["content"] for call in create.await_args_list]
         self.assertEqual(len(set(prompts)), 1)
+
+    async def test_reordering_and_narrowing_entities_do_not_use_revisions(self):
+        plans = [_plan([_step(str(index), {"value": index + 1})]) for index in range(5)]
+        values = ((101, 202), (202, 101), (101,), (202, 101), (202,))
+        for plan, selected in zip(plans, values):
+            plan["entities"] = [{"kind": "synthetic_source", "value": value} for value in selected]
+        session = _Session([*map(_model_step, plans), AgentStep("Ready.", (), AgentUsage())], self.events)
+        with patch("elbow_helper.features.agent.service.MAX_SCOPE_REVISIONS", 0):
+            await self._answer(session)
+        self.assertEqual(self.events.count("read"), 5)

@@ -61,6 +61,12 @@ AGENT_MAX_OUTPUT_TOKENS = 64_000
 INITIAL_MAX_OUTPUT_TOKENS = 8_000
 FINAL_MAX_OUTPUT_TOKENS = 16_000
 MIN_FINAL_OUTPUT_TOKENS = 1_024
+MAX_SCOPE_REVISIONS = 2
+
+
+def _scope_entries(plan: Mapping[str, Any]) -> frozenset[str]:
+    return frozenset(kind + json.dumps(value, sort_keys=True)
+                     for kind in ("periods", "entities") for value in plan[kind])
 
 
 class AgentUnavailableError(RuntimeError):
@@ -479,7 +485,7 @@ class AgentService:
             plan = decision.plan
             revisions = 0
             correction_used = len(decision.rounds) > 1
-            scope = (plan["periods"], plan["entities"])
+            scope = _scope_entries(plan)
             while rounds < MAX_MODEL_ROUNDS:
                 results = await run_plan(plan)
                 pending = (AgentToolResult(
@@ -564,12 +570,13 @@ class AgentService:
                     if not check.ok:
                         raise AgentUnavailableError(check.error)
                     model_step = corrected
-                changed = (next_plan["periods"], next_plan["entities"])
-                if changed != scope:
+                changed = _scope_entries(next_plan)
+                if changed - scope:
                     revisions += 1
-                    if revisions > 2:
+                    LOGGER.info("Agent scope revision: request=%s revision=%s", request_id, revisions)
+                    if revisions > MAX_SCOPE_REVISIONS:
                         raise AgentUnavailableError("The request reached its scope revision limit")
-                scope = changed
+                scope |= changed
                 plan = next_plan
                 decision = type(decision)(None, plan, (model_step,))
             raise AgentUnavailableError("The agent reached its model-round limit")
