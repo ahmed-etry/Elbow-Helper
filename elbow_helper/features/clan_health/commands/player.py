@@ -42,6 +42,55 @@ class PlayerHealthExport:
     sheets: list[tuple[str, list[list[Any]]]]
 
 
+@dataclass(frozen=True, slots=True)
+class PlayerHealthWindow:
+    now: datetime
+    mode: str
+    season_key: str
+    trend_season_key: str
+    start: datetime
+    end: datetime
+    label: str
+    date_from: str | None
+    date_to: str | None
+
+
+def prepare_player_health_window(
+    mode: str, *, date_from: str | None = None,
+    date_to: str | None = None, now: datetime | None = None,
+) -> tuple[PlayerHealthWindow | None, str | None]:
+    now = now or datetime.now(UTC)
+    trend_season_key = _latest_completed_season_key(now)
+    if mode == "last_7d":
+        season_key, label = "last 7d", "Last 7 days"
+        start, end = now - timedelta(days=7), now
+    elif mode == "last_14d":
+        season_key, label = "last 14d", "Last 14 days"
+        start, end = now - timedelta(days=14), now
+    elif mode == "custom":
+        if not date_from or not date_to:
+            return None, "Enter both a start date and an end date in YYYY-MM-DD format."
+        try:
+            start = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=UTC)
+        except ValueError:
+            return None, f"`{date_from}` isn't a valid start date. Use YYYY-MM-DD."
+        try:
+            end = datetime.strptime(date_to, "%Y-%m-%d").replace(tzinfo=UTC)
+        except ValueError:
+            return None, f"`{date_to}` isn't a valid end date. Use YYYY-MM-DD."
+        if start >= end:
+            return None, "The start date must be before the end date."
+        if (end - start).days > 365:
+            return None, "Choose a date range of 365 days or less."
+        season_key = f"custom {date_from}..{date_to}"
+        label = f"Custom: {date_from} to {date_to}"
+    else:
+        mode, season_key, label = "last_30d", "last 30d", "Last 30 days"
+        start, end = now - timedelta(days=30), now
+    return PlayerHealthWindow(now, mode, season_key, trend_season_key,
+                              start, end, label, date_from, date_to), None
+
+
 class ClanHealthPlayerCommandMixin:
     @staticmethod
     def _trend_summary(symbol: str, prior_windows: int) -> tuple[str, str]:
@@ -184,43 +233,22 @@ class ClanHealthPlayerCommandMixin:
             await warn(interaction, "Choose a Clash account from the list.")
             return
 
-        now = datetime.now(UTC)
-        window_mode = window.value if window else "last_30d"
-        trend_season_key = _latest_completed_season_key(now)
+        selected, issue = prepare_player_health_window(
+            window.value if window else "last_30d",
+            date_from=date_from, date_to=date_to,
+        )
+        if issue:
+            await warn(interaction, issue)
+            return
+        assert selected is not None
+        now = selected.now
+        window_mode = selected.mode
+        season_key = selected.season_key
+        trend_season_key = selected.trend_season_key
+        cycle_start = selected.start
+        cycle_end = selected.end
+        window_label = selected.label
         partial = False
-        if window_mode == "last_7d":
-            season_key = "last 7d"
-            cycle_end = now
-            cycle_start = now - timedelta(days=7)
-        elif window_mode == "last_14d":
-            season_key = "last 14d"
-            cycle_end = now
-            cycle_start = now - timedelta(days=14)
-        elif window_mode == "custom":
-            if not date_from or not date_to:
-                await warn(interaction, "Enter both a start date and an end date in YYYY-MM-DD format.")
-                return
-            try:
-                cycle_start = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=UTC)
-            except ValueError:
-                await warn(interaction, f"`{date_from}` isn't a valid start date. Use YYYY-MM-DD.")
-                return
-            try:
-                cycle_end = datetime.strptime(date_to, "%Y-%m-%d").replace(tzinfo=UTC)
-            except ValueError:
-                await warn(interaction, f"`{date_to}` isn't a valid end date. Use YYYY-MM-DD.")
-                return
-            if cycle_start >= cycle_end:
-                await warn(interaction, "The start date must be before the end date.")
-                return
-            if (cycle_end - cycle_start).days > 365:
-                await warn(interaction, "Choose a date range of 365 days or less.")
-                return
-            season_key = f"custom {date_from}..{date_to}"
-        else:
-            season_key = "last 30d"
-            cycle_end = now
-            cycle_start = now - timedelta(days=30)
 
         await interaction.response.defer(thinking=True)
 
