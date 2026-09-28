@@ -14,6 +14,7 @@ from openai import AsyncOpenAI
 from openai import OpenAIError
 
 from .agent import AgentModel
+from .agent import AgentReasoningEffort
 from .agent import AgentSession
 from .agent import AgentStep
 from .agent import AgentToolCall
@@ -272,6 +273,8 @@ class _DeepSeekAgentSession:
         tool_results: Sequence[AgentToolResult] = (),
         *,
         allow_tools: bool = True,
+        reasoning_effort: AgentReasoningEffort = AgentReasoningEffort.HIGH,
+        max_output_tokens: int | None = None,
     ) -> AgentStep:
         for result in tool_results:
             self._messages.append(
@@ -294,7 +297,7 @@ class _DeepSeekAgentSession:
         options: dict[str, Any] = {
             "model": DEEPSEEK_MODEL,
             "messages": request_messages,
-            "reasoning_effort": "high",
+            "reasoning_effort": reasoning_effort.value,
             "extra_body": {"thinking": {"type": "enabled"}},
         }
         # Keep the tools parameter so DeepSeek retains earlier reasoning in
@@ -303,8 +306,9 @@ class _DeepSeekAgentSession:
             options["tools"] = self._tools
         if not allow_tools:
             options["tool_choice"] = "none"
-        if self._max_output_tokens is not None:
-            options["max_tokens"] = self._max_output_tokens
+        output_limit = max_output_tokens if max_output_tokens is not None else self._max_output_tokens
+        if output_limit is not None:
+            options["max_tokens"] = output_limit
 
         started_at = time.monotonic()
         try:

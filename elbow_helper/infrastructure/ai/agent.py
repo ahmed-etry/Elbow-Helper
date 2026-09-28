@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any
 from typing import Mapping
 from typing import Protocol
@@ -45,6 +46,13 @@ class AgentUsage:
     prompt_cache_miss_tokens: int | None = None
 
 
+class AgentReasoningEffort(StrEnum):
+    """Provider-neutral reasoning budget for one agent generation."""
+
+    LOW = "low"
+    HIGH = "high"
+
+
 @dataclass(frozen=True, slots=True)
 class AgentStep:
     """One model response, either requesting tools or completing the answer."""
@@ -70,6 +78,8 @@ class AgentSession(Protocol):
         tool_results: Sequence[AgentToolResult] = (),
         *,
         allow_tools: bool = True,
+        reasoning_effort: AgentReasoningEffort = AgentReasoningEffort.HIGH,
+        max_output_tokens: int | None = None,
     ) -> AgentStep: ...
 
 

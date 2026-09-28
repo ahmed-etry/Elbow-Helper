@@ -10,6 +10,7 @@ from openai import OpenAIError
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from elbow_helper.infrastructure.ai import AgentToolResult
+from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from elbow_helper.infrastructure.ai import DeepSeekTextClient
 from elbow_helper.infrastructure.ai import GenerationTier
 from elbow_helper.infrastructure.ai import TextGenerationError
@@ -251,7 +252,10 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertIsNotNone(session)
             self.assertEqual(session.context_window_tokens, 1_000_000)
-            first = await session.advance()  # type: ignore[union-attr]
+            first = await session.advance(  # type: ignore[union-attr]
+                reasoning_effort=AgentReasoningEffort.LOW,
+                max_output_tokens=8_000,
+            )
             session.replace_tools((  # type: ignore[union-attr]
                 AgentToolDefinition(
                     name="read_report", description="Read report",
@@ -276,9 +280,12 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(first.provider_duration_ms, 0)
         self.assertEqual(second.content, "The decision was recorded here.")
         first_request = transport.chat.completions.create.await_args_list[0].kwargs
+        self.assertEqual(first_request["reasoning_effort"], "low")
         self.assertNotIn("tool_choice", first_request)
-        self.assertEqual(first_request["max_tokens"], 64_000)
+        self.assertEqual(first_request["max_tokens"], 8_000)
         second_request = transport.chat.completions.create.await_args_list[1].kwargs
+        self.assertEqual(second_request["reasoning_effort"], "high")
+        self.assertEqual(second_request["max_tokens"], 64_000)
         self.assertEqual(second_request["tools"][0]["function"]["name"], "read_report")
         self.assertEqual(second_request["tool_choice"], "none")
         self.assertEqual(first_request["messages"][0]["content"], "trusted")
