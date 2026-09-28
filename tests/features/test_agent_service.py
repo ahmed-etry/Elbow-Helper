@@ -597,9 +597,9 @@ class CoreAgentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(create.await_count, 3)
         final_request = create.await_args.kwargs
         self.assertEqual(final_request["tool_choice"], "none")
-        self.assertEqual(final_request["messages"][-2]["reasoning_content"], "retained reasoning")
-        self.assertIn("not executed", final_request["messages"][-1]["content"])
-        self.assertEqual(final_request["messages"][-1]["tool_call_id"], "dsml-1-0")
+        self.assertEqual(next(message for message in reversed(final_request["messages"]) if message["role"] == "assistant")["reasoning_content"], "retained reasoning")
+        self.assertIn("not executed", next(message for message in reversed(final_request["messages"]) if message["role"] == "tool")["content"])
+        self.assertEqual(next(message for message in reversed(final_request["messages"]) if message["role"] == "tool")["tool_call_id"], "dsml-1-0")
         self.assertTrue(any("prompt_tokens=300 completion_tokens=60" in line for line in logs.output))
 
     async def test_research_can_continue_past_old_round_limit(self):

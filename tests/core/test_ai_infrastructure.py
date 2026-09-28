@@ -289,10 +289,11 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second_request["tools"][0]["function"]["name"], "read_report")
         self.assertEqual(second_request["tool_choice"], "none")
         self.assertEqual(first_request["messages"][0]["content"], "trusted")
-        self.assertIn("Research for this request has ended.", second_request["messages"][0]["content"])
-        self.assertIn("without inventing facts", second_request["messages"][0]["content"])
+        self.assertEqual(second_request["messages"][0]["content"], "trusted")
+        self.assertIn("Research for this request has ended.", second_request["messages"][-1]["content"])
+        self.assertIn("without inventing facts", second_request["messages"][-1]["content"])
         self.assertEqual(len(first_request["messages"]), 2)
-        self.assertEqual(len(second_request["messages"]), 4)
+        self.assertEqual(len(second_request["messages"]), 5)
         self.assertIs(second_request["messages"][2], first_response.choices[0].message)
         self.assertEqual(
             second_request["messages"][3],

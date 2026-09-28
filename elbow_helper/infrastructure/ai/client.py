@@ -287,13 +287,7 @@ class _DeepSeekAgentSession:
 
         request_messages = list(self._messages)
         if not allow_tools:
-            # Keep this trusted instruction in the initial system message;
-            # it describes the runtime phase, not a new user request.
-            request_messages[0] = {
-                **request_messages[0],
-                "content": request_messages[0]["content"]
-                + "\n\n" + _FINAL_ANSWER_INSTRUCTION,
-            }
+            request_messages.append({"role": "user", "content": _FINAL_ANSWER_INSTRUCTION})
         options: dict[str, Any] = {
             "model": DEEPSEEK_MODEL,
             "messages": request_messages,
