@@ -46,6 +46,8 @@ from .plan.scope import ScopeLedger, resource_ids
 from .commands.adapters import enabled_adapters
 from .commands.bridge import build_command_tools, check_command_plan
 from .commands.outcomes import command_reply
+from .commands.confirmation import preview_text
+from .wording import COMMAND_PREVIEW_TOO_LONG, COMMAND_UNAVAILABLE
 from .reports.base import retain_reports
 
 
@@ -515,6 +517,27 @@ class AgentService:
             scope = _scope_entries(plan)
             while rounds < MAX_MODEL_ROUNDS:
                 results = await run_plan(plan)
+                if any(item.status == "needs_input" for item in context.state.command_outcomes):
+                    context.state.command_proposals.clear()
+                    status = "completed"
+                    return command_reply(context.state.command_outcomes)
+                expected_previews = sum(
+                    command_capabilities[step["capability"]].adapter.delivery == "confirm"
+                    for step in plan["steps"] if step["capability"] in command_capabilities
+                )
+                if expected_previews and len(context.state.command_proposals) != expected_previews:
+                    context.state.command_proposals.clear()
+                    status = "completed"
+                    return COMMAND_UNAVAILABLE
+                if context.state.command_proposals:
+                    response = preview_text(context.state.command_proposals)
+                    if response == COMMAND_PREVIEW_TOO_LONG:
+                        context.state.command_proposals.clear()
+                    elif context.state.command_outcomes:
+                        response += "\n\n" + command_reply(context.state.command_outcomes)
+                    await require_disclosure_access(context)
+                    status = "completed"
+                    return response
                 if context.state.command_outcomes:
                     await require_disclosure_access(context)
                     status = "completed"
@@ -741,7 +764,12 @@ def _merge_tool_state(target: AgentRequestContext, local: AgentRequestContext, p
     target.state.authorized_instructions = local.state.authorized_instructions
     target.state.stale_knowledge_report_ids.update(local.state.stale_knowledge_report_ids)
     target.state.stale_knowledge_refs.update(local.state.stale_knowledge_refs)
-    target.state.command_outcomes.extend(local.state.command_outcomes)
+    target.state.command_outcomes.extend(
+        local.state.command_outcomes[len(previous["command_outcomes"]):]
+    )
+    target.state.command_proposals.extend(
+        local.state.command_proposals[len(previous["command_proposals"]):]
+    )
 
 
 def _tool_state_snapshot(context: AgentRequestContext) -> dict[str, Any]:

@@ -9,8 +9,17 @@ from typing import Any
 from elbow_helper.domain.player_tags import normalize_player_tag
 
 from ..models import AgentCapabilityEffect, RegisteredAgentTool
-from .outcomes import CommandOutcome
+from .outcomes import CommandOutcome, command_reply
+from .confirmation import ChangePreview, PreparedCommand
 from .registry import CommandAdapter, CommandCapability, build_command_capabilities
+
+
+def _missing_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    return isinstance(value, (list, tuple, dict, set)) and not value
 
 
 def build_command_tools(
@@ -20,13 +29,28 @@ def build_command_tools(
     tools: dict[str, RegisteredAgentTool] = {}
     for name, capability in capabilities.items():
         async def handle(context, values, selected=capability):
-            missing = next((field for field in selected.required if not values.get(field)), "")
+            missing = next((field for field in selected.required
+                            if field not in values or _missing_value(values[field])), "")
+            if not missing and selected.adapter.delivery == "confirm":
+                if selected.adapter.prepare is None:
+                    raise ValueError("Confirmed command needs a preview function")
+                preview = await selected.adapter.prepare(context, values)
+                if not isinstance(preview, ChangePreview):
+                    raise TypeError("Command preview is invalid")
+                prepared = PreparedCommand(
+                    selected.adapter.path, dict(values), preview,
+                    lambda: selected.adapter.run(context, values),
+                )
+                context.state.command_proposals.append(prepared)
+                return {"command": selected.adapter.path, "status": "confirmation_required"}
             outcome = (CommandOutcome.needs_input(missing) if missing
                        else await selected.adapter.run(context, values))
             if not isinstance(outcome, CommandOutcome):
                 raise TypeError("Command adapter returned an invalid result")
             if outcome.visibility == "private" and outcome.text:
                 outcome = replace(outcome, text="", private_parts=(outcome.text, *outcome.private_parts))
+            if outcome.visibility == "private" and not outcome.private_parts and not outcome.attachments:
+                outcome = replace(outcome, private_parts=(command_reply([outcome]),))
             context.state.command_outcomes.append(outcome)
             if outcome.visibility == "public":
                 context.state.attachments.extend(outcome.attachments)

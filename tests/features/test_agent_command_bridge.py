@@ -5,11 +5,13 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.agent.commands.bridge import build_command_tools, check_command_plan
-from elbow_helper.features.agent.commands.outcomes import CommandOutcome
+from elbow_helper.features.agent.commands.confirmation import ChangePreview
+from elbow_helper.features.agent.commands.outcomes import CommandOutcome, command_reply
 from elbow_helper.features.agent.commands.registry import CommandAdapter
 from elbow_helper.features.agent.models import AgentTurnState, AgentCapabilityEffect
 from elbow_helper.features.agent.models import AgentAttachment
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
+from elbow_helper.features.agent.wording import COMMAND_EMPTY, COMMAND_PRIVATE_NOTE
 
 
 class CommandBridgeTests(unittest.IsolatedAsyncioTestCase):
@@ -43,6 +45,20 @@ class CommandBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.state.command_outcomes[0].missing, "target")
         self.run.assert_not_awaited()
 
+    async def test_false_and_zero_are_valid_required_values(self):
+        command = DiscoveredCommand(self.path, "Registered", (
+            ParameterInfo("enabled", "Choose a value.", True, "boolean"),
+            ParameterInfo("count", "Choose a count.", True, "integer"),
+        ))
+        with (patch("elbow_helper.features.agent.commands.registry.discover_commands",
+                    return_value={self.path: command}), self.patches[1]):
+            tools, _ = build_command_tools(object(), (self.adapter,))
+        context = SimpleNamespace(state=AgentTurnState())
+        values = {"enabled": False, "count": 0}
+        result = await next(iter(tools.values())).handler(context, values)
+        self.assertEqual(result["status"], "complete")
+        self.run.assert_awaited_once_with(context, values)
+
     async def test_private_content_never_enters_model_result(self):
         with self.patches[0], self.patches[1]:
             tools, _ = build_command_tools(object(), (self.adapter,))
@@ -68,6 +84,16 @@ class CommandBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.state.command_outcomes[0].private_parts,
                          ("synthetic private text",))
 
+    async def test_empty_private_result_is_not_posted_in_the_channel(self):
+        self.run.return_value = CommandOutcome("empty", "private")
+        with self.patches[0], self.patches[1]:
+            tools, _ = build_command_tools(object(), (self.adapter,))
+        context = SimpleNamespace(state=AgentTurnState())
+        result = await next(iter(tools.values())).handler(context, {"target": 101})
+        self.assertEqual(result["visibility"], "private")
+        self.assertEqual(command_reply(context.state.command_outcomes), COMMAND_PRIVATE_NOTE)
+        self.assertEqual(context.state.command_outcomes[0].private_parts, (COMMAND_EMPTY,))
+
     async def test_named_sources_are_checked_before_execution(self):
         with self.patches[0], self.patches[1]:
             _, capabilities = build_command_tools(object(), (self.adapter,))
@@ -78,3 +104,19 @@ class CommandBridgeTests(unittest.IsolatedAsyncioTestCase):
         plan["steps"][0]["arguments"]["target"] = 101
         self.assertEqual(check_command_plan(plan, capabilities,
                                             {"synthetic_source": frozenset({101})}), "")
+
+    async def test_confirmed_adapter_only_prepares_before_the_button(self):
+        preview = AsyncMock(return_value=ChangePreview(
+            ("Change synthetic target",), AsyncMock(return_value=True),
+        ))
+        adapter = CommandAdapter(self.path, "confirm", self.run, prepare=preview)
+        with self.patches[0], self.patches[1]:
+            tools, _ = build_command_tools(object(), (adapter,))
+        context = SimpleNamespace(state=AgentTurnState())
+        result = await next(iter(tools.values())).handler(context, {"target": 101})
+        self.assertEqual(result["status"], "confirmation_required")
+        self.assertEqual(len(context.state.command_proposals), 1)
+        self.assertEqual(context.state.command_proposals[0].preview.lines,
+                         ("Change synthetic target",))
+        self.run.assert_not_awaited()
+        preview.assert_awaited_once_with(context, {"target": 101})

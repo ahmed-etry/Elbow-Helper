@@ -19,6 +19,7 @@ class CommandAdapter:
     options: tuple[ParameterInfo, ...] = ()
     entity_options: tuple[tuple[str, str], ...] = ()
     check_period: Callable[[Mapping[str, Any], Mapping[str, Any]], str] | None = None
+    prepare: Callable[[Any, Mapping[str, Any]], Awaitable[Any]] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,7 +73,8 @@ def build_command_capabilities(
         definition = AgentToolDefinition(
             name=name,
             description=(f"{help_entry.summary} {help_entry.details} "
-                         + ("The result is private." if adapter.delivery == "private" else "")).strip(),
+                         + ("The result is private." if adapter.delivery == "private" else
+                            "Requires confirmation." if adapter.delivery == "confirm" else "")).strip(),
             parameters={
                 "type": "object",
                 "properties": {option.name: _option_schema(option) for option in options},

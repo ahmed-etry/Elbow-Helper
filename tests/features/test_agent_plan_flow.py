@@ -18,7 +18,9 @@ from elbow_helper.features.agent.models import AgentRequestContext, RegisteredAg
 from elbow_helper.features.agent.service import AgentService, AgentUnavailableError
 from elbow_helper.features.agent.commands.bridge import build_command_tools
 from elbow_helper.features.agent.commands.outcomes import CommandOutcome
+from elbow_helper.features.agent.commands.confirmation import ChangePreview
 from elbow_helper.features.agent.commands.registry import CommandAdapter
+from elbow_helper.features.agent.wording import COMMAND_UNAVAILABLE
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.capabilities import CapabilityContract
@@ -776,3 +778,67 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         run.assert_not_awaited()
         data = json.loads(session.calls[1][0][0].content)["results"]
         self.assertEqual(data["command"]["flags"]["status"], "failed")
+
+    async def test_confirmed_steps_make_one_preview_without_running(self):
+        path = "/synthetic"
+        run = AsyncMock(return_value=CommandOutcome("complete", text="Unexpected"))
+        async def prepare(context, values):
+            return ChangePreview((f"Change target {values['target']}",),
+                                 AsyncMock(return_value=True))
+        command = DiscoveredCommand(path, "registered", (
+            ParameterInfo("target", "Select a target.", True, "integer"),
+        ))
+        help_entry = SimpleNamespace(path=path, summary="Change a value.", details="Uses one target.")
+        with (patch("elbow_helper.features.agent.commands.registry.discover_commands",
+                    return_value={path: command}),
+              patch("elbow_helper.features.agent.commands.registry.HELP_ENTRIES", (help_entry,))):
+            tools, capabilities = build_command_tools(object(), (
+                CommandAdapter(path, "confirm", run, prepare=prepare),
+            ))
+        name = next(iter(tools))
+        plan = _plan([{**_step(str(value), {"target": value}), "capability": name}
+                      for value in (101, 202)])
+        session = _Session([_model_step(plan)], self.events)
+        context = _context()
+        with (patch("elbow_helper.features.agent.service.build_agent_tools", return_value=self.registry),
+              patch("elbow_helper.features.agent.service.build_command_tools",
+                    return_value=(tools, capabilities))):
+            answer = await AgentService(_Model(session), commands_enabled=True).answer(
+                question="synthetic request", local_context="", context=context)
+        self.assertIn("Change target 101", answer)
+        self.assertIn("Change target 202", answer)
+        self.assertEqual(len(context.state.command_proposals), 2)
+        self.assertEqual(len(session.calls), 1)
+        run.assert_not_awaited()
+
+    async def test_incomplete_change_preview_cannot_be_confirmed(self):
+        path = "/synthetic"
+        run = AsyncMock(return_value=CommandOutcome("complete", text="Unexpected"))
+        async def prepare(context, values):
+            if values["target"] == 202:
+                raise ValueError("Synthetic target unavailable")
+            return ChangePreview((f"Change target {values['target']}",),
+                                 AsyncMock(return_value=True))
+        command = DiscoveredCommand(path, "registered", (
+            ParameterInfo("target", "Select a target.", True, "integer"),
+        ))
+        help_entry = SimpleNamespace(path=path, summary="Change a value.", details="Uses one target.")
+        with (patch("elbow_helper.features.agent.commands.registry.discover_commands",
+                    return_value={path: command}),
+              patch("elbow_helper.features.agent.commands.registry.HELP_ENTRIES", (help_entry,))):
+            tools, capabilities = build_command_tools(object(), (
+                CommandAdapter(path, "confirm", run, prepare=prepare),
+            ))
+        name = next(iter(tools))
+        plan = _plan([{**_step(str(value), {"target": value}), "capability": name}
+                      for value in (101, 202)])
+        session = _Session([_model_step(plan)], self.events)
+        context = _context()
+        with (patch("elbow_helper.features.agent.service.build_agent_tools", return_value=self.registry),
+              patch("elbow_helper.features.agent.service.build_command_tools",
+                    return_value=(tools, capabilities))):
+            answer = await AgentService(_Model(session), commands_enabled=True).answer(
+                question="synthetic request", local_context="", context=context)
+        self.assertEqual(answer, COMMAND_UNAVAILABLE)
+        self.assertEqual(context.state.command_proposals, [])
+        run.assert_not_awaited()

@@ -17,6 +17,7 @@ from .conversation.transcripts import archive_write
 from .models import AgentAttachment, AgentDelivery, AgentRequestContext
 from .service import AgentUnavailableError
 from .commands.private_view import PrivateCommandView
+from .commands.confirmation import ConfirmationView
 
 LOGGER = logging.getLogger(__name__)
 DISCORD_MESSAGE_LIMIT = 2_000
@@ -77,8 +78,14 @@ class AgentDeliveryMixin:
             )
             private_view = (PrivateCommandView(message.author.id, private_parts, private_files)
                             if private_parts or private_files else None)
+            confirm_view = (ConfirmationView(message.author.id,
+                                             tuple(context.state.command_proposals), context,
+                                             private_view)
+                            if context and context.state.command_proposals else None)
             if private_view is not None:
                 options["view"] = private_view
+            if confirm_view is not None:
+                options["view"] = confirm_view
             nonce = _delivery_nonce(message.id, 0)
             sent = await self._send_delivery_part(
                 message.reply, getattr(message, "channel", None), nonce,
@@ -89,6 +96,8 @@ class AgentDeliveryMixin:
             )
             if private_view is not None:
                 private_view.message = sent
+            if confirm_view is not None:
+                confirm_view.message = sent
             if delivery is not None:
                 delivery.record(sent.id, response if chunks == [None] else (chunks[0] if chunks else ""))
             if conversation is not None:

@@ -96,6 +96,7 @@ class AgentTurnState:
     stale_knowledge_report_ids: set[str] = field(default_factory=set)
     stale_knowledge_refs: set[tuple[str, str]] = field(default_factory=set)
     command_outcomes: list[Any] = field(default_factory=list)
+    command_proposals: list[Any] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
