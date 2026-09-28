@@ -56,7 +56,7 @@ async def advance_discord_research_job(
     if claimed is None:
         return {"error": "That research job has expired."}
     if claimed.status != "running":
-        return claimed.manifest()
+        return {**claimed.manifest(), "new_messages": []}
     page_arguments = {
         "channel_id": claimed.source_channel_id,
         "limit": claimed.page_size,
