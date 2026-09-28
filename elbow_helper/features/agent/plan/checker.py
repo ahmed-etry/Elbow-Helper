@@ -273,6 +273,10 @@ def check_plan(
                 return _error("Arguments must match the capability schema.", step_id)
             contract = CONTRACTS.get(capability)
             if contract is not None:
+                if any(kind == "resolved" and owner == step_id for kind, owner, _ in periods) and any(
+                    field in arguments for field in (*contract.latest_fields, *contract.bounded_fields)
+                ):
+                    return _error("Resolve the latest or current key without a page selector.", step_id)
                 retained = any(field in arguments for field in contract.retained_fields)
                 bound = frozenset(named) | frozenset(
                     _kind(kind) for field, kind in contract.entity_fields if field in contract.retained_fields
@@ -303,10 +307,7 @@ def check_plan(
                 return _error("Resolve each period with a planned step.")
             resolver = CONTRACTS.get(steps_by_id[step_id]["capability"])
             if resolver is None or not any(
-                len(path) == len(pattern) and all(
-                    part == expected or expected == "*" and type(part) is int and part >= 0
-                    for part, expected in zip(path, pattern)
-                ) for pattern in resolver.period_results
+                tuple(path) == pattern for pattern in resolver.period_results
             ):
                 return _error("Resolve the period through an owning capability's period result.")
         if raw["output"] != "text" and not any(

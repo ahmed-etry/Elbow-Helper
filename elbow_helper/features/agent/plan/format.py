@@ -53,7 +53,7 @@ def capability_list(registry: Mapping[str, RegisteredAgentTool]) -> str:
         meaning = " ".join(tool.definition.description.split(".", 1)[0].split())[:120]
         time_fields = ",".join(contract.time_fields) if contract else ""
         latest_fields = ",".join(contract.latest_fields) if contract else ""
-        period_results = ",".join("/".join(path) for path in contract.period_results) if contract else ""
+        period_results = ",".join("/".join(map(str, path)) for path in contract.period_results) if contract else ""
         entity_fields = ",".join(
             f"{field}:{kind}" for field, kind in contract.entity_fields
         ) if contract else ""

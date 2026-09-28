@@ -304,3 +304,22 @@ class PlanContractTests(unittest.TestCase):
             self.assertEqual(check.ok, value == base["steps"][0][field])
             if not check.ok:
                 self.assertTrue(check.error)
+
+    def test_every_period_resolver_requires_its_exact_unpaged_result(self):
+        for name, contract in CONTRACTS.items():
+            for path in contract.period_results:
+                with self.subTest(capability=name, path=path):
+                    plan = _plan_for(name, self.registry[name], contract)
+                    plan["periods"] = [{"kind": "resolved", "step": "step", "selector": "latest", "path": list(path)}]
+                    self.assertTrue(check_plan(plan, self.registry).ok)
+                    outside = copy.deepcopy(plan)
+                    index = next((index for index, value in enumerate(path) if type(value) is int), None)
+                    if index is None:
+                        outside["periods"][0]["path"].append("other-key")
+                    else:
+                        outside["periods"][0]["path"][index] = 7
+                    self.assertFalse(check_plan(outside, self.registry).ok)
+                    for field in (*contract.latest_fields, *contract.bounded_fields):
+                        paged = copy.deepcopy(plan)
+                        paged["steps"][0]["arguments"][field] = _sample(self.registry[name].definition.parameters["properties"][field])
+                        self.assertFalse(check_plan(paged, self.registry).ok)

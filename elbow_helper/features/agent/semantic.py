@@ -58,7 +58,7 @@ class CapabilityContract:
     required_access: frozenset[str] = frozenset()
     latest_fields: tuple[str, ...] = ()
     bounded_fields: tuple[str, ...] = ()
-    period_results: tuple[tuple[str, ...], ...] = ()
+    period_results: tuple[tuple[str | int, ...], ...] = ()
     value_patterns: tuple[tuple[str, str], ...] = ()
     retained_fields: tuple[str, ...] = ()
 
@@ -197,9 +197,9 @@ _BOUNDED_FIELDS = {
     "read_historical_regular_wars": ("before_war_id",),
 }
 _PERIOD_RESULTS = {
-    "list_roster_cycles": (("cycles", "*", "id"),),
-    "list_clan_health_reports": (("reports", "*", "run_id"),),
-    "list_cwl_ass_seasons": (("seasons", "*"), ("latest_seven_war_season",)),
+    "list_roster_cycles": (("cycles", 0, "id"),),
+    "list_clan_health_reports": (("reports", 0, "run_id"),),
+    "list_cwl_ass_seasons": (("seasons", 0), ("latest_seven_war_season",)),
 }
 _VALUE_PATTERNS = {
     "read_raffle": (("month", r"20\d{2}-(0[1-9]|1[0-2])"),),
@@ -295,7 +295,7 @@ def validate_contract_catalogue(registry: Mapping[str, RegisteredAgentTool]) -> 
             raise ValueError(f"Value formats differ from query fields: {name}")
         for _, pattern in contract.value_patterns:
             re.compile(pattern)
-        if any(not path or any(not isinstance(part, str) or not part for part in path)
+        if any(not path or any(not (isinstance(part, str) and part or type(part) is int and part >= 0) for part in path)
                for path in contract.period_results):
             raise ValueError(f"Invalid period result path: {name}")
         if not set(contract.bounded_fields) <= set(contract.time_fields) or contract.bounded_fields and contract.time_window is None:
