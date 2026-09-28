@@ -54,6 +54,17 @@ class HistoricalRegularWarReport:
             raise ValueError("Invalid historical regular-war report identity")
         _timestamp(self.ownership_observed_at)
         _timestamp(self.history.read_at)
+        for boundary in (
+            self.history.ended_from_ts, self.history.ended_before_ts,
+        ):
+            if boundary is not None and (type(boundary) is not int or boundary < 0):
+                raise ValueError("Invalid historical regular-war end-time boundary")
+        if (
+            self.history.ended_from_ts is not None
+            and self.history.ended_before_ts is not None
+            and self.history.ended_from_ts >= self.history.ended_before_ts
+        ):
+            raise ValueError("Invalid historical regular-war end-time window")
         source_keys = [(row.war_id, row.player_tag) for row in self.history.members]
         row_keys = [(row.source.war_id, row.source.player_tag) for row in self.rows]
         if (
@@ -77,6 +88,12 @@ class HistoricalRegularWarReport:
             for index in range(len(self.history.wars) - 1)
         ):
             raise ValueError("Historical regular wars are not ordered newest first")
+        if any(
+            (self.history.ended_from_ts is not None and war.end_ts < self.history.ended_from_ts)
+            or (self.history.ended_before_ts is not None and war.end_ts >= self.history.ended_before_ts)
+            for war in self.history.wars
+        ):
+            raise ValueError("Historical regular war falls outside its selected end-time window")
         members_by_war: dict[str, list[HistoricalRegularWarMember]] = {}
         for member in self.history.members:
             members_by_war.setdefault(member.war_id, []).append(member)
@@ -139,6 +156,8 @@ class HistoricalRegularWarReport:
         return {
             "report_id": self.report_id, "kind": "historical_regular_wars",
             "clan_code": self.history.clan_code,
+            "ended_from_ts": self.history.ended_from_ts,
+            "ended_before_ts": self.history.ended_before_ts,
             "history_read_at": self.history.read_at,
             "ownership_observed_at": self.ownership_observed_at,
             "wars": [asdict(war) for war in self.history.wars],

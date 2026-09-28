@@ -118,6 +118,7 @@ def decode_report(row: dict[str, Any], *, guild_id: int) -> Any:
                 value["total_transactions"],
                 tuple(CoinTransactionRow(**item) for item in value["rows"]),
                 value["complete"],
+                value.get("after"), value.get("before"),
             ),
         )
     if kind == "raffle":
@@ -322,6 +323,8 @@ def decode_report(row: dict[str, Any], *, guild_id: int) -> Any:
             members=tuple(HistoricalRegularWarMember(**item)
                           for item in value["members"]),
             next_before_war_id=value["next_before_war_id"],
+            ended_from_ts=value.get("ended_from_ts"),
+            ended_before_ts=value.get("ended_before_ts"),
         )
         return HistoricalRegularWarReport(
             row["report_id"], row["guild_id"], row["ownership_observed_at"],

@@ -599,7 +599,7 @@ class ConversationCodecTests(unittest.TestCase):
                     ),
                     CoinTransactionRow(1, 5, "daily", None, None, 1000),
                 ),
-                True,
+                True, 1000, 1002,
             ),
         )
         original.reports[report.report_id] = report
@@ -610,9 +610,28 @@ class ConversationCodecTests(unittest.TestCase):
 
         restored = decode_conversation(snapshot, wall_time=1001)
         self.assertEqual(restored.reports[report.report_id], report)
+        self.assertEqual(
+            restored.reports[report.report_id].page()["before_exclusive_ts"],
+            1002,
+        )
+
+        legacy = json.loads(snapshot.payload)
+        legacy["reports"][0]["snapshot"].pop("after")
+        legacy["reports"][0]["snapshot"].pop("before")
+        legacy_report = decode_conversation(
+            replace(snapshot, payload=json.dumps(legacy)), wall_time=1001,
+        ).reports[report.report_id]
+        self.assertIsNone(legacy_report.snapshot.after)
+        self.assertIsNone(legacy_report.snapshot.before)
 
         data = json.loads(snapshot.payload)
         data["reports"][0]["snapshot"]["total_transactions"] = 3
+        with self.assertRaises(ValueError):
+            decode_conversation(
+                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
+            )
+        data = json.loads(snapshot.payload)
+        data["reports"][0]["snapshot"]["before"] = 1001
         with self.assertRaises(ValueError):
             decode_conversation(
                 replace(snapshot, payload=json.dumps(data)), wall_time=1001,
@@ -1348,5 +1367,3 @@ class ConversationCodecTests(unittest.TestCase):
                 replace(snapshot, payload=json.dumps(data)), wall_time=1001,
                 monotonic_time=61,
             )
-
-

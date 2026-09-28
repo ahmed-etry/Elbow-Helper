@@ -193,7 +193,16 @@ class CoinTransactionReport:
             or len({row.transaction_id for row in value.rows}) != len(value.rows)
             or type(value.complete) is not bool
             or value.complete != (value.total_transactions == len(value.rows))
+            or value.after is not None and (type(value.after) is not int or value.after < 0)
+            or value.before is not None and (type(value.before) is not int or value.before < 0)
+            or value.after is not None and value.before is not None
+            and value.after > value.before
             or any(not _valid_coin_transaction(row) for row in value.rows)
+            or any(
+                value.after is not None and row.created_at < value.after
+                or value.before is not None and row.created_at >= value.before
+                for row in value.rows
+            )
         ):
             raise ValueError("Invalid coin transaction report")
         object.__setattr__(
@@ -216,6 +225,8 @@ class CoinTransactionReport:
             "total_transactions": value.total_transactions,
             "retained_transactions": len(value.rows),
             "complete_snapshot": value.complete,
+            "after_inclusive_ts": value.after,
+            "before_exclusive_ts": value.before,
             "order": "newest_first",
         }
 
