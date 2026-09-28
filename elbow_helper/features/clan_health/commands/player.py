@@ -7,6 +7,7 @@ import json
 import logging
 import time
 from datetime import datetime, timedelta
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 import discord
@@ -31,6 +32,14 @@ from ..seasons import (
 )
 
 LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class PlayerHealthExport:
+    workbook_name: str
+    workbook_title: str
+    summary_lines: list[str]
+    sheets: list[tuple[str, list[list[Any]]]]
 
 
 class ClanHealthPlayerCommandMixin:
@@ -215,6 +224,37 @@ class ClanHealthPlayerCommandMixin:
 
         await interaction.response.defer(thinking=True)
 
+        report = await self.build_player_health_export(
+            player_tag=player_tag, now=now, window_mode=window_mode,
+            season_key=season_key, trend_season_key=trend_season_key,
+            cycle_start=cycle_start, cycle_end=cycle_end,
+            window_label=window_label, partial=partial,
+            date_from=date_from, date_to=date_to,
+        )
+        if report is None:
+            await interaction.followup.send("No health data is available for that player during this period.")
+            return
+        await self._write_and_send_export(
+            interaction=interaction,
+            workbook_name=report.workbook_name,
+            workbook_title=report.workbook_title,
+            summary_lines=report.summary_lines,
+            sheets=report.sheets,
+        )
+        LOGGER.debug(
+            "Command done /health player user=%s tag=%s season=%s elapsed=%.2fs",
+            getattr(interaction.user, "id", None),
+            player_tag,
+            season_key,
+            time.monotonic() - started,
+        )
+
+    async def build_player_health_export(
+        self, *, player_tag: str, now: datetime, window_mode: str,
+        season_key: str, trend_season_key: str, cycle_start: datetime,
+        cycle_end: datetime, window_label: str, partial: bool = False,
+        date_from: str | None = None, date_to: str | None = None,
+    ) -> PlayerHealthExport | None:
         report_lookup_season = (
             await asyncio.to_thread(
                 self.repository.latest_activity_season,
@@ -465,8 +505,7 @@ class ClanHealthPlayerCommandMixin:
                 season_key,
                 live_warnings,
             )
-            await interaction.followup.send("No health data is available for that player during this period.")
-            return
+            return None
 
         if not report_row:
             seed_history = history[0] if history else {}
@@ -717,17 +756,7 @@ class ClanHealthPlayerCommandMixin:
             ("CWL", cwl_sheet),
             ("Clan History", history_sheet),
         ]
-        await self._write_and_send_export(
-            interaction=interaction,
-            workbook_name=workbook_name,
-            workbook_title=workbook_title,
-            summary_lines=summary_lines,
-            sheets=workbook_sheets,
-        )
-        LOGGER.debug(
-            "Command done /health player user=%s tag=%s season=%s elapsed=%.2fs",
-            getattr(interaction.user, "id", None),
-            player_tag,
-            season_key,
-            time.monotonic() - started,
+        return PlayerHealthExport(
+            workbook_name=workbook_name, workbook_title=workbook_title,
+            summary_lines=summary_lines, sheets=workbook_sheets,
         )
