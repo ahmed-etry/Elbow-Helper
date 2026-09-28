@@ -23,8 +23,13 @@ class RequestPromptTests(unittest.TestCase):
                      "Mention a limit only when it changes the conclusion",
                      "what you remember, what you can see and what you did",
                      "Never claim the bot's data supports something you made up",
-                     "Never inspect a member's records just to make a joke"):
+                     "Never inspect a member's records just to make a joke",
+                     "You remember this conversation and its earlier results",
+                     "cannot see images",
+                     "say in a few words that you cannot do that yourself",
+                     "Do not repeat it unless they ask again"):
             self.assertIn(rule, SYSTEM_PROMPT)
+        self.assertNotIn("while agent mode is being tested", SYSTEM_PROMPT)
 
     def test_spreadsheet_instruction_preserves_evidence_and_completeness(self):
         self.assertIn("choose sheets, columns and rows that fit the request", SYSTEM_PROMPT)
@@ -34,16 +39,18 @@ class RequestPromptTests(unittest.TestCase):
         self.assertIn("presentation, not new evidence", SYSTEM_PROMPT)
 
     def test_planning_separates_evidence_constraints_and_proposals(self):
-        self.assertIn("keep three categories distinct", SYSTEM_PROMPT)
         self.assertIn("verified facts from authorized sources", SYSTEM_PROMPT)
-        self.assertIn("constraints explicitly supplied by the requester", SYSTEM_PROMPT)
-        self.assertIn("clearly labelled proposals and assumptions", SYSTEM_PROMPT)
+        self.assertIn("constraints the requester gave you", SYSTEM_PROMPT)
+        self.assertIn("apart in your reasoning", SYSTEM_PROMPT)
+        self.assertIn("Never present an assumption, proposal or member statement as a verified fact", SYSTEM_PROMPT)
+        self.assertIn("say so in a few words", SYSTEM_PROMPT)
 
     def test_unfamiliar_requests_compose_tools_without_inventing_metrics(self):
         self.assertIn("Combine available capabilities", SYSTEM_PROMPT)
         self.assertIn("request crosses features", SYSTEM_PROMPT)
         self.assertIn("exactly as their owner defines them", SYSTEM_PROMPT)
         self.assertIn("scope, sample size and projection basis", SYSTEM_PROMPT)
+        self.assertIn("mention those only when they change the answer", SYSTEM_PROMPT)
         self.assertIn("only when the owner interface establishes that", SYSTEM_PROMPT)
         self.assertIn("never invent a formula", SYSTEM_PROMPT)
         self.assertIn("silently substitute another metric", SYSTEM_PROMPT)
