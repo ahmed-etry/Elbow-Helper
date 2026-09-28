@@ -1,10 +1,11 @@
-"""Internal models for the read-only Core agent."""
+"""Internal models for the agent."""
 
 from __future__ import annotations
 
 from collections.abc import Awaitable
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any, TYPE_CHECKING
 from typing import Mapping
 
@@ -128,6 +129,7 @@ class AgentRequestContext:
     research_jobs: ResearchJobRepository | None = None
     conversation_root_id: int | None = None
     attachment_sources: tuple[discord.Message, ...] = ()
+    deadline_monotonic: float | None = None
 
 
 AgentToolHandler = Callable[
@@ -136,9 +138,16 @@ AgentToolHandler = Callable[
 ]
 
 
+class AgentCapabilityEffect(StrEnum):
+    READ = "read"
+    STATE = "conversation_state"
+    ARTIFACT = "artifact"
+
+
 @dataclass(frozen=True, slots=True)
 class RegisteredAgentTool:
     """A model-facing definition paired with one trusted handler."""
 
     definition: AgentToolDefinition
     handler: AgentToolHandler
+    effect: AgentCapabilityEffect = AgentCapabilityEffect.READ

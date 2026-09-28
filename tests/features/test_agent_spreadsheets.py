@@ -12,7 +12,7 @@ from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentAttachment, AgentRequestContext
 from elbow_helper.features.agent.files.spreadsheets import parse_agent_spreadsheet
 from elbow_helper.features.agent.tools import build_agent_tools
-from elbow_helper.features.agent.tools.spreadsheets import prepare_spreadsheet
+from elbow_helper.features.agent.tools.spreadsheets import prepare_report_spreadsheet, prepare_spreadsheet
 from elbow_helper.infrastructure.exports import LocalExportStore, WorkbookWriter
 
 
@@ -85,6 +85,101 @@ class AgentSpreadsheetContractTests(unittest.TestCase):
 
 
 class AgentSpreadsheetToolTests(unittest.IsolatedAsyncioTestCase):
+    async def test_imported_table_uses_column_positions_without_losing_duplicates(self):
+        class ImportReport:
+            def page(self, *, sheet_name=None, offset=0, limit=25):
+                if sheet_name != "Input":
+                    raise ValueError("Unknown source sheet")
+                rows = [[f"left-{index}", f"right-{index}"] for index in range(125)]
+                return {
+                    "columns": ["Name", "Name"],
+                    "data": rows[offset:offset + limit],
+                    "next_offset": offset + limit if offset + limit < len(rows) else None,
+                }
+
+        with TemporaryDirectory() as directory:
+            context = _context(directory)
+            context.state.reports["import"] = ImportReport()
+            context.state.report_sources["import"] = frozenset({100})
+            context.state.report_access_requirements["import"] = frozenset()
+            context.state.source_channels.add(100)
+            result = await prepare_report_spreadsheet(context, {
+                "title": "Imported comparison",
+                "report_sheets": [{
+                    "name": "Selected", "report_id": "import",
+                    "collection": "data", "sheet_name": "Input",
+                    "columns": [
+                        {"field": "0", "heading": "Earlier"},
+                        {"field": "1", "heading": "Later"},
+                    ],
+                }],
+            })
+            workbook = load_workbook(BytesIO(context.state.attachments[0].data))
+            try:
+                self.assertEqual(result["rows"], 125)
+                self.assertEqual(workbook["Selected"]["A126"].value, "left-124")
+                self.assertEqual(workbook["Selected"]["B126"].value, "right-124")
+            finally:
+                workbook.close()
+
+    async def test_report_workbook_materializes_every_page_without_model_rows(self):
+        class Report:
+            def page(self, *, offset=0, limit=25):
+                rows = [{"tag": f"#P{index}", "score": index} for index in range(135)]
+                return {
+                    "accounts": rows[offset:offset + limit],
+                    "summary": [{"count": 135}],
+                    "next_offset": offset + limit if offset + limit < len(rows) else None,
+                }
+
+        with TemporaryDirectory() as directory:
+            context = _context(directory)
+            context.state.reports["report"] = Report()
+            context.state.report_sources["report"] = frozenset({100})
+            context.state.report_access_requirements["report"] = frozenset()
+            context.state.source_channels.add(100)
+            arguments = {
+                "title": "Account review",
+                "report_sheets": [{
+                    "name": "Accounts", "report_id": "report",
+                    "collection": "accounts", "columns": [
+                        {"field": "tag", "heading": "Account"},
+                        {"field": "score", "heading": "Score"},
+                    ],
+                }],
+                "written_sheets": [{
+                    "name": "Notes", "columns": ["Finding"],
+                    "rows": [["Provisional"]],
+                }],
+            }
+
+            result = await prepare_report_spreadsheet(context, arguments)
+            workbook = load_workbook(
+                BytesIO(context.state.attachments[0].data), read_only=True,
+            )
+            try:
+                self.assertEqual(result["rows"], 136)
+                self.assertEqual(workbook["Accounts"].max_row, 136)
+                self.assertEqual(workbook["Accounts"]["A136"].value, "#P134")
+                self.assertEqual(workbook["Accounts"]["B136"].value, "134")
+                self.assertEqual(workbook["Notes"]["A2"].value, "Provisional")
+            finally:
+                workbook.close()
+
+            incomplete = dict(arguments)
+            incomplete["report_sheets"] = [{
+                **arguments["report_sheets"][0], "collection": "summary",
+                "columns": [{"field": "count", "heading": "Count"}],
+            }]
+            self.assertIn("cursor", (await prepare_report_spreadsheet(
+                context, incomplete,
+            ))["error"])
+
+            context.state.report_sources.clear()
+            self.assertIn("not authorized", (await prepare_report_spreadsheet(
+                context, arguments,
+            ))["error"])
+
     async def test_requested_workbook_is_literal_bounded_and_reused(self):
         with TemporaryDirectory() as directory:
             context = _context(directory)
