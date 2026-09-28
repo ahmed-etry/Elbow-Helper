@@ -536,11 +536,11 @@ class RecruitmentCommandMixin:
         return choices
 
     @staticmethod
-    def _resolve_opinion_ticket(
-        interaction: discord.Interaction,
+    def resolve_opinion_ticket(
+        guild: discord.Guild | None,
+        member: discord.Member,
         ticket: str,
     ) -> discord.TextChannel | None:
-        guild = interaction.guild
         if guild is None:
             return None
         try:
@@ -553,9 +553,18 @@ class RecruitmentCommandMixin:
             return None
         if channel.category_id != RECRUITMENT_TICKET_CATEGORY:
             return None
-        if not channel.permissions_for(interaction.user).view_channel:
+        if not channel.permissions_for(member).view_channel:
             return None
         return channel
+
+    @staticmethod
+    def _resolve_opinion_ticket(
+        interaction: discord.Interaction,
+        ticket: str,
+    ) -> discord.TextChannel | None:
+        return RecruitmentCommandMixin.resolve_opinion_ticket(
+            interaction.guild, interaction.user, ticket,
+        )
 
     @app_commands.command(name="opinion", description="Get an AI second opinion on an applicant ticket.")
     @app_commands.autocomplete(ticket=opinion_ticket_autocomplete)
