@@ -210,6 +210,7 @@ class ElbowHelperBot(commands.Bot):
         agent_model: AgentModel,
         google_publisher: GoogleSheetsPublisher,
         workbook_writer: WorkbookWriter,
+        agent_commands_enabled: bool = False,
         required_extensions: tuple[str, ...] = REQUIRED_EXTENSIONS,
         optional_extensions: tuple[str, ...] = OPTIONAL_EXTENSIONS,
     ):
@@ -219,6 +220,7 @@ class ElbowHelperBot(commands.Bot):
         self.clash_client = clash_client
         self.text_generator = text_generator
         self.agent_model = agent_model
+        self.agent_commands_enabled = agent_commands_enabled
         self.google_publisher = google_publisher
         self.workbook_writer = workbook_writer
         self.local_exports = LocalExportStore(paths.data_root / ".exports")
