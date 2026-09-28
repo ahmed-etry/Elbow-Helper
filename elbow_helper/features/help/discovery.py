@@ -17,6 +17,7 @@ class ParameterInfo:
     type_name: str
     choices: tuple[str, ...] = ()
     autocomplete: bool = False
+    choice_values: tuple[str | int | float, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,9 @@ def _extract_parameters(command: app_commands.Command) -> tuple[ParameterInfo, .
                 type_name=_format_type_name(parameter),
                 choices=_extract_choices(parameter),
                 autocomplete=bool(getattr(parameter, "autocomplete", False)),
+                choice_values=tuple(
+                    choice.value for choice in getattr(parameter, "choices", ()) or ()
+                ),
             )
         )
     return tuple(extracted)
