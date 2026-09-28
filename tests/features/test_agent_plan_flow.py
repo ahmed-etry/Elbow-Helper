@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, patch
 import discord
 
 from elbow_helper.configuration.roles import CORE
-from elbow_helper.features.agent.models import AgentRequestContext, RegisteredAgentTool
+from elbow_helper.features.agent.models import AgentRequestContext, RegisteredAgentTool, AgentCapabilityEffect
 from elbow_helper.features.agent.service import AgentService, AgentUnavailableError
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.semantic import CapabilityContract
@@ -563,6 +563,84 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         with patch("elbow_helper.features.agent.service.MAX_SCOPE_REVISIONS", 0):
             await self._answer(session)
         self.assertEqual(self.events.count("read"), 5)
+
+    async def test_selected_artifact_keeps_a_tool_slot_after_research_budget_ends(self):
+        artifact = AsyncMock(return_value={"artifact_prepared": True})
+        self.registry["write_value"] = RegisteredAgentTool(AgentToolDefinition(
+            "write_value", "Write a value.", {"type": "object", "properties": {"value": {"type": "integer"}}}),
+            artifact, AgentCapabilityEffect.ARTIFACT)
+        output = {**_step("output", {"value": {"step": "first", "path": ["value"]}}, ["first"]),
+                  "capability": "write_value"}
+        plan = _plan([_step("first"), output])
+        plan["output"] = "write_value"
+        session = _Session([_model_step(plan), AgentStep("Ready.", (), AgentUsage())], self.events)
+        with patch("elbow_helper.features.agent.service.MAX_TOOL_CALLS", 2):
+            await self._answer(session)
+        artifact.assert_awaited_once()
+        self.assertEqual(artifact.await_args.args[1], {"value": 7})
+        self.assertFalse(session.calls[1][1])
+        self.assertTrue(json.loads(session.calls[1][0][0].content)["results"]["output"]["artifact_prepared"])
+
+    async def test_artifact_preparation_can_follow_completed_research(self):
+        async def read(_, arguments):
+            return {"error": "The source is unavailable."}
+        self.registry["read_value"] = replace(self.registry["read_value"], handler=read)
+        artifact = AsyncMock(return_value={"artifact_prepared": True})
+        self.registry["write_value"] = RegisteredAgentTool(AgentToolDefinition(
+            "write_value", "Write a value.", {"type": "object", "properties": {}}),
+            artifact, AgentCapabilityEffect.ARTIFACT)
+        output = {**_step("output", depends_on=["first"]), "capability": "write_value"}
+        plan = _plan([_step("first"), output])
+        plan["output"] = "write_value"
+        session = _Session([_model_step(plan), AgentStep("Ready.", (), AgentUsage())], self.events)
+        await self._answer(session)
+        artifact.assert_awaited_once()
+        data = json.loads(session.calls[1][0][0].content)["results"]
+        self.assertEqual(data["first"]["flags"]["status"], "failed")
+        self.assertTrue(data["output"]["artifact_prepared"])
+
+    async def test_finite_context_can_keep_tools_available_for_first_round(self):
+        session = _Session([AgentStep("Ready.", (), AgentUsage())], self.events)
+        session.context_window_tokens = 150_000
+        limits = []
+        advance = session.advance
+        async def observe(*args, **kwargs):
+            limits.append(kwargs["max_output_tokens"])
+            return await advance(*args, **kwargs)
+        session.advance = observe
+        _, model = await self._answer(session)
+        self.assertTrue(session.calls[0][1])
+        self.assertEqual(limits, [8_000])
+        self.assertEqual(model.request["max_output_tokens"], 64_000)
+
+    async def test_finite_context_executes_bounded_read_and_reserves_answer(self):
+        session = _Session([_model_step(_plan([_step("first")])), AgentStep("Ready.", (), AgentUsage())], self.events)
+        session.context_window_tokens = 150_000
+        limits = []
+        advance = session.advance
+        async def observe(*args, **kwargs):
+            limits.append(kwargs["max_output_tokens"])
+            return await advance(*args, **kwargs)
+        session.advance = observe
+        await self._answer(session)
+        self.assertEqual(self.events.count("read"), 1)
+        self.assertEqual(limits, [8_000, 16_000])
+
+    async def test_deadline_rechecked_after_model_round_before_tool_runs(self):
+        now = time.monotonic()
+        context = replace(_context(), deadline_monotonic=now + 200)
+        session = _Session([_model_step(_plan([_step("first")])), AgentStep("Ready.", (), AgentUsage())], self.events)
+        advance = session.advance
+        clock = SimpleNamespace(value=now)
+        with patch("elbow_helper.features.agent.service.time", SimpleNamespace(monotonic=lambda: clock.value)):
+            async def advance_clock(*args, **kwargs):
+                result = await advance(*args, **kwargs)
+                clock.value = now + 150
+                return result
+            session.advance = advance_clock
+            await self._answer(session, context)
+        self.assertNotIn("read", self.events)
+        self.assertEqual(len(session.calls), 2)
 
     async def test_retained_pages_keep_the_original_source_through_service(self):
         context = _context()
