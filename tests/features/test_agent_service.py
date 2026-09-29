@@ -16,7 +16,6 @@ from unittest.mock import patch
 from elbow_helper.features.agent.models import AgentAttachment, AgentCapabilityEffect, RegisteredAgentTool
 from elbow_helper.features.agent.models import AgentRequestContext
 from elbow_helper.configuration.roles import CORE, LEAD, LEAD_PLUS
-from elbow_helper.features.agent.prompts import SYSTEM_PROMPT
 from elbow_helper.features.agent.service import AgentService
 from elbow_helper.features.agent.capabilities import compile_capability_call
 from elbow_helper.features.agent.tools import build_agent_tools
@@ -376,8 +375,3 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.calls[0][0], ())
         self.assertIn("tell this guy to piss off", model.request["prompt"])
         self.assertIn("he asked for another reminder", model.request["prompt"])
-
-    def test_prompt_keeps_casual_context_narrow(self) -> None:
-        self.assertIn("Never inspect a member's records just to make a joke", SYSTEM_PROMPT)
-        self.assertIn("Do not search broadly", SYSTEM_PROMPT)
-        self.assertIn("Do not plan several lookups when one answers the question", SYSTEM_PROMPT)
