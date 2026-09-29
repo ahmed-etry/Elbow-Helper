@@ -708,7 +708,8 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             with (patch("elbow_helper.features.agent.service.build_agent_tools", return_value=self.registry),
                   patch("elbow_helper.features.agent.service.build_command_tools",
                         return_value=(tools, capabilities))):
-                response = await AgentService(model, commands_enabled=True).answer(
+                context = replace(context, bot=SimpleNamespace(tree=object()))
+                response = await AgentService(model, actions_enabled=True).answer(
                     question="synthetic request", local_context="", context=context,
                     conversation_history=history)
             return response, session, context, model
@@ -741,7 +742,8 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         with (patch("elbow_helper.features.agent.service.build_agent_tools", return_value=self.registry),
               patch("elbow_helper.features.agent.service.build_command_tools",
                     return_value=(tools, capabilities))):
-            answer = await AgentService(_Model(session), commands_enabled=True).answer(
+            context = replace(context, bot=SimpleNamespace(tree=object()))
+            answer = await AgentService(_Model(session), actions_enabled=True).answer(
                 question="synthetic request", local_context="", context=context)
         self.assertNotIn("synthetic private data", answer)
         self.assertNotIn("synthetic private data", str(context.state.evidence))
@@ -773,8 +775,9 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                     return_value=(tools, capabilities)),
               patch("elbow_helper.features.agent.service.named_sources",
                     return_value={"synthetic_source": frozenset({101})})):
-            await AgentService(_Model(session), commands_enabled=True).answer(
-                question="synthetic request", local_context="", context=_context())
+            context = replace(_context(), bot=SimpleNamespace(tree=object()))
+            await AgentService(_Model(session), actions_enabled=True).answer(
+                question="synthetic request", local_context="", context=context)
         run.assert_not_awaited()
         data = json.loads(session.calls[1][0][0].content)["results"]
         self.assertEqual(data["command"]["flags"]["status"], "failed")
@@ -803,7 +806,8 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         with (patch("elbow_helper.features.agent.service.build_agent_tools", return_value=self.registry),
               patch("elbow_helper.features.agent.service.build_command_tools",
                     return_value=(tools, capabilities))):
-            answer = await AgentService(_Model(session), commands_enabled=True).answer(
+            context = replace(context, bot=SimpleNamespace(tree=object()))
+            answer = await AgentService(_Model(session), actions_enabled=True).answer(
                 question="synthetic request", local_context="", context=context)
         self.assertIn("Change target 101", answer)
         self.assertIn("Change target 202", answer)
@@ -837,7 +841,8 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         with (patch("elbow_helper.features.agent.service.build_agent_tools", return_value=self.registry),
               patch("elbow_helper.features.agent.service.build_command_tools",
                     return_value=(tools, capabilities))):
-            answer = await AgentService(_Model(session), commands_enabled=True).answer(
+            context = replace(context, bot=SimpleNamespace(tree=object()))
+            answer = await AgentService(_Model(session), actions_enabled=True).answer(
                 question="synthetic request", local_context="", context=context)
         self.assertEqual(answer, COMMAND_UNAVAILABLE)
         self.assertEqual(context.state.command_proposals, [])

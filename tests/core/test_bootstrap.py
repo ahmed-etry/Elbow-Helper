@@ -56,14 +56,16 @@ class RuntimeSettingsTests(unittest.TestCase):
         self.assertEqual(settings.google_oauth_client_secret, "google-secret")
         self.assertEqual(settings.google_oauth_refresh_token, "google-refresh")
         self.assertEqual(settings.google_drive_folder_id, "google-folder")
-        self.assertFalse(settings.agent_commands_enabled)
+        self.assertTrue(settings.agent_actions_enabled)
         self.assertEqual(settings.require_discord_token(), "token-value")
 
-    def test_agent_commands_switch_uses_explicit_true_values(self) -> None:
-        for value in ("1", "true", " YES ", "on"):
-            self.assertTrue(RuntimeSettings.from_mapping({"AGENT_COMMANDS_ENABLED": value}).agent_commands_enabled)
-        for value in ("", "0", "false", "other"):
-            self.assertFalse(RuntimeSettings.from_mapping({"AGENT_COMMANDS_ENABLED": value}).agent_commands_enabled)
+    def test_agent_actions_switch_defaults_on_and_fails_safe_when_disabled(self) -> None:
+        for value in ("", "1", "true", " YES ", "on"):
+            self.assertTrue(RuntimeSettings.from_mapping({"AGENT_ACTIONS_ENABLED": value}).agent_actions_enabled)
+        for value in ("0", "false", "other"):
+            self.assertFalse(RuntimeSettings.from_mapping({"AGENT_ACTIONS_ENABLED": value}).agent_actions_enabled)
+        self.assertFalse(RuntimeSettings.from_mapping({"AGENT_COMMANDS_ENABLED": "true",
+                                                       "AGENT_ACTIONS_ENABLED": "false"}).agent_actions_enabled)
 
     def test_missing_discord_token_fails_startup_validation(self) -> None:
         settings = RuntimeSettings.from_mapping({"DISCORD_TOKEN": "  "})

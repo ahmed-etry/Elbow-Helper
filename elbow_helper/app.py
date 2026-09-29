@@ -75,7 +75,7 @@ def create_bot(
     ai_client: AIClient,
     google_publisher: GoogleSheetsPublisher,
     workbook_writer: WorkbookWriter,
-    agent_commands_enabled: bool = False,
+    agent_actions_enabled: bool = True,
 ) -> ElbowHelperBot:
     """Construct the Discord bot without loading settings or starting network I/O."""
 
@@ -85,7 +85,7 @@ def create_bot(
         clash_client=clash_client,
         text_generator=ai_client,
         agent_model=ai_client,
-        agent_commands_enabled=agent_commands_enabled,
+        agent_actions_enabled=agent_actions_enabled,
         google_publisher=google_publisher,
         workbook_writer=workbook_writer,
     )
@@ -116,7 +116,7 @@ async def main() -> None:
             ai_client,
             google_publisher,
             workbook_writer,
-            agent_commands_enabled=settings.agent_commands_enabled,
+            agent_actions_enabled=settings.agent_actions_enabled,
         )
         async with bot:
             await bot.start(settings.require_discord_token())

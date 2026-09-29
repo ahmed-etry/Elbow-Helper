@@ -13,10 +13,10 @@ from ..capabilities import CONTRACTS
 PLAN_TOOL_NAME = "submit_request_plan"
 
 
-def system_instructions(registry: Mapping[str, RegisteredAgentTool], *, commands_enabled: bool = False) -> str:
+def system_instructions(registry: Mapping[str, RegisteredAgentTool], *, actions_enabled: bool = True) -> str:
     from ..prompts import COMMAND_SYSTEM_PROMPT, SYSTEM_PROMPT
-    prompt = COMMAND_SYSTEM_PROMPT if commands_enabled else SYSTEM_PROMPT
-    command_rules = COMMAND_PLANNING_INSTRUCTIONS if commands_enabled else ""
+    prompt = COMMAND_SYSTEM_PROMPT if actions_enabled else SYSTEM_PROMPT
+    command_rules = COMMAND_PLANNING_INSTRUCTIONS if actions_enabled else ""
     return (prompt + "\n\n" + PLANNING_INSTRUCTIONS + command_rules
             + "\n\n<capabilities>\n" + capability_list(registry) + "\n</capabilities>")
 

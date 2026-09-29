@@ -96,7 +96,7 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
         self.persistence = persistence
         self._cleanup_task: asyncio.Task | None = None
         self.service = AgentService(
-            bot.agent_model, commands_enabled=getattr(bot, "agent_commands_enabled", False),
+            bot.agent_model, actions_enabled=getattr(bot, "agent_actions_enabled", True),
         )
         self._conversations = ConversationStore()
         self._member_locks: WeakValueDictionary[int, asyncio.Lock] = WeakValueDictionary()

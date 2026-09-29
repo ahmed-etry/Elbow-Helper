@@ -83,9 +83,9 @@ class AgentUnavailableError(RuntimeError):
 class AgentService:
     """Plan checked reads and answer from their results."""
 
-    def __init__(self, model: AgentModel, *, commands_enabled: bool = False):
+    def __init__(self, model: AgentModel, *, actions_enabled: bool = True):
         self._model = model
-        self._commands_enabled = commands_enabled
+        self._actions_enabled = actions_enabled
 
     @staticmethod
     async def _execute_tool(
@@ -216,7 +216,8 @@ class AgentService:
     ) -> str:
         registry = build_agent_tools()
         command_capabilities = {}
-        if self._commands_enabled:
+        actions_available = self._actions_enabled and getattr(context.bot, "tree", None) is not None
+        if actions_available:
             command_tools, command_capabilities = build_command_tools(
                 context.bot, enabled_adapters(),
             )
@@ -228,7 +229,7 @@ class AgentService:
         sources = named_sources(question, visible_channels)
         command_check = lambda plan: check_command_plan(plan, command_capabilities, sources)
         definition = plan_definition(registry)
-        system_prompt = system_instructions(registry, commands_enabled=self._commands_enabled)
+        system_prompt = system_instructions(registry, actions_enabled=actions_available)
         context.state.request_text = question
         compiled = compile_context(
             question=question, local_context=local_context, context=context,
