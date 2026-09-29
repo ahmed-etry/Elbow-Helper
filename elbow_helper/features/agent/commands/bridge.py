@@ -29,8 +29,11 @@ def build_command_tools(
     tools: dict[str, RegisteredAgentTool] = {}
     for name, capability in capabilities.items():
         async def handle(context, values, selected=capability):
-            missing = next((field for field in selected.required
-                            if field not in values or _missing_value(values[field])), "")
+            missing = tuple(
+                option.description or option.name.replace("_", " ")
+                for option in selected.option_info if option.name in selected.required
+                and (option.name not in values or _missing_value(values[option.name]))
+            )
             if not missing and selected.adapter.delivery == "confirm":
                 if selected.adapter.prepare is None:
                     raise ValueError("Confirmed command needs a preview function")

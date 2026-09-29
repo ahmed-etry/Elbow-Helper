@@ -39,10 +39,9 @@ def requested_member_ids(question: str) -> frozenset[int]:
 
 def requested_clans(question: str) -> frozenset[str]:
     code_pattern = "|".join(re.escape(code) for code in CLAN_ORDER)
-    codes = {candidate.upper() for candidate in re.findall(
+    codes = set(re.findall(
         rf"(?<![\w#])(?:{code_pattern})(?!\w)", question,
-        flags=re.IGNORECASE,
-    )}
+    ))
     normalized_tags = {
         tag for candidate in re.findall(
             r"(?<![\w#])#[PYLQGRJCUV0289]{2,15}(?!\w)",

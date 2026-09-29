@@ -15,8 +15,8 @@ from ..access import AgentAccessLost, require_access, require_disclosure_access
 from ..wording import (
     COMMAND_CANCEL_BUTTON, COMMAND_CANCELLED, COMMAND_CONFIRM_BUTTON,
     COMMAND_CONFIRM_FAILED, COMMAND_PREVIEW_CHANGED, COMMAND_PREVIEW_EXPIRED,
-    COMMAND_PREVIEW_HEADER, COMMAND_PREVIEW_OWNER, COMMAND_PREVIEW_TOO_LONG,
-    COMMAND_PREVIEW_USED,
+    COMMAND_PREVIEW_HEADER, COMMAND_PREVIEW_OWNER,
+    COMMAND_PREVIEW_USED, COMMAND_NO_CHANGES,
 )
 from .outcomes import CommandOutcome, command_reply
 from .private_view import PrivateCommandView
@@ -42,11 +42,8 @@ class PreparedCommand:
 
 
 def preview_text(proposals: list[PreparedCommand]) -> str:
-    lines = [line for proposal in proposals for line in proposal.preview.lines]
-    if not lines or any(not line.strip() for line in lines):
-        return COMMAND_PREVIEW_TOO_LONG
-    content = COMMAND_PREVIEW_HEADER + "\n" + "\n".join(lines)
-    return content if len(content) <= MAX_PREVIEW_CHARACTERS else COMMAND_PREVIEW_TOO_LONG
+    lines = [line.strip() or "-" for proposal in proposals for line in proposal.preview.lines]
+    return COMMAND_PREVIEW_HEADER + "\n" + "\n".join(lines or ["-"])
 
 
 class ConfirmationView(discord.ui.View):
@@ -113,6 +110,7 @@ class ConfirmationView(discord.ui.View):
                 return
             await interaction.response.defer()
             started = False
+            finished: list[str] = []
             try:
                 require_access(self.context.guild, self.owner_id,
                                self.context.source_message.channel)
@@ -130,25 +128,33 @@ class ConfirmationView(discord.ui.View):
                     outcome = await proposal.run()
                     if not isinstance(outcome, CommandOutcome):
                         raise TypeError("Command returned an invalid result")
+                    finished.append(proposal.path)
                     await require_disclosure_access(self.context)
                     await self._send_outcome(interaction, outcome)
                     LOGGER.info("Agent command confirmed: requester=%s command=%s status=%s",
                                 self.owner_id, proposal.path, outcome.status)
             except AgentAccessLost:
                 await interaction.followup.send(
-                    COMMAND_CONFIRM_FAILED if started else COMMAND_PREVIEW_CHANGED,
+                    self._failure(finished) if started else COMMAND_PREVIEW_CHANGED,
                     ephemeral=True,
                 )
                 LOGGER.info("Agent command access changed: requester=%s", self.owner_id)
             except Exception:
                 LOGGER.exception("Agent command confirmation failed: requester=%s", self.owner_id)
-                await interaction.followup.send(COMMAND_CONFIRM_FAILED, ephemeral=True)
+                await interaction.followup.send(self._failure(finished), ephemeral=True)
             finally:
                 if self.message is not None:
                     try:
                         await self.message.edit(view=self)
                     except discord.DiscordException:
                         LOGGER.warning("Agent command preview could not be disabled")
+
+    def _failure(self, finished: list[str]) -> str:
+        remaining = [proposal.path for proposal in self.proposals[len(finished):]]
+        return COMMAND_CONFIRM_FAILED.format(
+            finished=", ".join(finished) or COMMAND_NO_CHANGES,
+            remaining=", ".join(remaining) or COMMAND_NO_CHANGES,
+        )
 
     async def _send_outcome(self, interaction: discord.Interaction, outcome: CommandOutcome) -> None:
         private = outcome.visibility == "private"

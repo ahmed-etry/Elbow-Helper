@@ -14,7 +14,7 @@ from elbow_helper.features.agent.models import AgentDelivery, AgentTurnState
 from elbow_helper.features.agent.wording import (
     COMMAND_CANCELLED, COMMAND_PREVIEW_CHANGED, COMMAND_PREVIEW_EXPIRED,
     COMMAND_PREVIEW_HEADER, COMMAND_PREVIEW_OWNER,
-    COMMAND_PREVIEW_TOO_LONG, COMMAND_PREVIEW_USED,
+    COMMAND_PREVIEW_USED,
 )
 
 
@@ -132,9 +132,15 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(item.disabled for item in view.children))
         view.message.edit.assert_awaited_once_with(view=view)
 
-    async def test_preview_that_does_not_fit_cannot_be_confirmed(self):
+    async def test_long_preview_is_complete(self):
         proposal, _, _ = self.proposal("x" * 2000)
-        self.assertEqual(preview_text([proposal]), COMMAND_PREVIEW_TOO_LONG)
+        self.assertIn("x" * 2000, preview_text([proposal]))
+
+    async def test_blank_preview_line_has_a_fallback(self):
+        proposal, _, _ = self.proposal(1)
+        proposal = PreparedCommand(proposal.path, proposal.values,
+                                   ChangePreview(("",), proposal.preview.recheck), proposal.run)
+        self.assertEqual(preview_text([proposal]), COMMAND_PREVIEW_HEADER + "\n-")
 
     async def test_second_click_reports_used_preview(self):
         proposal, _, _ = self.proposal(1)
@@ -156,6 +162,8 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
             await view.confirm(self.interaction(101))
         run.assert_awaited_once()
         self.assertTrue(view.used)
+        self.assertEqual(member.followup.send.await_args.args[0],
+                         "Finished: none. Did not finish: /synthetic.")
 
     async def test_private_result_stays_ephemeral_after_confirmation(self):
         proposal, _, run = self.proposal(1)
@@ -206,6 +214,33 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(view.proposals), 2)
         self.assertEqual(view.owner_id, 202)
         self.assertIs(view.message, sent)
+
+    async def test_long_preview_puts_buttons_only_on_last_part(self):
+        delivery_surface = AgentDeliveryMixin()
+        delivery_surface.bot = SimpleNamespace(user=SimpleNamespace(id=999))
+        delivery_surface.transcript_archive = None
+        first = SimpleNamespace(id=303)
+        last = SimpleNamespace(id=304)
+        channel = SimpleNamespace(send=AsyncMock(return_value=last))
+        message = SimpleNamespace(
+            id=101, author=SimpleNamespace(id=202), mentions=[],
+            reply=AsyncMock(return_value=first), channel=channel,
+        )
+        state = AgentTurnState()
+        state.command_proposals.append(self.proposal("x" * 2000)[0])
+        context = SimpleNamespace(state=state)
+        with patch("elbow_helper.features.agent.delivery.require_disclosure_access",
+                   new_callable=AsyncMock):
+            await delivery_surface._send_response(
+                message, preview_text(state.command_proposals), None,
+                delivery=AgentDelivery(), context=context,
+            )
+        self.assertNotIn("view", message.reply.await_args.kwargs)
+        view = channel.send.await_args.kwargs["view"]
+        self.assertIsInstance(view, ConfirmationView)
+        self.assertIs(view.message, last)
+        self.assertEqual((message.reply.await_args.args[0]
+                          + channel.send.await_args.args[0]).count("x"), 2000)
 
     async def test_mixed_private_result_remains_available_after_cancel(self):
         delivery_surface = AgentDeliveryMixin()

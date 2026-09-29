@@ -15,11 +15,11 @@ class CommandOutcome:
     text: str = ""
     private_parts: tuple[str, ...] = ()
     attachments: tuple[AgentAttachment, ...] = ()
-    missing: str = ""
+    missing: tuple[str, ...] = ()
 
     @classmethod
-    def needs_input(cls, name: str) -> "CommandOutcome":
-        return cls("needs_input", missing=name)
+    def needs_input(cls, descriptions: tuple[str, ...]) -> "CommandOutcome":
+        return cls("needs_input", missing=descriptions)
 
     @classmethod
     def unavailable(cls) -> "CommandOutcome":
@@ -27,9 +27,15 @@ class CommandOutcome:
 
 
 def command_reply(outcomes: list[CommandOutcome]) -> str:
-    missing = next((item.missing for item in outcomes if item.status == "needs_input"), "")
+    missing = tuple(dict.fromkeys(
+        description for item in outcomes if item.status == "needs_input"
+        for description in item.missing
+    ))
     if missing:
-        return COMMAND_MISSING_VALUE.format(value=missing.replace("_", " "))
+        return COMMAND_MISSING_VALUE.format(
+            value_word="value" if len(missing) == 1 else "values",
+            values="\n".join(f"- {item}" for item in missing),
+        )
     parts = [item.text for item in outcomes
              if item.status == "complete" and item.visibility == "public" and item.text]
     if any(item.visibility == "private" and (item.private_parts or item.attachments)

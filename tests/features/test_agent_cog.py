@@ -1266,6 +1266,13 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(attached.fp.read().decode("utf-8"), response)
         attached.close()
 
+    async def test_short_code_block_stays_in_channel(self):
+        message = SimpleNamespace(id=1, mentions=[], reply=AsyncMock())
+        response = "```text\nhello\n```"
+        await self.cog._send_response(message, response, None)
+        self.assertEqual(message.reply.await_args.args[0], response)
+        self.assertEqual(message.reply.await_args.kwargs.get("files"), None)
+
     def setUp(self) -> None:
         self.bot = SimpleNamespace(
             user=SimpleNamespace(id=999),

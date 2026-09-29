@@ -42,8 +42,23 @@ class CommandBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(tool.effect, AgentCapabilityEffect.COMMAND)
         result = await tool.handler(context, {})
         self.assertEqual(result["status"], "needs_input")
-        self.assertEqual(context.state.command_outcomes[0].missing, "target")
+        self.assertEqual(context.state.command_outcomes[0].missing, ("Choose a target.",))
+        self.assertEqual(command_reply(context.state.command_outcomes),
+                         "Which value should I use?\n- Choose a target.")
         self.run.assert_not_awaited()
+
+    async def test_all_missing_values_use_option_descriptions(self):
+        command = DiscoveredCommand(self.path, "Registered", (
+            ParameterInfo("first_target", "The first target", True, "integer"),
+            ParameterInfo("second_target", "The second target", True, "integer"),
+        ))
+        with (patch("elbow_helper.features.agent.commands.registry.discover_commands",
+                    return_value={self.path: command}), self.patches[1]):
+            tools, _ = build_command_tools(object(), (self.adapter,))
+        context = SimpleNamespace(state=AgentTurnState())
+        await next(iter(tools.values())).handler(context, {})
+        self.assertEqual(context.state.command_outcomes[0].missing,
+                         ("The first target", "The second target"))
 
     async def test_false_and_zero_are_valid_required_values(self):
         command = DiscoveredCommand(self.path, "Registered", (

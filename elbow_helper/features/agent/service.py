@@ -47,7 +47,7 @@ from .commands.adapters import enabled_adapters
 from .commands.bridge import build_command_tools, check_command_plan
 from .commands.outcomes import command_reply
 from .commands.confirmation import preview_text
-from .wording import COMMAND_PREVIEW_TOO_LONG, COMMAND_UNAVAILABLE
+from .wording import COMMAND_UNAVAILABLE
 from .reports.base import retain_reports
 
 
@@ -531,9 +531,7 @@ class AgentService:
                     return COMMAND_UNAVAILABLE
                 if context.state.command_proposals:
                     response = preview_text(context.state.command_proposals)
-                    if response == COMMAND_PREVIEW_TOO_LONG:
-                        context.state.command_proposals.clear()
-                    elif context.state.command_outcomes:
+                    if context.state.command_outcomes:
                         response += "\n\n" + command_reply(context.state.command_outcomes)
                     await require_disclosure_access(context)
                     status = "completed"

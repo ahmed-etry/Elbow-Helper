@@ -6,12 +6,13 @@ import asyncio
 import hashlib
 import io
 import logging
+import re
 import sqlite3
 
 import discord
 
 from .access import require_disclosure_access
-from .wording import FAILURE_MESSAGE, LONG_REPLY_FILENAME
+from .wording import COMMAND_PREVIEW_HEADER, FAILURE_MESSAGE, LONG_REPLY_FILENAME
 from .conversation.state import Conversation
 from .conversation.transcripts import archive_write
 from .models import AgentAttachment, AgentDelivery, AgentRequestContext
@@ -56,7 +57,8 @@ class AgentDeliveryMixin:
             replied_user=False,
         )
         files = [discord.File(io.BytesIO(item.data), filename=item.filename) for item in attachments]
-        if len(response) > MAX_RESPONSE_CHARACTERS or "```" in response:
+        has_preview = bool(context and context.state.command_proposals)
+        if not has_preview and _needs_file(response):
             files.append(discord.File(io.BytesIO(response.encode("utf-8")), filename=LONG_REPLY_FILENAME))
             chunks = [None]
         else:
@@ -82,9 +84,9 @@ class AgentDeliveryMixin:
                                              tuple(context.state.command_proposals), context,
                                              private_view)
                             if context and context.state.command_proposals else None)
-            if private_view is not None:
+            if private_view is not None and confirm_view is None:
                 options["view"] = private_view
-            if confirm_view is not None:
+            if confirm_view is not None and len(chunks) <= 1:
                 options["view"] = confirm_view
             nonce = _delivery_nonce(message.id, 0)
             sent = await self._send_delivery_part(
@@ -96,7 +98,7 @@ class AgentDeliveryMixin:
             )
             if private_view is not None:
                 private_view.message = sent
-            if confirm_view is not None:
+            if confirm_view is not None and len(chunks) <= 1:
                 confirm_view.message = sent
             if delivery is not None:
                 delivery.record(sent.id, response if chunks == [None] else (chunks[0] if chunks else ""))
@@ -110,7 +112,11 @@ class AgentDeliveryMixin:
                 sent = await self._send_delivery_part(
                     message.channel.send, message.channel, nonce,
                     active_delivery, chunk, allowed_mentions=allowed_mentions,
+                    **({"view": confirm_view} if confirm_view is not None and index == len(chunks) - 1 else {}),
                 )
+                if confirm_view is not None and index == len(chunks) - 1:
+                    confirm_view.message = sent
+                    confirm_view.preview = chunk
                 if delivery is not None:
                     delivery.record(sent.id, chunk)
                 if conversation is not None:
@@ -251,7 +257,7 @@ def _chunk_response(content: str) -> list[str]:
 def _delivery_part(response: str, part_index: int) -> tuple[str, int]:
     if type(part_index) is not int or part_index < 0:
         raise ValueError("Invalid delivery part index")
-    if len(response) > MAX_RESPONSE_CHARACTERS or "```" in response:
+    if not response.startswith(COMMAND_PREVIEW_HEADER) and _needs_file(response):
         if part_index != 0:
             raise ValueError("Delivery part is outside the generated response")
         return response, 1
@@ -259,6 +265,19 @@ def _delivery_part(response: str, part_index: int) -> tuple[str, int]:
     if part_index >= len(chunks):
         raise ValueError("Delivery part is outside the generated response")
     return chunks[part_index], len(chunks)
+
+
+def _needs_file(response: str) -> bool:
+    if len(response) > MAX_RESPONSE_CHARACTERS:
+        return True
+    chunks = _chunk_response(response)
+    open_block = False
+    for chunk in chunks[:-1]:
+        for _ in re.finditer(r"(?m)^\s*```", chunk):
+            open_block = not open_block
+        if open_block:
+            return True
+    return False
 
 
 def _delivery_nonce(request_message_id: int, part_index: int) -> int:
