@@ -126,13 +126,16 @@ class CwlQueriesTests(unittest.TestCase):
             "war_id": "new-partial", "cwl_season": "2026-09",
             "clan_code": "BEH", "end_ts": 2000,
         })
-        snapshot = self.bonus_queries(dataset).ass_season_coverage(clan_code="BEH")
+        queries = self.bonus_queries(dataset)
+        snapshot = queries.ass_season_coverage(clan_code="BEH")
         self.assertEqual([row.season for row in snapshot.seasons],
                          ["2026-09", "2026-08"])
         self.assertEqual([row.ended_wars for row in snapshot.seasons], [1, 7])
         self.assertEqual([row.seven_wars_recorded for row in snapshot.seasons],
                          [False, True])
         self.assertEqual(snapshot.latest_seven_war_season, "2026-08")
+        self.assertEqual(queries.ass_seasons(clan_code=snapshot.clan_code),
+                         tuple(row.season for row in snapshot.seasons))
 
     def bonus_queries(self, dataset=None, *, config=None):
         history = _History(dataset or _dataset())

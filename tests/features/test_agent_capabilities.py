@@ -10,7 +10,8 @@ from elbow_helper.features.agent import capabilities
 from elbow_helper.features.agent.capabilities import (
     CapabilityBindError, require_source_provenance, validate_contract_catalogue,
 )
-from elbow_helper.features.agent.tools import build_agent_tools
+from elbow_helper.features.agent.tools import build_agent_tool_groups, build_agent_tools
+from elbow_helper.features.agent.capabilities import SAVED_REPORT_CONTRACTS
 
 
 class AgentCapabilityTests(unittest.TestCase):
@@ -27,6 +28,18 @@ class AgentCapabilityTests(unittest.TestCase):
             validate_contract_catalogue(missing)
         with self.assertRaisesRegex(ValueError, "lack capability contracts"):
             validate_contract_catalogue({**self.registry, "unclassified": next(iter(self.registry.values()))})
+
+    def test_available_period_keys_have_one_feature_owner(self):
+        owners = {}
+        for group, tools in build_agent_tool_groups().items():
+            for tool in tools:
+                contract = (capabilities.CONTRACTS.get(tool.definition.name)
+                            or SAVED_REPORT_CONTRACTS.get(tool.definition.name))
+                for _, kind in contract.result_entity_keys:
+                    if any(part in kind for part in ("period", "season", "cycle", "run")):
+                        owners.setdefault(kind, set()).add(group)
+        self.assertTrue(owners)
+        self.assertTrue(all(len(groups) == 1 for groups in owners.values()), owners)
 
     def test_invalid_access_and_field_descriptors_fail_across_registry(self):
         for name, contract in capabilities.CONTRACTS.items():

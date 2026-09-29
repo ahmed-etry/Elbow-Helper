@@ -342,13 +342,9 @@ class CwlQueries:
         )
 
     def ass_seasons(self, *, clan_code: str) -> tuple[str, ...]:
-        if clan_code not in CWL_CLAN_NAMES:
-            raise ValueError("Invalid CWL clan code")
-        return tuple(dict.fromkeys(
-            season for season in self._history.bonus_seasons([clan_code])
-            if isinstance(season, str)
-            and re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", season)
-        ))
+        return tuple(row.season for row in self.ass_season_coverage(
+            clan_code=clan_code,
+        ).seasons)
 
     def ass_season_coverage(self, *, clan_code: str) -> CwlSeasonCoverageSnapshot:
         """Distinguish seasons with any ended war from seven-war seasons."""
