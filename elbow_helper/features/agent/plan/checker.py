@@ -8,7 +8,8 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..models import RegisteredAgentTool
-from ..capabilities import CONTRACTS, CapabilityBindError, bound_time_window, compile_capability_call, entity_kind
+from ..capabilities import CONTRACTS, SAVED_REPORT_CONTRACTS, CapabilityBindError, bound_time_window, compile_capability_call, entity_kind
+from ..tools.saved_reports import COMPARE_NAME, READ_NAME, original_arguments, original_tool
 from .format import output_forms
 
 
@@ -271,7 +272,15 @@ def check_plan(
             schema = tool.definition.parameters
             if not _valid_arguments(arguments, schema, set(dependencies)):
                 return _error("Arguments must match the capability schema.", step_id)
-            contract = CONTRACTS.get(capability)
+            selected = original_tool(capability, arguments) if capability in (READ_NAME, COMPARE_NAME) else None
+            if capability in (READ_NAME, COMPARE_NAME):
+                if selected is None or not _valid_arguments(
+                    original_arguments(arguments), selected.definition.parameters,
+                    set(dependencies),
+                ):
+                    return _error("Use the fields supported by this report kind.", step_id)
+            contract = (SAVED_REPORT_CONTRACTS[selected.definition.name] if selected is not None
+                        else CONTRACTS.get(capability))
             if contract is not None:
                 if any(kind == "resolved" and owner == step_id for kind, owner, _ in periods) and any(
                     field in arguments for field in (*contract.latest_fields, *contract.bounded_fields)
@@ -292,7 +301,11 @@ def check_plan(
                     return _error(issue, step_id)
                 if not references:
                     try:
-                        compile_capability_call(tool, arguments)
+                        compile_capability_call(
+                            selected or tool,
+                            original_arguments(arguments) if selected else arguments,
+                            contract=contract,
+                        )
                     except CapabilityBindError as error:
                         return _error(str(error), step_id)
             earlier.add(step_id)

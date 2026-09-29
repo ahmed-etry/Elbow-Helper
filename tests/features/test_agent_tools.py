@@ -239,60 +239,42 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("get_player_health", tools)
         self.assertIn("get_clan_health", tools)
         self.assertIn("read_member_achievements", tools)
-        self.assertIn("read_member_achievement_report", tools)
+        self.assertIn("read_saved_report", tools)
+        self.assertIn("compare_saved_reports", tools)
         self.assertIn("read_achievement_economy_rules", tools)
         self.assertIn("read_achievement_leaderboard", tools)
-        self.assertIn("read_achievement_leaderboard_report", tools)
         self.assertIn("read_event_schedule", tools)
-        self.assertIn("read_event_schedule_report", tools)
         self.assertIn("list_clan_health_reports", tools)
         self.assertIn("read_clan_health_period", tools)
-        self.assertIn("read_clan_health_report", tools)
-        self.assertIn("compare_clan_health_reports", tools)
         self.assertIn("read_family_account_movements", tools)
-        self.assertIn("read_family_account_movement_report", tools)
         self.assertIn("read_pending_transfer_requests", tools)
-        self.assertIn("read_pending_transfer_report", tools)
         self.assertIn("read_active_hibernation", tools)
-        self.assertIn("read_active_hibernation_report", tools)
         self.assertIn("read_accessible_support_tickets", tools)
-        self.assertIn("read_support_ticket_report", tools)
         self.assertIn("read_active_recruitment_trials", tools)
-        self.assertIn("read_active_recruitment_trial_report", tools)
         self.assertIn("read_accessible_examination_cases", tools)
-        self.assertIn("read_examination_case_report", tools)
         self.assertIn("read_active_leadership_records", tools)
-        self.assertIn("read_leadership_record_report", tools)
         self.assertIn("read_discord_channel_history", tools)
         self.assertIn("find_discord_threads", tools)
-        self.assertIn("compare_role_account_reports", tools)
         self.assertIn("start_discord_research_job", tools)
         self.assertIn("start_discord_history_job", tools)
         self.assertIn("continue_discord_research_job", tools)
         self.assertIn("read_discord_research_job", tools)
         self.assertIn("cancel_discord_research_job", tools)
         self.assertIn("retain_discord_research_report", tools)
-        self.assertIn("read_discord_research_report", tools)
         self.assertIn("list_regular_war_status", tools)
         self.assertIn("read_regular_war", tools)
-        self.assertIn("read_regular_war_report", tools)
         self.assertIn("read_historical_regular_wars", tools)
-        self.assertIn("read_historical_regular_war_report", tools)
         self.assertIn("read_cwl_performance", tools)
-        self.assertIn("read_cwl_performance_report", tools)
         self.assertIn("list_cwl_ass_seasons", tools)
         self.assertIn("read_cwl_ass_scope", tools)
-        self.assertIn("read_cwl_ass_scope_report", tools)
         self.assertIn("read_cwl_bonus_scope", tools)
-        self.assertIn("read_cwl_bonus_scope_report", tools)
         self.assertIn("read_cwl_threads", tools)
         self.assertIn("list_supported_attachments", tools)
         self.assertIn("import_csv_attachment", tools)
-        self.assertIn("read_csv_import", tools)
         self.assertIn("import_xlsx_attachment", tools)
-        self.assertIn("read_xlsx_import", tools)
         self.assertIn("import_text_attachment", tools)
-        self.assertIn("read_text_import", tools)
+        self.assertNotIn("read_clan_health_report", tools)
+        self.assertNotIn("compare_clan_health_reports", tools)
         self.assertNotIn("execute_sql", tools)
         self.assertNotIn("propose_action", tools)
         self.assertNotIn("approve_action", tools)
@@ -312,9 +294,10 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
     def test_cwl_bonus_tool_preserves_metric_and_side_effect_boundaries(self) -> None:
         tools = build_agent_tools()
         description = tools["read_cwl_bonus_scope"].definition.description
-        retained = tools[
-            "read_cwl_bonus_scope_report"
-        ].definition.description
+        from elbow_helper.features.agent.tools.saved_reports import original_tool
+        retained = original_tool("read_saved_report", {
+            "report_kind": "cwl_bonus_scope",
+        }).definition.description
 
         self.assertIn("adjusted-delta evidence, not ASS", description)
         self.assertIn("does not poll Clash or publish", description)
@@ -341,7 +324,10 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
     def test_event_tools_preserve_role_and_read_only_boundaries(self) -> None:
         tools = build_agent_tools()
         current = tools["read_event_schedule"].definition.description
-        retained = tools["read_event_schedule_report"].definition.description
+        from elbow_helper.features.agent.tools.saved_reports import original_tool
+        retained = original_tool("read_saved_report", {
+            "report_kind": "event_schedule",
+        }).definition.description
 
         self.assertIn("Requires current Lead access", current)
         self.assertIn("missing counter roles explicitly", current)

@@ -22,7 +22,7 @@ MECHANICAL_FIELDS = frozenset({
     "expected_state_fingerprint", "title", "sheets", "report_sheets",
     "written_sheets", "label", "quote", "section_offset",
     "section_limit", "content_offset", "content_limit", "ticket_offset",
-    "winner_offset", "query",
+    "winner_offset", "query", "report_kind",
 })
 
 ENTITY_KINDS = {
@@ -229,6 +229,30 @@ CONTRACTS = {
     )
     for name, contract in CONTRACTS.items()
 }
+SAVED_REPORT_CONTRACTS = {
+    name: contract for name, contract in CONTRACTS.items()
+    if (name.startswith("read_") and (name.endswith("_report") or name.endswith("_import")))
+    or (name.startswith("compare_") and name.endswith("_reports"))
+}
+CONTRACTS = {name: contract for name, contract in CONTRACTS.items()
+             if name not in SAVED_REPORT_CONTRACTS}
+_SAVED_REPORT_FIELDS = tuple(sorted({
+    field for name, contract in SAVED_REPORT_CONTRACTS.items()
+    if name.startswith("read_")
+    for field in (
+        *(field for field, _ in contract.entity_fields),
+        *contract.time_fields, *contract.filter_fields, *contract.channel_fields,
+    )
+    if field != "report_id"
+}))
+CONTRACTS["read_saved_report"] = CapabilityContract(
+    (("report_id", "saved_report"),), (), filter_fields=_SAVED_REPORT_FIELDS,
+    retained_fields=("report_id",),
+)
+CONTRACTS["compare_saved_reports"] = CapabilityContract(
+    (("before_report_id", "saved_report"), ("after_report_id", "saved_report")),
+    (), retained_fields=("before_report_id", "after_report_id"),
+)
 
 
 def validate_contract_catalogue(registry: Mapping[str, RegisteredAgentTool]) -> None:
@@ -370,9 +394,10 @@ def bound_time_window(
 def compile_capability_call(
     tool: RegisteredAgentTool, arguments: Mapping[str, Any],
     known_sources: Mapping[str, int] | None = None,
+    *, contract: CapabilityContract | None = None,
 ) -> dict[str, Any]:
     """Return a bounded, inspectable scope; feature code still owns the calculation."""
-    contract = CONTRACTS.get(tool.definition.name)
+    contract = contract or CONTRACTS.get(tool.definition.name)
     if contract is None:
         return {"precision": "schema_only", "capability": tool.definition.name}
 

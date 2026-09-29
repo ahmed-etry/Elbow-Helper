@@ -106,7 +106,8 @@ class AgentRosterTests(unittest.IsolatedAsyncioTestCase):
 
         planned = plan_call(
             AgentToolCall("first", "read_roster", json.dumps({"roster_id": self.roster.id})),
-            AgentToolCall("second", "read_roster_report", json.dumps({
+            AgentToolCall("second", "read_saved_report", json.dumps({
+                "report_kind": "roster_signups",
                 "report_id": {"step": "first", "path": ["report_id"]},
                 "offset": {"step": "first", "path": ["next_offset"]},
             })),

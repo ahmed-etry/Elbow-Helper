@@ -24,6 +24,7 @@ from .recruitment import recruitment_tools
 from .roles import role_tools
 from .role_connections import role_connection_tools
 from .rosters import roster_tools
+from .saved_reports import replace_report_tools
 from .spreadsheets import spreadsheet_tools
 from .support import support_tools
 from .threads import thread_tools
@@ -65,11 +66,11 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
 def build_agent_tools() -> dict[str, RegisteredAgentTool]:
     """Build the complete catalogue without exposing arbitrary capabilities."""
 
-    tools = tuple(
+    tools = replace_report_tools(tuple(
         tool
         for group in build_agent_tool_groups().values()
         for tool in group
-    )
+    ))
     registry = {tool.definition.name: tool for tool in tools}
     if len(registry) != len(tools):
         raise ValueError("Duplicate agent capability")

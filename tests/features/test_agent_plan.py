@@ -11,8 +11,9 @@ from datetime import datetime, timezone
 
 from elbow_helper.features.agent.plan import capability_list, check_plan, plan_definition
 from elbow_helper.features.agent.plan.checker import _kind, _source_check, _time_check
-from elbow_helper.features.agent.capabilities import CONTRACTS
+from elbow_helper.features.agent.capabilities import CONTRACTS, SAVED_REPORT_CONTRACTS
 from elbow_helper.features.agent.tools import build_agent_tools
+from elbow_helper.features.agent.tools.saved_reports import original_tool
 
 
 def _sample(schema):
@@ -226,6 +227,8 @@ class PlanContractTests(unittest.TestCase):
 
     def test_full_plans_refuse_other_sources_for_every_entity_field(self):
         for name, tool in self.registry.items():
+            if name in {"read_saved_report", "compare_saved_reports"}:
+                continue
             contract = CONTRACTS[name]
             for field, kind in contract.entity_fields:
                 with self.subTest(capability=name, field=field):
@@ -251,6 +254,30 @@ class PlanContractTests(unittest.TestCase):
                     check = check_plan(other, self.registry, named)
                     self.assertFalse(check.ok)
                     self.assertTrue(check.offered)
+
+    def test_every_saved_report_kind_checks_its_source_fields(self):
+        for name in ("read_saved_report", "compare_saved_reports"):
+            kinds = self.registry[name].definition.parameters["properties"]["report_kind"]["enum"]
+            for kind in kinds:
+                selected = original_tool(name, {"report_kind": kind})
+                contract = SAVED_REPORT_CONTRACTS[selected.definition.name]
+                for field, entity_kind in contract.entity_fields:
+                    with self.subTest(capability=name, kind=kind, field=field):
+                        plan = _plan_for(selected.definition.name, selected, contract, field)
+                        plan["steps"][0]["capability"] = name
+                        plan["steps"][0]["arguments"]["report_kind"] = kind
+                        value = plan["steps"][0]["arguments"][field]
+                        named = {_kind(entity_kind): frozenset([value])}
+                        self.assertTrue(check_plan(plan, self.registry, named).ok)
+                        other = copy.deepcopy(plan)
+                        choices = selected.definition.parameters["properties"][field].get("enum", ())
+                        outside = (next(item for item in choices if item != value)
+                                   if len(choices) > 1 else
+                                   98765 if type(value) is int else "#P2")
+                        other["steps"][0]["arguments"][field] = outside
+                        check = check_plan(other, self.registry, named)
+                        self.assertFalse(check.ok)
+                        self.assertTrue(check.offered)
 
     def test_malformed_plans_return_errors(self):
         generator = random.Random(7162)

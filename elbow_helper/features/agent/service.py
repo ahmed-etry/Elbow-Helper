@@ -34,7 +34,8 @@ from .budgets import ContextBudget
 from .capabilities import (
     CapabilityBindError, compile_capability_call, require_source_provenance,
 )
-from .capabilities import CONTRACTS
+from .capabilities import CONTRACTS, SAVED_REPORT_CONTRACTS
+from .tools.saved_reports import COMPARE_NAME, READ_NAME, original_arguments, original_tool
 from .access import can_disclose_provenance
 from .plan.checker import _kind, _periods, _source_check, _time_check, _valid_arguments, check_plan
 from .plan.executor import execute_plan, resolve_arguments
@@ -312,7 +313,9 @@ class AgentService:
                             int((time.monotonic() - round_started) * 1000))
 
         async def disclosure_issue(step: Mapping[str, Any]) -> str:
-            contract = CONTRACTS.get(step["capability"])
+            selected = original_tool(step["capability"], step["arguments"])
+            contract = (SAVED_REPORT_CONTRACTS[selected.definition.name] if selected
+                        else CONTRACTS.get(step["capability"]))
             if contract is None:
                 return ""
             channels: set[int] = set()
@@ -345,10 +348,18 @@ class AgentService:
                 nonlocal tool_calls, evidence_characters, context
                 name = step["capability"]
                 tool = registry[name]
-                contract = CONTRACTS.get(name)
+                selected = original_tool(name, arguments) if name in (READ_NAME, COMPARE_NAME) else None
+                contract = (SAVED_REPORT_CONTRACTS[selected.definition.name] if selected
+                            else CONTRACTS.get(name))
                 retained = []
                 if not _valid_arguments(arguments, tool.definition.parameters):
                     return {"error": "Arguments must match the capability schema."}
+                if name in (READ_NAME, COMPARE_NAME) and (
+                    selected is None or not _valid_arguments(
+                        original_arguments(arguments), selected.definition.parameters,
+                    )
+                ):
+                    return {"error": "Use the fields supported by this report kind."}
                 if tool.effect is AgentCapabilityEffect.COMMAND:
                     issue = check_command_plan(
                         {**plan, "steps": [{**step, "arguments": arguments}]},
@@ -399,7 +410,11 @@ class AgentService:
                     if issue:
                         return {"error": issue}
                 try:
-                    capability_scope = compile_capability_call(tool, arguments)
+                    capability_scope = compile_capability_call(
+                        selected or tool,
+                        original_arguments(arguments) if selected else arguments,
+                        contract=contract,
+                    )
                 except CapabilityBindError as error:
                     return {"error": str(error)}
                 if retained:

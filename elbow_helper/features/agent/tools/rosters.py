@@ -4,7 +4,6 @@ from dataclasses import asdict
 from typing import Any, Mapping
 from uuid import uuid4
 
-from elbow_helper.configuration.clans import CLANS
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..access import accessible_message_channel, require_evidence_access
@@ -38,21 +37,15 @@ def roster_tools() -> tuple[RegisteredAgentTool, ...]:
 
 async def find_rosters(context: AgentRequestContext, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
     await require_evidence_access(context)
-    rosters = await context.roster_queries.list_for_guild(context.guild.id)
-    query = str(arguments.get("query") or "").casefold()
-    matches = []
-    for roster in rosters:
-        if roster.guild_id != context.guild.id:
-            continue
-        clan = CLANS.get(roster.clan_code)
-        aliases = (str(roster.id), roster.name, roster.clan_code, clan.name if clan else "")
-        if not query or any(query in value.casefold() for value in aliases):
-            matches.append(roster_summary(roster))
-    matches.sort(key=lambda item: (item["name"].casefold(), item["roster_id"]))
     offset = arguments.get("offset", 0)
+    page, matched_count = await context.roster_queries.find_for_guild(
+        context.guild.id, query=str(arguments.get("query") or ""),
+        offset=offset, limit=25,
+    )
     await require_evidence_access(context)
-    return {"rosters": matches[offset:offset + 25], "matched_count": len(matches),
-            "next_offset": offset + 25 if offset + 25 < len(matches) else None}
+    return {"rosters": [roster_summary(roster) for roster in page],
+            "matched_count": matched_count,
+            "next_offset": offset + 25 if offset + 25 < matched_count else None}
 
 
 async def list_roster_cycles(context: AgentRequestContext, arguments: Mapping[str, Any]) -> Mapping[str, Any]:

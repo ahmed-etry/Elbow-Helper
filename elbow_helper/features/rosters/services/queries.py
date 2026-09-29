@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
+from elbow_helper.configuration.clans import CLANS
+
 from ..repository import RosterRepository
 from ..models import Roster
 from ..models import RosterMember
@@ -41,6 +43,23 @@ class RosterQueries:
             self._repository.list_rosters,
             guild_id,
         )
+
+    async def find_for_guild(
+        self, guild_id: int, *, query: str = "", offset: int = 0, limit: int = 25,
+    ) -> tuple[list[Roster], int]:
+        rosters = await self.list_for_guild(guild_id)
+        selected = query.strip().casefold()
+        matches = []
+        for roster in rosters:
+            if roster.guild_id != guild_id:
+                continue
+            clan = CLANS.get(roster.clan_code)
+            aliases = (str(roster.id), roster.name, roster.clan_code,
+                       clan.name if clan else "")
+            if not selected or any(selected in value.casefold() for value in aliases):
+                matches.append(roster)
+        matches.sort(key=lambda item: (item.name.casefold(), item.id))
+        return matches[offset:offset + limit], len(matches)
 
     async def members(self, roster: Roster) -> list[RosterMember]:
         return await asyncio.to_thread(
