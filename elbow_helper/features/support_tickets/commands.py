@@ -26,6 +26,93 @@ LOGGER = logging.getLogger(__name__)
 
 
 class SupportCommandMixin:
+    def support_ticket_target_state(self, guild: discord.Guild,
+                                    user: discord.Member, topic: str,
+                                    actor: discord.Member) -> dict[str, object]:
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+        }
+        bot_member = guild.me or guild.get_member(self.bot.user.id if self.bot.user else 0)
+        if bot_member:
+            overwrites[bot_member] = discord.PermissionOverwrite(
+                view_channel=True, send_messages=True,
+            )
+        visible_roles = []
+        for role_id in LEAD:
+            role = guild.get_role(role_id)
+            if role:
+                overwrites[role] = discord.PermissionOverwrite(
+                    view_channel=True, send_messages=True,
+                )
+                visible_roles.append(role.id)
+        display_name = user.display_name or user.name
+        return {
+            "guild": guild, "user": user, "topic": topic, "actor": actor,
+            "name": f"🎫｜support-{display_name}",
+            "category": guild.get_channel(SUPPORT_TICKET_CATEGORY),
+            "overwrites": overwrites, "visible_roles": visible_roles,
+            "bot_member_id": bot_member.id if bot_member else None,
+        }
+
+    async def prepare_support_ticket(self, guild: discord.Guild,
+                                     user: discord.Member, topic: str,
+                                     actor: discord.Member) -> dict[str, object]:
+        target = self.support_ticket_target_state(guild, user, topic, actor)
+        display_name = user.display_name or user.name
+        welcome_text = await self.welcome_messages.create(
+            topic or "General assistance", display_name,
+        )
+        embed = discord.Embed(
+            title="Support Ticket",
+            description="A staff member will reply soon. You can share any helpful details in the meantime.",
+            color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
+            timestamp=datetime.now(timezone.utc),
+        )
+        embed.set_footer(text=f"Opened by {actor.display_name}",
+                         icon_url=actor.display_avatar.url)
+        return {**target, "welcome": welcome_text, "embed": embed}
+
+    async def open_support_ticket(self, prepared: dict[str, object]):
+        guild = prepared["guild"]
+        user = prepared["user"]
+        ticket_channel = None
+        ticket_saved = False
+        try:
+            ticket_channel = await guild.create_text_channel(
+                name=prepared["name"], category=prepared["category"],
+                overwrites=prepared["overwrites"],
+            )
+            await ticket_channel.edit(topic=user.mention)
+            await ticket_channel.send(
+                content=f"{user.mention}\n{prepared['welcome']}\n",
+                embed=prepared["embed"], view=SupportTicketCloseView(self),
+            )
+            tickets = load_tickets()
+            tickets[str(ticket_channel.id)] = {
+                "owner": user.id, "topic": prepared["topic"],
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "source": "open",
+            }
+            save_tickets(tickets)
+            ticket_saved = True
+            return ticket_channel, f"Ticket created for {user.mention}: {ticket_channel.mention}"
+        except Exception:
+            if ticket_channel is not None and not ticket_saved:
+                try:
+                    await ticket_channel.delete()
+                except discord.NotFound:
+                    pass
+                except (discord.Forbidden, discord.HTTPException):
+                    LOGGER.exception(
+                        "Failed to remove incomplete support ticket %s",
+                        ticket_channel.id,
+                    )
+            raise
+
+    def support_ticket_registration(self, channel_id: int):
+        return load_tickets().get(str(channel_id))
+
     @staticmethod
     def _build_transcript_link_view() -> discord.ui.View:
         return TranscriptLinkPromptView("support_transcript_link")
@@ -55,8 +142,6 @@ class SupportCommandMixin:
     @app_commands.guilds(discord.Object(id=GUILD_ID))
     async def open_ticket(self, interaction: discord.Interaction, user: discord.Member, topic: str):
         await interaction.response.defer(ephemeral=True)
-        ticket_channel: discord.TextChannel | None = None
-        ticket_saved = False
         try:
             if not any(role.id in LEAD for role in interaction.user.roles):
                 await deny(interaction)
@@ -67,66 +152,13 @@ class SupportCommandMixin:
                 await interaction.followup.send("Run this in the server, not in DMs.", ephemeral=True)
                 return
 
-            overwrites = {
-                guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-            }
-            bot_member = guild.me or guild.get_member(self.bot.user.id if self.bot.user else 0)
-            if bot_member:
-                overwrites[bot_member] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-            for role_id in LEAD:
-                role = guild.get_role(role_id)
-                if role:
-                    overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-
-            display_name = user.display_name or user.name
-            ticket_channel = await guild.create_text_channel(
-                name=f"🎫｜support-{display_name}",
-                category=guild.get_channel(SUPPORT_TICKET_CATEGORY),
-                overwrites=overwrites,
+            prepared = await self.prepare_support_ticket(
+                guild, user, topic, interaction.user,
             )
-            await ticket_channel.edit(topic=user.mention)
-
-            welcome_text = await self.welcome_messages.create(
-                topic or "General assistance",
-                display_name,
-            )
-            embed = discord.Embed(
-                title="Support Ticket",
-                description="A staff member will reply soon. You can share any helpful details in the meantime.",
-                color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
-                timestamp=datetime.now(timezone.utc),
-            )
-            embed.set_footer(text=f"Opened by {interaction.user.display_name}", icon_url=interaction.user.display_avatar.url)
-            await ticket_channel.send(
-                content=f"{user.mention}\n{welcome_text}\n",
-                embed=embed,
-                view=SupportTicketCloseView(self),
-            )
-
-            tickets = load_tickets()
-            tickets[str(ticket_channel.id)] = {
-                "owner": user.id,
-                "topic": topic,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "source": "open",
-            }
-            save_tickets(tickets)
-            ticket_saved = True
-
-            await interaction.followup.send(f"Ticket created for {user.mention}: {ticket_channel.mention}", ephemeral=True)
+            _, message = await self.open_support_ticket(prepared)
+            await interaction.followup.send(message, ephemeral=True)
         except (discord.Forbidden, discord.HTTPException, OSError, RuntimeError, TypeError, ValueError):
             LOGGER.exception("Failed to open ticket")
-            if ticket_channel is not None and not ticket_saved:
-                try:
-                    await ticket_channel.delete()
-                except discord.NotFound:
-                    pass
-                except (discord.Forbidden, discord.HTTPException):
-                    LOGGER.exception(
-                        "Failed to remove incomplete support ticket %s",
-                        ticket_channel.id,
-                    )
             try:
                 await fail(interaction)
             except discord.HTTPException:
