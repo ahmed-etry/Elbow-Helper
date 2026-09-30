@@ -44,6 +44,13 @@ class RosterQueries:
             guild_id,
         )
 
+    async def managed_role_ids(self, guild_id: int) -> frozenset[int]:
+        rosters = await self.list_for_guild(guild_id)
+        return frozenset(
+            roster.role_id for roster in rosters
+            if roster.guild_id == guild_id and roster.role_id is not None
+        )
+
     async def find_for_guild(
         self, guild_id: int, *, query: str = "", offset: int = 0, limit: int = 25,
     ) -> tuple[list[Roster], int]:

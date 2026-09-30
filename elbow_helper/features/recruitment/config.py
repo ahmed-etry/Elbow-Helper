@@ -2,6 +2,19 @@
 
 from __future__ import annotations
 
+from elbow_helper.configuration.clans import CLAN_INFO_BOARDS
+from elbow_helper.configuration.roles import (
+    ALLIANCE_MEMBER_ROLE_ID, APPLICANT_ROLE_ID, MEMBER_ROLE_ID, TRIAL_ROLE_ID,
+)
+
+
+def managed_role_ids() -> frozenset[int]:
+    return frozenset({
+        APPLICANT_ROLE_ID, TRIAL_ROLE_ID, MEMBER_ROLE_ID,
+        ALLIANCE_MEMBER_ROLE_ID,
+        *(entry["clan_role"] for entry in CLAN_INFO_BOARDS.values()),
+    })
+
 TRIAL_DAYS_DEFAULT = 7
 TRIAL_DATA_FILE = "data/recruitment/trial_data.json"
 TRIAL_REMINDERS_FILE = "data/recruitment/trial_reminders.json"

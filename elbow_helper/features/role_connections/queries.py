@@ -121,6 +121,17 @@ class RoleConnectionQueries:
         self._connection_provider = connection_provider
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
+    def managed_role_ids(self) -> frozenset[int]:
+        connections = self._connection_provider()
+        if not isinstance(connections, Sequence) or isinstance(connections, (str, bytes)):
+            raise RuntimeError("Role-connection state is unavailable")
+        if len(connections) > MAX_ROLE_CONNECTION_RULES:
+            raise RuntimeError("Role-connection state exceeds its read limit")
+        return frozenset(
+            role_id for connection in connections if isinstance(connection, Mapping)
+            if type(role_id := connection.get("target_role_id")) is int and role_id > 0
+        )
+
     def snapshot(self) -> RoleConnectionSnapshot:
         raw_connections = self._connection_provider()
         if not isinstance(raw_connections, Sequence) or isinstance(

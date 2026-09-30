@@ -9,6 +9,9 @@ from elbow_helper.configuration.roles import (
     CO_LEADER_ROLE_ID,
     CROSS_LEADER_ROLE_ID,
     MEMBER_ROLE_ID,
+    HIBERNATING_ROLE_ID,
+    SLEEPING_CO_ROLE_ID,
+    SLEEPING_CROSS_ROLE_ID,
 )
 
 STATE_FILE = Path("data/hibernation/hibernation.json")
@@ -115,3 +118,13 @@ HIBERNATION_CLAN_NAMES = {
     for code, role_id in CLAN_MEMBER_ROLE_IDS.items()
     if code in CLAN_NAMES
 }
+
+
+def managed_role_ids() -> frozenset[int]:
+    return frozenset({
+        *HIBERNATE_REMOVE_ROLE_IDS,
+        *RESTORE_ROLE_IDS,
+        *SNAPSHOT_ONLY_ROLE_IDS,
+        HIBERNATING_ROLE_ID, SLEEPING_CO_ROLE_ID, SLEEPING_CROSS_ROLE_ID,
+        *CLAN_MEMBER_ROLE_IDS.values(),
+    })

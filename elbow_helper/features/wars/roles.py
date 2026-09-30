@@ -25,6 +25,10 @@ _CLAN_CODE_BY_WAR_ROLE_ID = {
 RosterRoleClaim = Callable[[int, int], Awaitable[bool]]
 
 
+def managed_role_ids() -> frozenset[int]:
+    return frozenset(CLAN_WAR_ROLE_IDS.values())
+
+
 class WarRoleMixin:
     """Keep regular-war roles aligned with roster and live-lineup claims."""
 
