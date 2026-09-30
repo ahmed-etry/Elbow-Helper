@@ -8,7 +8,12 @@ from typing import Any
 from elbow_helper.features.agent.access import ACCESS_LEAD, has_access_requirements
 from elbow_helper.features.event_stats.commands import open_event_panel
 
+from ...actions.contracts import ChangePreview
 from ...wording import COMMAND_UNAVAILABLE
+from ...wording import (
+    ACTION_EVENT_UPDATE_LABEL, ACTION_EVENT_UPDATE_LINE,
+    ACTION_EVENT_UPDATE_TARGET,
+)
 from ..outcomes import CommandOutcome
 from ..registry import CommandAdapter
 
@@ -32,4 +37,42 @@ async def run_event_panel(context: Any, values: Mapping[str, Any]) -> CommandOut
 
 
 def event_adapters() -> tuple[CommandAdapter, ...]:
-    return (CommandAdapter("/event panel", "private", run_event_panel),)
+    return (
+        CommandAdapter("/event panel", "private", run_event_panel),
+        CommandAdapter("/event update", "confirm", run_event_update,
+                       prepare=prepare_event_update),
+    )
+
+
+async def prepare_event_update(context: Any, values: Mapping[str, Any]) -> ChangePreview:
+    del values
+    if not has_access_requirements(context.guild, context.member.id, {ACCESS_LEAD}):
+        raise ValueError("Event stats are unavailable")
+    workflow = context.bot.get_cog("EventStatsCog")
+    if workflow is None:
+        raise ValueError("Event stats are unavailable")
+    context.state.required_access.add(ACCESS_LEAD)
+    snapshot = workflow.queries.snapshot(context.guild)
+    targets = tuple((row.event_key, row.name) for row in snapshot.rows)
+
+    async def recheck() -> bool:
+        if not has_access_requirements(context.guild, context.member.id, {ACCESS_LEAD}):
+            return False
+        current = workflow.queries.snapshot(context.guild)
+        return tuple((row.event_key, row.name) for row in current.rows) == targets
+
+    return ChangePreview((
+        ACTION_EVENT_UPDATE_LINE,
+        *(ACTION_EVENT_UPDATE_TARGET.format(name=name) for _, name in targets),
+    ), recheck, summary=ACTION_EVENT_UPDATE_LABEL)
+
+
+async def run_event_update(context: Any, values: Mapping[str, Any]) -> CommandOutcome:
+    del values
+    if not has_access_requirements(context.guild, context.member.id, {ACCESS_LEAD}):
+        return CommandOutcome.unavailable()
+    workflow = context.bot.get_cog("EventStatsCog")
+    if workflow is None:
+        return CommandOutcome.unavailable()
+    await workflow.force_refresh(context.guild)
+    return CommandOutcome("complete")
