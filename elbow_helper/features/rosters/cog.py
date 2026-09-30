@@ -327,6 +327,35 @@ class Rosters(commands.Cog):
     async def get_roster(self, roster_id: int) -> Roster | None:
         return await self.service.get(roster_id)
 
+    def roster_clone_settings(self, source: Roster, *, name: str,
+                              clan_code: str | None, role_id: int | None,
+                              max_members: int | None,
+                              min_townhall: int | None) -> dict[str, object]:
+        return {
+            "source_id": source.id, "source_name": source.name,
+            "name": name,
+            "clan_code": clan_code if clan_code is not None else source.clan_code,
+            "role_id": role_id if role_id is not None else source.role_id,
+            "max_members": max_members if max_members is not None else source.max_members,
+            "min_townhall": (source.min_townhall if min_townhall is None
+                             else min_townhall or None),
+            "buttons_hidden": source.buttons_hidden,
+            "schedule_enabled": source.schedule_enabled,
+            "schedule_utc_offset": source.schedule_utc_offset,
+            "open_day": source.open_day, "open_time": source.open_time,
+            "close_day": source.close_day, "close_time": source.close_time,
+            "reset_on_open": source.reset_on_open,
+        }
+
+    async def clone_roster(self, source: Roster, *, name: str,
+                           clan_code: str | None, role_id: int | None,
+                           max_members: int | None,
+                           min_townhall: int | None) -> Roster:
+        return await self.service.clone(
+            source, name=name, clan_code=clan_code, role_id=role_id,
+            max_members=max_members, min_townhall=min_townhall,
+        )
+
     async def handle_refresh(self, interaction: discord.Interaction, roster_id: int) -> None:
         now = time.monotonic()
         last = self._refresh_times.get(roster_id)
@@ -1262,12 +1291,12 @@ class Rosters(commands.Cog):
         source = await self._resolve_roster(interaction, roster)
         if source is None or interaction.guild_id is None:
             return
-        clean_name = self._clean_roster_name(name)
+        clean_name = self.validate_roster_name(name)
         if clean_name is None:
             await warn(interaction, "Enter a roster name between 1 and 100 characters.")
             return
         try:
-            clone = await self.service.clone(
+            clone = await self.clone_roster(
                 source,
                 name=clean_name,
                 clan_code=clan.value if clan is not None else None,
