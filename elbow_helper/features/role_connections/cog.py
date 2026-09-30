@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import json
 import logging
 import math
 import time
@@ -246,6 +247,9 @@ class RoleConnections(commands.Cog):
         message = await channel.send(embed=embed, view=view)
         view.bind_message(message)
         return message
+
+    def connections_board_signature(self) -> str:
+        return json.dumps(self.state["connections"], sort_keys=True)
 
     async def refresh_connections_message(
         self,
