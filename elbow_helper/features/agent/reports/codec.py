@@ -501,14 +501,6 @@ def _decode_attachment_report(row: dict[str, Any], *, guild_id: int) -> Any:
     return report
 
 
-
-
-
-
-
-
-
-
 def _require_guild(row: dict[str, Any], guild_id: int, label: str) -> None:
     if row["guild_id"] != guild_id:
         raise ValueError(f"{label} belongs to another guild")

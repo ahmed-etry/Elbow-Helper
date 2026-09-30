@@ -16,6 +16,7 @@ from .research.runner import ResearchJobRunner
 from .actions.repository import AgentActionRepository
 from .actions.runner import AgentActionRunner
 from .tools.discord_roles import prepare_role_undo
+from .tools.discord_messages import prepare_edit_undo
 from .knowledge.store import KnowledgeStore
 
 
@@ -88,6 +89,8 @@ async def setup(bot) -> None:
         "add_discord_roles": prepare_role_undo,
         "remove_discord_roles": prepare_role_undo,
         "undo_discord_role": prepare_role_undo,
+        "edit_agent_message": prepare_edit_undo,
+        "undo_agent_message_edit": prepare_edit_undo,
     })
     knowledge_store = KnowledgeStore(
         bot.paths.data_root / "agent" / "knowledge",

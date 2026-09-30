@@ -81,13 +81,18 @@ async def resolve_channel(context: Any, channel_id: int) -> Any:
 
 
 def check_post_access(channel: Any, member: Any, bot_member: Any) -> None:
+    check_view_access(channel, member, bot_member)
     permission = "send_messages_in_threads" if isinstance(channel, discord.Thread) else "send_messages"
     for actor in (member, bot_member):
-        if actor is None:
-            raise DiscordActionRefused("That channel is unavailable.")
         allowed = channel.permissions_for(actor)
-        if not allowed.view_channel or not getattr(allowed, permission, False):
+        if not getattr(allowed, permission, False):
             raise DiscordActionRefused("Both you and the bot need access to post there.")
+
+
+def check_view_access(channel: Any, member: Any, bot_member: Any) -> None:
+    for actor in (member, bot_member):
+        if actor is None or not channel.permissions_for(actor).view_channel:
+            raise DiscordActionRefused("Both you and the bot need access to view that channel.")
 
 
 def check_raw_role(role: Any, guild: Any, bot_member: Any,

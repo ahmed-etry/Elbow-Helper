@@ -19,9 +19,9 @@ from .models import AgentAttachment, AgentDelivery, AgentRequestContext
 from .service import AgentUnavailableError
 from .commands.private_view import PrivateCommandView
 from .commands.confirmation import ConfirmationView
+from .message_parts import DISCORD_MESSAGE_LIMIT, chunk_response as _chunk_response
 
 LOGGER = logging.getLogger(__name__)
-DISCORD_MESSAGE_LIMIT = 2_000
 MAX_RESPONSE_CHARACTERS = 12_000
 
 
@@ -240,24 +240,6 @@ class AgentDeliveryMixin:
                 "Could not send agent failure response: request=%s channel=%s",
                 message.id, message.channel.id, exc_info=True,
             )
-
-
-def _chunk_response(content: str) -> list[str]:
-    remaining = str(content or "").strip()
-    chunks: list[str] = []
-    while remaining:
-        if len(remaining) <= DISCORD_MESSAGE_LIMIT:
-            chunks.append(remaining)
-            break
-        split_at = remaining.rfind("\n", 0, DISCORD_MESSAGE_LIMIT)
-        if split_at <= 0:
-            split_at = remaining.rfind(" ", 0, DISCORD_MESSAGE_LIMIT)
-        if split_at <= 0:
-            split_at = DISCORD_MESSAGE_LIMIT
-        chunk = remaining[:split_at].rstrip()
-        chunks.append(chunk or remaining[:DISCORD_MESSAGE_LIMIT])
-        remaining = remaining[split_at:].lstrip()
-    return chunks
 
 
 def _delivery_part(response: str, part_index: int) -> tuple[str, int]:
