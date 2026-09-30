@@ -13,6 +13,14 @@ from .views import EventListView
 from .views import EventPanelView
 
 
+async def open_event_panel(interaction: discord.Interaction, workflow, guild) -> None:
+    view = EventPanelView(workflow, guild)
+    await send_bound_view(
+        interaction, embed=workflow.build_panel_embed(guild),
+        view=view, ephemeral=True,
+    )
+
+
 class EventStatsCommandsMixin:
     event_group = app_commands.Group(name="event", description="Track event schedules and participation.", guild_ids=[GUILD_ID])
 
@@ -23,13 +31,7 @@ class EventStatsCommandsMixin:
             return
 
         guild = interaction.guild or self._get_guild()
-        view = EventPanelView(self, guild)
-        await send_bound_view(
-            interaction,
-            embed=self.build_panel_embed(guild),
-            view=view,
-            ephemeral=True,
-        )
+        await open_event_panel(interaction, self, guild)
 
     @event_group.command(name="list", description="See every event tracker and its current status.")
     async def event_list(self, interaction: discord.Interaction) -> None:
