@@ -35,7 +35,7 @@ NOT_YET_ADAPTED = frozenset({
     "/cwl register", "/cwl roster", "/decline",
     "/finalize", "/grant coins",
     "/grant ticket", "/hibernate",
-    "/open", "/plan", "/raffle clear", "/raffle draw", "/raffle prize",
+    "/open", "/plan", "/raffle clear", "/raffle draw",
     "/raffle remove", "/raffle reroll", "/reactivate", "/recstatements",
     "/roster announcement", "/roster clone", "/roster create",
     "/roster delete", "/roster edit", "/roster export", "/roster post",

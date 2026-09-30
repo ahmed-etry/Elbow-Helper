@@ -21,6 +21,7 @@ from .tools.discord_threads import prepare_thread_member_undo, prepare_thread_up
 from .tools.discord_message_controls import prepare_control_undo
 from .tools.discord_nicknames import prepare_nickname_undo
 from .commands.adapters.records import prepare_record_add_undo, prepare_record_edit_undo
+from .commands.adapters.achievements import prepare_raffle_prize_undo
 from .knowledge.store import KnowledgeStore
 
 
@@ -109,6 +110,8 @@ async def setup(bot) -> None:
         "undo_record_add": prepare_record_add_undo,
         "/record edit": prepare_record_edit_undo,
         "undo_record_edit": prepare_record_edit_undo,
+        "/raffle prize": prepare_raffle_prize_undo,
+        "undo_raffle_prize": prepare_raffle_prize_undo,
     })
     knowledge_store = KnowledgeStore(
         bot.paths.data_root / "agent" / "knowledge",

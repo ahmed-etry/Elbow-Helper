@@ -274,6 +274,9 @@ class AchievementsDatabaseMixin:
     async def _set_meta(self, cursor, key: str, value: str):
         cursor.execute('INSERT OR REPLACE INTO economy_meta (key, value) VALUES (?, ?)', (key, value))
 
+    async def _delete_meta(self, cursor, key: str):
+        cursor.execute('DELETE FROM economy_meta WHERE key = ?', (key,))
+
     async def _get_meta(self, cursor, key: str) -> Optional[str]:
         cursor.execute('SELECT value FROM economy_meta WHERE key = ?', (key,))
         row = cursor.fetchone()

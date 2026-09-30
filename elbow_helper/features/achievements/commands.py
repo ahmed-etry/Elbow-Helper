@@ -410,6 +410,16 @@ class AchievementCommandMixin:
             await interaction.response.send_message("Enter a raffle prize.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
+        saved_message = await self.apply_raffle_prize(prize, winners)
+        await interaction.followup.send(saved_message, ephemeral=True)
+
+    async def raffle_prize_state(self) -> tuple[int, str | None, str | None]:
+        month_key = self._month_key()
+        reward = await self._retry_db_operation(self._get_meta, f"reward_{month_key}")
+        winners = await self._retry_db_operation(self._get_meta, f"winners_{month_key}")
+        return month_key, reward, winners
+
+    async def apply_raffle_prize(self, prize: str, winners: int) -> str:
         month_key = self._month_key()
         await self._retry_db_operation(self._set_meta, f"reward_{month_key}", prize)
         await self._retry_db_operation(self._set_meta, f"winners_{month_key}", str(winners))
@@ -417,13 +427,25 @@ class AchievementCommandMixin:
             saved_message = f"Saved this month's raffle prize: {prize}"
         else:
             saved_message = f"Saved this month's raffle prize for {winners} winners: {prize}"
-        await interaction.followup.send(saved_message, ephemeral=True)
         _, hub_month = await self._retry_db_operation(self._get_raffle_hub_state_internal)
         if hub_month != month_key:
             await self._retry_db_operation(self._set_raffle_hub_state_internal, "active", month_key)
             await self.update_raffle_hub_message(force_new=True)
         else:
             await self.update_raffle_hub_message()
+        return saved_message
+
+    async def restore_raffle_prize(self, month_key: int,
+                                  reward: str | None, winners: str | None) -> None:
+        if month_key != self._month_key():
+            raise ValueError("The raffle month changed")
+        for key, value in ((f"reward_{month_key}", reward),
+                           (f"winners_{month_key}", winners)):
+            if value is None:
+                await self._retry_db_operation(self._delete_meta, key)
+            else:
+                await self._retry_db_operation(self._set_meta, key, value)
+        await self.update_raffle_hub_message()
 
     @app_commands.command(name="economyinfo", description="Explain how coins, tickets, and prizes work.")
     async def economy_info(self, interaction: discord.Interaction):
