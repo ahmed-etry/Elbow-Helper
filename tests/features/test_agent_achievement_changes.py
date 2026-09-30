@@ -13,7 +13,8 @@ from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.agent.commands.adapters.achievements import (
     achievement_adapters, prepare_achievement_award, prepare_achievement_remove,
     prepare_grant_coins, prepare_grant_ticket, run_achievement_award,
-    run_achievement_remove, run_grant_coins, run_grant_ticket,
+    prepare_raffle_clear, prepare_raffle_remove, run_achievement_remove,
+    run_grant_coins, run_grant_ticket, run_raffle_clear, run_raffle_remove,
 )
 
 
@@ -67,6 +68,45 @@ class _EconomyStore(AchievementEconomyMixin):
 
 
 class AchievementChangeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_raffle_removal_and_clear_show_affected_members(self):
+        member = SimpleNamespace(id=7, mention="<@7>", display_name="Member")
+        ticket = {"month_key": 24117, "has_ticket": True,
+                  "last_ticket_month": 24117}
+        raffle = {"month_key": 24117, "winners": [8], "tickets": [7, 8]}
+
+        async def remove_ticket(*args):
+            ticket["has_ticket"] = False
+            ticket["last_ticket_month"] = None
+            return "Ticket removed for this month (if any)."
+
+        async def clear(*args):
+            raffle["winners"] = []
+            raffle["tickets"] = []
+            return "Cleared this month's raffle winners and tickets."
+
+        workflow = SimpleNamespace(
+            raffle_member_ticket_state=AsyncMock(side_effect=lambda *args: dict(ticket)),
+            remove_raffle_ticket=AsyncMock(side_effect=remove_ticket),
+            raffle_clear_state=AsyncMock(side_effect=lambda: dict(raffle)),
+            clear_raffle=AsyncMock(side_effect=clear),
+        )
+        context = SimpleNamespace(
+            bot=SimpleNamespace(get_cog=lambda _: workflow),
+            guild=SimpleNamespace(get_member=lambda _: member),
+        )
+        removal = await prepare_raffle_remove(context, {"user": 7})
+        self.assertTrue(await removal.recheck())
+        workflow.remove_raffle_ticket.assert_not_awaited()
+        await run_raffle_remove(context, {"user": 7})
+        self.assertFalse(await removal.recheck())
+        preview = await prepare_raffle_clear(context, {"clear_tickets": True})
+        self.assertIn("Winner: <@8>", preview.lines)
+        self.assertIn("Ticket: <@7>", preview.lines)
+        self.assertTrue(await preview.recheck())
+        workflow.clear_raffle.assert_not_awaited()
+        await run_raffle_clear(context, {"clear_tickets": True})
+        self.assertFalse(await preview.recheck())
+
     async def test_coin_grant_keeps_caps_and_amount_limit(self):
         store = _EconomyStore()
         try:

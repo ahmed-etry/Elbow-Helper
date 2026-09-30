@@ -243,7 +243,7 @@ class AchievementCommandMixin:
             await deny(interaction)
             return
         await interaction.response.defer(ephemeral=True)
-        msg = await self._retry_db_operation(self._raffle_remove_internal, user.id)
+        msg = await self.remove_raffle_ticket(user.id)
         await interaction.followup.send(msg, ephemeral=True)
 
     @grant_group.command(name="ticket", description="Give a raffle ticket to a member.")
@@ -385,9 +385,8 @@ class AchievementCommandMixin:
             await deny(interaction)
             return
         await interaction.response.defer(ephemeral=True)
-        msg = await self._retry_db_operation(self._raffle_clear_internal, clear_tickets)
+        msg = await self.clear_raffle(clear_tickets)
         await interaction.followup.send(msg, ephemeral=True)
-        await self.update_raffle_hub_message()
 
     @raffle_group.command(name="prize", description="Set this month's raffle prize.")
     @app_commands.describe(

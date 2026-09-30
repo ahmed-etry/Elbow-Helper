@@ -26,6 +26,11 @@ from ...wording import (
     ACTION_COIN_GRANT_LINE, ACTION_COIN_GRANT_REASON,
     ACTION_TICKET_GRANT_HUB, ACTION_TICKET_GRANT_LABEL,
     ACTION_TICKET_GRANT_LINE, ACTION_TICKET_GRANT_REASON,
+    ACTION_RAFFLE_REMOVE_LINE, ACTION_RAFFLE_REMOVE_NONE,
+    ACTION_RAFFLE_REMOVE_LABEL, ACTION_RAFFLE_CLEAR_LINE,
+    ACTION_RAFFLE_CLEAR_TICKETS_LINE, ACTION_RAFFLE_CLEAR_WINNER,
+    ACTION_RAFFLE_CLEAR_TICKET, ACTION_RAFFLE_CLEAR_NONE,
+    ACTION_RAFFLE_CLEAR_HUB, ACTION_RAFFLE_CLEAR_LABEL,
 )
 from ..outcomes import CommandOutcome
 from ..registry import CommandAdapter
@@ -260,6 +265,78 @@ async def run_grant_ticket(context: Any,
                           after={"ticket_state": after})
 
 
+async def prepare_raffle_remove(context: Any,
+                                values: Mapping[str, Any]) -> ChangePreview:
+    workflow = _workflow(context)
+    member = await _member(context, values["user"])
+    if member is None:
+        raise ValueError(ACTION_ACHIEVEMENT_MEMBER_UNAVAILABLE)
+    state = await workflow.raffle_member_ticket_state(member.id)
+    if not state["has_ticket"]:
+        raise ValueError(ACTION_RAFFLE_REMOVE_NONE)
+
+    async def recheck() -> bool:
+        if await _member(context, member.id) is None:
+            return False
+        return await workflow.raffle_member_ticket_state(member.id) == state
+
+    return ChangePreview((
+        ACTION_RAFFLE_REMOVE_LINE.format(member=member.mention),
+    ), recheck, summary=ACTION_RAFFLE_REMOVE_LABEL,
+        before={"ticket_state": state})
+
+
+async def run_raffle_remove(context: Any,
+                            values: Mapping[str, Any]) -> CommandOutcome:
+    workflow = _workflow(context)
+    member = await _member(context, values["user"])
+    if member is None:
+        return CommandOutcome.unavailable()
+    message = await workflow.remove_raffle_ticket(member.id)
+    after = await workflow.raffle_member_ticket_state(member.id)
+    if after["has_ticket"] or after["last_ticket_month"] == after["month_key"]:
+        raise OSError("Ticket removal could not be verified")
+    return CommandOutcome("complete", "private", text=message,
+                          after={"ticket_state": after})
+
+
+async def prepare_raffle_clear(context: Any,
+                               values: Mapping[str, Any]) -> ChangePreview:
+    workflow = _workflow(context)
+    state = await workflow.raffle_clear_state()
+    clear_tickets = bool(values.get("clear_tickets", False))
+    lines = [ACTION_RAFFLE_CLEAR_TICKETS_LINE if clear_tickets
+             else ACTION_RAFFLE_CLEAR_LINE]
+    lines.extend(ACTION_RAFFLE_CLEAR_WINNER.format(member=f"<@{member_id}>")
+                 for member_id in state["winners"])
+    if clear_tickets:
+        lines.extend(ACTION_RAFFLE_CLEAR_TICKET.format(member=f"<@{member_id}>")
+                     for member_id in state["tickets"])
+    if len(lines) == 1:
+        lines.append(ACTION_RAFFLE_CLEAR_NONE)
+    lines.append(ACTION_RAFFLE_CLEAR_HUB)
+
+    async def recheck() -> bool:
+        return await workflow.raffle_clear_state() == state
+
+    return ChangePreview(tuple(lines), recheck, summary=ACTION_RAFFLE_CLEAR_LABEL,
+                         count=max(1, len(state["winners"]) +
+                                   (len(state["tickets"]) if clear_tickets else 0)),
+                         before={"raffle_state": state})
+
+
+async def run_raffle_clear(context: Any,
+                           values: Mapping[str, Any]) -> CommandOutcome:
+    workflow = _workflow(context)
+    clear_tickets = bool(values.get("clear_tickets", False))
+    message = await workflow.clear_raffle(clear_tickets)
+    after = await workflow.raffle_clear_state()
+    if after["winners"] or (clear_tickets and after["tickets"]):
+        raise OSError("Raffle clear could not be verified")
+    return CommandOutcome("complete", "private", text=message,
+                          after={"raffle_state": after})
+
+
 def _lines(before: tuple[int, str | None, str | None],
            prize: str, winners: int) -> tuple[str, ...]:
     _, old_prize, old_winners = before
@@ -355,6 +432,12 @@ def achievement_adapters() -> tuple[CommandAdapter, ...]:
                        action_class=ActionClass.IRREVERSIBLE),
         CommandAdapter("/grant ticket", "confirm", run_grant_ticket,
                        prepare=prepare_grant_ticket,
+                       action_class=ActionClass.IRREVERSIBLE),
+        CommandAdapter("/raffle remove", "confirm", run_raffle_remove,
+                       prepare=prepare_raffle_remove,
+                       action_class=ActionClass.IRREVERSIBLE),
+        CommandAdapter("/raffle clear", "confirm", run_raffle_clear,
+                       prepare=prepare_raffle_clear,
                        action_class=ActionClass.IRREVERSIBLE),
         CommandAdapter("/raffle prize", "confirm", run_raffle_prize,
                        prepare=prepare_raffle_prize),

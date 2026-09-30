@@ -24,6 +24,52 @@ RAFFLE_HUB_HTTP_RETRY_DELAYS_SECONDS = (1.0, 2.0, 5.0)
 
 
 class AchievementRaffleMixin:
+    async def raffle_member_ticket_state(self, user_id: int):
+        return await self._retry_db_operation(
+            self._raffle_member_ticket_state_internal, user_id,
+        )
+
+    async def _raffle_member_ticket_state_internal(self, cursor, user_id: int):
+        month_key = self._month_key()
+        cursor.execute(
+            'SELECT 1 FROM raffle_tickets WHERE month_key = ? AND user_id = ?',
+            (month_key, user_id),
+        )
+        has_ticket = cursor.fetchone() is not None
+        cursor.execute(
+            'SELECT last_ticket_month FROM user_coins WHERE user_id = ?', (user_id,),
+        )
+        row = cursor.fetchone()
+        return {"month_key": month_key, "has_ticket": has_ticket,
+                "last_ticket_month": row[0] if row else None}
+
+    async def remove_raffle_ticket(self, user_id: int):
+        return await self._retry_db_operation(self._raffle_remove_internal, user_id)
+
+    async def raffle_clear_state(self):
+        return await self._retry_db_operation(self._raffle_clear_state_internal)
+
+    async def _raffle_clear_state_internal(self, cursor):
+        month_key = self._month_key()
+        cursor.execute(
+            'SELECT user_id FROM raffle_tickets WHERE month_key = ? ORDER BY user_id',
+            (month_key,),
+        )
+        tickets = [row[0] for row in cursor.fetchall()]
+        cursor.execute(
+            'SELECT user_id FROM raffle_winners WHERE month_key = ? ORDER BY id',
+            (month_key,),
+        )
+        winners = [row[0] for row in cursor.fetchall()]
+        return {"month_key": month_key, "tickets": tickets, "winners": winners}
+
+    async def clear_raffle(self, clear_tickets: bool):
+        message = await self._retry_db_operation(
+            self._raffle_clear_internal, clear_tickets,
+        )
+        await self.update_raffle_hub_message()
+        return message
+
     async def ticket_grant_state(self, user_id: int):
         return await self._retry_db_operation(self._ticket_grant_state_internal, user_id)
 
