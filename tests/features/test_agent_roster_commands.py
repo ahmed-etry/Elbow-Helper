@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 from elbow_helper.features.agent.commands.adapters.rosters import (
     prepare_roster_clone, prepare_roster_create, prepare_roster_delete,
     prepare_roster_edit,
+    prepare_roster_timing,
     roster_adapters,
 )
 from elbow_helper.features.rosters.cog import Rosters
@@ -151,6 +152,44 @@ class RosterCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.after["changes"], {
             "max_members": 50, "min_townhall": None,
         })
+        self.assertFalse(await prepared.preview.recheck())
+
+    async def test_clear_timing_uses_feature_plan_and_checks_result(self):
+        roster = SimpleNamespace(
+            id=4, guild_id=5, name="Signup", one_off_open_ts=100,
+            one_off_close_ts=200, role_id=None,
+        )
+        current = roster
+
+        async def apply(_, plan):
+            nonlocal current
+            self.assertTrue(plan["clear"])
+            current = SimpleNamespace(**{
+                **vars(current), "one_off_open_ts": None,
+                "one_off_close_ts": None,
+            })
+            return current
+
+        workflow = SimpleNamespace(
+            get_roster=AsyncMock(side_effect=lambda _: current),
+            plan_roster_timing=lambda _, **kwargs: {
+                "issue": None, "clear": True, "window": None,
+            },
+            roster_edit_state=AsyncMock(return_value={
+                "roster": roster, "account_count": 0,
+                "member_ids": (), "posts": ((9, 99),),
+            }),
+            apply_roster_timing=AsyncMock(side_effect=apply),
+        )
+        context = SimpleNamespace(
+            bot=SimpleNamespace(get_cog=lambda _: workflow),
+            guild=SimpleNamespace(id=5),
+        )
+        prepared = await prepare_roster_timing(context, {"roster": "4"})
+        self.assertTrue(await prepared.preview.recheck())
+        self.assertIn("Clear one-off timing for **Signup**.",
+                      prepared.preview.lines)
+        self.assertEqual((await prepared.run()).after["one_off_open_ts"], None)
         self.assertFalse(await prepared.preview.recheck())
 
 

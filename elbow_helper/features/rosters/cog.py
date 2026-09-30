@@ -408,6 +408,41 @@ class Rosters(commands.Cog):
         async with self._lock(roster.id):
             return await self.service.update(roster, changes)
 
+    def plan_roster_timing(self, roster: Roster, *, opens_on: str | None,
+                           closes_on: str | None, timezone: str | None,
+                           reset_on_open: bool,
+                           now: datetime | None = None) -> dict[str, object]:
+        if opens_on is None and closes_on is None:
+            return {"issue": None, "clear": True, "window": None,
+                    "reset_on_open": reset_on_open, "now": now}
+        if opens_on is None or closes_on is None:
+            return {"issue": "Enter both opening and closing times, or leave both blank to clear them."}
+        if roster.schedule_enabled:
+            return {"issue": "Disable the automatic schedule before setting one-off timing."}
+        canonical_tz = canonical_timezone_name(timezone or "")
+        if canonical_tz is None:
+            return {"issue": "Choose a timezone from the list."}
+        window = one_off_window(
+            opens_on=opens_on, closes_on=closes_on,
+            timezone_name=canonical_tz,
+        )
+        if window is None:
+            return {"issue": "Enter valid `YYYY-MM-DD HH:mm` times with the closing time after the opening time."}
+        now = now or datetime.now(dt_timezone.utc)
+        if window.closes_at <= now:
+            return {"issue": "Closing time must be in the future."}
+        return {"issue": None, "clear": False, "window": window,
+                "reset_on_open": reset_on_open, "now": now}
+
+    async def apply_roster_timing(self, roster: Roster,
+                                  plan: dict[str, object]) -> Roster:
+        if plan["clear"]:
+            return await self.service.clear_one_off_timing(roster)
+        return await self.service.set_one_off_timing(
+            roster, plan["window"],
+            reset_on_open=plan["reset_on_open"], now=plan["now"],
+        )
+
     def roster_clone_settings(self, source: Roster, *, name: str,
                               clan_code: str | None, role_id: int | None,
                               max_members: int | None,
@@ -1019,52 +1054,24 @@ class Rosters(commands.Cog):
         target = await self._resolve_roster(interaction, roster)
         if target is None:
             return
-        if opens_on is None and closes_on is None:
+        plan = self.plan_roster_timing(
+            target, opens_on=opens_on, closes_on=closes_on,
+            timezone=timezone, reset_on_open=reset_on_open,
+        )
+        if plan["issue"]:
+            await warn(interaction, plan["issue"])
+            return
+        if plan["clear"]:
             await interaction.response.defer(ephemeral=True)
-            target = await self.service.clear_one_off_timing(target)
+            target = await self.apply_roster_timing(target, plan)
             await interaction.followup.send(
                 f"Cleared one-off timing for **{target.name}**.",
                 ephemeral=True,
             )
             return
-        if opens_on is None or closes_on is None:
-            await warn(
-                interaction,
-                "Enter both opening and closing times, or leave both blank to clear them.",
-            )
-            return
-        if target.schedule_enabled:
-            await warn(
-                interaction,
-                "Disable the automatic schedule before setting one-off timing.",
-            )
-            return
-        canonical_tz = canonical_timezone_name(timezone or "")
-        if canonical_tz is None:
-            await warn(interaction, "Choose a timezone from the list.")
-            return
-        window = one_off_window(
-            opens_on=opens_on,
-            closes_on=closes_on,
-            timezone_name=canonical_tz,
-        )
-        if window is None:
-            await warn(
-                interaction,
-                "Enter valid `YYYY-MM-DD HH:mm` times with the closing time after the opening time.",
-            )
-            return
-        now = datetime.now(dt_timezone.utc)
-        if window.closes_at <= now:
-            await warn(interaction, "Closing time must be in the future.")
-            return
+        window = plan["window"]
         await interaction.response.defer(ephemeral=True)
-        target = await self.service.set_one_off_timing(
-            target,
-            window,
-            reset_on_open=reset_on_open,
-            now=now,
-        )
+        target = await self.apply_roster_timing(target, plan)
         await interaction.followup.send(
             f"Set **{target.name}** to open {discord.utils.format_dt(window.opens_at)} "
             f"and close {discord.utils.format_dt(window.closes_at)}.",

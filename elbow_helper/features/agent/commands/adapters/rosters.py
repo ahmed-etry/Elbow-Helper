@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+import discord
+
 from elbow_helper.features.agent.tools.discord_safety import check_member, check_role
 from elbow_helper.features.rosters.config import DEFAULT_MAX_MEMBERS, MAX_ROSTER_MEMBERS
 
@@ -28,6 +30,10 @@ from ...wording import (
     ACTION_ROSTER_EDIT_FIELD, ACTION_ROSTER_EDIT_FIELDS,
     ACTION_ROSTER_EDIT_LABEL, ACTION_ROSTER_EDIT_LINE,
     ACTION_ROSTER_EDIT_POST, ACTION_ROSTER_EDIT_ROLE_SYNC,
+    ACTION_ROSTER_TIMING_CLEAR, ACTION_ROSTER_TIMING_SET,
+    ACTION_ROSTER_TIMING_RESET, ACTION_ROSTER_TIMING_KEEP,
+    ACTION_ROSTER_TIMING_ROLE, ACTION_ROSTER_TIMING_MEMBER,
+    ACTION_ROSTER_TIMING_LABEL, ACTION_ROSTER_TIMING_ROLE_KEEP,
 )
 from ..outcomes import CommandOutcome
 from ..registry import CommandAdapter, PreparedCommandChange
@@ -368,6 +374,125 @@ async def run_roster_edit(context: Any,
     return await (await prepare_roster_edit(context, values)).run()
 
 
+async def prepare_roster_timing(context: Any,
+                                values: Mapping[str, Any]) -> PreparedCommandChange:
+    workflow = context.bot.get_cog("Rosters")
+    if workflow is None:
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+    try:
+        roster_id = int(values["roster"])
+    except (TypeError, ValueError):
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE) from None
+    roster = await workflow.get_roster(roster_id)
+    if roster is None or roster.guild_id != context.guild.id:
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+    options = {
+        "opens_on": values.get("opens_on"),
+        "closes_on": values.get("closes_on"),
+        "timezone": values.get("timezone"),
+        "reset_on_open": bool(values.get("reset_on_open", True)),
+    }
+    plan = workflow.plan_roster_timing(roster, **options)
+    if plan["issue"]:
+        raise ValueError(plan["issue"])
+    state = await workflow.roster_edit_state(roster)
+    opens_now = (not plan["clear"]
+                 and plan["window"].opens_at <= plan["now"])
+
+    def check_targets() -> None:
+        if plan["clear"] or not roster.role_id:
+            return
+        check_role(context.guild.get_role(roster.role_id),
+                   context.guild, context.guild.me, {})
+        if not opens_now:
+            return
+        for member_id in state["member_ids"]:
+            member = context.guild.get_member(member_id)
+            if member is not None:
+                check_member(member, context.guild.me)
+
+    check_targets()
+    if plan["clear"]:
+        lines = [ACTION_ROSTER_TIMING_CLEAR.format(name=roster.name)]
+    else:
+        window = plan["window"]
+        lines = [ACTION_ROSTER_TIMING_SET.format(
+            name=roster.name,
+            opens=discord.utils.format_dt(window.opens_at),
+            closes=discord.utils.format_dt(window.closes_at),
+        )]
+        lines.append(ACTION_ROSTER_TIMING_RESET if options["reset_on_open"]
+                     else ACTION_ROSTER_TIMING_KEEP)
+        if opens_now and roster.role_id:
+            lines.append((ACTION_ROSTER_TIMING_ROLE if options["reset_on_open"]
+                          else ACTION_ROSTER_TIMING_ROLE_KEEP).format(
+                role=f"<@&{roster.role_id}>",
+            ))
+            lines.extend(ACTION_ROSTER_TIMING_MEMBER.format(member=f"<@{member_id}>")
+                         for member_id in state["member_ids"])
+    lines.extend(ACTION_ROSTER_EDIT_POST.format(
+        channel=f"<#{channel_id}>", message_id=message_id,
+    ) for channel_id, message_id in state["posts"])
+
+    async def recheck() -> bool:
+        current = await workflow.get_roster(roster_id)
+        if current != roster:
+            return False
+        live_plan = workflow.plan_roster_timing(roster, **options)
+        if live_plan["issue"] or live_plan["clear"] != plan["clear"]:
+            return False
+        if not plan["clear"] and live_plan["window"] != plan["window"]:
+            return False
+        if not plan["clear"] and (
+            live_plan["window"].opens_at <= live_plan["now"]
+        ) != opens_now:
+            return False
+        try:
+            check_targets()
+        except ValueError:
+            return False
+        return await workflow.roster_edit_state(roster) == state
+
+    async def run() -> CommandOutcome:
+        live_plan = workflow.plan_roster_timing(roster, **options)
+        if live_plan["issue"] or (not plan["clear"] and (
+            live_plan["window"].opens_at <= live_plan["now"]
+        ) != opens_now):
+            raise ValueError("Roster timing changed before execution")
+        updated = await workflow.apply_roster_timing(roster, live_plan)
+        actual = await workflow.get_roster(roster_id)
+        if actual is None:
+            raise OSError("Roster timing could not be verified")
+        if plan["clear"]:
+            if actual.one_off_open_ts is not None or actual.one_off_close_ts is not None:
+                raise OSError("Roster timing could not be verified")
+            text = f"Cleared one-off timing for **{updated.name}**."
+        else:
+            window = plan["window"]
+            if (actual.one_off_open_ts != int(window.opens_at.timestamp())
+                    or actual.one_off_close_ts != int(window.closes_at.timestamp())):
+                raise OSError("Roster timing could not be verified")
+            text = (f"Set **{updated.name}** to open {discord.utils.format_dt(window.opens_at)} "
+                    f"and close {discord.utils.format_dt(window.closes_at)}.")
+        return CommandOutcome("complete", "private", text=text,
+                              after={"roster_id": roster_id,
+                                     "one_off_open_ts": actual.one_off_open_ts,
+                                     "one_off_close_ts": actual.one_off_close_ts})
+
+    return PreparedCommandChange(
+        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_TIMING_LABEL,
+                      before={"roster_id": roster.id,
+                              "one_off_open_ts": roster.one_off_open_ts,
+                              "one_off_close_ts": roster.one_off_close_ts}),
+        run,
+    )
+
+
+async def run_roster_timing(context: Any,
+                            values: Mapping[str, Any]) -> CommandOutcome:
+    return await (await prepare_roster_timing(context, values)).run()
+
+
 def roster_adapters() -> tuple[CommandAdapter, ...]:
     return (
         CommandAdapter("/roster create", "confirm", run_roster_create,
@@ -388,4 +513,8 @@ def roster_adapters() -> tuple[CommandAdapter, ...]:
                        action_class=ActionClass.CHANGE,
                        entity_options=(("roster", "roster"),
                                        ("signup_role", "discord_role"))),
+        CommandAdapter("/roster timing", "confirm", run_roster_timing,
+                       prepare=prepare_roster_timing,
+                       action_class=ActionClass.IRREVERSIBLE,
+                       entity_options=(("roster", "roster"),)),
     )
