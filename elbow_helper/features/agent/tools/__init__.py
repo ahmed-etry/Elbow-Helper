@@ -15,6 +15,7 @@ from .discord import discord_tools
 from .discord_roles import discord_role_tools
 from .discord_messages import discord_message_tools
 from .discord_threads import discord_thread_tools
+from .discord_message_controls import discord_message_control_tools
 from .examination import examination_tools
 from .events import event_tools
 from .hibernation import hibernation_tools
@@ -48,7 +49,8 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
     return {
         "commands": command_tools(),
         "discord_research": (*discord_tools(), *thread_tools(), *research_tools()),
-        "discord_actions": (*discord_message_tools(), *discord_thread_tools()),
+        "discord_actions": (*discord_message_tools(), *discord_thread_tools(),
+                            *discord_message_control_tools()),
         "members_roles": (
             *member_tools(), *role_tools(), *role_connection_tools(),
             *discord_role_tools(),

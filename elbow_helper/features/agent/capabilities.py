@@ -184,6 +184,8 @@ CONTRACTS: Mapping[str, CapabilityContract] = {
     "create_discord_thread": CapabilityContract((('parent_channel_id', 'parent_discord_channel'),), (), source_scope='request_context', filter_fields=('name', 'private', 'initial_message')),
     "update_discord_thread": CapabilityContract((('thread_id', 'discord_channel'),), (), source_scope='request_context', filter_fields=('operation', 'name')),
     "change_discord_thread_members": CapabilityContract((('thread_id', 'discord_channel'), ('member_ids', 'discord_member_set')), (), source_scope='request_context', filter_fields=('operation',)),
+    "change_bot_reaction": CapabilityContract((('channel_id', 'discord_channel'), ('message_id', 'discord_message')), (), source_scope='request_context', filter_fields=('operation', 'emoji')),
+    "change_discord_pin": CapabilityContract((('channel_id', 'discord_channel'), ('message_id', 'discord_message')), (), source_scope='request_context', filter_fields=('operation',)),
     "remember_task_instruction": CapabilityContract((('replaces_id', 'task_instruction'),), (), source_scope='request_context'),
     "retire_task_instruction": CapabilityContract((('instruction_id', 'task_instruction'),), (), source_scope='request_context'),
     "prepare_spreadsheet": CapabilityContract((), (), source_scope='request_context'),
