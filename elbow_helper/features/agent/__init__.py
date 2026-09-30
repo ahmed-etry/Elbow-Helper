@@ -15,6 +15,7 @@ from .research.repository import ResearchJobRepository
 from .research.runner import ResearchJobRunner
 from .actions.repository import AgentActionRepository
 from .actions.runner import AgentActionRunner
+from .tools.discord_roles import prepare_role_undo
 from .knowledge.store import KnowledgeStore
 
 
@@ -83,6 +84,11 @@ async def setup(bot) -> None:
         bot=bot, repository=action_repository, guild_id=GUILD_ID,
         enabled=getattr(bot, "agent_actions_enabled", True),
     )
+    action_runner.undo_handlers.update({
+        "add_discord_roles": prepare_role_undo,
+        "remove_discord_roles": prepare_role_undo,
+        "undo_discord_role": prepare_role_undo,
+    })
     knowledge_store = KnowledgeStore(
         bot.paths.data_root / "agent" / "knowledge",
     )

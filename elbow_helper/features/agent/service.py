@@ -543,9 +543,11 @@ class AgentService:
                     status = "completed"
                     return command_reply(context.state.command_outcomes)
                 expected_previews = sum(
-                    registry[step["capability"]].action_class in (
+                    results[step["id"]].get("prepared_count", 1)
+                    for step in plan["steps"]
+                    if registry[step["capability"]].action_class in (
                         ActionClass.CHANGE, ActionClass.IRREVERSIBLE,
-                    ) for step in plan["steps"]
+                    )
                 )
                 if expected_previews and len(context.state.command_proposals) != expected_previews:
                     context.state.command_proposals.clear()

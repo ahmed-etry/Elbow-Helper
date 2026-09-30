@@ -57,10 +57,11 @@ def check_member(member: Any, bot_member: Any) -> None:
         raise DiscordActionRefused("The bot cannot change its own membership.")
 
 
-async def resolve_member(guild: Any, member_id: int) -> Any:
-    member = guild.get_member(member_id)
-    if member is not None:
-        return member
+async def resolve_member(guild: Any, member_id: int, *, fresh: bool = False) -> Any:
+    if not fresh:
+        member = guild.get_member(member_id)
+        if member is not None:
+            return member
     try:
         return await guild.fetch_member(member_id)
     except discord.NotFound as error:

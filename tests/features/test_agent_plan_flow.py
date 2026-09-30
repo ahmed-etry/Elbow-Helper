@@ -19,6 +19,7 @@ from elbow_helper.features.agent.service import AgentService, AgentUnavailableEr
 from elbow_helper.features.agent.commands.bridge import build_command_tools
 from elbow_helper.features.agent.commands.outcomes import CommandOutcome
 from elbow_helper.features.agent.commands.confirmation import ChangePreview
+from elbow_helper.features.agent.actions.contracts import ActionClass, PreparedAction
 from elbow_helper.features.agent.commands.registry import CommandAdapter
 from elbow_helper.features.agent.wording import COMMAND_UNAVAILABLE
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
@@ -813,6 +814,39 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Change target 202", answer)
         self.assertEqual(len(context.state.command_proposals), 2)
         self.assertEqual(len(session.calls), 1)
+        run.assert_not_awaited()
+
+    async def test_one_action_step_can_preview_each_selected_target(self):
+        run = AsyncMock(return_value=CommandOutcome("complete"))
+        async def prepare(context, arguments):
+            for target in arguments["targets"]:
+                context.state.command_proposals.append(PreparedAction(
+                    "synthetic_change", {"target": target},
+                    ChangePreview((f"Change target {target}",), AsyncMock(return_value=True)),
+                    run,
+                ))
+            return {"status": "confirmation_required", "prepared_count": len(arguments["targets"])}
+        tool = RegisteredAgentTool(AgentToolDefinition(
+            name="synthetic_change", description="Change selected targets.",
+            parameters={"type": "object", "properties": {
+                "targets": {"type": "array", "items": {"type": "integer", "minimum": 1},
+                            "minItems": 1, "maxItems": 5},
+            }, "required": ["targets"], "additionalProperties": False},
+        ), prepare, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True)
+        plan = _plan([{**_step("many", {"targets": [101, 202]}),
+                       "capability": "synthetic_change"}])
+        session = _Session([_model_step(plan)], self.events)
+        context = replace(_context(), bot=SimpleNamespace(tree=object()))
+        with (patch("elbow_helper.features.agent.service.build_agent_tools",
+                    return_value={**self.registry, "synthetic_change": tool}),
+              patch("elbow_helper.features.agent.service.build_command_tools",
+                    return_value=({}, {}))):
+            answer = await AgentService(_Model(session), actions_enabled=True).answer(
+                question="synthetic request", local_context="", context=context,
+            )
+        self.assertIn("Change target 101", answer)
+        self.assertIn("Change target 202", answer)
+        self.assertEqual(len(context.state.command_proposals), 2)
         run.assert_not_awaited()
 
     async def test_incomplete_change_preview_cannot_be_confirmed(self):

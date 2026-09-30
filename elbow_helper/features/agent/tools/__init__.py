@@ -12,6 +12,7 @@ from .clan_reporting import clan_reporting_tools
 from .commands import command_tools
 from .cwl import cwl_tools
 from .discord import discord_tools
+from .discord_roles import discord_role_tools
 from .examination import examination_tools
 from .events import event_tools
 from .hibernation import hibernation_tools
@@ -47,6 +48,7 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
         "discord_research": (*discord_tools(), *thread_tools(), *research_tools()),
         "members_roles": (
             *member_tools(), *role_tools(), *role_connection_tools(),
+            *discord_role_tools(),
         ),
         "achievements_events": (
             *achievement_tools(), *achievement_economy_tools(), *event_tools(),

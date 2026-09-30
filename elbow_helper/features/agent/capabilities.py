@@ -175,6 +175,8 @@ CONTRACTS: Mapping[str, CapabilityContract] = {
     "read_approved_knowledge_report": CapabilityContract((('report_id', 'approved_knowledge_report'), ('section_id', 'approved_knowledge_section')), ()),
     "read_agent_action_log": CapabilityContract((), (), result_entity_keys=(('actions[].log_id', 'agent_action_log'),)),
     "undo_agent_action": CapabilityContract((('log_id', 'agent_action_log'),), ()),
+    "add_discord_roles": CapabilityContract((('role_id', 'discord_role'), ('member_ids', 'discord_member_set')), (), source_scope='request_context'),
+    "remove_discord_roles": CapabilityContract((('role_id', 'discord_role'), ('member_ids', 'discord_member_set')), (), source_scope='request_context'),
     "remember_task_instruction": CapabilityContract((('replaces_id', 'task_instruction'),), (), source_scope='request_context'),
     "retire_task_instruction": CapabilityContract((('instruction_id', 'task_instruction'),), (), source_scope='request_context'),
     "prepare_spreadsheet": CapabilityContract((), (), source_scope='request_context'),
