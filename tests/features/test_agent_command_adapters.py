@@ -14,7 +14,7 @@ class CommandAdapterTests(unittest.IsolatedAsyncioTestCase):
         ticket = object()
         workflow = SimpleNamespace(
             resolve_opinion_ticket=Mock(return_value=ticket),
-            _build_ticket_second_opinion=AsyncMock(return_value=["Synthetic private result"]),
+            build_ticket_second_opinion=AsyncMock(return_value=["Synthetic private result"]),
         )
         context = SimpleNamespace(
             bot=SimpleNamespace(get_cog=lambda _: workflow), guild=object(), member=object(),
@@ -23,12 +23,12 @@ class CommandAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.visibility, "private")
         self.assertEqual(result.private_parts, ("Synthetic private result",))
         self.assertEqual(result.text, "")
-        workflow._build_ticket_second_opinion.assert_awaited_once_with(ticket)
+        workflow.build_ticket_second_opinion.assert_awaited_once_with(ticket)
 
     async def test_missing_or_unresolved_input_does_not_call_feature(self):
         workflow = SimpleNamespace(
             resolve_opinion_ticket=Mock(return_value=None),
-            _build_ticket_second_opinion=AsyncMock(),
+            build_ticket_second_opinion=AsyncMock(),
         )
         context = SimpleNamespace(
             bot=SimpleNamespace(get_cog=lambda _: workflow), guild=object(), member=object(),
@@ -36,7 +36,7 @@ class CommandAdapterTests(unittest.IsolatedAsyncioTestCase):
         for values in ({}, {"ticket": "unknown"}):
             result = await run_opinion(context, values)
             self.assertEqual(result.status, "needs_input")
-        workflow._build_ticket_second_opinion.assert_not_awaited()
+        workflow.build_ticket_second_opinion.assert_not_awaited()
 
     async def test_health_uses_feature_report_and_publisher(self):
         with TemporaryDirectory() as directory:

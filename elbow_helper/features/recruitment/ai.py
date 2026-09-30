@@ -83,7 +83,7 @@ class AIMixin:
         match = re.match(r"^\s*<@!?(\d+)>", first_message.content or "")
         return int(match.group(1)) if match else None
 
-    async def _build_ticket_second_opinion(
+    async def build_ticket_second_opinion(
         self,
         ticket_channel: discord.TextChannel,
     ) -> list[str] | None:

@@ -19,7 +19,7 @@ async def run_opinion(context: Any, values: Mapping[str, Any]) -> CommandOutcome
     channel = workflow.resolve_opinion_ticket(context.guild, context.member, ticket)
     if channel is None:
         return CommandOutcome.needs_input(("ticket",))
-    parts = await workflow._build_ticket_second_opinion(channel)
+    parts = await workflow.build_ticket_second_opinion(channel)
     if not parts:
         return CommandOutcome("empty", "private")
     return CommandOutcome("complete", "private", private_parts=tuple(parts))

@@ -85,7 +85,7 @@ class RecruitmentAITests(unittest.IsolatedAsyncioTestCase):
             [first_message, applicant_message, recruiter_message, bot_message]
         )
 
-        result = await workflow._build_ticket_second_opinion(channel)
+        result = await workflow.build_ticket_second_opinion(channel)
 
         self.assertEqual(
             result,
@@ -218,7 +218,7 @@ class OpinionCommandTests(unittest.IsolatedAsyncioTestCase):
             followup=SimpleNamespace(send=AsyncMock()),
         )
         workflow = RecruitmentCommandMixin()
-        workflow._build_ticket_second_opinion = AsyncMock()
+        workflow.build_ticket_second_opinion = AsyncMock()
 
         await RecruitmentCommandMixin.slash_opinion.callback(
             workflow,
@@ -226,7 +226,7 @@ class OpinionCommandTests(unittest.IsolatedAsyncioTestCase):
             str(other_channel.id),
         )
 
-        workflow._build_ticket_second_opinion.assert_not_awaited()
+        workflow.build_ticket_second_opinion.assert_not_awaited()
         interaction.followup.send.assert_awaited_once_with(
             "Choose an applicant ticket.",
             ephemeral=True,
@@ -250,7 +250,7 @@ class OpinionCommandTests(unittest.IsolatedAsyncioTestCase):
             followup=SimpleNamespace(send=AsyncMock()),
         )
         workflow = RecruitmentCommandMixin()
-        workflow._build_ticket_second_opinion = AsyncMock(
+        workflow.build_ticket_second_opinion = AsyncMock(
             return_value=["opinion"],
         )
 
@@ -260,7 +260,7 @@ class OpinionCommandTests(unittest.IsolatedAsyncioTestCase):
             str(ticket.id),
         )
 
-        workflow._build_ticket_second_opinion.assert_awaited_once_with(ticket)
+        workflow.build_ticket_second_opinion.assert_awaited_once_with(ticket)
         interaction.followup.send.assert_awaited_once_with(
             "opinion",
             ephemeral=True,

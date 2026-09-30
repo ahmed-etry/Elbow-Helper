@@ -582,7 +582,7 @@ class RecruitmentCommandMixin:
             return
 
         try:
-            opinion_result = await self._build_ticket_second_opinion(ticket_channel)
+            opinion_result = await self.build_ticket_second_opinion(ticket_channel)
             if opinion_result is None:
                 await interaction.followup.send("This ticket has no messages to use for a second opinion.", ephemeral=True)
                 return
