@@ -125,3 +125,18 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
                 "file_message_id": 78, "file_name": "result.txt",
             })
             self.assertIn("error", refused)
+
+    async def test_post_can_use_a_thread_created_by_an_earlier_action(self):
+        reference = {"step": "created", "path": ["thread_id"]}
+        with patch("elbow_helper.features.agent.tools.discord_messages.require_evidence_access",
+                   new_callable=AsyncMock):
+            result = await prepare_post(self.context, {
+                "channel_id": reference, "text": "Opening message",
+            })
+        self.assertEqual(result["status"], "confirmation_required")
+        pending = self.context.state.command_proposals.pop()
+        self.assertIn("earlier action", pending.preview.lines[0])
+        bound = await pending.bind({"created": {"thread_id": 2}})
+        self.assertEqual(bound.values["channel_id"], 2)
+        await bound.run()
+        self.channel.send.assert_awaited_once()

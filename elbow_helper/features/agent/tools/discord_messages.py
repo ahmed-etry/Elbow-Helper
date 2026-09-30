@@ -21,7 +21,8 @@ from ..wording import (
     ACTION_ATTACH_LINE,
     ACTION_DELETE_DONE, ACTION_DELETE_LABEL, ACTION_DELETE_LINE,
     ACTION_EDIT_DONE, ACTION_EDIT_LABEL, ACTION_EDIT_LINE,
-    ACTION_PINGS_LINE, ACTION_POST_DONE, ACTION_POST_LABEL, ACTION_POST_LINE,
+    ACTION_PINGS_LINE, ACTION_POST_DONE, ACTION_POST_FUTURE_LINE,
+    ACTION_POST_LABEL, ACTION_POST_LINE,
     ACTION_UNDO_CHANGED,
 )
 from .discord_safety import (DiscordActionRefused, check_post_access,
@@ -180,8 +181,10 @@ async def _find_nonce(channel: Any, nonce: int, bot_id: int) -> Any | None:
 async def prepare_post(context: AgentRequestContext,
                        arguments: Mapping[str, Any]) -> Mapping[str, Any]:
     await require_evidence_access(context)
+    channel_value = arguments["channel_id"]
+    deferred = isinstance(channel_value, Mapping) and set(channel_value) == {"step", "path"}
     try:
-        channel = await _channel_for_post(context, arguments["channel_id"])
+        channel = None if deferred else await _channel_for_post(context, channel_value)
         mentions = _mentions(context, arguments, arguments["text"])
     except DiscordActionRefused as error:
         return {"error": str(error), "prepared_count": 0}
@@ -209,12 +212,45 @@ async def prepare_post(context: AgentRequestContext,
         return {"error": "The message has no text.", "prepared_count": 0}
     await require_evidence_access(context)
     for index, chunk in enumerate(chunks):
-        context.state.command_proposals.append(_post_part(
-            context, channel.id, chunk, mentions,
+        make = _deferred_post_part if deferred else _post_part
+        context.state.command_proposals.append(make(
+            context, channel_value if deferred else channel.id, chunk, mentions,
             attachment=attachment if index == 0 else None,
             ping_line=_ping_line(context, arguments),
         ))
     return {"status": "confirmation_required", "prepared_count": len(chunks)}
+
+
+def _deferred_post_part(context: AgentRequestContext, reference: Mapping[str, Any],
+                        text: str, mentions: discord.AllowedMentions, *,
+                        attachment: Any = None,
+                        ping_line: tuple[str, ...] = ()) -> PreparedAction:
+    async def recheck() -> bool:
+        return True
+
+    async def unavailable() -> CommandOutcome:
+        raise RuntimeError("The earlier action result was not bound")
+
+    async def bind(results: Mapping[str, Mapping[str, Any]]) -> PreparedAction:
+        from ..plan.executor import resolve_arguments
+        channel_id = resolve_arguments({"channel_id": reference}, results)["channel_id"]
+        if type(channel_id) is not int:
+            raise DiscordActionRefused("The earlier action did not return a channel.")
+        await _channel_for_post(context, channel_id)
+        return _post_part(
+            context, channel_id, text, mentions,
+            attachment=attachment, ping_line=ping_line,
+        )
+
+    lines = (ACTION_POST_FUTURE_LINE.format(step=reference["step"]),
+             *text.splitlines(), *ping_line)
+    if attachment is not None:
+        lines += (ACTION_ATTACH_LINE.format(filename=attachment.filename),)
+    return PreparedAction(
+        "post_discord_message", {"channel_id": dict(reference), "text": text},
+        ChangePreview(lines, recheck, summary=ACTION_POST_LABEL),
+        unavailable, permission="Send Messages", bind=bind,
+    )
 
 
 def _post_part(context: AgentRequestContext, channel_id: int, text: str,

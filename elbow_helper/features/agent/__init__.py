@@ -17,6 +17,7 @@ from .actions.repository import AgentActionRepository
 from .actions.runner import AgentActionRunner
 from .tools.discord_roles import prepare_role_undo
 from .tools.discord_messages import prepare_edit_undo
+from .tools.discord_threads import prepare_thread_member_undo, prepare_thread_update_undo
 from .knowledge.store import KnowledgeStore
 
 
@@ -91,6 +92,10 @@ async def setup(bot) -> None:
         "undo_discord_role": prepare_role_undo,
         "edit_agent_message": prepare_edit_undo,
         "undo_agent_message_edit": prepare_edit_undo,
+        "update_discord_thread": prepare_thread_update_undo,
+        "undo_discord_thread_update": prepare_thread_update_undo,
+        "change_discord_thread_members": prepare_thread_member_undo,
+        "undo_discord_thread_member": prepare_thread_member_undo,
     })
     knowledge_store = KnowledgeStore(
         bot.paths.data_root / "agent" / "knowledge",

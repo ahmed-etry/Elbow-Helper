@@ -44,6 +44,7 @@ ACTION_ROLE_ADD_LABEL = "Add role"
 ACTION_ROLE_REMOVE_LABEL = "Remove role"
 ACTION_ROLE_UNDO_LABEL = "Undo role change"
 ACTION_POST_LINE = "Post in {channel}:"
+ACTION_POST_FUTURE_LINE = "Post in the channel from the earlier action ({step}):"
 ACTION_POST_LABEL = "Post message"
 ACTION_POST_DONE = "Posted in {channel}."
 ACTION_EDIT_LINE = "Edit message in {channel}:"
@@ -54,3 +55,23 @@ ACTION_DELETE_LABEL = "Delete message"
 ACTION_DELETE_DONE = "Deleted the message from {channel}."
 ACTION_PINGS_LINE = "Pings: {targets}"
 ACTION_ATTACH_LINE = "Attach {filename}"
+ACTION_THREAD_CREATE_LINE = "Create thread {name} in {channel}."
+ACTION_THREAD_CREATE_DONE = "Created {thread}."
+ACTION_THREAD_CREATE_LABEL = "Create thread"
+ACTION_THREAD_UPDATE_LINE = "{action} {thread}{detail}."
+ACTION_THREAD_UPDATE_DONE = "{action} {thread}."
+ACTION_THREAD_UPDATE_LABEL = "Change thread"
+ACTION_THREAD_MEMBER_LINE = "{action} {member} {relation} {thread}."
+ACTION_THREAD_MEMBER_DONE = "{action} {member} {relation} {thread}."
+ACTION_THREAD_MEMBER_LABEL = "Change thread members"
+ACTION_THREAD_ACTIONS = {
+    "rename": ("Rename", "Renamed"),
+    "archive": ("Archive", "Archived"),
+    "unarchive": ("Unarchive", "Unarchived"),
+    "lock": ("Lock", "Locked"),
+    "unlock": ("Unlock", "Unlocked"),
+}
+ACTION_THREAD_MEMBER_ADD = ("Add", "Added", "to")
+ACTION_THREAD_MEMBER_REMOVE = ("Remove", "Removed", "from")
+ACTION_THREAD_FUTURE_TARGET = "the thread from the earlier action ({step})"
+ACTION_THREAD_MEMBER_NO_CHANGE = "No thread membership change for {member}."
