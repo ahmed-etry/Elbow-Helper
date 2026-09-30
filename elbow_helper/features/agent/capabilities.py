@@ -186,6 +186,7 @@ CONTRACTS: Mapping[str, CapabilityContract] = {
     "change_discord_thread_members": CapabilityContract((('thread_id', 'discord_channel'), ('member_ids', 'discord_member_set')), (), source_scope='request_context', filter_fields=('operation',)),
     "change_bot_reaction": CapabilityContract((('channel_id', 'discord_channel'), ('message_id', 'discord_message')), (), source_scope='request_context', filter_fields=('operation', 'emoji')),
     "change_discord_pin": CapabilityContract((('channel_id', 'discord_channel'), ('message_id', 'discord_message')), (), source_scope='request_context', filter_fields=('operation',)),
+    "change_discord_nickname": CapabilityContract((('member_id', 'discord_member'),), (), source_scope='request_context', filter_fields=('nickname',)),
     "remember_task_instruction": CapabilityContract((('replaces_id', 'task_instruction'),), (), source_scope='request_context'),
     "retire_task_instruction": CapabilityContract((('instruction_id', 'task_instruction'),), (), source_scope='request_context'),
     "prepare_spreadsheet": CapabilityContract((), (), source_scope='request_context'),

@@ -6,7 +6,7 @@ import unittest
 
 from elbow_helper.features.agent.tools.discord_safety import (
     POWERFUL_PERMISSIONS, DiscordActionRefused, check_member, check_post_access,
-    check_role, check_raw_role,
+    check_role, check_raw_role, check_raw_nickname,
 )
 
 
@@ -16,7 +16,7 @@ class DiscordActionSafetyTests(unittest.TestCase):
         role = SimpleNamespace(id=3, position=1, managed=False, is_default=lambda: False,
                                permissions=SimpleNamespace())
         member = SimpleNamespace(id=6, top_role=SimpleNamespace(position=1))
-        for permission in ("manage_roles",):
+        for permission in ("manage_roles", "manage_nicknames"):
             setattr(self.requester.guild_permissions, permission, False)
             with self.assertRaises(DiscordActionRefused):
                 if permission == "manage_roles":

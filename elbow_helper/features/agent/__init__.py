@@ -19,6 +19,7 @@ from .tools.discord_roles import prepare_role_undo
 from .tools.discord_messages import prepare_edit_undo
 from .tools.discord_threads import prepare_thread_member_undo, prepare_thread_update_undo
 from .tools.discord_message_controls import prepare_control_undo
+from .tools.discord_nicknames import prepare_nickname_undo
 from .knowledge.store import KnowledgeStore
 
 
@@ -101,6 +102,8 @@ async def setup(bot) -> None:
         "undo_bot_reaction": prepare_control_undo,
         "change_discord_pin": prepare_control_undo,
         "undo_discord_pin": prepare_control_undo,
+        "change_discord_nickname": prepare_nickname_undo,
+        "undo_discord_nickname": prepare_nickname_undo,
     })
     knowledge_store = KnowledgeStore(
         bot.paths.data_root / "agent" / "knowledge",

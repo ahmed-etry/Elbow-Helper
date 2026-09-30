@@ -109,3 +109,10 @@ def check_raw_role(role: Any, guild: Any, bot_member: Any,
     owner = owners.get(role.id)
     if owner:
         raise DiscordActionRefused(f"{owner} manages that role.")
+
+
+def check_raw_nickname(member: Any, bot_member: Any, *, guild: Any, requester: Any) -> None:
+    check_member(member, bot_member)
+    current = guild.get_member(requester.id)
+    if current is None or not getattr(current.guild_permissions, "manage_nicknames", False):
+        raise DiscordActionRefused(ACTION_UNAVAILABLE)
