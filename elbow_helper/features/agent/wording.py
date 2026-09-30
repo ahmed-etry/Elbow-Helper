@@ -250,3 +250,12 @@ ACTION_ROSTER_SIGNUP_ONE = "signup"
 ACTION_ROSTER_SIGNUP_MANY = "signups"
 ACTION_ROSTER_CYCLE_ONE = "cycle"
 ACTION_ROSTER_CYCLE_MANY = "cycles"
+ACTION_ROSTER_EDIT_LINE = "Update roster **{name}** (ID {roster_id})."
+ACTION_ROSTER_EDIT_FIELD = "{field}: {old} → {new}"
+ACTION_ROSTER_EDIT_FIELDS = {
+    "name": "Name", "clan_code": "Clan", "role_id": "Signup role",
+    "max_members": "Maximum accounts", "min_townhall": "Minimum Town Hall",
+}
+ACTION_ROSTER_EDIT_ROLE_SYNC = "Update the signup role for {member}."
+ACTION_ROSTER_EDIT_POST = "Refresh roster post {message_id} in {channel}."
+ACTION_ROSTER_EDIT_LABEL = "Edit roster"

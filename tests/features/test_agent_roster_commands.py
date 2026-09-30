@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 
 from elbow_helper.features.agent.commands.adapters.rosters import (
     prepare_roster_clone, prepare_roster_create, prepare_roster_delete,
+    prepare_roster_edit,
     roster_adapters,
 )
 from elbow_helper.features.rosters.cog import Rosters
@@ -108,6 +109,48 @@ class RosterCommandTests(unittest.IsolatedAsyncioTestCase):
                       prepared.preview.lines)
         workflow.delete_roster.assert_not_awaited()
         self.assertTrue((await prepared.run()).after["deleted"])
+        self.assertFalse(await prepared.preview.recheck())
+
+    async def test_edit_previews_old_and_new_values_and_refreshes_posts(self):
+        roster = SimpleNamespace(
+            id=4, guild_id=5, name="Signup", clan_code="BEH",
+            role_id=None, max_members=40, min_townhall=15,
+        )
+        current = roster
+
+        async def update(_, changes):
+            nonlocal current
+            current = SimpleNamespace(**{**vars(current), **changes})
+            return current
+
+        workflow = SimpleNamespace(
+            get_roster=AsyncMock(side_effect=lambda _: current),
+            roster_edit_changes=lambda **kwargs: Rosters.roster_edit_changes(
+                None, **kwargs,
+            ),
+            roster_edit_state=AsyncMock(return_value={
+                "roster": roster, "account_count": 2,
+                "member_ids": (2,), "posts": ((9, 99),),
+            }),
+            update_roster_settings=AsyncMock(side_effect=update),
+        )
+        context = SimpleNamespace(
+            bot=SimpleNamespace(get_cog=lambda _: workflow),
+            guild=SimpleNamespace(id=5, get_role=lambda _: None,
+                                  get_member=lambda _: None),
+        )
+        prepared = await prepare_roster_edit(context, {
+            "roster": "4", "max_members": 50, "min_townhall": 0,
+        })
+        self.assertTrue(await prepared.preview.recheck())
+        self.assertIn("Maximum accounts: 40 → 50", prepared.preview.lines)
+        self.assertIn("Minimum Town Hall: 15 → None", prepared.preview.lines)
+        self.assertIn("Refresh roster post 99 in <#9>.", prepared.preview.lines)
+        workflow.update_roster_settings.assert_not_awaited()
+        result = await prepared.run()
+        self.assertEqual(result.after["changes"], {
+            "max_members": 50, "min_townhall": None,
+        })
         self.assertFalse(await prepared.preview.recheck())
 
 

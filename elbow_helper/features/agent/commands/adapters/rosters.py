@@ -25,6 +25,9 @@ from ...wording import (
     ACTION_ROSTER_DELETE_HISTORY, ACTION_ROSTER_CYCLE_ONE,
     ACTION_ROSTER_CYCLE_MANY, ACTION_ROSTER_SIGNUP_ONE,
     ACTION_ROSTER_SIGNUP_MANY,
+    ACTION_ROSTER_EDIT_FIELD, ACTION_ROSTER_EDIT_FIELDS,
+    ACTION_ROSTER_EDIT_LABEL, ACTION_ROSTER_EDIT_LINE,
+    ACTION_ROSTER_EDIT_POST, ACTION_ROSTER_EDIT_ROLE_SYNC,
 )
 from ..outcomes import CommandOutcome
 from ..registry import CommandAdapter, PreparedCommandChange
@@ -257,6 +260,114 @@ async def run_roster_delete(context: Any,
     return await (await prepare_roster_delete(context, values)).run()
 
 
+async def prepare_roster_edit(context: Any,
+                              values: Mapping[str, Any]) -> PreparedCommandChange:
+    workflow = context.bot.get_cog("Rosters")
+    if workflow is None:
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+    try:
+        roster_id = int(values["roster"])
+    except (TypeError, ValueError):
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE) from None
+    roster = await workflow.get_roster(roster_id)
+    if roster is None or roster.guild_id != context.guild.id:
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+    max_members = values.get("max_members")
+    min_townhall = values.get("min_townhall")
+    if max_members is not None and not 1 <= int(max_members) <= MAX_ROSTER_MEMBERS:
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+    if min_townhall is not None and int(min_townhall) < 0:
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+    changes, issue = workflow.roster_edit_changes(
+        name=values.get("name"), clan_code=values.get("clan"),
+        role_id=values.get("signup_role"),
+        max_members=max_members, min_townhall=min_townhall,
+        remove_signup_role=bool(values.get("remove_signup_role", False)),
+    )
+    if issue:
+        raise ValueError(issue)
+    if ("name" in changes
+            and changes["name"].casefold() != roster.name.casefold()
+            and not await workflow.roster_name_available(
+                context.guild.id, changes["name"],
+            )):
+        raise ValueError(ACTION_ROSTER_NAME_TAKEN)
+    state = await workflow.roster_edit_state(roster)
+    if ("max_members" in changes
+            and changes["max_members"] < state["account_count"]):
+        raise ValueError(workflow.roster_capacity_issue(state["account_count"]))
+
+    def check_targets() -> None:
+        if "role_id" not in changes or changes["role_id"] == roster.role_id:
+            return
+        for role_id in (roster.role_id, changes["role_id"]):
+            if role_id is not None:
+                check_role(context.guild.get_role(role_id),
+                           context.guild, context.guild.me, {})
+        for member_id in state["member_ids"]:
+            member = context.guild.get_member(member_id)
+            if member is not None:
+                check_member(member, context.guild.me)
+
+    check_targets()
+
+    def display(key: str, value: object) -> str:
+        if key == "role_id":
+            return f"<@&{value}>" if value is not None else ACTION_ROSTER_NO_ROLE
+        return str(value) if value is not None else ACTION_ROSTER_NO_ROLE
+
+    lines = [ACTION_ROSTER_EDIT_LINE.format(name=roster.name, roster_id=roster.id)]
+    lines.extend(ACTION_ROSTER_EDIT_FIELD.format(
+        field=ACTION_ROSTER_EDIT_FIELDS[key],
+        old=display(key, getattr(roster, key)), new=display(key, new),
+    ) for key, new in changes.items())
+    if "role_id" in changes and changes["role_id"] != roster.role_id:
+        lines.extend(ACTION_ROSTER_EDIT_ROLE_SYNC.format(member=f"<@{member_id}>")
+                     for member_id in state["member_ids"])
+    lines.extend(ACTION_ROSTER_EDIT_POST.format(
+        channel=f"<#{channel_id}>", message_id=message_id,
+    ) for channel_id, message_id in state["posts"])
+
+    async def recheck() -> bool:
+        current = await workflow.get_roster(roster_id)
+        if current != roster:
+            return False
+        if ("name" in changes
+                and changes["name"].casefold() != roster.name.casefold()
+                and not await workflow.roster_name_available(
+                    context.guild.id, changes["name"],
+                )):
+            return False
+        try:
+            check_targets()
+        except ValueError:
+            return False
+        return await workflow.roster_edit_state(roster) == state
+
+    async def run() -> CommandOutcome:
+        updated = await workflow.update_roster_settings(roster, changes)
+        actual = await workflow.get_roster(roster_id)
+        if actual is None or any(getattr(actual, key) != value
+                                 for key, value in changes.items()):
+            raise OSError("Roster update could not be verified")
+        return CommandOutcome(
+            "complete", "private", text=f"Updated **{updated.name}**.",
+            after={"roster_id": roster_id, "changes": changes},
+        )
+
+    return PreparedCommandChange(
+        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_EDIT_LABEL,
+                      before={"roster_id": roster.id,
+                              "values": {key: getattr(roster, key) for key in changes}}),
+        run,
+    )
+
+
+async def run_roster_edit(context: Any,
+                          values: Mapping[str, Any]) -> CommandOutcome:
+    return await (await prepare_roster_edit(context, values)).run()
+
+
 def roster_adapters() -> tuple[CommandAdapter, ...]:
     return (
         CommandAdapter("/roster create", "confirm", run_roster_create,
@@ -272,4 +383,9 @@ def roster_adapters() -> tuple[CommandAdapter, ...]:
                        prepare=prepare_roster_delete,
                        action_class=ActionClass.IRREVERSIBLE,
                        entity_options=(("roster", "roster"),)),
+        CommandAdapter("/roster edit", "confirm", run_roster_edit,
+                       prepare=prepare_roster_edit,
+                       action_class=ActionClass.CHANGE,
+                       entity_options=(("roster", "roster"),
+                                       ("signup_role", "discord_role"))),
     )

@@ -359,6 +359,55 @@ class Rosters(commands.Cog):
     async def delete_roster(self, roster: Roster) -> None:
         await self.service.delete(roster)
 
+    def roster_edit_changes(self, *, name: str | None,
+                            clan_code: str | None, role_id: int | None,
+                            max_members: int | None,
+                            min_townhall: int | None,
+                            remove_signup_role: bool) -> tuple[dict[str, object], str | None]:
+        if role_id is not None and remove_signup_role:
+            return {}, "Choose a signup role or remove it, not both."
+        changes: dict[str, object] = {}
+        if name is not None:
+            clean_name = self.validate_roster_name(name)
+            if clean_name is None:
+                return {}, "Enter a roster name between 1 and 100 characters."
+            changes["name"] = clean_name
+        if clan_code is not None:
+            changes["clan_code"] = clan_code
+        if role_id is not None:
+            changes["role_id"] = role_id
+        elif remove_signup_role:
+            changes["role_id"] = None
+        if max_members is not None:
+            changes["max_members"] = int(max_members)
+        if min_townhall is not None and min_townhall > 0:
+            changes["min_townhall"] = int(min_townhall)
+        elif min_townhall == 0:
+            changes["min_townhall"] = None
+        if not changes:
+            return {}, "Choose at least one roster setting to change."
+        return changes, None
+
+    async def roster_edit_state(self, roster: Roster) -> dict[str, object]:
+        members = await self.service.list_members(roster)
+        posts = await asyncio.to_thread(self._repository.list_posts, roster.id)
+        return {
+            "roster": roster,
+            "account_count": len(members),
+            "member_ids": tuple(sorted({row.discord_user_id for row in members})),
+            "posts": tuple(sorted((post.channel_id, post.message_id) for post in posts)),
+        }
+
+    @staticmethod
+    def roster_capacity_issue(current_count: int) -> str:
+        return (f"This roster already has {account_count(current_count)} signed up. "
+                f"Choose {current_count} or higher.")
+
+    async def update_roster_settings(self, roster: Roster,
+                                     changes: dict[str, object]) -> Roster:
+        async with self._lock(roster.id):
+            return await self.service.update(roster, changes)
+
     def roster_clone_settings(self, source: Roster, *, name: str,
                               clan_code: str | None, role_id: int | None,
                               max_members: int | None,
@@ -925,40 +974,19 @@ class Rosters(commands.Cog):
         target = await self._resolve_roster(interaction, roster)
         if target is None:
             return
-        if signup_role and remove_signup_role:
-            await warn(interaction, "Choose a signup role or remove it, not both.")
-            return
-        changes: dict[str, object] = {}
-        if name is not None:
-            clean_name = self._clean_roster_name(name)
-            if clean_name is None:
-                await warn(interaction, "Enter a roster name between 1 and 100 characters.")
-                return
-            changes["name"] = clean_name
-        if clan is not None:
-            changes["clan_code"] = clan.value
-        if signup_role is not None:
-            changes["role_id"] = signup_role.id
-        elif remove_signup_role:
-            changes["role_id"] = None
-        if max_members is not None:
-            changes["max_members"] = int(max_members)
-        if min_townhall is not None and min_townhall > 0:
-            changes["min_townhall"] = int(min_townhall)
-        elif min_townhall == 0:
-            changes["min_townhall"] = None
-        if not changes:
-            await warn(interaction, "Choose at least one roster setting to change.")
+        changes, issue = self.roster_edit_changes(
+            name=name, clan_code=clan.value if clan else None,
+            role_id=signup_role.id if signup_role else None,
+            max_members=max_members, min_townhall=min_townhall,
+            remove_signup_role=remove_signup_role,
+        )
+        if issue:
+            await warn(interaction, issue)
             return
         try:
-            async with self._lock(target.id):
-                target = await self.service.update(target, changes)
+            target = await self.update_roster_settings(target, changes)
         except RosterCapacityError as error:
-            await warn(
-                interaction,
-                f"This roster already has {account_count(error.current_count)} signed up. "
-                f"Choose {error.current_count} or higher.",
-            )
+            await warn(interaction, self.roster_capacity_issue(error.current_count))
             return
         except sqlite3.IntegrityError as error:
             if _is_roster_name_conflict(error):
