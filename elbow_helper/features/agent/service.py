@@ -36,7 +36,7 @@ from .capabilities import (
     CapabilityBindError, compile_capability_call, require_source_provenance,
 )
 from .capabilities import CONTRACTS, SAVED_REPORT_CONTRACTS
-from .tools.saved_reports import COMPARE_NAME, READ_NAME, original_arguments, original_tool
+from .tools.saved_reports import COMPARE_NAME, READ_NAME, filter_fields, original_arguments, original_tool
 from .access import can_disclose_provenance
 from .plan.checker import _kind, _periods, _source_check, _time_check, _valid_arguments, check_plan
 from .plan.executor import execute_plan, resolve_arguments
@@ -238,6 +238,7 @@ class AgentService:
         compiled = compile_context(
             question=question, local_context=local_context, context=context,
             tools=(definition,), conversation_history=conversation_history,
+            report_filter_fields=filter_fields(registry),
         )
         request_prompt = compiled.prompt + "\nCurrent UTC: " + datetime.now(timezone.utc).isoformat()
         session = self._model.create_agent_session(
@@ -318,7 +319,7 @@ class AgentService:
                             int((time.monotonic() - round_started) * 1000))
 
         async def disclosure_issue(step: Mapping[str, Any]) -> str:
-            selected = original_tool(step["capability"], step["arguments"])
+            selected = original_tool(registry, step["capability"], step["arguments"])
             contract = (SAVED_REPORT_CONTRACTS[selected.definition.name] if selected
                         else CONTRACTS.get(step["capability"]))
             if contract is None:
@@ -353,7 +354,7 @@ class AgentService:
                 nonlocal tool_calls, evidence_characters, context
                 name = step["capability"]
                 tool = registry[name]
-                selected = original_tool(name, arguments) if name in (READ_NAME, COMPARE_NAME) else None
+                selected = original_tool(registry, name, arguments) if name in (READ_NAME, COMPARE_NAME) else None
                 contract = (SAVED_REPORT_CONTRACTS[selected.definition.name] if selected
                             else CONTRACTS.get(name))
                 retained = []

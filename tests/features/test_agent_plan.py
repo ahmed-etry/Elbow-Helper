@@ -285,7 +285,7 @@ class PlanContractTests(unittest.TestCase):
         for name in ("read_saved_report", "compare_saved_reports"):
             kinds = self.registry[name].definition.parameters["properties"]["report_kind"]["enum"]
             for kind in kinds:
-                selected = original_tool(name, {"report_kind": kind})
+                selected = original_tool(self.registry, name, {"report_kind": kind})
                 contract = SAVED_REPORT_CONTRACTS[selected.definition.name]
                 for field, entity_kind in contract.entity_fields:
                     with self.subTest(capability=name, kind=kind, field=field):
@@ -304,6 +304,19 @@ class PlanContractTests(unittest.TestCase):
                         check = check_plan(other, self.registry, named)
                         self.assertFalse(check.ok)
                         self.assertTrue(check.offered)
+
+    def test_saved_report_rejects_an_unsupported_filter_with_supported_names(self):
+        name = "read_saved_report"
+        kind = self.registry[name].definition.parameters["properties"]["report_kind"]["enum"][0]
+        selected = original_tool(self.registry, name, {"report_kind": kind})
+        contract = SAVED_REPORT_CONTRACTS[selected.definition.name]
+        plan = _plan_for(selected.definition.name, selected, contract)
+        plan["steps"][0]["capability"] = name
+        plan["steps"][0]["arguments"].update(report_kind=kind, unsupported_filter="value")
+        check = check_plan(plan, self.registry)
+        self.assertFalse(check.ok)
+        self.assertIn("unsupported_filter", check.error)
+        self.assertIn("Supported filters:", check.error)
 
     def test_malformed_plans_return_errors(self):
         generator = random.Random(7162)

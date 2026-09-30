@@ -295,7 +295,7 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
         tools = build_agent_tools()
         description = tools["read_cwl_bonus_scope"].definition.description
         from elbow_helper.features.agent.tools.saved_reports import original_tool
-        retained = original_tool("read_saved_report", {
+        retained = original_tool(tools, "read_saved_report", {
             "report_kind": "cwl_bonus_scope",
         }).definition.description
 
@@ -325,7 +325,7 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
         tools = build_agent_tools()
         current = tools["read_event_schedule"].definition.description
         from elbow_helper.features.agent.tools.saved_reports import original_tool
-        retained = original_tool("read_saved_report", {
+        retained = original_tool(tools, "read_saved_report", {
             "report_kind": "event_schedule",
         }).definition.description
 

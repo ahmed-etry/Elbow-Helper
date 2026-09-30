@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
@@ -48,18 +48,67 @@ REPORT_COMPARERS = {
 READ_NAME = "read_saved_report"
 COMPARE_NAME = "compare_saved_reports"
 
-_SPECS: dict[str, dict[str, RegisteredAgentTool]] = {}
-
-
-def original_tool(name: str, arguments: Mapping[str, Any]) -> RegisteredAgentTool | None:
+def original_tool(registry: Mapping[str, RegisteredAgentTool], name: str,
+                  arguments: Mapping[str, Any]) -> RegisteredAgentTool | None:
     kind = arguments.get("report_kind")
-    if not isinstance(kind, str):
+    handler = _router(registry, name)
+    if not isinstance(kind, str) or not isinstance(handler, ReportRouter):
         return None
-    return _SPECS.get(name, {}).get(kind)
+    return handler.specs.get(kind)
 
 
 def original_arguments(arguments: Mapping[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in arguments.items() if key != "report_kind"}
+
+
+def filter_fields(registry: Mapping[str, RegisteredAgentTool]) -> dict[str, tuple[str, ...]]:
+    handler = _router(registry, READ_NAME)
+    if not isinstance(handler, ReportRouter):
+        return {}
+    return {kind: tuple(sorted(set(tool.definition.parameters["properties"]) -
+                               {"report_id"})) for kind, tool in handler.specs.items()}
+
+
+def _router(registry: Mapping[str, RegisteredAgentTool], name: str) -> Any:
+    handler = getattr(registry.get(name), "handler", None)
+    return getattr(handler, "__wrapped__", handler)
+
+
+def unsupported_fields(selected: RegisteredAgentTool,
+                       arguments: Mapping[str, Any]) -> tuple[str, ...]:
+    return tuple(sorted(set(original_arguments(arguments)) -
+                        set(selected.definition.parameters["properties"])))
+
+
+def unsupported_field_error(selected: RegisteredAgentTool,
+                            arguments: Mapping[str, Any]) -> str:
+    extra = unsupported_fields(selected, arguments)
+    supported = tuple(sorted(set(selected.definition.parameters["properties"]) -
+                             {"report_id", "before_report_id", "after_report_id"}))
+    return (f"Unsupported field: {', '.join(extra)}. Supported filters: "
+            f"{', '.join(supported) if supported else 'none'}.")
+
+
+@dataclass(frozen=True, slots=True)
+class ReportRouter:
+    name: str
+    specs: Mapping[str, RegisteredAgentTool]
+
+    async def __call__(self, context: Any, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
+        kind = arguments.get("report_kind")
+        selected = self.specs.get(kind) if isinstance(kind, str) else None
+        if selected is None:
+            return {"error": "That report kind is unavailable."}
+        extra = unsupported_fields(selected, arguments)
+        if extra:
+            return {"error": unsupported_field_error(selected, arguments)}
+        ids = (("before_report_id", "after_report_id") if self.name == COMPARE_NAME
+               else ("report_id",))
+        for field in ids:
+            report = context.state.reports.get(arguments[field])
+            if report is None or report.manifest().get("kind") != kind:
+                return {"error": "That report is unavailable in this conversation."}
+        return await selected.handler(context, original_arguments(arguments))
 
 
 def _properties(specs: Mapping[str, RegisteredAgentTool]) -> dict[str, dict[str, Any]]:
@@ -98,17 +147,6 @@ def _tool(name: str, specs: Mapping[str, RegisteredAgentTool]) -> RegisteredAgen
         **_properties(specs),
     }
 
-    async def handle(context, arguments):
-        selected = original_tool(name, arguments)
-        if selected is None:
-            return {"error": "That report kind is unavailable."}
-        kind = arguments["report_kind"]
-        for field in ids:
-            report = context.state.reports.get(arguments[field])
-            if report is None or report.manifest().get("kind") != kind:
-                return {"error": "That report is unavailable in this conversation."}
-        return await selected.handler(context, original_arguments(arguments))
-
     description = (
         "Compare two retained reports of the same kind using that kind's page fields."
         if comparing else
@@ -118,7 +156,7 @@ def _tool(name: str, specs: Mapping[str, RegisteredAgentTool]) -> RegisteredAgen
         name=name, description=description,
         parameters={"type": "object", "properties": properties,
                     "required": ["report_kind", *ids], "additionalProperties": False},
-    ), handle)
+    ), ReportRouter(name, specs))
 
 
 def replace_report_tools(tools: Sequence[RegisteredAgentTool]) -> tuple[RegisteredAgentTool, ...]:
@@ -126,8 +164,6 @@ def replace_report_tools(tools: Sequence[RegisteredAgentTool]) -> tuple[Register
     readers = {kind: by_name[name] for kind, name in REPORT_READERS.items()}
     comparers = {kind: by_name[name] for kind, name in REPORT_COMPARERS.items()}
     replaced = set(REPORT_READERS.values()) | set(REPORT_COMPARERS.values())
-    _SPECS.clear()
-    _SPECS.update({READ_NAME: readers, COMPARE_NAME: comparers})
     retained = []
     for tool in tools:
         if tool.definition.name in replaced:

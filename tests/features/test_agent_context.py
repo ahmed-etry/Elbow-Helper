@@ -49,6 +49,17 @@ def _compile(context, **changes):
 
 
 class AgentContextTests(unittest.TestCase):
+    def test_available_report_names_its_supported_filters(self):
+        context = _context()
+        context.state.reports["synthetic"] = SimpleNamespace(
+            manifest=lambda: {"report_id": "synthetic", "kind": "synthetic"},
+        )
+        compiled = _compile(context, report_filter_fields={"synthetic": ("offset", "limit")})
+        manifest_text = compiled.prompt.split("<available_reports>\n", 1)[1].split(
+            "\n</available_reports>", 1,
+        )[0]
+        self.assertEqual(json.loads(manifest_text)[0]["filter_fields"], ["offset", "limit"])
+
     def test_checkpoint_is_deterministic_bounded_and_used_only_for_omitted_prefix(self):
         turns = tuple(
             _turn(index, payload_characters=10_000)

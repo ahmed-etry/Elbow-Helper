@@ -3,7 +3,7 @@
 from dataclasses import asdict, dataclass
 from datetime import datetime
 import json
-from typing import Sequence
+from typing import Mapping, Sequence
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
@@ -132,6 +132,7 @@ def compile_context(
     *, question: str, local_context: str, context: AgentRequestContext,
     tools: Sequence[AgentToolDefinition], conversation_history: str = "",
     target_tokens: int = INPUT_TARGET_TOKENS,
+    report_filter_fields: Mapping[str, Sequence[str]] | None = None,
 ) -> CompiledContext:
     """Preserve mandatory input and choose whole authorized recent records.
 
@@ -144,7 +145,11 @@ def compile_context(
         "name": tool.name, "description": tool.description, "parameters": tool.parameters,
     }} for tool in tools]
     tool_json = json.dumps(definitions, ensure_ascii=False, sort_keys=True)
-    manifest = [report.manifest() for report in context.state.reports.values()]
+    manifest = []
+    for report in context.state.reports.values():
+        item = dict(report.manifest())
+        item["filter_fields"] = list((report_filter_fields or {}).get(item.get("kind", ""), ()))
+        manifest.append(item)
     candidates = context.state.authorized_history
     checkpoint = context.state.authorized_checkpoint
     instructions = [asdict(instruction) for instruction in context.state.authorized_instructions]

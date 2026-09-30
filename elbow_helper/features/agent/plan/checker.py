@@ -10,7 +10,9 @@ from typing import Any
 from ..models import RegisteredAgentTool
 from ..actions.contracts import ActionClass
 from ..capabilities import CONTRACTS, SAVED_REPORT_CONTRACTS, CapabilityBindError, bound_time_window, compile_capability_call, entity_kind
-from ..tools.saved_reports import COMPARE_NAME, READ_NAME, original_arguments, original_tool
+from ..tools.saved_reports import (COMPARE_NAME, READ_NAME, original_arguments,
+                                   original_tool, unsupported_fields,
+                                   unsupported_field_error)
 from .format import output_forms
 
 
@@ -271,9 +273,11 @@ def check_plan(
             references = {field: value for field, value in arguments.items()
                           if _has_reference(value)}
             schema = tool.definition.parameters
+            selected = original_tool(registry, capability, arguments) if capability in (READ_NAME, COMPARE_NAME) else None
+            if selected is not None and unsupported_fields(selected, arguments):
+                return _error(unsupported_field_error(selected, arguments), step_id)
             if not _valid_arguments(arguments, schema, set(dependencies)):
                 return _error("Arguments must match the capability schema.", step_id)
-            selected = original_tool(capability, arguments) if capability in (READ_NAME, COMPARE_NAME) else None
             if capability in (READ_NAME, COMPARE_NAME):
                 if selected is None or not _valid_arguments(
                     original_arguments(arguments), selected.definition.parameters,
