@@ -8,10 +8,13 @@ from datetime import date, datetime, time, timezone
 from typing import Any
 
 from elbow_helper.domain.player_tags import normalize_player_tag
+from elbow_helper.features.agent.access import ACCESS_LEAD_PLUS, has_access_requirements
 from elbow_helper.features.clan_health.commands.player import prepare_player_health_window
+from elbow_helper.features.clan_health.ui import ClanConfigHomeView
 from elbow_helper.features.help.discovery import ParameterInfo
 
 from ...models import AgentAttachment
+from ...wording import COMMAND_UNAVAILABLE
 from ..outcomes import CommandOutcome
 from ..registry import CommandAdapter
 
@@ -79,9 +82,30 @@ async def run_health_player(context: Any, values: Mapping[str, Any]) -> CommandO
         await asyncio.to_thread(workflow.local_exports.delete, path)
 
 
+async def run_health_settings(context: Any, values: Mapping[str, Any]) -> CommandOutcome:
+    if not has_access_requirements(
+        context.guild, context.member.id, {ACCESS_LEAD_PLUS},
+    ):
+        return CommandOutcome.unavailable()
+    context.state.required_access.add(ACCESS_LEAD_PLUS)
+    if context.bot.get_cog("ClanHealth") is None:
+        return CommandOutcome.unavailable()
+
+    async def open_panel(interaction):
+        if not has_access_requirements(
+            context.guild, context.member.id, {ACCESS_LEAD_PLUS},
+        ):
+            await interaction.response.send_message(COMMAND_UNAVAILABLE, ephemeral=True)
+            return
+        await ClanConfigHomeView.open(interaction, values["clan"])
+
+    return CommandOutcome("complete", "private", private_panel=open_panel)
+
+
 def health_adapters() -> tuple[CommandAdapter, ...]:
     return (CommandAdapter("/health player", "public", run_health_player, (
         ParameterInfo("date_from", "Start date for Custom dates.", False, "string"),
         ParameterInfo("date_to", "End date for Custom dates.", False, "string"),
     ), entity_options=(("account", "clash_account"),),
-        check_period=_health_period_issue),)
+        check_period=_health_period_issue),
+        CommandAdapter("/health settings", "private", run_health_settings))

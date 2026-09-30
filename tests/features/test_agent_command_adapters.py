@@ -4,9 +4,12 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
+from elbow_helper.configuration.roles import LEAD_PLUS
 from elbow_helper.features.agent.commands.adapters import run_health_player, run_opinion
+from elbow_helper.features.agent.commands.adapters.clan_health import run_health_settings
+from elbow_helper.features.agent.models import AgentTurnState
 
 
 class CommandAdapterTests(unittest.IsolatedAsyncioTestCase):
@@ -88,3 +91,17 @@ class CommandAdapterTests(unittest.IsolatedAsyncioTestCase):
         result = await run_health_player(context, {"account": "#P0", "period": "custom"})
         self.assertEqual(result.status, "needs_input")
         context.bot.get_cog.assert_not_called()
+
+    async def test_health_settings_opens_the_feature_management_screen(self):
+        member = SimpleNamespace(id=4, roles=[SimpleNamespace(id=next(iter(LEAD_PLUS)))])
+        context = SimpleNamespace(
+            guild=SimpleNamespace(get_member=lambda _: member), member=member,
+            bot=SimpleNamespace(get_cog=lambda _: object()), state=AgentTurnState(),
+        )
+        result = await run_health_settings(context, {"clan": "BEH"})
+        self.assertIsNotNone(result.private_panel)
+        interaction = SimpleNamespace(user=member)
+        with patch("elbow_helper.features.agent.commands.adapters.clan_health.ClanConfigHomeView.open",
+                   new_callable=AsyncMock) as open_panel:
+            await result.private_panel(interaction)
+        open_panel.assert_awaited_once_with(interaction, "BEH")

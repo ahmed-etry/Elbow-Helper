@@ -43,7 +43,10 @@ class CommandRegistryTests(unittest.TestCase):
             if guild is not None else []
         )))
         capabilities = build_command_capabilities(bot, enabled_adapters())
-        self.assertEqual(set(capabilities), {"run_command_opinion", "run_command_health_player"})
+        self.assertEqual(set(capabilities), {
+            "run_command_opinion", "run_command_health_player",
+            "run_command_health_settings",
+        })
         self.assertEqual(capabilities["run_command_opinion"].required, ("ticket",))
         self.assertEqual(capabilities["run_command_health_player"].required, ("account",))
         self.assertEqual(
