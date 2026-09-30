@@ -288,6 +288,76 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
             "synthetic private result", ephemeral=True,
         )
 
+    async def test_private_panel_opens_from_the_requesters_result_button(self):
+        delivery_surface = AgentDeliveryMixin()
+        delivery_surface.bot = SimpleNamespace(user=SimpleNamespace(id=999))
+        delivery_surface.transcript_archive = None
+        sent = SimpleNamespace(id=303)
+        message = SimpleNamespace(
+            id=101, author=SimpleNamespace(id=202), mentions=[],
+            reply=AsyncMock(return_value=sent), channel=SimpleNamespace(),
+        )
+        panel = AsyncMock()
+        state = AgentTurnState()
+        state.command_outcomes.append(CommandOutcome(
+            "complete", "private", private_panel=panel,
+        ))
+        context = SimpleNamespace(state=state)
+        with patch("elbow_helper.features.agent.delivery.require_disclosure_access",
+                   new_callable=AsyncMock):
+            await delivery_surface._send_response(
+                message, "Result is ready. Open it privately below.", None,
+                delivery=AgentDelivery(), context=context,
+            )
+        view = message.reply.await_args.kwargs["view"]
+        await view.open_result(self.interaction(202))
+        panel.assert_awaited_once()
+
+    async def test_multiple_private_panels_can_each_be_opened(self):
+        first, second = AsyncMock(), AsyncMock()
+        from elbow_helper.features.agent.commands.private_view import PrivateCommandView
+        view = PrivateCommandView(
+            202, (), panels=(first, second),
+            panel_labels=("/synthetic first", "/synthetic second"),
+        )
+        interaction = self.interaction(202)
+        await view.open_result(interaction)
+        selection = interaction.response.send_message.await_args.kwargs["view"]
+        selector = selection.children[0]
+        self.assertEqual([option.label for option in selector.options],
+                         ["/synthetic first", "/synthetic second"])
+        selector._values = ["1"]
+        await selector.callback(self.interaction(202))
+        first.assert_not_awaited()
+        second.assert_awaited_once()
+
+    async def test_delivery_uses_command_names_for_private_panel_choices(self):
+        delivery_surface = AgentDeliveryMixin()
+        delivery_surface.bot = SimpleNamespace(user=SimpleNamespace(id=999))
+        delivery_surface.transcript_archive = None
+        sent = SimpleNamespace(id=303)
+        message = SimpleNamespace(
+            id=101, author=SimpleNamespace(id=202), mentions=[],
+            reply=AsyncMock(return_value=sent), channel=SimpleNamespace(),
+        )
+        state = AgentTurnState()
+        for name in ("/synthetic first", "/synthetic second"):
+            state.command_outcomes.append(CommandOutcome(
+                "complete", "private", private_panel=AsyncMock(), command_name=name,
+            ))
+        with patch("elbow_helper.features.agent.delivery.require_disclosure_access",
+                   new_callable=AsyncMock):
+            await delivery_surface._send_response(
+                message, "Result is ready. Open it privately below.", None,
+                delivery=AgentDelivery(), context=SimpleNamespace(state=state),
+            )
+        view = message.reply.await_args.kwargs["view"]
+        interaction = self.interaction(202)
+        await view.open_result(interaction)
+        choices = interaction.response.send_message.await_args.kwargs["view"].children[0].options
+        self.assertEqual([choice.label for choice in choices],
+                         ["/synthetic first", "/synthetic second"])
+
     async def test_cancel_preserves_other_public_result_in_the_message(self):
         proposal, _, _ = self.proposal(1)
         view = self.view((proposal,))

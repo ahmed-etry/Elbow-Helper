@@ -78,8 +78,18 @@ class AgentDeliveryMixin:
                 item for outcome in (context.state.command_outcomes if context else ())
                 if outcome.visibility == "private" for item in outcome.attachments
             )
-            private_view = (PrivateCommandView(message.author.id, private_parts, private_files)
-                            if private_parts or private_files else None)
+            private_panels = tuple(
+                outcome.private_panel for outcome in (context.state.command_outcomes if context else ())
+                if outcome.private_panel is not None
+            )
+            panel_labels = tuple(
+                outcome.command_name for outcome in (context.state.command_outcomes if context else ())
+                if outcome.private_panel is not None
+            )
+            private_view = (PrivateCommandView(
+                message.author.id, private_parts, private_files,
+                panels=private_panels, panel_labels=panel_labels,
+            ) if private_parts or private_files or private_panels else None)
             confirm_view = (ConfirmationView(message.author.id,
                                              tuple(context.state.command_proposals), context,
                                              private_view,

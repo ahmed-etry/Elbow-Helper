@@ -53,8 +53,10 @@ def build_command_tools(
                 raise TypeError("Command adapter returned an invalid result")
             if outcome.visibility == "private" and outcome.text:
                 outcome = replace(outcome, text="", private_parts=(outcome.text, *outcome.private_parts))
-            if outcome.visibility == "private" and not outcome.private_parts and not outcome.attachments:
+            if (outcome.visibility == "private" and not outcome.private_parts
+                    and not outcome.attachments and outcome.private_panel is None):
                 outcome = replace(outcome, private_parts=(command_reply([outcome]),))
+            outcome = replace(outcome, command_name=selected.adapter.path)
             context.state.command_outcomes.append(outcome)
             if outcome.visibility == "public":
                 context.state.attachments.extend(outcome.attachments)

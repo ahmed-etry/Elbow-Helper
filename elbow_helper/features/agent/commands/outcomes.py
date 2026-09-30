@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Awaitable, Callable
 from typing import Any, Mapping
+
+import discord
 
 from ..models import AgentAttachment
 from ..wording import COMMAND_EMPTY, COMMAND_MISSING_VALUE, COMMAND_PRIVATE_NOTE, COMMAND_UNAVAILABLE
@@ -19,6 +22,8 @@ class CommandOutcome:
     missing: tuple[str, ...] = ()
     after: Any = None
     result: Mapping[str, Any] | None = None
+    private_panel: Callable[[discord.Interaction], Awaitable[None]] | None = None
+    command_name: str = ""
 
     @classmethod
     def needs_input(cls, descriptions: tuple[str, ...]) -> "CommandOutcome":
@@ -40,7 +45,8 @@ def command_reply(outcomes: list[CommandOutcome]) -> str:
         )
     parts = [item.text for item in outcomes
              if item.status == "complete" and item.visibility == "public" and item.text]
-    if any(item.visibility == "private" and (item.private_parts or item.attachments)
+    if any(item.visibility == "private" and (item.private_parts or item.attachments
+                                              or item.private_panel)
            for item in outcomes):
         parts.append(COMMAND_PRIVATE_NOTE)
     if parts:

@@ -76,6 +76,32 @@ class CommandRegistryTests(unittest.TestCase):
         self.assertIn("First (first)",
                       capability.definition.parameters["properties"]["mode"]["description"])
 
+    def test_agent_option_can_use_a_resolved_numeric_key(self):
+        path = "/synthetic inspect"
+        command = DiscoveredCommand(path, "registered", (
+            ParameterInfo("record", "Choose a record.", True, "string"),
+        ))
+        help_entry = SimpleNamespace(path=path, summary="Inspect a record.",
+                                     details="Shows its state.")
+        adapter = CommandAdapter(path, "public", AsyncMock(),
+                                 option_types=(("record", "integer"),))
+        with (patch("elbow_helper.features.agent.commands.registry.discover_commands",
+                    return_value={path: command}),
+              patch("elbow_helper.features.agent.commands.registry.HELP_ENTRIES", (help_entry,))):
+            capability = build_command_capabilities(object(), (adapter,))[
+                "run_command_synthetic_inspect"]
+        self.assertEqual(capability.definition.parameters["properties"]["record"]["type"],
+                         "integer")
+        self.assertEqual(command.parameters[0].type_name, "string")
+
+        invalid = CommandAdapter(path, "public", AsyncMock(),
+                                 option_types=(("missing", "integer"),))
+        with (patch("elbow_helper.features.agent.commands.registry.discover_commands",
+                    return_value={path: command}),
+              patch("elbow_helper.features.agent.commands.registry.HELP_ENTRIES", (help_entry,))):
+            with self.assertRaises(ValueError):
+                build_command_capabilities(object(), (invalid,))
+
     def test_unregistered_or_missing_help_commands_stay_hidden(self):
         adapter = CommandAdapter("/synthetic", "public", AsyncMock())
         with (patch("elbow_helper.features.agent.commands.registry.discover_commands",

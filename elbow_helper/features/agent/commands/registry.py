@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from elbow_helper.features.help.catalog import HELP_ENTRIES
@@ -22,6 +22,7 @@ class CommandAdapter:
     check_period: Callable[[Mapping[str, Any], Mapping[str, Any]], str] | None = None
     prepare: Callable[[Any, Mapping[str, Any]], Awaitable[Any]] | None = None
     action_class: ActionClass | None = None
+    option_types: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
         if self.delivery == "confirm" and self.classification not in (
@@ -84,7 +85,14 @@ def build_command_capabilities(
         help_entry = help_entries.get(adapter.path)
         if command is None or help_entry is None:
             continue
-        options = (*command.parameters, *adapter.options)
+        type_overrides = dict(adapter.option_types)
+        option_names = {option.name for option in (*command.parameters, *adapter.options)}
+        if type_overrides.keys() - option_names:
+            raise ValueError("Command type override names an unknown option")
+        options = tuple(
+            replace(option, type_name=type_overrides.get(option.name, option.type_name))
+            for option in (*command.parameters, *adapter.options)
+        )
         if len({option.name for option in options}) != len(options):
             raise ValueError("Command options must have distinct names")
         name = "run_command_" + adapter.path.lstrip("/").replace(" ", "_")
