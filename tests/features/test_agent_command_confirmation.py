@@ -71,6 +71,20 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(text.count("Change target"), 3)
         self.assertEqual(text.count(COMMAND_PREVIEW_HEADER), 1)
 
+    async def test_adjacent_actions_share_one_preview_header(self):
+        proposals = []
+        for value in (1, 2, 3):
+            proposal, _, _ = self.proposal(value)
+            proposals.append(PreparedCommand(
+                proposal.path, proposal.values,
+                ChangePreview(proposal.preview.lines, proposal.preview.recheck,
+                              summary="Add role"), proposal.run,
+            ))
+        text = preview_text(proposals)
+        self.assertIn("1. Add role: 3 changes", text)
+        self.assertEqual(text.count("Add role:"), 1)
+        self.assertEqual(text.count("Change target"), 3)
+
     async def test_multiline_details_keep_the_preview_free_of_blank_lines(self):
         proposal, _, _ = self.proposal(1)
         proposal = PreparedCommand(

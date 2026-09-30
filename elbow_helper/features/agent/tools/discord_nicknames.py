@@ -12,8 +12,8 @@ from ..actions.contracts import ActionClass, ChangePreview, PreparedAction, audi
 from ..commands.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
-    ACTION_NICKNAME_DONE, ACTION_NICKNAME_LABEL, ACTION_NICKNAME_LINE,
-    ACTION_NICKNAME_RESET_DONE, ACTION_NICKNAME_RESET_LINE, ACTION_UNDO_CHANGED,
+    ACTION_NICKNAME_LABEL, ACTION_NICKNAME_LINE,
+    ACTION_NICKNAME_RESET_LINE, ACTION_UNDO_CHANGED,
 )
 from .discord_safety import DiscordActionRefused, check_raw_nickname, resolve_member
 
@@ -48,9 +48,7 @@ def _nickname_action(context: AgentRequestContext, member_id: int,
     async def run() -> CommandOutcome:
         member = await current()
         await member.edit(nick=after, reason=audit_reason(context.member))
-        text = (ACTION_NICKNAME_DONE.format(member=label, nickname=after)
-                if after is not None else ACTION_NICKNAME_RESET_DONE.format(member=label))
-        return CommandOutcome("complete", text=text, after={"nickname": after},
+        return CommandOutcome("complete", after={"nickname": after},
                               result={"member_id": member_id})
 
     async def verify() -> bool:

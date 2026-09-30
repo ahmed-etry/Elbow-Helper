@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import json
+from itertools import groupby
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 from uuid import uuid4
@@ -14,11 +15,12 @@ import discord
 from ..access import require_access, require_disclosure_access
 from ..commands.outcomes import CommandOutcome
 from ..commands.private_view import PrivateCommandView
+from ..message_parts import chunk_response
 from ..wording import (
-    ACTION_DISCORD_PERMISSION, ACTION_PREVIEW_UNIT_MANY, ACTION_PREVIEW_UNIT_ONE,
-    ACTION_PROGRESS, ACTION_RUNNING, ACTION_TEMPORARY_FAILURE,
-    ACTION_STOP_BUTTON, ACTION_STOP_OWNER, ACTION_UNNAMED_PERMISSION, COMMAND_CONFIRM_FAILED,
-    ACTION_RUN_DONE, COMMAND_NO_CHANGES, COMMAND_PREVIEW_CHANGED,
+    ACTION_PREVIEW_UNIT_MANY, ACTION_PREVIEW_UNIT_ONE,
+    ACTION_PROGRESS, ACTION_RUNNING,
+    ACTION_STOP_BUTTON, ACTION_STOP_OWNER, COMMAND_CONFIRM_FAILED,
+    ACTION_RUN_DONE, COMMAND_NO_CHANGES,
 )
 from .contracts import ActionClass, PreparedAction, check_bundle
 from .repository import AgentActionRepository
@@ -228,17 +230,6 @@ class AgentActionRunner:
                         owner=owner, status=status,
                         outcome={"error_class": type(error).__name__},
                     )
-                    if isinstance(error, discord.Forbidden):
-                        await channel.send(
-                            ACTION_DISCORD_PERMISSION.format(
-                                permission=current_action.permission or ACTION_UNNAMED_PERMISSION,
-                            ), allowed_mentions=discord.AllowedMentions.none(),
-                        )
-                    elif status == "uncertain":
-                        await channel.send(
-                            ACTION_TEMPORARY_FAILURE,
-                            allowed_mentions=discord.AllowedMentions.none(),
-                        )
                     LOGGER.exception("Agent action failed: run=%s step=%s", run_id, index)
                     if status != "completed":
                         break
@@ -256,22 +247,31 @@ class AgentActionRunner:
             view.disable()
             run = await asyncio.to_thread(self.repository.run, run_id)
             report = self._report(run)
+            chunks = chunk_response(report) or [report]
             private_view = (PrivateCommandView(context.member.id,
                                                tuple(private_parts), tuple(private_files))
                             if private_parts or private_files else None)
             reported = None
             try:
                 if progress is not None:
-                    await progress.edit(content=report, view=private_view)
+                    await progress.edit(content=chunks[0],
+                                        view=private_view if len(chunks) == 1 else None)
                     reported = progress
-                    if private_view is not None:
-                        private_view.message = progress
+                    for index, chunk in enumerate(chunks[1:], start=1):
+                        reported = await channel.send(
+                            chunk,
+                            view=private_view if index == len(chunks) - 1 else None,
+                            allowed_mentions=discord.AllowedMentions.none(),
+                        )
                 else:
-                    sent = await channel.send(report, view=private_view,
-                                              allowed_mentions=discord.AllowedMentions.none())
-                    reported = sent
-                    if private_view is not None:
-                        private_view.message = sent
+                    for index, chunk in enumerate(chunks):
+                        reported = await channel.send(
+                            chunk,
+                            view=private_view if index == len(chunks) - 1 else None,
+                            allowed_mentions=discord.AllowedMentions.none(),
+                        )
+                if private_view is not None:
+                    private_view.message = reported
             except discord.DiscordException:
                 LOGGER.exception("Agent action result could not be posted: run=%s", run_id)
             if self.on_finish is not None:
@@ -282,23 +282,23 @@ class AgentActionRunner:
 
     @staticmethod
     def _report(run: dict[str, Any]) -> str:
-        finished = [step["action_label"] for step in run["steps"]
-                    if step["status"] == "completed"]
-        remaining = [step["action_label"] for step in run["steps"]
-                     if step["status"] != "completed"]
+        completed = [step for step in run["steps"] if step["status"] == "completed"]
+        summaries = []
+        for _, items in groupby(completed, key=lambda step: (
+                step["action_label"], step["action_class"],
+            )):
+            group = list(items)
+            summaries.append(f"{group[0]['action_label']} ({len(group)})")
+        finished = ", ".join(summaries) or COMMAND_NO_CHANGES
+        remaining = [line.strip() or "-" for step in run["steps"]
+                     if step["status"] != "completed"
+                     for item in json.loads(step["preview_json"])
+                     for line in item.split("\n")]
         if not remaining:
-            return ACTION_RUN_DONE.format(finished=", ".join(finished))
-        report = COMMAND_CONFIRM_FAILED.format(
-            finished=", ".join(finished) or COMMAND_NO_CHANGES,
-            remaining=", ".join(remaining) or COMMAND_NO_CHANGES,
+            return ACTION_RUN_DONE.format(finished=finished)
+        return COMMAND_CONFIRM_FAILED.format(
+            finished=finished, remaining="\n".join(remaining),
         )
-        if any(
-            step["outcome_json"] and
-            json.loads(step["outcome_json"]).get("error_class") == "ActionPreconditionChanged"
-            for step in run["steps"]
-        ):
-            report += "\n" + COMMAND_PREVIEW_CHANGED
-        return report
 
     @staticmethod
     async def _send_parts(channel: Any, value: str) -> None:
@@ -336,9 +336,10 @@ class AgentActionRunner:
                 if channel is None:
                     continue
                 try:
-                    await channel.send(
-                        self._report(run), allowed_mentions=discord.AllowedMentions.none(),
-                    )
+                    for chunk in chunk_response(self._report(run)):
+                        await channel.send(
+                            chunk, allowed_mentions=discord.AllowedMentions.none(),
+                        )
                 except discord.DiscordException:
                     LOGGER.exception("Interrupted action run could not be reported: run=%s", run["run_id"])
                 else:

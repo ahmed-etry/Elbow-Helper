@@ -12,8 +12,8 @@ from ..actions.contracts import ActionClass, ChangePreview, PreparedAction, audi
 from ..commands.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
-    ACTION_ROLE_ADD_DONE, ACTION_ROLE_ADD_LABEL, ACTION_ROLE_ADD_LINE,
-    ACTION_ROLE_REMOVE_DONE, ACTION_ROLE_REMOVE_LABEL, ACTION_ROLE_REMOVE_LINE,
+    ACTION_ROLE_ADD_LABEL, ACTION_ROLE_ADD_LINE,
+    ACTION_ROLE_REMOVE_LABEL, ACTION_ROLE_REMOVE_LINE,
     ACTION_ROLE_UNDO_LABEL, ACTION_UNDO_CHANGED,
 )
 from .discord_safety import (
@@ -83,7 +83,6 @@ def _role_action(
     undo: bool = False, changed: bool = False,
 ) -> PreparedAction:
     line_template = ACTION_ROLE_ADD_LINE if add else ACTION_ROLE_REMOVE_LINE
-    done_template = ACTION_ROLE_ADD_DONE if add else ACTION_ROLE_REMOVE_DONE
     summary = ACTION_ROLE_UNDO_LABEL if undo else (
         ACTION_ROLE_ADD_LABEL if add else ACTION_ROLE_REMOVE_LABEL
     )
@@ -113,7 +112,7 @@ def _role_action(
         else:
             await member.remove_roles(role, reason=audit_reason(context.member))
         return CommandOutcome(
-            "complete", text=done_template.format(role=label_role, member=label_member),
+            "complete",
             after={"has_role": add},
         )
 

@@ -15,10 +15,10 @@ from ..commands.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
     ACTION_THREAD_ACTIONS, ACTION_THREAD_MEMBER_ADD, ACTION_THREAD_MEMBER_REMOVE,
-    ACTION_THREAD_CREATE_DONE, ACTION_THREAD_CREATE_LABEL, ACTION_THREAD_CREATE_LINE,
-    ACTION_THREAD_MEMBER_DONE, ACTION_THREAD_MEMBER_LABEL, ACTION_THREAD_MEMBER_LINE,
-    ACTION_THREAD_FUTURE_TARGET, ACTION_THREAD_MEMBER_NO_CHANGE,
-    ACTION_THREAD_UPDATE_DONE, ACTION_THREAD_UPDATE_LABEL, ACTION_THREAD_UPDATE_LINE,
+    ACTION_THREAD_CREATE_LABEL, ACTION_THREAD_CREATE_LINE,
+    ACTION_THREAD_MEMBER_LABEL, ACTION_THREAD_MEMBER_LINE,
+    ACTION_THREAD_FUTURE_TARGET,
+    ACTION_THREAD_UPDATE_LABEL, ACTION_THREAD_UPDATE_LINE,
     ACTION_UNDO_CHANGED,
 )
 from .discord_safety import (DiscordActionRefused, check_member, check_view_access,
@@ -132,7 +132,7 @@ async def prepare_create_thread(context: AgentRequestContext,
             )
         created_id = thread.id
         return CommandOutcome(
-            "complete", text=ACTION_THREAD_CREATE_DONE.format(thread=thread.mention),
+            "complete",
             after={"thread_id": thread.id},
             result={"thread_id": thread.id, "channel_id": thread.id},
         )
@@ -174,7 +174,7 @@ def _thread_update_action(context: AgentRequestContext, thread_id: int,
                           *, field: str, before: Any, after: Any,
                           operation: str, detail: str = "", undo: bool = False,
                           changed: bool = False) -> PreparedAction:
-    verb, past = ACTION_THREAD_ACTIONS[operation]
+    verb = ACTION_THREAD_ACTIONS[operation][0]
     async def recheck() -> bool:
         try:
             thread = await _thread(context, thread_id, fresh=True)
@@ -186,9 +186,7 @@ def _thread_update_action(context: AgentRequestContext, thread_id: int,
         thread = await _thread(context, thread_id, fresh=True)
         await thread.edit(**{field: after}, reason=audit_reason(context.member))
         return CommandOutcome(
-            "complete", text=ACTION_THREAD_UPDATE_DONE.format(
-                action=past, thread=thread.mention,
-            ), after={field: after}, result={"thread_id": thread_id},
+            "complete", after={field: after}, result={"thread_id": thread_id},
         )
 
     async def verify() -> bool:
@@ -287,7 +285,7 @@ async def _member_ids(thread: Any) -> frozenset[int]:
 def _thread_member_action(context: AgentRequestContext, thread_id: int,
                           member_id: int, *, add: bool, before: bool,
                           undo: bool = False, changed: bool = False) -> PreparedAction:
-    verb, past, relation = (ACTION_THREAD_MEMBER_ADD if add
+    verb, _, relation = (ACTION_THREAD_MEMBER_ADD if add
                             else ACTION_THREAD_MEMBER_REMOVE)
     async def recheck() -> bool:
         try:
@@ -307,13 +305,7 @@ def _thread_member_action(context: AgentRequestContext, thread_id: int,
                 await thread.add_user(member)
             else:
                 await thread.remove_user(member)
-        text = (ACTION_THREAD_MEMBER_DONE.format(
-            action=past, member=member.mention, relation=relation,
-            thread=thread.mention,
-        ) if before != add else ACTION_THREAD_MEMBER_NO_CHANGE.format(
-            member=member.mention,
-        ))
-        return CommandOutcome("complete", text=text,
+        return CommandOutcome("complete",
                               after={"has_member": add},
                               result={"thread_id": thread_id})
 

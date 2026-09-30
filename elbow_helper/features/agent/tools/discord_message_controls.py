@@ -14,10 +14,10 @@ from ..actions.contracts import ActionClass, ChangePreview, PreparedAction, audi
 from ..commands.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
-    ACTION_PIN_ADD, ACTION_PIN_DONE, ACTION_PIN_LABEL, ACTION_PIN_LINE,
-    ACTION_PIN_REMOVE, ACTION_REACTION_ADD, ACTION_REACTION_DONE,
-    ACTION_REACTION_LABEL, ACTION_REACTION_REMOVE,
-    ACTION_UNDO_CHANGED, ACTION_REACTION_ADD_LINE, ACTION_REACTION_REMOVE_LINE,
+    ACTION_PIN_ADD, ACTION_PIN_LABEL, ACTION_PIN_LINE,
+    ACTION_PIN_REMOVE, ACTION_REACTION_ADD_LINE,
+    ACTION_REACTION_LABEL, ACTION_REACTION_REMOVE_LINE,
+    ACTION_UNDO_CHANGED,
 )
 from .discord_safety import DiscordActionRefused, check_view_access, resolve_channel
 
@@ -71,10 +71,7 @@ def _control_action(context: AgentRequestContext, *, channel_id: int,
                     emoji: str = "", undo: bool = False,
                     changed: bool = False, label_message: str = "") -> PreparedAction:
     reaction = kind == "reaction"
-    verbs = (ACTION_REACTION_ADD if add else ACTION_REACTION_REMOVE) if reaction else (
-        ACTION_PIN_ADD if add else ACTION_PIN_REMOVE
-    )
-    verb, past = verbs
+    verb = (ACTION_PIN_ADD if add else ACTION_PIN_REMOVE)[0] if not reaction else ""
 
     async def current() -> tuple[Any, Any, bool]:
         channel, message = await _message(context, channel_id, message_id)
@@ -100,11 +97,7 @@ def _control_action(context: AgentRequestContext, *, channel_id: int,
                 await message.pin(reason=audit_reason(context.member))
             else:
                 await message.unpin(reason=audit_reason(context.member))
-        link = message.jump_url
-        done = ACTION_REACTION_DONE.format(
-            action=past, emoji=emoji, message=link,
-        ) if reaction else ACTION_PIN_DONE.format(action=past, message=link)
-        return CommandOutcome("complete", text=done, after={"active": add},
+        return CommandOutcome("complete", after={"active": add},
                               result={"message_id": message_id, "channel_id": channel_id})
 
     async def verify() -> bool:

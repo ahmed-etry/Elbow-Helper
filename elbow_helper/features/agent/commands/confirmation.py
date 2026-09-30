@@ -28,15 +28,24 @@ PreparedCommand = PreparedAction
 def preview_text(proposals: list[PreparedCommand]) -> str:
     check_bundle(tuple(proposals))
     lines = []
-    for index, proposal in enumerate(proposals, start=1):
-        count = proposal.preview.count
+    groups: list[list[PreparedCommand]] = []
+    for proposal in proposals:
+        if (groups and (groups[-1][0].preview.summary or groups[-1][0].path,
+                        groups[-1][0].action_class) ==
+                (proposal.preview.summary or proposal.path, proposal.action_class)):
+            groups[-1].append(proposal)
+        else:
+            groups.append([proposal])
+    for index, group in enumerate(groups, start=1):
+        proposal = group[0]
+        count = sum(item.preview.count for item in group)
         lines.append(ACTION_PREVIEW_SUMMARY.format(
             index=index, name=proposal.preview.summary or proposal.path,
             count=count,
             unit=ACTION_PREVIEW_UNIT_ONE if count == 1 else ACTION_PREVIEW_UNIT_MANY,
         ))
-        lines.extend(part.strip() or "-" for line in proposal.preview.lines
-                     for part in line.split("\n"))
+        lines.extend(part.strip() or "-" for item in group
+                     for line in item.preview.lines for part in line.split("\n"))
         if proposal.action_class is ActionClass.IRREVERSIBLE:
             lines.append(ACTION_CANNOT_UNDO)
     return COMMAND_PREVIEW_HEADER + "\n" + "\n".join(lines)

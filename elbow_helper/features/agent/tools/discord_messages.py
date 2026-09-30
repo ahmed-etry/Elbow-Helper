@@ -19,9 +19,9 @@ from ..message_parts import chunk_response
 from ..models import AgentAttachment, AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
     ACTION_ATTACH_LINE,
-    ACTION_DELETE_DONE, ACTION_DELETE_LABEL, ACTION_DELETE_LINE,
-    ACTION_EDIT_DONE, ACTION_EDIT_LABEL, ACTION_EDIT_LINE,
-    ACTION_PINGS_LINE, ACTION_POST_DONE, ACTION_POST_FUTURE_LINE,
+    ACTION_DELETE_LABEL, ACTION_DELETE_LINE,
+    ACTION_EDIT_LABEL, ACTION_EDIT_LINE,
+    ACTION_PINGS_LINE, ACTION_POST_FUTURE_LINE,
     ACTION_POST_LABEL, ACTION_POST_LINE,
     ACTION_UNDO_CHANGED,
 )
@@ -296,7 +296,7 @@ def _post_part(context: AgentRequestContext, channel_id: int, text: str,
             if file is not None:
                 file.close()
         return CommandOutcome(
-            "complete", text=ACTION_POST_DONE.format(channel=channel.mention),
+            "complete",
             after={"message_id": sent_id},
             result={"message_id": sent_id, "channel_id": channel_id},
         )
@@ -377,7 +377,7 @@ def _edit_action(context: AgentRequestContext, channel_id: int, message_id: int,
         await message.edit(content=new_text,
                            allowed_mentions=_mentions(context, mention_values, new_text))
         return CommandOutcome(
-            "complete", text=ACTION_EDIT_DONE.format(channel=channel.mention),
+            "complete",
             after={"content": new_text},
             result={"message_id": message_id, "channel_id": channel_id},
         )
@@ -443,8 +443,7 @@ async def prepare_delete(context: AgentRequestContext,
             context.action_repository.mark_message_deleted,
             message_id=message.id, guild_id=context.guild.id, channel_id=channel.id,
         )
-        return CommandOutcome("complete", text=ACTION_DELETE_DONE.format(
-            channel=channel.mention), after={"deleted": True})
+        return CommandOutcome("complete", after={"deleted": True})
 
     async def verify() -> bool:
         try:

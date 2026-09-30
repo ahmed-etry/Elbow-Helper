@@ -68,7 +68,8 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
         second_check.assert_awaited_once()
         first_run.assert_awaited_once()
         second_run.assert_awaited_once()
-        self.assertIn("Done: first, second", self.progress.edit.await_args.kwargs["content"])
+        self.assertEqual("Done: first (1), second (1).",
+                         self.progress.edit.await_args.kwargs["content"])
         self.assertEqual(len(self.repository.recent_log(requester_id=4)), 2)
 
     async def test_failure_stops_before_later_change(self):
@@ -80,10 +81,31 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(run["status"], "failed")
         self.assertEqual([step["status"] for step in run["steps"]],
                          ["failed", "queued"])
-        self.assertIn("Not done: first, second",
-                      self.progress.edit.await_args.kwargs["content"])
-        self.assertIn("The data changed since this preview",
-                      self.progress.edit.await_args.kwargs["content"])
+        self.assertEqual("Done: none.\nNot done:\nChange first\nChange second",
+                         self.progress.edit.await_args.kwargs["content"])
+
+    async def test_adjacent_actions_share_one_report_group(self):
+        actions = []
+        for name in ("one", "two", "three"):
+            action, _, _ = self.action(name, outcome=CommandOutcome("complete"))
+            actions.append(replace(action, preview=replace(
+                action.preview, summary="Add role",
+            )))
+        await self.run_actions(*actions)
+        self.assertEqual("Done: Add role (3).",
+                         self.progress.edit.await_args.kwargs["content"])
+        self.channel.send.assert_awaited_once()
+
+    async def test_long_remaining_lines_split_after_replacing_progress(self):
+        action, _, _ = self.action("long", allowed=False)
+        action = replace(action, preview=replace(
+            action.preview, lines=("Not done: " + "x" * 2500,),
+        ))
+        await self.run_actions(action)
+        self.assertLessEqual(len(self.progress.edit.await_args.kwargs["content"]), 2000)
+        self.assertGreater(self.channel.send.await_count, 1)
+        self.assertTrue(all(len(call.args[0]) <= 2000
+                            for call in self.channel.send.await_args_list[1:]))
 
     async def test_stop_ends_after_current_change(self):
         first, _, first_run = self.action("first")
