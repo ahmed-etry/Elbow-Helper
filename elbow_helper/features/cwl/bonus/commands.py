@@ -81,13 +81,13 @@ class CwlBonusMixin:
             )
         except BonusReportError as error:
             await interaction.followup.send(
-                self._bonus_report_error_message(error)
+                self.bonus_report_error_message(error)
             )
             return
         await self._send_bonus_report(interaction, report)
 
     @staticmethod
-    def _bonus_report_error_message(error: BonusReportError) -> str:
+    def bonus_report_error_message(error: BonusReportError) -> str:
         if error.kind == "config":
             return (
                 "The CWL bonus settings contain errors, so this report "
@@ -121,28 +121,7 @@ class CwlBonusMixin:
         interaction: discord.Interaction,
         report: BonusReport,
     ) -> None:
-        response_lines = [
-            (
-                "CWL bonus estimate ready for "
-                f"`{report.scope_label}` (`{report.season}`)."
-            ),
-            f"Eligible players: {report.eligible_count}",
-            f"Ineligible players: {report.ineligible_count}",
-            f"Scored attacks: {report.attack_count}",
-        ]
-        if report.warnings:
-            preview = " | ".join(report.warnings[:5])
-            suffix = (
-                f" (+{len(report.warnings) - 5} more)"
-                if len(report.warnings) > 5
-                else ""
-            )
-            response_lines.append(f"Warnings: {preview}{suffix}")
-        if report.google_warning and not report.google_link:
-            warning = report.google_warning.rstrip(".")
-            response_lines.append(
-                f"{warning}. The Excel file is ready to download."
-            )
+        response_lines = bonus_report_lines(report)
 
         view = BonusExportView()
         google_download_link = None
@@ -230,3 +209,30 @@ class CwlBonusMixin:
         finally:
             if delivered:
                 await self.bonus_reports.discard(report)
+
+
+def bonus_report_lines(report: BonusReport) -> list[str]:
+    response_lines = [
+        (
+            "CWL bonus estimate ready for "
+            f"`{report.scope_label}` (`{report.season}`)."
+        ),
+        f"Eligible players: {report.eligible_count}",
+        f"Ineligible players: {report.ineligible_count}",
+        f"Scored attacks: {report.attack_count}",
+    ]
+    if report.warnings:
+        preview = " | ".join(report.warnings[:5])
+        suffix = (
+            f" (+{len(report.warnings) - 5} more)"
+            if len(report.warnings) > 5
+            else ""
+        )
+        response_lines.append(f"Warnings: {preview}{suffix}")
+    if report.google_warning and not report.google_link:
+        warning = report.google_warning.rstrip(".")
+        response_lines.append(
+            f"{warning}. The Excel file is ready to download."
+        )
+
+    return response_lines
