@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import re
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
 from xml.sax.saxutils import escape as xml_escape
@@ -17,6 +19,19 @@ from elbow_helper.infrastructure.exports import unique_sheet_name
 from elbow_helper.infrastructure.exports import xlsx_column_name
 
 LOGGER = logging.getLogger(__name__)
+
+
+class HealthWorkbookError(RuntimeError):
+    """The requested workbook could not be built."""
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedHealthExport:
+    workbook_name: str
+    workbook_title: str
+    summary_lines: tuple[str, ...]
+    google_link: str | None
+    workbook_data: bytes | None
 
 
 class ClanHealthExportMixin:
@@ -587,76 +602,88 @@ class ClanHealthExportMixin:
             for idx, (name, rows) in enumerate(normalized, start=1):
                 zf.writestr(f"xl/worksheets/sheet{idx}.xml", self._build_health_sheet_xml(name, rows))
 
+    async def prepare_health_export(
+        self, *, workbook_name: str, workbook_title: str,
+        summary_lines: List[str], sheets: List[Tuple[str, List[List[Any]]]],
+    ) -> PreparedHealthExport:
+        try:
+            workbook_path = await self.write_health_workbook(sheets)
+        except (OSError, TypeError, ValueError) as error:
+            raise HealthWorkbookError from error
+        try:
+            google_link, google_warning = await self.google_publisher.upload_workbook(
+                workbook_path, workbook_title,
+            )
+            data = (None if google_link else
+                    await asyncio.to_thread(workbook_path.read_bytes))
+            lines = tuple(summary_lines)
+            if not google_link and google_warning:
+                lines += (google_warning,)
+                LOGGER.warning("Google warning: %s", google_warning)
+            return PreparedHealthExport(
+                workbook_name, workbook_title, lines, google_link, data,
+            )
+        finally:
+            warning = await asyncio.to_thread(self.local_exports.delete, workbook_path)
+            if warning:
+                LOGGER.warning("Local cleanup warning: %s", warning)
+
+    async def send_prepared_health_export(
+        self, interaction: discord.Interaction, export: PreparedHealthExport,
+    ) -> None:
+        export_view = discord.ui.View(timeout=None)
+        google_download_link = None
+        if export.google_link:
+            sheet_match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", export.google_link)
+            if sheet_match:
+                google_download_link = (
+                    f"https://docs.google.com/spreadsheets/d/{sheet_match.group(1)}/export?format=xlsx"
+                )
+            export_view.add_item(discord.ui.Button(
+                label="Google Sheet", style=discord.ButtonStyle.link,
+                url=export.google_link,
+            ))
+        if google_download_link:
+            export_view.add_item(discord.ui.Button(
+                label="Download", style=discord.ButtonStyle.link,
+                url=google_download_link,
+            ))
+        if export.google_link and export_view.children:
+            await interaction.followup.send(
+                content=export.workbook_title, view=export_view, wait=True,
+            )
+            return
+
+        attachment = discord.File(
+            io.BytesIO(export.workbook_data or b""), filename=export.workbook_name,
+        )
+        try:
+            msg = await interaction.followup.send(
+                "\n".join(export.summary_lines), wait=True, file=attachment,
+            )
+        finally:
+            attachment.close()
+        if msg.attachments:
+            export_view.add_item(discord.ui.Button(
+                label="Download", style=discord.ButtonStyle.link,
+                url=msg.attachments[0].url,
+            ))
+        if export_view.children:
+            await msg.edit(content=export.workbook_title, view=export_view)
+
     async def _write_and_send_export(
-        self,
-        *,
-        interaction: discord.Interaction,
-        workbook_name: str,
-        workbook_title: str,
-        summary_lines: List[str],
+        self, *, interaction: discord.Interaction, workbook_name: str,
+        workbook_title: str, summary_lines: List[str],
         sheets: List[Tuple[str, List[List[Any]]]],
     ) -> None:
         try:
-            workbook_path = await self.write_health_workbook(sheets)
-        except (OSError, TypeError, ValueError):
-            await interaction.followup.send("Could not generate the spreadsheet right now. Try again in a moment.")
-            return
-
-        delivered = False
-        try:
-            google_link, google_warning = await self.google_publisher.upload_workbook(
-                workbook_path,
-                workbook_title,
+            export = await self.prepare_health_export(
+                workbook_name=workbook_name, workbook_title=workbook_title,
+                summary_lines=summary_lines, sheets=sheets,
             )
-
-            export_view = discord.ui.View(timeout=None)
-            google_download_link = None
-            if google_link:
-                sheet_match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", google_link)
-                if sheet_match:
-                    google_download_link = (
-                        f"https://docs.google.com/spreadsheets/d/{sheet_match.group(1)}/export?format=xlsx"
-                    )
-                export_view.add_item(
-                    discord.ui.Button(label="Google Sheet", style=discord.ButtonStyle.link, url=google_link)
-                )
-            if google_download_link:
-                export_view.add_item(
-                    discord.ui.Button(label="Download", style=discord.ButtonStyle.link, url=google_download_link)
-                )
-            if google_link and export_view.children:
-                await interaction.followup.send(
-                    content=workbook_title,
-                    view=export_view,
-                    wait=True,
-                )
-                delivered = True
-                return
-
-            if google_warning:
-                summary_lines.append(google_warning)
-                LOGGER.warning("Google warning: %s", google_warning)
-            attachment = discord.File(str(workbook_path), filename=workbook_name)
-            try:
-                msg = await interaction.followup.send(
-                    "\n".join(summary_lines),
-                    wait=True,
-                    file=attachment,
-                )
-            finally:
-                attachment.close()
-            delivered = bool(msg.attachments)
-            if msg.attachments:
-                export_view.add_item(
-                    discord.ui.Button(label="Download", style=discord.ButtonStyle.link, url=msg.attachments[0].url)
-                )
-            if export_view.children:
-                await msg.edit(content=workbook_title, view=export_view)
-        finally:
-            if delivered:
-                warning = await asyncio.to_thread(
-                    self.local_exports.delete,
-                    workbook_path,
-                )
-                if warning:
-                    LOGGER.warning("Local cleanup warning: %s", warning)
+        except HealthWorkbookError:
+            await interaction.followup.send(
+                "Could not generate the spreadsheet right now. Try again in a moment.",
+            )
+            return
+        await self.send_prepared_health_export(interaction, export)

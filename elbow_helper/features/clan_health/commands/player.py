@@ -8,6 +8,7 @@ import logging
 import time
 from datetime import datetime, timedelta
 from dataclasses import dataclass
+from collections.abc import Awaitable, Callable
 from typing import Any, Dict, List, Optional
 
 import discord
@@ -17,6 +18,7 @@ from elbow_helper.discord.interactions import deny, warn
 from elbow_helper.domain.player_tags import normalize_player_tag
 
 from ..config import UTC
+from ..export import HealthWorkbookError, PreparedHealthExport
 from ..analysis.verdicts import (
     GOOD,
     INSUFFICIENT_DATA,
@@ -53,6 +55,14 @@ class PlayerHealthWindow:
     label: str
     date_from: str | None
     date_to: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class PlayerHealthCommandResult:
+    status: str
+    issue: str = ""
+    export: PreparedHealthExport | None = None
+    season_key: str = ""
 
 
 def prepare_player_health_window(
@@ -227,54 +237,71 @@ class ClanHealthPlayerCommandMixin:
             LOGGER.info("Command denied /health player user=%s", getattr(interaction.user, "id", None))
             await deny(interaction)
             return
-
-        player_tag = normalize_player_tag(player)
-        if not player_tag:
+        result = await self.run_player_health_export(
+            player, mode=window.value if window else "last_30d",
+            date_from=date_from, date_to=date_to,
+            on_valid=lambda: interaction.response.defer(thinking=True),
+        )
+        if result.status == "invalid_account":
             await warn(interaction, "Choose a Clash account from the list.")
             return
-
-        selected, issue = prepare_player_health_window(
-            window.value if window else "last_30d",
-            date_from=date_from, date_to=date_to,
-        )
-        if issue:
-            await warn(interaction, issue)
+        if result.status == "invalid_window":
+            await warn(interaction, result.issue)
             return
-        assert selected is not None
-        now = selected.now
-        window_mode = selected.mode
-        season_key = selected.season_key
-        trend_season_key = selected.trend_season_key
-        cycle_start = selected.start
-        cycle_end = selected.end
-        window_label = selected.label
-        partial = False
-
-        await interaction.response.defer(thinking=True)
-
-        report = await self.build_player_health_export(
-            player_tag=player_tag, now=now, window_mode=window_mode,
-            season_key=season_key, trend_season_key=trend_season_key,
-            cycle_start=cycle_start, cycle_end=cycle_end,
-            window_label=window_label, partial=partial,
-            date_from=date_from, date_to=date_to,
-        )
-        if report is None:
+        if result.status == "empty":
             await interaction.followup.send("No health data is available for that player during this period.")
             return
-        await self._write_and_send_export(
-            interaction=interaction,
-            workbook_name=report.workbook_name,
-            workbook_title=report.workbook_title,
-            summary_lines=report.summary_lines,
-            sheets=report.sheets,
-        )
+        if result.status == "unavailable":
+            await interaction.followup.send(
+                "Could not generate the spreadsheet right now. Try again in a moment.",
+            )
+            return
+        assert result.export is not None
+        await self.send_prepared_health_export(interaction, result.export)
         LOGGER.debug(
             "Command done /health player user=%s tag=%s season=%s elapsed=%.2fs",
             getattr(interaction.user, "id", None),
-            player_tag,
-            season_key,
+            normalize_player_tag(player),
+            result.season_key,
             time.monotonic() - started,
+        )
+
+    async def run_player_health_export(
+        self, player: str, *, mode: str = "last_30d",
+        date_from: str | None = None, date_to: str | None = None,
+        on_valid: Callable[[], Awaitable[Any]] | None = None,
+    ) -> PlayerHealthCommandResult:
+        player_tag = normalize_player_tag(player)
+        if not player_tag:
+            return PlayerHealthCommandResult("invalid_account")
+        selected, issue = prepare_player_health_window(
+            mode, date_from=date_from, date_to=date_to,
+        )
+        if issue or selected is None:
+            return PlayerHealthCommandResult("invalid_window", issue or "")
+        if on_valid is not None:
+            await on_valid()
+        report = await self.build_player_health_export(
+            player_tag=player_tag, now=selected.now, window_mode=selected.mode,
+            season_key=selected.season_key,
+            trend_season_key=selected.trend_season_key,
+            cycle_start=selected.start, cycle_end=selected.end,
+            window_label=selected.label, partial=False,
+            date_from=date_from, date_to=date_to,
+        )
+        if report is None:
+            return PlayerHealthCommandResult("empty")
+        try:
+            export = await self.prepare_health_export(
+                workbook_name=report.workbook_name,
+                workbook_title=report.workbook_title,
+                summary_lines=report.summary_lines,
+                sheets=report.sheets,
+            )
+        except HealthWorkbookError:
+            return PlayerHealthCommandResult("unavailable")
+        return PlayerHealthCommandResult(
+            "complete", export=export, season_key=selected.season_key,
         )
 
     async def build_player_health_export(

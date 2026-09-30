@@ -1,7 +1,5 @@
 """The enabled adapters call feature functions directly."""
 
-from pathlib import Path
-from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
@@ -10,6 +8,10 @@ from elbow_helper.configuration.roles import LEAD_PLUS
 from elbow_helper.features.agent.commands.adapters import run_health_player, run_opinion
 from elbow_helper.features.agent.commands.adapters.clan_health import run_health_settings
 from elbow_helper.features.agent.models import AgentTurnState
+from elbow_helper.features.clan_health.commands.player import (
+    ClanHealthPlayerCommandMixin, PlayerHealthCommandResult,
+)
+from elbow_helper.features.clan_health.export import PreparedHealthExport
 
 
 class CommandAdapterTests(unittest.IsolatedAsyncioTestCase):
@@ -41,50 +43,75 @@ class CommandAdapterTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result.status, "needs_input")
         workflow.build_ticket_second_opinion.assert_not_awaited()
 
-    async def test_health_uses_feature_report_and_publisher(self):
-        with TemporaryDirectory() as directory:
-            path = Path(directory) / "synthetic.xlsx"
-            path.write_bytes(b"synthetic workbook")
-            report = SimpleNamespace(
-                sheets=[("Overview", [["Value"], ["7"]])],
-                workbook_title="Synthetic report", workbook_name="synthetic.xlsx",
-                summary_lines=["Synthetic summary"],
-            )
-            workflow = SimpleNamespace(
-                build_player_health_export=AsyncMock(return_value=report),
-                write_health_workbook=AsyncMock(return_value=path),
-                google_publisher=SimpleNamespace(
-                    upload_workbook=AsyncMock(return_value=("https://example.test/sheet", None)),
-                ),
-                local_exports=SimpleNamespace(delete=Mock()),
-            )
-            context = SimpleNamespace(bot=SimpleNamespace(get_cog=lambda _: workflow))
-            result = await run_health_player(context, {"account": "#P0"})
-            self.assertEqual(result.status, "complete")
-            self.assertIn("https://example.test/sheet", result.text)
-            self.assertEqual(result.attachments, ())
-            workflow.build_player_health_export.assert_awaited_once()
-            workflow.write_health_workbook.assert_awaited_once_with(report.sheets)
-            workflow.local_exports.delete.assert_called_once_with(path)
+    async def test_health_uses_the_public_feature_export(self):
+        export = PreparedHealthExport(
+            "synthetic.xlsx", "Synthetic report", ("Synthetic summary",),
+            "https://example.test/sheet", None,
+        )
+        workflow = SimpleNamespace(run_player_health_export=AsyncMock(
+            return_value=PlayerHealthCommandResult("complete", export=export),
+        ))
+        context = SimpleNamespace(bot=SimpleNamespace(get_cog=lambda _: workflow))
+        result = await run_health_player(context, {"account": "#P0"})
+        self.assertEqual(result.status, "complete")
+        self.assertIn("https://example.test/sheet", result.text)
+        self.assertEqual(result.attachments, ())
+        workflow.run_player_health_export.assert_awaited_once_with(
+            "#P0", mode="last_30d", date_from=None, date_to=None,
+        )
 
     async def test_health_fallback_carries_complete_workbook_bytes(self):
-        with TemporaryDirectory() as directory:
-            path = Path(directory) / "synthetic.xlsx"
-            path.write_bytes(b"synthetic workbook")
-            report = SimpleNamespace(
-                sheets=[], workbook_title="Synthetic report",
-                workbook_name="synthetic.xlsx", summary_lines=["Synthetic summary"],
-            )
-            workflow = SimpleNamespace(
-                build_player_health_export=AsyncMock(return_value=report),
-                write_health_workbook=AsyncMock(return_value=path),
-                google_publisher=SimpleNamespace(upload_workbook=AsyncMock(return_value=(None, None))),
-                local_exports=SimpleNamespace(delete=Mock()),
-            )
-            context = SimpleNamespace(bot=SimpleNamespace(get_cog=lambda _: workflow))
-            result = await run_health_player(context, {"account": "#P0"})
-            self.assertEqual(result.attachments[0].data, b"synthetic workbook")
-            self.assertEqual(result.text, "Synthetic summary")
+        export = PreparedHealthExport(
+            "synthetic.xlsx", "Synthetic report", ("Synthetic summary",),
+            None, b"synthetic workbook",
+        )
+        workflow = SimpleNamespace(run_player_health_export=AsyncMock(
+            return_value=PlayerHealthCommandResult("complete", export=export),
+        ))
+        context = SimpleNamespace(bot=SimpleNamespace(get_cog=lambda _: workflow))
+        result = await run_health_player(context, {"account": "#P0"})
+        self.assertEqual(result.attachments[0].data, b"synthetic workbook")
+        self.assertEqual(result.text, "Synthetic summary")
+
+    async def test_player_health_operation_builds_and_prepares_one_export(self):
+        workflow = ClanHealthPlayerCommandMixin()
+        report = SimpleNamespace(
+            workbook_name="synthetic.xlsx", workbook_title="Synthetic report",
+            summary_lines=["Synthetic summary"], sheets=[("Overview", [["Value"]])],
+        )
+        export = PreparedHealthExport(
+            "synthetic.xlsx", "Synthetic report", ("Synthetic summary",),
+            None, b"synthetic workbook",
+        )
+        workflow.build_player_health_export = AsyncMock(return_value=report)
+        workflow.prepare_health_export = AsyncMock(return_value=export)
+        result = await workflow.run_player_health_export("#P0")
+        self.assertIs(result.export, export)
+        self.assertEqual(result.status, "complete")
+        workflow.build_player_health_export.assert_awaited_once()
+        workflow.prepare_health_export.assert_awaited_once_with(
+            workbook_name=report.workbook_name,
+            workbook_title=report.workbook_title,
+            summary_lines=report.summary_lines, sheets=report.sheets,
+        )
+
+    async def test_slash_player_uses_the_same_public_operation(self):
+        workflow = ClanHealthPlayerCommandMixin()
+        export = PreparedHealthExport(
+            "synthetic.xlsx", "Synthetic report", ("Synthetic summary",),
+            None, b"synthetic workbook",
+        )
+        workflow._has_access = Mock(return_value=True)
+        workflow.run_player_health_export = AsyncMock(return_value=PlayerHealthCommandResult(
+            "complete", export=export, season_key="last 30d",
+        ))
+        workflow.send_prepared_health_export = AsyncMock()
+        interaction = SimpleNamespace(
+            user=SimpleNamespace(id=4), response=SimpleNamespace(defer=AsyncMock()),
+        )
+        await workflow._export_player_health(interaction, "#P0")
+        workflow.run_player_health_export.assert_awaited_once()
+        workflow.send_prepared_health_export.assert_awaited_once_with(interaction, export)
 
     async def test_health_custom_period_needs_both_dates(self):
         context = SimpleNamespace(bot=SimpleNamespace(get_cog=Mock()))
