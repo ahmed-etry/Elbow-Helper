@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from elbow_helper.features.agent.tools.discord_safety import check_role
+from elbow_helper.features.agent.tools.discord_safety import check_member, check_role
 from elbow_helper.features.rosters.config import DEFAULT_MAX_MEMBERS, MAX_ROSTER_MEMBERS
 
 from ...actions.contracts import ActionClass, ChangePreview
@@ -19,6 +19,12 @@ from ...wording import (
     ACTION_ROSTER_CLONE_START, ACTION_ROSTER_NAME_TAKEN, ACTION_ROSTER_NO_ROLE,
     ACTION_ROSTER_UNAVAILABLE, ACTION_VALUE_YES, ACTION_VALUE_NO,
     ACTION_VALUE_HIDDEN, ACTION_VALUE_VISIBLE, ACTION_VALUE_OFF,
+    ACTION_ROSTER_DELETE_LABEL, ACTION_ROSTER_DELETE_LINE,
+    ACTION_ROSTER_DELETE_MEMBER, ACTION_ROSTER_DELETE_POST,
+    ACTION_ROSTER_DELETE_ROLE,
+    ACTION_ROSTER_DELETE_HISTORY, ACTION_ROSTER_CYCLE_ONE,
+    ACTION_ROSTER_CYCLE_MANY, ACTION_ROSTER_SIGNUP_ONE,
+    ACTION_ROSTER_SIGNUP_MANY,
 )
 from ..outcomes import CommandOutcome
 from ..registry import CommandAdapter, PreparedCommandChange
@@ -179,6 +185,78 @@ async def run_roster_clone(context: Any,
     return await (await prepare_roster_clone(context, values)).run()
 
 
+async def prepare_roster_delete(context: Any,
+                                values: Mapping[str, Any]) -> PreparedCommandChange:
+    workflow = context.bot.get_cog("Rosters")
+    if workflow is None:
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+    try:
+        roster_id = int(values["roster"])
+    except (TypeError, ValueError):
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE) from None
+    roster = await workflow.get_roster(roster_id)
+    if roster is None or roster.guild_id != context.guild.id:
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+    state = await workflow.roster_deletion_state(roster)
+
+    def check_targets() -> None:
+        role = context.guild.get_role(roster.role_id) if roster.role_id else None
+        if role is not None:
+            check_role(role, context.guild, context.guild.me, {})
+        for member_id in state["member_ids"]:
+            member = context.guild.get_member(member_id)
+            if member is not None:
+                check_member(member, context.guild.me)
+
+    check_targets()
+    lines = [ACTION_ROSTER_DELETE_LINE.format(name=roster.name, roster_id=roster.id)]
+    cycle_count = len(state["history"])
+    signup_count = sum(len(members) for _, members in state["history"])
+    lines.append(ACTION_ROSTER_DELETE_HISTORY.format(
+        cycle_count=cycle_count,
+        cycle_word=ACTION_ROSTER_CYCLE_ONE if cycle_count == 1 else ACTION_ROSTER_CYCLE_MANY,
+        signup_count=signup_count,
+        signup_word=ACTION_ROSTER_SIGNUP_ONE if signup_count == 1 else ACTION_ROSTER_SIGNUP_MANY,
+    ))
+    if roster.role_id and state["member_ids"]:
+        lines.append(ACTION_ROSTER_DELETE_ROLE.format(role=f"<@&{roster.role_id}>"))
+    lines.extend(ACTION_ROSTER_DELETE_MEMBER.format(member=f"<@{member_id}>")
+                 for member_id in state["member_ids"])
+    lines.extend(ACTION_ROSTER_DELETE_POST.format(
+        channel=f"<#{channel_id}>", message_id=message_id,
+    ) for channel_id, message_id in state["posts"])
+
+    async def recheck() -> bool:
+        current = await workflow.get_roster(roster_id)
+        if current != roster:
+            return False
+        try:
+            check_targets()
+        except ValueError:
+            return False
+        return await workflow.roster_deletion_state(roster) == state
+
+    async def run() -> CommandOutcome:
+        await workflow.delete_roster(roster)
+        if await workflow.get_roster(roster_id) is not None:
+            raise OSError("Roster deletion could not be verified")
+        return CommandOutcome(
+            "complete", "private", text=f"Deleted **{roster.name}**.",
+            after={"roster_id": roster.id, "deleted": True},
+        )
+
+    return PreparedCommandChange(
+        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_DELETE_LABEL,
+                      before={"roster_id": roster.id}),
+        run,
+    )
+
+
+async def run_roster_delete(context: Any,
+                            values: Mapping[str, Any]) -> CommandOutcome:
+    return await (await prepare_roster_delete(context, values)).run()
+
+
 def roster_adapters() -> tuple[CommandAdapter, ...]:
     return (
         CommandAdapter("/roster create", "confirm", run_roster_create,
@@ -190,4 +268,8 @@ def roster_adapters() -> tuple[CommandAdapter, ...]:
                        action_class=ActionClass.CHANGE,
                        entity_options=(("roster", "roster"),
                                        ("signup_role", "discord_role"))),
+        CommandAdapter("/roster delete", "confirm", run_roster_delete,
+                       prepare=prepare_roster_delete,
+                       action_class=ActionClass.IRREVERSIBLE,
+                       entity_options=(("roster", "roster"),)),
     )

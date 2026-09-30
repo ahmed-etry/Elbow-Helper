@@ -7,7 +7,8 @@ import unittest
 from unittest.mock import AsyncMock
 
 from elbow_helper.features.agent.commands.adapters.rosters import (
-    prepare_roster_clone, prepare_roster_create, roster_adapters,
+    prepare_roster_clone, prepare_roster_create, prepare_roster_delete,
+    roster_adapters,
 )
 from elbow_helper.features.rosters.cog import Rosters
 
@@ -74,6 +75,40 @@ class RosterCommandTests(unittest.IsolatedAsyncioTestCase):
             source, name="New Roster", clan_code=None, role_id=None,
             max_members=None, min_townhall=0,
         )
+
+    async def test_delete_previews_posts_and_all_history(self):
+        roster = SimpleNamespace(id=4, guild_id=5, name="Old", role_id=None)
+        deleted = False
+
+        async def get_roster(_):
+            return None if deleted else roster
+
+        async def delete_roster(_):
+            nonlocal deleted
+            deleted = True
+
+        state = {
+            "roster": roster, "member_ids": (), "posts": ((9, 99),),
+            "history": ((11, (("#P0Y", 2),)),),
+        }
+        workflow = SimpleNamespace(
+            get_roster=AsyncMock(side_effect=get_roster),
+            roster_deletion_state=AsyncMock(return_value=state),
+            delete_roster=AsyncMock(side_effect=delete_roster),
+        )
+        context = SimpleNamespace(
+            bot=SimpleNamespace(get_cog=lambda _: workflow),
+            guild=SimpleNamespace(id=5, get_role=lambda _: None,
+                                  get_member=lambda _: None),
+        )
+        prepared = await prepare_roster_delete(context, {"roster": "4"})
+        self.assertTrue(await prepared.preview.recheck())
+        self.assertIn("Delete 1 signup across 1 cycle.", prepared.preview.lines)
+        self.assertIn("Disable controls on roster post 99 in <#9>.",
+                      prepared.preview.lines)
+        workflow.delete_roster.assert_not_awaited()
+        self.assertTrue((await prepared.run()).after["deleted"])
+        self.assertFalse(await prepared.preview.recheck())
 
 
 if __name__ == "__main__":

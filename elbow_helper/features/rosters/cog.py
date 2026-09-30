@@ -327,6 +327,38 @@ class Rosters(commands.Cog):
     async def get_roster(self, roster_id: int) -> Roster | None:
         return await self.service.get(roster_id)
 
+    async def roster_deletion_state(self, roster: Roster) -> dict[str, object]:
+        members = await self.service.list_members(roster)
+        posts = await asyncio.to_thread(self._repository.list_posts, roster.id)
+        history = []
+        before_id = None
+        while True:
+            page = await asyncio.to_thread(
+                self._repository.list_cycles, roster.guild_id, roster.id,
+                before_id=before_id, limit=100,
+            )
+            if page is None:
+                break
+            for cycle in page.cycles:
+                rows = await asyncio.to_thread(
+                    self._repository.list_members, roster.id, cycle.id,
+                )
+                history.append((cycle.id, tuple(sorted(
+                    (row.player_tag, row.discord_user_id) for row in rows
+                ))))
+            before_id = page.next_before_id
+            if before_id is None:
+                break
+        return {
+            "roster": roster,
+            "member_ids": tuple(sorted({row.discord_user_id for row in members})),
+            "posts": tuple(sorted((post.channel_id, post.message_id) for post in posts)),
+            "history": tuple(history),
+        }
+
+    async def delete_roster(self, roster: Roster) -> None:
+        await self.service.delete(roster)
+
     def roster_clone_settings(self, source: Roster, *, name: str,
                               clan_code: str | None, role_id: int | None,
                               max_members: int | None,
@@ -1345,7 +1377,7 @@ class Rosters(commands.Cog):
                 )
                 return
             try:
-                await self.service.delete(roster)
+                await self.delete_roster(roster)
             except RosterDeleteCleanupError as error:
                 LOGGER.warning(
                     "Roster deletion cleanup incomplete roster_id=%s members=%s messages=%s",
