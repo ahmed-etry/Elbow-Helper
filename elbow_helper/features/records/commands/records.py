@@ -24,6 +24,18 @@ from ..domain.types import incident_types_for_category
 UTC = dt_timezone.utc
 
 
+async def open_record_editor(
+    interaction: discord.Interaction, *, service, member: discord.Member,
+    records: list[dict],
+) -> None:
+    from ..ui.edit_record import RecordEditView
+
+    view = RecordEditView(
+        service, member=member, records=records, owner_id=interaction.user.id,
+    )
+    await send_bound_view(interaction, embed=view.build_embed(), view=view, ephemeral=True)
+
+
 def _namespace_value(value: object) -> str:
     return str(getattr(value, "value", value) or "")
 
@@ -125,15 +137,9 @@ class RecordCommandMixin:
         if not records:
             await warn(interaction, f"No records found for {user.display_name}.")
             return
-        from ..ui.edit_record import RecordEditView
-
-        view = RecordEditView(
-            self.service,
-            member=user,
-            records=records,
-            owner_id=interaction.user.id,
+        await open_record_editor(
+            interaction, service=self.service, member=user, records=records,
         )
-        await send_bound_view(interaction, embed=view.build_embed(), view=view, ephemeral=True)
 
     async def record_autocomplete(
         self,
