@@ -1,4 +1,4 @@
-"""Feature adapters for enabled agent commands."""
+"""Clan health command adapters."""
 
 from __future__ import annotations
 
@@ -11,9 +11,9 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.features.clan_health.commands.player import prepare_player_health_window
 from elbow_helper.features.help.discovery import ParameterInfo
 
-from ..models import AgentAttachment
-from .outcomes import CommandOutcome
-from .registry import CommandAdapter
+from ...models import AgentAttachment
+from ..outcomes import CommandOutcome
+from ..registry import CommandAdapter
 
 
 def _health_period_issue(plan: Mapping[str, Any], values: Mapping[str, Any]) -> str:
@@ -37,35 +37,19 @@ def _health_period_issue(plan: Mapping[str, Any], values: Mapping[str, Any]) -> 
     return ""
 
 
-async def run_opinion(context: Any, values: Mapping[str, Any]) -> CommandOutcome:
-    ticket = str(values.get("ticket") or "").strip()
-    if not ticket:
-        return CommandOutcome.needs_input("ticket")
-    workflow = context.bot.get_cog("Recruitment")
-    if workflow is None:
-        return CommandOutcome.unavailable()
-    channel = workflow.resolve_opinion_ticket(context.guild, context.member, ticket)
-    if channel is None:
-        return CommandOutcome.needs_input("ticket")
-    parts = await workflow._build_ticket_second_opinion(channel)
-    if not parts:
-        return CommandOutcome("empty", "private")
-    return CommandOutcome("complete", "private", private_parts=tuple(parts))
-
-
 async def run_health_player(context: Any, values: Mapping[str, Any]) -> CommandOutcome:
     raw_account = values.get("account")
     player_tag = normalize_player_tag(raw_account) if isinstance(raw_account, str) else None
     if player_tag is None:
-        return CommandOutcome.needs_input("account")
+        return CommandOutcome.needs_input(("account",))
     mode = values.get("period", "last_30d")
     if mode == "custom" and (not values.get("date_from") or not values.get("date_to")):
-        return CommandOutcome.needs_input("start and end dates")
+        return CommandOutcome.needs_input(("start and end dates",))
     selected, issue = prepare_player_health_window(
         mode, date_from=values.get("date_from"), date_to=values.get("date_to"),
     )
     if issue or selected is None:
-        return CommandOutcome.needs_input("period")
+        return CommandOutcome.needs_input(("period",))
     workflow = context.bot.get_cog("ClanHealth")
     if workflow is None:
         return CommandOutcome.unavailable()
@@ -95,13 +79,9 @@ async def run_health_player(context: Any, values: Mapping[str, Any]) -> CommandO
         await asyncio.to_thread(workflow.local_exports.delete, path)
 
 
-def enabled_adapters() -> tuple[CommandAdapter, ...]:
-    return (
-        CommandAdapter("/opinion", "private", run_opinion,
-                       entity_options=(("ticket", "discord_channel"),)),
-        CommandAdapter("/health player", "public", run_health_player, (
-            ParameterInfo("date_from", "Start date for Custom dates.", False, "string"),
-            ParameterInfo("date_to", "End date for Custom dates.", False, "string"),
-        ), entity_options=(("account", "clash_account"),),
-            check_period=_health_period_issue),
-    )
+def health_adapters() -> tuple[CommandAdapter, ...]:
+    return (CommandAdapter("/health player", "public", run_health_player, (
+        ParameterInfo("date_from", "Start date for Custom dates.", False, "string"),
+        ParameterInfo("date_to", "End date for Custom dates.", False, "string"),
+    ), entity_options=(("account", "clash_account"),),
+        check_period=_health_period_issue),)
