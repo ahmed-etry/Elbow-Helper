@@ -7,7 +7,9 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.features.agent.commands.bridge import build_command_tools, check_command_plan
 from elbow_helper.features.agent.commands.confirmation import ChangePreview
 from elbow_helper.features.agent.commands.outcomes import CommandOutcome, command_reply
-from elbow_helper.features.agent.commands.registry import CommandAdapter
+from elbow_helper.features.agent.commands.registry import (
+    CommandAdapter, PreparedCommandChange,
+)
 from elbow_helper.features.agent.models import AgentTurnState, AgentCapabilityEffect
 from elbow_helper.features.agent.models import AgentAttachment
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
@@ -135,3 +137,21 @@ class CommandBridgeTests(unittest.IsolatedAsyncioTestCase):
                          ("Change synthetic target",))
         self.run.assert_not_awaited()
         preview.assert_awaited_once_with(context, {"target": 101})
+
+    async def test_prepared_change_uses_the_saved_run_after_confirmation(self):
+        saved_run = AsyncMock(return_value=CommandOutcome("complete"))
+        preview = AsyncMock(return_value=PreparedCommandChange(
+            ChangePreview(("Change synthetic target",),
+                          AsyncMock(return_value=True)),
+            saved_run,
+        ))
+        adapter = CommandAdapter(self.path, "confirm", self.run, prepare=preview)
+        with self.patches[0], self.patches[1]:
+            tools, _ = build_command_tools(object(), (adapter,))
+        context = SimpleNamespace(state=AgentTurnState())
+        await next(iter(tools.values())).handler(context, {"target": 101})
+        self.run.assert_not_awaited()
+        saved_run.assert_not_awaited()
+        await context.state.command_proposals[0].run()
+        saved_run.assert_awaited_once()
+        self.run.assert_not_awaited()

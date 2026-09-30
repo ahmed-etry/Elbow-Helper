@@ -11,7 +11,10 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 from ..models import AgentCapabilityEffect, RegisteredAgentTool
 from .outcomes import CommandOutcome, command_reply
 from .confirmation import ChangePreview, PreparedCommand
-from .registry import CommandAdapter, CommandCapability, build_command_capabilities
+from .registry import (
+    CommandAdapter, CommandCapability, PreparedCommandChange,
+    build_command_capabilities,
+)
 
 
 def _missing_value(value: Any) -> bool:
@@ -57,11 +60,15 @@ def build_command_tools(
                     outcome = _record_outcome(context, preview, selected.adapter.path)
                     return {"command": selected.adapter.path, "status": outcome.status,
                             "visibility": outcome.visibility}
+                prepared_run = lambda: selected.adapter.run(context, values)
+                if isinstance(preview, PreparedCommandChange):
+                    prepared_run = preview.run
+                    preview = preview.preview
                 if not isinstance(preview, ChangePreview):
                     raise TypeError("Command preview is invalid")
                 prepared = PreparedCommand(
                     selected.adapter.path, dict(values), preview,
-                    lambda: selected.adapter.run(context, values),
+                    prepared_run,
                     action_class=selected.adapter.classification,
                 )
                 context.state.command_proposals.append(prepared)

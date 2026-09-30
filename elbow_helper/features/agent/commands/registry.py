@@ -9,7 +9,7 @@ from typing import Any
 from elbow_helper.features.help.catalog import HELP_ENTRIES
 from elbow_helper.features.help.discovery import ParameterInfo, discover_commands
 from elbow_helper.infrastructure.ai import AgentToolDefinition
-from ..actions.contracts import ActionClass
+from ..actions.contracts import ActionClass, ChangePreview
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +42,16 @@ class CommandAdapter:
         if self.action_class is not None:
             return self.action_class
         return ActionClass.CHANGE if self.delivery == "confirm" else ActionClass.OUTPUT
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedCommandChange:
+    preview: ChangePreview
+    run: Callable[[], Awaitable[Any]]
+
+    def __post_init__(self) -> None:
+        if not callable(self.run):
+            raise ValueError("Prepared command needs a run handler")
 
 
 @dataclass(frozen=True, slots=True)
