@@ -32,7 +32,7 @@ READ_COVERAGE = {
 NOT_YET_ADAPTED = frozenset({
     "/accept", "/account add", "/account remove", "/achievement award",
     "/achievement remove", "/checkup", "/close",
-    "/cwl brief", "/cwl register", "/cwl roster", "/decline",
+    "/cwl register", "/cwl roster", "/decline",
     "/finalize", "/grant coins",
     "/grant ticket", "/hibernate",
     "/open", "/plan", "/raffle clear", "/raffle draw", "/raffle prize",

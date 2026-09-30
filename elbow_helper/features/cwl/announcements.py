@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from dataclasses import dataclass
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone as dt_timezone
@@ -49,6 +50,16 @@ from elbow_helper.infrastructure.persistence import write_json_atomic
 
 LOGGER = logging.getLogger(__name__)
 timezone = dt_timezone
+
+
+class CwlBriefUnavailable(ValueError):
+    """The requested CWL brief cannot be prepared."""
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedCwlBrief:
+    channel: Any
+    content: str
 
 
 def _signup_reminder_times(
@@ -541,31 +552,50 @@ class CwlAnnouncementMixin:
             await deny(interaction)
             return
         await interaction.response.send_message("Posting CWL brief...", ephemeral=True)
-        clan_code = clan.value
+        try:
+            brief = await self.prepare_cwl_brief(
+                clan=clan.value, mode=mode.value, helper_cwl=helper_cwl,
+                rotations=rotations, lead_cwl=lead_cwl, intro=intro,
+            )
+        except CwlBriefUnavailable as error:
+            await interaction.followup.send(str(error), ephemeral=True)
+            return
+        try:
+            await self.post_cwl_brief(brief)
+            await interaction.followup.send(f"Brief posted to {brief.channel.mention}.", ephemeral=True)
+        except (discord.Forbidden, discord.HTTPException, RuntimeError) as e:
+            LOGGER.exception("failed to send brief: %s", e)
+            await interaction.followup.send(
+                "I couldn't post the brief. Try again in a moment.",
+                ephemeral=True,
+            )
+
+    async def prepare_cwl_brief(
+        self, *, clan: str, mode: str, helper_cwl: str, rotations: bool,
+        lead_cwl: str | None = None, intro: str | None = None,
+    ) -> PreparedCwlBrief:
+        clan_code = clan
         channel_id = CLAN_CWL_INFO_CHANNELS.get(clan_code)
         team_role_id = CLAN_CWL_ROLE_IDS.get(clan_code)
         if not channel_id or not team_role_id:
-            await interaction.followup.send("CWL channels haven't been set up for that clan. Check the CWL setup.", ephemeral=True)
-            return
-        target_channel = interaction.client.get_channel(channel_id)
+            raise CwlBriefUnavailable(
+                "CWL channels haven't been set up for that clan. Check the CWL setup."
+            )
+        target_channel = self.bot.get_channel(channel_id)
         if not target_channel:
             try:
-                target_channel = await interaction.client.fetch_channel(channel_id)
+                target_channel = await self.bot.fetch_channel(channel_id)
             except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
                 LOGGER.warning("brief fetch channel failed: %s", e)
-                await interaction.followup.send(
+                raise CwlBriefUnavailable(
                     "The clan's CWL info channel hasn't been set up. Check that clan's CWL setup.",
-                    ephemeral=True,
-                )
-                return
+                ) from e
 
-        template = BRIEF_TEMPLATES.get(mode.value)
+        template = BRIEF_TEMPLATES.get(mode)
         if not template:
-            await interaction.followup.send(
+            raise CwlBriefUnavailable(
                 "That CWL brief version isn't available. Choose another version.",
-                ephemeral=True,
             )
-            return
         template = self._apply_brief_overrides(template, intro, rotations)
         cwl_team_role = f"<@&{team_role_id}>"
         lead_str = lead_cwl or "TBD"
@@ -575,15 +605,10 @@ class CwlAnnouncementMixin:
             lead_cwl=lead_str,
             helper_cwl=helper_cwl,
         )
-        try:
-            await self._send_chunked(target_channel, content)
-            await interaction.followup.send(f"Brief posted to {target_channel.mention}.", ephemeral=True)
-        except (discord.Forbidden, discord.HTTPException, RuntimeError) as e:
-            LOGGER.exception("failed to send brief: %s", e)
-            await interaction.followup.send(
-                "I couldn't post the brief. Try again in a moment.",
-                ephemeral=True,
-            )
+        return PreparedCwlBrief(target_channel, content)
+
+    async def post_cwl_brief(self, brief: PreparedCwlBrief) -> None:
+        await self._send_chunked(brief.channel, brief.content)
 
 
     def _apply_brief_overrides(
