@@ -112,6 +112,23 @@ def _schema(connection: sqlite3.Connection) -> None:
             connection.execute(statement)
 
 
+def _message_schema(connection: sqlite3.Connection) -> None:
+    connection.execute("""
+        CREATE TABLE agent_messages (
+            message_id INTEGER PRIMARY KEY,
+            guild_id INTEGER NOT NULL,
+            channel_id INTEGER NOT NULL,
+            requester_id INTEGER NOT NULL,
+            created_at REAL NOT NULL,
+            deleted_at REAL
+        )
+    """)
+    connection.execute("""
+        CREATE INDEX agent_messages_channel
+        ON agent_messages(guild_id, channel_id, created_at)
+    """)
+
+
 def _json(value: Any) -> str:
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
     if len(encoded) > 100_000:
@@ -126,8 +143,10 @@ class AgentActionRepository:
         self.path = path
         with self.connect() as connection:
             run_sqlite_migrations(
-                connection, (SQLiteMigration(1, "Agent action state", _schema),),
-                target_version=1,
+                connection, (
+                    SQLiteMigration(1, "Agent action state", _schema),
+                    SQLiteMigration(2, "Agent message ownership", _message_schema),
+                ), target_version=2,
             )
 
     def connect(self):
@@ -135,6 +154,40 @@ class AgentActionRepository:
             self.path, timeout_seconds=30, busy_timeout_ms=30_000,
             synchronous="FULL",
         )
+
+    def record_message(self, *, message_id: int, guild_id: int,
+                       channel_id: int, requester_id: int,
+                       now: float | None = None) -> None:
+        if any(type(value) is not int or value <= 0 for value in (
+            message_id, guild_id, channel_id, requester_id,
+        )):
+            raise ValueError("Invalid agent message")
+        with self.connect() as connection, sqlite_transaction(connection, immediate=True):
+            connection.execute("""
+                INSERT INTO agent_messages (
+                    message_id, guild_id, channel_id, requester_id, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(message_id) DO NOTHING
+            """, (message_id, guild_id, channel_id, requester_id,
+                  time.time() if now is None else now))
+
+    def agent_message(self, *, message_id: int, guild_id: int,
+                      channel_id: int) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            row = connection.execute("""
+                SELECT * FROM agent_messages
+                WHERE message_id=? AND guild_id=? AND channel_id=? AND deleted_at IS NULL
+            """, (message_id, guild_id, channel_id)).fetchone()
+        return dict(row) if row is not None else None
+
+    def mark_message_deleted(self, *, message_id: int, guild_id: int,
+                             channel_id: int, now: float | None = None) -> bool:
+        with self.connect() as connection, sqlite_transaction(connection, immediate=True):
+            changed = connection.execute("""
+                UPDATE agent_messages SET deleted_at=?
+                WHERE message_id=? AND guild_id=? AND channel_id=? AND deleted_at IS NULL
+            """, (time.time() if now is None else now, message_id, guild_id, channel_id))
+            return changed.rowcount == 1
 
     def create_run(
         self, *, guild_id: int, channel_id: int, request_message_id: int,

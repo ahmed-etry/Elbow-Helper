@@ -75,3 +75,23 @@ class ActionRepositoryTests(unittest.TestCase):
         self.assertEqual(self.repository.prune_log(
             now=1003 + ACTION_LOG_RETENTION_SECONDS,
         ), 1)
+
+    def test_only_recorded_agent_posts_can_be_edited_or_deleted(self):
+        self.assertIsNone(self.repository.agent_message(
+            message_id=5, guild_id=1, channel_id=2,
+        ))
+        self.repository.record_message(
+            message_id=5, guild_id=1, channel_id=2, requester_id=4, now=1000,
+        )
+        self.assertIsNone(self.repository.agent_message(
+            message_id=5, guild_id=1, channel_id=3,
+        ))
+        self.assertEqual(self.repository.agent_message(
+            message_id=5, guild_id=1, channel_id=2,
+        )["requester_id"], 4)
+        self.assertTrue(self.repository.mark_message_deleted(
+            message_id=5, guild_id=1, channel_id=2, now=1001,
+        ))
+        self.assertIsNone(self.repository.agent_message(
+            message_id=5, guild_id=1, channel_id=2,
+        ))
