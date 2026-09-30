@@ -35,7 +35,8 @@ def preview_text(proposals: list[PreparedCommand]) -> str:
             count=count,
             unit=ACTION_PREVIEW_UNIT_ONE if count == 1 else ACTION_PREVIEW_UNIT_MANY,
         ))
-        lines.extend(line.strip() or "-" for line in proposal.preview.lines)
+        lines.extend(part.strip() or "-" for line in proposal.preview.lines
+                     for part in line.split("\n"))
         if proposal.action_class is ActionClass.IRREVERSIBLE:
             lines.append(ACTION_CANNOT_UNDO)
     return COMMAND_PREVIEW_HEADER + "\n" + "\n".join(lines)

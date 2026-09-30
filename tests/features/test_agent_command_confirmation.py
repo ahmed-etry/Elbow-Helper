@@ -71,6 +71,17 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(text.count("Change target"), 3)
         self.assertEqual(text.count(COMMAND_PREVIEW_HEADER), 1)
 
+    async def test_multiline_details_keep_the_preview_free_of_blank_lines(self):
+        proposal, _, _ = self.proposal(1)
+        proposal = PreparedCommand(
+            proposal.path, proposal.values,
+            ChangePreview(("Details: first\n\nlast",), proposal.preview.recheck),
+            proposal.run,
+        )
+        text = preview_text([proposal])
+        self.assertNotIn("\n\n", text)
+        self.assertIn("Details: first\n-\nlast", text)
+
     async def test_other_member_cannot_confirm_or_cancel(self):
         proposal, check, run = self.proposal(1)
         view = self.view((proposal,))
