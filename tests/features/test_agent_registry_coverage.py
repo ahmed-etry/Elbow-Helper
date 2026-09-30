@@ -38,9 +38,6 @@ NOT_YET_ADAPTED = frozenset({
     "/roster delete", "/roster edit", "/roster export", "/roster post",
     "/roster schedule", "/roster timing", "/transfer cancel",
     "/transfer reminder", "/transfer request",
-    "/warstatement breaking-rules", "/warstatement first-claim",
-    "/warstatement missed-attacks", "/warstatement one-attack-missed",
-    "/warstatement war-filler",
 })
 
 
