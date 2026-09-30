@@ -1,17 +1,16 @@
 from datetime import datetime, timezone
 import unittest
 
-from elbow_helper.features.agent.prompts import COMMAND_SYSTEM_PROMPT, SYSTEM_PROMPT, build_request_prompt
+from elbow_helper.features.agent.prompts import ACTION_SYSTEM_PROMPT, SYSTEM_PROMPT, build_request_prompt
 
 
 class RequestPromptTests(unittest.TestCase):
-    def test_command_switch_changes_only_command_authority_text(self):
+    def test_action_switch_changes_only_action_authority_text(self):
         self.assertIn("cannot change live Discord, roster, role, or other bot data", SYSTEM_PROMPT)
-        self.assertIn("You cannot edit Discord or bot data directly", COMMAND_SYSTEM_PROMPT)
-        self.assertIn("You can run the bot commands listed among your capabilities", COMMAND_SYSTEM_PROMPT)
-        self.assertIn("only after the member confirms it", COMMAND_SYSTEM_PROMPT)
-        self.assertNotEqual(SYSTEM_PROMPT, COMMAND_SYSTEM_PROMPT)
-        self.assertNotIn("You can run the bot commands", SYSTEM_PROMPT)
+        self.assertIn("Changes run only after the member who asked confirms", ACTION_SYSTEM_PROMPT)
+        self.assertIn("An irreversible change has its own confirmation", ACTION_SYSTEM_PROMPT)
+        self.assertNotEqual(SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT)
+        self.assertNotIn("Confirmed changes run", SYSTEM_PROMPT)
 
     def test_safety_and_truthfulness_rules_are_present(self):
         for rule in (

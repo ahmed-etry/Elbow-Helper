@@ -173,6 +173,8 @@ CONTRACTS: Mapping[str, CapabilityContract] = {
     "read_xlsx_import": CapabilityContract((('report_id', 'xlsx_import'), ('sheet_name', 'workbook_sheet')), (), source_scope='retained_attachment', result_channel_fields=('source_channel_id',)),
     "read_text_import": CapabilityContract((('report_id', 'text_import'),), (), source_scope='retained_attachment', result_channel_fields=('source_channel_id',)),
     "read_approved_knowledge_report": CapabilityContract((('report_id', 'approved_knowledge_report'), ('section_id', 'approved_knowledge_section')), ()),
+    "read_agent_action_log": CapabilityContract((), (), result_entity_keys=(('actions[].log_id', 'agent_action_log'),)),
+    "undo_agent_action": CapabilityContract((('log_id', 'agent_action_log'),), ()),
     "remember_task_instruction": CapabilityContract((('replaces_id', 'task_instruction'),), (), source_scope='request_context'),
     "retire_task_instruction": CapabilityContract((('instruction_id', 'task_instruction'),), (), source_scope='request_context'),
     "prepare_spreadsheet": CapabilityContract((), (), source_scope='request_context'),

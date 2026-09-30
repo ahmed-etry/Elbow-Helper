@@ -9,6 +9,7 @@ from typing import Any
 from elbow_helper.features.help.catalog import HELP_ENTRIES
 from elbow_helper.features.help.discovery import ParameterInfo, discover_commands
 from elbow_helper.infrastructure.ai import AgentToolDefinition
+from ..actions.contracts import ActionClass
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,6 +21,25 @@ class CommandAdapter:
     entity_options: tuple[tuple[str, str], ...] = ()
     check_period: Callable[[Mapping[str, Any], Mapping[str, Any]], str] | None = None
     prepare: Callable[[Any, Mapping[str, Any]], Awaitable[Any]] | None = None
+    action_class: ActionClass | None = None
+
+    def __post_init__(self) -> None:
+        if self.delivery == "confirm" and self.classification not in (
+            ActionClass.CHANGE, ActionClass.IRREVERSIBLE,
+        ):
+            raise ValueError("Confirmed commands must be changes")
+        if self.delivery == "confirm" and self.prepare is None:
+            raise ValueError("Confirmed commands need a preview")
+        if self.delivery != "confirm" and self.classification in (
+            ActionClass.CHANGE, ActionClass.IRREVERSIBLE,
+        ):
+            raise ValueError("Changes need a confirmation preview")
+
+    @property
+    def classification(self) -> ActionClass:
+        if self.action_class is not None:
+            return self.action_class
+        return ActionClass.CHANGE if self.delivery == "confirm" else ActionClass.OUTPUT
 
 
 @dataclass(frozen=True, slots=True)

@@ -5,15 +5,36 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.agent.commands import CommandAdapter, build_command_capabilities
+from elbow_helper.features.agent.commands.bridge import build_command_tools
+from elbow_helper.features.agent.tools import build_agent_tools
+from elbow_helper.features.agent.conversation.context import estimate_tokens
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 from elbow_helper.features.agent.commands.adapters import enabled_adapters
-from elbow_helper.features.agent.plan.format import capability_list
+from elbow_helper.features.agent.plan.format import capability_list, system_instructions
 from elbow_helper.features.agent.models import RegisteredAgentTool, AgentCapabilityEffect
+from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin
 from elbow_helper.features.clan_health.commands.health import ClanHealthRootCommandMixin
 
 
 class CommandRegistryTests(unittest.TestCase):
+    def test_full_action_catalogue_fits_the_system_prompt_budget(self):
+        bot = SimpleNamespace(tree=SimpleNamespace(get_commands=lambda guild=None: (
+            [RecruitmentCommandMixin.slash_opinion, ClanHealthRootCommandMixin.health]
+            if guild is not None else []
+        )))
+        registry = build_agent_tools()
+        commands, _ = build_command_tools(bot, enabled_adapters())
+        registry.update(commands)
+        prompt = system_instructions(registry, actions_enabled=True)
+        self.assertLess(estimate_tokens(prompt), 35_000)
+        self.assertEqual(len(capability_list(registry).splitlines()), len(registry))
+        self.assertTrue(all(" | class " in line for line in capability_list(registry).splitlines()))
+        self.assertTrue(all(
+            tool.prepares_action for tool in registry.values()
+            if tool.action_class in (ActionClass.CHANGE, ActionClass.IRREVERSIBLE)
+        ))
+
     def test_enabled_adapters_match_the_registered_commands(self):
         bot = SimpleNamespace(tree=SimpleNamespace(get_commands=lambda guild=None: (
             [RecruitmentCommandMixin.slash_opinion, ClanHealthRootCommandMixin.health]

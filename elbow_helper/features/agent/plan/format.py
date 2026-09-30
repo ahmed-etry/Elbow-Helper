@@ -14,9 +14,9 @@ PLAN_TOOL_NAME = "submit_request_plan"
 
 
 def system_instructions(registry: Mapping[str, RegisteredAgentTool], *, actions_enabled: bool = True) -> str:
-    from ..prompts import COMMAND_SYSTEM_PROMPT, SYSTEM_PROMPT
-    prompt = COMMAND_SYSTEM_PROMPT if actions_enabled else SYSTEM_PROMPT
-    command_rules = COMMAND_PLANNING_INSTRUCTIONS if actions_enabled else ""
+    from ..prompts import ACTION_SYSTEM_PROMPT, SYSTEM_PROMPT
+    prompt = ACTION_SYSTEM_PROMPT if actions_enabled else SYSTEM_PROMPT
+    command_rules = ACTION_PLANNING_INSTRUCTIONS if actions_enabled else ""
     return (prompt + "\n\n" + PLANNING_INSTRUCTIONS + command_rules
             + "\n\n<capabilities>\n" + capability_list(registry) + "\n</capabilities>")
 
@@ -29,7 +29,9 @@ def _argument(detail: Mapping) -> str:
         kind = "{" + ",".join(field + ":" + _argument(value)
                             for field, value in detail.get("properties", {}).items()) + "}"
     if "enum" in detail:
-        kind += "=" + "/".join(map(str, detail["enum"]))
+        choices = detail["enum"]
+        kind += ("=" + "/".join(map(str, choices)) if len(choices) <= 20
+                 else f"({len(choices)} choices)")
     bounds = [f"{key}={detail[key]}" for key in
               ("minimum", "maximum", "minItems", "maxItems", "maxLength") if key in detail]
     return kind + ("(" + ",".join(bounds) + ")" if bounds else "")
@@ -52,6 +54,17 @@ def capability_list(registry: Mapping[str, RegisteredAgentTool]) -> str:
             f"{field}:{_argument(detail)}{'*' if field in required else ''}"
             for field, detail in schema.get("properties", {}).items()
         ]
+        if len(arguments) > 16:
+            arguments = [
+                f"{field}:{_argument(detail)}*"
+                for field, detail in schema["properties"].items() if field in required
+            ] + [
+                "optional " + "/".join(
+                    f"{field}:{detail.get('type', 'value')}"
+                    for field, detail in schema["properties"].items()
+                    if field not in required
+                )
+            ]
         meaning = " ".join(tool.definition.description.split(".", 1)[0].split())[:120]
         time_fields = ",".join(contract.time_fields) if contract else ""
         latest_fields = ",".join(contract.latest_fields) if contract else ""
@@ -61,7 +74,7 @@ def capability_list(registry: Mapping[str, RegisteredAgentTool]) -> str:
         ) if contract else ""
         patterns = ",".join(f"{field}={pattern}" for field, pattern in contract.value_patterns) if contract else ""
         entries.append(
-            f"{name}: {meaning} | args {','.join(arguments)} | "
+            f"{name}: {meaning} | class {tool.action_class.value} | args {','.join(arguments)} | "
             f"time {time_fields} | latest {latest_fields} | periods {period_results} | entity {entity_fields}"
             + (f" | formats {patterns}" if patterns else "")
             + (" | output" if tool.effect is AgentCapabilityEffect.ARTIFACT else "")
@@ -120,6 +133,8 @@ For a utc_range, write kind, start and exclusive end in UTC. For a key, write ki
 Use low effort unless the answer needs substantial synthesis. After checked results arrive, answer from those results. Request more steps only for a remaining gap, and stay inside the declared scope unless a revision is needed. Mention a limit only if it changes the conclusion."""
 
 
-COMMAND_PLANNING_INSTRUCTIONS = """
+ACTION_PLANNING_INSTRUCTIONS = """
 
-When a listed command matches the request, include its command capability as a step. Use its registered option types and choices. Omit a required value when the member has not supplied or resolved it; the command will ask for that value. Never guess an ambiguous value. A command's result is delivered by code at that command's visibility."""
+Each capability is marked read, output, change or irreversible. Plan the reads needed to identify exact targets before choosing a change. If choosing targets needs judgment from read results, plan those reads first and add changes in the next round. Use an earlier result reference when a value is copied unchanged. Change steps share one preview in execution order; an irreversible step needs its own confirmation. The member confirms the preview before changes run in the background. Never say a change finished until the reported outcome confirms it.
+
+When a listed command matches the request, include its command capability as a step. Use its registered option types and choices. Omit a required value when the member has not supplied or resolved it; the command will ask for all missing values. Never guess an ambiguous value. Code delivers each result at its required visibility."""

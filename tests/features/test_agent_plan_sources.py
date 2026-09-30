@@ -24,6 +24,7 @@ class NamedSourceTests(unittest.TestCase):
         for clan in CLANS.values():
             with self.subTest(code=clan.code):
                 self.assertEqual(requested_clans(clan.code), frozenset({clan.code}))
+                self.assertEqual(requested_clans(clan.code.lower()), frozenset())
                 self.assertEqual(requested_clans(clan.tag), frozenset({clan.code}))
                 self.assertEqual(requested_player_tags(clan.tag), frozenset())
 

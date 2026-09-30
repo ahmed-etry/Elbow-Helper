@@ -51,9 +51,9 @@ async def execute_plan(
                  and set(steps[step_id]["depends_on"]) <= results.keys()]
         if not ready:
             raise ValueError("Step dependencies cannot be resolved")
-        serial = next((step for step in ready if parallel is not None and not parallel(step)), None)
-        if serial is not None:
-            ready = [serial]
+        if parallel is not None:
+            reads = [step for step in ready if parallel(step)]
+            ready = reads or [ready[0]]
         tasks = [asyncio.create_task(run_step(step)) for step in ready]
         try:
             outcomes = await asyncio.gather(*tasks, return_exceptions=True)

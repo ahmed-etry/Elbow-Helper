@@ -14,6 +14,9 @@ from elbow_helper.features.agent.plan.checker import _kind, _source_check, _time
 from elbow_helper.features.agent.capabilities import CONTRACTS, SAVED_REPORT_CONTRACTS
 from elbow_helper.features.agent.tools import build_agent_tools
 from elbow_helper.features.agent.tools.saved_reports import original_tool
+from elbow_helper.features.agent.actions.contracts import ActionClass
+from elbow_helper.features.agent.models import RegisteredAgentTool
+from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 
 def _sample(schema):
@@ -112,6 +115,29 @@ def _period_end(encoding):
 
 
 class PlanContractTests(unittest.TestCase):
+    def test_irreversible_step_never_bundles_with_another_change(self):
+        schema = {"type": "object", "properties": {}, "required": [],
+                  "additionalProperties": False}
+        registry = {
+            name: RegisteredAgentTool(
+                AgentToolDefinition(name, "Synthetic capability.", schema),
+                lambda context, arguments: {}, action_class=action_class,
+            ) for name, action_class in (
+                ("read", ActionClass.READ),
+                ("change", ActionClass.CHANGE),
+                ("irreversible", ActionClass.IRREVERSIBLE),
+            )
+        }
+        def plan(names):
+            return {"goal": "Synthetic action", "effort": "low", "output": "text",
+                    "periods": [], "entities": [], "steps": [{
+                        "id": str(index), "capability": name, "arguments": {},
+                        "reason": "Synthetic step", "depends_on": [],
+                    } for index, name in enumerate(names)]}
+        self.assertTrue(check_plan(plan(("read", "irreversible")), registry).ok)
+        self.assertFalse(check_plan(plan(("irreversible", "change")), registry).ok)
+        self.assertFalse(check_plan(plan(("irreversible", "irreversible")), registry).ok)
+
     @classmethod
     def setUpClass(cls):
         cls.registry = build_agent_tools()

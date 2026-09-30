@@ -17,9 +17,12 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from .conversation.state import ConversationCheckpoint, ConversationTurn
 from .reports.base import ReportArtifact
 from .conversation.instructions import TaskInstruction, WorkingState
+from .actions.contracts import ActionClass
 
 if TYPE_CHECKING:
     from .research.repository import ResearchJobRepository
+    from .actions.repository import AgentActionRepository
+    from .actions.runner import AgentActionRunner
     from .knowledge.store import KnowledgeStore
     from elbow_helper.features.clan_health.queries import ClanHealthQueries
     from elbow_helper.features.clan_reporting.queries import ClanReportingQueries
@@ -129,6 +132,8 @@ class AgentRequestContext:
     role_connection_queries: RoleConnectionQueries | None = None
     knowledge_store: KnowledgeStore | None = None
     research_jobs: ResearchJobRepository | None = None
+    action_repository: AgentActionRepository | None = None
+    action_runner: AgentActionRunner | None = None
     conversation_root_id: int | None = None
     attachment_sources: tuple[discord.Message, ...] = ()
     deadline_monotonic: float | None = None
@@ -154,3 +159,5 @@ class RegisteredAgentTool:
     definition: AgentToolDefinition
     handler: AgentToolHandler
     effect: AgentCapabilityEffect = AgentCapabilityEffect.READ
+    action_class: ActionClass = ActionClass.READ
+    prepares_action: bool = False

@@ -7,6 +7,18 @@ from elbow_helper.features.agent.plan.executor import execute_plan
 
 
 class PlanExecutorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_ready_reads_finish_before_change_previews(self):
+        order = []
+        async def run(step, arguments, earlier):
+            order.append(step["id"])
+            return {"value": step["id"]}
+        plan = {"steps": [
+            {"id": "change", "arguments": {}, "depends_on": []},
+            {"id": "read", "arguments": {}, "depends_on": []},
+        ]}
+        await execute_plan(plan, run, parallel=lambda step: step["id"] == "read")
+        self.assertEqual(order, ["read", "change"])
+
     async def test_failed_batch_waits_for_other_steps_before_returning(self):
         finished = asyncio.Event()
         async def run(step, arguments, earlier):

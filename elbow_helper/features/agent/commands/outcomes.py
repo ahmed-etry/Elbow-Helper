@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from ..models import AgentAttachment
 from ..wording import COMMAND_EMPTY, COMMAND_MISSING_VALUE, COMMAND_PRIVATE_NOTE, COMMAND_UNAVAILABLE
@@ -16,6 +17,7 @@ class CommandOutcome:
     private_parts: tuple[str, ...] = ()
     attachments: tuple[AgentAttachment, ...] = ()
     missing: tuple[str, ...] = ()
+    after: Any = None
 
     @classmethod
     def needs_input(cls, descriptions: tuple[str, ...]) -> "CommandOutcome":
@@ -33,7 +35,6 @@ def command_reply(outcomes: list[CommandOutcome]) -> str:
     ))
     if missing:
         return COMMAND_MISSING_VALUE.format(
-            value_word="value" if len(missing) == 1 else "values",
             values="\n".join(f"- {item}" for item in missing),
         )
     parts = [item.text for item in outcomes

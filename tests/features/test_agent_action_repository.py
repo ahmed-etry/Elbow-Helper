@@ -1,0 +1,77 @@
+"""Action attempts remain visible and cannot be claimed twice."""
+
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import unittest
+
+from elbow_helper.features.agent.actions.repository import (
+    ACTION_LOG_RETENTION_SECONDS, AgentActionRepository,
+)
+
+
+class ActionRepositoryTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.repository = AgentActionRepository(Path(self.directory.name) / "agent_actions.sqlite3")
+
+    def create(self):
+        return self.repository.create_run(
+            guild_id=1, channel_id=2, request_message_id=3,
+            requester_id=4, confirmer_id=4,
+            steps=({"name": "synthetic_change", "class": "change",
+                    "values": {"target": 5}, "preview": ["Change target 5"],
+                    "before": {"value": 1}},), now=1000,
+        )
+
+    def test_claim_and_step_are_single_use_with_a_durable_log(self):
+        run_id = self.create()
+        self.assertTrue(self.repository.claim(run_id, owner="worker", now=1001))
+        self.assertFalse(self.repository.claim(run_id, owner="other", now=1001))
+        self.assertTrue(self.repository.start_step(run_id, 0, owner="worker", now=1002))
+        self.assertFalse(self.repository.start_step(run_id, 0, owner="worker", now=1002))
+        self.assertEqual(self.repository.recent_log(requester_id=4)[0]["outcome"], "started")
+        self.assertTrue(self.repository.finish_step(
+            run_id, 0, owner="worker", status="completed",
+            outcome={"status": "complete"}, after={"value": 2}, now=1003,
+        ))
+        self.assertFalse(self.repository.finish_step(
+            run_id, 0, owner="worker", status="completed", outcome={}, now=1004,
+        ))
+        self.assertTrue(self.repository.finish_run(run_id, owner="worker", status="completed"))
+        self.assertEqual(self.repository.run(run_id)["steps"][0]["status"], "completed")
+        self.assertIn('"value": 1', self.repository.recent_log(requester_id=4)[0]["before_json"])
+        self.assertIn('"value": 2', self.repository.recent_log(requester_id=4)[0]["after_json"])
+
+    def test_restart_interrupts_running_steps_and_never_reclaims_them(self):
+        run_id = self.create()
+        self.repository.claim(run_id, owner="worker", now=1001)
+        self.repository.start_step(run_id, 0, owner="worker", now=1002)
+        interrupted = self.repository.interrupt_incomplete(guild_id=1, now=1003)
+        self.assertEqual([run["run_id"] for run in interrupted], [run_id])
+        self.assertEqual(self.repository.run(run_id)["steps"][0]["status"], "interrupted")
+        self.assertEqual(self.repository.recent_log(requester_id=4)[0]["outcome"], "interrupted")
+        self.assertFalse(self.repository.claim(run_id, owner="new-worker", now=1004))
+        self.assertEqual(len(self.repository.unreported_interruptions(guild_id=1)), 1)
+        self.repository.mark_reported(run_id, now=1005)
+        self.assertEqual(self.repository.unreported_interruptions(guild_id=1), [])
+
+    def test_stop_and_log_retention(self):
+        run_id = self.create()
+        self.repository.claim(run_id, owner="worker", now=1001)
+        self.assertFalse(self.repository.request_stop(run_id, requester_id=99))
+        self.assertTrue(self.repository.request_stop(run_id, requester_id=4))
+        self.assertFalse(self.repository.start_step(run_id, 0, owner="worker", now=1002))
+        self.repository.finish_run(run_id, owner="worker", status="stopped")
+        self.assertEqual(self.repository.prune_log(now=1003), 0)
+
+    def test_log_is_kept_for_at_least_ninety_days(self):
+        run_id = self.create()
+        self.repository.claim(run_id, owner="worker", now=1001)
+        self.repository.start_step(run_id, 0, owner="worker", now=1002)
+        self.assertEqual(self.repository.prune_log(
+            now=1002 + ACTION_LOG_RETENTION_SECONDS,
+        ), 0)
+        self.assertEqual(self.repository.prune_log(
+            now=1003 + ACTION_LOG_RETENTION_SECONDS,
+        ), 1)

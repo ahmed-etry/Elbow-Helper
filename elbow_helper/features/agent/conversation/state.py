@@ -261,6 +261,10 @@ class ConversationStore:
         key = self._replies.get((guild_id, channel_id, reply_id))
         return self._conversations.get(key)
 
+    def get(self, root_message_id: int) -> Conversation | None:
+        self._prune()
+        return self._conversations.get(root_message_id)
+
     def create(self, guild_id: int, channel_id: int, message_id: int) -> Conversation:
         self._prune()
         existing = self._conversations.get(message_id)

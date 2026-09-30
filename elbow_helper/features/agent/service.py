@@ -20,6 +20,7 @@ from elbow_helper.infrastructure.ai import AgentToolResult
 from elbow_helper.infrastructure.ai import TextGenerationError
 
 from .models import AgentCapabilityEffect, AgentRequestContext
+from .actions.contracts import ActionClass
 from .access import (
     AgentAccessLost, AgentDisclosureDenied, require_access,
     require_access_requirements,
@@ -217,6 +218,9 @@ class AgentService:
         registry = build_agent_tools()
         command_capabilities = {}
         actions_available = self._actions_enabled and getattr(context.bot, "tree", None) is not None
+        if not actions_available:
+            registry = {name: tool for name, tool in registry.items()
+                        if tool.action_class not in (ActionClass.CHANGE, ActionClass.IRREVERSIBLE)}
         if actions_available:
             command_tools, command_capabilities = build_command_tools(
                 context.bot, enabled_adapters(),
@@ -538,8 +542,9 @@ class AgentService:
                     status = "completed"
                     return command_reply(context.state.command_outcomes)
                 expected_previews = sum(
-                    command_capabilities[step["capability"]].adapter.delivery == "confirm"
-                    for step in plan["steps"] if step["capability"] in command_capabilities
+                    registry[step["capability"]].action_class in (
+                        ActionClass.CHANGE, ActionClass.IRREVERSIBLE,
+                    ) for step in plan["steps"]
                 )
                 if expected_previews and len(context.state.command_proposals) != expected_previews:
                     context.state.command_proposals.clear()

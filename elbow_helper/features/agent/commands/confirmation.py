@@ -1,58 +1,55 @@
-"""Hold proposed command changes until their requester confirms."""
+"""Show proposed changes and queue one confirmed run."""
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
-import io
 import logging
 from typing import Any
 
 import discord
 
-from ..access import AgentAccessLost, require_access, require_disclosure_access
+from ..actions.contracts import ActionClass, ChangePreview, PreparedAction, check_bundle
 from ..wording import (
+    ACTION_CANNOT_UNDO, ACTION_PREVIEW_SUMMARY,
+    ACTION_PREVIEW_UNIT_MANY, ACTION_PREVIEW_UNIT_ONE,
     COMMAND_CANCEL_BUTTON, COMMAND_CANCELLED, COMMAND_CONFIRM_BUTTON,
-    COMMAND_CONFIRM_FAILED, COMMAND_PREVIEW_CHANGED, COMMAND_PREVIEW_EXPIRED,
+    COMMAND_PREVIEW_EXPIRED,
     COMMAND_PREVIEW_HEADER, COMMAND_PREVIEW_OWNER,
-    COMMAND_PREVIEW_USED, COMMAND_NO_CHANGES,
+    COMMAND_PREVIEW_USED, COMMAND_UNAVAILABLE,
 )
-from .outcomes import CommandOutcome, command_reply
 from .private_view import PrivateCommandView
 
 
 LOGGER = logging.getLogger(__name__)
 CONFIRMATION_TIMEOUT = 300.0
-MAX_PREVIEW_CHARACTERS = 1900
-
-
-@dataclass(frozen=True, slots=True)
-class ChangePreview:
-    lines: tuple[str, ...]
-    recheck: Callable[[], Awaitable[bool]]
-
-
-@dataclass(frozen=True, slots=True)
-class PreparedCommand:
-    path: str
-    values: Mapping[str, Any]
-    preview: ChangePreview
-    run: Callable[[], Awaitable[CommandOutcome]]
+PreparedCommand = PreparedAction
 
 
 def preview_text(proposals: list[PreparedCommand]) -> str:
-    lines = [line.strip() or "-" for proposal in proposals for line in proposal.preview.lines]
-    return COMMAND_PREVIEW_HEADER + "\n" + "\n".join(lines or ["-"])
+    check_bundle(tuple(proposals))
+    lines = []
+    for index, proposal in enumerate(proposals, start=1):
+        count = proposal.preview.count
+        lines.append(ACTION_PREVIEW_SUMMARY.format(
+            index=index, name=proposal.preview.summary or proposal.path,
+            count=count,
+            unit=ACTION_PREVIEW_UNIT_ONE if count == 1 else ACTION_PREVIEW_UNIT_MANY,
+        ))
+        lines.extend(line.strip() or "-" for line in proposal.preview.lines)
+        if proposal.action_class is ActionClass.IRREVERSIBLE:
+            lines.append(ACTION_CANNOT_UNDO)
+    return COMMAND_PREVIEW_HEADER + "\n" + "\n".join(lines)
 
 
 class ConfirmationView(discord.ui.View):
     def __init__(self, owner_id: int, proposals: tuple[PreparedCommand, ...], context: Any,
-                 private_result: PrivateCommandView | None = None):
+                 private_result: PrivateCommandView | None = None, runner: Any = None):
         super().__init__(timeout=CONFIRMATION_TIMEOUT)
+        check_bundle(proposals)
         self.owner_id = owner_id
         self.proposals = proposals
         self.context = context
+        self.runner = runner
         self.message = None
         self.preview = preview_text(proposals)
         self.expired = False
@@ -109,73 +106,36 @@ class ConfirmationView(discord.ui.View):
             if not await self._claim(interaction):
                 return
             await interaction.response.defer()
-            started = False
-            finished: list[str] = []
             try:
-                require_access(self.context.guild, self.owner_id,
-                               self.context.source_message.channel)
-                await require_disclosure_access(self.context)
-                checks = [await proposal.preview.recheck() for proposal in self.proposals]
-                if not all(checks):
-                    await interaction.followup.send(COMMAND_PREVIEW_CHANGED, ephemeral=True)
-                    LOGGER.info("Agent command preview changed: requester=%s", self.owner_id)
-                    return
-                for proposal in self.proposals:
-                    require_access(self.context.guild, self.owner_id,
-                                   self.context.source_message.channel)
-                    await require_disclosure_access(self.context)
-                    started = True
-                    outcome = await proposal.run()
-                    if not isinstance(outcome, CommandOutcome):
-                        raise TypeError("Command returned an invalid result")
-                    finished.append(proposal.path)
-                    await require_disclosure_access(self.context)
-                    await self._send_outcome(interaction, outcome)
-                    LOGGER.info("Agent command confirmed: requester=%s command=%s status=%s",
-                                self.owner_id, proposal.path, outcome.status)
-            except AgentAccessLost:
-                await interaction.followup.send(
-                    self._failure(finished) if started else COMMAND_PREVIEW_CHANGED,
-                    ephemeral=True,
+                if self.runner is None:
+                    raise RuntimeError("Action runner is unavailable")
+                await self.runner.submit(
+                    self.context, self.proposals, confirmer_id=interaction.user.id,
                 )
-                LOGGER.info("Agent command access changed: requester=%s", self.owner_id)
+                LOGGER.info("Agent preview confirmed: requester=%s", self.owner_id)
             except Exception:
-                LOGGER.exception("Agent command confirmation failed: requester=%s", self.owner_id)
-                await interaction.followup.send(self._failure(finished), ephemeral=True)
+                LOGGER.exception("Agent preview could not be queued: requester=%s", self.owner_id)
+                await self.context.source_message.channel.send(
+                    COMMAND_UNAVAILABLE, allowed_mentions=discord.AllowedMentions.none(),
+                )
             finally:
                 if self.message is not None:
                     try:
                         await self.message.edit(view=self)
                     except discord.DiscordException:
-                        LOGGER.warning("Agent command preview could not be disabled")
+                        LOGGER.warning("Agent preview could not be disabled")
 
-    def _failure(self, finished: list[str]) -> str:
-        remaining = [proposal.path for proposal in self.proposals[len(finished):]]
-        return COMMAND_CONFIRM_FAILED.format(
-            finished=", ".join(finished) or COMMAND_NO_CHANGES,
-            remaining=", ".join(remaining) or COMMAND_NO_CHANGES,
-        )
-
-    async def _send_outcome(self, interaction: discord.Interaction, outcome: CommandOutcome) -> None:
-        private = outcome.visibility == "private"
-        if private:
-            parts = ((outcome.text,) if outcome.text else ()) + outcome.private_parts
-        else:
-            parts = (outcome.text,)
-        if not any(parts) and not outcome.attachments:
-            parts = (command_reply([outcome]),)
-        files = [discord.File(io.BytesIO(item.data), filename=item.filename)
-                 for item in outcome.attachments]
-        try:
-            for index, part in enumerate(parts or ("",)):
-                await interaction.followup.send(
-                    part or None, files=files if index == 0 else [],
-                    ephemeral=private,
-                    allowed_mentions=discord.AllowedMentions.none(),
-                )
-        finally:
-            for file in files:
-                file.close()
+    async def invalidate(self) -> None:
+        async with self._lock:
+            if self.used or self.expired:
+                return
+            self.used = True
+            self._disable()
+            if self.message is not None:
+                try:
+                    await self.message.edit(view=self)
+                except discord.DiscordException:
+                    LOGGER.warning("Agent preview could not be invalidated")
 
     async def on_timeout(self) -> None:
         self.expired = True

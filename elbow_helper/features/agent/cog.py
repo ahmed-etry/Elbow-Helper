@@ -67,6 +67,8 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
         knowledge_store=None,
         research_jobs=None,
         research_runner=None,
+        action_runner=None,
+        action_repository=None,
         transcript_archive: TranscriptArchive | None = None,
         persistence: ConversationPersistence | None = None,
     ):
@@ -92,6 +94,10 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
         self.knowledge_store = knowledge_store
         self.research_jobs = research_jobs
         self.research_runner = research_runner
+        self.action_runner = action_runner
+        if self.action_runner is not None:
+            self.action_runner.on_finish = self._record_action_outcome
+        self.action_repository = action_repository
         self.transcript_archive = transcript_archive
         self.persistence = persistence
         self._cleanup_task: asyncio.Task | None = None
@@ -100,6 +106,7 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
         )
         self._conversations = ConversationStore()
         self._member_locks: WeakValueDictionary[int, asyncio.Lock] = WeakValueDictionary()
+        self._previews: WeakValueDictionary[int, object] = WeakValueDictionary()
         self._tasks: set[asyncio.Task] = set()
         self._semaphore = asyncio.Semaphore(AGENT_CONCURRENCY)
 
@@ -112,6 +119,8 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
             self._cleanup_task = asyncio.create_task(self._prune_checkpoints())
         if self.research_runner is not None:
             self.research_runner.start()
+        if self.action_runner is not None:
+            self.action_runner.start()
 
     async def _prune_checkpoints(self) -> None:
         while True:
@@ -126,6 +135,11 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
                     await asyncio.to_thread(self.research_jobs.prune)
                 except (OSError, sqlite3.Error, RuntimeError):
                     LOGGER.exception("Agent research job expiry failed")
+            if self.action_repository is not None:
+                try:
+                    await asyncio.to_thread(self.action_repository.prune_log)
+                except (OSError, sqlite3.Error, RuntimeError):
+                    LOGGER.exception("Agent action log expiry failed")
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
@@ -137,6 +151,10 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
             return
         if not has_agent_entry_access(member):
             return
+        reference = getattr(message, "reference", None)
+        preview = self._previews.get(getattr(reference, "message_id", None))
+        if preview is not None and preview.owner_id == member.id:
+            await preview.invalidate()
         question = self._extract_question(message)
         if not question:
             return
@@ -237,8 +255,37 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
             self._cleanup_task.cancel()
         if self.research_runner is not None:
             self.research_runner.cancel()
+        if self.action_runner is not None:
+            self.action_runner.cancel()
         for task in tuple(self._tasks):
             task.cancel()
+
+    async def _record_action_outcome(self, context, run, message) -> None:
+        root_id = context.conversation_root_id
+        if root_id is None:
+            return
+        conversation = self._conversations.get(root_id)
+        if conversation is None:
+            return
+        async with conversation.lock:
+            conversation.append(ConversationTurn(
+                text=json.dumps({
+                    "action_run_id": run["run_id"],
+                    "status": run["status"],
+                    "actions": [{
+                        "name": step["action_name"],
+                        "label": step["action_label"],
+                        "status": step["status"],
+                        "targets": json.loads(step["values_json"]),
+                    } for step in run["steps"]],
+                }, ensure_ascii=False),
+                source_channels=frozenset(context.state.source_channels),
+                required_access=frozenset(context.state.required_access),
+            ))
+            if message is not None:
+                self._conversations.register_reply(conversation, message.id)
+            if self.persistence is not None:
+                await self.persistence.save(self._conversations, conversation)
 
     def _is_agent_request(self, message: discord.Message) -> bool:
         bot_user = self.bot.user
@@ -337,6 +384,8 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
             role_connection_queries=self.role_connection_queries,
             knowledge_store=self.knowledge_store,
             research_jobs=self.research_jobs,
+            action_repository=self.action_repository,
+            action_runner=self.action_runner,
             conversation_root_id=root_id,
             attachment_sources=tuple(item for item in (message, referenced) if item is not None),
             deadline_monotonic=deadline_monotonic,

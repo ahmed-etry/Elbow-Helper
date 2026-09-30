@@ -715,10 +715,10 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             return response, session, context, model
         incomplete = _plan([{**_step("command"), "capability": command_name}])
         question, session, context, model = await answer(incomplete)
-        self.assertEqual(question, "Which value should I use?\n- A required value.")
+        self.assertEqual(question, "I still need:\n- A required value.")
         self.assertEqual(len(session.calls), 1)
         self.assertIn(command_name, model.request["system_prompt"])
-        self.assertIn("You can run the bot commands", model.request["system_prompt"])
+        self.assertIn("Use only listed capabilities", model.request["system_prompt"])
         run.assert_not_awaited()
         complete = _plan([{**_step("command", {"value": 7}), "capability": command_name}])
         response, session, context, _ = await answer(complete, history=question)

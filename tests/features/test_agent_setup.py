@@ -94,11 +94,15 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
         with (patch("elbow_helper.features.agent.AgentCog") as factory,
               patch("elbow_helper.features.agent.TranscriptArchive") as archive,
               patch("elbow_helper.features.agent.ConversationRepository") as repository,
-              patch("elbow_helper.features.agent.ResearchJobRepository") as jobs):
+              patch("elbow_helper.features.agent.ResearchJobRepository") as jobs,
+              patch("elbow_helper.features.agent.AgentActionRepository") as actions):
             await setup(bot)
         self.assertIs(factory.call_args.kwargs["transcript_archive"], archive.return_value)
         self.assertIs(factory.call_args.kwargs["persistence"].repository, repository.return_value)
         self.assertIs(factory.call_args.kwargs["research_jobs"], jobs.return_value)
+        self.assertIs(factory.call_args.kwargs["action_repository"], actions.return_value)
+        self.assertIs(factory.call_args.kwargs["action_runner"].repository,
+                      actions.return_value)
         runner = factory.call_args.kwargs["research_runner"]
         self.assertIs(runner.repository, jobs.return_value)
         self.assertIs(

@@ -43,6 +43,7 @@ def build_command_tools(
                 prepared = PreparedCommand(
                     selected.adapter.path, dict(values), preview,
                     lambda: selected.adapter.run(context, values),
+                    action_class=selected.adapter.classification,
                 )
                 context.state.command_proposals.append(prepared)
                 return {"command": selected.adapter.path, "status": "confirmation_required"}
@@ -61,6 +62,8 @@ def build_command_tools(
                     "visibility": outcome.visibility}
         tools[name] = RegisteredAgentTool(
             capability.definition, handle, AgentCapabilityEffect.COMMAND,
+            capability.adapter.classification,
+            capability.adapter.delivery == "confirm",
         )
     return tools, capabilities
 

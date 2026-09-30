@@ -13,6 +13,8 @@ from .conversation.repository import ConversationRepository
 from .conversation.persistence import ConversationPersistence
 from .research.repository import ResearchJobRepository
 from .research.runner import ResearchJobRunner
+from .actions.repository import AgentActionRepository
+from .actions.runner import AgentActionRunner
 from .knowledge.store import KnowledgeStore
 
 
@@ -67,11 +69,19 @@ async def setup(bot) -> None:
         ResearchJobRepository,
         bot.paths.data_root / "agent" / "research_jobs.sqlite3",
     )
+    action_repository = await asyncio.to_thread(
+        AgentActionRepository,
+        bot.paths.data_root / "agent" / "actions.sqlite3",
+    )
     message_search = DiscordMessageSearch(bot.http)
     thread_discovery = DiscordThreadDiscovery()
     research_runner = ResearchJobRunner(
         bot=bot, repository=research_jobs, message_search=message_search,
         guild_id=GUILD_ID,
+    )
+    action_runner = AgentActionRunner(
+        bot=bot, repository=action_repository, guild_id=GUILD_ID,
+        enabled=getattr(bot, "agent_actions_enabled", True),
     )
     knowledge_store = KnowledgeStore(
         bot.paths.data_root / "agent" / "knowledge",
@@ -100,6 +110,8 @@ async def setup(bot) -> None:
             knowledge_store=knowledge_store,
             research_jobs=research_jobs,
             research_runner=research_runner,
+            action_runner=action_runner,
+            action_repository=action_repository,
             transcript_archive=archive,
             persistence=ConversationPersistence(repository),
         )

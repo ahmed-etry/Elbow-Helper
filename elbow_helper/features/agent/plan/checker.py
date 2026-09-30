@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..models import RegisteredAgentTool
+from ..actions.contracts import ActionClass
 from ..capabilities import CONTRACTS, SAVED_REPORT_CONTRACTS, CapabilityBindError, bound_time_window, compile_capability_call, entity_kind
 from ..tools.saved_reports import COMPARE_NAME, READ_NAME, original_arguments, original_tool
 from .format import output_forms
@@ -312,6 +313,15 @@ def check_plan(
         for entity in raw["entities"]:
             if isinstance(entity["value"], dict) and not _reference(entity["value"], earlier):
                 return _error("Resolve each entity with a planned step and result path.")
+        changes = [step for step in raw["steps"]
+                   if registry[step["capability"]].action_class in (
+                       ActionClass.CHANGE, ActionClass.IRREVERSIBLE,
+                   )]
+        if len(changes) > 1 and any(
+            registry[step["capability"]].action_class is ActionClass.IRREVERSIBLE
+            for step in changes
+        ):
+            return _error("Confirm an irreversible change on its own.")
         steps_by_id = {step["id"]: step for step in raw["steps"]}
         for kind, step_id, path in periods:
             if kind != "resolved":

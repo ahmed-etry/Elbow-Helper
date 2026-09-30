@@ -82,7 +82,8 @@ class AgentDeliveryMixin:
                             if private_parts or private_files else None)
             confirm_view = (ConfirmationView(message.author.id,
                                              tuple(context.state.command_proposals), context,
-                                             private_view)
+                                             private_view,
+                                             runner=getattr(self, "action_runner", None))
                             if context and context.state.command_proposals else None)
             if private_view is not None and confirm_view is None:
                 options["view"] = private_view
@@ -100,6 +101,8 @@ class AgentDeliveryMixin:
                 private_view.message = sent
             if confirm_view is not None and len(chunks) <= 1:
                 confirm_view.message = sent
+            if confirm_view is not None and hasattr(self, "_previews"):
+                self._previews[sent.id] = confirm_view
             if delivery is not None:
                 delivery.record(sent.id, response if chunks == [None] else (chunks[0] if chunks else ""))
             if conversation is not None:
@@ -114,9 +117,12 @@ class AgentDeliveryMixin:
                     active_delivery, chunk, allowed_mentions=allowed_mentions,
                     **({"view": confirm_view} if confirm_view is not None and index == len(chunks) - 1 else {}),
                 )
-                if confirm_view is not None and index == len(chunks) - 1:
-                    confirm_view.message = sent
-                    confirm_view.preview = chunk
+                if confirm_view is not None:
+                    if hasattr(self, "_previews"):
+                        self._previews[sent.id] = confirm_view
+                    if index == len(chunks) - 1:
+                        confirm_view.message = sent
+                        confirm_view.preview = chunk
                 if delivery is not None:
                     delivery.record(sent.id, chunk)
                 if conversation is not None:

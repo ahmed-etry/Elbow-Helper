@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from .attachments import attachment_tools
+from .action_log import action_log_tools
 from .achievements import achievement_tools
 from .achievement_economy import achievement_economy_tools
 from .clan_health import clan_health_tools
@@ -32,6 +33,8 @@ from .transfers import transfer_tools
 from .wars import war_tools
 from .working_state import working_state_tools
 from ..models import RegisteredAgentTool
+from ..actions.contracts import ActionClass
+from ..models import AgentCapabilityEffect
 from ..capabilities import validate_contract_catalogue
 from ..plan.results import result_handler
 
@@ -58,7 +61,7 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
             *recruitment_tools(), *examination_tools(), *record_tools(),
         ),
         "files": attachment_tools(),
-        "knowledge_history": (*history_tools(), *knowledge_tools()),
+        "knowledge_history": (*history_tools(), *knowledge_tools(), *action_log_tools()),
         "planning_output": (*working_state_tools(), *spreadsheet_tools()),
     }
 
@@ -75,7 +78,11 @@ def build_agent_tools() -> dict[str, RegisteredAgentTool]:
     if len(registry) != len(tools):
         raise ValueError("Duplicate agent capability")
     validate_contract_catalogue(registry)
-    return {name: replace(tool, handler=result_handler(tool.handler))
+    return {name: replace(
+        tool, handler=result_handler(tool.handler),
+        action_class=(ActionClass.OUTPUT if tool.effect is AgentCapabilityEffect.ARTIFACT
+                      else tool.action_class),
+    )
             for name, tool in registry.items()}
 
 

@@ -20,7 +20,7 @@ from elbow_helper.configuration.roles import CORE, LEAD_PLUS
 from elbow_helper.discord.interactions import DEFAULT_FAILURE_MESSAGE
 from elbow_helper.features.agent.access import ACCESS_LEAD_PLUS, AgentAccessLost
 from elbow_helper.features.agent.cog import AgentCog
-from elbow_helper.features.agent.delivery import _delivery_nonce
+from elbow_helper.features.agent.delivery import _delivery_nonce, _needs_file
 from elbow_helper.features.agent.message_content import message_text
 from elbow_helper.features.agent.conversation.state import ConversationTurn
 from elbow_helper.features.agent.models import AgentDelivery, AgentTurnState
@@ -1196,6 +1196,24 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         context = self.cog.service.answer.await_args.kwargs["context"]
         self.assertEqual(context.state.authorized_instructions[0].quote, "Keep together")
 
+    async def test_action_result_keeps_instruction_saved_after_preview(self):
+        latest, _ = WorkingState().remember(
+            label="Constraint", quote="Keep together", request_text="Keep together",
+            member_id=42, message_id=2, channel_id=100, created_at="2026-09-17",
+        )
+        conversation = SimpleNamespace(
+            lock=asyncio.Lock(), working=latest, append=MagicMock(),
+        )
+        self.cog._conversations = SimpleNamespace(get=lambda _: conversation)
+        context = SimpleNamespace(
+            conversation_root_id=1, state=AgentTurnState(working=WorkingState()),
+        )
+        await self.cog._record_action_outcome(
+            context, {"run_id": "synthetic", "status": "completed", "steps": []}, None,
+        )
+        self.assertIs(conversation.working, latest)
+        conversation.append.assert_called_once()
+
     async def test_queue_wait_has_its_own_timeout(self):
         self.cog._semaphore = asyncio.Semaphore(0)
         self.cog._send_failure = AsyncMock()
@@ -1272,6 +1290,12 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         await self.cog._send_response(message, response, None)
         self.assertEqual(message.reply.await_args.args[0], response)
         self.assertEqual(message.reply.await_args.kwargs.get("files"), None)
+
+    async def test_file_only_when_length_or_split_code_block_requires_it(self):
+        self.assertFalse(_needs_file("```text\nshort\n```"))
+        self.assertFalse(_needs_file("plain " * 400))
+        self.assertTrue(_needs_file("```text\n" + "x" * 2100 + "\n```"))
+        self.assertTrue(_needs_file("x" * 12_001))
 
     def setUp(self) -> None:
         self.bot = SimpleNamespace(
