@@ -64,6 +64,7 @@ class RosterSheetPublisher:
     async def export(
         self,
         roster: Roster,
+        *, timestamp: str | None = None,
     ) -> tuple[RosterExport | None, str | None]:
         deleted, cleanup_warning = await asyncio.to_thread(
             self._local_exports.cleanup,
@@ -111,10 +112,8 @@ class RosterSheetPublisher:
                 ).strftime("%Y-%m-%d %H:%M UTC"),
             ])
 
-        timestamp = datetime.now(dt_timezone.utc).strftime("%Y%m%d-%H%M%S")
-        workbook_name = (
-            f"roster_{_filename_segment(roster.name)}_{timestamp}.xlsx"
-        )
+        timestamp = timestamp or datetime.now(dt_timezone.utc).strftime("%Y%m%d-%H%M%S")
+        workbook_name = self.workbook_name(roster.name, timestamp)
         workbook_path = self._local_exports.temporary_path("roster")
         await asyncio.to_thread(
             self._workbook_writer.write,
@@ -131,6 +130,10 @@ class RosterSheetPublisher:
             google_link=google_link,
             google_warning=google_warning,
         ), None
+
+    @staticmethod
+    def workbook_name(roster_name: str, timestamp: str) -> str:
+        return f"roster_{_filename_segment(roster_name)}_{timestamp}.xlsx"
 
     async def discard(self, report: RosterExport) -> None:
         warning = await asyncio.to_thread(

@@ -345,6 +345,31 @@ class Rosters(commands.Cog):
         posts = await asyncio.to_thread(self._repository.list_posts, roster_id)
         return any(post.message_id == message_id for post in posts)
 
+    async def roster_export_plan(self, roster: Roster) -> dict[str, object]:
+        members = await self.service.list_members(roster)
+        timestamp = datetime.now(dt_timezone.utc).strftime("%Y%m%d-%H%M%S")
+        return {
+            "roster": roster, "timestamp": timestamp,
+            "workbook_name": self.publisher.workbook_name(roster.name, timestamp),
+            "accounts": tuple(sorted((row.player_tag, row.discord_user_id)
+                                     for row in members)),
+        }
+
+    async def export_roster(self, roster: Roster,
+                            *, timestamp: str | None = None):
+        if timestamp is None:
+            return await self.publisher.export(roster)
+        return await self.publisher.export(roster, timestamp=timestamp)
+
+    async def deliver_roster_export(self, report) -> tuple[str | None, bytes | None]:
+        try:
+            if report.google_link:
+                return report.google_link, None
+            data = await asyncio.to_thread(report.workbook_path.read_bytes)
+            return None, data
+        finally:
+            await self.publisher.discard(report)
+
     def roster_post_effect(self, roster: Roster,
                            *, now: datetime | None = None) -> dict[str, object]:
         now = now or datetime.now(dt_timezone.utc)
@@ -1057,7 +1082,7 @@ class Rosters(commands.Cog):
         roster: Roster,
     ) -> None:
         try:
-            report, warning = await self.publisher.export(roster)
+            report, warning = await self.export_roster(roster)
         except (OSError, RuntimeError, TypeError, ValueError):
             LOGGER.exception("Roster export failed roster_id=%s", roster.id)
             await interaction.edit_original_response(

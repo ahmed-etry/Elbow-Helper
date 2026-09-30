@@ -14,6 +14,7 @@ from elbow_helper.features.rosters.config import DEFAULT_MAX_MEMBERS, MAX_ROSTER
 from elbow_helper.features.help.discovery import ParameterInfo
 
 from ...actions.contracts import ActionClass, ChangePreview
+from ...models import AgentAttachment
 from ...wording import (
     ACTION_ROSTER_CREATE_CLAN, ACTION_ROSTER_CREATE_LABEL,
     ACTION_ROSTER_CREATE_LINE, ACTION_ROSTER_CREATE_LIMIT,
@@ -49,6 +50,9 @@ from ...wording import (
     ACTION_ROSTER_POST_RESET,
     ACTION_ROSTER_POST_PAGE, ACTION_ROSTER_POST_IMAGE,
     ACTION_PREVIEW_BLANK,
+    ACTION_ROSTER_EXPORT_ACCOUNT, ACTION_ROSTER_EXPORT_FILE,
+    ACTION_ROSTER_EXPORT_GOOGLE, ACTION_ROSTER_EXPORT_LABEL,
+    ACTION_ROSTER_EXPORT_LINE, ACTION_ROSTER_EXPORT_LINK,
 )
 from ..outcomes import CommandOutcome, embed_text
 from ..registry import CommandAdapter, PreparedCommandChange
@@ -722,6 +726,76 @@ async def run_roster_post(context: Any,
     return await (await prepare_roster_post(context, values)).run()
 
 
+async def prepare_roster_export(context: Any,
+                                values: Mapping[str, Any]) -> PreparedCommandChange | CommandOutcome:
+    workflow = context.bot.get_cog("Rosters")
+    if workflow is None:
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+    try:
+        roster_id = int(values["roster"])
+    except (TypeError, ValueError):
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE) from None
+    roster = await workflow.get_roster(roster_id)
+    if roster is None or roster.guild_id != context.guild.id:
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+    plan = await workflow.roster_export_plan(roster)
+    if not plan["accounts"]:
+        return CommandOutcome(
+            "complete", "private", text=f"No accounts are signed up to **{roster.name}**.",
+        )
+    lines = [
+        ACTION_ROSTER_EXPORT_LINE.format(name=roster.name, roster_id=roster.id),
+        ACTION_ROSTER_EXPORT_FILE.format(name=plan["workbook_name"]),
+        ACTION_ROSTER_EXPORT_GOOGLE,
+    ]
+    lines.extend(ACTION_ROSTER_EXPORT_ACCOUNT.format(
+        tag=tag, member=f"<@{member_id}>",
+    ) for tag, member_id in plan["accounts"])
+
+    async def recheck() -> bool:
+        current = await workflow.get_roster(roster_id)
+        if current != roster:
+            return False
+        fresh = await workflow.roster_export_plan(roster)
+        return fresh["accounts"] == plan["accounts"]
+
+    async def run() -> CommandOutcome:
+        report, warning = await workflow.export_roster(
+            roster, timestamp=plan["timestamp"],
+        )
+        if report is None:
+            return CommandOutcome("complete", "private", text=warning or "")
+        link, data = await workflow.deliver_roster_export(report)
+        text = f"Exported **{roster.name}**."
+        if link:
+            text += "\n" + ACTION_ROSTER_EXPORT_LINK.format(url=link)
+        elif report.google_warning:
+            text += "\n" + report.google_warning
+        attachments = ((AgentAttachment(report.workbook_name, data),)
+                       if data is not None else ())
+        return CommandOutcome(
+            "complete", "private", text=text,
+            attachments=attachments,
+            result={"roster_id": roster_id, "workbook_name": report.workbook_name,
+                    "google_link": link},
+            after={"roster_id": roster_id, "workbook_name": report.workbook_name,
+                   "google_link": link},
+        )
+
+    return PreparedCommandChange(
+        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_EXPORT_LABEL,
+                      before={"roster_id": roster.id,
+                              "accounts": plan["accounts"]}),
+        run,
+    )
+
+
+async def run_roster_export(context: Any,
+                            values: Mapping[str, Any]) -> CommandOutcome:
+    prepared = await prepare_roster_export(context, values)
+    return await prepared.run() if isinstance(prepared, PreparedCommandChange) else prepared
+
+
 def roster_adapters() -> tuple[CommandAdapter, ...]:
     return (
         CommandAdapter("/roster create", "confirm", run_roster_create,
@@ -759,4 +833,8 @@ def roster_adapters() -> tuple[CommandAdapter, ...]:
                        ),),
                        entity_options=(("roster", "roster"),
                                        ("channel", "discord_channel"))),
+        CommandAdapter("/roster export", "confirm", run_roster_export,
+                       prepare=prepare_roster_export,
+                       action_class=ActionClass.IRREVERSIBLE,
+                       entity_options=(("roster", "roster"),)),
     )

@@ -14,6 +14,7 @@ from elbow_helper.features.agent.commands.adapters.rosters import (
     prepare_roster_timing,
     prepare_roster_schedule,
     prepare_roster_post,
+    prepare_roster_export,
     roster_adapters,
 )
 from elbow_helper.features.rosters.cog import Rosters
@@ -297,6 +298,37 @@ class RosterCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.result["message_id"], 99)
         self.assertEqual(workflow.post_roster.await_args.args, (4, channel.send))
         self.assertEqual(workflow.post_roster.await_args.kwargs["rendered"][2], 1)
+
+    async def test_export_previews_accounts_and_delivers_file_after_confirm(self):
+        roster = SimpleNamespace(id=4, guild_id=5, name="Signup")
+        report = SimpleNamespace(
+            workbook_name="roster_signup_20260930.xlsx",
+            google_warning=None,
+        )
+        plan = {
+            "roster": roster, "timestamp": "20260930",
+            "workbook_name": report.workbook_name,
+            "accounts": (("#P0Y", 2),),
+        }
+        workflow = SimpleNamespace(
+            get_roster=AsyncMock(return_value=roster),
+            roster_export_plan=AsyncMock(return_value=plan),
+            export_roster=AsyncMock(return_value=(report, None)),
+            deliver_roster_export=AsyncMock(return_value=(None, b"workbook")),
+        )
+        context = SimpleNamespace(
+            bot=SimpleNamespace(get_cog=lambda _: workflow),
+            guild=SimpleNamespace(id=5),
+        )
+        prepared = await prepare_roster_export(context, {"roster": "4"})
+        self.assertTrue(await prepared.preview.recheck())
+        self.assertIn("#P0Y linked to <@2>", prepared.preview.lines)
+        workflow.export_roster.assert_not_awaited()
+        result = await prepared.run()
+        self.assertEqual(result.attachments[0].data, b"workbook")
+        workflow.export_roster.assert_awaited_once_with(
+            roster, timestamp="20260930",
+        )
 
 
 if __name__ == "__main__":

@@ -35,7 +35,6 @@ NOT_YET_ADAPTED = frozenset({
     "/finalize", "/hibernate",
     "/reactivate",
     "/roster announcement",
-    "/roster export",
     "/transfer reminder",
 })
 
