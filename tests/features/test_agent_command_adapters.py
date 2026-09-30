@@ -6,15 +6,28 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.configuration.roles import LEAD_PLUS
 from elbow_helper.features.agent.commands.adapters import run_health_player, run_opinion
-from elbow_helper.features.agent.commands.adapters.clan_health import run_health_settings
+from elbow_helper.features.agent.commands.adapters.clan_health import (
+    run_health_clan, run_health_settings,
+)
 from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.clan_health.commands.player import (
     ClanHealthPlayerCommandMixin, PlayerHealthCommandResult,
+)
+from elbow_helper.features.clan_health.commands.clan import (
+    ClanHealthClanCommandMixin, ClanHealthCommandResult,
 )
 from elbow_helper.features.clan_health.export import PreparedHealthExport
 
 
 class CommandAdapterTests(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def health_context(workflow):
+        member = SimpleNamespace(id=4, roles=[SimpleNamespace(id=next(iter(LEAD_PLUS)))])
+        return SimpleNamespace(
+            guild=SimpleNamespace(get_member=lambda _: member), member=member,
+            bot=SimpleNamespace(get_cog=lambda _: workflow), state=AgentTurnState(),
+        )
+
     async def test_private_result_keeps_feature_parts_out_of_public_text(self):
         ticket = object()
         workflow = SimpleNamespace(
@@ -51,7 +64,7 @@ class CommandAdapterTests(unittest.IsolatedAsyncioTestCase):
         workflow = SimpleNamespace(run_player_health_export=AsyncMock(
             return_value=PlayerHealthCommandResult("complete", export=export),
         ))
-        context = SimpleNamespace(bot=SimpleNamespace(get_cog=lambda _: workflow))
+        context = self.health_context(workflow)
         result = await run_health_player(context, {"account": "#P0"})
         self.assertEqual(result.status, "complete")
         self.assertIn("https://example.test/sheet", result.text)
@@ -68,7 +81,7 @@ class CommandAdapterTests(unittest.IsolatedAsyncioTestCase):
         workflow = SimpleNamespace(run_player_health_export=AsyncMock(
             return_value=PlayerHealthCommandResult("complete", export=export),
         ))
-        context = SimpleNamespace(bot=SimpleNamespace(get_cog=lambda _: workflow))
+        context = self.health_context(workflow)
         result = await run_health_player(context, {"account": "#P0"})
         self.assertEqual(result.attachments[0].data, b"synthetic workbook")
         self.assertEqual(result.text, "Synthetic summary")
@@ -111,6 +124,59 @@ class CommandAdapterTests(unittest.IsolatedAsyncioTestCase):
         )
         await workflow._export_player_health(interaction, "#P0")
         workflow.run_player_health_export.assert_awaited_once()
+        workflow.send_prepared_health_export.assert_awaited_once_with(interaction, export)
+
+    async def test_clan_health_uses_the_public_feature_export(self):
+        export = PreparedHealthExport(
+            "clan.xlsx", "Clan Health", ("Synthetic summary",),
+            None, b"synthetic workbook",
+        )
+        workflow = SimpleNamespace(run_clan_health_export=AsyncMock(
+            return_value=ClanHealthCommandResult("complete", export=export),
+        ))
+        result = await run_health_clan(
+            self.health_context(workflow), {"clan": "BEH"},
+        )
+        self.assertEqual(result.attachments[0].data, b"synthetic workbook")
+        workflow.run_clan_health_export.assert_awaited_once_with(
+            "BEH", mode="last_30d", date_from=None, date_to=None,
+        )
+
+    async def test_clan_health_operation_builds_and_prepares_one_export(self):
+        workflow = ClanHealthClanCommandMixin()
+        workflow.clash_client = SimpleNamespace(configured=True)
+        workflow.repository = SimpleNamespace(latest_report_before=Mock(return_value=(
+            None, [{"clan_code": "BEH", "flags_json": "[]"}],
+        )))
+        workflow.analyzer = SimpleNamespace(build_sheets=Mock(return_value=(
+            [("Overview", [["Value"]])], [{"status": "Good"}], {},
+        )))
+        export = PreparedHealthExport(
+            "clan.xlsx", "Clan Health", ("Synthetic summary",),
+            None, b"synthetic workbook",
+        )
+        workflow.prepare_health_export = AsyncMock(return_value=export)
+        result = await workflow.run_clan_health_export("BEH")
+        self.assertEqual(result.status, "complete")
+        self.assertIs(result.export, export)
+        workflow.prepare_health_export.assert_awaited_once()
+
+    async def test_slash_clan_uses_the_same_public_operation(self):
+        workflow = ClanHealthClanCommandMixin()
+        workflow._has_access = Mock(return_value=True)
+        export = PreparedHealthExport(
+            "clan.xlsx", "Clan Health", ("Synthetic summary",),
+            None, b"synthetic workbook",
+        )
+        workflow.run_clan_health_export = AsyncMock(return_value=ClanHealthCommandResult(
+            "complete", export=export, timeframe_key="last_30d",
+        ))
+        workflow.send_prepared_health_export = AsyncMock()
+        interaction = SimpleNamespace(user=SimpleNamespace(id=4))
+        await workflow._export_clan_health(
+            interaction, SimpleNamespace(value="BEH"),
+        )
+        workflow.run_clan_health_export.assert_awaited_once()
         workflow.send_prepared_health_export.assert_awaited_once_with(interaction, export)
 
     async def test_health_custom_period_needs_both_dates(self):

@@ -34,7 +34,7 @@ NOT_YET_ADAPTED = frozenset({
     "/achievement remove", "/api", "/checkup", "/close", "/connections",
     "/cwl bonus", "/cwl brief", "/cwl register", "/cwl roster", "/decline",
     "/event panel", "/event update", "/finalize", "/grant coins",
-    "/grant ticket", "/health clan", "/hibernate",
+    "/grant ticket", "/hibernate",
     "/open", "/plan", "/raffle clear", "/raffle draw", "/raffle prize",
     "/raffle remove", "/raffle reroll", "/reactivate", "/recstatements",
     "/roster announcement", "/roster clone", "/roster create",
