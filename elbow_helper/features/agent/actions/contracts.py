@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -24,6 +24,7 @@ class ChangePreview:
     summary: str = ""
     count: int = 1
     before: Any = None
+    result_label: str = ""
 
     def __post_init__(self) -> None:
         if not self.lines or not callable(self.recheck) or self.count < 1:
@@ -64,3 +65,12 @@ def audit_reason(member: Any) -> str:
         member=str(getattr(member, "display_name", member))[:80],
         member_id=member.id,
     )[:512]
+
+
+def earlier_result_label(actions: Sequence[PreparedAction],
+                         reference: Mapping[str, Any]) -> str:
+    """Describe a referenced action using its preview, never its plan step ID."""
+    for action in reversed(actions):
+        if action.step_id == reference.get("step"):
+            return action.preview.result_label or action.preview.lines[0].strip()
+    raise ValueError("The earlier action has no preview label")

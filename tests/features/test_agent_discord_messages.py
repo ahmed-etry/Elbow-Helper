@@ -6,7 +6,9 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.features.agent.actions.contracts import ActionClass
+from elbow_helper.features.agent.actions.contracts import (
+    ActionClass, ChangePreview, PreparedAction,
+)
 from elbow_helper.features.agent.actions.repository import AgentActionRepository
 from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.agent.tools.discord_messages import (
@@ -128,6 +130,12 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_post_can_use_a_thread_created_by_an_earlier_action(self):
         reference = {"step": "created", "path": ["thread_id"]}
+        self.context.state.command_proposals.append(PreparedAction(
+            "create_discord_thread", {},
+            ChangePreview(("Create thread Planned in #place.",), AsyncMock(),
+                          result_label="thread Planned"),
+            AsyncMock(), step_id="created",
+        ))
         with patch("elbow_helper.features.agent.tools.discord_messages.require_evidence_access",
                    new_callable=AsyncMock):
             result = await prepare_post(self.context, {
@@ -135,7 +143,8 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
             })
         self.assertEqual(result["status"], "confirmation_required")
         pending = self.context.state.command_proposals.pop()
-        self.assertIn("earlier action", pending.preview.lines[0])
+        self.assertIn("thread Planned", pending.preview.lines[0])
+        self.assertNotIn("created", pending.preview.lines[0])
         bound = await pending.bind({"created": {"thread_id": 2}})
         self.assertEqual(bound.values["channel_id"], 2)
         await bound.run()

@@ -10,14 +10,15 @@ import discord
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..access import require_evidence_access
-from ..actions.contracts import ActionClass, ChangePreview, PreparedAction, audit_reason
+from ..actions.contracts import (
+    ActionClass, ChangePreview, PreparedAction, audit_reason, earlier_result_label,
+)
 from ..commands.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
     ACTION_THREAD_ACTIONS, ACTION_THREAD_MEMBER_ADD, ACTION_THREAD_MEMBER_REMOVE,
     ACTION_THREAD_CREATE_LABEL, ACTION_THREAD_CREATE_LINE,
     ACTION_THREAD_MEMBER_LABEL, ACTION_THREAD_MEMBER_LINE,
-    ACTION_THREAD_FUTURE_TARGET,
     ACTION_THREAD_UPDATE_LABEL, ACTION_THREAD_UPDATE_LINE,
     ACTION_UNDO_CHANGED,
 )
@@ -151,7 +152,8 @@ async def prepare_create_thread(context: AgentRequestContext,
         lines += tuple(initial.splitlines())
     context.state.command_proposals.append(PreparedAction(
         "create_discord_thread", dict(arguments),
-        ChangePreview(lines, recheck, summary=ACTION_THREAD_CREATE_LABEL),
+        ChangePreview(lines, recheck, summary=ACTION_THREAD_CREATE_LABEL,
+                      result_label=f"thread {name}"),
         run, verify=verify, permission="Manage Threads",
     ))
     return {"status": "confirmation_required"}
@@ -203,7 +205,7 @@ def _thread_update_action(context: AgentRequestContext, thread_id: int,
         {"thread_id": thread_id, "operation": operation,
          **({"name": after} if field == "name" else {})},
         ChangePreview(lines, recheck, summary=ACTION_THREAD_UPDATE_LABEL,
-                      before={field: before}),
+                      before={field: before}, result_label=label),
         run, verify=verify, permission="Manage Threads",
     )
 
@@ -220,7 +222,10 @@ async def prepare_update_thread(context: AgentRequestContext,
         except DiscordActionRefused as error:
             return {"error": str(error), "prepared_count": 0}
         verb = ACTION_THREAD_ACTIONS[arguments["operation"]][0]
-        label = ACTION_THREAD_FUTURE_TARGET.format(step=reference["step"])
+        try:
+            label = earlier_result_label(context.state.command_proposals, reference)
+        except ValueError as error:
+            return {"error": str(error), "prepared_count": 0}
         async def bind(results: Mapping[str, Mapping[str, Any]]) -> PreparedAction:
             from ..plan.executor import resolve_arguments
             thread_id = resolve_arguments({"thread_id": reference}, results)["thread_id"]
@@ -239,7 +244,8 @@ async def prepare_update_thread(context: AgentRequestContext,
             "update_discord_thread", dict(arguments),
             ChangePreview((ACTION_THREAD_UPDATE_LINE.format(
                 action=verb, thread=label, detail=detail,
-            ),), recheck, summary=ACTION_THREAD_UPDATE_LABEL),
+            ),), recheck, summary=ACTION_THREAD_UPDATE_LABEL,
+            result_label=label),
             unavailable, permission="Manage Threads", bind=bind,
         ))
         return {"status": "confirmation_required"}
@@ -326,7 +332,7 @@ def _thread_member_action(context: AgentRequestContext, thread_id: int,
         {"thread_id": thread_id, "member_id": member_id,
          "operation": "add" if add else "remove"},
         ChangePreview(lines, recheck, summary=ACTION_THREAD_MEMBER_LABEL,
-                      before={"has_member": before}),
+                      before={"has_member": before}, result_label=label_thread),
         run, verify=verify, permission="Manage Threads",
     )
 
@@ -337,7 +343,10 @@ async def prepare_thread_members(context: AgentRequestContext,
     reference = arguments["thread_id"]
     if isinstance(reference, Mapping) and set(reference) == {"step", "path"}:
         add = arguments["operation"] == "add"
-        label = ACTION_THREAD_FUTURE_TARGET.format(step=reference["step"])
+        try:
+            label = earlier_result_label(context.state.command_proposals, reference)
+        except ValueError as error:
+            return {"error": str(error), "prepared_count": 0}
         selected = []
         try:
             for member_id in arguments["member_ids"]:
@@ -371,7 +380,8 @@ async def prepare_thread_members(context: AgentRequestContext,
                 ChangePreview((ACTION_THREAD_MEMBER_LINE.format(
                     action=verb, member=member.mention, relation=relation,
                     thread=label,
-                ),), recheck, summary=ACTION_THREAD_MEMBER_LABEL),
+                ),), recheck, summary=ACTION_THREAD_MEMBER_LABEL,
+                result_label=label),
                 unavailable, permission="Manage Threads", bind=bind,
             ))
         return {"status": "confirmation_required", "prepared_count": len(selected)}

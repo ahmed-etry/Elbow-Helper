@@ -13,7 +13,9 @@ import discord
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..access import require_evidence_access
-from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
+from ..actions.contracts import (
+    ActionClass, ChangePreview, PreparedAction, earlier_result_label,
+)
 from ..commands.outcomes import CommandOutcome
 from ..message_parts import chunk_response
 from ..models import AgentAttachment, AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
@@ -210,6 +212,11 @@ async def prepare_post(context: AgentRequestContext,
     chunks = chunk_response(arguments["text"])
     if not chunks:
         return {"error": "The message has no text.", "prepared_count": 0}
+    if deferred:
+        try:
+            target_label = earlier_result_label(context.state.command_proposals, channel_value)
+        except ValueError as error:
+            return {"error": str(error), "prepared_count": 0}
     await require_evidence_access(context)
     for index, chunk in enumerate(chunks):
         make = _deferred_post_part if deferred else _post_part
@@ -217,6 +224,7 @@ async def prepare_post(context: AgentRequestContext,
             context, channel_value if deferred else channel.id, chunk, mentions,
             attachment=attachment if index == 0 else None,
             ping_line=_ping_line(context, arguments),
+            **({"target_label": target_label} if deferred else {}),
         ))
     return {"status": "confirmation_required", "prepared_count": len(chunks)}
 
@@ -224,7 +232,8 @@ async def prepare_post(context: AgentRequestContext,
 def _deferred_post_part(context: AgentRequestContext, reference: Mapping[str, Any],
                         text: str, mentions: discord.AllowedMentions, *,
                         attachment: Any = None,
-                        ping_line: tuple[str, ...] = ()) -> PreparedAction:
+                        ping_line: tuple[str, ...] = (),
+                        target_label: str) -> PreparedAction:
     async def recheck() -> bool:
         return True
 
@@ -242,13 +251,14 @@ def _deferred_post_part(context: AgentRequestContext, reference: Mapping[str, An
             attachment=attachment, ping_line=ping_line,
         )
 
-    lines = (ACTION_POST_FUTURE_LINE.format(step=reference["step"]),
+    lines = (ACTION_POST_FUTURE_LINE.format(target=target_label),
              *text.splitlines(), *ping_line)
     if attachment is not None:
         lines += (ACTION_ATTACH_LINE.format(filename=attachment.filename),)
     return PreparedAction(
         "post_discord_message", {"channel_id": dict(reference), "text": text},
-        ChangePreview(lines, recheck, summary=ACTION_POST_LABEL),
+        ChangePreview(lines, recheck, summary=ACTION_POST_LABEL,
+                      result_label=target_label),
         unavailable, permission="Send Messages", bind=bind,
     )
 
@@ -317,7 +327,8 @@ def _post_part(context: AgentRequestContext, channel_id: int, text: str,
         lines += (ACTION_ATTACH_LINE.format(filename=attachment.filename),)
     return PreparedAction(
         "post_discord_message", {"channel_id": channel_id, "text": text, "nonce": nonce},
-        ChangePreview(lines, recheck, summary=ACTION_POST_LABEL),
+        ChangePreview(lines, recheck, summary=ACTION_POST_LABEL,
+                      result_label=label),
         run, verify=verify, permission="Send Messages",
     )
 

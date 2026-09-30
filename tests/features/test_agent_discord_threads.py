@@ -1,6 +1,7 @@
 """Thread actions recheck their targets and expose creation results."""
 
 from contextlib import ExitStack
+from dataclasses import replace
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -125,6 +126,11 @@ class DiscordThreadActionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_new_thread_can_be_updated_and_joined_in_the_same_run(self):
         reference = {"step": "created", "path": ["thread_id"]}
+        await prepare_create_thread(self.context, {
+            "parent_channel_id": 2, "name": "Planned",
+        })
+        created = self.context.state.command_proposals.pop()
+        self.context.state.command_proposals.append(replace(created, step_id="created"))
         update = await prepare_update_thread(self.context, {
             "thread_id": reference, "operation": "rename", "name": "After",
         })
@@ -133,8 +139,9 @@ class DiscordThreadActionTests(unittest.IsolatedAsyncioTestCase):
         })
         self.assertEqual(update["status"], "confirmation_required")
         self.assertEqual(members["prepared_count"], 1)
-        changing, joining = self.context.state.command_proposals
-        self.assertIn("earlier action", changing.preview.lines[0])
+        _, changing, joining = self.context.state.command_proposals
+        self.assertIn("thread Planned", changing.preview.lines[0])
+        self.assertNotIn("created", changing.preview.lines[0])
         bound_change = await changing.bind({"created": {"thread_id": 7}})
         bound_join = await joining.bind({"created": {"thread_id": 7}})
         self.assertTrue(await bound_change.preview.recheck())

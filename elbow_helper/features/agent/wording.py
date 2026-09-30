@@ -39,7 +39,7 @@ ACTION_ROLE_ADD_LABEL = "Add role"
 ACTION_ROLE_REMOVE_LABEL = "Remove role"
 ACTION_ROLE_UNDO_LABEL = "Undo role change"
 ACTION_POST_LINE = "Post in {channel}:"
-ACTION_POST_FUTURE_LINE = "Post in the channel from the earlier action ({step}):"
+ACTION_POST_FUTURE_LINE = "Post in {target}:"
 ACTION_POST_LABEL = "Post message"
 ACTION_EDIT_LINE = "Edit message in {channel}:"
 ACTION_EDIT_LABEL = "Edit message"
@@ -62,7 +62,6 @@ ACTION_THREAD_ACTIONS = {
 }
 ACTION_THREAD_MEMBER_ADD = ("Add", "Added", "to")
 ACTION_THREAD_MEMBER_REMOVE = ("Remove", "Removed", "from")
-ACTION_THREAD_FUTURE_TARGET = "the thread from the earlier action ({step})"
 ACTION_REACTION_ADD_LINE = "Add {emoji} to {message}."
 ACTION_REACTION_REMOVE_LINE = "Remove {emoji} from {message}."
 ACTION_REACTION_LABEL = "Change reaction"
