@@ -51,6 +51,29 @@ RARE_STATEMENT_CHOICES = [
 
 
 class RecruitmentCommandMixin:
+    def prepare_recstatement(self, template_key: str,
+                             applicant: discord.Member,
+                             channel: discord.TextChannel,
+                             additional_notes: str | None = None) -> dict[str, object]:
+        if not isinstance(channel, discord.TextChannel):
+            return {"issue": "Run this command in a server text channel."}
+        statement = RARE_STATEMENTS.get(template_key)
+        statement_meta = RARE_STATEMENT_META.get(template_key)
+        if not statement or not statement_meta:
+            return {"issue": "That recruitment message is no longer available. Choose another message from the list."}
+        statement_text = statement.format(user=applicant.mention)
+        if additional_notes:
+            statement_text += f"\n\n**Additional Notes:** {additional_notes}"
+        return {"issue": None, "channel": channel,
+                "message": statement_text, "name": statement_meta["name"],
+                "applicant": applicant}
+
+    async def post_recstatement(self, prepared: dict[str, object]) -> str:
+        channel = prepared["channel"]
+        await channel.send(prepared["message"])
+        return (f"Sent **{prepared['name']}** to {prepared['applicant'].display_name} "
+                f"in {channel.mention}.")
+
     @staticmethod
     def _member_has_any_role(member: discord.Member, role_ids: frozenset[int]) -> bool:
         return any(role.id in role_ids for role in member.roles)
@@ -909,33 +932,16 @@ class RecruitmentCommandMixin:
         try:
             target_channel = channel or interaction.channel
              
-            if not isinstance(target_channel, discord.TextChannel):
-                await interaction.followup.send(
-                    "Run this command in a server text channel.",
-                    ephemeral=True
-                )
-                return
-             
-            statement = RARE_STATEMENTS.get(message.value)
-            statement_meta = RARE_STATEMENT_META.get(message.value)
-            if not statement or not statement_meta:
-                await warn(
-                    interaction,
-                    "That recruitment message is no longer available. Choose another message from the list.",
-                )
-                return
-
-            statement_text = statement.format(user=applicant.mention)
-            template_name = statement_meta["name"]
-             
-            if additional_notes:
-                statement_text += f"\n\n**Additional Notes:** {additional_notes}"
-             
-            await target_channel.send(statement_text)
-
-            confirmation_msg = (
-                f"Sent **{template_name}** to {applicant.display_name} in {target_channel.mention}."
+            prepared = self.prepare_recstatement(
+                message.value, applicant, target_channel, additional_notes,
             )
+            if prepared["issue"]:
+                if not isinstance(target_channel, discord.TextChannel):
+                    await interaction.followup.send(prepared["issue"], ephemeral=True)
+                else:
+                    await warn(interaction, prepared["issue"])
+                return
+            confirmation_msg = await self.post_recstatement(prepared)
             await interaction.followup.send(confirmation_msg, ephemeral=True)
             
         except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError):

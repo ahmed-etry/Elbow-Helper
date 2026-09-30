@@ -10,7 +10,7 @@ import discord
 
 from ..actions.contracts import ActionClass, ChangePreview, PreparedAction, check_bundle
 from ..wording import (
-    ACTION_CANNOT_UNDO, ACTION_PREVIEW_SUMMARY,
+    ACTION_CANNOT_UNDO, ACTION_PREVIEW_SUMMARY, ACTION_PREVIEW_BLANK,
     ACTION_PREVIEW_UNIT_MANY, ACTION_PREVIEW_UNIT_ONE,
     COMMAND_CANCEL_BUTTON, COMMAND_CANCELLED, COMMAND_CONFIRM_BUTTON,
     COMMAND_PREVIEW_EXPIRED,
@@ -44,7 +44,7 @@ def preview_text(proposals: list[PreparedCommand]) -> str:
             count=count,
             unit=ACTION_PREVIEW_UNIT_ONE if count == 1 else ACTION_PREVIEW_UNIT_MANY,
         ))
-        lines.extend(part.strip() or "-" for item in group
+        lines.extend(part.strip() or ACTION_PREVIEW_BLANK for item in group
                      for line in item.preview.lines for part in line.split("\n"))
         if proposal.action_class is ActionClass.IRREVERSIBLE:
             lines.append(ACTION_CANNOT_UNDO)

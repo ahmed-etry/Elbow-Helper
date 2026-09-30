@@ -15,7 +15,7 @@ from elbow_helper.features.agent.models import AgentDelivery, AgentTurnState
 from elbow_helper.features.agent.wording import (
     COMMAND_CANCELLED, COMMAND_PREVIEW_EXPIRED,
     COMMAND_PREVIEW_HEADER, COMMAND_PREVIEW_OWNER,
-    COMMAND_PREVIEW_USED,
+    COMMAND_PREVIEW_USED, ACTION_PREVIEW_BLANK,
 )
 
 
@@ -94,7 +94,7 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         )
         text = preview_text([proposal])
         self.assertNotIn("\n\n", text)
-        self.assertIn("Details: first\n-\nlast", text)
+        self.assertIn(f"Details: first\n{ACTION_PREVIEW_BLANK}\nlast", text)
 
     async def test_other_member_cannot_confirm_or_cancel(self):
         proposal, check, run = self.proposal(1)
@@ -164,7 +164,7 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         proposal = PreparedCommand(proposal.path, proposal.values,
                                    ChangePreview(("",), proposal.preview.recheck), proposal.run)
         self.assertEqual(preview_text([proposal]),
-                         COMMAND_PREVIEW_HEADER + "\n1. /synthetic: 1 change\n-")
+                         COMMAND_PREVIEW_HEADER + "\n1. /synthetic: 1 change\n" + ACTION_PREVIEW_BLANK)
 
     async def test_second_click_reports_used_preview(self):
         proposal, _, _ = self.proposal(1)

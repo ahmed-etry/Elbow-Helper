@@ -14,7 +14,7 @@ from elbow_helper.features.wars.commands import resolve_statement_members
 
 from ...actions.contracts import ActionClass, ChangePreview
 from ...wording import (
-    ACTION_WAR_STATEMENT_BLANK, ACTION_WAR_STATEMENT_LABEL,
+    ACTION_PREVIEW_BLANK, ACTION_WAR_STATEMENT_LABEL,
     ACTION_WAR_STATEMENT_LINE, ACTION_WAR_STATEMENT_PLAYER_UNAVAILABLE,
 )
 from ..outcomes import CommandOutcome
@@ -76,7 +76,7 @@ def _adapter(path: str, kind: str) -> CommandAdapter:
 
         return ChangePreview((
             ACTION_WAR_STATEMENT_LINE.format(channel=post_channel.mention),
-            *(line or ACTION_WAR_STATEMENT_BLANK for line in message.splitlines()),
+            *(line or ACTION_PREVIEW_BLANK for line in message.splitlines()),
         ), recheck, summary=ACTION_WAR_STATEMENT_LABEL)
 
     async def run(context: Any, values: Mapping[str, Any]) -> CommandOutcome:

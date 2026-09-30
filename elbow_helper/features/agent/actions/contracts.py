@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from ..wording import ACTION_AUDIT_REASON
+from ..wording import ACTION_AUDIT_REASON, ACTION_PREVIEW_BLANK
 
 
 class ActionClass(StrEnum):
@@ -29,6 +29,11 @@ class ChangePreview:
     def __post_init__(self) -> None:
         if not self.lines or not callable(self.recheck) or self.count < 1:
             raise ValueError("A change needs preview lines and a precondition")
+        for name in ("lines",):
+            object.__setattr__(self, name, tuple(
+                line if line.strip() else ACTION_PREVIEW_BLANK
+                for line in getattr(self, name)
+            ))
 
 
 @dataclass(frozen=True, slots=True)
