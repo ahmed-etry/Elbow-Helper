@@ -22,6 +22,7 @@ from ..repository import RosterRepository
 from ..ui.emojis import TownHallEmojiProvider
 from ..models import LinkedAccount
 from ..models import Roster
+from ..models import RosterMember
 from ..models import RosterPost
 from .profiles import enrich_accounts
 from ..ui.rendering import build_roster_embeds
@@ -147,13 +148,14 @@ class RosterPostService:
         self,
         roster: Roster,
         page: int | None = 0,
+        *, members_override: list[RosterMember] | None = None,
     ) -> tuple[list[discord.Embed], int, int]:
         layout = await asyncio.to_thread(self._repository.get_layout, roster.id)
-        members = await asyncio.to_thread(
-            self._repository.list_members,
-            roster.id,
-            roster.active_cycle_id,
-        )
+        members = (list(members_override) if members_override is not None else
+                   await asyncio.to_thread(
+                       self._repository.list_members,
+                       roster.id, roster.active_cycle_id,
+                   ))
         townhall_emojis = await self._emojis.get()
         rows_per_page = roster_rows_per_page(members, layout, townhall_emojis)
         page_count = roster_page_count(len(members), rows_per_page)
@@ -161,7 +163,7 @@ class RosterPostService:
         start = page * rows_per_page
         page_members = members[start:start + rows_per_page]
         missing_heroes = [member for member in page_members if member.hero_sum <= 0]
-        if missing_heroes:
+        if missing_heroes and members_override is None:
             profiles = await enrich_accounts(
                 [
                     LinkedAccount(
@@ -424,9 +426,16 @@ class RosterPostService:
         roster: Roster,
         interaction: discord.Interaction,
     ) -> discord.InteractionMessage:
-        embeds, page, page_count = await self.render(roster)
-        message = await interaction.edit_original_response(
-            content=None,
+        return await self.post(
+            roster,
+            lambda **kwargs: interaction.edit_original_response(
+                content=None, **kwargs,
+            ),
+        )
+
+    async def post(self, roster: Roster, send, *, rendered=None):
+        embeds, page, page_count = rendered or await self.render(roster)
+        message = await send(
             embeds=embeds,
             view=self.message_view(
                 roster,

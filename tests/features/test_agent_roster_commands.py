@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
+
+import discord
 
 from elbow_helper.features.agent.commands.adapters.rosters import (
     prepare_roster_clone, prepare_roster_create, prepare_roster_delete,
     prepare_roster_edit,
     prepare_roster_timing,
     prepare_roster_schedule,
+    prepare_roster_post,
     roster_adapters,
 )
 from elbow_helper.features.rosters.cog import Rosters
@@ -236,6 +239,64 @@ class RosterCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Automatic scheduling: Yes → No", prepared.preview.lines)
         self.assertEqual((await prepared.run()).after["schedule_enabled"], False)
         self.assertFalse(await prepared.preview.recheck())
+
+    async def test_post_names_channel_and_opens_roster_after_confirm(self):
+        roster = SimpleNamespace(
+            id=4, guild_id=5, name="Signup", status="closed",
+            role_id=None, buttons_hidden=False,
+        )
+        member = SimpleNamespace(id=2)
+        bot_member = SimpleNamespace(id=3)
+        message = SimpleNamespace(id=99)
+        channel = SimpleNamespace(
+            id=9, mention="<#9>", send=AsyncMock(return_value=message),
+            permissions_for=lambda _: SimpleNamespace(
+                view_channel=True, send_messages=True,
+            ),
+        )
+        guild = SimpleNamespace(
+            id=5, me=bot_member, get_member=lambda _: None,
+            get_channel_or_thread=lambda _: channel,
+        )
+        channel.guild = guild
+        opened = SimpleNamespace(id=4, status="open")
+        workflow = SimpleNamespace(
+            get_roster=AsyncMock(return_value=roster),
+            roster_edit_state=AsyncMock(return_value={
+                "roster": roster, "account_count": 2,
+                "member_ids": (), "posts": (),
+            }),
+            roster_post_effect=lambda _: {
+                "opens": True, "starts_cycle": False,
+                "clears_signups": False,
+            },
+            preview_roster_post=AsyncMock(return_value={
+                "effect": {"opens": True, "starts_cycle": False,
+                           "clears_signups": False},
+                "rendered": ([discord.Embed(title="Signup")], 0, 1),
+                "pages": ((discord.Embed(title="Signup"),),),
+                "signature": ((repr(discord.Embed(title="Signup").to_dict()),),),
+            }),
+            post_roster=AsyncMock(return_value=(opened, message)),
+            roster_post_registered=AsyncMock(return_value=True),
+        )
+        context = SimpleNamespace(
+            bot=SimpleNamespace(get_cog=lambda _: workflow),
+            guild=guild, member=member,
+            source_message=SimpleNamespace(channel=channel),
+        )
+        with patch("elbow_helper.features.agent.commands.adapters.rosters.discord.TextChannel",
+                   new=SimpleNamespace):
+            prepared = await prepare_roster_post(context, {"roster": "4"})
+            self.assertTrue(await prepared.preview.recheck())
+            self.assertIn("Post **Signup** in <#9>.", prepared.preview.lines)
+            self.assertIn("Roster page 1:", prepared.preview.lines)
+            self.assertIn("Signup", prepared.preview.lines)
+            workflow.post_roster.assert_not_awaited()
+            result = await prepared.run()
+        self.assertEqual(result.result["message_id"], 99)
+        self.assertEqual(workflow.post_roster.await_args.args, (4, channel.send))
+        self.assertEqual(workflow.post_roster.await_args.kwargs["rendered"][2], 1)
 
 
 if __name__ == "__main__":

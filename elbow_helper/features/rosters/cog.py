@@ -328,6 +328,70 @@ class Rosters(commands.Cog):
     async def get_roster(self, roster_id: int) -> Roster | None:
         return await self.service.get(roster_id)
 
+    async def post_roster(self, roster_id: int, send,
+                          *, interaction: discord.Interaction | None = None,
+                          rendered=None):
+        async with self._lock(roster_id):
+            current = await self.service.get(roster_id)
+            if current is None:
+                return None
+            opened = await self.service.open(current)
+            message = (await self.posts.post_interaction_response(opened, interaction)
+                       if interaction is not None else
+                       await self.posts.post(opened, send, rendered=rendered))
+            return opened, message
+
+    async def roster_post_registered(self, roster_id: int, message_id: int) -> bool:
+        posts = await asyncio.to_thread(self._repository.list_posts, roster_id)
+        return any(post.message_id == message_id for post in posts)
+
+    def roster_post_effect(self, roster: Roster,
+                           *, now: datetime | None = None) -> dict[str, object]:
+        now = now or datetime.now(dt_timezone.utc)
+        if roster.one_off_open_ts is not None and roster.one_off_close_ts is not None:
+            key = f"once:{roster.one_off_open_ts}"
+            opens = (roster.one_off_open_ts <= int(now.timestamp()) < roster.one_off_close_ts
+                     and roster.last_close_cycle_key != key)
+            starts_cycle = (opens and (roster.last_open_cycle_key != key
+                                       or not roster.active_cycle_id))
+        elif roster.schedule_enabled:
+            window = due_window(roster, now)
+            key = window.cycle_key if window is not None else None
+            opens = (window is not None and window.opens_at <= now < window.closes_at
+                     and roster.last_close_cycle_key != key)
+            starts_cycle = (opens and (roster.last_open_cycle_key != key
+                                       or not roster.active_cycle_id))
+        else:
+            opens = True
+            key = None
+            starts_cycle = roster.active_cycle_id is None
+        return {"opens": bool(opens), "starts_cycle": bool(starts_cycle),
+                "clears_signups": bool(starts_cycle),
+                "cycle_key": key if opens else None}
+
+    async def preview_roster_post(self, roster: Roster) -> dict[str, object]:
+        effect = self.roster_post_effect(roster)
+        members = await self.service.list_members(roster)
+        if effect["clears_signups"]:
+            members = []
+        projected = replace(
+            roster, status="open" if effect["opens"] else "closed",
+            last_open_cycle_key=(effect["cycle_key"]
+                                 if effect["starts_cycle"] and effect["cycle_key"]
+                                 else roster.last_open_cycle_key),
+        )
+        first = await self.posts.render(projected, members_override=members)
+        pages = [first[0]]
+        for page in range(1, first[2]):
+            renders = await self.posts.render(
+                projected, page=page, members_override=members,
+            )
+            pages.append(renders[0])
+        return {"effect": effect, "rendered": first,
+                "pages": tuple(tuple(embeds) for embeds in pages),
+                "signature": tuple(tuple(repr(embed.to_dict()) for embed in embeds)
+                                   for embeds in pages)}
+
     async def roster_deletion_state(self, roster: Roster) -> dict[str, object]:
         members = await self.service.list_members(roster)
         posts = await asyncio.to_thread(self._repository.list_posts, roster.id)
@@ -1259,15 +1323,17 @@ class Rosters(commands.Cog):
             await warn(interaction, "Run this command in the channel where the roster should appear.")
             return
         await interaction.response.defer(thinking=True)
-        async with self._lock(target.id):
-            current = await self.service.get(target.id)
-            if current is None:
-                await interaction.edit_original_response(
-                    content="That roster no longer exists.",
-                )
-                return
-            target = await self.service.open(current)
-            await self.posts.post_interaction_response(target, interaction)
+        result = await self.post_roster(
+            target.id,
+            lambda **kwargs: interaction.edit_original_response(
+                content=None, **kwargs,
+            ),
+            interaction=interaction,
+        )
+        if result is None:
+            await interaction.edit_original_response(
+                content="That roster no longer exists.",
+            )
 
     @app_commands.autocomplete(roster=roster_autocomplete)
     @app_commands.describe(roster="Roster whose current signups you want to export.")
