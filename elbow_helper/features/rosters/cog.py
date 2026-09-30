@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import datetime
 from datetime import timezone as dt_timezone
 import logging
@@ -442,6 +443,129 @@ class Rosters(commands.Cog):
             roster, plan["window"],
             reset_on_open=plan["reset_on_open"], now=plan["now"],
         )
+
+    def plan_roster_schedule(self, roster: Roster, *,
+                             open_day: str | None, open_time: str | None,
+                             close_day: str | None, close_time: str | None,
+                             timezone: str | None, enabled: bool,
+                             reset_on_open: bool | None) -> dict[str, object]:
+        changes: dict[str, object] = {"schedule_enabled": int(enabled)}
+        normalized_open = parse_day_rule(open_day) if open_day is not None else None
+        normalized_close = parse_day_rule(close_day) if close_day is not None else None
+        normalized_open_time = normalize_clock(open_time) if open_time is not None else None
+        normalized_close_time = normalize_clock(close_time) if close_time is not None else None
+        canonical_tz = canonical_timezone_name(timezone) if timezone is not None else None
+        fixed_timezone = fixed_utc_offset_name(canonical_tz) if canonical_tz is not None else None
+        for supplied, normalized, label in (
+            (open_day, normalized_open, "opening"),
+            (close_day, normalized_close, "closing"),
+        ):
+            if supplied is not None and normalized is None:
+                unsupported = _unsupported_monthly_day(supplied)
+                if unsupported is not None:
+                    return {"issue": (
+                        f"Day {unsupported} isn't available every month. Use `last`, "
+                        "`last-1`, or `last-2` for month-end timing."
+                    )}
+                return {"issue": (
+                    f"Enter the {label} day as `1`–`28`, `last`, `last-1`, or `last-2`."
+                )}
+        if open_time is not None and normalized_open_time is None:
+            return {"issue": "Enter the opening time in 24-hour `HH:mm` format."}
+        if close_time is not None and normalized_close_time is None:
+            return {"issue": "Enter the closing time in 24-hour `HH:mm` format."}
+        if timezone is not None and canonical_tz is None:
+            return {"issue": "Choose a timezone from the list."}
+        for key, value in (
+            ("open_day", normalized_open), ("close_day", normalized_close),
+            ("open_time", normalized_open_time), ("close_time", normalized_close_time),
+            ("schedule_utc_offset", fixed_timezone),
+        ):
+            if value is not None:
+                changes[key] = value
+        if reset_on_open is not None:
+            changes["reset_on_open"] = int(reset_on_open)
+        if not enabled:
+            return {"issue": None, "enabled": False, "changes": changes,
+                    "supplied_settings": len(changes) > 1}
+        effective = {
+            "open_day": normalized_open or parse_day_rule(roster.open_day or ""),
+            "close_day": normalized_close or parse_day_rule(roster.close_day or ""),
+            "open_time": normalized_open_time or normalize_clock(roster.open_time or ""),
+            "close_time": normalized_close_time or normalize_clock(roster.close_time or ""),
+            "timezone_name": fixed_timezone or canonical_timezone_name(roster.schedule_utc_offset or ""),
+        }
+        if not all(effective.values()):
+            return {"issue": "Enter the opening day and time, closing day and time, and timezone."}
+        if roster.one_off_open_ts is not None:
+            return {"issue": "Clear the one-off timing before enabling automatic scheduling."}
+        return {"issue": None, "enabled": True, "changes": changes,
+                "effective": effective,
+                "reset_on_open": (roster.reset_on_open if reset_on_open is None
+                                  else reset_on_open)}
+
+    async def apply_roster_schedule(self, roster: Roster,
+                                    plan: dict[str, object],
+                                    *, now: datetime | None = None) -> tuple[Roster, str]:
+        if not plan["enabled"]:
+            updated = await self.service.disable_schedule(roster, plan["changes"])
+            if plan["supplied_settings"]:
+                message = f"Saved the schedule for **{updated.name}**. Automatic scheduling is off."
+            else:
+                message = f"Disabled automatic scheduling for **{updated.name}**."
+            if updated.status == "open":
+                message += " The roster remains open."
+            return updated, message
+        now = now or datetime.now(dt_timezone.utc)
+        effective = plan["effective"]
+        updated = await self.service.configure_schedule(
+            roster, timezone_name=str(effective["timezone_name"]),
+            open_day=str(effective["open_day"]),
+            open_time=str(effective["open_time"]),
+            close_day=str(effective["close_day"]),
+            close_time=str(effective["close_time"]),
+            reset_on_open=plan["reset_on_open"], now=now,
+        )
+        message = f"Scheduled **{updated.name}**."
+        display_window = due_window(updated, now)
+        if not (updated.status == "open" and display_window is not None
+                and display_window.opens_at <= now < display_window.closes_at):
+            display_window = next_window(updated, now)
+            window_label = "Next window"
+        else:
+            window_label = "Current window"
+        if display_window is not None:
+            message += (
+                f"\n{window_label}: {discord.utils.format_dt(display_window.opens_at)} to "
+                f"{discord.utils.format_dt(display_window.closes_at)}."
+            )
+        return updated, message
+
+    def roster_schedule_preview(self, roster: Roster,
+                                plan: dict[str, object],
+                                *, now: datetime | None = None) -> dict[str, object]:
+        if not plan["enabled"]:
+            return {"enabled": False, "window": None,
+                    "opens_now": False, "starts_cycle": False}
+        now = now or datetime.now(dt_timezone.utc)
+        effective = plan["effective"]
+        candidate = replace(
+            roster, schedule_enabled=True,
+            schedule_utc_offset=effective["timezone_name"],
+            open_day=effective["open_day"],
+            open_time=effective["open_time"],
+            close_day=effective["close_day"],
+            close_time=effective["close_time"],
+            reset_on_open=plan["reset_on_open"],
+        )
+        current = due_window(candidate, now)
+        opens_now = (current is not None
+                     and current.opens_at <= now < current.closes_at)
+        starts_cycle = (opens_now and current.cycle_key != roster.last_open_cycle_key
+                        and current.cycle_key != roster.last_close_cycle_key)
+        return {"enabled": True,
+                "window": current if opens_now else next_window(candidate, now),
+                "opens_now": opens_now, "starts_cycle": starts_cycle}
 
     def roster_clone_settings(self, source: Roster, *, name: str,
                               clan_code: str | None, role_id: int | None,
@@ -1110,143 +1234,18 @@ class Rosters(commands.Cog):
         if target is None:
             return
 
-        changes: dict[str, object] = {"schedule_enabled": int(enabled)}
-        normalized_open = parse_day_rule(open_day) if open_day is not None else None
-        normalized_close = parse_day_rule(close_day) if close_day is not None else None
-        normalized_open_time = normalize_clock(open_time) if open_time is not None else None
-        normalized_close_time = normalize_clock(close_time) if close_time is not None else None
-        canonical_tz = canonical_timezone_name(timezone) if timezone is not None else None
-        fixed_timezone = (
-            fixed_utc_offset_name(canonical_tz)
-            if canonical_tz is not None
-            else None
+        plan = self.plan_roster_schedule(
+            target, open_day=open_day, open_time=open_time,
+            close_day=close_day, close_time=close_time,
+            timezone=timezone, enabled=enabled,
+            reset_on_open=reset_on_open,
         )
-        if open_day is not None and normalized_open is None:
-            unsupported_day = _unsupported_monthly_day(open_day)
-            if unsupported_day is not None:
-                await warn(
-                    interaction,
-                    f"Day {unsupported_day} isn't available every month. Use `last`, "
-                    "`last-1`, or `last-2` for month-end timing.",
-                )
-                return
-            await warn(
-                interaction,
-                "Enter the opening day as `1`–`28`, `last`, `last-1`, or `last-2`.",
-            )
-            return
-        if close_day is not None and normalized_close is None:
-            unsupported_day = _unsupported_monthly_day(close_day)
-            if unsupported_day is not None:
-                await warn(
-                    interaction,
-                    f"Day {unsupported_day} isn't available every month. Use `last`, "
-                    "`last-1`, or `last-2` for month-end timing.",
-                )
-                return
-            await warn(
-                interaction,
-                "Enter the closing day as `1`–`28`, `last`, `last-1`, or `last-2`.",
-            )
-            return
-        if open_time is not None and normalized_open_time is None:
-            await warn(interaction, "Enter the opening time in 24-hour `HH:mm` format.")
-            return
-        if close_time is not None and normalized_close_time is None:
-            await warn(interaction, "Enter the closing time in 24-hour `HH:mm` format.")
-            return
-        if timezone is not None and canonical_tz is None:
-            await warn(interaction, "Choose a timezone from the list.")
-            return
-
-        if normalized_open is not None:
-            changes["open_day"] = normalized_open
-        if normalized_close is not None:
-            changes["close_day"] = normalized_close
-        if normalized_open_time is not None:
-            changes["open_time"] = normalized_open_time
-        if normalized_close_time is not None:
-            changes["close_time"] = normalized_close_time
-        if fixed_timezone is not None:
-            changes["schedule_utc_offset"] = fixed_timezone
-        if reset_on_open is not None:
-            changes["reset_on_open"] = int(reset_on_open)
-
-        supplied_settings = len(changes) > 1
-        if not enabled:
-            await interaction.response.defer(ephemeral=True)
-            target = await self.service.disable_schedule(target, changes)
-            if supplied_settings:
-                message = (
-                    f"Saved the schedule for **{target.name}**. Automatic scheduling is off."
-                )
-            else:
-                message = f"Disabled automatic scheduling for **{target.name}**."
-            if target.status == "open":
-                message += " The roster remains open."
-            await interaction.followup.send(message, ephemeral=True)
-            return
-
-        effective_open = normalized_open or parse_day_rule(target.open_day or "")
-        effective_close = normalized_close or parse_day_rule(target.close_day or "")
-        effective_open_time = normalized_open_time or normalize_clock(target.open_time or "")
-        effective_close_time = normalized_close_time or normalize_clock(target.close_time or "")
-        effective_tz = fixed_timezone or canonical_timezone_name(target.schedule_utc_offset or "")
-        if not all(
-            (
-                effective_open,
-                effective_open_time,
-                effective_close,
-                effective_close_time,
-                effective_tz,
-            )
-        ):
-            await warn(
-                interaction,
-                "Enter the opening day and time, closing day and time, and timezone.",
-            )
-            return
-        if target.one_off_open_ts is not None:
-            await warn(
-                interaction,
-                "Clear the one-off timing before enabling automatic scheduling.",
-            )
+        if plan["issue"]:
+            await warn(interaction, plan["issue"])
             return
         await interaction.response.defer(ephemeral=True)
-        now = datetime.now(dt_timezone.utc)
-        target = await self.service.configure_schedule(
-            target,
-            timezone_name=str(effective_tz),
-            open_day=str(effective_open),
-            open_time=str(effective_open_time),
-            close_day=str(effective_close),
-            close_time=str(effective_close_time),
-            reset_on_open=(
-                target.reset_on_open if reset_on_open is None else reset_on_open
-            ),
-            now=now,
-        )
-
-        message = f"Scheduled **{target.name}**."
-        display_window = due_window(target, now)
-        if not (
-            target.status == "open"
-            and display_window is not None
-            and display_window.opens_at <= now < display_window.closes_at
-        ):
-            display_window = next_window(target, now)
-            window_label = "Next window"
-        else:
-            window_label = "Current window"
-        if display_window is not None:
-            message += (
-                f"\n{window_label}: {discord.utils.format_dt(display_window.opens_at)} to "
-                f"{discord.utils.format_dt(display_window.closes_at)}."
-            )
-        await interaction.followup.send(
-            message,
-            ephemeral=True,
-        )
+        _, message = await self.apply_roster_schedule(target, plan)
+        await interaction.followup.send(message, ephemeral=True)
 
     @app_commands.autocomplete(roster=roster_autocomplete)
     @app_commands.describe(roster="Roster to post.")

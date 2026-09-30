@@ -10,6 +10,7 @@ from elbow_helper.features.agent.commands.adapters.rosters import (
     prepare_roster_clone, prepare_roster_create, prepare_roster_delete,
     prepare_roster_edit,
     prepare_roster_timing,
+    prepare_roster_schedule,
     roster_adapters,
 )
 from elbow_helper.features.rosters.cog import Rosters
@@ -190,6 +191,50 @@ class RosterCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Clear one-off timing for **Signup**.",
                       prepared.preview.lines)
         self.assertEqual((await prepared.run()).after["one_off_open_ts"], None)
+        self.assertFalse(await prepared.preview.recheck())
+
+    async def test_disable_schedule_previews_status_and_refresh(self):
+        roster = SimpleNamespace(
+            id=4, guild_id=5, name="Signup", role_id=None,
+            schedule_enabled=True, open_day="last-2", open_time="11:00",
+            close_day="last-1", close_time="20:00",
+            schedule_utc_offset="Europe/Paris", reset_on_open=True,
+        )
+        current = roster
+
+        async def apply(_, plan):
+            nonlocal current
+            current = SimpleNamespace(**{
+                **vars(current), "schedule_enabled": False,
+            })
+            return current, "Disabled automatic scheduling for **Signup**."
+
+        workflow = SimpleNamespace(
+            get_roster=AsyncMock(side_effect=lambda _: current),
+            plan_roster_schedule=lambda roster, **kwargs: Rosters.plan_roster_schedule(
+                None, roster, **kwargs,
+            ),
+            roster_schedule_preview=lambda roster, plan: Rosters.roster_schedule_preview(
+                None, roster, plan,
+            ),
+            roster_edit_state=AsyncMock(return_value={
+                "roster": roster, "account_count": 0,
+                "member_ids": (), "posts": ((9, 99),),
+            }),
+            apply_roster_schedule=AsyncMock(side_effect=apply),
+        )
+        context = SimpleNamespace(
+            bot=SimpleNamespace(get_cog=lambda _: workflow),
+            guild=SimpleNamespace(id=5),
+        )
+        prepared = await prepare_roster_schedule(context, {
+            "roster": "4", "enabled": False,
+        })
+        self.assertTrue(await prepared.preview.recheck())
+        self.assertIn("Disable monthly scheduling for **Signup**.",
+                      prepared.preview.lines)
+        self.assertIn("Automatic scheduling: Yes → No", prepared.preview.lines)
+        self.assertEqual((await prepared.run()).after["schedule_enabled"], False)
         self.assertFalse(await prepared.preview.recheck())
 
 

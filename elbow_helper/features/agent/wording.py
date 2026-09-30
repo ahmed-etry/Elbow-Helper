@@ -267,3 +267,18 @@ ACTION_ROSTER_TIMING_ROLE = "Remove signup role {role} from these members now:"
 ACTION_ROSTER_TIMING_ROLE_KEEP = "Sync signup role {role} for these members now:"
 ACTION_ROSTER_TIMING_MEMBER = "{member}"
 ACTION_ROSTER_TIMING_LABEL = "Set roster timing"
+ACTION_ROSTER_SCHEDULE_DISABLE = "Disable monthly scheduling for **{name}**."
+ACTION_ROSTER_SCHEDULE_ENABLE = "Enable monthly scheduling for **{name}**."
+ACTION_ROSTER_SCHEDULE_RULE = "Open {open_day} at {open_time}; close {close_day} at {close_time} ({timezone})."
+ACTION_ROSTER_SCHEDULE_WINDOW = "{kind} window: {opens} to {closes}."
+ACTION_ROSTER_SCHEDULE_RESET = "Clear existing signups at each opening."
+ACTION_ROSTER_SCHEDULE_KEEP = "Carry existing signups into each opening."
+ACTION_ROSTER_SCHEDULE_LABEL = "Set roster schedule"
+ACTION_ROSTER_SCHEDULE_FIELDS = {
+    "schedule_enabled": "Automatic scheduling", "open_day": "Opening day",
+    "open_time": "Opening time", "close_day": "Closing day",
+    "close_time": "Closing time", "schedule_utc_offset": "Timezone",
+    "reset_on_open": "Clear signups on open",
+}
+ACTION_VALUE_CURRENT = "Current"
+ACTION_VALUE_NEXT = "Next"
