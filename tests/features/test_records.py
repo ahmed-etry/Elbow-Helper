@@ -69,6 +69,10 @@ class _RecordPublisher:
 
 
 class RecordServiceTests(unittest.TestCase):
+    def test_record_details_match_the_editor_limit(self) -> None:
+        with self.assertRaisesRegex(ValueError, "1,000 characters"):
+            RecordService.validate_details("war", "war_missed_attacks", "x" * 1001)
+
     def test_create_edit_remove_and_read_contract(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             repository = RecordRepository(

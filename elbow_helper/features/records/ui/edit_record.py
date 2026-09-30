@@ -143,7 +143,7 @@ class SaveButton(discord.ui.Button):
             if hasattr(child, "disabled"):
                 child.disabled = True
         await interaction.response.edit_message(
-            content=f"Updated record #{view.selected_id} for {view.member.display_name}.",
+            content=view.service.edit_confirmation(view.selected_id, view.member),
             embed=None,
             view=view,
         )

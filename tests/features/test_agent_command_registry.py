@@ -12,6 +12,8 @@ from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInf
 from elbow_helper.features.agent.commands.adapters import enabled_adapters
 from elbow_helper.features.agent.plan.format import capability_list, system_instructions
 from elbow_helper.features.agent.models import RegisteredAgentTool, AgentCapabilityEffect
+from elbow_helper.features.agent.models import AgentTurnState
+from elbow_helper.features.agent.commands.outcomes import CommandOutcome
 from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin
 from elbow_helper.features.clan_health.commands.health import ClanHealthRootCommandMixin
@@ -126,3 +128,31 @@ class CommandRegistryTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 build_command_capabilities(object(),
                                            (CommandAdapter(path, "public", AsyncMock()),) * 2)
+
+
+class ConfirmedCommandInputTests(unittest.IsolatedAsyncioTestCase):
+    async def test_preview_can_ask_for_a_missing_edit_choice(self):
+        path = "/synthetic edit"
+        command = DiscoveredCommand(path, "registered", (
+            ParameterInfo("target", "Choose a target.", True, "integer"),
+        ))
+        help_entry = SimpleNamespace(path=path, summary="Edit a target.",
+                                     details="Changes its values.")
+        prepare = AsyncMock(return_value=CommandOutcome.needs_input((
+            "What should change?",
+        )))
+        adapter = CommandAdapter(path, "confirm", AsyncMock(), prepare=prepare)
+        with (patch("elbow_helper.features.agent.commands.registry.discover_commands",
+                    return_value={path: command}),
+              patch("elbow_helper.features.agent.commands.registry.HELP_ENTRIES", (help_entry,))):
+            tools, _ = build_command_tools(object(), (adapter,))
+        context = SimpleNamespace(state=AgentTurnState())
+        result = await tools["run_command_synthetic_edit"].handler(
+            context, {"target": 7},
+        )
+        self.assertEqual(result["status"], "needs_input")
+        self.assertEqual(context.state.command_proposals, [])
+        self.assertEqual(context.state.command_outcomes[0].missing,
+                         ("What should change?",))
+        self.assertEqual(context.state.command_outcomes[0].command_name,
+                         "/synthetic edit")

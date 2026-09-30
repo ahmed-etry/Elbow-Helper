@@ -23,6 +23,7 @@ class CommandAdapter:
     prepare: Callable[[Any, Mapping[str, Any]], Awaitable[Any]] | None = None
     action_class: ActionClass | None = None
     option_types: tuple[tuple[str, str], ...] = ()
+    agent_details: str = ""
 
     def __post_init__(self) -> None:
         if self.delivery == "confirm" and self.classification not in (
@@ -100,7 +101,7 @@ def build_command_capabilities(
             raise ValueError("Command capability already exists")
         definition = AgentToolDefinition(
             name=name,
-            description=(f"{help_entry.summary} {help_entry.details} "
+            description=(f"{help_entry.summary} {adapter.agent_details or help_entry.details} "
                          + ("The result is private." if adapter.delivery == "private" else
                             "Requires confirmation." if adapter.delivery == "confirm" else "")).strip(),
             parameters={

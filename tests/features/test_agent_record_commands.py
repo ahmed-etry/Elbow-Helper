@@ -9,16 +9,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from elbow_helper.configuration.roles import LEAD_PLUS
 from elbow_helper.features.agent.actions.contracts import ActionClass, check_bundle
 from elbow_helper.features.agent.commands.adapters.records import (
-    prepare_record_add, prepare_record_add_undo, prepare_record_remove,
+    prepare_record_add, prepare_record_add_undo, prepare_record_edit,
+    prepare_record_edit_undo, prepare_record_remove,
     record_adapters, run_record_add, run_record_edit, run_record_export,
     run_record_remove,
 )
-from elbow_helper.features.agent.commands.private_view import PrivateCommandView
 from elbow_helper.features.agent.commands.registry import build_command_capabilities
 from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.help.catalog import HELP_ENTRIES
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 from elbow_helper.features.records.domain.types import INCIDENT_TYPES
+from elbow_helper.features.records.service import RecordService
 
 
 class RecordCommandPatternTests(unittest.IsolatedAsyncioTestCase):
@@ -38,6 +39,12 @@ class RecordCommandPatternTests(unittest.IsolatedAsyncioTestCase):
         })
         self.assertEqual(capabilities["run_command_record_remove"].definition.parameters[
             "properties"]["record"]["type"], "integer")
+        self.assertEqual(capabilities["run_command_record_edit"].required,
+                         ("record",))
+        self.assertIn("old and new values",
+                      capabilities["run_command_record_edit"].definition.description)
+        self.assertNotIn("Opens controls",
+                         capabilities["run_command_record_edit"].definition.description)
 
     def setUp(self):
         self.member = SimpleNamespace(id=4, mention="@member", display_name="Member")
@@ -52,15 +59,14 @@ class RecordCommandPatternTests(unittest.IsolatedAsyncioTestCase):
             "note": "Synthetic details", "updated_ts": 100,
         }
         self.service = SimpleNamespace(
-            validate_details=MagicMock(return_value=(
-                INCIDENT_TYPES[0].category_key, INCIDENT_TYPES[0].key,
-                "Synthetic details",
-            )),
+            validate_details=MagicMock(side_effect=RecordService.validate_details),
             create=MagicMock(return_value=dict(self.record)),
             active_record=MagicMock(return_value=dict(self.record)),
+            edit=MagicMock(return_value=dict(self.record)),
             remove=MagicMock(return_value={**self.record, "status": "removed"}),
             edit_options=MagicMock(return_value=[dict(self.record)]),
             confirmation=MagicMock(return_value="Recorded synthetic incident."),
+            edit_confirmation=MagicMock(return_value="Updated record #7 for Member."),
             display_name=MagicMock(return_value="Member"),
         )
         self.exports = SimpleNamespace(create=AsyncMock(), discard=AsyncMock())
@@ -123,7 +129,7 @@ class RecordCommandPatternTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(adapters["/record remove"].classification, ActionClass.IRREVERSIBLE)
         self.assertEqual(adapters["/record add"].classification, ActionClass.CHANGE)
         self.assertIs(adapters["/record export"].classification, ActionClass.OUTPUT)
-        self.assertIs(adapters["/record edit"].classification, ActionClass.OUTPUT)
+        self.assertIs(adapters["/record edit"].classification, ActionClass.CHANGE)
         from elbow_helper.features.agent.actions.contracts import PreparedAction
         with self.assertRaises(ValueError):
             check_bundle((
@@ -133,20 +139,34 @@ class RecordCommandPatternTests(unittest.IsolatedAsyncioTestCase):
                                ActionClass.IRREVERSIBLE),
             ))
 
-    async def test_editor_is_opened_privately_by_the_requester(self):
-        outcome = await run_record_edit(self.context, {"user": 4})
-        self.assertIsNotNone(outcome.private_panel)
-        view = PrivateCommandView(self.asker.id, (), panel=outcome.private_panel)
-        other = SimpleNamespace(
-            user=SimpleNamespace(id=9), response=SimpleNamespace(send_message=AsyncMock()),
-        )
-        await view.open_result(other)
-        other.response.send_message.assert_awaited_once()
-        with patch("elbow_helper.features.agent.commands.adapters.records.open_record_editor",
-                   new_callable=AsyncMock) as open_editor:
-            interaction = SimpleNamespace(user=self.asker)
-            await outcome.private_panel(interaction)
-        open_editor.assert_awaited_once()
+    async def test_edit_previews_old_and_new_values_and_can_be_undone(self):
+        values = {"user": 4, "record": 7, "note": "Revised details"}
+        preview = await prepare_record_edit(self.context, values)
+        self.assertIn("Details: Synthetic details to Revised details", preview.lines)
+        self.assertTrue(await preview.recheck())
+        edited = {**self.record, "note": "Revised details", "updated_ts": 101}
+        self.service.edit.return_value = edited
+        self.service.active_record.return_value = edited
+        outcome = await run_record_edit(self.context, values)
+        self.assertEqual(outcome.visibility, "private")
+        self.assertEqual(outcome.after["record"]["note"], "Revised details")
+        self.service.edit.assert_called_once()
+
+        undo = await prepare_record_edit_undo(self.context, {
+            "before": preview.before, "after": outcome.after,
+        })
+        self.assertTrue(await undo.preview.recheck())
+        self.assertIn("Details: Revised details to Synthetic details", undo.preview.lines)
+        self.service.edit.return_value = dict(self.record)
+        self.service.active_record.return_value = dict(self.record)
+        restored = await undo.run()
+        self.assertEqual(restored.after["record"]["note"], "Synthetic details")
+        self.assertEqual(self.service.edit.call_count, 2)
+
+    async def test_edit_asks_for_a_change_before_preparing(self):
+        outcome = await prepare_record_edit(self.context, {"user": 4, "record": 7})
+        self.assertEqual(outcome.status, "needs_input")
+        self.service.edit.assert_not_called()
 
     async def test_export_uses_the_public_export_service(self):
         with TemporaryDirectory() as directory:

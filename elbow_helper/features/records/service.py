@@ -49,6 +49,8 @@ class RecordService:
         cleaned_note = note.strip()
         if not cleaned_note:
             raise ValueError("Add details about what happened.")
+        if len(cleaned_note) > 1000:
+            raise ValueError("Details must be 1,000 characters or fewer.")
         return category_key, resolved_type, cleaned_note
 
     def active_record(self, *, member_id: int, record_id: int) -> dict[str, Any] | None:
@@ -128,6 +130,10 @@ class RecordService:
             f"{incident_type_label(str(record.get('incident_type_key') or ''))} "
             f"for {record.get('member_display') or record.get('member_id')}."
         )
+
+    @staticmethod
+    def edit_confirmation(record_id: int, member: Any) -> str:
+        return f"Updated record #{record_id} for {RecordService.display_name(member)}."
 
     def links_for(
         self,

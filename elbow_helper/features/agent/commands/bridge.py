@@ -22,6 +22,21 @@ def _missing_value(value: Any) -> bool:
     return isinstance(value, (list, tuple, dict, set)) and not value
 
 
+def _record_outcome(context: Any, outcome: CommandOutcome,
+                    command_name: str) -> CommandOutcome:
+    outcome = replace(outcome, command_name=command_name)
+    if outcome.visibility == "private" and outcome.text:
+        outcome = replace(outcome, text="",
+                          private_parts=(outcome.text, *outcome.private_parts))
+    if (outcome.visibility == "private" and not outcome.private_parts
+            and not outcome.attachments and outcome.private_panel is None):
+        outcome = replace(outcome, private_parts=(command_reply([outcome]),))
+    context.state.command_outcomes.append(outcome)
+    if outcome.visibility == "public":
+        context.state.attachments.extend(outcome.attachments)
+    return outcome
+
+
 def build_command_tools(
     bot: Any, adapters: Sequence[CommandAdapter],
 ) -> tuple[dict[str, RegisteredAgentTool], dict[str, CommandCapability]]:
@@ -38,6 +53,10 @@ def build_command_tools(
                 if selected.adapter.prepare is None:
                     raise ValueError("Confirmed command needs a preview function")
                 preview = await selected.adapter.prepare(context, values)
+                if isinstance(preview, CommandOutcome):
+                    outcome = _record_outcome(context, preview, selected.adapter.path)
+                    return {"command": selected.adapter.path, "status": outcome.status,
+                            "visibility": outcome.visibility}
                 if not isinstance(preview, ChangePreview):
                     raise TypeError("Command preview is invalid")
                 prepared = PreparedCommand(
@@ -51,15 +70,7 @@ def build_command_tools(
                        else await selected.adapter.run(context, values))
             if not isinstance(outcome, CommandOutcome):
                 raise TypeError("Command adapter returned an invalid result")
-            if outcome.visibility == "private" and outcome.text:
-                outcome = replace(outcome, text="", private_parts=(outcome.text, *outcome.private_parts))
-            if (outcome.visibility == "private" and not outcome.private_parts
-                    and not outcome.attachments and outcome.private_panel is None):
-                outcome = replace(outcome, private_parts=(command_reply([outcome]),))
-            outcome = replace(outcome, command_name=selected.adapter.path)
-            context.state.command_outcomes.append(outcome)
-            if outcome.visibility == "public":
-                context.state.attachments.extend(outcome.attachments)
+            outcome = _record_outcome(context, outcome, selected.adapter.path)
             return {"command": selected.adapter.path, "status": outcome.status,
                     "visibility": outcome.visibility}
         tools[name] = RegisteredAgentTool(
