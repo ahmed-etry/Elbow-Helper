@@ -24,6 +24,35 @@ RAFFLE_HUB_HTTP_RETRY_DELAYS_SECONDS = (1.0, 2.0, 5.0)
 
 
 class AchievementRaffleMixin:
+    async def ticket_grant_state(self, user_id: int):
+        return await self._retry_db_operation(self._ticket_grant_state_internal, user_id)
+
+    async def _ticket_grant_state_internal(self, cursor, user_id: int):
+        month_key = self._month_key()
+        is_open, status = await self._raffle_is_open_internal(cursor, month_key)
+        cursor.execute(
+            'SELECT last_ticket_month FROM user_coins WHERE user_id = ?', (user_id,),
+        )
+        row = cursor.fetchone()
+        has_ticket = row is not None and row[0] == month_key
+        guild = self.bot.get_guild(self.GUILD_ID)
+        member = guild.get_member(user_id) if guild else None
+        issue = status if not is_open else None
+        if issue is None and has_ticket:
+            issue = "User already has a ticket this month."
+        if issue is None and member and self._is_leadership_any(member):
+            issue = "Leadership cannot hold raffle tickets."
+        return {"month_key": month_key, "has_ticket": has_ticket,
+                "open": is_open, "issue": issue}
+
+    async def grant_raffle_ticket(self, user_id: int, reason: str):
+        ok, message = await self._retry_db_operation(
+            self._grant_ticket_internal, user_id, reason,
+        )
+        if ok:
+            await self.update_raffle_hub_message()
+        return ok, message
+
     async def _raffle_list_internal(self, cursor):
         month_key = self._month_key()
         cursor.execute('SELECT user_id FROM raffle_tickets WHERE month_key = ?', (month_key,))
@@ -348,19 +377,10 @@ class AchievementRaffleMixin:
 
     async def _grant_ticket_internal(self, cursor, user_id: int, reason: str):
         await self._ensure_coin_row(cursor, user_id)
-        month_key = self._month_key()
-        is_open, status_msg = await self._raffle_is_open_internal(cursor, month_key)
-        if not is_open:
-            return False, status_msg
-        cursor.execute('SELECT last_ticket_month FROM user_coins WHERE user_id = ?', (user_id,))
-        last_ticket_month = cursor.fetchone()[0]
-        if last_ticket_month == month_key:
-            return False, "User already has a ticket this month."
-        guild = self.bot.get_guild(self.GUILD_ID)
-        if guild:
-            member = guild.get_member(user_id)
-            if member and self._is_leadership_any(member):
-                return False, "Leadership cannot hold raffle tickets."
+        state = await self._ticket_grant_state_internal(cursor, user_id)
+        if state["issue"]:
+            return False, state["issue"]
+        month_key = state["month_key"]
         cursor.execute('UPDATE user_coins SET last_ticket_month = ? WHERE user_id = ?', (month_key, user_id))
         cursor.execute('INSERT OR REPLACE INTO raffle_tickets (month_key, user_id) VALUES (?, ?)', (month_key, user_id))
         cursor.execute('''

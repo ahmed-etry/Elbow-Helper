@@ -256,10 +256,8 @@ class AchievementCommandMixin:
             await deny(interaction)
             return
         await interaction.response.defer(ephemeral=True)
-        ok, msg = await self._retry_db_operation(self._grant_ticket_internal, user.id, reason)
+        ok, msg = await self.grant_raffle_ticket(user.id, reason)
         await interaction.followup.send(msg, ephemeral=True)
-        if ok:
-            await self.update_raffle_hub_message()
 
     @raffle_group.command(name="draw", description="Draw raffle winners for this month or an earlier month.")
     @app_commands.describe(month="Month to draw in YYYY-MM. Leave empty for the current month.")
@@ -521,9 +519,10 @@ class AchievementCommandMixin:
         if not self._require_command_role(interaction):
             await deny(interaction)
             return
-        amount = max(1, min(amount, 10))
         await interaction.response.defer(ephemeral=True)
-        _, msg = await self._retry_db_operation(self._grant_coins_internal, user, category, amount, reason, interaction.user)
+        _, msg = await self.grant_coins_to_member(
+            user, category, amount, reason, interaction.user,
+        )
         await interaction.followup.send(msg, ephemeral=True)
 
     @achievement_group.command(name="award", description="Add an achievement to a member's profile.")

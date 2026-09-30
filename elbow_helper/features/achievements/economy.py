@@ -156,18 +156,26 @@ class AchievementEconomyMixin:
         cursor.execute('UPDATE user_coins SET last_salary_month = ? WHERE user_id = ?', (month_key, user_id))
 
 
-    async def _grant_coins_internal(self, cursor, member: discord.Member, category: str, amount: int, reason: str, actor: discord.Member):
+    async def manual_coin_grant_state(self, member: discord.Member,
+                                      category: str, amount: int,
+                                      actor: discord.Member):
+        return await self._retry_db_operation(
+            self._manual_coin_grant_state_internal, member, category, amount, actor,
+        )
+
+    async def _manual_coin_grant_state_internal(self, cursor, member, category,
+                                                amount, actor):
         user_id = member.id
-        await self._ensure_coin_row(cursor, user_id)
-        if self._is_leadership_any(member):
-            return False, "Leadership users are excluded from the coin system."
         month_key = self._month_key()
         cursor.execute('''
-            SELECT manual_cwl_month, manual_cwl_awarded, manual_enc_month, manual_enc_awarded
+            SELECT balance, manual_cwl_month, manual_cwl_awarded,
+                   manual_enc_month, manual_enc_awarded
             FROM user_coins WHERE user_id = ?
         ''', (user_id,))
         row = cursor.fetchone()
-        cwl_month, cwl_awarded, enc_month, enc_awarded = row if row else (None, 0, None, 0)
+        balance, cwl_month, cwl_awarded, enc_month, enc_awarded = (
+            row if row else (0, None, 0, None, 0)
+        )
         if cwl_month != month_key:
             cwl_awarded = 0
             cwl_month = month_key
@@ -176,25 +184,48 @@ class AchievementEconomyMixin:
             enc_month = month_key
         total_awarded = cwl_awarded + enc_awarded
         override = any(r.id in CORE for r in getattr(actor, "roles", []))
+        issue = None
+        if self._is_leadership_any(member):
+            issue = "Leadership users are excluded from the coin system."
         if category == "cwl":
-            if not override and cwl_awarded + amount > MANUAL_CAP_CWL:
-                return False, f"CWL cap reached ({cwl_awarded}/{MANUAL_CAP_CWL})."
-            if not override and total_awarded + amount > MANUAL_CAP_TOTAL:
-                return False, f"Monthly total cap reached ({total_awarded}/{MANUAL_CAP_TOTAL})."
-            cwl_awarded += amount
+            if not issue and not override and cwl_awarded + amount > MANUAL_CAP_CWL:
+                issue = f"CWL cap reached ({cwl_awarded}/{MANUAL_CAP_CWL})."
         else:
-            if not override and enc_awarded + amount > MANUAL_CAP_ENCOURAGEMENT:
-                return False, f"Encouragement cap reached ({enc_awarded}/{MANUAL_CAP_ENCOURAGEMENT})."
-            if not override and total_awarded + amount > MANUAL_CAP_TOTAL:
-                return False, f"Monthly total cap reached ({total_awarded}/{MANUAL_CAP_TOTAL})."
-            enc_awarded += amount
+            if not issue and not override and enc_awarded + amount > MANUAL_CAP_ENCOURAGEMENT:
+                issue = f"Encouragement cap reached ({enc_awarded}/{MANUAL_CAP_ENCOURAGEMENT})."
+        if not issue and not override and total_awarded + amount > MANUAL_CAP_TOTAL:
+            issue = f"Monthly total cap reached ({total_awarded}/{MANUAL_CAP_TOTAL})."
+        return {
+            "month_key": month_key, "balance": balance,
+            "cwl_awarded": cwl_awarded, "enc_awarded": enc_awarded,
+            "issue": issue,
+        }
+
+    async def grant_coins_to_member(self, member: discord.Member, category: str,
+                                    amount: int, reason: str, actor: discord.Member):
+        amount = max(1, min(amount, 10))
+        return await self._retry_db_operation(
+            self._grant_coins_internal, member, category, amount, reason, actor,
+        )
+
+    async def _grant_coins_internal(self, cursor, member: discord.Member, category: str, amount: int, reason: str, actor: discord.Member):
+        user_id = member.id
+        await self._ensure_coin_row(cursor, user_id)
+        state = await self._manual_coin_grant_state_internal(
+            cursor, member, category, amount, actor,
+        )
+        if state["issue"]:
+            return False, state["issue"]
+        month_key = state["month_key"]
+        cwl_awarded = state["cwl_awarded"] + (amount if category == "cwl" else 0)
+        enc_awarded = state["enc_awarded"] + (amount if category != "cwl" else 0)
 
         await self._add_coins(cursor, user_id, amount, f'manual_{category}', reason, actor.id)
         cursor.execute('''
             UPDATE user_coins
             SET manual_cwl_month = ?, manual_cwl_awarded = ?, manual_enc_month = ?, manual_enc_awarded = ?
             WHERE user_id = ?
-        ''', (cwl_month, cwl_awarded, enc_month, enc_awarded, user_id))
+        ''', (month_key, cwl_awarded, month_key, enc_awarded, user_id))
         coin_word = "coin" if amount == 1 else "coins"
         return True, f"Gave {amount} {coin_word} to {member.display_name} ({category})."
 

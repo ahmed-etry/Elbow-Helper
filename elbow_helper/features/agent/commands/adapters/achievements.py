@@ -22,6 +22,10 @@ from ...wording import (
     ACTION_RAFFLE_PRIZE_LABEL, ACTION_RAFFLE_PRIZE_LINE,
     ACTION_RAFFLE_PRIZE_UNDO_LABEL, ACTION_RAFFLE_PRIZE_VALUE,
     ACTION_RAFFLE_WINNERS_VALUE, ACTION_UNDO_CHANGED,
+    ACTION_COIN_GRANT_BALANCE, ACTION_COIN_GRANT_LABEL,
+    ACTION_COIN_GRANT_LINE, ACTION_COIN_GRANT_REASON,
+    ACTION_TICKET_GRANT_HUB, ACTION_TICKET_GRANT_LABEL,
+    ACTION_TICKET_GRANT_LINE, ACTION_TICKET_GRANT_REASON,
 )
 from ..outcomes import CommandOutcome
 from ..registry import CommandAdapter
@@ -157,6 +161,105 @@ async def run_achievement_remove(context: Any,
                           after={"achievement": after})
 
 
+async def prepare_grant_coins(context: Any,
+                              values: Mapping[str, Any]) -> ChangePreview:
+    workflow = _workflow(context)
+    member = await _member(context, values["user"])
+    if member is None:
+        raise ValueError(ACTION_ACHIEVEMENT_MEMBER_UNAVAILABLE)
+    category = values["category"]
+    amount = max(1, min(int(values["amount"]), 10))
+    state = await workflow.manual_coin_grant_state(
+        member, category, amount, context.member,
+    )
+    if state["issue"]:
+        raise ValueError(state["issue"])
+
+    async def recheck() -> bool:
+        if await _member(context, member.id) is None:
+            return False
+        return await workflow.manual_coin_grant_state(
+            member, category, amount, context.member,
+        ) == state
+
+    return ChangePreview((
+        ACTION_COIN_GRANT_LINE.format(
+            count=amount,
+            coin_word=(ACTION_ACHIEVEMENT_COIN_SINGULAR if amount == 1
+                       else ACTION_ACHIEVEMENT_COIN_PLURAL),
+            member=member.mention, category=category,
+        ),
+        ACTION_COIN_GRANT_REASON.format(reason=values["reason"]),
+        ACTION_COIN_GRANT_BALANCE.format(
+            old=state["balance"], new=state["balance"] + amount,
+        ),
+    ), recheck, summary=ACTION_COIN_GRANT_LABEL, before={"coin_state": state})
+
+
+async def run_grant_coins(context: Any,
+                          values: Mapping[str, Any]) -> CommandOutcome:
+    workflow = _workflow(context)
+    member = await _member(context, values["user"])
+    if member is None:
+        return CommandOutcome.unavailable()
+    category = values["category"]
+    amount = max(1, min(int(values["amount"]), 10))
+    before = await workflow.manual_coin_grant_state(
+        member, category, amount, context.member,
+    )
+    ok, message = await workflow.grant_coins_to_member(
+        member, category, amount, values["reason"], context.member,
+    )
+    if not ok:
+        return CommandOutcome.unavailable()
+    after = await workflow.manual_coin_grant_state(
+        member, category, amount, context.member,
+    )
+    if after["balance"] != before["balance"] + amount:
+        raise OSError("Coin grant could not be verified")
+    return CommandOutcome("complete", "private", text=message,
+                          after={"coin_state": after})
+
+
+async def prepare_grant_ticket(context: Any,
+                               values: Mapping[str, Any]) -> ChangePreview:
+    workflow = _workflow(context)
+    member = await _member(context, values["user"])
+    if member is None:
+        raise ValueError(ACTION_ACHIEVEMENT_MEMBER_UNAVAILABLE)
+    state = await workflow.ticket_grant_state(member.id)
+    if state["issue"]:
+        raise ValueError(state["issue"])
+
+    async def recheck() -> bool:
+        if await _member(context, member.id) is None:
+            return False
+        return await workflow.ticket_grant_state(member.id) == state
+
+    return ChangePreview((
+        ACTION_TICKET_GRANT_LINE.format(member=member.mention),
+        ACTION_TICKET_GRANT_REASON.format(reason=values["reason"]),
+        ACTION_TICKET_GRANT_HUB,
+    ), recheck, summary=ACTION_TICKET_GRANT_LABEL,
+        before={"ticket_state": state})
+
+
+async def run_grant_ticket(context: Any,
+                           values: Mapping[str, Any]) -> CommandOutcome:
+    workflow = _workflow(context)
+    member = await _member(context, values["user"])
+    if member is None:
+        return CommandOutcome.unavailable()
+    ok, message = await workflow.grant_raffle_ticket(member.id, values["reason"])
+    if not ok:
+        return CommandOutcome.unavailable()
+    after = await workflow.ticket_grant_state(member.id)
+    if not after["has_ticket"]:
+        raise OSError("Ticket grant could not be verified")
+    return CommandOutcome("complete", "private", text=message,
+                          after={"ticket_state": after})
+
+
 def _lines(before: tuple[int, str | None, str | None],
            prize: str, winners: int) -> tuple[str, ...]:
     _, old_prize, old_winners = before
@@ -246,6 +349,12 @@ def achievement_adapters() -> tuple[CommandAdapter, ...]:
                        action_class=ActionClass.IRREVERSIBLE),
         CommandAdapter("/achievement remove", "confirm", run_achievement_remove,
                        prepare=prepare_achievement_remove,
+                       action_class=ActionClass.IRREVERSIBLE),
+        CommandAdapter("/grant coins", "confirm", run_grant_coins,
+                       prepare=prepare_grant_coins,
+                       action_class=ActionClass.IRREVERSIBLE),
+        CommandAdapter("/grant ticket", "confirm", run_grant_ticket,
+                       prepare=prepare_grant_ticket,
                        action_class=ActionClass.IRREVERSIBLE),
         CommandAdapter("/raffle prize", "confirm", run_raffle_prize,
                        prepare=prepare_raffle_prize),
