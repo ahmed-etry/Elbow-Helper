@@ -8,6 +8,10 @@ from typing import Any
 import discord
 
 from elbow_helper.configuration.channels import GENERAL_CHAT
+from elbow_helper.features.agent.tools.discord_safety import (
+    check_post_access, resolve_channel,
+)
+from elbow_helper.features.help.discovery import ParameterInfo
 
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...wording import (
@@ -31,6 +35,14 @@ from ...wording import (
     ACTION_RAFFLE_CLEAR_TICKETS_LINE, ACTION_RAFFLE_CLEAR_WINNER,
     ACTION_RAFFLE_CLEAR_TICKET, ACTION_RAFFLE_CLEAR_NONE,
     ACTION_RAFFLE_CLEAR_HUB, ACTION_RAFFLE_CLEAR_LABEL,
+    ACTION_RAFFLE_DRAW_LINE, ACTION_RAFFLE_REROLL_LINE,
+    ACTION_RAFFLE_DRAW_ELIGIBLE, ACTION_RAFFLE_DRAW_OLD,
+    ACTION_RAFFLE_DRAW_PRIOR, ACTION_RAFFLE_DRAW_PRIZE,
+    ACTION_RAFFLE_DRAW_PINGS, ACTION_RAFFLE_DRAW_COLLECT,
+    ACTION_RAFFLE_DRAW_HISTORY, ACTION_RAFFLE_DRAW_HUB,
+    ACTION_RAFFLE_DRAW_LABEL, ACTION_RAFFLE_REROLL_LABEL,
+    ACTION_RAFFLE_WINNER_ONE, ACTION_RAFFLE_WINNER_MANY,
+    ACTION_RAFFLE_CURRENT_MONTH, ACTION_RAFFLE_NO_PRIZE,
 )
 from ..outcomes import CommandOutcome
 from ..registry import CommandAdapter
@@ -337,6 +349,123 @@ async def run_raffle_clear(context: Any,
                           after={"raffle_state": after})
 
 
+async def _draw_target(context: Any, values: Mapping[str, Any]):
+    workflow = _workflow(context)
+    channel_id = values.get("channel") or context.source_message.channel.id
+    channel = await resolve_channel(context, channel_id)
+    check_post_access(channel, context.member, context.guild.me)
+    return workflow, channel
+
+
+async def _draw_state(context: Any, values: Mapping[str, Any], *, reroll: bool):
+    workflow, channel = await _draw_target(context, values)
+    if reroll:
+        month_key = workflow.raffle_draw_month(None)[0]
+    else:
+        month_key, issue, _invalid_format = workflow.raffle_draw_month(values.get("month"))
+        if issue:
+            raise ValueError(issue)
+    state = await workflow.raffle_draw_state(context.guild.id, month_key)
+    issue = workflow.raffle_draw_issue(state, reroll=reroll)
+    if issue:
+        raise ValueError(issue)
+    return workflow, channel, state
+
+
+async def _prepare_draw(context: Any, values: Mapping[str, Any], *,
+                        reroll: bool) -> ChangePreview:
+    workflow, channel, state = await _draw_state(context, values, reroll=reroll)
+    count = state["winners_count"]
+    winner_word = ACTION_RAFFLE_WINNER_ONE if count == 1 else ACTION_RAFFLE_WINNER_MANY
+    if reroll:
+        heading = ACTION_RAFFLE_REROLL_LINE.format(
+            count=count, winner_word=winner_word, channel=channel.mention,
+        )
+    else:
+        month = (ACTION_RAFFLE_CURRENT_MONTH if state["month_key"] == state["current_month_key"]
+                 else workflow.raffle_month_label(state["month_key"]))
+        heading = ACTION_RAFFLE_DRAW_LINE.format(
+            count=count, winner_word=winner_word, month=month,
+            channel=channel.mention,
+        )
+    lines = [heading, ACTION_RAFFLE_DRAW_PRIZE.format(
+        prize=state["reward"] or ACTION_RAFFLE_NO_PRIZE,
+    )]
+    lines.extend(ACTION_RAFFLE_DRAW_OLD.format(member=f"<@{member_id}>")
+                 for member_id in state["active_winners"] if reroll)
+    if reroll:
+        lines.extend(ACTION_RAFFLE_DRAW_PRIOR.format(member=f"<@{member_id}>")
+                     for member_id in state["winners"]
+                     if member_id not in state["active_winners"])
+        lines.append(ACTION_RAFFLE_DRAW_HISTORY)
+    lines.extend(ACTION_RAFFLE_DRAW_ELIGIBLE.format(member=f"<@{member_id}>")
+                 for member_id in state["eligible"])
+    lines.append(ACTION_RAFFLE_DRAW_PINGS)
+    if not reroll:
+        lines.append(ACTION_RAFFLE_DRAW_COLLECT)
+    lines.append(ACTION_RAFFLE_DRAW_HUB)
+
+    async def recheck() -> bool:
+        try:
+            current, target, live = await _draw_state(context, values, reroll=reroll)
+        except ValueError:
+            return False
+        return current is workflow and target.id == channel.id and live == state
+
+    return ChangePreview(
+        tuple(lines), recheck,
+        summary=(ACTION_RAFFLE_REROLL_LABEL if reroll else ACTION_RAFFLE_DRAW_LABEL),
+        count=count, before={"raffle_state": state},
+    )
+
+
+async def prepare_raffle_draw(context: Any,
+                              values: Mapping[str, Any]) -> ChangePreview:
+    return await _prepare_draw(context, values, reroll=False)
+
+
+async def prepare_raffle_reroll(context: Any,
+                                values: Mapping[str, Any]) -> ChangePreview:
+    return await _prepare_draw(context, values, reroll=True)
+
+
+async def _run_draw(context: Any, values: Mapping[str, Any], *,
+                    reroll: bool) -> CommandOutcome:
+    workflow, channel, state = await _draw_state(context, values, reroll=reroll)
+    mentions = discord.AllowedMentions(users=True, roles=False, everyone=False)
+    if reroll:
+        async def post(embed):
+            return await channel.send(embed=embed, allowed_mentions=mentions)
+
+        ok, _result = await workflow.reroll_raffle_winners(context.guild.id, post)
+    else:
+        async def post(content):
+            return await channel.send(content, allowed_mentions=mentions)
+
+        ok, _result = await workflow.draw_raffle_winners(
+            context.guild.id, state["month_key"], post,
+        )
+    if not ok:
+        return CommandOutcome.unavailable()
+    after = await workflow.raffle_draw_state(context.guild.id, state["month_key"])
+    if (not after["active_winners"] or
+            (not reroll and len(after["winners"]) != state["winners_count"])):
+        raise OSError("Raffle draw could not be verified")
+    return CommandOutcome("complete", result={"channel_id": channel.id,
+                                               "winners": after["active_winners"]},
+                          after={"raffle_state": after})
+
+
+async def run_raffle_draw(context: Any,
+                          values: Mapping[str, Any]) -> CommandOutcome:
+    return await _run_draw(context, values, reroll=False)
+
+
+async def run_raffle_reroll(context: Any,
+                            values: Mapping[str, Any]) -> CommandOutcome:
+    return await _run_draw(context, values, reroll=True)
+
+
 def _lines(before: tuple[int, str | None, str | None],
            prize: str, winners: int) -> tuple[str, ...]:
     _, old_prize, old_winners = before
@@ -438,6 +567,18 @@ def achievement_adapters() -> tuple[CommandAdapter, ...]:
                        action_class=ActionClass.IRREVERSIBLE),
         CommandAdapter("/raffle clear", "confirm", run_raffle_clear,
                        prepare=prepare_raffle_clear,
+                       action_class=ActionClass.IRREVERSIBLE),
+        CommandAdapter("/raffle draw", "confirm", run_raffle_draw,
+                       options=(ParameterInfo(
+                           "channel", "Channel for the winner announcement; defaults to this channel.",
+                           False, "channel",
+                       ),), prepare=prepare_raffle_draw,
+                       action_class=ActionClass.IRREVERSIBLE),
+        CommandAdapter("/raffle reroll", "confirm", run_raffle_reroll,
+                       options=(ParameterInfo(
+                           "channel", "Channel for the new results; defaults to this channel.",
+                           False, "channel",
+                       ),), prepare=prepare_raffle_reroll,
                        action_class=ActionClass.IRREVERSIBLE),
         CommandAdapter("/raffle prize", "confirm", run_raffle_prize,
                        prepare=prepare_raffle_prize),

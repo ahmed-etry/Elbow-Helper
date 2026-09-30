@@ -265,37 +265,20 @@ class AchievementCommandMixin:
         if not self._require_command_role(interaction):
             await deny(interaction)
             return
-        current_month_key = self._month_key()
-        target_month_key = current_month_key
-        if month:
-            target_month_key = self._parse_month_label(month.strip())
-            if target_month_key is None:
-                await warn(
-                    interaction,
-                    "That doesn't look like a valid month. Use the format YYYY-MM, like 2025-09.",
-                )
-                return
-            if target_month_key > current_month_key:
-                await interaction.response.send_message("You can't draw raffle winners for a future month.", ephemeral=True)
-                return
+        target_month_key, issue, invalid_format = self.raffle_draw_month(month)
+        if issue:
+            if invalid_format:
+                await warn(interaction, issue)
+            else:
+                await interaction.response.send_message(issue, ephemeral=True)
+            return
         await interaction.response.defer(ephemeral=False)
-        ok, winners, info = await self._retry_db_operation(
-            self._draw_raffle_internal,
-            interaction.guild.id,
-            target_month_key,
+        ok, info = await self.draw_raffle_winners(
+            interaction.guild.id, target_month_key,
+            lambda content: interaction.followup.send(content, ephemeral=False),
         )
         if not ok:
             await interaction.followup.send(info, ephemeral=False)
-            return
-        winner_mentions = ", ".join(f"<@{uid}>" for uid in winners)
-        reward = await self._retry_db_operation(self._get_meta, f"reward_{target_month_key}")
-        reward_text = reward.strip() if isinstance(reward, str) and reward.strip() else "Prize not set"
-        await interaction.followup.send(
-            f"Congratulations, {winner_mentions}! You won this month's raffle prize: **{reward_text}**. "
-            f"Contact <@327057918992187395> to collect it.",
-            ephemeral=False,
-        )
-        await self.update_raffle_hub_message()
 
     @raffle_group.command(name="reroll", description="Draw this month's raffle winners again.")
     async def raffle_reroll(self, interaction: discord.Interaction):
@@ -303,23 +286,12 @@ class AchievementCommandMixin:
             await deny(interaction)
             return
         await interaction.response.defer(ephemeral=False)
-        ok, winners, info = await self._retry_db_operation(
-            self._raffle_reroll_internal, interaction.guild.id
+        ok, info = await self.reroll_raffle_winners(
+            interaction.guild.id,
+            lambda embed: interaction.followup.send(embed=embed, ephemeral=False),
         )
         if not ok:
             await interaction.followup.send(info, ephemeral=False)
-            return
-
-        winner_mentions = ", ".join(f"<@{winner_id}>" for winner_id in winners)
-        result_label = "New result" if len(winners) == 1 else "New results"
-        embed = discord.Embed(
-            title="Raffle Redrawn",
-            description=f"{result_label}: {winner_mentions}",
-            color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
-            timestamp=datetime.now(timezone.utc),
-        )
-        await interaction.followup.send(embed=embed, ephemeral=False)
-        await self.update_raffle_hub_message()
 
 
     @raffle_group.command(name="history", description="See the raffle prize and winners for a selected month.")

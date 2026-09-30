@@ -24,6 +24,115 @@ RAFFLE_HUB_HTTP_RETRY_DELAYS_SECONDS = (1.0, 2.0, 5.0)
 
 
 class AchievementRaffleMixin:
+    def raffle_draw_month(self, month: Optional[str]):
+        current_month_key = self._month_key()
+        if not month:
+            return current_month_key, None, False
+        target_month_key = self._parse_month_label(month.strip())
+        if target_month_key is None:
+            return None, "That doesn't look like a valid month. Use the format YYYY-MM, like 2025-09.", True
+        if target_month_key > current_month_key:
+            return None, "You can't draw raffle winners for a future month.", False
+        return target_month_key, None, False
+
+    def raffle_month_label(self, month_key: int):
+        return self._month_label_from_key(month_key)
+
+    async def raffle_draw_state(self, guild_id: int, month_key: int):
+        return await self._retry_db_operation(
+            self._raffle_draw_state_internal, guild_id, month_key,
+        )
+
+    async def _raffle_draw_state_internal(self, cursor, guild_id, month_key):
+        tickets, eligible = await self._eligible_raffle_tickets(cursor, guild_id, month_key)
+        cursor.execute(
+            'SELECT user_id, is_active FROM raffle_winners WHERE month_key = ? ORDER BY id',
+            (month_key,),
+        )
+        rows = cursor.fetchall()
+        winners_raw = await self._get_meta(cursor, f"winners_{month_key}")
+        try:
+            winners_count = max(1, int(winners_raw)) if winners_raw else 1
+        except (TypeError, ValueError):
+            winners_count = 1
+        reward = await self._get_meta(cursor, f"reward_{month_key}")
+        return {"month_key": month_key, "tickets": tickets, "eligible": eligible,
+                "winners": [row[0] for row in rows],
+                "active_winners": [row[0] for row in rows if row[1]],
+                "winners_count": winners_count,
+                "reward": reward, "current_month_key": self._month_key()}
+
+    def raffle_draw_issue(self, state, *, reroll: bool = False):
+        month_key = state["month_key"]
+        month_scope = (
+            "this month" if month_key == state["current_month_key"]
+            else self._month_label_from_key(month_key)
+        )
+        if reroll:
+            if not state["active_winners"]:
+                return "Raffle has not been drawn yet."
+        elif state["winners"]:
+            return f"Raffle already drawn for {month_scope}."
+        elif not state["tickets"]:
+            return f"No tickets for {month_scope}."
+        elif not state["eligible"]:
+            return f"No eligible tickets for {month_scope}."
+        eligible_count = len(state["eligible"])
+        winners_count = state["winners_count"]
+        if eligible_count < winners_count:
+            ticket_label = f"{eligible_count} eligible ticket" + ("" if eligible_count == 1 else "s")
+            winner_label = f"{winners_count} winner" + ("" if winners_count == 1 else "s")
+            winner_verb = "is" if winners_count == 1 else "are"
+            scope = "This month" if reroll else month_scope.capitalize()
+            return f"{scope} has only {ticket_label}, but {winner_label} {winner_verb} set."
+        return None
+
+    async def _eligible_raffle_tickets(self, cursor, guild_id, month_key):
+        cursor.execute('SELECT user_id FROM raffle_tickets WHERE month_key = ?', (month_key,))
+        tickets = [row[0] for row in cursor.fetchall()]
+        guild = self.bot.get_guild(guild_id)
+        eligible = []
+        for user_id in tickets:
+            member = guild.get_member(user_id) if guild else None
+            if member and not self._is_leadership_any(member):
+                eligible.append(user_id)
+        return tickets, eligible
+
+    async def draw_raffle_winners(self, guild_id: int, month_key: int, post):
+        ok, winners, info = await self._retry_db_operation(
+            self._draw_raffle_internal, guild_id, month_key,
+        )
+        if not ok:
+            return False, info
+        winner_mentions = ", ".join(f"<@{uid}>" for uid in winners)
+        reward = await self._retry_db_operation(self._get_meta, f"reward_{month_key}")
+        reward_text = reward.strip() if isinstance(reward, str) and reward.strip() else "Prize not set"
+        announcement = (
+            f"Congratulations, {winner_mentions}! You won this month's raffle prize: **{reward_text}**. "
+            f"Contact <@327057918992187395> to collect it."
+        )
+        await post(announcement)
+        await self.update_raffle_hub_message()
+        return True, announcement
+
+    async def reroll_raffle_winners(self, guild_id: int, post):
+        ok, winners, info = await self._retry_db_operation(
+            self._raffle_reroll_internal, guild_id,
+        )
+        if not ok:
+            return False, info
+        winner_mentions = ", ".join(f"<@{winner_id}>" for winner_id in winners)
+        result_label = "New result" if len(winners) == 1 else "New results"
+        embed = discord.Embed(
+            title="Raffle Redrawn",
+            description=f"{result_label}: {winner_mentions}",
+            color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
+            timestamp=datetime.now(timezone.utc),
+        )
+        await post(embed)
+        await self.update_raffle_hub_message()
+        return True, embed
+
     async def raffle_member_ticket_state(self, user_id: int):
         return await self._retry_db_operation(
             self._raffle_member_ticket_state_internal, user_id,
@@ -437,41 +546,12 @@ class AchievementRaffleMixin:
 
     async def _raffle_reroll_internal(self, cursor, guild_id: int):
         month_key = self._month_key()
-        cursor.execute(
-            'SELECT user_id FROM raffle_winners WHERE month_key = ? AND is_active = 1',
-            (month_key,),
-        )
-        active_winners = [row[0] for row in cursor.fetchall()]
-        if not active_winners:
-            return False, None, "Raffle has not been drawn yet."
-
-        cursor.execute('SELECT user_id FROM raffle_tickets WHERE month_key = ?', (month_key,))
-        tickets = [row[0] for row in cursor.fetchall()]
-
-        guild = self.bot.get_guild(guild_id)
-        eligible = []
-        for user_id in tickets:
-            member = guild.get_member(user_id) if guild else None
-            if not member:
-                continue
-            if self._is_leadership_any(member):
-                continue
-            eligible.append(user_id)
-
-        winners_raw = await self._get_meta(cursor, f"winners_{month_key}")
-        try:
-            winners_count = max(1, int(winners_raw)) if winners_raw else 1
-        except (TypeError, ValueError):
-            winners_count = 1
-        if len(eligible) < winners_count:
-            ticket_label = f"{len(eligible)} eligible ticket" + ("" if len(eligible) == 1 else "s")
-            winner_label = f"{winners_count} winner" + ("" if winners_count == 1 else "s")
-            winner_verb = "is" if winners_count == 1 else "are"
-            return (
-                False,
-                None,
-                f"This month has only {ticket_label}, but {winner_label} {winner_verb} set.",
-            )
+        state = await self._raffle_draw_state_internal(cursor, guild_id, month_key)
+        issue = self.raffle_draw_issue(state, reroll=True)
+        if issue:
+            return False, None, issue
+        eligible = state["eligible"]
+        winners_count = state["winners_count"]
 
         winners = random.sample(eligible, winners_count)
         drawn_at = int(datetime.now(timezone.utc).timestamp())
@@ -524,48 +604,14 @@ class AchievementRaffleMixin:
     async def _draw_raffle_internal(self, cursor, guild_id: int, month_key: Optional[int] = None):
         current_month_key = self._month_key()
         target_month_key = month_key if month_key is not None else current_month_key
-        month_scope = (
-            "this month"
-            if target_month_key == current_month_key
-            else self._month_label_from_key(target_month_key)
+        state = await self._raffle_draw_state_internal(
+            cursor, guild_id, target_month_key,
         )
-
-        cursor.execute('SELECT user_id FROM raffle_winners WHERE month_key = ? LIMIT 1', (target_month_key,))
-        if cursor.fetchone():
-            return False, None, f"Raffle already drawn for {month_scope}."
-        cursor.execute('SELECT user_id FROM raffle_tickets WHERE month_key = ?', (target_month_key,))
-        tickets = [row[0] for row in cursor.fetchall()]
-        if not tickets:
-            return False, None, f"No tickets for {month_scope}."
-
-        guild = self.bot.get_guild(guild_id)
-        eligible = []
-        for user_id in tickets:
-            member = guild.get_member(user_id) if guild else None
-            if not member:
-                continue
-            if self._is_leadership_any(member):
-                continue
-            eligible.append(user_id)
-
-        if not eligible:
-            return False, None, f"No eligible tickets for {month_scope}."
-
-        winners_raw = await self._get_meta(cursor, f"winners_{target_month_key}")
-        try:
-            winners_count = max(1, int(winners_raw)) if winners_raw else 1
-        except (TypeError, ValueError):
-            winners_count = 1
-
-        if len(eligible) < winners_count:
-            ticket_label = f"{len(eligible)} eligible ticket" + ("" if len(eligible) == 1 else "s")
-            winner_label = f"{winners_count} winner" + ("" if winners_count == 1 else "s")
-            winner_verb = "is" if winners_count == 1 else "are"
-            return (
-                False,
-                None,
-                f"{month_scope.capitalize()} has only {ticket_label}, but {winner_label} {winner_verb} set.",
-            )
+        issue = self.raffle_draw_issue(state)
+        if issue:
+            return False, None, issue
+        eligible = state["eligible"]
+        winners_count = state["winners_count"]
 
         winners = random.sample(eligible, winners_count)
         drawn_at = int(datetime.now(timezone.utc).timestamp())
