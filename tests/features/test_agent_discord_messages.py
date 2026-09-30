@@ -10,7 +10,7 @@ from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.agent.actions.repository import AgentActionRepository
 from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.agent.tools.discord_messages import (
-    prepare_delete, prepare_edit, prepare_post,
+    find_agent_files, prepare_delete, prepare_edit, prepare_post,
 )
 
 
@@ -48,6 +48,7 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
         self.context = SimpleNamespace(
             guild=guild, bot=SimpleNamespace(), member=SimpleNamespace(id=4),
             state=AgentTurnState(), action_repository=repository,
+            history=(), source_message=SimpleNamespace(channel=channel),
         )
         self.channel = channel
         self.messages = messages
@@ -96,5 +97,31 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
             ))
             refused = await prepare_edit(self.context, {
                 "channel_id": 2, "message_id": message_id, "text": "Third",
+            })
+            self.assertIn("error", refused)
+
+    async def test_only_a_delivered_conversation_file_can_be_reposted(self):
+        attachment = SimpleNamespace(
+            filename="result.txt", size=4, read=AsyncMock(return_value=b"data"),
+        )
+        self.messages[77] = SimpleNamespace(
+            id=77, author=self.context.guild.me, attachments=[attachment],
+        )
+        self.context.history = (SimpleNamespace(record=SimpleNamespace(reply_ids=(77,))),)
+        with patch("elbow_helper.features.agent.tools.discord_messages.require_evidence_access",
+                   new_callable=AsyncMock):
+            listed = await find_agent_files(self.context, {})
+            self.assertEqual(listed["files"][0]["file_name"], "result.txt")
+            result = await prepare_post(self.context, {
+                "channel_id": 2, "text": "File attached",
+                "file_message_id": 77, "file_name": "result.txt",
+            })
+            self.assertEqual(result["status"], "confirmation_required")
+            await self.context.state.command_proposals.pop().run()
+            sent_file = self.channel.send.await_args.kwargs["file"]
+            self.assertEqual(sent_file.filename, "result.txt")
+            refused = await prepare_post(self.context, {
+                "channel_id": 2, "text": "File attached",
+                "file_message_id": 78, "file_name": "result.txt",
             })
             self.assertIn("error", refused)

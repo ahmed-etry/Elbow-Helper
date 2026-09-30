@@ -16,7 +16,7 @@ from ..access import require_evidence_access
 from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ..commands.outcomes import CommandOutcome
 from ..message_parts import chunk_response
-from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
+from ..models import AgentAttachment, AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
     ACTION_ATTACH_LINE,
     ACTION_DELETE_DONE, ACTION_DELETE_LABEL, ACTION_DELETE_LINE,
@@ -40,12 +40,21 @@ def _content_options() -> dict[str, Any]:
 def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
     return (
         RegisteredAgentTool(AgentToolDefinition(
+            name="find_agent_files",
+            description="List files the agent delivered earlier in this conversation. Returns their filename and reply message ID for posting a selected file.",
+            parameters={"type": "object", "properties": {
+                "offset": {"type": "integer", "minimum": 0},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 25},
+            }, "required": [], "additionalProperties": False},
+        ), find_agent_files),
+        RegisteredAgentTool(AgentToolDefinition(
             name="post_discord_message",
             description="Post text in a channel visible and writable by both the asker and bot; long text is split. Can attach a file made in this conversation. Pings require explicit preview values. Returns each posted message ID.",
             parameters={"type": "object", "properties": {
                 "channel_id": {"type": "integer", "minimum": 1},
                 **_content_options(),
                 "file_name": {"type": "string", "minLength": 1, "maxLength": 255},
+                "file_message_id": {"type": "integer", "minimum": 1},
             }, "required": ["channel_id", "text"], "additionalProperties": False},
         ), prepare_post, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True),
         RegisteredAgentTool(AgentToolDefinition(
@@ -68,6 +77,60 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
                "additionalProperties": False},
         ), prepare_delete, AgentCapabilityEffect.COMMAND, ActionClass.IRREVERSIBLE, True),
     )
+
+
+def _conversation_reply_ids(context: AgentRequestContext) -> tuple[int, ...]:
+    return tuple(dict.fromkeys(
+        message_id
+        for turn in reversed(context.history)
+        if turn.record is not None
+        for message_id in reversed(turn.record.reply_ids)
+    ))
+
+
+async def _conversation_file(context: AgentRequestContext, message_id: int,
+                             filename: str) -> AgentAttachment:
+    if message_id not in _conversation_reply_ids(context):
+        raise DiscordActionRefused("That file is not from this conversation.")
+    channel = context.source_message.channel
+    check_view_access(channel, context.member, context.guild.me)
+    try:
+        message = await channel.fetch_message(message_id)
+    except discord.NotFound as error:
+        raise DiscordActionRefused("That file is no longer available.") from error
+    if message.author.id != context.guild.me.id:
+        raise DiscordActionRefused("That file is not from an agent reply.")
+    matches = [item for item in message.attachments if item.filename == filename]
+    if len(matches) != 1:
+        raise DiscordActionRefused("Choose one file from that agent reply.")
+    attachment = matches[0]
+    if attachment.size > 24 * 1024 * 1024:
+        raise DiscordActionRefused("That file is too large to post here.")
+    data = await attachment.read(use_cached=False)
+    return AgentAttachment(filename, data)
+
+
+async def find_agent_files(context: AgentRequestContext,
+                           arguments: Mapping[str, Any]) -> Mapping[str, Any]:
+    await require_evidence_access(context)
+    channel = context.source_message.channel
+    check_view_access(channel, context.member, context.guild.me)
+    reply_ids = _conversation_reply_ids(context)
+    offset = arguments.get("offset", 0)
+    limit = arguments.get("limit", 25)
+    files = []
+    for message_id in reply_ids[offset:offset + limit]:
+        try:
+            message = await channel.fetch_message(message_id)
+        except discord.NotFound:
+            continue
+        if message.author.id != context.guild.me.id:
+            continue
+        files.extend({
+            "message_id": message_id, "file_name": item.filename, "size": item.size,
+        } for item in message.attachments)
+    await require_evidence_access(context)
+    return {"files": files, "next_offset": offset + limit if offset + limit < len(reply_ids) else None}
 
 
 def _mentions(context: Any, arguments: Mapping[str, Any], text: str) -> discord.AllowedMentions:
@@ -124,12 +187,23 @@ async def prepare_post(context: AgentRequestContext,
         return {"error": str(error), "prepared_count": 0}
     attachment = None
     if "file_name" in arguments:
-        matches = [item for item in context.state.attachments
-                   if item.filename == arguments["file_name"]]
-        if len(matches) != 1:
-            return {"error": "Choose one file made in this conversation.",
-                    "prepared_count": 0}
-        attachment = matches[0]
+        if "file_message_id" in arguments:
+            try:
+                attachment = await _conversation_file(
+                    context, arguments["file_message_id"], arguments["file_name"],
+                )
+            except DiscordActionRefused as error:
+                return {"error": str(error), "prepared_count": 0}
+        else:
+            matches = [item for item in context.state.attachments
+                       if item.filename == arguments["file_name"]]
+            if len(matches) != 1:
+                return {"error": "Choose one file made in this conversation.",
+                        "prepared_count": 0}
+            attachment = matches[0]
+    elif "file_message_id" in arguments:
+        return {"error": "Choose the file name from that agent reply.",
+                "prepared_count": 0}
     chunks = chunk_response(arguments["text"])
     if not chunks:
         return {"error": "The message has no text.", "prepared_count": 0}
