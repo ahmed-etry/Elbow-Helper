@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 import discord
 from discord import app_commands
@@ -17,6 +19,16 @@ from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import CORE
 
 LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class ClashConnectionCheck:
+    outcome: str
+    clan_name: str = ""
+    clan_tag: str = ""
+    response: Any = None
+    embed: discord.Embed | None = None
+    message: str = ""
 
 
 class DebugCog(commands.Cog):
@@ -51,31 +63,27 @@ class DebugCog(commands.Cog):
         if not any(role.id in CORE for role in getattr(interaction.user, "roles", [])):
             await deny(interaction)
             return
-        if not self.clash_client.configured:
-            await interaction.response.send_message("Clash API access isn't set up yet.", ephemeral=False)
-            return
-
-        await interaction.response.defer(ephemeral=False, thinking=True)
-
-        clan_name = clan or next(iter(CLAN_TAGS.keys()))
-        tag = CLAN_TAGS.get(clan_name)
-        if not tag:
-            await interaction.followup.send(f"`{clan_name}` isn't available for this check.", ephemeral=True)
-            return
-
-        response = await self.clash_client.get(
-            f"/clans/{encode_clash_tag(tag)}/currentwar",
-            attempts=1,
-            timeout_seconds=10,
+        check = await self.check_clash_connection(
+            clan, on_ready=lambda: interaction.response.defer(ephemeral=False, thinking=True),
         )
-        if response.error is not None:
+        if check.outcome == "not_configured":
+            await interaction.response.send_message(check.message, ephemeral=False)
+            return
+        if check.outcome == "invalid_clan":
+            await interaction.followup.send(check.message, ephemeral=True)
+            return
+        if check.outcome == "failed":
             LOGGER.warning(
                 "CoC API test failed: clan=%s reason=%s",
-                clan_name,
-                response.error,
+                check.clan_name,
+                check.response.error,
             )
-            await interaction.followup.send("Clash API check failed. Try again in a moment.", ephemeral=False)
+            await interaction.followup.send(check.message, ephemeral=False)
             return
+        await interaction.followup.send(embed=check.embed, ephemeral=False)
+
+    @staticmethod
+    def _build_connection_embed(clan_name: str, tag: str, response: Any) -> discord.Embed:
         status = response.status
         data = response.payload_object or {}
         latency_ms = response.latency_ms
@@ -120,4 +128,37 @@ class DebugCog(commands.Cog):
             if reason:
                 embed.add_field(name="Reason", value=str(reason), inline=False)
 
-        await interaction.followup.send(embed=embed, ephemeral=False)
+        return embed
+
+    async def check_clash_connection(
+        self, clan: str | None = None,
+        *, on_ready: Callable[[], Awaitable[Any]] | None = None,
+    ) -> ClashConnectionCheck:
+        if not self.clash_client.configured:
+            return ClashConnectionCheck(
+                "not_configured", message="Clash API access isn't set up yet.",
+            )
+        if on_ready is not None:
+            await on_ready()
+        clan_name = clan or next(iter(CLAN_TAGS.keys()))
+        tag = CLAN_TAGS.get(clan_name)
+        if not tag:
+            return ClashConnectionCheck(
+                "invalid_clan", clan_name=clan_name,
+                message=f"`{clan_name}` isn't available for this check.",
+            )
+        response = await self.clash_client.get(
+            f"/clans/{encode_clash_tag(tag)}/currentwar",
+            attempts=1, timeout_seconds=10,
+        )
+        if response.error is not None:
+            return ClashConnectionCheck(
+                "failed", clan_name=clan_name, clan_tag=tag,
+                response=response,
+                message="Clash API check failed. Try again in a moment.",
+            )
+        return ClashConnectionCheck(
+            "complete", clan_name=clan_name, clan_tag=tag,
+            response=response,
+            embed=self._build_connection_embed(clan_name, tag, response),
+        )

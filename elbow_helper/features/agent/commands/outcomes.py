@@ -34,6 +34,15 @@ class CommandOutcome:
         return cls("unavailable")
 
 
+def embed_text(embed: discord.Embed) -> str:
+    """Keep a feature embed's visible facts in a plain agent reply."""
+    parts = [str(value) for value in (embed.title, embed.description) if value]
+    parts.extend(f"{field.name}: {field.value}" for field in embed.fields)
+    if embed.footer.text:
+        parts.append(embed.footer.text)
+    return "\n".join(parts)
+
+
 def command_reply(outcomes: list[CommandOutcome]) -> str:
     missing = tuple(dict.fromkeys(
         description for item in outcomes if item.status == "needs_input"
