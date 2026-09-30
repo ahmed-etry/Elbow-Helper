@@ -121,11 +121,7 @@ class RecordCommandMixin:
         if not self._has_record_access(interaction):
             await deny(interaction)
             return
-        records = await asyncio.to_thread(
-            self.reader.list,
-            member_id=user.id,
-            limit=25,
-        )
+        records = await asyncio.to_thread(self.service.edit_options, member_id=user.id)
         if not records:
             await warn(interaction, f"No records found for {user.display_name}.")
             return

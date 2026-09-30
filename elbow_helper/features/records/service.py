@@ -40,6 +40,24 @@ class RecordService:
             or user.id
         )
 
+    @staticmethod
+    def validate_details(category_key: str, incident_type_key: str,
+                         note: str) -> tuple[str, str, str]:
+        resolved_type = resolve_incident_type(category_key, incident_type_key)
+        if resolved_type is None:
+            raise ValueError("Choose an incident type from the selected category.")
+        cleaned_note = note.strip()
+        if not cleaned_note:
+            raise ValueError("Add details about what happened.")
+        return category_key, resolved_type, cleaned_note
+
+    def active_record(self, *, member_id: int, record_id: int) -> dict[str, Any] | None:
+        return next((record for record in self.reader.list(member_id=member_id)
+                     if record["id"] == record_id), None)
+
+    def edit_options(self, *, member_id: int) -> list[dict[str, Any]]:
+        return self.reader.list(member_id=member_id, limit=25)
+
     def create(
         self,
         *,
@@ -49,23 +67,16 @@ class RecordService:
         note: str,
         recorder: Any,
     ) -> dict[str, Any]:
-        resolved_type = resolve_incident_type(
-            category_key,
-            incident_type_key,
+        category_key, resolved_type, note = self.validate_details(
+            category_key, incident_type_key, note,
         )
-        if resolved_type is None:
-            raise ValueError(
-                "Choose an incident type from the selected category."
-            )
-        if not note.strip():
-            raise ValueError("Add details about what happened.")
         return self._repository.insert(
             created_ts=int(time.time()),
             member_id=member.id,
             member_display=self.display_name(member),
             category_key=category_key,
             incident_type_key=resolved_type,
-            note=note.strip(),
+            note=note,
             recorder_id=recorder.id,
             recorder_display=self.display_name(recorder),
         )
@@ -80,22 +91,15 @@ class RecordService:
         note: str,
         editor: Any,
     ) -> dict[str, Any] | None:
-        resolved_type = resolve_incident_type(
-            category_key,
-            incident_type_key,
+        category_key, resolved_type, note = self.validate_details(
+            category_key, incident_type_key, note,
         )
-        if resolved_type is None:
-            raise ValueError(
-                "Choose an incident type from the selected category."
-            )
-        if not note.strip():
-            raise ValueError("Add details about what happened.")
         return self._repository.update(
             record_id=record_id,
             member_id=member_id,
             category_key=category_key,
             incident_type_key=resolved_type,
-            note=note.strip(),
+            note=note,
             updated_ts=int(time.time()),
             edited_by_id=editor.id,
             edited_by_display=self.display_name(editor),
