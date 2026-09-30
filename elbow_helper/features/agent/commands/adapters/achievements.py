@@ -5,8 +5,20 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from ...actions.contracts import ChangePreview, PreparedAction
+import discord
+
+from elbow_helper.configuration.channels import GENERAL_CHAT
+
+from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...wording import (
+    ACTION_ACHIEVEMENT_ALREADY_HELD, ACTION_ACHIEVEMENT_AMBIGUOUS,
+    ACTION_ACHIEVEMENT_ANNOUNCE_LINE, ACTION_ACHIEVEMENT_AWARD_LABEL,
+    ACTION_ACHIEVEMENT_AWARD_LINE, ACTION_ACHIEVEMENT_COIN_LINE,
+    ACTION_ACHIEVEMENT_COIN_ADD, ACTION_ACHIEVEMENT_COIN_REMOVE,
+    ACTION_ACHIEVEMENT_COIN_PLURAL, ACTION_ACHIEVEMENT_COIN_SINGULAR,
+    ACTION_ACHIEVEMENT_MEMBER_UNAVAILABLE, ACTION_ACHIEVEMENT_NOT_HELD,
+    ACTION_ACHIEVEMENT_REMOVE_LABEL,
+    ACTION_ACHIEVEMENT_REMOVE_LINE, ACTION_ACHIEVEMENT_UNKNOWN,
     ACTION_RAFFLE_PRIZE_LABEL, ACTION_RAFFLE_PRIZE_LINE,
     ACTION_RAFFLE_PRIZE_UNDO_LABEL, ACTION_RAFFLE_PRIZE_VALUE,
     ACTION_RAFFLE_WINNERS_VALUE, ACTION_UNDO_CHANGED,
@@ -20,6 +32,129 @@ def _workflow(context: Any):
     if workflow is None:
         raise ValueError("The raffle is unavailable")
     return workflow
+
+
+async def _member(context: Any, member_id: int):
+    member = context.guild.get_member(member_id)
+    if member is not None:
+        return member
+    try:
+        return await context.guild.fetch_member(member_id)
+    except discord.DiscordException:
+        return None
+
+
+async def _achievement_state(workflow: Any, member_id: int, query: str):
+    try:
+        state = await workflow.achievement_change_state(member_id, query)
+    except ValueError as error:
+        raise ValueError(ACTION_ACHIEVEMENT_AMBIGUOUS) from error
+    if state is None:
+        raise ValueError(ACTION_ACHIEVEMENT_UNKNOWN)
+    return state
+
+
+def _coin_line(action: str, count: int) -> str:
+    return ACTION_ACHIEVEMENT_COIN_LINE.format(
+        action=action, count=count,
+        coin_word=(ACTION_ACHIEVEMENT_COIN_SINGULAR if count == 1
+                   else ACTION_ACHIEVEMENT_COIN_PLURAL),
+    )
+
+
+async def prepare_achievement_award(context: Any,
+                                    values: Mapping[str, Any]) -> ChangePreview:
+    workflow = _workflow(context)
+    member = await _member(context, values["user"])
+    if member is None:
+        raise ValueError(ACTION_ACHIEVEMENT_MEMBER_UNAVAILABLE)
+    state = await _achievement_state(workflow, member.id, values["achievement"])
+    if state["completed_date"] is not None:
+        raise ValueError(ACTION_ACHIEVEMENT_ALREADY_HELD)
+    silent = bool(values.get("silent", False))
+    lines = [ACTION_ACHIEVEMENT_AWARD_LINE.format(
+        achievement=state["name"], member=member.mention,
+    )]
+    if state["reward"]:
+        lines.append(_coin_line(ACTION_ACHIEVEMENT_COIN_ADD, state["reward"]))
+    announce = not silent and workflow.bot.get_channel(GENERAL_CHAT) is not None
+    if announce:
+        lines.append(ACTION_ACHIEVEMENT_ANNOUNCE_LINE.format(
+            channel=f"<#{GENERAL_CHAT}>",
+        ))
+
+    async def recheck() -> bool:
+        if await _member(context, member.id) is None:
+            return False
+        return (await workflow.achievement_change_state(member.id, state["id"]) == state
+                and (not silent and workflow.bot.get_channel(GENERAL_CHAT) is not None)
+                == announce)
+
+    return ChangePreview(tuple(lines), recheck, summary=ACTION_ACHIEVEMENT_AWARD_LABEL,
+                         before={"achievement": state})
+
+
+async def run_achievement_award(context: Any,
+                                values: Mapping[str, Any]) -> CommandOutcome:
+    workflow = _workflow(context)
+    member = await _member(context, values["user"])
+    if member is None:
+        return CommandOutcome.unavailable()
+    state = await _achievement_state(workflow, member.id, values["achievement"])
+    success, message = await workflow.manually_award_achievement(
+        member.id, state["id"], context.member.display_name,
+        bool(values.get("silent", False)),
+    )
+    if not success:
+        return CommandOutcome.unavailable()
+    after = await workflow.achievement_change_state(member.id, state["id"])
+    if after is None or after["completed_date"] is None:
+        raise OSError("Achievement award could not be verified")
+    return CommandOutcome("complete", "private", text=f"{message} to {member.display_name}.",
+                          after={"achievement": after})
+
+
+async def prepare_achievement_remove(context: Any,
+                                     values: Mapping[str, Any]) -> ChangePreview:
+    workflow = _workflow(context)
+    member = await _member(context, values["user"])
+    if member is None:
+        raise ValueError(ACTION_ACHIEVEMENT_MEMBER_UNAVAILABLE)
+    state = await _achievement_state(workflow, member.id, values["achievement"])
+    if state["completed_date"] is None:
+        raise ValueError(ACTION_ACHIEVEMENT_NOT_HELD)
+    lines = [ACTION_ACHIEVEMENT_REMOVE_LINE.format(
+        achievement=state["name"], member=member.mention,
+    )]
+    if state["reward"] and state["reversal_due"]:
+        lines.append(_coin_line(ACTION_ACHIEVEMENT_COIN_REMOVE, state["reward"]))
+
+    async def recheck() -> bool:
+        if await _member(context, member.id) is None:
+            return False
+        return await workflow.achievement_change_state(member.id, state["id"]) == state
+
+    return ChangePreview(tuple(lines), recheck, summary=ACTION_ACHIEVEMENT_REMOVE_LABEL,
+                         before={"achievement": state})
+
+
+async def run_achievement_remove(context: Any,
+                                 values: Mapping[str, Any]) -> CommandOutcome:
+    workflow = _workflow(context)
+    member = await _member(context, values["user"])
+    if member is None:
+        return CommandOutcome.unavailable()
+    state = await _achievement_state(workflow, member.id, values["achievement"])
+    success, message = await workflow.manually_remove_achievement(
+        member.id, state["id"], context.member.display_name,
+    )
+    if not success:
+        return CommandOutcome.unavailable()
+    after = await workflow.achievement_change_state(member.id, state["id"])
+    if after is None or after["completed_date"] is not None:
+        raise OSError("Achievement removal could not be verified")
+    return CommandOutcome("complete", "private", text=f"{message} from {member.display_name}.",
+                          after={"achievement": after})
 
 
 def _lines(before: tuple[int, str | None, str | None],
@@ -105,5 +240,13 @@ async def prepare_raffle_prize_undo(context: Any,
 
 
 def achievement_adapters() -> tuple[CommandAdapter, ...]:
-    return (CommandAdapter("/raffle prize", "confirm", run_raffle_prize,
-                           prepare=prepare_raffle_prize),)
+    return (
+        CommandAdapter("/achievement award", "confirm", run_achievement_award,
+                       prepare=prepare_achievement_award,
+                       action_class=ActionClass.IRREVERSIBLE),
+        CommandAdapter("/achievement remove", "confirm", run_achievement_remove,
+                       prepare=prepare_achievement_remove,
+                       action_class=ActionClass.IRREVERSIBLE),
+        CommandAdapter("/raffle prize", "confirm", run_raffle_prize,
+                       prepare=prepare_raffle_prize),
+    )

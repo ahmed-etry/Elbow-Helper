@@ -16,6 +16,48 @@ from .definitions import ACHIEVEMENT_PHRASES
 from .definitions import COIN_REWARDS
 
 class AchievementServiceMixin:
+    async def achievement_change_state(self, user_id: int, query: str):
+        """Resolve an achievement and read the member's award and coin state."""
+        return await self._retry_db_operation(
+            self._achievement_change_state_internal, user_id, query,
+        )
+
+    async def _achievement_change_state_internal(
+        self, cursor: sqlite3.Cursor, user_id: int, query: str,
+    ):
+        cursor.execute("SELECT id, name FROM achievements ORDER BY name")
+        rows = cursor.fetchall()
+        needle = query.strip().casefold()
+        exact = [row for row in rows if needle in (row[0].casefold(), row[1].casefold())]
+        matches = exact or [row for row in rows if needle in row[0].casefold()
+                            or needle in row[1].casefold()]
+        if not needle or not matches:
+            return None
+        if len(matches) != 1:
+            raise ValueError("ambiguous achievement")
+        achievement_id, name = matches[0]
+        cursor.execute(
+            "SELECT completed_date FROM user_achievements "
+            "WHERE user_id = ? AND achievement_id = ?",
+            (user_id, achievement_id),
+        )
+        completed = cursor.fetchone()
+        cursor.execute(
+            "SELECT type, COUNT(*) FROM coin_transactions "
+            "WHERE user_id = ? AND reason = ? "
+            "AND type IN ('achievement', 'achievement_reversal') GROUP BY type",
+            (user_id, achievement_id),
+        )
+        counts = dict(cursor.fetchall())
+        return {
+            "id": achievement_id, "name": name,
+            "completed_date": completed[0] if completed else None,
+            "reward": COIN_REWARDS.get(achievement_id, 0),
+            "reversal_due": counts.get("achievement", 0) > counts.get(
+                "achievement_reversal", 0,
+            ),
+        }
+
     async def award_achievement(self, user_id: int, achievement_id: str, announce: bool = True, cursor: sqlite3.Cursor = None):
         """Award an achievement to a user"""
         if cursor:
