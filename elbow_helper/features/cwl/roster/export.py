@@ -433,6 +433,36 @@ class CwlRosterExportMixin:
         )
         self._apply_roster_xlsx_features(workbook_path, sheets)
 
+    async def prepare_cwl_roster_workbook(
+        self, sheets: Sequence[ExportSheet],
+    ) -> tuple[str, str, Path]:
+        timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+        workbook_name = f"cwl_roster_{timestamp}.xlsx"
+        workbook_path = self.cwl_exports.temporary_path("cwl_roster")
+        await asyncio.to_thread(self._write_roster_xlsx, workbook_path, sheets)
+        return timestamp, workbook_name, workbook_path
+
+    async def build_cwl_roster_attachment(
+        self, sheets: Sequence[ExportSheet],
+    ) -> tuple[str, bytes]:
+        _, workbook_name, workbook_path = await self.prepare_cwl_roster_workbook(sheets)
+        try:
+            data = await asyncio.to_thread(workbook_path.read_bytes)
+            return workbook_name, data
+        finally:
+            warning = await asyncio.to_thread(self.cwl_exports.delete, workbook_path)
+            if warning:
+                LOGGER.warning("Local cleanup warning: %s", warning)
+
+    def cwl_roster_summary(self, history_label: str,
+                           signed_member_count: int,
+                           signed_account_count: int) -> list[str]:
+        return [
+            f"**CWL Roster Planner ({history_label})**",
+            f"**{signed_member_count}** members • "
+            f"**{signed_account_count}** Clash accounts signed up",
+        ]
+
     async def _send_roster_workbook(
         self,
         *,
@@ -442,13 +472,8 @@ class CwlRosterExportMixin:
         signed_member_count: int,
         signed_account_count: int,
     ) -> None:
-        timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-        workbook_name = f"cwl_roster_{timestamp}.xlsx"
-        workbook_path = self.cwl_exports.temporary_path("cwl_roster")
         try:
-            await asyncio.to_thread(
-                self._write_roster_xlsx,
-                workbook_path,
+            timestamp, workbook_name, workbook_path = await self.prepare_cwl_roster_workbook(
                 sheets,
             )
         except (OSError, TypeError, ValueError, zipfile.BadZipFile, ElementTree.ParseError):
@@ -479,11 +504,9 @@ class CwlRosterExportMixin:
             )
             if cleanup_warning:
                 LOGGER.warning("Local cleanup warning: %s", cleanup_warning)
-            lines = [
-                f"**CWL Roster Planner ({history_label})**",
-                f"**{signed_member_count}** members • "
-                f"**{signed_account_count}** Clash accounts signed up",
-            ]
+            lines = self.cwl_roster_summary(
+                history_label, signed_member_count, signed_account_count,
+            )
 
             view = discord.ui.View(timeout=None)
             if google_link:

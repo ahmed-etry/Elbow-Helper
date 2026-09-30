@@ -14,6 +14,7 @@ from .achievements import achievement_adapters
 from .account_links import account_link_adapters
 from .war_statements import war_statement_adapters
 from .cwl_register import cwl_register_adapters
+from .cwl_roster import cwl_roster_adapters
 
 
 def enabled_adapters():
@@ -21,7 +22,8 @@ def enabled_adapters():
             *event_adapters(), *diagnostic_adapters(), *cwl_bonus_adapters(),
             *role_connection_adapters(), *cwl_brief_adapters(),
             *achievement_adapters(), *account_link_adapters(),
-            *war_statement_adapters(), *cwl_register_adapters())
+            *war_statement_adapters(), *cwl_register_adapters(),
+            *cwl_roster_adapters())
 
 
 __all__ = ["enabled_adapters", "run_health_player", "run_opinion"]
