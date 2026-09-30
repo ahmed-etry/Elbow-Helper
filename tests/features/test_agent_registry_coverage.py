@@ -30,7 +30,7 @@ READ_COVERAGE = {
 
 # Remove each entry when its feature adapter is added.
 NOT_YET_ADAPTED = frozenset({
-    "/accept", "/account add", "/account remove", "/checkup", "/close",
+    "/accept", "/checkup", "/close",
     "/cwl register", "/cwl roster", "/decline",
     "/finalize", "/hibernate",
     "/open", "/plan", "/reactivate", "/recstatements",

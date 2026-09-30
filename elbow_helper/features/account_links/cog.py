@@ -437,6 +437,82 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
 
         return valid, invalid
 
+    def account_board_refresh_available(self) -> bool:
+        return getattr(self, "_board_refresher", None) is not None
+
+    async def account_add_operation(self, member: discord.Member, tags: str,
+                                    *, commit: bool = True) -> dict[str, Any]:
+        valid_tags, invalid_tags = self._parse_player_tag_input(tags)
+        if not valid_tags:
+            return {"error": "None of those player tags were recognized. Check the tags and try again."}
+        player_rows = await self.lookup_players(valid_tags)
+        member_links = self.get_links_for_user(member.id)
+        existing_links = self.get_all_links()
+        before = {tag: existing_links.get(tag) for tag in valid_tags}
+        has_primary = any(bool(row.get("is_primary")) for row in member_links)
+        lines: list[str] = []
+        link_rows: list[dict[str, object]] = []
+        for row in player_rows:
+            tag = str(row["player_tag"])
+            existing = existing_links.get(tag)
+            is_primary = False
+            if existing and int(existing["discord_user_id"]) == member.id:
+                is_primary = bool(existing.get("is_primary"))
+            elif not has_primary:
+                is_primary = True
+                has_primary = True
+            link_rows.append({
+                "player_tag": tag,
+                "discord_user_id": member.id,
+                "is_primary": is_primary,
+                "player_name_last_seen": str(row["player_name"]),
+            })
+            if existing and int(existing["discord_user_id"]) != member.id:
+                lines.append(
+                    f"- Reassigned {row['player_name']} (`{tag}`) from <@{int(existing['discord_user_id'])}> to {member.mention}"
+                )
+            else:
+                lines.append(f"- Linked {row['player_name']} (`{tag}`) to {member.mention}")
+        if commit:
+            self.upsert_links(link_rows)
+            await self._try_refresh_linked_boards()
+        if invalid_tags:
+            lines.append(f"- Invalid player tags: {', '.join(invalid_tags)}")
+        return {"error": None, "lines": lines, "message": "\n".join(lines),
+                "rows": link_rows, "before": before,
+                "member_links": member_links, "invalid_tags": invalid_tags,
+                "refresh_boards": self.account_board_refresh_available()}
+
+    async def account_remove_operation(self, tags: str, *,
+                                       commit: bool = True) -> dict[str, Any]:
+        valid_tags, invalid_tags = self._parse_player_tag_input(tags)
+        if not valid_tags:
+            return {"error": "None of those player tags were recognized. Check the tags and try again."}
+        existing_links = self.get_all_links()
+        before = {tag: existing_links.get(tag) for tag in valid_tags}
+        tags_to_remove: list[str] = []
+        lines: list[str] = []
+        for tag in valid_tags:
+            existing = existing_links.get(tag)
+            if not existing:
+                lines.append(f"- No Discord member linked to `{tag}`")
+                continue
+            tags_to_remove.append(tag)
+            lines.append(f"- Removed `{tag}` from <@{int(existing['discord_user_id'])}>")
+        if commit and tags_to_remove:
+            self.delete_links(tags_to_remove)
+            await self._try_refresh_linked_boards()
+        if invalid_tags:
+            lines.append(f"- Invalid player tags: {', '.join(invalid_tags)}")
+        return {"error": None, "lines": lines, "message": "\n".join(lines),
+                "tags_to_remove": tags_to_remove, "before": before,
+                "invalid_tags": invalid_tags,
+                "refresh_boards": self.account_board_refresh_available()}
+
+    async def restore_account_add(self, before: dict[str, dict[str, Any] | None]) -> None:
+        self.restore_links(before)
+        await self._try_refresh_linked_boards()
+
     @account_group.command(name="add", description="Link one or more Clash accounts to a Discord member.")
     @app_commands.describe(
         member="Discord member who owns these Clash accounts.",
@@ -450,51 +526,11 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         await interaction.response.defer(ephemeral=True)
 
         try:
-            valid_tags, invalid_tags = self._parse_player_tag_input(tags)
-            if not valid_tags:
-                await warn(interaction, "None of those player tags were recognized. Check the tags and try again.")
+            result = await self.account_add_operation(member, tags)
+            if result["error"]:
+                await warn(interaction, result["error"])
                 return
-
-            player_rows = await self.lookup_players(valid_tags)
-            existing_member_links = self.get_links_for_user(member.id)
-            existing_links = self.get_all_links()
-            has_primary = any(bool(row.get("is_primary")) for row in existing_member_links)
-            lines: list[str] = []
-            link_rows: list[dict[str, object]] = []
-
-            for row in player_rows:
-                tag = str(row["player_tag"])
-                existing = existing_links.get(tag)
-                is_primary = False
-                if existing and int(existing["discord_user_id"]) == member.id:
-                    is_primary = bool(existing.get("is_primary"))
-                elif not has_primary:
-                    is_primary = True
-                    has_primary = True
-
-                link_rows.append(
-                    {
-                        "player_tag": tag,
-                        "discord_user_id": member.id,
-                        "is_primary": is_primary,
-                        "player_name_last_seen": str(row["player_name"]),
-                    }
-                )
-
-                if existing and int(existing["discord_user_id"]) != member.id:
-                    lines.append(
-                        f"- Reassigned {row['player_name']} (`{tag}`) from <@{int(existing['discord_user_id'])}> to {member.mention}"
-                    )
-                else:
-                    lines.append(f"- Linked {row['player_name']} (`{tag}`) to {member.mention}")
-
-            self.upsert_links(link_rows)
-            await self._try_refresh_linked_boards()
-
-            if invalid_tags:
-                lines.append(f"- Invalid player tags: {', '.join(invalid_tags)}")
-
-            await interaction.followup.send("\n".join(lines), ephemeral=True)
+            await interaction.followup.send(result["message"], ephemeral=True)
         except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError):
             LOGGER.exception("Manual account add failed: member_id=%s", member.id)
             await fail(interaction)
@@ -509,30 +545,11 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         await interaction.response.defer(ephemeral=True)
 
         try:
-            valid_tags, invalid_tags = self._parse_player_tag_input(tags)
-            if not valid_tags:
-                await warn(interaction, "None of those player tags were recognized. Check the tags and try again.")
+            result = await self.account_remove_operation(tags)
+            if result["error"]:
+                await warn(interaction, result["error"])
                 return
-
-            existing_links = self.get_all_links()
-            tags_to_remove: list[str] = []
-            lines: list[str] = []
-            for tag in valid_tags:
-                existing = existing_links.get(tag)
-                if not existing:
-                    lines.append(f"- No Discord member linked to `{tag}`")
-                    continue
-                tags_to_remove.append(tag)
-                lines.append(f"- Removed `{tag}` from <@{int(existing['discord_user_id'])}>")
-
-            if tags_to_remove:
-                self.delete_links(tags_to_remove)
-                await self._try_refresh_linked_boards()
-
-            if invalid_tags:
-                lines.append(f"- Invalid player tags: {', '.join(invalid_tags)}")
-
-            await interaction.followup.send("\n".join(lines), ephemeral=True)
+            await interaction.followup.send(result["message"], ephemeral=True)
         except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError):
             LOGGER.exception("Manual account remove failed")
             await fail(interaction)

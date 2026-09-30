@@ -201,6 +201,30 @@ class AccountLinksDbMixin:
         with self._db_connect() as conn, conn:
             conn.executemany(_LINK_UPSERT_SQL, values)
 
+    def restore_links(self, before: Mapping[str, Mapping[str, Any] | None]) -> None:
+        """Restore a link group in one transaction."""
+        if not before:
+            return
+        with self._db_connect() as conn, conn:
+            conn.executemany(
+                "DELETE FROM links WHERE player_tag = ?",
+                ((tag,) for tag in before),
+            )
+            conn.executemany(
+                _LINK_UPSERT_SQL,
+                (
+                    (
+                        tag, int(row["discord_user_id"]),
+                        int(row.get("is_primary") or 0),
+                        str(row.get("player_name_last_seen") or ""),
+                        str(row.get("last_seen_clan_tag") or ""),
+                        str(row.get("last_seen_clan_code") or ""),
+                        str(row.get("last_seen_role") or ""),
+                    )
+                    for tag, row in before.items() if row is not None
+                ),
+            )
+
     def update_link_last_seen(
         self,
         *,
