@@ -849,6 +849,61 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(context.state.command_proposals), 2)
         run.assert_not_awaited()
 
+    async def test_action_preview_keeps_an_earlier_action_result_reference(self):
+        reference = {"step": "created", "path": ["target_id"]}
+        async def create(context, arguments):
+            context.state.command_proposals.append(PreparedAction(
+                "synthetic_create", {},
+                ChangePreview(("Create a target",), AsyncMock(return_value=True)),
+                AsyncMock(return_value=CommandOutcome("complete", result={"target_id": 7})),
+            ))
+            return {"status": "confirmation_required"}
+        async def use(context, arguments):
+            self.assertEqual(arguments["target_id"], reference)
+            async def bind(results):
+                return PreparedAction(
+                    "synthetic_use", {"target_id": results["created"]["target_id"]},
+                    ChangePreview(("Use the created target",), AsyncMock(return_value=True)),
+                    AsyncMock(return_value=CommandOutcome("complete")),
+                )
+            context.state.command_proposals.append(PreparedAction(
+                "synthetic_use", dict(arguments),
+                ChangePreview(("Use the target created above",),
+                              AsyncMock(return_value=True)),
+                AsyncMock(), bind=bind,
+            ))
+            return {"status": "confirmation_required"}
+        tools = {
+            "synthetic_create": RegisteredAgentTool(AgentToolDefinition(
+                name="synthetic_create", description="Create a target.",
+                parameters={"type": "object", "properties": {}, "required": [],
+                            "additionalProperties": False},
+            ), create, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True),
+            "synthetic_use": RegisteredAgentTool(AgentToolDefinition(
+                name="synthetic_use", description="Use a target.",
+                parameters={"type": "object", "properties": {
+                    "target_id": {"type": "integer", "minimum": 1},
+                }, "required": ["target_id"], "additionalProperties": False},
+            ), use, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True),
+        }
+        plan = _plan([
+            {**_step("created"), "capability": "synthetic_create"},
+            {**_step("used", {"target_id": reference}), "capability": "synthetic_use",
+             "depends_on": ["created"]},
+        ])
+        session = _Session([_model_step(plan)], self.events)
+        context = replace(_context(), bot=SimpleNamespace(tree=object()))
+        with (patch("elbow_helper.features.agent.service.build_agent_tools",
+                    return_value={**self.registry, **tools}),
+              patch("elbow_helper.features.agent.service.build_command_tools",
+                    return_value=({}, {}))):
+            answer = await AgentService(_Model(session), actions_enabled=True).answer(
+                question="synthetic request", local_context="", context=context,
+            )
+        self.assertIn("Use the target created above", answer)
+        self.assertEqual([item.step_id for item in context.state.command_proposals],
+                         ["created", "used"])
+
     async def test_incomplete_change_preview_cannot_be_confirmed(self):
         path = "/synthetic"
         run = AsyncMock(return_value=CommandOutcome("complete", text="Unexpected"))

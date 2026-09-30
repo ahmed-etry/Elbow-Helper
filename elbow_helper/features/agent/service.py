@@ -20,7 +20,7 @@ from elbow_helper.infrastructure.ai import AgentToolResult
 from elbow_helper.infrastructure.ai import TextGenerationError
 
 from .models import AgentCapabilityEffect, AgentRequestContext
-from .actions.contracts import ActionClass
+from .actions.contracts import ActionClass, PreparedAction
 from .access import (
     AgentAccessLost, AgentDisclosureDenied, require_access,
     require_access_requirements,
@@ -38,7 +38,7 @@ from .capabilities import (
 from .capabilities import CONTRACTS, SAVED_REPORT_CONTRACTS
 from .tools.saved_reports import COMPARE_NAME, READ_NAME, filter_fields, original_arguments, original_tool
 from .access import can_disclose_provenance
-from .plan.checker import _kind, _periods, _source_check, _time_check, _valid_arguments, check_plan
+from .plan.checker import _has_reference, _kind, _periods, _source_check, _time_check, _valid_arguments, check_plan
 from .plan.executor import execute_plan, resolve_arguments
 from .plan.format import PLAN_TOOL_NAME, plan_definition, system_instructions
 from .plan.planning import read_request
@@ -358,11 +358,13 @@ class AgentService:
                 contract = (SAVED_REPORT_CONTRACTS[selected.definition.name] if selected
                             else CONTRACTS.get(name))
                 retained = []
-                if not _valid_arguments(arguments, tool.definition.parameters):
+                if not _valid_arguments(arguments, tool.definition.parameters,
+                                        set(step["depends_on"])):
                     return {"error": "Arguments must match the capability schema."}
                 if name in (READ_NAME, COMPARE_NAME) and (
                     selected is None or not _valid_arguments(
                         original_arguments(arguments), selected.definition.parameters,
+                        set(step["depends_on"]),
                     )
                 ):
                     return {"error": "Use the fields supported by this report kind."}
@@ -409,10 +411,14 @@ class AgentService:
                     bound = frozenset(named) | frozenset(
                         _kind(kind) for field, kind in contract.entity_fields if field in contract.retained_fields
                     ) if retained else frozenset()
-                    issue, offered = _source_check(contract, arguments, named, resolved_entities, {}, bound)
+                    references = {field: value for field, value in arguments.items()
+                                  if _has_reference(value)}
+                    issue, offered = _source_check(contract, arguments, named,
+                                                   resolved_entities, references, bound)
                     if issue:
                         return {"error": issue, "offered": offered}
-                    issue = _time_check(contract, arguments, tuple(bound_periods), set())
+                    issue = _time_check(contract, arguments, tuple(bound_periods),
+                                        set(step["depends_on"]))
                     if issue:
                         return {"error": issue}
                 try:
@@ -459,6 +465,13 @@ class AgentService:
                     timeout_seconds=(COMMAND_TIMEOUT_SECONDS if tool.effect is AgentCapabilityEffect.COMMAND
                                      else TOOL_TIMEOUT_SECONDS),
                 )
+                for index in range(len(previous["command_proposals"]),
+                                   len(local.state.command_proposals)):
+                    proposal = local.state.command_proposals[index]
+                    if isinstance(proposal, PreparedAction):
+                        local.state.command_proposals[index] = replace(
+                            proposal, step_id=step["id"],
+                        )
                 try:
                     raw_payload = json.loads(raw)
                 except ValueError:

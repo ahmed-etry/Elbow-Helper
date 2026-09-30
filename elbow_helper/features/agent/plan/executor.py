@@ -13,6 +13,8 @@ def resolve_arguments(
     def resolve(value):
         if isinstance(value, dict) and set(value) == {"step", "path"}:
             source = results[value["step"]]
+            if source.get("status") == "confirmation_required":
+                return value
             for part in value["path"]:
                 source = source[part]
             return source

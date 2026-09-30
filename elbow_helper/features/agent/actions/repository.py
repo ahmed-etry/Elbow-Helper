@@ -258,6 +258,27 @@ class AgentActionRepository:
             """, (current, run_id))
         return True
 
+    def set_step_values(self, run_id: str, index: int, *, owner: str,
+                        values: Mapping[str, Any]) -> bool:
+        encoded = _json(values)
+        with self.connect() as connection, sqlite_transaction(connection, immediate=True):
+            run = connection.execute(
+                "SELECT status, lease_owner FROM action_runs WHERE run_id=?", (run_id,),
+            ).fetchone()
+            if run is None or run["status"] != "running" or run["lease_owner"] != owner:
+                return False
+            changed = connection.execute("""
+                UPDATE action_steps SET values_json=?
+                WHERE run_id=? AND step_index=? AND status='running'
+            """, (encoded, run_id, index))
+            if changed.rowcount != 1:
+                return False
+            connection.execute("""
+                UPDATE action_log SET targets_json=?
+                WHERE run_id=? AND step_index=? AND outcome='started'
+            """, (encoded, run_id, index))
+        return True
+
     def request_stop(self, run_id: str, *, requester_id: int) -> bool:
         with self.connect() as connection, sqlite_transaction(connection, immediate=True):
             changed = connection.execute("""

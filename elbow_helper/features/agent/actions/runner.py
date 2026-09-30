@@ -141,6 +141,7 @@ class AgentActionRunner:
         progress = None
         private_parts: list[str] = []
         private_files = []
+        action_results: dict[str, Mapping[str, Any]] = {}
         outcome_status = "completed"
         try:
             progress = await channel.send(
@@ -160,18 +161,30 @@ class AgentActionRunner:
                 ):
                     outcome_status = "stopped"
                     break
+                current_action = action
                 try:
                     require_access(context.guild, context.member.id, channel)
                     await require_disclosure_access(context)
-                    if not await action.preview.recheck():
+                    if action.bind is not None:
+                        current_action = await action.bind(action_results)
+                        if (current_action.action_class is not action.action_class
+                                or current_action.bind is not None):
+                            raise TypeError("Action binding returned an invalid change")
+                        recorded_values = await asyncio.to_thread(
+                            self.repository.set_step_values, run_id, index,
+                            owner=owner, values=current_action.values,
+                        )
+                        if not recorded_values:
+                            raise RuntimeError("Action targets could not be recorded")
+                    if not await current_action.preview.recheck():
                         raise ActionPreconditionChanged("Action precondition changed")
                     async with asyncio.timeout(ACTION_TIMEOUT_SECONDS):
-                        result = await action.run()
+                        result = await current_action.run()
                     if not isinstance(result, CommandOutcome):
                         raise TypeError("Action returned an invalid result")
                     if result.status != "complete":
                         raise ValueError("Action did not complete")
-                    if action.verify is not None and await action.verify() is False:
+                    if current_action.verify is not None and await current_action.verify() is False:
                         raise ValueError("Action could not be verified")
                     if result.visibility == "private":
                         private_parts.extend((result.text,) if result.text else ())
@@ -182,11 +195,14 @@ class AgentActionRunner:
                     recorded = await asyncio.to_thread(
                         self.repository.finish_step, run_id, index,
                         owner=owner, status="completed",
-                        outcome={"status": result.status, "visibility": result.visibility},
+                        outcome={"status": result.status, "visibility": result.visibility,
+                                 "result": result.result},
                         after=result.after,
                     )
                     if not recorded:
                         raise RuntimeError("Action result could not be recorded")
+                    if action.step_id and result.result is not None:
+                        action_results[action.step_id] = dict(result.result)
                     if progress is not None and index + 1 < len(actions):
                         try:
                             await progress.edit(
@@ -199,9 +215,9 @@ class AgentActionRunner:
                     raise
                 except Exception as error:
                     status = "uncertain" if _uncertain(error) else "failed"
-                    if status == "uncertain" and action.verify is not None:
+                    if status == "uncertain" and current_action.verify is not None:
                         try:
-                            if await action.verify() is True:
+                            if await current_action.verify() is True:
                                 status = "completed"
                         except Exception:
                             LOGGER.exception("Agent action verification failed: run=%s step=%s", run_id, index)
@@ -215,7 +231,7 @@ class AgentActionRunner:
                     if isinstance(error, discord.Forbidden):
                         await channel.send(
                             ACTION_DISCORD_PERMISSION.format(
-                                permission=action.permission or ACTION_UNNAMED_PERMISSION,
+                                permission=current_action.permission or ACTION_UNNAMED_PERMISSION,
                             ), allowed_mentions=discord.AllowedMentions.none(),
                         )
                     elif status == "uncertain":

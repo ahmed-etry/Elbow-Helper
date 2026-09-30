@@ -40,6 +40,8 @@ class PreparedAction:
     verify: Callable[[], Awaitable[bool | None]] | None = None
     undo: Callable[[], Awaitable[Any]] | None = None
     permission: str = ""
+    step_id: str = ""
+    bind: Callable[[Mapping[str, Mapping[str, Any]]], Awaitable["PreparedAction"]] | None = None
 
     def __post_init__(self) -> None:
         if self.action_class not in (ActionClass.CHANGE, ActionClass.IRREVERSIBLE):

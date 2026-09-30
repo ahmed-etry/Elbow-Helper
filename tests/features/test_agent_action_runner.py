@@ -1,6 +1,8 @@
 """Confirmed fake changes run once in the background and report in-channel."""
 
 import asyncio
+from dataclasses import replace
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -127,6 +129,34 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "completed")
         run.assert_awaited_once()
         verify.assert_awaited_once()
+
+    async def test_later_action_binds_an_earlier_action_result_once(self):
+        first, _, first_run = self.action("first", outcome=CommandOutcome(
+            "complete", result={"target_id": 7},
+        ))
+        first = replace(first, step_id="created")
+        second_run = AsyncMock(return_value=CommandOutcome("complete"))
+        placeholder = {"step": "created", "path": ["target_id"]}
+        async def bind(results):
+            target_id = results["created"]["target_id"]
+            return PreparedAction(
+                "second", {"target_id": target_id},
+                ChangePreview(("Use the created target",), AsyncMock(return_value=True)),
+                second_run,
+            )
+        second = PreparedAction(
+            "second", {"target_id": placeholder},
+            ChangePreview(("Use the target created by the first action",),
+                          AsyncMock(return_value=True)),
+            AsyncMock(), step_id="used", bind=bind,
+        )
+        result = await self.run_actions(first, second)
+        self.assertEqual(result["status"], "completed")
+        first_run.assert_awaited_once()
+        second_run.assert_awaited_once()
+        self.assertEqual(json.loads(result["steps"][1]["values_json"]), {"target_id": 7})
+        log = self.repository.recent_log(requester_id=4)
+        self.assertEqual(json.loads(log[0]["targets_json"]), {"target_id": 7})
 
     async def test_undo_restores_recorded_prior_state_after_a_new_preview(self):
         state = {"value": "old"}

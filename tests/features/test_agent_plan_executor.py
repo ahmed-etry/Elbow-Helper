@@ -3,10 +3,20 @@
 import asyncio
 import unittest
 
-from elbow_helper.features.agent.plan.executor import execute_plan
+from elbow_helper.features.agent.plan.executor import execute_plan, resolve_arguments
 
 
 class PlanExecutorTests(unittest.IsolatedAsyncioTestCase):
+    def test_action_result_reference_waits_for_confirmed_run(self):
+        reference = {"step": "created", "path": ["target_id"]}
+        arguments = {"target_id": reference}
+        self.assertEqual(resolve_arguments(arguments, {
+            "created": {"status": "confirmation_required"},
+        }), arguments)
+        self.assertEqual(resolve_arguments(arguments, {
+            "created": {"target_id": 7},
+        }), {"target_id": 7})
+
     async def test_ready_reads_finish_before_change_previews(self):
         order = []
         async def run(step, arguments, earlier):

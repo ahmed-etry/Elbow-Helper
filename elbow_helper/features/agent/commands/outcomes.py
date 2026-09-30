@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Mapping
 
 from ..models import AgentAttachment
 from ..wording import COMMAND_EMPTY, COMMAND_MISSING_VALUE, COMMAND_PRIVATE_NOTE, COMMAND_UNAVAILABLE
@@ -18,6 +18,7 @@ class CommandOutcome:
     attachments: tuple[AgentAttachment, ...] = ()
     missing: tuple[str, ...] = ()
     after: Any = None
+    result: Mapping[str, Any] | None = None
 
     @classmethod
     def needs_input(cls, descriptions: tuple[str, ...]) -> "CommandOutcome":
