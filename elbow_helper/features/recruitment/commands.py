@@ -51,6 +51,54 @@ RARE_STATEMENT_CHOICES = [
 
 
 class RecruitmentCommandMixin:
+    def prepare_checkup(self, applicant: discord.Member, account_linked: bool,
+                        channel: discord.TextChannel | None,
+                        additional_notes: str | None = None) -> dict[str, object]:
+        has_age_role = self._member_has_any_role(applicant, AGE_ROLE_IDS)
+        has_region_role = self._member_has_any_role(applicant, REGION_ROLE_IDS)
+        has_required_self_roles = has_age_role and has_region_role
+        account_link_line = ""
+        self_roles_line = ""
+        if not account_linked and not has_required_self_roles:
+            account_link_line = (
+                f"Also, please link all of your accounts in <#{GET_STARTED_CHANNEL}> "
+                f"and choose all of the relevant roles for you in <#{SELF_ROLES}>.\n"
+            )
+        elif not account_linked:
+            account_link_line = f"Also, please link all of your accounts in <#{GET_STARTED_CHANNEL}>.\n"
+        elif not has_required_self_roles:
+            self_roles_line = f"Also, please choose all of the relevant roles for you in <#{SELF_ROLES}>.\n"
+
+        if account_linked and has_required_self_roles:
+            followup_question = "Once you've read them, what questions do you have about the rules or expectations?"
+        else:
+            followup_question = (
+                "Once you've read the rules and completed the setup above, what questions do you have about "
+                "the rules or expectations?"
+            )
+        additional_notes_block = f"\n\n**Additional Notes:** {additional_notes}" if additional_notes else ""
+        message = CHECKUP_TEMPLATE.format(
+            user_mention=applicant.mention,
+            server_rules=SERVER_RULES,
+            account_link_line=account_link_line,
+            self_roles_line=self_roles_line,
+            followup_question=followup_question,
+            additional_notes=additional_notes_block,
+        )
+        if not isinstance(channel, discord.TextChannel):
+            return {"issue": "Run this command in a server text channel."}
+        confirmation = (
+            f"Recruitment conversation started with {applicant.display_name} in {channel.mention}.\n"
+            f"All Clash accounts linked: {'Yes' if account_linked else 'No'} • "
+            f"Age and region roles selected: {'Yes' if has_required_self_roles else 'No'}"
+        )
+        return {"issue": None, "channel": channel, "message": message,
+                "confirmation": confirmation}
+
+    async def post_checkup(self, prepared: dict[str, object]) -> str:
+        await prepared["channel"].send(prepared["message"])
+        return str(prepared["confirmation"])
+
     def prepare_recstatement(self, template_key: str,
                              applicant: discord.Member,
                              channel: discord.TextChannel,
@@ -733,59 +781,14 @@ class RecruitmentCommandMixin:
         await interaction.response.defer(ephemeral=True)
         
         try:
-            has_age_role = self._member_has_any_role(applicant, AGE_ROLE_IDS)
-            has_region_role = self._member_has_any_role(applicant, REGION_ROLE_IDS)
-            has_required_self_roles = has_age_role and has_region_role
-
-            account_link_line = ""
-            self_roles_line = ""
-            if not account_linked and not has_required_self_roles:
-                account_link_line = (
-                    f"Also, please link all of your accounts in <#{GET_STARTED_CHANNEL}> "
-                    f"and choose all of the relevant roles for you in <#{SELF_ROLES}>.\n"
-                )
-            elif not account_linked:
-                account_link_line = f"Also, please link all of your accounts in <#{GET_STARTED_CHANNEL}>.\n"
-            elif not has_required_self_roles:
-                self_roles_line = f"Also, please choose all of the relevant roles for you in <#{SELF_ROLES}>.\n"
-
-            if account_linked and has_required_self_roles:
-                followup_question = "Once you've read them, what questions do you have about the rules or expectations?"
-            else:
-                followup_question = (
-                    "Once you've read the rules and completed the setup above, what questions do you have about "
-                    "the rules or expectations?"
-                )
-
-            additional_notes_block = ""
-            if additional_notes:
-                additional_notes_block = f"\n\n**Additional Notes:** {additional_notes}"
-
-            checkup_msg = CHECKUP_TEMPLATE.format(
-                user_mention=applicant.mention,
-                server_rules=SERVER_RULES,
-                account_link_line=account_link_line,
-                self_roles_line=self_roles_line,
-                followup_question=followup_question,
-                additional_notes=additional_notes_block,
+            prepared = self.prepare_checkup(
+                applicant, account_linked, channel or interaction.channel,
+                additional_notes,
             )
-            
-            target_channel = channel or interaction.channel
-             
-            if not isinstance(target_channel, discord.TextChannel):
-                await interaction.followup.send(
-                    "Run this command in a server text channel.",
-                    ephemeral=True
-                )
+            if prepared["issue"]:
+                await interaction.followup.send(prepared["issue"], ephemeral=True)
                 return
-             
-            await target_channel.send(checkup_msg)
-
-            confirmation_msg = (
-                f"Recruitment conversation started with {applicant.display_name} in {target_channel.mention}.\n"
-                f"All Clash accounts linked: {'Yes' if account_linked else 'No'} • "
-                f"Age and region roles selected: {'Yes' if has_required_self_roles else 'No'}"
-            )
+            confirmation_msg = await self.post_checkup(prepared)
             await interaction.followup.send(confirmation_msg, ephemeral=True)
             
         except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError):
