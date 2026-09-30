@@ -88,6 +88,83 @@ class Planning(commands.Cog):
 
         return "Clash data couldn't be loaded."
 
+    def validate_plan_inputs(self, player: str,
+                             strategy_image: discord.Attachment,
+                             base_image: discord.Attachment) -> tuple[str | None, str | None]:
+        player_tag = normalize_player_tag(player)
+        if not player_tag:
+            return None, "Choose your Clash account from the list."
+        if not self.clash_client.configured:
+            return None, "Clash data isn't available because the connection hasn't been set up."
+        if base_image.content_type and not base_image.content_type.startswith("image/"):
+            return None, "Base screenshot needs to be an image file."
+        if strategy_image.content_type and not strategy_image.content_type.startswith("image/"):
+            return None, "Strategy screenshot needs to be an image file."
+        return player_tag, None
+
+    async def resolve_plan_account(self, value: str) -> tuple[str | None, str | None]:
+        query = value.strip()
+        if query and not query.startswith("#"):
+            try:
+                rows = await asyncio.to_thread(
+                    self.clan_health.search_players, query, 25,
+                )
+            except (KeyError, TypeError, ValueError, sqlite3.Error):
+                rows = []
+            exact = [row for row in rows
+                     if str(row.get("player_name") or "").casefold() == query.casefold()]
+            tags = {str(row["player_tag"]) for row in exact}
+            if len(tags) == 1:
+                return next(iter(tags)), None
+            if len(tags) > 1:
+                return None, "ambiguous"
+        tag = normalize_player_tag(query)
+        if tag is None:
+            return None, "invalid"
+        return tag, None
+
+    async def prepare_attack_plan(self, player: str, thinking: str,
+                                  strategy_image: discord.Attachment,
+                                  base_image: discord.Attachment) -> dict[str, Any]:
+        player_tag, issue = self.validate_plan_inputs(
+            player, strategy_image, base_image,
+        )
+        if issue:
+            return {"issue": issue, "player_tag": player_tag}
+        player_data = await fetch_player(player_tag, self.clash_client)
+        if not player_data or player_data.get("_http_status", 500) >= 400:
+            return {"issue": self._player_fetch_error_text(player_data),
+                    "player_tag": player_tag}
+        emoji_set = await self.plan_emojis.get((
+            *required_plan_unit_names(), "town_hall", "Troops",
+        ))
+        planning_embeds = build_planning_embeds(
+            player_data, thinking, strategy_image, base_image,
+            emoji_tokens=emoji_set.tokens,
+        )
+        mention_roles = " ".join(f"<@&{role_id}>" for role_id in PLANNING_HELPERS) or None
+        view = PlanningView(
+            planning_embeds,
+            button_emoji_tokens=(
+                emoji_set.get("town_hall"), emoji_set.get("Barbarian King"),
+                emoji_set.get("Troops"),
+            ),
+        )
+        return {"issue": None, "player_tag": player_tag,
+                "embeds": planning_embeds, "mention_roles": mention_roles,
+                "view": view, "strategy_image": strategy_image,
+                "base_image": base_image}
+
+    async def post_attack_plan(self, prepared: dict[str, Any], send):
+        message = await send(
+            content=prepared["mention_roles"],
+            embeds=prepared["embeds"].embeds_for_page(0),
+            view=prepared["view"],
+        )
+        if isinstance(message, discord.Message):
+            prepared["view"].bind_message(message)
+        return message
+
     @app_commands.command(name="plan", description="Get help planning an attack.")
     @app_commands.guilds(discord.Object(id=GUILD_ID))
     @app_commands.autocomplete(player=player_autocomplete)
@@ -109,62 +186,27 @@ class Planning(commands.Cog):
             await deny(interaction)
             return
 
-        player_tag = normalize_player_tag(player)
-        if not player_tag:
-            await warn(interaction, "Choose your Clash account from the list.")
-            return
-
-        if not self.clash_client.configured:
-            await interaction.response.send_message(
-                "Clash data isn't available because the connection hasn't been set up.",
-                ephemeral=True,
-            )
-            return
-
-        if base_image.content_type and not base_image.content_type.startswith("image/"):
-            await interaction.response.send_message("Base screenshot needs to be an image file.", ephemeral=True)
-            return
-        if strategy_image.content_type and not strategy_image.content_type.startswith("image/"):
-            await interaction.response.send_message("Strategy screenshot needs to be an image file.", ephemeral=True)
+        player_tag, issue = self.validate_plan_inputs(
+            player, strategy_image, base_image,
+        )
+        if issue:
+            if player_tag is None and normalize_player_tag(player) is None:
+                await warn(interaction, issue)
+            else:
+                await interaction.response.send_message(issue, ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=False, thinking=True)
 
-        player = await fetch_player(player_tag, self.clash_client)
-        if not player or player.get("_http_status", 500) >= 400:
-            await interaction.followup.send(self._player_fetch_error_text(player), ephemeral=True)
+        prepared = await self.prepare_attack_plan(
+            player_tag, thinking, strategy_image, base_image,
+        )
+        if prepared["issue"]:
+            await interaction.followup.send(prepared["issue"], ephemeral=True)
             return
-
-        emoji_set = await self.plan_emojis.get(
-            (
-                *required_plan_unit_names(),
-                "town_hall",
-                "Troops",
-            )
-        )
-        planning_embeds = build_planning_embeds(
-            player,
-            thinking,
-            strategy_image,
-            base_image,
-            emoji_tokens=emoji_set.tokens,
-        )
-        mention_roles = " ".join(f"<@&{role_id}>" for role_id in PLANNING_HELPERS) or None
-        view = PlanningView(
-            planning_embeds,
-            button_emoji_tokens=(
-                emoji_set.get("town_hall"),
-                emoji_set.get("Barbarian King"),
-                emoji_set.get("Troops"),
+        await self.post_attack_plan(
+            prepared,
+            lambda **kwargs: interaction.followup.send(
+                **kwargs, ephemeral=False, wait=True,
             ),
         )
-
-        review_message = await interaction.followup.send(
-            content=mention_roles,
-            embeds=planning_embeds.embeds_for_page(0),
-            view=view,
-            ephemeral=False,
-            wait=True,
-        )
-        if isinstance(review_message, discord.Message):
-            view.bind_message(review_message)
