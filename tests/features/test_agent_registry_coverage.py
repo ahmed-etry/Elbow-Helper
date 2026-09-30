@@ -36,8 +36,8 @@ NOT_YET_ADAPTED = frozenset({
     "/reactivate",
     "/roster announcement", "/roster clone", "/roster create",
     "/roster delete", "/roster edit", "/roster export", "/roster post",
-    "/roster schedule", "/roster timing", "/transfer cancel",
-    "/transfer reminder", "/transfer request",
+    "/roster schedule", "/roster timing",
+    "/transfer reminder",
 })
 
 
