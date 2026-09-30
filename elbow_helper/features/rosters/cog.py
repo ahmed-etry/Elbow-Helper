@@ -308,6 +308,25 @@ class Rosters(commands.Cog):
         cleaned = " ".join(value.split())
         return cleaned if 1 <= len(cleaned) <= 100 else None
 
+    @staticmethod
+    def validate_roster_name(value: str) -> str | None:
+        return Rosters._clean_roster_name(value)
+
+    async def roster_name_available(self, guild_id: int, name: str) -> bool:
+        rows = await self.service.list_for_guild(guild_id)
+        return all(row.name.casefold() != name.casefold() for row in rows)
+
+    async def create_roster(self, *, guild_id: int, name: str,
+                            clan_code: str, role_id: int | None,
+                            max_members: int) -> Roster:
+        return await self.service.create(
+            guild_id=guild_id, name=name, clan_code=clan_code,
+            role_id=role_id, max_members=max_members,
+        )
+
+    async def get_roster(self, roster_id: int) -> Roster | None:
+        return await self.service.get(roster_id)
+
     async def handle_refresh(self, interaction: discord.Interaction, roster_id: int) -> None:
         now = time.monotonic()
         last = self._refresh_times.get(roster_id)
@@ -794,12 +813,12 @@ class Rosters(commands.Cog):
         if interaction.guild_id is None:
             await warn(interaction, "Run this command in the server.")
             return
-        clean_name = self._clean_roster_name(name)
+        clean_name = self.validate_roster_name(name)
         if clean_name is None:
             await warn(interaction, "Enter a roster name between 1 and 100 characters.")
             return
         try:
-            roster = await self.service.create(
+            roster = await self.create_roster(
                 guild_id=interaction.guild_id,
                 name=clean_name,
                 clan_code=clan.value,
