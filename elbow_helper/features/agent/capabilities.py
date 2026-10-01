@@ -219,6 +219,7 @@ CONTRACTS: Mapping[str, CapabilityContract] = {
     "set_examiner_profile": CapabilityContract((), (), source_scope='request_context', filter_fields=('th_levels', 'status', 'timezone', 'availability')),
     "leave_examiner_roster": CapabilityContract((), (), source_scope='request_context'),
     "reopen_support_ticket": CapabilityContract((('channel_id', 'support_ticket_channel'),), (), source_scope='request_context', channel_fields=('channel_id',)),
+    "reopen_reactivation_ticket": CapabilityContract((('channel_id', 'support_ticket_channel'),), (), source_scope='request_context', channel_fields=('channel_id',)),
     "remember_task_instruction": CapabilityContract((('replaces_id', 'task_instruction'),), (), source_scope='request_context'),
     "retire_task_instruction": CapabilityContract((('instruction_id', 'task_instruction'),), (), source_scope='request_context'),
     "prepare_spreadsheet": CapabilityContract((), (), source_scope='request_context'),

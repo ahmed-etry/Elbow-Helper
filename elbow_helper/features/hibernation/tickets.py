@@ -15,7 +15,7 @@ from elbow_helper.configuration.channels import HIBERNATION_FALLBACK, HIBERNATIO
 from elbow_helper.configuration.files import CREATED_TICKETS_FILE
 from elbow_helper.infrastructure.persistence import read_json
 from elbow_helper.infrastructure.persistence import write_json_atomic
-from elbow_helper.configuration.roles import CORE, RECRUITERS
+from elbow_helper.configuration.roles import CORE, LEAD, RECRUITERS
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX, DEFAULT_THUMBNAIL_URL
 
 from .config import (
@@ -39,6 +39,34 @@ LOGGER = logging.getLogger(__name__)
 
 
 class HibernationTicketMixin:
+    @staticmethod
+    def can_manage_reactivation_ticket(member: discord.Member) -> bool:
+        return any(role.id in (RECRUITERS | LEAD | CORE) for role in member.roles)
+
+    async def reactivation_reopen_state(self, guild: discord.Guild,
+                                        channel: discord.abc.GuildChannel) -> discord.Member | None:
+        """Resolve the owner of a reactivation ticket."""
+        return await self._resolve_ticket_owner_from_topic(guild, channel)
+
+    async def reopen_reactivation_ticket(self, guild: discord.Guild,
+                                         channel: discord.abc.GuildChannel,
+                                         actor: discord.Member) -> tuple[discord.Member | None, bool]:
+        """Restore the owner's messaging access for the panel and agent."""
+        owner = await self.reactivation_reopen_state(guild, channel)
+        if owner is None:
+            LOGGER.warning("Could not resolve ticket owner from topic for channel %s during reopen.",
+                           getattr(channel, "id", 0))
+            return None, False
+        try:
+            await channel.set_permissions(
+                owner, send_messages=True,
+                reason=f"Hibernation ticket reopened by {actor}",
+            )
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            LOGGER.warning("Could not unlock ticket %s for owner %s", channel.id, owner.id)
+            return owner, False
+        return owner, True
+
     @staticmethod
     def _build_transcript_link_view() -> discord.ui.View:
         return TranscriptLinkPromptView("hibernation_transcript_link")
@@ -729,25 +757,8 @@ class HibernationTicketMixin:
         channel = interaction.channel
         owner_member: discord.Member | None = None
         if guild is not None and channel is not None:
-            owner_member = await self._resolve_ticket_owner_from_topic(guild, channel)
-            if owner_member is not None:
-                try:
-                    await channel.set_permissions(
-                        owner_member,
-                        send_messages=True,
-                        reason=f"Hibernation ticket reopened by {interaction.user}",
-                    )
-                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                    LOGGER.warning(
-                        "Could not unlock ticket %s for owner %s",
-                        getattr(channel, "id", 0),
-                        owner_member.id,
-                    )
-            else:
-                LOGGER.warning(
-                    "Could not resolve ticket owner from topic for channel %s during reopen.",
-                    getattr(channel, "id", 0),
-                )
+            owner_member, _ = await self.reopen_reactivation_ticket(guild, channel,
+                                                                     interaction.user)
 
         restored_text = (
             f"Restored messaging access for {owner_member.mention}."

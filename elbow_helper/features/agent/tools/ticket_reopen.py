@@ -20,14 +20,21 @@ from .discord_safety import check_member, check_post_access, resolve_channel
 
 
 def ticket_reopen_tools() -> tuple[RegisteredAgentTool, ...]:
+    schema = {"type": "object", "properties": {
+        "channel_id": {"type": "integer", "minimum": 1},
+    }, "additionalProperties": False}
     return (RegisteredAgentTool(AgentToolDefinition(
         name="reopen_support_ticket",
         description="Restore the owner's messaging access to a closed support ticket after confirmation.",
-        parameters={"type": "object", "properties": {
-            "channel_id": {"type": "integer", "minimum": 1},
-        }, "additionalProperties": False},
+        parameters=schema,
     ), prepare_support_reopen, AgentCapabilityEffect.COMMAND,
-        ActionClass.CHANGE, True),)
+        ActionClass.CHANGE, True),
+        RegisteredAgentTool(AgentToolDefinition(
+            name="reopen_reactivation_ticket",
+            description="Restore the owner's messaging access to a closed reactivation ticket after confirmation.",
+            parameters=schema,
+        ), prepare_reactivation_reopen, AgentCapabilityEffect.COMMAND,
+            ActionClass.CHANGE, True),)
 
 
 async def prepare_support_reopen(context: AgentRequestContext,
@@ -70,6 +77,52 @@ async def prepare_support_reopen(context: AgentRequestContext,
 
     context.state.command_proposals.append(PreparedAction(
         "reopen_support_ticket", {"channel_id": channel.id, "owner_id": owner.id},
+        ChangePreview(lines, recheck, summary=ACTION_TICKET_REOPEN_LABEL),
+        run, action_class=ActionClass.CHANGE,
+    ))
+    return {"status": "confirmation_required"}
+
+
+async def prepare_reactivation_reopen(context: AgentRequestContext,
+                                      values: Mapping[str, Any]) -> Mapping[str, Any]:
+    await require_evidence_access(context)
+    workflow = context.bot.get_cog("Hibernate")
+    if workflow is None or not workflow.can_manage_reactivation_ticket(context.member):
+        raise ValueError(ACTION_TICKET_REOPEN_UNAVAILABLE)
+    channel = await resolve_channel(context, values.get("channel_id") or context.source_message.channel.id)
+    if not isinstance(channel, discord.TextChannel):
+        raise ValueError(ACTION_TICKET_REOPEN_UNAVAILABLE)
+    check_post_access(channel, context.member, context.guild.me)
+    owner = await workflow.reactivation_reopen_state(context.guild, channel)
+    check_member(owner, context.guild.me)
+    before = channel.overwrites_for(owner).send_messages
+    if before is True:
+        return {"status": "no_change"}
+    lines = (
+        ACTION_TICKET_REOPEN_LINE.format(channel=channel.mention),
+        ACTION_TICKET_REOPEN_ACCESS.format(member=owner.mention,
+                                          old=("not set" if before is None else "blocked"),
+                                          new="allowed"),
+    )
+
+    async def recheck() -> bool:
+        try:
+            check_post_access(channel, context.member, context.guild.me)
+            check_member(owner, context.guild.me)
+            return ((await workflow.reactivation_reopen_state(context.guild, channel)) == owner
+                    and channel.overwrites_for(owner).send_messages == before)
+        except ValueError:
+            return False
+
+    async def run() -> CommandOutcome:
+        _, restored = await workflow.reopen_reactivation_ticket(context.guild, channel,
+                                                                 context.member)
+        if not restored:
+            raise ValueError(ACTION_TICKET_REOPEN_UNAVAILABLE)
+        return CommandOutcome("complete", "private", text=ACTION_TICKET_REOPEN_LABEL)
+
+    context.state.command_proposals.append(PreparedAction(
+        "reopen_reactivation_ticket", {"channel_id": channel.id, "owner_id": owner.id},
         ChangePreview(lines, recheck, summary=ACTION_TICKET_REOPEN_LABEL),
         run, action_class=ActionClass.CHANGE,
     ))

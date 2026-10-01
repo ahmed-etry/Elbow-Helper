@@ -27,7 +27,7 @@ class CloseTicketView(BaseTimeoutView):
         custom_id="hibernation_close_ticket",
     )
     async def close_ticket(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
-        if not _has_close_perms(interaction.user):
+        if not self.cog.can_manage_reactivation_ticket(interaction.user):
             await interaction.response.send_message("You don't have permission to close this ticket.", ephemeral=True)
             return
         await interaction.response.defer()
@@ -46,7 +46,7 @@ class CloseTicketConfirmView(BaseTimeoutView):
         custom_id="hibernation_ticket_reopen",
     )
     async def reopen_ticket(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
-        if not _has_close_perms(interaction.user):
+        if not self.cog.can_manage_reactivation_ticket(interaction.user):
             await interaction.response.send_message("You don't have permission to use these controls.", ephemeral=True)
             return
         await self.cog._reopen_reactivation_ticket(interaction)
