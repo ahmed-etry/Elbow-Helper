@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import copy
 
 import discord
 from elbow_helper.discord.interactions import send_bound_view
@@ -20,6 +21,45 @@ LOGGER = logging.getLogger(__name__)
 
 
 class AccountLinksReviewMixin:
+    def can_review_links(self, member: discord.abc.User | discord.Member) -> bool:
+        return self._can_review_links(member)
+
+    def account_suggestion_snapshot(self, player_tag: str) -> dict[str, object] | None:
+        suggestion = self.get_pending_suggestion(player_tag)
+        return copy.deepcopy(suggestion) if suggestion else None
+
+    async def resolve_account_suggestion(
+        self, player_tag: str, actor: discord.Member,
+        *, discord_user_id: int | None = None, ignore: bool = False,
+    ) -> str:
+        """Apply a suggestion decision for the panel and the agent."""
+        if not self.can_review_links(actor):
+            raise ValueError("You don't have permission to review player links.")
+        suggestion = self.get_pending_suggestion(player_tag)
+        if not suggestion:
+            raise ValueError("That suggestion is no longer pending.")
+        if ignore:
+            self.add_ignored_tag(player_tag)
+            self.delete_suggestion(player_tag)
+            await self._finalize_suggestion_message(suggestion)
+            return f"`{player_tag}` will no longer be suggested as an account match."
+        proposed = int(suggestion.get("proposed_discord_user_id") or 0)
+        selected = discord_user_id or proposed
+        if not selected:
+            raise ValueError("No Discord member was suggested. Use **Choose Member** instead.")
+        self.upsert_link(
+            player_tag=player_tag,
+            discord_user_id=selected,
+            player_name_last_seen=str(suggestion.get("player_name") or ""),
+            last_seen_clan_tag=str(suggestion.get("current_clan_tag") or ""),
+            last_seen_clan_code=str(suggestion.get("current_clan_code") or ""),
+            last_seen_role="",
+        )
+        self.delete_suggestion(player_tag)
+        await self._finalize_suggestion_message(suggestion)
+        await self.refresh_board_for_clan(str(suggestion.get("current_clan_code") or ""))
+        return "Corrected link saved." if discord_user_id else "Link confirmed."
+
     def _can_review_links(self, member: discord.abc.User | discord.Member) -> bool:
         roles = getattr(member, "roles", [])
         return any(getattr(role, "id", None) in (CORE | RECRUITERS) for role in roles)
@@ -143,18 +183,8 @@ class AccountLinksReviewMixin:
             )
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
-        self.upsert_link(
-            player_tag=player_tag,
-            discord_user_id=proposed_user_id,
-            player_name_last_seen=str(suggestion.get("player_name") or ""),
-            last_seen_clan_tag=str(suggestion.get("current_clan_tag") or ""),
-            last_seen_clan_code=str(suggestion.get("current_clan_code") or ""),
-            last_seen_role="",
-        )
-        self.delete_suggestion(player_tag)
-        await self._finalize_suggestion_message(suggestion)
-        await self.refresh_board_for_clan(str(suggestion.get("current_clan_code") or ""))
-        await succeed(interaction, "Link confirmed.")
+        message = await self.resolve_account_suggestion(player_tag, interaction.user)
+        await succeed(interaction, message)
 
     async def open_correction_flow(self, interaction: discord.Interaction, player_tag: str) -> None:
         if not self._can_review_links(interaction.user):
@@ -200,18 +230,9 @@ class AccountLinksReviewMixin:
             await interaction.response.send_message("That suggestion is no longer pending.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
-        self.upsert_link(
-            player_tag=player_tag,
-            discord_user_id=discord_user_id,
-            player_name_last_seen=str(suggestion.get("player_name") or ""),
-            last_seen_clan_tag=str(suggestion.get("current_clan_tag") or ""),
-            last_seen_clan_code=str(suggestion.get("current_clan_code") or ""),
-            last_seen_role="",
-        )
-        self.delete_suggestion(player_tag)
-        await self._finalize_suggestion_message(suggestion)
-        await self.refresh_board_for_clan(str(suggestion.get("current_clan_code") or ""))
-        await succeed(interaction, "Corrected link saved.")
+        message = await self.resolve_account_suggestion(
+            player_tag, interaction.user, discord_user_id=discord_user_id)
+        await succeed(interaction, message)
 
     async def ignore_suggestion(self, interaction: discord.Interaction, player_tag: str) -> None:
         if not self._can_review_links(interaction.user):
@@ -221,7 +242,5 @@ class AccountLinksReviewMixin:
         if not suggestion:
             await interaction.response.send_message("That suggestion is no longer pending.", ephemeral=True)
             return
-        self.add_ignored_tag(player_tag)
-        self.delete_suggestion(player_tag)
-        await self._finalize_suggestion_message(suggestion)
-        await interaction.response.edit_message(content=f"`{player_tag}` will no longer be suggested as an account match.", view=None)
+        message = await self.resolve_account_suggestion(player_tag, interaction.user, ignore=True)
+        await interaction.response.edit_message(content=message, view=None)

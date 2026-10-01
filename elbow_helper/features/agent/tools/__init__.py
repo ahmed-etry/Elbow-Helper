@@ -5,6 +5,7 @@ from dataclasses import replace
 
 from .attachments import attachment_tools
 from .action_log import action_log_tools
+from .account_suggestions import account_suggestion_tools
 from .achievements import achievement_tools
 from .raffle_purchase import raffle_purchase_tools
 from .achievement_economy import achievement_economy_tools
@@ -70,7 +71,8 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
         "discord_actions": (*discord_message_tools(), *discord_thread_tools(),
                             *discord_message_control_tools(), *discord_nickname_tools()),
         "members_roles": (
-            *member_tools(), *role_tools(), *role_connection_tools(),
+            *member_tools(), *role_tools(), *account_suggestion_tools(),
+            *role_connection_tools(),
             *role_connection_management_tools(),
             *role_connection_scan_tools(),
             *discord_role_tools(),
