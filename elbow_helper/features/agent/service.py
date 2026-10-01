@@ -68,6 +68,11 @@ DELIVERY_TIME_RESERVE_SECONDS = 15.0
 AGENT_MAX_OUTPUT_TOKENS = 64_000
 INITIAL_MAX_OUTPUT_TOKENS = 8_000
 FINAL_MAX_OUTPUT_TOKENS = 16_000
+ANSWER_OUTPUT_LIMITS = {
+    AgentReasoningEffort.LOW: FINAL_MAX_OUTPUT_TOKENS,
+    AgentReasoningEffort.HIGH: 32_000,
+    AgentReasoningEffort.MAX: 64_000,
+}
 MIN_FINAL_OUTPUT_TOKENS = 1_024
 MAX_SCOPE_REVISIONS = 2
 
@@ -546,6 +551,7 @@ class AgentService:
                 status = "completed"
                 return decision.answer
             plan = decision.plan
+            budget.final_answer_reserve = ANSWER_OUTPUT_LIMITS[AgentReasoningEffort(plan["effort"])]
             revisions = 0
             correction_used = len(decision.rounds) > 1
             scope = _scope_entries(plan)
@@ -610,9 +616,10 @@ class AgentService:
                                ensure_ascii=False, default=str),
                 ),)
                 projected_input = budget.projected_input(pending)
+                answer_limit = ANSWER_OUTPUT_LIMITS[AgentReasoningEffort(plan["effort"])]
                 available_output = (
-                    FINAL_MAX_OUTPUT_TOKENS if budget.context_window_tokens is None
-                    else min(FINAL_MAX_OUTPUT_TOKENS,
+                    answer_limit if budget.context_window_tokens is None
+                    else min(answer_limit,
                              budget.context_window_tokens - projected_input)
                 )
                 if available_output < MIN_FINAL_OUTPUT_TOKENS:
@@ -698,6 +705,7 @@ class AgentService:
                         raise AgentUnavailableError("The request reached its scope revision limit")
                 scope |= changed
                 plan = next_plan
+                budget.final_answer_reserve = ANSWER_OUTPUT_LIMITS[AgentReasoningEffort(plan["effort"])]
                 decision = type(decision)(None, plan, (model_step,))
             raise AgentUnavailableError("The agent reached its model-round limit")
         except TextGenerationError as error:

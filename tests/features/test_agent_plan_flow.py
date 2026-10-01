@@ -151,6 +151,44 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([call[2] for call in session.calls],
                          [AgentReasoningEffort.LOW, AgentReasoningEffort.MAX])
 
+    async def test_answer_output_limit_grows_with_effort(self):
+        for effort, expected in (("low", 16_000), ("high", 32_000),
+                                 ("max", 64_000)):
+            with self.subTest(effort=effort):
+                session = _Session([
+                    _model_step(_plan([_step("first")], effort=effort)),
+                    AgentStep("Seven.", (), AgentUsage()),
+                ], self.events)
+                limits = []
+                advance = session.advance
+
+                async def capture(*args, **kwargs):
+                    limits.append(kwargs["max_output_tokens"])
+                    return await advance(*args, **kwargs)
+
+                session.advance = capture
+                await self._answer(session)
+                self.assertEqual(limits, [8_000, expected])
+                self.events.clear()
+
+    async def test_answer_output_limit_stays_inside_context(self):
+        session = _Session([
+            _model_step(_plan([_step("first")], effort="max")),
+            AgentStep("Seven.", (), AgentUsage()),
+        ], self.events)
+        session.context_window_tokens = 70_000
+        limits = []
+        advance = session.advance
+
+        async def capture(*args, **kwargs):
+            limits.append(kwargs["max_output_tokens"])
+            return await advance(*args, **kwargs)
+
+        session.advance = capture
+        await self._answer(session)
+        self.assertLess(limits[1], 64_000)
+        self.assertGreaterEqual(limits[1], 1_024)
+
     async def test_dependent_steps_run_before_the_answer_call(self):
         plan = _plan([_step("first"), _step("second", {
             "value": {"step": "first", "path": ["value"]},
