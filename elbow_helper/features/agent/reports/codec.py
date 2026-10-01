@@ -89,375 +89,458 @@ from .war import RegularWarReport
 
 def decode_report(row: dict[str, Any], *, guild_id: int) -> Any:
     """Reconstruct one typed report while enforcing its guild boundary."""
-    kind = row["kind"]
-    if kind == "achievement_progress":
-        _require_guild(row, guild_id, "Achievement progress report")
-        value = row["snapshot"]
-        return AchievementProgressReport(
-            row["report_id"], row["guild_id"], row["member_name"],
-            MemberAchievementSnapshot(
-                value["observed_at"], value["member_id"],
-                value["completed_count"], value["total_count"],
-                tuple(AchievementProgressRow(**item) for item in value["rows"]),
+    decoder = _DECODERS.get(row["kind"])
+    if decoder is None:
+        raise ValueError("Unsupported conversation report kind")
+    return decoder(row, guild_id)
+
+
+def _decode_achievement_progress(row: dict[str, Any], guild_id: int) -> Any:
+    _require_guild(row, guild_id, "Achievement progress report")
+    value = row["snapshot"]
+    return AchievementProgressReport(
+        row["report_id"], row["guild_id"], row["member_name"],
+        MemberAchievementSnapshot(
+            value["observed_at"], value["member_id"],
+            value["completed_count"], value["total_count"],
+            tuple(AchievementProgressRow(**item) for item in value["rows"]),
+        ),
+    )
+
+
+def _decode_achievement_leaderboard(row: dict[str, Any], guild_id: int) -> Any:
+    _require_guild(row, guild_id, "Achievement leaderboard report")
+    return AchievementLeaderboardReport(
+        row["report_id"], row["guild_id"], row["observed_at"],
+        row["total_achievements"],
+        tuple(AchievementLeaderboardMember(**item) for item in row["rows"]),
+    )
+
+
+def _decode_coin_transactions(row: dict[str, Any], guild_id: int) -> Any:
+    _require_guild(row, guild_id, "Coin transaction report")
+    value = row["snapshot"]
+    return CoinTransactionReport(
+        row["report_id"], row["guild_id"], row["member_name"],
+        CoinTransactionSnapshot(
+            value["observed_at"], value["member_id"],
+            value["total_transactions"],
+            tuple(CoinTransactionRow(**item) for item in value["rows"]),
+            value["complete"],
+            value.get("after"), value.get("before"),
+        ),
+    )
+
+
+def _decode_raffle(row: dict[str, Any], guild_id: int) -> Any:
+    _require_guild(row, guild_id, "Raffle report")
+    value = row["snapshot"]
+    return RaffleReport(
+        row["report_id"], row["guild_id"], RaffleSnapshot(
+            value["observed_at"], value["month_key"], value["month_label"],
+            value["prize"], value["configured_winners"],
+            value["total_tickets"], tuple(value["ticket_member_ids"]),
+            value["total_winner_rows"],
+            tuple(RaffleWinnerRow(**item) for item in value["winners"]),
+            value["complete"],
+        ),
+        tuple(tuple(item) for item in row["member_names"]),
+    )
+
+
+def _decode_event_schedule(row: dict[str, Any], guild_id: int) -> Any:
+    _require_guild(row, guild_id, "Event schedule report")
+    value = row["snapshot"]
+    return EventScheduleReport(
+        row["report_id"], row["guild_id"], EventScheduleSnapshot(
+            value["observed_at"],
+            tuple(EventScheduleRow(**item) for item in value["rows"]),
+        ),
+    )
+
+
+def _decode_member_lifecycle(row: dict[str, Any], guild_id: int) -> Any:
+    _require_guild(row, guild_id, "Member lifecycle report")
+    value = row["snapshot"]
+    return MemberLifecycleReport(
+        row["report_id"], row["guild_id"], row["source_channel_id"],
+        MemberLifecycleSnapshot(
+            observed_at=value["observed_at"],
+            stored_member_entry_count=value["stored_member_entry_count"],
+            current_guild_member_count=value["current_guild_member_count"],
+            skipped_invalid_member_entries=value[
+                "skipped_invalid_member_entries"
+            ],
+            untracked_current_member_count=value[
+                "untracked_current_member_count"
+            ],
+            skipped_invalid_platform_counts=value[
+                "skipped_invalid_platform_counts"
+            ],
+            skipped_invalid_overdue_entries=value[
+                "skipped_invalid_overdue_entries"
+            ],
+            last_weekly_report_at=value["last_weekly_report_at"],
+            last_applicant_scan_at=value["last_applicant_scan_at"],
+            platform_counts=tuple(
+                (item[0], item[1]) for item in value["platform_counts"]
             ),
-        )
-    if kind == "achievement_leaderboard":
-        _require_guild(row, guild_id, "Achievement leaderboard report")
-        return AchievementLeaderboardReport(
-            row["report_id"], row["guild_id"], row["observed_at"],
-            row["total_achievements"],
-            tuple(AchievementLeaderboardMember(**item) for item in row["rows"]),
-        )
-    if kind == "coin_transactions":
-        _require_guild(row, guild_id, "Coin transaction report")
-        value = row["snapshot"]
-        return CoinTransactionReport(
-            row["report_id"], row["guild_id"], row["member_name"],
-            CoinTransactionSnapshot(
-                value["observed_at"], value["member_id"],
-                value["total_transactions"],
-                tuple(CoinTransactionRow(**item) for item in value["rows"]),
-                value["complete"],
-                value.get("after"), value.get("before"),
+            overdue_applicants=tuple(
+                OverdueApplicant(**item)
+                for item in value["overdue_applicants"]
             ),
-        )
-    if kind == "raffle":
-        _require_guild(row, guild_id, "Raffle report")
-        value = row["snapshot"]
-        return RaffleReport(
-            row["report_id"], row["guild_id"], RaffleSnapshot(
-                value["observed_at"], value["month_key"], value["month_label"],
-                value["prize"], value["configured_winners"],
-                value["total_tickets"], tuple(value["ticket_member_ids"]),
-                value["total_winner_rows"],
-                tuple(RaffleWinnerRow(**item) for item in value["winners"]),
-                value["complete"],
+            rows=tuple(MemberLifecycleRow(**item) for item in value["rows"]),
+        ),
+    )
+
+
+def _decode_missing_elder(row: dict[str, Any], guild_id: int) -> Any:
+    _require_guild(row, guild_id, "Missing Elder report")
+    value = row["snapshot"]
+    return MissingElderReport(
+        row["report_id"], row["guild_id"],
+        tuple(row["source_channel_ids"]),
+        tuple(row["omitted_inaccessible_clan_codes"]),
+        MissingElderSnapshot(
+            observed_at=value["observed_at"],
+            selected_clan_codes=tuple(value["selected_clan_codes"]),
+            skipped_invalid_row_count=value["skipped_invalid_row_count"],
+            rows=tuple(MissingElderRow(**item) for item in value["rows"]),
+        ),
+    )
+
+
+def _decode_approved_knowledge(row: dict[str, Any], guild_id: int) -> Any:
+    _require_guild(row, guild_id, "Approved knowledge report")
+    return KnowledgeReport(
+        row["report_id"], row["guild_id"], row["observed_at"],
+        row["query"], tuple(row["topics"]),
+        tuple(KnowledgeSection(**{
+            **item,
+            "topics": tuple(item["topics"]),
+            "source_refs": tuple(item["source_refs"]),
+            "conflicts_with": tuple(item["conflicts_with"]),
+        }) for item in row["sections"]),
+    )
+
+
+def _decode_role_accounts(row: dict[str, Any], guild_id: int) -> Any:
+    return RoleAccountReport(
+        row["report_id"], row["created_at"], tuple(row["roles"]),
+        tuple(row["members"]), row.get("parent_report_id"),
+        tuple(row.get("refresh_attempted_player_tags", ())),
+    )
+
+
+def _decode_roster_signups(row: dict[str, Any], guild_id: int) -> Any:
+    value = row["snapshot"]
+    roster = Roster(**value["roster"])
+    if roster.guild_id != guild_id:
+        raise ValueError("Roster report belongs to another guild")
+    if value["cycle"] and value["cycle"]["roster_id"] != roster.id:
+        raise ValueError("Roster report cycle belongs to another roster")
+    if any(post["roster_id"] != roster.id for post in value["posts"]):
+        raise ValueError("Roster report post belongs to another roster")
+    return RosterReport(row["report_id"], RosterSnapshot(
+        roster, RosterCycle(**value["cycle"]) if value["cycle"] else None,
+        tuple(RosterMember(**member) for member in value["members"]),
+        tuple(RosterPost(**post) for post in value["posts"]),
+        value["observed_ts"],
+    ))
+
+
+def _decode_cwl_performance(row: dict[str, Any], guild_id: int) -> Any:
+    _require_guild(row, guild_id, "CWL performance report")
+    value = row["snapshot"]
+    return CwlPerformanceReport(
+        row["report_id"], row["guild_id"], CwlPerformanceSnapshot(
+            value["observed_at"], value["history_limit"],
+            tuple(value["seasons"]),
+            tuple(CwlClanSeasonSummary(**item)
+                  for item in value["clan_seasons"]),
+            tuple(CwlPerformanceRow(**item) for item in value["rows"]),
+        ),
+    )
+
+
+def _decode_cwl_ass_scope(row: dict[str, Any], guild_id: int) -> Any:
+    _require_guild(row, guild_id, "Scoped CWL ASS report")
+    value = row["snapshot"]
+    return CwlAssScopeReport(
+        row["report_id"], row["guild_id"], CwlAssScopeSnapshot(
+            observed_at=value["observed_at"],
+            clan_code=value["clan_code"], season=value["season"],
+            scope_type=value["scope_type"],
+            requested_round=value["requested_round"],
+            requested_war_id=value["requested_war_id"],
+            resolved_war_ids=tuple(value["resolved_war_ids"]),
+            resolved_rounds=tuple(value["resolved_rounds"]),
+            completed_wars=value["completed_wars"],
+            league=value["league"], profile_key=value["profile_key"],
+            profile_label=value["profile_label"],
+            difficulty_weight=value["difficulty_weight"],
+            missed_mode=value["missed_mode"],
+            scoring_status=value["scoring_status"],
+            coverage_status=value["coverage_status"],
+            rows=tuple(CwlAssScopeRow(**item) for item in value["rows"]),
+        ),
+    )
+
+
+def _decode_cwl_bonus_scope(row: dict[str, Any], guild_id: int) -> Any:
+    _require_guild(row, guild_id, "CWL bonus scope report")
+    value = row["snapshot"]
+    return CwlBonusScopeReport(
+        row["report_id"], row["guild_id"], CwlBonusScopeSnapshot(
+            observed_at=value["observed_at"],
+            clan_code=value["clan_code"], season=value["season"],
+            scope_type=value["scope_type"],
+            requested_round=value["requested_round"],
+            requested_war_tag=value["requested_war_tag"],
+            resolved_rounds=tuple(value["resolved_rounds"]),
+            resolved_war_tags=tuple(value["resolved_war_tags"]),
+            settings=CwlBonusSettings(**value["settings"]),
+            summaries=tuple(
+                CwlBonusPlayerSummary(**item)
+                for item in value["summaries"]
             ),
-            tuple(tuple(item) for item in row["member_names"]),
-        )
-    if kind == "event_schedule":
-        _require_guild(row, guild_id, "Event schedule report")
-        value = row["snapshot"]
-        return EventScheduleReport(
-            row["report_id"], row["guild_id"], EventScheduleSnapshot(
-                value["observed_at"],
-                tuple(EventScheduleRow(**item) for item in value["rows"]),
+            ineligible=tuple(
+                CwlBonusIneligiblePlayer(**item)
+                for item in value["ineligible"]
             ),
-        )
-    if kind == "member_lifecycle":
-        _require_guild(row, guild_id, "Member lifecycle report")
-        value = row["snapshot"]
-        return MemberLifecycleReport(
-            row["report_id"], row["guild_id"], row["source_channel_id"],
-            MemberLifecycleSnapshot(
-                observed_at=value["observed_at"],
-                stored_member_entry_count=value["stored_member_entry_count"],
-                current_guild_member_count=value["current_guild_member_count"],
-                skipped_invalid_member_entries=value[
-                    "skipped_invalid_member_entries"
-                ],
-                untracked_current_member_count=value[
-                    "untracked_current_member_count"
-                ],
-                skipped_invalid_platform_counts=value[
-                    "skipped_invalid_platform_counts"
-                ],
-                skipped_invalid_overdue_entries=value[
-                    "skipped_invalid_overdue_entries"
-                ],
-                last_weekly_report_at=value["last_weekly_report_at"],
-                last_applicant_scan_at=value["last_applicant_scan_at"],
-                platform_counts=tuple(
-                    (item[0], item[1]) for item in value["platform_counts"]
-                ),
-                overdue_applicants=tuple(
-                    OverdueApplicant(**item)
-                    for item in value["overdue_applicants"]
-                ),
-                rows=tuple(MemberLifecycleRow(**item) for item in value["rows"]),
+            attacks=tuple(
+                CwlBonusAttackScore(**item) for item in value["attacks"]
             ),
-        )
-    if kind == "missing_elder":
-        _require_guild(row, guild_id, "Missing Elder report")
-        value = row["snapshot"]
-        return MissingElderReport(
-            row["report_id"], row["guild_id"],
-            tuple(row["source_channel_ids"]),
-            tuple(row["omitted_inaccessible_clan_codes"]),
-            MissingElderSnapshot(
-                observed_at=value["observed_at"],
-                selected_clan_codes=tuple(value["selected_clan_codes"]),
-                skipped_invalid_row_count=value["skipped_invalid_row_count"],
-                rows=tuple(MissingElderRow(**item) for item in value["rows"]),
-            ),
-        )
-    if kind == "approved_knowledge":
-        _require_guild(row, guild_id, "Approved knowledge report")
-        return KnowledgeReport(
-            row["report_id"], row["guild_id"], row["observed_at"],
-            row["query"], tuple(row["topics"]),
-            tuple(KnowledgeSection(**{
-                **item,
-                "topics": tuple(item["topics"]),
-                "source_refs": tuple(item["source_refs"]),
-                "conflicts_with": tuple(item["conflicts_with"]),
-            }) for item in row["sections"]),
-        )
-    if kind == "role_accounts":
-        return RoleAccountReport(
-            row["report_id"], row["created_at"], tuple(row["roles"]),
-            tuple(row["members"]), row.get("parent_report_id"),
-            tuple(row.get("refresh_attempted_player_tags", ())),
-        )
-    if kind == "roster_signups":
-        value = row["snapshot"]
-        roster = Roster(**value["roster"])
-        if roster.guild_id != guild_id:
-            raise ValueError("Roster report belongs to another guild")
-        if value["cycle"] and value["cycle"]["roster_id"] != roster.id:
-            raise ValueError("Roster report cycle belongs to another roster")
-        if any(post["roster_id"] != roster.id for post in value["posts"]):
-            raise ValueError("Roster report post belongs to another roster")
-        return RosterReport(row["report_id"], RosterSnapshot(
-            roster, RosterCycle(**value["cycle"]) if value["cycle"] else None,
-            tuple(RosterMember(**member) for member in value["members"]),
-            tuple(RosterPost(**post) for post in value["posts"]),
-            value["observed_ts"],
-        ))
-    if kind == "cwl_performance":
-        _require_guild(row, guild_id, "CWL performance report")
-        value = row["snapshot"]
-        return CwlPerformanceReport(
-            row["report_id"], row["guild_id"], CwlPerformanceSnapshot(
-                value["observed_at"], value["history_limit"],
-                tuple(value["seasons"]),
-                tuple(CwlClanSeasonSummary(**item)
-                      for item in value["clan_seasons"]),
-                tuple(CwlPerformanceRow(**item) for item in value["rows"]),
-            ),
-        )
-    if kind == "cwl_ass_scope":
-        _require_guild(row, guild_id, "Scoped CWL ASS report")
-        value = row["snapshot"]
-        return CwlAssScopeReport(
-            row["report_id"], row["guild_id"], CwlAssScopeSnapshot(
-                observed_at=value["observed_at"],
-                clan_code=value["clan_code"], season=value["season"],
-                scope_type=value["scope_type"],
-                requested_round=value["requested_round"],
-                requested_war_id=value["requested_war_id"],
-                resolved_war_ids=tuple(value["resolved_war_ids"]),
-                resolved_rounds=tuple(value["resolved_rounds"]),
-                completed_wars=value["completed_wars"],
-                league=value["league"], profile_key=value["profile_key"],
-                profile_label=value["profile_label"],
-                difficulty_weight=value["difficulty_weight"],
-                missed_mode=value["missed_mode"],
-                scoring_status=value["scoring_status"],
-                coverage_status=value["coverage_status"],
-                rows=tuple(CwlAssScopeRow(**item) for item in value["rows"]),
-            ),
-        )
-    if kind == "cwl_bonus_scope":
-        _require_guild(row, guild_id, "CWL bonus scope report")
-        value = row["snapshot"]
-        return CwlBonusScopeReport(
-            row["report_id"], row["guild_id"], CwlBonusScopeSnapshot(
-                observed_at=value["observed_at"],
-                clan_code=value["clan_code"], season=value["season"],
-                scope_type=value["scope_type"],
-                requested_round=value["requested_round"],
-                requested_war_tag=value["requested_war_tag"],
-                resolved_rounds=tuple(value["resolved_rounds"]),
-                resolved_war_tags=tuple(value["resolved_war_tags"]),
-                settings=CwlBonusSettings(**value["settings"]),
-                summaries=tuple(
-                    CwlBonusPlayerSummary(**item)
-                    for item in value["summaries"]
-                ),
-                ineligible=tuple(
-                    CwlBonusIneligiblePlayer(**item)
-                    for item in value["ineligible"]
-                ),
-                attacks=tuple(
-                    CwlBonusAttackScore(**item) for item in value["attacks"]
-                ),
-                warnings=tuple(value["warnings"]),
-                coverage_status=value["coverage_status"],
-            ),
-        )
-    if kind == "clan_health":
-        _require_guild(row, guild_id, "Clan-health report")
-        value = row["snapshot"]
-        return ClanHealthReport(
-            row["report_id"], row["guild_id"], ClanHealthReportSnapshot(
-                run=ClanHealthReportRun(**value["run"]),
-                clan_code=value["clan_code"],
-                rows=tuple(ClanHealthPlayerRow(
-                    **{**item, "flags": tuple(item["flags"])}
-                ) for item in value["rows"]),
-                issues=tuple(value["issues"]),
-            ),
-        )
-    if kind == "regular_war":
-        _require_guild(row, guild_id, "Regular-war report")
-        value = row["snapshot"]
-        return RegularWarReport(
-            row["report_id"], row["guild_id"], RegularWarSnapshot(
-                **{
-                    **value,
-                    "members": tuple(WarMemberEvidence(**item)
-                                     for item in value["members"]),
-                    "issues": tuple(value["issues"]),
-                },
-            ),
-        )
-    if kind == "historical_regular_wars":
-        _require_guild(row, guild_id, "Historical regular-war report")
-        value = row["history"]
-        history = HistoricalRegularWarHistory(
-            read_at=value["read_at"], clan_code=value["clan_code"],
-            wars=tuple(HistoricalRegularWar(
-                **{**item, "issues": tuple(item["issues"])}
-            ) for item in value["wars"]),
-            members=tuple(HistoricalRegularWarMember(**item)
-                          for item in value["members"]),
-            next_before_war_id=value["next_before_war_id"],
-            ended_from_ts=value.get("ended_from_ts"),
-            ended_before_ts=value.get("ended_before_ts"),
-        )
-        return HistoricalRegularWarReport(
-            row["report_id"], row["guild_id"], row["ownership_observed_at"],
-            history, tuple(HistoricalWarOwnedMember(
-                source=HistoricalRegularWarMember(**item["source"]),
-                linked_member_id=item["linked_member_id"],
-                linked_player_name=item["linked_player_name"],
-            ) for item in row["rows"]),
-        )
-    if kind == "family_account_movements":
-        _require_guild(row, guild_id, "Family movement report")
-        value = row["history"]
-        history = FamilyMovementHistory(
-            read_at=value["read_at"],
-            runs=tuple(CompleteFamilySnapshotRun(
-                **{**item, "ambiguous_account_tags": tuple(
-                    item["ambiguous_account_tags"]
-                )}
-            ) for item in value["runs"]),
-            intervals=tuple(FamilySnapshotInterval(
-                **{**item, "excluded_ambiguous_account_tags": tuple(
-                    item["excluded_ambiguous_account_tags"]
-                )}
-            ) for item in value["intervals"]),
-            movements=tuple(FamilyAccountMovement(**item)
-                            for item in value["movements"]),
-            next_before_run_id=value["next_before_run_id"],
-        )
-        return FamilyMovementReport(
-            row["report_id"], row["guild_id"], row["ownership_observed_at"],
-            history, tuple(OwnedFamilyAccountMovement(
-                source=FamilyAccountMovement(**item["source"]),
-                linked_member_id=item["linked_member_id"],
-                linked_player_name=item["linked_player_name"],
-            ) for item in row["rows"]),
-        )
-    if kind == "pending_transfer_requests":
-        _require_guild(row, guild_id, "Pending transfer report")
-        return TransferQueueReport(
-            row["report_id"], row["guild_id"], row["observed_at"],
-            row["request_ttl_hours"], row["registered_queue_count"],
-            row["omitted_inaccessible_count"],
-            tuple(TransferQueueSnapshot(
-                clan_code=item["clan_code"], thread_id=item["thread_id"],
-                stored_request_count=item["stored_request_count"],
-                expired_stored_count=item["expired_stored_count"],
-                pending=tuple(PendingTransferRequest(**request)
-                              for request in item["pending"]),
-            ) for item in row["queues"]),
-        )
-    if kind == "active_hibernation":
-        _require_guild(row, guild_id, "Hibernation report")
-        value = row["snapshot"]
-        return HibernationReport(
-            row["report_id"], row["guild_id"], row["source_channel_id"],
-            ActiveHibernationSnapshot(
-                observed_at=value["observed_at"],
-                stored_member_entry_count=value["stored_member_entry_count"],
-                skipped_invalid_member_entries=value[
-                    "skipped_invalid_member_entries"
-                ],
-                ignored_metadata_entries=value["ignored_metadata_entries"],
-                missing_start_time_count=value["missing_start_time_count"],
-                records=tuple(ActiveHibernationRecord(**item)
-                              for item in value["records"]),
-            ),
-        )
-    if kind == "support_ticket_inventory":
-        _require_guild(row, guild_id, "Support ticket report")
-        value = row["snapshot"]
-        return SupportTicketReport(
-            row["report_id"], row["guild_id"],
-            row["registered_ticket_count"], row["omitted_inaccessible_count"],
-            SupportTicketSnapshot(
-                observed_at=value["observed_at"],
-                tickets=tuple(SupportTicketMetadata(**item)
-                              for item in value["tickets"]),
-            ),
-        )
-    if kind == "active_recruitment_trials":
-        _require_guild(row, guild_id, "Recruitment trial report")
-        value = row["snapshot"]
-        return RecruitmentTrialReport(
-            row["report_id"], row["guild_id"], ActiveRecruitmentTrialSnapshot(
-                observed_at=value["observed_at"],
-                selected_entry_count=value["selected_entry_count"],
-                skipped_invalid_selected_count=value[
-                    "skipped_invalid_selected_count"
-                ],
-                trials=tuple(ActiveRecruitmentTrial(**item)
-                             for item in value["trials"]),
-            ),
-        )
-    if kind == "examination_case_status":
-        _require_guild(row, guild_id, "Examination case report")
-        value = row["snapshot"]
-        return ExaminationCaseReport(
-            row["report_id"], row["guild_id"], ExaminationCaseSnapshot(
-                observed_at=value["observed_at"],
-                selected_entry_count=value["selected_entry_count"],
-                skipped_invalid_selected_count=value[
-                    "skipped_invalid_selected_count"
-                ],
-                cases=tuple(ExaminationCaseStatus(**item)
-                            for item in value["cases"]),
-            ),
-        )
-    if kind == "active_leadership_records":
-        _require_guild(row, guild_id, "Leadership record report")
-        value = row["snapshot"]
-        return LeadershipRecordReport(
-            row["report_id"], row["guild_id"], LeadershipRecordSnapshot(
-                observed_at=value["observed_at"], member_id=value["member_id"],
-                records=tuple(LeadershipRecordRow(**item)
-                              for item in value["records"]),
-            ),
-        )
-    if kind in {"csv_import", "xlsx_import", "text_import"}:
-        return _decode_attachment_report(row, guild_id=guild_id)
-    if kind == "discord_research":
-        _require_guild(row, guild_id, "Discord research report")
-        return DiscordResearchReport(
-            report_id=row["report_id"], guild_id=row["guild_id"],
-            source_job_id=row["source_job_id"],
-            source_channel_id=row["source_channel_id"],
-            research_kind=row["research_kind"], query=row["query"],
-            author_id=row["author_id"], after=row["after"], before=row["before"],
-            status=row["status"], pages_completed=row["pages_completed"],
-            total_results_estimate=row["total_results_estimate"],
-            coverage=row["coverage"], messages=tuple(row["messages"]),
-            finished_at=row["finished_at"],
-        )
-    raise ValueError("Unsupported conversation report kind")
+            warnings=tuple(value["warnings"]),
+            coverage_status=value["coverage_status"],
+        ),
+    )
+
+
+def _decode_clan_health(row: dict[str, Any], guild_id: int) -> Any:
+    _require_guild(row, guild_id, "Clan-health report")
+    value = row["snapshot"]
+    return ClanHealthReport(
+        row["report_id"], row["guild_id"], ClanHealthReportSnapshot(
+            run=ClanHealthReportRun(**value["run"]),
+            clan_code=value["clan_code"],
+            rows=tuple(ClanHealthPlayerRow(
+                **{**item, "flags": tuple(item["flags"])}
+            ) for item in value["rows"]),
+            issues=tuple(value["issues"]),
+        ),
+    )
+
+
+def _decode_regular_war(row: dict[str, Any], guild_id: int) -> Any:
+    _require_guild(row, guild_id, "Regular-war report")
+    value = row["snapshot"]
+    return RegularWarReport(
+        row["report_id"], row["guild_id"], RegularWarSnapshot(
+            **{
+                **value,
+                "members": tuple(WarMemberEvidence(**item)
+                                 for item in value["members"]),
+                "issues": tuple(value["issues"]),
+            },
+        ),
+    )
+
+
+def _decode_historical_regular_wars(row: dict[str, Any], guild_id: int) -> Any:
+    _require_guild(row, guild_id, "Historical regular-war report")
+    value = row["history"]
+    history = HistoricalRegularWarHistory(
+        read_at=value["read_at"], clan_code=value["clan_code"],
+        wars=tuple(HistoricalRegularWar(
+            **{**item, "issues": tuple(item["issues"])}
+        ) for item in value["wars"]),
+        members=tuple(HistoricalRegularWarMember(**item)
+                      for item in value["members"]),
+        next_before_war_id=value["next_before_war_id"],
+        ended_from_ts=value.get("ended_from_ts"),
+        ended_before_ts=value.get("ended_before_ts"),
+    )
+    return HistoricalRegularWarReport(
+        row["report_id"], row["guild_id"], row["ownership_observed_at"],
+        history, tuple(HistoricalWarOwnedMember(
+            source=HistoricalRegularWarMember(**item["source"]),
+            linked_member_id=item["linked_member_id"],
+            linked_player_name=item["linked_player_name"],
+        ) for item in row["rows"]),
+    )
+
+
+def _decode_family_account_movements(row: dict[str, Any], guild_id: int) -> Any:
+    _require_guild(row, guild_id, "Family movement report")
+    value = row["history"]
+    history = FamilyMovementHistory(
+        read_at=value["read_at"],
+        runs=tuple(CompleteFamilySnapshotRun(
+            **{**item, "ambiguous_account_tags": tuple(
+                item["ambiguous_account_tags"]
+            )}
+        ) for item in value["runs"]),
+        intervals=tuple(FamilySnapshotInterval(
+            **{**item, "excluded_ambiguous_account_tags": tuple(
+                item["excluded_ambiguous_account_tags"]
+            )}
+        ) for item in value["intervals"]),
+        movements=tuple(FamilyAccountMovement(**item)
+                        for item in value["movements"]),
+        next_before_run_id=value["next_before_run_id"],
+    )
+    return FamilyMovementReport(
+        row["report_id"], row["guild_id"], row["ownership_observed_at"],
+        history, tuple(OwnedFamilyAccountMovement(
+            source=FamilyAccountMovement(**item["source"]),
+            linked_member_id=item["linked_member_id"],
+            linked_player_name=item["linked_player_name"],
+        ) for item in row["rows"]),
+    )
+
+
+def _decode_pending_transfer_requests(row: dict[str, Any], guild_id: int) -> Any:
+    _require_guild(row, guild_id, "Pending transfer report")
+    return TransferQueueReport(
+        row["report_id"], row["guild_id"], row["observed_at"],
+        row["request_ttl_hours"], row["registered_queue_count"],
+        row["omitted_inaccessible_count"],
+        tuple(TransferQueueSnapshot(
+            clan_code=item["clan_code"], thread_id=item["thread_id"],
+            stored_request_count=item["stored_request_count"],
+            expired_stored_count=item["expired_stored_count"],
+            pending=tuple(PendingTransferRequest(**request)
+                          for request in item["pending"]),
+        ) for item in row["queues"]),
+    )
+
+
+def _decode_active_hibernation(row: dict[str, Any], guild_id: int) -> Any:
+    _require_guild(row, guild_id, "Hibernation report")
+    value = row["snapshot"]
+    return HibernationReport(
+        row["report_id"], row["guild_id"], row["source_channel_id"],
+        ActiveHibernationSnapshot(
+            observed_at=value["observed_at"],
+            stored_member_entry_count=value["stored_member_entry_count"],
+            skipped_invalid_member_entries=value[
+                "skipped_invalid_member_entries"
+            ],
+            ignored_metadata_entries=value["ignored_metadata_entries"],
+            missing_start_time_count=value["missing_start_time_count"],
+            records=tuple(ActiveHibernationRecord(**item)
+                          for item in value["records"]),
+        ),
+    )
+
+
+def _decode_support_ticket_inventory(row: dict[str, Any], guild_id: int) -> Any:
+    _require_guild(row, guild_id, "Support ticket report")
+    value = row["snapshot"]
+    return SupportTicketReport(
+        row["report_id"], row["guild_id"],
+        row["registered_ticket_count"], row["omitted_inaccessible_count"],
+        SupportTicketSnapshot(
+            observed_at=value["observed_at"],
+            tickets=tuple(SupportTicketMetadata(**item)
+                          for item in value["tickets"]),
+        ),
+    )
+
+
+def _decode_active_recruitment_trials(row: dict[str, Any], guild_id: int) -> Any:
+    _require_guild(row, guild_id, "Recruitment trial report")
+    value = row["snapshot"]
+    return RecruitmentTrialReport(
+        row["report_id"], row["guild_id"], ActiveRecruitmentTrialSnapshot(
+            observed_at=value["observed_at"],
+            selected_entry_count=value["selected_entry_count"],
+            skipped_invalid_selected_count=value[
+                "skipped_invalid_selected_count"
+            ],
+            trials=tuple(ActiveRecruitmentTrial(**item)
+                         for item in value["trials"]),
+        ),
+    )
+
+
+def _decode_examination_case_status(row: dict[str, Any], guild_id: int) -> Any:
+    _require_guild(row, guild_id, "Examination case report")
+    value = row["snapshot"]
+    return ExaminationCaseReport(
+        row["report_id"], row["guild_id"], ExaminationCaseSnapshot(
+            observed_at=value["observed_at"],
+            selected_entry_count=value["selected_entry_count"],
+            skipped_invalid_selected_count=value[
+                "skipped_invalid_selected_count"
+            ],
+            cases=tuple(ExaminationCaseStatus(**item)
+                        for item in value["cases"]),
+        ),
+    )
+
+
+def _decode_active_leadership_records(row: dict[str, Any], guild_id: int) -> Any:
+    _require_guild(row, guild_id, "Leadership record report")
+    value = row["snapshot"]
+    return LeadershipRecordReport(
+        row["report_id"], row["guild_id"], LeadershipRecordSnapshot(
+            observed_at=value["observed_at"], member_id=value["member_id"],
+            records=tuple(LeadershipRecordRow(**item)
+                          for item in value["records"]),
+        ),
+    )
+
+
+def _decode_discord_research(row: dict[str, Any], guild_id: int) -> Any:
+    _require_guild(row, guild_id, "Discord research report")
+    return DiscordResearchReport(
+        report_id=row["report_id"], guild_id=row["guild_id"],
+        source_job_id=row["source_job_id"],
+        source_channel_id=row["source_channel_id"],
+        research_kind=row["research_kind"], query=row["query"],
+        author_id=row["author_id"], after=row["after"], before=row["before"],
+        status=row["status"], pages_completed=row["pages_completed"],
+        total_results_estimate=row["total_results_estimate"],
+        coverage=row["coverage"], messages=tuple(row["messages"]),
+        finished_at=row["finished_at"],
+    )
+
+
+def _decode_attachment(row: dict[str, Any], guild_id: int) -> Any:
+    return _decode_attachment_report(row, guild_id=guild_id)
+
+
+_DECODERS = {
+    "achievement_progress": _decode_achievement_progress,
+    "achievement_leaderboard": _decode_achievement_leaderboard,
+    "coin_transactions": _decode_coin_transactions,
+    "raffle": _decode_raffle,
+    "event_schedule": _decode_event_schedule,
+    "member_lifecycle": _decode_member_lifecycle,
+    "missing_elder": _decode_missing_elder,
+    "approved_knowledge": _decode_approved_knowledge,
+    "role_accounts": _decode_role_accounts,
+    "roster_signups": _decode_roster_signups,
+    "cwl_performance": _decode_cwl_performance,
+    "cwl_ass_scope": _decode_cwl_ass_scope,
+    "cwl_bonus_scope": _decode_cwl_bonus_scope,
+    "clan_health": _decode_clan_health,
+    "regular_war": _decode_regular_war,
+    "historical_regular_wars": _decode_historical_regular_wars,
+    "family_account_movements": _decode_family_account_movements,
+    "pending_transfer_requests": _decode_pending_transfer_requests,
+    "active_hibernation": _decode_active_hibernation,
+    "support_ticket_inventory": _decode_support_ticket_inventory,
+    "active_recruitment_trials": _decode_active_recruitment_trials,
+    "examination_case_status": _decode_examination_case_status,
+    "active_leadership_records": _decode_active_leadership_records,
+    "csv_import": _decode_attachment,
+    "xlsx_import": _decode_attachment,
+    "text_import": _decode_attachment,
+    "discord_research": _decode_discord_research,
+}
 
 
 def _decode_attachment_report(row: dict[str, Any], *, guild_id: int) -> Any:
