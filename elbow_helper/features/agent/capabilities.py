@@ -202,6 +202,7 @@ CONTRACTS: Mapping[str, CapabilityContract] = {
     "restore_event_defaults": CapabilityContract((('event', 'event_tracker'),), (), source_scope='request_context'),
     "delete_event": CapabilityContract((('event', 'event_tracker'),), (), source_scope='request_context'),
     "review_cwl_bonus": CapabilityContract((('clan_code', 'clan'),), (), source_scope='request_context', filter_fields=('mode', 'month_key', 'decision', 'source', 'source_text')),
+    "set_cwl_bonus_scoring": CapabilityContract((('clan_code', 'clan'), ('source_clan', 'clan')), (), source_scope='request_context', filter_fields=('operation', 'attacker_th', 'defender_th', 'score', 'uphit_bonus_per_level', 'downhit_penalty_per_level', 'downhit_severe_after', 'downhit_severe_base', 'downhit_severe_multiplier')),
     "create_event_tracker": CapabilityContract((), (), source_scope='request_context', filter_fields=('name', 'start', 'end', 'timezone', 'grace_hours')),
     "edit_event_tracker": CapabilityContract((('event', 'event_tracker'),), (), source_scope='request_context', filter_fields=('name', 'start', 'end', 'timezone', 'grace_hours')),
     "edit_preset_event": CapabilityContract((('event', 'event_tracker'),), (), source_scope='request_context', filter_fields=('name', 'grace_hours')),

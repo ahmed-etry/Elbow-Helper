@@ -42,14 +42,7 @@ async def _deny_settings(interaction: discord.Interaction) -> None:
 
 
 def _load_clan_snapshot(cog: Any, clan_code: str) -> tuple[Dict[str, Any], Dict[str, Any], int]:
-    config, errors = cog.bonus_config.load()
-    if config is None:
-        raise BonusConfigValidationError(errors)
-    payload = (config.get("clans") or {}).get(clan_code)
-    if not isinstance(payload, dict):
-        raise BonusConfigValidationError([f"CWL bonus scoring settings for {clan_code} aren't available. Check that clan's settings and try again."])
-    meta = (config.get("clan_meta") or {}).get(clan_code) or {}
-    return copy.deepcopy(payload), dict(meta), cog.bonus_config.revision(config)
+    return cog.bonus_scoring_snapshot(clan_code)
 
 
 def _number(value: Any) -> str:
@@ -486,7 +479,7 @@ class ExpectedScoreConfirmView(LeadBonusSettingsView):
         updated_payload["matchup_expected"][self.matchup_key] = self.new_value
         attacker, defender = self.matchup_key.split(":", 1)
         try:
-            self.cog.bonus_config.save_clan(
+            self.cog.save_bonus_scoring(
                 self.clan_code,
                 updated_payload,
                 interaction.user,
@@ -657,7 +650,7 @@ class AdjustmentsConfirmView(LeadBonusSettingsView):
             for _, label, old, new in self.changes
         )
         try:
-            self.cog.bonus_config.save_clan(
+            self.cog.save_bonus_scoring(
                 self.clan_code,
                 updated_payload,
                 interaction.user,
@@ -765,7 +758,7 @@ class CopyConfirmView(LeadBonusSettingsView):
 
     async def confirm(self, interaction: discord.Interaction) -> None:
         try:
-            self.cog.bonus_config.copy_clan(
+            self.cog.copy_bonus_scoring(
                 self.source_clan,
                 self.clan_code,
                 interaction.user,

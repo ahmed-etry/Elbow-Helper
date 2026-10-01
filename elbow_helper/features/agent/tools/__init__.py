@@ -12,6 +12,7 @@ from .clan_reporting import clan_reporting_tools
 from .commands import command_tools
 from .cwl import cwl_tools
 from .cwl_bonus_review import cwl_bonus_review_tools
+from .cwl_bonus_scoring import cwl_bonus_scoring_tools
 from .discord import discord_tools
 from .discord_roles import discord_role_tools
 from .discord_messages import discord_message_tools
@@ -73,7 +74,8 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
         "wars": war_tools(),
         "rosters": (*roster_tools(), *roster_management_tools(),
                     *roster_account_management_tools()),
-        "cwl": (*cwl_tools(), *cwl_bonus_review_tools()),
+        "cwl": (*cwl_tools(), *cwl_bonus_review_tools(),
+                *cwl_bonus_scoring_tools()),
         "transfers": (*transfer_tools(), *transfer_management_tools()),
         "member_cases": (
             *member_lifecycle_tools(), *hibernation_tools(), *support_tools(),

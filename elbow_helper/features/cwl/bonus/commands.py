@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import copy
 
 import discord
 from discord import app_commands
@@ -17,6 +18,7 @@ from .service import BonusReport
 from .service import BonusReportError
 from .settings import BonusExportView
 from .settings import BonusSettingsButton
+from .config import BonusConfigValidationError
 
 
 def _error_preview(errors: list[str]) -> str:
@@ -27,6 +29,37 @@ def _error_preview(errors: list[str]) -> str:
 
 
 class CwlBonusMixin:
+    def bonus_scoring_snapshot(self, clan_code: str):
+        """Return one scoring setup and revision for panel and agent edits."""
+        config, errors = self.bonus_config.load()
+        if config is None:
+            raise BonusConfigValidationError(errors)
+        payload = (config.get("clans") or {}).get(clan_code)
+        if not isinstance(payload, dict):
+            raise BonusConfigValidationError([
+                f"CWL bonus scoring settings for {clan_code} aren't available. Check that clan's settings and try again."
+            ])
+        meta = (config.get("clan_meta") or {}).get(clan_code) or {}
+        return copy.deepcopy(payload), dict(meta), self.bonus_config.revision(config)
+
+    def save_bonus_scoring(self, clan_code: str, payload, actor, *,
+                           expected_revision: int, summary: str):
+        """Save a complete scoring setup for panel and agent changes."""
+        return self.bonus_config.save_clan(
+            clan_code, payload, actor, expected_revision=expected_revision,
+            summary=summary,
+        )
+
+    def bonus_scoring_issues(self, clan_code: str, payload) -> list[str]:
+        """Validate a proposed complete setup before showing its preview."""
+        return self.bonus_config._validate_bonus_clan_config(clan_code, payload)
+
+    def copy_bonus_scoring(self, source: str, target: str, actor, *,
+                           expected_revision: int):
+        return self.bonus_config.copy_clan(
+            source, target, actor, expected_revision=expected_revision,
+        )
+
     async def cwl_bonus_season_autocomplete(
         self,
         interaction: discord.Interaction,

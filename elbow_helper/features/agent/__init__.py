@@ -26,6 +26,7 @@ from .commands.adapters.account_links import prepare_account_add_undo
 from .tools.roster_management import prepare_roster_layout_undo
 from .tools.role_connection_management import prepare_role_connection_undo
 from .tools.role_connection_scan import prepare_role_connection_scan_undo
+from .tools.cwl_bonus_scoring import prepare_cwl_bonus_scoring_undo
 from .knowledge.store import KnowledgeStore
 
 
@@ -124,6 +125,8 @@ async def setup(bot) -> None:
         "undo_role_connection": prepare_role_connection_undo,
         "apply_role_connections": prepare_role_connection_scan_undo,
         "undo_role_connection_scan": prepare_role_connection_scan_undo,
+        "set_cwl_bonus_scoring": prepare_cwl_bonus_scoring_undo,
+        "undo_cwl_bonus_scoring": prepare_cwl_bonus_scoring_undo,
     })
     knowledge_store = KnowledgeStore(
         bot.paths.data_root / "agent" / "knowledge",
