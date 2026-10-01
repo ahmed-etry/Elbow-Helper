@@ -36,6 +36,7 @@ from .spreadsheets import spreadsheet_tools
 from .support import support_tools
 from .threads import thread_tools
 from .transfers import transfer_tools
+from .transfer_management import transfer_management_tools
 from .wars import war_tools
 from .working_state import working_state_tools
 from ..models import RegisteredAgentTool
@@ -64,7 +65,7 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
         "wars": war_tools(),
         "rosters": (*roster_tools(), *roster_management_tools()),
         "cwl": cwl_tools(),
-        "transfers": transfer_tools(),
+        "transfers": (*transfer_tools(), *transfer_management_tools()),
         "member_cases": (
             *member_lifecycle_tools(), *hibernation_tools(), *support_tools(),
             *recruitment_tools(), *examination_tools(), *record_tools(),

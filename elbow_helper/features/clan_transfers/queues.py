@@ -457,6 +457,26 @@ class ClanTransferQueueMixin:
                 clan_code,
             )
 
+        cleared_message = await self.clear_transfer_queue(clan_code)
+        await self._safe_ephemeral_reply(interaction, cleared_message)
+
+    def transfer_queue_clear_state(self, clan_code: str) -> dict[str, Any] | None:
+        """Describe the queue items and posts affected by clearing it."""
+        if clan_code not in CLAN_TRANSFER_QUEUES:
+            return None
+        queue = self.state.get("clans", {}).get(clan_code) or default_clan_state(clan_code)
+        return {
+            "clan_code": clan_code,
+            "member_ids": tuple(sorted(int(item["user_id"]) for item in queue.get("pending", []))),
+            "ping_message_id": queue.get("last_ping_message_id"),
+            "thread_id": CLAN_TRANSFER_QUEUES[clan_code]["thread_id"],
+            "board_channel_id": TRANSFER_REQUESTS,
+        }
+
+    async def clear_transfer_queue(self, clan_code: str) -> str:
+        """Clear a queue for both its panel button and the agent."""
+        if clan_code not in CLAN_TRANSFER_QUEUES:
+            raise ValueError("Unknown transfer queue")
         async with self.locks[clan_code]:
             clan_state = self._get_clan_state(clan_code)
             cleared_count = len(clan_state.get("pending", []))
@@ -472,7 +492,7 @@ class ClanTransferQueueMixin:
             cleared_message = (
                 f"Cleared **{cleared_count}** transfer requests for {clan_code}."
             )
-        await self._safe_ephemeral_reply(interaction, cleared_message)
+        return cleared_message
 
     @tasks.loop(minutes=5)
     async def request_expiry_loop(self) -> None:

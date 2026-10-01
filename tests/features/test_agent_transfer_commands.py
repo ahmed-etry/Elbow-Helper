@@ -4,14 +4,40 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.agent.commands.adapters.clan_transfers import (
     clan_transfer_adapters, prepare_transfer_cancel, prepare_transfer_request,
 )
+from elbow_helper.features.agent.models import AgentTurnState
+from elbow_helper.features.agent.tools.transfer_management import prepare_clear_transfer_queue
 
 
 class TransferCommandTests(unittest.IsolatedAsyncioTestCase):
+    async def test_clear_queue_names_every_request_and_rechecks_before_running(self):
+        state = {"clan_code": "BEH", "member_ids": (4, 5), "ping_message_id": 7,
+                 "thread_id": 8, "board_channel_id": 9}
+        workflow = SimpleNamespace(
+            transfer_queue_clear_state=lambda clan: state,
+            clear_transfer_queue=AsyncMock(return_value="Cleared two requests."),
+        )
+        context = SimpleNamespace(
+            bot=SimpleNamespace(get_cog=lambda name: workflow),
+            state=AgentTurnState(),
+        )
+        with patch("elbow_helper.features.agent.tools.transfer_management.require_evidence_access",
+                   new_callable=AsyncMock):
+            result = await prepare_clear_transfer_queue(context, {"clan_code": "BEH"})
+        self.assertEqual(result["status"], "confirmation_required")
+        action = context.state.command_proposals[0]
+        self.assertTrue(any("<@4>" in line for line in action.preview.lines))
+        self.assertTrue(any("<@5>" in line for line in action.preview.lines))
+        self.assertTrue(any("<#8>" in line for line in action.preview.lines))
+        self.assertTrue(await action.preview.recheck())
+        workflow.clear_transfer_queue.assert_not_awaited()
+        self.assertEqual((await action.run()).text, "Cleared two requests.")
+        workflow.clear_transfer_queue.assert_awaited_once_with("BEH")
+
     async def test_request_and_cancel_use_same_queue_state(self):
         pending = False
 

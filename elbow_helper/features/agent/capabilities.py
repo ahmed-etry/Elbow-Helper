@@ -192,6 +192,7 @@ CONTRACTS: Mapping[str, CapabilityContract] = {
     "show_roster_controls": CapabilityContract((('roster_id', 'roster'),), (), source_scope='request_context'),
     "hide_roster_controls": CapabilityContract((('roster_id', 'roster'),), (), source_scope='request_context'),
     "clear_roster_signups": CapabilityContract((('roster_id', 'roster'),), (), source_scope='request_context'),
+    "clear_transfer_queue": CapabilityContract((('clan_code', 'clan'),), (), source_scope='request_context'),
     "remember_task_instruction": CapabilityContract((('replaces_id', 'task_instruction'),), (), source_scope='request_context'),
     "retire_task_instruction": CapabilityContract((('instruction_id', 'task_instruction'),), (), source_scope='request_context'),
     "prepare_spreadsheet": CapabilityContract((), (), source_scope='request_context'),
