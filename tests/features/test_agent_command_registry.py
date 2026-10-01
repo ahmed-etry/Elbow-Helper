@@ -21,12 +21,20 @@ from elbow_helper.features.clan_health.commands.health import ClanHealthRootComm
 
 class CommandRegistryTests(unittest.TestCase):
     def test_full_action_catalogue_fits_the_system_prompt_budget(self):
-        bot = SimpleNamespace(tree=SimpleNamespace(get_commands=lambda guild=None: (
-            [RecruitmentCommandMixin.slash_opinion, ClanHealthRootCommandMixin.health]
-            if guild is not None else []
-        )))
+        adapters = enabled_adapters()
+        discovered = {
+            adapter.path: DiscoveredCommand(
+                adapter.path, adapter.path,
+                tuple(ParameterInfo(name, name, True, kind)
+                      for name, kind in adapter.option_types),
+            )
+            for adapter in adapters
+        }
         registry = build_agent_tools()
-        commands, _ = build_command_tools(bot, enabled_adapters())
+        with patch("elbow_helper.features.agent.commands.registry.discover_commands",
+                   return_value=discovered):
+            commands, _ = build_command_tools(object(), adapters)
+        self.assertEqual(len(commands), len(adapters))
         registry.update(commands)
         prompt = system_instructions(registry, actions_enabled=True)
         self.assertLess(estimate_tokens(prompt), 35_000)
