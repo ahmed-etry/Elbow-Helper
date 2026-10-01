@@ -41,13 +41,8 @@ class RaffleHubView(BaseTimeoutView):
 
     async def buy_ticket(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        ok, msg = await self.cog._retry_db_operation(
-            self.cog._buy_ticket_internal,
-            interaction.user.id,
-        )
+        _, msg = await self.cog.buy_raffle_ticket(interaction.user.id)
         await interaction.followup.send(msg, ephemeral=True)
-        if ok:
-            await self.cog.update_raffle_hub_message()
 
     async def inventory(self, interaction: discord.Interaction):
         balance, has_ticket = await self.cog._retry_db_operation(

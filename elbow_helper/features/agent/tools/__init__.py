@@ -6,6 +6,7 @@ from dataclasses import replace
 from .attachments import attachment_tools
 from .action_log import action_log_tools
 from .achievements import achievement_tools
+from .raffle_purchase import raffle_purchase_tools
 from .achievement_economy import achievement_economy_tools
 from .clan_health import clan_health_tools
 from .clan_reporting import clan_reporting_tools
@@ -67,7 +68,7 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
             *discord_role_tools(),
         ),
         "achievements_events": (
-            *achievement_tools(), *achievement_economy_tools(), *event_tools(),
+            *achievement_tools(), *achievement_economy_tools(), *raffle_purchase_tools(), *event_tools(),
             *event_management_tools(),
         ),
         "clan_operations": (*clan_reporting_tools(), *clan_health_tools()),

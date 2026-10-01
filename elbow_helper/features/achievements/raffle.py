@@ -507,6 +507,38 @@ class AchievementRaffleMixin:
         await self.bot.wait_until_ready()
 
     # Ticket purchase logic used by the raffle hub button.
+    async def raffle_purchase_state(self, user_id: int):
+        """Read a ticket purchase's cost, balance and eligibility without changing them."""
+        return await self._retry_db_operation(self._raffle_purchase_state_internal, user_id)
+
+    async def _raffle_purchase_state_internal(self, cursor, user_id: int):
+        month_key = self._month_key()
+        is_open, issue = await self._raffle_is_open_internal(cursor, month_key)
+        cursor.execute(
+            'SELECT last_ticket_month, balance FROM user_coins WHERE user_id = ?',
+            (user_id,),
+        )
+        row = cursor.fetchone()
+        last_ticket_month, balance = row if row else (None, 0)
+        guild = self.bot.get_guild(self.GUILD_ID)
+        member = guild.get_member(user_id) if guild else None
+        if is_open and last_ticket_month == month_key:
+            issue = "You already have a ticket this month."
+        elif is_open and member and self._is_leadership_any(member):
+            issue = "Leadership cannot hold raffle tickets."
+        elif is_open and balance < TICKET_COST:
+            issue = f"Not enough coins. Need {TICKET_COST}, you have {balance}."
+        return {"month_key": month_key, "cost": TICKET_COST,
+                "balance": balance, "has_ticket": last_ticket_month == month_key,
+                "issue": issue}
+
+    async def buy_raffle_ticket(self, user_id: int):
+        """Purchase a ticket for the panel and agent."""
+        ok, message = await self._retry_db_operation(self._buy_ticket_internal, user_id)
+        if ok:
+            await self.update_raffle_hub_message()
+        return ok, message
+
     async def _buy_ticket_internal(self, cursor, user_id: int):
         await self._ensure_coin_row(cursor, user_id)
         month_key = self._month_key()
