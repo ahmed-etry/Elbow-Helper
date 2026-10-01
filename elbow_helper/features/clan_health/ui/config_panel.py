@@ -132,6 +132,41 @@ def _block_summary_lines(block: str, payload: Dict[str, Any]) -> List[str]:
     return lines
 
 
+def prepare_player_config_block(
+    clan_code: str, block: str, values: Dict[str, Any],
+) -> tuple[Dict[str, Any], Dict[str, Any], str | None]:
+    """Validate a settings edit for the panel and the agent."""
+    if block not in PLAYER_BLOCK_ORDER:
+        raise ValueError("That settings section is unavailable.")
+    labels = PLAYER_LABELS[block]
+    if not values or any(key not in _field_keys(labels) for key in values):
+        raise ValueError("Choose settings from this section.")
+    current, snapshot = _get_payload_with_snapshot(clan_code)
+    updated = copy.deepcopy(current)
+    errors = []
+    for key, raw in values.items():
+        try:
+            updated[block][key] = _parse_value(str(raw), labels[key])
+        except (TypeError, ValueError) as exc:
+            errors.append(str(exc))
+    errors.extend(_guardrail_errors(updated))
+    if errors:
+        raise ConfigValidationError(errors)
+    return current, updated, snapshot
+
+
+def save_player_config_block(
+    clan_code: str, block: str, values: Dict[str, Any], actor: Any,
+    *, expected_updated_at: str | None = None,
+) -> Dict[str, Any]:
+    """Save one settings section for the panel and the agent."""
+    _, updated, current_snapshot = prepare_player_config_block(clan_code, block, values)
+    save_player_config(clan_code, updated, actor,
+                       expected_updated_at=(current_snapshot if expected_updated_at is None
+                                            else expected_updated_at))
+    return updated
+
+
 class EditBlockModal(BaseErrorModal):
     def __init__(self, parent_view: "ClanConfigBlockView"):
         super().__init__(title=f"Edit {parent_view.block_title}")
@@ -153,28 +188,11 @@ class EditBlockModal(BaseErrorModal):
             self.add_item(control)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        block_payload = copy.deepcopy(self.payload[self.parent_view.block])
-        parse_errors: List[str] = []
-        for key in _field_keys(self.labels):
-            spec = self.labels[key]
-            try:
-                block_payload[key] = _parse_value(self.inputs_by_key[key].value, spec)
-            except (ValueError, TypeError) as exc:
-                parse_errors.append(str(exc))
-        if parse_errors:
-            await interaction.response.send_message("Couldn't save:\n- " + "\n- ".join(parse_errors), ephemeral=True)
-            return
-
-        new_payload = copy.deepcopy(self.payload)
-        new_payload[self.parent_view.block] = block_payload
-        errors = _guardrail_errors(new_payload)
-        if errors:
-            await interaction.response.send_message("Couldn't save:\n- " + "\n- ".join(errors), ephemeral=True)
-            return
         try:
-            save_player_config(
+            new_payload = save_player_config_block(
                 self.parent_view.clan_code,
-                new_payload,
+                self.parent_view.block,
+                {key: self.inputs_by_key[key].value for key in _field_keys(self.labels)},
                 interaction.user,
                 expected_updated_at=self._snapshot_updated_at,
             )

@@ -9,6 +9,7 @@ from .achievements import achievement_tools
 from .raffle_purchase import raffle_purchase_tools
 from .achievement_economy import achievement_economy_tools
 from .clan_health import clan_health_tools
+from .clan_health_settings import clan_health_settings_tools
 from .clan_reporting import clan_reporting_tools
 from .commands import command_tools
 from .cwl import cwl_tools
@@ -75,6 +76,7 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
             *event_management_tools(),
         ),
         "clan_operations": (*clan_reporting_tools(), *clan_health_tools(),
+                            *clan_health_settings_tools(),
                             *missing_elder_board_tools()),
         "wars": war_tools(),
         "rosters": (*roster_tools(), *roster_management_tools(),

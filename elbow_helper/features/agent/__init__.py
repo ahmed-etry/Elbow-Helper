@@ -27,6 +27,7 @@ from .tools.roster_management import prepare_roster_layout_undo
 from .tools.role_connection_management import prepare_role_connection_undo
 from .tools.role_connection_scan import prepare_role_connection_scan_undo
 from .tools.cwl_bonus_scoring import prepare_cwl_bonus_scoring_undo
+from .tools.clan_health_settings import prepare_health_settings_undo
 from .knowledge.store import KnowledgeStore
 
 
@@ -127,6 +128,8 @@ async def setup(bot) -> None:
         "undo_role_connection_scan": prepare_role_connection_scan_undo,
         "set_cwl_bonus_scoring": prepare_cwl_bonus_scoring_undo,
         "undo_cwl_bonus_scoring": prepare_cwl_bonus_scoring_undo,
+        "set_clan_health_settings": prepare_health_settings_undo,
+        "undo_clan_health_settings": prepare_health_settings_undo,
     })
     knowledge_store = KnowledgeStore(
         bot.paths.data_root / "agent" / "knowledge",
