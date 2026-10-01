@@ -25,6 +25,7 @@ from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.roles import HIBERNATING_ROLE_ID
 from elbow_helper.configuration.roles import LEAD_PLUS
 from elbow_helper.domain.timezones import canonical_timezone_name
+from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.infrastructure.clash import ClashClient
 from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
 from elbow_helper.infrastructure.exports import LocalExportStore
@@ -831,7 +832,7 @@ class Rosters(commands.Cog):
             content=None,
             view=RosterProgressView(label),
         )
-        result = await self.membership.apply_selection(
+        result = await self.change_roster_accounts(
             roster_id,
             member_id=member_id,
             player_tags=player_tags,
@@ -840,6 +841,47 @@ class Rosters(commands.Cog):
             bypass_min_townhall=bypass_min_townhall,
         )
         await interaction.edit_original_response(content=result.message, view=None)
+
+    async def prepare_roster_account_selection(self, roster_id: int,
+                                               member_id: int, *, mode: str,
+                                               for_other_member: bool):
+        """Return the accounts a roster picker would offer to this member."""
+        roster = await self.service.get(roster_id)
+        if roster is None:
+            return None, None
+        picker = await self.membership.account_picker(
+            roster_id, member_id, mode=mode,
+            for_other_member=for_other_member,
+        )
+        return roster, picker
+
+    async def change_roster_accounts(self, roster_id: int, *, member_id: int,
+                                     player_tags: list[str], mode: str,
+                                     account_snapshots: dict[str, LinkedAccount],
+                                     bypass_min_townhall: bool = False):
+        """Apply an account selection for the panel and agent."""
+        return await self.membership.apply_selection(
+            roster_id, member_id=member_id, player_tags=player_tags,
+            mode=mode, account_snapshots=account_snapshots,
+            bypass_min_townhall=bypass_min_townhall,
+        )
+
+    @staticmethod
+    def resolve_roster_account_choices(accounts: tuple[LinkedAccount, ...],
+                                       requested: list[str]) -> tuple[list[str], str | None]:
+        """Resolve names or tags exactly as one roster picker selection."""
+        selected: list[str] = []
+        for value in requested:
+            tag = normalize_player_tag(value)
+            matches = [account for account in accounts
+                       if account.player_tag == tag
+                       or account.player_name.casefold() == value.strip().casefold()]
+            if len(matches) != 1:
+                return [], ("More than one Clash account matches that name. Use a player tag."
+                            if matches else "That Clash account isn't available for this roster.")
+            if matches[0].player_tag not in selected:
+                selected.append(matches[0].player_tag)
+        return selected, None
 
     async def bulk_add_roster_accounts(
         self,

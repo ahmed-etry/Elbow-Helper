@@ -34,6 +34,7 @@ from .role_connections import role_connection_tools
 from .role_connection_management import role_connection_management_tools
 from .rosters import roster_tools
 from .roster_management import roster_management_tools
+from .roster_account_management import roster_account_management_tools
 from .saved_reports import replace_report_tools
 from .spreadsheets import spreadsheet_tools
 from .support import support_tools
@@ -68,7 +69,8 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
         ),
         "clan_operations": (*clan_reporting_tools(), *clan_health_tools()),
         "wars": war_tools(),
-        "rosters": (*roster_tools(), *roster_management_tools()),
+        "rosters": (*roster_tools(), *roster_management_tools(),
+                    *roster_account_management_tools()),
         "cwl": (*cwl_tools(), *cwl_bonus_review_tools()),
         "transfers": (*transfer_tools(), *transfer_management_tools()),
         "member_cases": (
