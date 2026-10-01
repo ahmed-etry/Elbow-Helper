@@ -8,7 +8,7 @@ from typing import Any
 import discord
 
 from elbow_helper.features.agent.tools.discord_safety import (
-    check_member, check_post_access, resolve_channel, resolve_member,
+    check_member, check_post_access, check_role, resolve_channel, resolve_member,
 )
 
 from ...actions.contracts import ActionClass, ChangePreview
@@ -19,6 +19,9 @@ from ...wording import (
     ACTION_CHECKUP_LINE,
     ACTION_DECLINE_LABEL, ACTION_DECLINE_LINE, ACTION_DECLINE_RENAME,
     ACTION_DECLINE_RENAME_SKIP,
+    ACTION_FINALIZE_LABEL, ACTION_FINALIZE_LINE,
+    ACTION_FINALIZE_RENAME, ACTION_FINALIZE_ROLE_ADD,
+    ACTION_FINALIZE_ROLE_REMOVE,
 )
 from ..outcomes import CommandOutcome
 from ..registry import CommandAdapter, PreparedCommandChange
@@ -200,6 +203,88 @@ async def run_decline(context: Any,
     return await (await prepare_decline(context, values)).run()
 
 
+async def prepare_finalize(context: Any,
+                           values: Mapping[str, Any]) -> PreparedCommandChange:
+    workflow = context.bot.get_cog("Recruitment")
+    if workflow is None:
+        raise ValueError(ACTION_RECSTATEMENT_UNAVAILABLE)
+    member = await resolve_member(context.guild, values["applicant"])
+    check_member(member, context.guild.me)
+    channel = await resolve_channel(
+        context, values.get("channel") or context.source_message.channel.id,
+    )
+    check_post_access(channel, context.member, context.guild.me)
+    prepared = workflow.prepare_finalize(
+        member, channel, context.guild, values.get("additional_notes"),
+    )
+    if prepared["issue"]:
+        raise ValueError(prepared["issue"])
+
+    def check_roles() -> None:
+        for role in (*prepared["remove_roles"], *prepared["add_roles"]):
+            check_role(role, context.guild, context.guild.me, {})
+
+    check_roles()
+    lines = [ACTION_FINALIZE_LINE.format(member=member.mention,
+                                         channel=channel.mention)]
+    if prepared["old_name"] != prepared["new_name"]:
+        lines.append(ACTION_FINALIZE_RENAME.format(
+            old=prepared["old_name"], new=prepared["new_name"],
+        ))
+    lines.extend(ACTION_FINALIZE_ROLE_REMOVE.format(
+        role=role.mention, member=member.mention,
+    ) for role in prepared["remove_roles"])
+    lines.extend(ACTION_FINALIZE_ROLE_ADD.format(
+        role=role.mention, member=member.mention,
+    ) for role in prepared["add_roles"])
+    lines.extend(line or ACTION_PREVIEW_BLANK
+                 for line in prepared["message"].splitlines())
+    signature = (
+        prepared["old_name"], prepared["new_name"], prepared["message"],
+        tuple(role.id for role in prepared["remove_roles"]),
+        tuple(role.id for role in prepared["add_roles"]),
+    )
+
+    async def recheck() -> bool:
+        try:
+            live_member = await resolve_member(context.guild, member.id, fresh=True)
+            check_member(live_member, context.guild.me)
+            check_post_access(channel, context.member, context.guild.me)
+            check_roles()
+        except (ValueError, discord.DiscordException):
+            return False
+        live = workflow.prepare_finalize(
+            live_member, channel, context.guild,
+            values.get("additional_notes"),
+        )
+        if live["issue"]:
+            return False
+        return signature == (
+            live["old_name"], live["new_name"], live["message"],
+            tuple(role.id for role in live["remove_roles"]),
+            tuple(role.id for role in live["add_roles"]),
+        )
+
+    async def run() -> CommandOutcome:
+        confirmation = await workflow.post_finalize(prepared)
+        return CommandOutcome(
+            "complete", "private", text=confirmation,
+            result={"channel_id": channel.id, "member_id": member.id},
+            after={"channel_id": channel.id, "member_id": member.id,
+                   "channel_name": channel.name,
+                   "role_ids": tuple(role.id for role in member.roles)},
+        )
+
+    return PreparedCommandChange(
+        ChangePreview(tuple(lines), recheck, summary=ACTION_FINALIZE_LABEL), run,
+    )
+
+
+async def run_finalize(context: Any,
+                       values: Mapping[str, Any]) -> CommandOutcome:
+    return await (await prepare_finalize(context, values)).run()
+
+
 def recruitment_adapters() -> tuple[CommandAdapter, ...]:
     return (
         CommandAdapter("/opinion", "private", run_opinion,
@@ -214,6 +299,11 @@ def recruitment_adapters() -> tuple[CommandAdapter, ...]:
                                        ("channel", "discord_channel"))),
         CommandAdapter("/decline", "confirm", run_decline,
                        prepare=prepare_decline,
+                       action_class=ActionClass.IRREVERSIBLE,
+                       entity_options=(("applicant", "discord_member"),
+                                       ("channel", "discord_channel"))),
+        CommandAdapter("/finalize", "confirm", run_finalize,
+                       prepare=prepare_finalize,
                        action_class=ActionClass.IRREVERSIBLE,
                        entity_options=(("applicant", "discord_member"),
                                        ("channel", "discord_channel"))),

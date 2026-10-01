@@ -51,6 +51,67 @@ RARE_STATEMENT_CHOICES = [
 
 
 class RecruitmentCommandMixin:
+    def prepare_finalize(self, applicant: discord.Member,
+                         channel: discord.TextChannel | None,
+                         guild: discord.Guild,
+                         additional_notes: str | None = None) -> dict[str, object]:
+        if not isinstance(channel, discord.TextChannel):
+            return {"issue": "Run this command in a server text channel."}
+        current_name = channel.name
+        new_name = (current_name.replace("🤔", "✅")
+                    if "🤔" in current_name else current_name)
+        trial_role = guild.get_role(TRIAL_ROLE_ID) if TRIAL_ROLE_ID else None
+        member_role = guild.get_role(MEMBER_ROLE_ID) if MEMBER_ROLE_ID else None
+        alliance_role = (guild.get_role(ALLIANCE_MEMBER_ROLE_ID)
+                         if ALLIANCE_MEMBER_ROLE_ID else None)
+        remove_roles = (trial_role,) if trial_role and trial_role in applicant.roles else ()
+        add_roles = tuple(role for role in (member_role, alliance_role)
+                          if role and role not in applicant.roles)
+        notes = f"\n\n**Additional Notes:**\n{additional_notes}" if additional_notes else ""
+        message = FINALIZE_TEMPLATE.format(
+            user_mention=applicant.mention, additional_notes=notes,
+        )
+        return {"issue": None, "applicant": applicant, "channel": channel,
+                "old_name": current_name, "new_name": new_name,
+                "remove_roles": remove_roles, "add_roles": add_roles,
+                "message": message}
+
+    async def post_finalize(self, prepared: dict[str, object]) -> str:
+        applicant = prepared["applicant"]
+        channel = prepared["channel"]
+        new_name = prepared["new_name"]
+        name_changed = False
+        rename_failed = False
+        try:
+            if new_name != channel.name:
+                await channel.edit(name=new_name)
+                name_changed = True
+        except discord.Forbidden:
+            rename_failed = True
+        roles_changed: list[str] = []
+        role_update_failed = False
+        try:
+            for role in prepared["remove_roles"]:
+                await applicant.remove_roles(role)
+                roles_changed.append(f"Removed {role.name}")
+            for role in prepared["add_roles"]:
+                await applicant.add_roles(role)
+                roles_changed.append(f"Added {role.name}")
+        except discord.Forbidden:
+            role_update_failed = True
+        await channel.send(prepared["message"])
+        lines = [f"Completed {applicant.display_name}'s trial."]
+        if name_changed:
+            lines.append(f"Renamed the channel to {new_name}.")
+        if roles_changed:
+            lines.append(f"Updated roles: {', '.join(roles_changed)}.")
+        lines.append(f"Sent to {channel.mention}.")
+        if rename_failed:
+            lines.append("Couldn't rename the channel — check permissions.")
+        if role_update_failed:
+            lines.append("Couldn't update roles — check permissions.")
+        return "\n".join(lines)
+
     def prepare_decline(self, applicant: discord.Member,
                         channel: discord.TextChannel | None,
                         additional_notes: str | None = None) -> dict[str, object]:
@@ -825,77 +886,16 @@ class RecruitmentCommandMixin:
         await interaction.response.defer(ephemeral=True)
         
         try:
-            target_channel = channel or interaction.channel
-             
-            if not isinstance(target_channel, discord.TextChannel):
-                await interaction.followup.send(
-                    "Run this command in a server text channel.",
-                    ephemeral=True
-                )
-                return
-             
-            rename_failed = False
-            try:
-                current_name = target_channel.name
-                if "🤔" in current_name:
-                    new_name = current_name.replace("🤔", "✅")
-                    await target_channel.edit(name=new_name)
-                    name_changed = True
-                else:
-                    name_changed = False
-                    new_name = current_name
-            except discord.Forbidden:
-                name_changed = False
-                new_name = current_name
-                rename_failed = True
-             
-            roles_changed: list[str] = []
-            role_update_failed = False
-            try:
-                if TRIAL_ROLE_ID:
-                    trial_role = interaction.guild.get_role(TRIAL_ROLE_ID)
-                    if trial_role and trial_role in applicant.roles:
-                        await applicant.remove_roles(trial_role)
-                        roles_changed.append(f"Removed {trial_role.name}")
-                
-                if MEMBER_ROLE_ID:
-                    member_role = interaction.guild.get_role(MEMBER_ROLE_ID)
-                    if member_role and member_role not in applicant.roles:
-                        await applicant.add_roles(member_role)
-                        roles_changed.append(f"Added {member_role.name}")
-                
-                if ALLIANCE_MEMBER_ROLE_ID:
-                    alliance_role = interaction.guild.get_role(ALLIANCE_MEMBER_ROLE_ID)
-                    if alliance_role and alliance_role not in applicant.roles:
-                        await applicant.add_roles(alliance_role)
-                        roles_changed.append(f"Added {alliance_role.name}")
-            except discord.Forbidden:
-                role_update_failed = True
-             
-            additional_notes_block = ""
-            if additional_notes:
-                additional_notes_block = f"\n\n**Additional Notes:**\n{additional_notes}"
-
-            finalize_msg = FINALIZE_TEMPLATE.format(
-                user_mention=applicant.mention,
-                additional_notes=additional_notes_block,
+            prepared = self.prepare_finalize(
+                applicant, channel or interaction.channel,
+                interaction.guild, additional_notes,
             )
-             
-            await target_channel.send(finalize_msg)
+            if prepared["issue"]:
+                await interaction.followup.send(prepared["issue"], ephemeral=True)
+                return
+            confirmation = await self.post_finalize(prepared)
+            await interaction.followup.send(confirmation, ephemeral=True)
 
-            confirmation_lines = [f"Completed {applicant.display_name}'s trial."]
-            if name_changed:
-                confirmation_lines.append(f"Renamed the channel to {new_name}.")
-            if roles_changed:
-                confirmation_lines.append(f"Updated roles: {', '.join(roles_changed)}.")
-            confirmation_lines.append(f"Sent to {target_channel.mention}.")
-            if rename_failed:
-                confirmation_lines.append("Couldn't rename the channel — check permissions.")
-            if role_update_failed:
-                confirmation_lines.append("Couldn't update roles — check permissions.")
-
-            await interaction.followup.send("\n".join(confirmation_lines), ephemeral=True)
-            
         except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError):
             self.logger.exception(
                 "finalize_applicant failed: invoker=%s target=%s channel=%s",
