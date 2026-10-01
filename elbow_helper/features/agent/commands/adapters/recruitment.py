@@ -17,6 +17,8 @@ from ...wording import (
     ACTION_RECSTATEMENT_LABEL, ACTION_RECSTATEMENT_LINE,
     ACTION_RECSTATEMENT_UNAVAILABLE, ACTION_CHECKUP_LABEL,
     ACTION_CHECKUP_LINE,
+    ACTION_DECLINE_LABEL, ACTION_DECLINE_LINE, ACTION_DECLINE_RENAME,
+    ACTION_DECLINE_RENAME_SKIP,
 )
 from ..outcomes import CommandOutcome
 from ..registry import CommandAdapter, PreparedCommandChange
@@ -140,6 +142,64 @@ async def run_checkup(context: Any,
     return await (await prepare_checkup(context, values)).run()
 
 
+async def prepare_decline(context: Any,
+                          values: Mapping[str, Any]) -> PreparedCommandChange:
+    workflow = context.bot.get_cog("Recruitment")
+    if workflow is None:
+        raise ValueError(ACTION_RECSTATEMENT_UNAVAILABLE)
+    member = await resolve_member(context.guild, values["applicant"])
+    check_member(member, context.guild.me)
+    channel = await resolve_channel(
+        context, values.get("channel") or context.source_message.channel.id,
+    )
+    check_post_access(channel, context.member, context.guild.me)
+    prepared = workflow.prepare_decline(
+        member, channel, values.get("additional_notes"),
+    )
+    if prepared["issue"]:
+        raise ValueError(prepared["issue"])
+    candidate = prepared["rename_candidate"]
+    lines = [ACTION_DECLINE_LINE.format(member=member.mention,
+                                        channel=channel.mention)]
+    if candidate and candidate != channel.name:
+        lines.append((ACTION_DECLINE_RENAME if len(candidate) <= 100
+                      else ACTION_DECLINE_RENAME_SKIP).format(
+            old=channel.name, new=candidate,
+        ))
+    lines.extend(line or ACTION_PREVIEW_BLANK
+                 for line in prepared["message"].splitlines())
+
+    async def recheck() -> bool:
+        try:
+            live_member = await resolve_member(context.guild, member.id, fresh=True)
+            check_member(live_member, context.guild.me)
+            check_post_access(channel, context.member, context.guild.me)
+        except (ValueError, discord.DiscordException):
+            return False
+        live = workflow.prepare_decline(
+            live_member, channel, values.get("additional_notes"),
+        )
+        return (live["issue"] is None
+                and live["message"] == prepared["message"]
+                and live["rename_candidate"] == candidate)
+
+    async def run() -> CommandOutcome:
+        message = await workflow.post_decline(prepared)
+        return CommandOutcome("complete", "private", text=message,
+                              result={"channel_id": channel.id},
+                              after={"channel_id": channel.id,
+                                     "channel_name": channel.name})
+
+    return PreparedCommandChange(
+        ChangePreview(tuple(lines), recheck, summary=ACTION_DECLINE_LABEL), run,
+    )
+
+
+async def run_decline(context: Any,
+                      values: Mapping[str, Any]) -> CommandOutcome:
+    return await (await prepare_decline(context, values)).run()
+
+
 def recruitment_adapters() -> tuple[CommandAdapter, ...]:
     return (
         CommandAdapter("/opinion", "private", run_opinion,
@@ -149,6 +209,11 @@ def recruitment_adapters() -> tuple[CommandAdapter, ...]:
                        action_class=ActionClass.IRREVERSIBLE),
         CommandAdapter("/checkup", "confirm", run_checkup,
                        prepare=prepare_checkup,
+                       action_class=ActionClass.IRREVERSIBLE,
+                       entity_options=(("applicant", "discord_member"),
+                                       ("channel", "discord_channel"))),
+        CommandAdapter("/decline", "confirm", run_decline,
+                       prepare=prepare_decline,
                        action_class=ActionClass.IRREVERSIBLE,
                        entity_options=(("applicant", "discord_member"),
                                        ("channel", "discord_channel"))),

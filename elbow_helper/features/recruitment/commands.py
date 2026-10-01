@@ -51,6 +51,40 @@ RARE_STATEMENT_CHOICES = [
 
 
 class RecruitmentCommandMixin:
+    def prepare_decline(self, applicant: discord.Member,
+                        channel: discord.TextChannel | None,
+                        additional_notes: str | None = None) -> dict[str, object]:
+        if not isinstance(channel, discord.TextChannel):
+            return {"issue": "Run this command in a server text channel."}
+        notes = f"\n\n**Additional Notes:** {additional_notes}" if additional_notes else ""
+        message = DECLINE_TEMPLATE.format(
+            user_mention=applicant.mention, additional_notes=notes,
+        )
+        rename_candidate = rename_ticket_channel(channel, DECLINED_TICKET_PREFIXES)
+        return {"issue": None, "applicant": applicant, "channel": channel,
+                "message": message, "rename_candidate": rename_candidate}
+
+    async def post_decline(self, prepared: dict[str, object]) -> str:
+        applicant = prepared["applicant"]
+        channel = prepared["channel"]
+        candidate = prepared["rename_candidate"]
+        rename_failed = False
+        if candidate and candidate != channel.name:
+            if len(candidate) > 100:
+                rename_failed = True
+            elif can_rename(channel.guild.id):
+                try:
+                    await channel.edit(name=candidate)
+                except (discord.Forbidden, discord.HTTPException):
+                    rename_failed = True
+            else:
+                rename_failed = True
+        await channel.send(prepared["message"])
+        lines = [f"Declined {applicant.display_name}. Message sent to {channel.mention}."]
+        if rename_failed:
+            lines.append("Couldn't rename the channel — check permissions.")
+        return "\n".join(lines)
+
     def prepare_checkup(self, applicant: discord.Member, account_linked: bool,
                         channel: discord.TextChannel | None,
                         additional_notes: str | None = None) -> dict[str, object]:
@@ -702,49 +736,15 @@ class RecruitmentCommandMixin:
         await interaction.response.defer(ephemeral=True)
         
         try:
-            additional_notes_block = ""
-            if additional_notes:
-                additional_notes_block = f"\n\n**Additional Notes:** {additional_notes}"
-
-            decline_msg = DECLINE_TEMPLATE.format(
-                user_mention=applicant.mention,
-                additional_notes=additional_notes_block,
+            prepared = self.prepare_decline(
+                applicant, channel or interaction.channel, additional_notes,
             )
-            
-            target_channel = channel or interaction.channel
-             
-            if not isinstance(target_channel, discord.TextChannel):
-                await interaction.followup.send(
-                    "Run this command in a server text channel.",
-                    ephemeral=True
-                )
+            if prepared["issue"]:
+                await interaction.followup.send(prepared["issue"], ephemeral=True)
                 return
+            confirmation = await self.post_decline(prepared)
+            await interaction.followup.send(confirmation, ephemeral=True)
 
-            rename_failed = False
-            rename_candidate = rename_ticket_channel(target_channel, DECLINED_TICKET_PREFIXES)
-            if rename_candidate and rename_candidate != target_channel.name:
-                if len(rename_candidate) > 100:
-                    rename_failed = True
-                elif can_rename(target_channel.guild.id):
-                    try:
-                        await target_channel.edit(name=rename_candidate)
-                    except discord.Forbidden:
-                        rename_failed = True
-                    except discord.HTTPException:
-                        rename_failed = True
-                else:
-                    rename_failed = True
-
-            await target_channel.send(decline_msg)
-
-            confirmation_lines = [
-                f"Declined {applicant.display_name}. Message sent to {target_channel.mention}.",
-            ]
-            if rename_failed:
-                confirmation_lines.append("Couldn't rename the channel — check permissions.")
-
-            await interaction.followup.send("\n".join(confirmation_lines), ephemeral=True)
-            
         except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError):
             self.logger.exception(
                 "decline_applicant failed: invoker=%s target=%s channel=%s",
