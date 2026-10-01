@@ -141,44 +141,57 @@ class RoleConnections(commands.Cog):
                 return connection
         return None
 
-    def update_connection_target(self, conn_id: str, role_id: int) -> bool:
+    def role_connection_state(self, conn_id: str) -> Optional[Dict[str, Any]]:
+        """Return a detached connection for previews and later rechecks."""
+        connection = self.get_connection(conn_id)
+        return copy.deepcopy(connection) if connection is not None else None
+
+    def replace_connection(self, conn_id: str, connection: Dict[str, Any]) -> bool:
+        """Save one complete rule after validating its dependencies."""
+        if connection.get("id") != conn_id or not self.connection_change_is_valid(
+            connection, replacing_id=conn_id,
+        ):
+            return False
         connections = copy.deepcopy(self.state["connections"])
-        for connection in connections:
-            if connection["id"] == conn_id:
-                connection["target_role_id"] = role_id
+        for index, existing in enumerate(connections):
+            if existing["id"] == conn_id:
+                connections[index] = copy.deepcopy(connection)
                 self._replace_connections(connections)
                 return True
         return False
+
+    def update_connection_target(self, conn_id: str, role_id: int) -> bool:
+        connection = self.role_connection_state(conn_id)
+        if connection is None:
+            return False
+        connection["target_role_id"] = role_id
+        return self.replace_connection(conn_id, connection)
 
     def get_connection_list_ids(self, connection: Dict[str, Any], list_name: str, kind: str) -> List[int]:
         key = "has" if kind == "has" else "not"
         return [cond[key] for cond in connection.get(list_name, []) if key in cond]
 
     def add_connection_roles(self, conn_id: str, list_name: str, kind: str, role_ids: List[int]) -> bool:
-        connections = copy.deepcopy(self.state["connections"])
-        for connection in connections:
-            if connection["id"] == conn_id:
-                key = "has" if kind == "has" else "not"
-                target = connection.get(list_name, [])
-                for role_id in role_ids:
-                    entry = {key: role_id}
-                    if entry not in target:
-                        target.append(entry)
-                connection[list_name] = target
-                self._replace_connections(connections)
-                return True
-        return False
+        connection = self.role_connection_state(conn_id)
+        if connection is None:
+            return False
+        key = "has" if kind == "has" else "not"
+        target = connection.get(list_name, [])
+        for role_id in role_ids:
+            entry = {key: role_id}
+            if entry not in target:
+                target.append(entry)
+        connection[list_name] = target
+        return self.replace_connection(conn_id, connection)
 
     def remove_connection_roles(self, conn_id: str, list_name: str, kind: str, role_ids: List[int]) -> bool:
-        connections = copy.deepcopy(self.state["connections"])
-        for connection in connections:
-            if connection["id"] == conn_id:
-                key = "has" if kind == "has" else "not"
-                target = connection.get(list_name, [])
-                connection[list_name] = [cond for cond in target if cond.get(key) not in role_ids]
-                self._replace_connections(connections)
-                return True
-        return False
+        connection = self.role_connection_state(conn_id)
+        if connection is None:
+            return False
+        key = "has" if kind == "has" else "not"
+        target = connection.get(list_name, [])
+        connection[list_name] = [cond for cond in target if cond.get(key) not in role_ids]
+        return self.replace_connection(conn_id, connection)
 
     def _connection_matches(self, member: discord.Member, connection: Dict[str, Any]) -> bool:
         # `all` must fully match; `any` acts as an optional OR gate.

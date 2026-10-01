@@ -24,6 +24,7 @@ from .commands.adapters.records import prepare_record_add_undo, prepare_record_e
 from .commands.adapters.achievements import prepare_raffle_prize_undo
 from .commands.adapters.account_links import prepare_account_add_undo
 from .tools.roster_management import prepare_roster_layout_undo
+from .tools.role_connection_management import prepare_role_connection_undo
 from .knowledge.store import KnowledgeStore
 
 
@@ -118,6 +119,8 @@ async def setup(bot) -> None:
         "undo_account_add": prepare_account_add_undo,
         "set_roster_layout": prepare_roster_layout_undo,
         "undo_roster_layout": prepare_roster_layout_undo,
+        "manage_role_connection": prepare_role_connection_undo,
+        "undo_role_connection": prepare_role_connection_undo,
     })
     knowledge_store = KnowledgeStore(
         bot.paths.data_root / "agent" / "knowledge",
