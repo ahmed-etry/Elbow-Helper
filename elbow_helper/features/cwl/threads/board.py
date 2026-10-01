@@ -55,6 +55,81 @@ def _escaped(value: str) -> str:
 
 
 class CwlThreadBoardMixin:
+    def can_change_cc_status(self, member: discord.Member) -> bool:
+        return self.has_leader_permissions(member) or self.has_helper_permissions(member)
+
+    async def cc_status_snapshot(self, clan_code: str) -> dict[str, Any] | None:
+        """Read the active CC status board for its control and the agent."""
+        registration = self._registered_thread_entry(clan_code)
+        if registration is None:
+            return None
+        _, thread_key, thread_data = registration
+        latest = await self._latest_thread_snapshot(clan_code, force_refresh=True)
+        if latest is None:
+            return None
+        _, snapshot = latest
+        preparation = snapshot.preparation
+        if preparation is None or not preparation.war_tag:
+            return None
+        records = thread_data.get("cc_statuses") or {}
+        record = records.get(preparation.war_tag) if isinstance(records, dict) else None
+        return {"thread_id": int(thread_key),
+                "sticky_message_id": thread_data.get("sticky_message_id"),
+                "war_tag": preparation.war_tag,
+                "round": preparation.round_number,
+                "season": preparation.season,
+                "status": record.get("status") if isinstance(record, dict) else None}
+
+    async def set_cwl_cc_status(self, clan_code: str, status: str,
+                                actor: discord.Member, thread_id: int,
+                                sticky_message_id: int | None,
+                                *, access_checked: bool = False) -> tuple[bool, str]:
+        """Set active Clan Castle status for the button and the agent."""
+        if status not in VALID_CC_STATUSES:
+            return False, "That Clan Castle status isn't valid."
+        if not access_checked and not self.can_change_cc_status(actor):
+            return False, "You don't have permission to use this."
+        registration = self._registered_thread_entry(clan_code)
+        if registration is None:
+            return False, "This thread isn't set up for CWL."
+        _, thread_key, thread_data = registration
+        if str(thread_id) != thread_key or (
+                sticky_message_id is not None
+                and sticky_message_id != thread_data.get("sticky_message_id")):
+            return False, "This is an older CWL status post. Use the latest one."
+        latest = await self._latest_thread_snapshot(clan_code, force_refresh=True)
+        if latest is None:
+            return False, "CWL data is unavailable right now. Nothing was changed."
+        wars, snapshot = latest
+        preparation = snapshot.preparation
+        if preparation is None or not preparation.war_tag:
+            await self.sync_registered_cwl_thread(clan_code, wars)
+            return False, "No CWL preparation day is active right now."
+        displayed = self._active_prep_state(thread_data)
+        displayed_tag = str(displayed.get("war_tag") or "") if displayed else ""
+        if displayed_tag and displayed_tag != preparation.war_tag:
+            await self.sync_registered_cwl_thread(clan_code, wars)
+            return False, "The preparation round changed. Use the updated status post."
+        records = self._cc_status_records(thread_data)
+        records[preparation.war_tag] = {
+            "round": preparation.round_number,
+            "season": preparation.season,
+            "status": status,
+            "updated_at": self._utc_now_iso(),
+            "updated_by": actor.id,
+        }
+        thread_data["active_prep"] = {
+            "war_tag": preparation.war_tag,
+            "round": preparation.round_number,
+            "season": preparation.season,
+        }
+        self.save_data()
+        refreshed = await self.sync_registered_cwl_thread(clan_code, wars)
+        message = f"Day {preparation.round_number} CCs marked **{status}**."
+        if not refreshed:
+            message += " The status post couldn't be refreshed."
+        return True, message
+
     def _registered_thread_entry(
         self,
         clan_code: str,
@@ -614,50 +689,10 @@ class CwlThreadBoardMixin:
                 return
 
         await interaction.response.defer(ephemeral=True)
-        latest = await self._latest_thread_snapshot(clan_code, force_refresh=True)
-        if latest is None:
-            await interaction.followup.send(
-                "CWL data is unavailable right now. Nothing was changed.",
-                ephemeral=True,
-            )
-            return
-        wars, snapshot = latest
-        preparation = snapshot.preparation
-        if preparation is None or not preparation.war_tag:
-            await self.sync_registered_cwl_thread(clan_code, wars)
-            await interaction.followup.send(
-                "No CWL preparation day is active right now.",
-                ephemeral=True,
-            )
-            return
-        displayed = self._active_prep_state(thread_data)
-        displayed_tag = str(displayed.get("war_tag") or "") if displayed else ""
-        if displayed_tag and displayed_tag != preparation.war_tag:
-            await self.sync_registered_cwl_thread(clan_code, wars)
-            await interaction.followup.send(
-                "The preparation round changed. Use the updated status post.",
-                ephemeral=True,
-            )
-            return
-
-        records = self._cc_status_records(thread_data)
-        records[preparation.war_tag] = {
-            "round": preparation.round_number,
-            "season": preparation.season,
-            "status": status,
-            "updated_at": self._utc_now_iso(),
-            "updated_by": interaction.user.id,
-        }
-        thread_data["active_prep"] = {
-            "war_tag": preparation.war_tag,
-            "round": preparation.round_number,
-            "season": preparation.season,
-        }
-        self.save_data()
-        refreshed = await self.sync_registered_cwl_thread(clan_code, wars)
-        message = f"Day {preparation.round_number} CCs marked **{status}**."
-        if not refreshed:
-            message += " The status post couldn't be refreshed."
+        _, message = await self.set_cwl_cc_status(
+            clan_code, status, interaction.user, interaction.channel.id,
+            interaction.message.id if interaction.message else None,
+            access_checked=True)
         await interaction.followup.send(message, ephemeral=True)
 
     async def update_cc_status_from_button(
