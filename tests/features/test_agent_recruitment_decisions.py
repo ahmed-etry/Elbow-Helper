@@ -8,12 +8,80 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.agent.commands.adapters.recruitment import (
-    prepare_decline, prepare_finalize, recruitment_adapters,
+    prepare_accept, prepare_decline, prepare_finalize, recruitment_adapters,
 )
 from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin
 
 
 class RecruitmentDecisionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_accept_previews_all_steps_and_runs_the_public_flow(self):
+        role = SimpleNamespace(
+            id=20, name="Trial", mention="<@&20>", position=1,
+            managed=False, permissions=SimpleNamespace(),
+            is_default=lambda: False,
+        )
+        bot_member = SimpleNamespace(
+            id=1, top_role=SimpleNamespace(position=10),
+        )
+        applicant = SimpleNamespace(
+            id=3, mention="<@3>", display_name="Applicant", nick="Old",
+            roles=[], top_role=SimpleNamespace(position=1),
+        )
+        channel = SimpleNamespace(
+            id=4, mention="<#4>",
+            permissions_for=lambda _: SimpleNamespace(
+                view_channel=True, send_messages=True,
+            ),
+        )
+        guild = SimpleNamespace(
+            id=5, me=bot_member,
+            get_member=lambda member_id: applicant if member_id == 3 else None,
+            fetch_member=AsyncMock(return_value=applicant),
+            get_channel_or_thread=lambda channel_id: channel if channel_id == 4 else None,
+        )
+        channel.guild = guild
+        applicant.guild = guild
+        prepared = {
+            "issue": None, "warnings": (), "user": applicant,
+            "channel": channel, "valid_clans": ("BEH",),
+            "player_tags": ("#P0Y",),
+            "player_rows": ({"player_tag": "#P0Y", "player_name": "Player"},),
+            "nickname": "New", "days": 7, "additional_notes": None,
+            "welcome": "Welcome <@3>!",
+        }
+        effects = {
+            "nickname_before": "Old", "nickname_after": "New",
+            "remove_roles": (), "add_roles": (role,),
+            "missing_roles": (), "links_before": {},
+        }
+        workflow = SimpleNamespace(
+            prepare_accept=AsyncMock(return_value=prepared),
+            accept_effects=lambda _: effects,
+            perform_accept=AsyncMock(return_value={
+                "issue": None, "failures": (), "message": None,
+            }),
+        )
+        context = SimpleNamespace(
+            bot=SimpleNamespace(get_cog=lambda _: workflow),
+            guild=guild, member=SimpleNamespace(id=2),
+            source_message=SimpleNamespace(channel=channel),
+        )
+        values = {"applicant": 3, "clans": "BEH", "nickname": "New",
+                  "player_tags": "#P0Y"}
+        change = await prepare_accept(context, values)
+        self.assertTrue(await change.preview.recheck())
+        self.assertIn("Nickname: Old → New", change.preview.lines)
+        self.assertIn("Link #P0Y: not linked → <@3>", change.preview.lines)
+        self.assertIn("Welcome <@3>!", change.preview.lines)
+        workflow.perform_accept.assert_not_awaited()
+        result = await change.run()
+        self.assertEqual(result.result["member_id"], 3)
+        self.assertEqual(result.result["failures"], [])
+        workflow.perform_accept.assert_awaited_once()
+        self.assertIs(next(adapter for adapter in recruitment_adapters()
+                           if adapter.path == "/accept").classification,
+                      ActionClass.IRREVERSIBLE)
+
     async def test_finalize_previews_roles_ticket_and_message(self):
         workflow = RecruitmentCommandMixin()
         bot_member = SimpleNamespace(

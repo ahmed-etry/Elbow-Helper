@@ -22,6 +22,13 @@ from ...wording import (
     ACTION_FINALIZE_LABEL, ACTION_FINALIZE_LINE,
     ACTION_FINALIZE_RENAME, ACTION_FINALIZE_ROLE_ADD,
     ACTION_FINALIZE_ROLE_REMOVE,
+    ACTION_ACCEPT_ACCOUNT, ACTION_ACCEPT_ACCOUNT_OLD,
+    ACTION_ACCEPT_ACHIEVEMENT, ACTION_ACCEPT_BOARD,
+    ACTION_ACCEPT_LABEL, ACTION_ACCEPT_LINE,
+    ACTION_ACCEPT_NICKNAME, ACTION_ACCEPT_ROLE_ADD,
+    ACTION_ACCEPT_ROLE_REMOVE, ACTION_ACCEPT_TRACK,
+    ACTION_ACCEPT_WARNING, ACTION_ACCEPT_NO_LINK,
+    ACTION_ACCEPT_ROLE_MISSING,
 )
 from ..outcomes import CommandOutcome
 from ..registry import CommandAdapter, PreparedCommandChange
@@ -285,6 +292,131 @@ async def run_finalize(context: Any,
     return await (await prepare_finalize(context, values)).run()
 
 
+async def prepare_accept(context: Any,
+                         values: Mapping[str, Any]) -> PreparedCommandChange:
+    workflow = context.bot.get_cog("Recruitment")
+    if workflow is None:
+        raise ValueError(ACTION_RECSTATEMENT_UNAVAILABLE)
+    member = await resolve_member(context.guild, values["applicant"])
+    check_member(member, context.guild.me)
+    channel = await resolve_channel(
+        context, values.get("channel") or context.source_message.channel.id,
+    )
+    check_post_access(channel, context.member, context.guild.me)
+    options = {
+        "clans": values["clans"], "nickname": values["nickname"],
+        "player_tags": values["player_tags"],
+        "days": int(values.get("days", 7)),
+        "channel": channel,
+        "additional_notes": values.get("additional_notes"),
+    }
+    prepared = await workflow.prepare_accept(user=member, **options)
+    if prepared["issue"]:
+        raise ValueError(prepared["issue"])
+    effects = workflow.accept_effects(prepared)
+    if effects["missing_roles"]:
+        raise ValueError(ACTION_ACCEPT_ROLE_MISSING.format(
+            roles=", ".join(f"<@&{role_id}>" for role_id in effects["missing_roles"]),
+        ))
+
+    def check_roles() -> None:
+        for role in (*effects["remove_roles"], *effects["add_roles"]):
+            check_role(role, context.guild, context.guild.me, {})
+
+    check_roles()
+    lines = [ACTION_ACCEPT_LINE.format(
+        member=member.mention, channel=channel.mention,
+        clans=", ".join(prepared["valid_clans"]), days=prepared["days"],
+    )]
+    lines.extend(ACTION_ACCEPT_WARNING.format(message=warning)
+                 for warning in prepared["warnings"])
+    lines.append(ACTION_ACCEPT_NICKNAME.format(
+        old=effects["nickname_before"] or member.display_name,
+        new=effects["nickname_after"],
+    ))
+    lines.extend(ACTION_ACCEPT_ROLE_REMOVE.format(
+        role=role.mention, member=member.mention,
+    ) for role in effects["remove_roles"])
+    lines.extend(ACTION_ACCEPT_ROLE_ADD.format(
+        role=role.mention, member=member.mention,
+    ) for role in effects["add_roles"])
+    for row in prepared["player_rows"]:
+        prior = effects["links_before"].get(row["player_tag"])
+        old = (ACTION_ACCEPT_ACCOUNT_OLD.format(member=f"<@{prior['discord_user_id']}>")
+               if prior else ACTION_ACCEPT_NO_LINK)
+        lines.append(ACTION_ACCEPT_ACCOUNT.format(
+            tag=row["player_tag"], old=old, member=member.mention,
+        ))
+    lines.extend((ACTION_ACCEPT_BOARD, ACTION_ACCEPT_TRACK.format(
+        channel=channel.mention, days=prepared["days"],
+    ), ACTION_ACCEPT_ACHIEVEMENT.format(member=member.mention)))
+    lines.extend(line or ACTION_PREVIEW_BLANK
+                 for line in prepared["welcome"].splitlines())
+
+    def signature(item, effect):
+        return (
+            item["valid_clans"], item["player_tags"], item["player_rows"],
+            item["welcome"], effect["nickname_before"],
+            tuple(role.id for role in effect["remove_roles"]),
+            tuple(role.id for role in effect["add_roles"]),
+            effect["links_before"],
+        )
+
+    initial = signature(prepared, effects)
+
+    async def recheck() -> bool:
+        try:
+            live_member = await resolve_member(context.guild, member.id, fresh=True)
+            check_member(live_member, context.guild.me)
+            check_post_access(channel, context.member, context.guild.me)
+            live = await workflow.prepare_accept(user=live_member, **options)
+            if live["issue"]:
+                return False
+            live_effects = workflow.accept_effects(live)
+            if live_effects["missing_roles"]:
+                return False
+            for role in (*live_effects["remove_roles"], *live_effects["add_roles"]):
+                check_role(role, context.guild, context.guild.me, {})
+        except (ValueError, discord.DiscordException, OSError, RuntimeError):
+            return False
+        return signature(live, live_effects) == initial
+
+    async def run() -> CommandOutcome:
+        result = await workflow.perform_accept(
+            user=member, valid_clans=list(prepared["valid_clans"]),
+            nickname=prepared["nickname"], days=prepared["days"],
+            target_channel=channel,
+            additional_notes=prepared["additional_notes"],
+            player_tags=list(prepared["player_tags"]),
+            player_rows=list(prepared["player_rows"]),
+        )
+        if result["issue"]:
+            raise ValueError(result["issue"])
+        return CommandOutcome(
+            "complete", "private", text=result["message"] or "",
+            result={"member_id": member.id, "channel_id": channel.id,
+                    "failures": list(result["failures"])},
+            after={"member_id": member.id, "channel_id": channel.id,
+                   "failures": list(result["failures"])},
+        )
+
+    return PreparedCommandChange(
+        ChangePreview(tuple(lines), recheck, summary=ACTION_ACCEPT_LABEL,
+                      before={
+                          "member_id": member.id,
+                          "nickname": effects["nickname_before"],
+                          "role_ids": tuple(role.id for role in member.roles),
+                          "links": effects["links_before"],
+                      }),
+        run,
+    )
+
+
+async def run_accept(context: Any,
+                     values: Mapping[str, Any]) -> CommandOutcome:
+    return await (await prepare_accept(context, values)).run()
+
+
 def recruitment_adapters() -> tuple[CommandAdapter, ...]:
     return (
         CommandAdapter("/opinion", "private", run_opinion,
@@ -304,6 +436,11 @@ def recruitment_adapters() -> tuple[CommandAdapter, ...]:
                                        ("channel", "discord_channel"))),
         CommandAdapter("/finalize", "confirm", run_finalize,
                        prepare=prepare_finalize,
+                       action_class=ActionClass.IRREVERSIBLE,
+                       entity_options=(("applicant", "discord_member"),
+                                       ("channel", "discord_channel"))),
+        CommandAdapter("/accept", "confirm", run_accept,
+                       prepare=prepare_accept,
                        action_class=ActionClass.IRREVERSIBLE,
                        entity_options=(("applicant", "discord_member"),
                                        ("channel", "discord_channel"))),

@@ -248,6 +248,106 @@ class RecruitmentCommandMixin:
             embed.add_field(name="Additional Notes", value=additional_notes, inline=False)
         return embed
 
+    async def prepare_accept(self, *, user: discord.Member, clans: str,
+                             nickname: str, player_tags: str, days: int,
+                             channel: discord.TextChannel | None,
+                             additional_notes: str | None = None) -> dict[str, object]:
+        if days < 1:
+            return {"issue": "Enter a trial length of at least 1 day.", "warnings": ()}
+        valid_clans, invalid_clans = self.parse_clan_input(clans)
+        valid_tags, invalid_tags = self.parse_player_tag_input(player_tags)
+        if not valid_clans:
+            return {"issue": "None of those clan codes were recognized. Check the codes and try again.",
+                    "warnings": ()}
+        if not valid_tags:
+            return {"issue": "None of those player tags were recognized. Check the tags and try again.",
+                    "warnings": ()}
+        if len(valid_clans) > 7:
+            return {"issue": "Too many clans — maximum is 7.", "warnings": ()}
+        warnings = []
+        if invalid_clans:
+            warnings.append(
+                f"Some codes weren't recognized: {', '.join(invalid_clans)}. "
+                f"Continuing with: {', '.join(valid_clans)}."
+            )
+        if invalid_tags:
+            warnings.append(
+                f"Some player tags weren't recognized: {', '.join(invalid_tags)}. "
+                f"Continuing with: {', '.join(valid_tags)}."
+            )
+        missing_clans = [code for code in valid_clans if code not in CLAN_INFO_BOARDS]
+        if missing_clans:
+            return {"issue": (
+                f"Recruitment info boards haven't been set up for: {', '.join(missing_clans)}. "
+                "Check the recruitment setup."
+            ), "warnings": tuple(warnings)}
+        info_channels = []
+        missing_channels = []
+        for code in valid_clans:
+            configured = self.bot.get_channel(CLAN_INFO_BOARDS[code]["channel_id"])
+            if configured is None:
+                missing_channels.append(code)
+            else:
+                info_channels.append(configured.mention)
+        if missing_channels:
+            return {"issue": (
+                f"Recruitment info channels couldn't be found for: {', '.join(missing_channels)}. "
+                "Check the recruitment setup."
+            ), "warnings": tuple(warnings)}
+        if not isinstance(channel, discord.TextChannel):
+            return {"issue": "Run this command in a server text channel.",
+                    "warnings": tuple(warnings)}
+        player_rows = await self.account_links.lookup_players(valid_tags)
+        clan_links = (CLAN_INFO_BOARDS[valid_clans[0]]["link"]
+                      if len(valid_clans) == 1 else
+                      "".join(f"**{code}:** {CLAN_INFO_BOARDS[code]['link']}\n"
+                              for code in valid_clans))
+        notes = f"\n\n**Additional Notes:** {additional_notes}" if additional_notes else ""
+        welcome = ACCEPT_TEMPLATE.format(
+            user_mention=user.mention,
+            trial_length=f"{days} day" if days == 1 else f"{days} days",
+            info_channels_text="/".join(info_channels),
+            server_rules=SERVER_RULES, clan_links=clan_links,
+            additional_notes=notes,
+        )
+        embed = self._build_accept_confirmation_embed(
+            user=user, valid_clans=valid_clans, nickname=nickname,
+            days=days, target_channel=channel, player_rows=player_rows,
+            additional_notes=additional_notes,
+        )
+        return {"issue": None, "warnings": tuple(warnings),
+                "user": user, "channel": channel,
+                "valid_clans": tuple(valid_clans), "player_tags": tuple(valid_tags),
+                "player_rows": tuple(player_rows), "nickname": nickname,
+                "days": days, "additional_notes": additional_notes,
+                "welcome": welcome, "embed": embed}
+
+    def accept_effects(self, prepared: dict[str, object]) -> dict[str, object]:
+        user = prepared["user"]
+        guild = user.guild
+        applicant_role = guild.get_role(APPLICANT_ROLE_ID)
+        trial_role = guild.get_role(TRIAL_ROLE_ID)
+        remove_roles = (applicant_role,) if applicant_role in user.roles else ()
+        add_roles = []
+        missing_roles = []
+        if trial_role is None:
+            missing_roles.append(TRIAL_ROLE_ID)
+        elif trial_role not in user.roles:
+            add_roles.append(trial_role)
+        for code in prepared["valid_clans"]:
+            role_id = CLAN_INFO_BOARDS[code]["clan_role"]
+            role = guild.get_role(role_id)
+            if role is None:
+                missing_roles.append(role_id)
+            elif role not in user.roles:
+                add_roles.append(role)
+        tags = tuple(str(row["player_tag"]) for row in prepared["player_rows"])
+        links = self.account_links.get_links_by_tags(tags)
+        return {"nickname_before": user.nick, "nickname_after": prepared["nickname"],
+                "remove_roles": remove_roles, "add_roles": tuple(add_roles),
+                "missing_roles": tuple(missing_roles), "links_before": links,
+                "linked_tags": tags}
+
     async def _apply_accept_member_update(
         self,
         action: Callable[[], Awaitable[object]],
@@ -293,128 +393,97 @@ class RecruitmentCommandMixin:
             player_tags=[str(tag) for tag in payload["player_tags"]],
         )
 
-    async def _perform_accept_flow(
-        self,
-        interaction: discord.Interaction,
-        *,
-        user: discord.Member,
-        valid_clans: list[str],
-        nickname: str,
-        days: int,
-        target_channel: discord.TextChannel,
-        additional_notes: str | None,
-        player_tags: list[str],
-    ) -> None:
-        try:
-            if not interaction.response.is_done():
-                await interaction.response.defer(ephemeral=True)
-        except (discord.InteractionResponded, discord.NotFound):
-            pass
-
-        try:
-            if days < 1:
-                await warn(interaction, "Enter a trial length of at least 1 day.")
-                return
-
-            missing_clans = [clan_code for clan_code in valid_clans if clan_code not in CLAN_INFO_BOARDS]
-            if missing_clans:
-                await warn(
-                    interaction,
-                    f"Recruitment info boards haven't been set up for: {', '.join(missing_clans)}. Check the recruitment setup.",
-                )
-                return
-
-            missing_channels = []
-            info_channels = []
-            for clan_code in valid_clans:
-                clan_config = CLAN_INFO_BOARDS[clan_code]
-                info_channel = self.bot.get_channel(clan_config["channel_id"])
-                if not info_channel:
-                    missing_channels.append(clan_code)
-                else:
-                    info_channels.append(info_channel.mention)
-
-            if missing_channels:
-                await warn(
-                    interaction,
-                    f"Recruitment info channels couldn't be found for: {', '.join(missing_channels)}. Check the recruitment setup.",
-                )
-                return
-
-            info_channels_text = "/".join(info_channels) if len(info_channels) > 1 else info_channels[0]
-
-            if len(valid_clans) == 1:
-                clan_links = f"{CLAN_INFO_BOARDS[valid_clans[0]]['link']}"
+    async def perform_accept(
+        self, *, user: discord.Member, valid_clans: list[str],
+        nickname: str, days: int, target_channel: discord.TextChannel,
+        additional_notes: str | None, player_tags: list[str],
+        player_rows: list[dict[str, str]] | None = None,
+    ) -> dict[str, object]:
+        if days < 1:
+            return {"issue": "Enter a trial length of at least 1 day.", "failures": ()}
+        missing_clans = [code for code in valid_clans if code not in CLAN_INFO_BOARDS]
+        if missing_clans:
+            return {"issue": (
+                f"Recruitment info boards haven't been set up for: {', '.join(missing_clans)}. "
+                "Check the recruitment setup."
+            ), "failures": ()}
+        info_channels = []
+        missing_channels = []
+        for code in valid_clans:
+            channel = self.bot.get_channel(CLAN_INFO_BOARDS[code]["channel_id"])
+            if channel is None:
+                missing_channels.append(code)
             else:
-                clan_links = "".join(
-                    f"**{clan_code}:** {CLAN_INFO_BOARDS[clan_code]['link']}\n"
-                    for clan_code in valid_clans
-                )
+                info_channels.append(channel.mention)
+        if missing_channels:
+            return {"issue": (
+                f"Recruitment info channels couldn't be found for: {', '.join(missing_channels)}. "
+                "Check the recruitment setup."
+            ), "failures": ()}
+        clan_links = (CLAN_INFO_BOARDS[valid_clans[0]]["link"]
+                      if len(valid_clans) == 1 else
+                      "".join(f"**{code}:** {CLAN_INFO_BOARDS[code]['link']}\n"
+                              for code in valid_clans))
+        notes = f"\n\n**Additional Notes:** {additional_notes}" if additional_notes else ""
+        welcome_msg = ACCEPT_TEMPLATE.format(
+            user_mention=user.mention,
+            trial_length=f"{days} day" if days == 1 else f"{days} days",
+            info_channels_text="/".join(info_channels),
+            server_rules=SERVER_RULES, clan_links=clan_links,
+            additional_notes=notes,
+        )
+        failures: list[str] = []
 
-            additional_notes_block = ""
-            if additional_notes:
-                additional_notes_block = f"\n\n**Additional Notes:** {additional_notes}"
+        nickname_updated = await self._apply_accept_member_update(
+            lambda: user.edit(nick=nickname),
+            label="Nickname update",
+            user_id=user.id,
+        )
+        if not nickname_updated:
+            failures.append("Nickname was not changed.")
 
-            welcome_msg = ACCEPT_TEMPLATE.format(
-                user_mention=user.mention,
-                trial_length=f"{days} day" if days == 1 else f"{days} days",
-                info_channels_text=info_channels_text,
-                server_rules=SERVER_RULES,
-                clan_links=clan_links,
-                additional_notes=additional_notes_block,
-            )
+        guild = user.guild
 
-            failures: list[str] = []
-
-            nickname_updated = await self._apply_accept_member_update(
-                lambda: user.edit(nick=nickname),
-                label="Nickname update",
+        applicant_role = guild.get_role(APPLICANT_ROLE_ID)
+        if applicant_role is not None and applicant_role in user.roles:
+            removed = await self._apply_accept_member_update(
+                lambda: user.remove_roles(applicant_role),
+                label="Applicant role removal",
                 user_id=user.id,
             )
-            if not nickname_updated:
-                failures.append("Nickname was not changed.")
+            if not removed:
+                failures.append("Applicant role was not removed.")
 
-            guild = user.guild
-
-            applicant_role = guild.get_role(APPLICANT_ROLE_ID)
-            if applicant_role is not None and applicant_role in user.roles:
-                removed = await self._apply_accept_member_update(
-                    lambda: user.remove_roles(applicant_role),
-                    label="Applicant role removal",
-                    user_id=user.id,
-                )
-                if not removed:
-                    failures.append("Applicant role was not removed.")
-
-            trial_role = guild.get_role(TRIAL_ROLE_ID)
-            if trial_role is None:
+        trial_role = guild.get_role(TRIAL_ROLE_ID)
+        if trial_role is None:
+            failures.append("Trial role was not added.")
+        elif trial_role not in user.roles:
+            added = await self._apply_accept_member_update(
+                lambda: user.add_roles(trial_role),
+                label="Trial role addition",
+                user_id=user.id,
+            )
+            if not added:
                 failures.append("Trial role was not added.")
-            elif trial_role not in user.roles:
-                added = await self._apply_accept_member_update(
-                    lambda: user.add_roles(trial_role),
-                    label="Trial role addition",
-                    user_id=user.id,
-                )
-                if not added:
-                    failures.append("Trial role was not added.")
 
-            for clan_code in valid_clans:
-                clan_role_id = CLAN_INFO_BOARDS[clan_code]["clan_role"]
-                clan_role = guild.get_role(clan_role_id)
-                if clan_role is None:
-                    failures.append(f"{clan_code} role was not added.")
-                    continue
-                if clan_role in user.roles:
-                    continue
-                added = await self._apply_accept_member_update(
-                    lambda role=clan_role: user.add_roles(role),
-                    label=f"{clan_code} role addition",
-                    user_id=user.id,
-                )
-                if not added:
-                    failures.append(f"{clan_code} role was not added.")
+        for clan_code in valid_clans:
+            clan_role_id = CLAN_INFO_BOARDS[clan_code]["clan_role"]
+            clan_role = guild.get_role(clan_role_id)
+            if clan_role is None:
+                failures.append(f"{clan_code} role was not added.")
+                continue
+            if clan_role in user.roles:
+                continue
+            added = await self._apply_accept_member_update(
+                lambda role=clan_role: user.add_roles(role),
+                label=f"{clan_code} role addition",
+                user_id=user.id,
+            )
+            if not added:
+                failures.append(f"{clan_code} role was not added.")
 
-            failed_tags: list[str] = []
+        failed_tags: list[str] = []
+        if player_rows is None:
             try:
                 player_rows = await self.account_links.lookup_players(player_tags)
             except (OSError, RuntimeError):
@@ -425,115 +494,131 @@ class RecruitmentCommandMixin:
                 player_rows = []
                 failed_tags.extend(player_tags)
 
-            for index, row in enumerate(player_rows):
-                tag = str(row["player_tag"])
-                try:
-                    self.account_links.upsert_link(
-                        player_tag=tag,
-                        discord_user_id=user.id,
-                        is_primary=index == 0,
-                        player_name_last_seen=str(row["player_name"]),
-                    )
-                except (OSError, sqlite3.Error):
-                    self.logger.exception(
-                        "Account link failed during /accept: user_id=%s player_tag=%s",
-                        user.id,
-                        tag,
-                    )
-                    failed_tags.append(tag)
-            if failed_tags:
-                failures.append(
-                    "Clash accounts were not linked: "
-                    + ", ".join(f"`{tag}`" for tag in failed_tags)
-                    + "."
-                )
-
+        for index, row in enumerate(player_rows):
+            tag = str(row["player_tag"])
             try:
-                await self.account_links.refresh_linked_boards()
-            except (
-                discord.Forbidden,
-                discord.HTTPException,
-                OSError,
-                RuntimeError,
-            ):
-                self.logger.exception(
-                    "Failed refreshing missing-elder boards after /accept for user_id=%s",
-                    user.id,
-                )
-
-            try:
-                await target_channel.send(welcome_msg)
-            except (discord.Forbidden, discord.HTTPException):
-                self.logger.exception(
-                    "Acceptance message failed during /accept for user_id=%s channel_id=%s",
-                    user.id,
-                    target_channel.id,
-                )
-                failures.append("Welcome message was not posted.")
-
-            try:
-                trial_result = await self.start_trial_for_accept(
-                    target_channel,
-                    days,
-                    user.id,
-                )
-            except (
-                discord.Forbidden,
-                discord.HTTPException,
-                OSError,
-                RuntimeError,
-            ):
-                self.logger.exception(
-                    "Trial start failed during /accept for user_id=%s channel_id=%s",
-                    user.id,
-                    target_channel.id,
-                )
-                trial_result = TrialStartResult(started=False)
-            if not trial_result.started:
-                failures.append("Trial tracking was not started.")
-            elif not trial_result.ticket_renamed:
-                failures.append("Ticket was not renamed for the trial.")
-
-            try:
-                await self.achievement_rewards.award_achievement(
-                    user.id,
-                    "fresh_recruit",
+                self.account_links.upsert_link(
+                    player_tag=tag,
+                    discord_user_id=user.id,
+                    is_primary=index == 0,
+                    player_name_last_seen=str(row["player_name"]),
                 )
             except (OSError, sqlite3.Error):
                 self.logger.exception(
-                    "Fresh Recruit award failed during /accept for user_id=%s",
+                    "Account link failed during /accept: user_id=%s player_tag=%s",
                     user.id,
+                    tag,
                 )
-                failures.append("Fresh Recruit achievement was not awarded.")
-            else:
-                self.logger.info(
-                    "Fresh Recruit award requested for user_id=%s",
-                    user.id,
-                )
+                failed_tags.append(tag)
+        if failed_tags:
+            failures.append(
+                "Clash accounts were not linked: "
+                + ", ".join(f"`{tag}`" for tag in failed_tags)
+                + "."
+            )
 
-            if failures:
-                lines = [
-                    f"Acceptance is incomplete for {user.mention}:",
-                    *(f"- {failure}" for failure in failures),
-                    "",
-                    "Other acceptance steps were completed.",
-                ]
-                await warn(interaction, "\n".join(lines))
-                return
-
+        try:
+            await self.account_links.refresh_linked_boards()
         except (
             discord.Forbidden,
             discord.HTTPException,
             OSError,
             RuntimeError,
-            TypeError,
-            ValueError,
-            sqlite3.Error,
+        ):
+            self.logger.exception(
+                "Failed refreshing missing-elder boards after /accept for user_id=%s",
+                user.id,
+            )
+
+        try:
+            await target_channel.send(welcome_msg)
+        except (discord.Forbidden, discord.HTTPException):
+            self.logger.exception(
+                "Acceptance message failed during /accept for user_id=%s channel_id=%s",
+                user.id,
+                target_channel.id,
+            )
+            failures.append("Welcome message was not posted.")
+
+        try:
+            trial_result = await self.start_trial_for_accept(
+                target_channel,
+                days,
+                user.id,
+            )
+        except (
+            discord.Forbidden,
+            discord.HTTPException,
+            OSError,
+            RuntimeError,
+        ):
+            self.logger.exception(
+                "Trial start failed during /accept for user_id=%s channel_id=%s",
+                user.id,
+                target_channel.id,
+            )
+            trial_result = TrialStartResult(started=False)
+        if not trial_result.started:
+            failures.append("Trial tracking was not started.")
+        elif not trial_result.ticket_renamed:
+            failures.append("Ticket was not renamed for the trial.")
+
+        try:
+            await self.achievement_rewards.award_achievement(
+                user.id,
+                "fresh_recruit",
+            )
+        except (OSError, sqlite3.Error):
+            self.logger.exception(
+                "Fresh Recruit award failed during /accept for user_id=%s",
+                user.id,
+            )
+            failures.append("Fresh Recruit achievement was not awarded.")
+        else:
+            self.logger.info(
+                "Fresh Recruit award requested for user_id=%s",
+                user.id,
+            )
+
+        if failures:
+            lines = [
+                f"Acceptance is incomplete for {user.mention}:",
+                *(f"- {failure}" for failure in failures),
+                "",
+                "Other acceptance steps were completed.",
+            ]
+            return {"issue": None, "failures": tuple(failures),
+                    "message": "\n".join(lines)}
+        return {"issue": None, "failures": (), "message": None}
+
+    async def _perform_accept_flow(
+        self, interaction: discord.Interaction, *, user: discord.Member,
+        valid_clans: list[str], nickname: str, days: int,
+        target_channel: discord.TextChannel,
+        additional_notes: str | None, player_tags: list[str],
+    ) -> None:
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=True)
+        except (discord.InteractionResponded, discord.NotFound):
+            pass
+        try:
+            result = await self.perform_accept(
+                user=user, valid_clans=valid_clans, nickname=nickname,
+                days=days, target_channel=target_channel,
+                additional_notes=additional_notes, player_tags=player_tags,
+            )
+            if result["issue"]:
+                await warn(interaction, result["issue"])
+            elif result["message"]:
+                await warn(interaction, result["message"])
+        except (
+            discord.Forbidden, discord.HTTPException, OSError,
+            RuntimeError, TypeError, ValueError, sqlite3.Error,
         ):
             self.logger.exception(
                 "accept_applicant failed: invoker=%s target=%s",
-                interaction.user.id,
-                user.id,
+                interaction.user.id, user.id,
             )
             await fail(interaction)
 
@@ -570,96 +655,34 @@ class RecruitmentCommandMixin:
         await interaction.response.defer(ephemeral=True)
         
         try:
-            if days < 1:
-                await interaction.followup.send("Enter a trial length of at least 1 day.", ephemeral=True)
-                return
-            valid_clans, invalid_clans = self.parse_clan_input(clans)
-            valid_tags, invalid_tags = self.parse_player_tag_input(player_tags)
-            
-            if not valid_clans:
-                await warn(interaction, "None of those clan codes were recognized. Check the codes and try again.")
-                return
-
-            if not valid_tags:
-                await warn(interaction, "None of those player tags were recognized. Check the tags and try again.")
-                return
-             
-            if len(valid_clans) > 7:
-                await warn(interaction, "Too many clans — maximum is 7.")
-                return
-            
-            if invalid_clans:
-                warning_msg = (
-                    f"Some codes weren't recognized: {', '.join(invalid_clans)}. "
-                    f"Continuing with: {', '.join(valid_clans)}."
-                )
-                await interaction.followup.send(warning_msg, ephemeral=True)
-
-            if invalid_tags:
-                await interaction.followup.send(
-                    f"Some player tags weren't recognized: {', '.join(invalid_tags)}. Continuing with: {', '.join(valid_tags)}.",
-                    ephemeral=True,
-                )
-            
-            missing_clans = []
-            for clan_code in valid_clans:
-                if clan_code not in CLAN_INFO_BOARDS:
-                    missing_clans.append(clan_code)
-            
-            if missing_clans:
-                await warn(
-                    interaction,
-                    f"Recruitment info boards haven't been set up for: {', '.join(missing_clans)}. Check the recruitment setup.",
-                )
-                return
-            
-            missing_channels = []
-            for clan_code in valid_clans:
-                clan_config = CLAN_INFO_BOARDS[clan_code]
-                info_channel = self.bot.get_channel(clan_config["channel_id"])
-                if not info_channel:
-                    missing_channels.append(clan_code)
-            
-            if missing_channels:
-                await warn(
-                    interaction,
-                    f"Recruitment info channels couldn't be found for: {', '.join(missing_channels)}. Check the recruitment setup.",
-                )
-                return
-            
-            target_channel = channel or interaction.channel
-            if not isinstance(target_channel, discord.TextChannel):
-                await interaction.followup.send(
-                    "Run this command in a server text channel.",
-                    ephemeral=True
-                )
-                return
-
-            player_rows = await self.account_links.lookup_players(valid_tags)
-            embed = self._build_accept_confirmation_embed(
-                user=applicant,
-                valid_clans=valid_clans,
-                nickname=nickname,
-                days=days,
-                target_channel=target_channel,
-                player_rows=player_rows,
+            prepared = await self.prepare_accept(
+                user=applicant, clans=clans, nickname=nickname,
+                player_tags=player_tags, days=days,
+                channel=channel or interaction.channel,
                 additional_notes=additional_notes,
             )
+            for warning in prepared["warnings"]:
+                await interaction.followup.send(warning, ephemeral=True)
+            if prepared["issue"]:
+                await warn(interaction, prepared["issue"])
+                return
             view = AcceptConfirmationView(
                 self,
                 payload={
                     "user_id": applicant.id,
-                    "valid_clans": valid_clans,
+                    "valid_clans": list(prepared["valid_clans"]),
                     "nickname": nickname,
-                    "player_tags": valid_tags,
+                    "player_tags": list(prepared["player_tags"]),
                     "days": days,
-                    "channel_id": target_channel.id,
+                    "channel_id": prepared["channel"].id,
                     "additional_notes": additional_notes,
                 },
             )
-            message = await interaction.followup.send(embed=embed, view=view, ephemeral=True, wait=True)
+            message = await interaction.followup.send(
+                embed=prepared["embed"], view=view, ephemeral=True, wait=True,
+            )
             view.bind_message(message)
-            
+
         except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError):
             self.logger.exception(
                 "accept_applicant failed: invoker=%s target=%s",
