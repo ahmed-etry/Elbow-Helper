@@ -263,17 +263,34 @@ class EventStatsCog(EventStatsCommandsMixin, EventStatsChannelsMixin, commands.C
         index = next((i for i, event in enumerate(ordered) if event.get("key") == key), None)
         if index is None:
             return False
+        return self.move_event_to_position(key, index + direction)
 
-        target_index = index + direction
+    def move_event_to_position(self, key: str, target_index: int) -> bool:
+        """Place an event at an absolute position for panel and agent changes."""
+        ordered = sorted(self._state_events(), key=lambda item: (int(item.get("position", 0)), str(item.get("key") or "")))
+        index = next((i for i, event in enumerate(ordered) if event.get("key") == key), None)
+        if index is None:
+            return False
         if target_index < 0 or target_index >= len(ordered):
             return False
-
-        ordered[index], ordered[target_index] = ordered[target_index], ordered[index]
+        event = ordered.pop(index)
+        ordered.insert(target_index, event)
         for position, event in enumerate(ordered):
             event["position"] = position
         self.state["events"] = ordered
         self._persist_state()
         return True
+
+    def event_management_state(self, key_or_name: str) -> dict[str, Any] | None:
+        """Resolve one event by key or unambiguous name with its current order."""
+        matched = [event for event in self.events
+                   if event["key"] == key_or_name or event["name"].casefold() == key_or_name.casefold()]
+        if len(matched) != 1:
+            return None
+        event = matched[0]
+        order = [item["key"] for item in self.events]
+        return {"event": dict(event), "position": order.index(event["key"]),
+                "count": len(order)}
 
     async def delete_custom_event(self, guild: discord.Guild, key: str) -> tuple[bool, str]:
         event = self.get_event(key)

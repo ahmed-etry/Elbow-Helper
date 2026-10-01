@@ -19,6 +19,7 @@ from .discord_message_controls import discord_message_control_tools
 from .discord_nicknames import discord_nickname_tools
 from .examination import examination_tools
 from .events import event_tools
+from .event_management import event_management_tools
 from .hibernation import hibernation_tools
 from .history import history_tools
 from .knowledge import knowledge_tools
@@ -60,6 +61,7 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
         ),
         "achievements_events": (
             *achievement_tools(), *achievement_economy_tools(), *event_tools(),
+            *event_management_tools(),
         ),
         "clan_operations": (*clan_reporting_tools(), *clan_health_tools()),
         "wars": war_tools(),

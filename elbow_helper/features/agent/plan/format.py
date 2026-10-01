@@ -23,6 +23,8 @@ def system_instructions(registry: Mapping[str, RegisteredAgentTool], *, actions_
 
 def _argument(detail: Mapping) -> str:
     kind = detail.get("type", "value")
+    if isinstance(kind, list):
+        kind = "/".join(kind)
     if kind == "array":
         kind = "[" + _argument(detail.get("items", {})) + "]"
     elif kind == "object":
