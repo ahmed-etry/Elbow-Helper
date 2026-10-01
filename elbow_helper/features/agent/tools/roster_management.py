@@ -63,17 +63,36 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
     schema = {"type": "object", "properties": {
         "roster_id": {"type": "integer", "minimum": 1},
     }, "required": ["roster_id"], "additionalProperties": False}
-    tools = []
-    for name, operation, classification, label in _OPERATIONS:
-        async def prepare(context: AgentRequestContext, values: Mapping[str, Any],
-                          selected=name, action=operation, action_class=classification,
-                          summary=label) -> Mapping[str, Any]:
-            return await _prepare(context, values, selected, action, action_class, summary)
-        tools.append(RegisteredAgentTool(
-            AgentToolDefinition(name=name, description=f"{label} for an existing roster after confirmation.",
-                                parameters=schema),
-            prepare, AgentCapabilityEffect.COMMAND, classification, True,
-        ))
+    async def prepare_state(context: AgentRequestContext,
+                            values: Mapping[str, Any]) -> Mapping[str, Any]:
+        selected = next((spec for spec in _OPERATIONS[:4]
+                         if spec[0] == {
+                             "open": "open_roster", "close": "close_roster",
+                             "show": "show_roster_controls",
+                             "hide": "hide_roster_controls",
+                         }.get(values["operation"])), None)
+        if selected is None:
+            raise ValueError("Choose open, close, show or hide.")
+        name, operation, classification, label = selected
+        return await _prepare(context, values, name, operation, classification, label)
+
+    tools = [RegisteredAgentTool(AgentToolDefinition(
+        name="set_roster_state",
+        description="Open or close a roster, or show or hide its signup controls after confirmation.",
+        parameters={"type": "object", "properties": {
+            "roster_id": {"type": "integer", "minimum": 1},
+            "operation": {"type": "string", "enum": ["open", "close", "show", "hide"]},
+        }, "required": ["roster_id", "operation"], "additionalProperties": False},
+    ), prepare_state, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True)]
+    name, operation, classification, label = _OPERATIONS[4]
+    async def prepare_clear(context: AgentRequestContext,
+                            values: Mapping[str, Any]) -> Mapping[str, Any]:
+        return await _prepare(context, values, name, operation, classification, label)
+    tools.append(RegisteredAgentTool(
+        AgentToolDefinition(name=name, description="Clear a roster's signups after confirmation.",
+                            parameters=schema),
+        prepare_clear, AgentCapabilityEffect.COMMAND, classification, True,
+    ))
     tools.append(RegisteredAgentTool(AgentToolDefinition(
         name="refresh_roster",
         description="Refresh a roster's account details, signup roles and post after confirmation.",
@@ -307,7 +326,9 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         return CommandOutcome("complete", "private", text=text)
 
     context.state.command_proposals.append(PreparedAction(
-        name, {"roster_id": roster_id},
+        "clear_roster_signups" if operation == "clear" else "set_roster_state",
+        {"roster_id": roster_id, **({"operation": values["operation"]}
+                                  if operation != "clear" else {})},
         ChangePreview(tuple(lines), recheck, summary=label),
         run, action_class=classification,
     ))

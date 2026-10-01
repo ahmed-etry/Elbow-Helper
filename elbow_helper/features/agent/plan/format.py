@@ -75,12 +75,17 @@ def capability_list(registry: Mapping[str, RegisteredAgentTool]) -> str:
             f"{field}:{kind}" for field, kind in contract.entity_fields
         ) if contract else ""
         patterns = ",".join(f"{field}={pattern}" for field, pattern in contract.value_patterns) if contract else ""
-        entries.append(
-            f"{name}: {meaning} | class {tool.action_class.value} | args {','.join(arguments)} | "
-            f"time {time_fields} | latest {latest_fields} | periods {period_results} | entity {entity_fields}"
-            + (f" | formats {patterns}" if patterns else "")
-            + (" | output" if tool.effect is AgentCapabilityEffect.ARTIFACT else "")
-        )
+        fields = [f"class {tool.action_class.value}"]
+        for label, value in (
+            ("args", ",".join(arguments)), ("time", time_fields),
+            ("latest", latest_fields), ("periods", period_results),
+            ("entity", entity_fields), ("formats", patterns),
+        ):
+            if value:
+                fields.append(f"{label} {value}")
+        if tool.effect is AgentCapabilityEffect.ARTIFACT:
+            fields.append("output")
+        entries.append(f"{name}: {meaning} | " + " | ".join(fields))
     return "\n".join(entries)
 
 

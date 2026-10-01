@@ -1,8 +1,14 @@
 """Command entries come from registered commands and help."""
 
+import asyncio
+import importlib
+import inspect
+import pkgutil
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+
+from discord import app_commands
 
 from elbow_helper.features.agent.commands import CommandAdapter, build_command_capabilities
 from elbow_helper.features.agent.commands.bridge import build_command_tools
@@ -17,19 +23,53 @@ from elbow_helper.features.agent.commands.outcomes import CommandOutcome
 from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin
 from elbow_helper.features.clan_health.commands.health import ClanHealthRootCommandMixin
+from elbow_helper.discord import command_registry
+import elbow_helper.features as features
+from elbow_helper.features.cwl.cog import CwlManagement
+from elbow_helper.features.rosters.cog import Rosters
+from elbow_helper.features.clan_transfers.cog import ClanTransfers
+from elbow_helper.features.records.cog import Records
+from elbow_helper.features.help.discovery import discover_commands
+
+
+def _registered_command_catalogue():
+    roots = {}
+    for _, name, _ in pkgutil.walk_packages(features.__path__, features.__name__ + "."):
+        module = importlib.import_module(name)
+        for owner in vars(module).values():
+            if inspect.isclass(owner) and owner.__module__ == module.__name__:
+                for command in vars(owner).values():
+                    if isinstance(command, (app_commands.Command, app_commands.Group)):
+                        roots[id(command)] = command
+
+    class Tree:
+        def __init__(self):
+            self.groups = []
+
+        def get_command(self, *args, **kwargs):
+            return None
+
+        def remove_command(self, *args, **kwargs):
+            pass
+
+        def add_command(self, command, **kwargs):
+            self.groups.append(command)
+
+        def get_commands(self, guild=None):
+            return list(roots.values()) if guild is None else self.groups
+
+    classes = {"CwlManagement": CwlManagement, "Rosters": Rosters,
+               "ClanTransfers": ClanTransfers, "Records": Records}
+    bot = SimpleNamespace(tree=Tree(),
+                          get_cog=lambda name: object.__new__(classes[name]))
+    asyncio.run(command_registry.setup(bot))
+    return discover_commands(bot)
 
 
 class CommandRegistryTests(unittest.TestCase):
     def test_full_action_catalogue_fits_the_system_prompt_budget(self):
         adapters = enabled_adapters()
-        discovered = {
-            adapter.path: DiscoveredCommand(
-                adapter.path, adapter.path,
-                tuple(ParameterInfo(name, name, True, kind)
-                      for name, kind in adapter.option_types),
-            )
-            for adapter in adapters
-        }
+        discovered = _registered_command_catalogue()
         registry = build_agent_tools()
         with patch("elbow_helper.features.agent.commands.registry.discover_commands",
                    return_value=discovered):
@@ -37,7 +77,7 @@ class CommandRegistryTests(unittest.TestCase):
         self.assertEqual(len(commands), len(adapters))
         registry.update(commands)
         prompt = system_instructions(registry, actions_enabled=True)
-        self.assertLess(estimate_tokens(prompt), 35_000)
+        self.assertLess(estimate_tokens(prompt), 30_000)
         self.assertEqual(len(capability_list(registry).splitlines()), len(registry))
         self.assertTrue(all(" | class " in line for line in capability_list(registry).splitlines()))
         self.assertTrue(all(
