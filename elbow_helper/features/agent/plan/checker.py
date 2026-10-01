@@ -208,6 +208,75 @@ def _time_check(
     return ""
 
 
+def _check_steps(raw, registry, periods, entities, named):
+    earlier: set[str] = set()
+    for step in raw["steps"]:
+        if not isinstance(step, dict) or set(step) != {
+            "id", "capability", "arguments", "reason", "depends_on",
+        }:
+            return _error("Each step needs id, capability, arguments, reason and depends_on.")
+        step_id = step["id"]
+        if not isinstance(step_id, str) or not 1 <= len(step_id) <= 40 or step_id in earlier:
+            return _error("Give each step a unique short ID.")
+        capability = step["capability"]
+        if not isinstance(capability, str) or capability not in registry:
+            return _error("Choose a registered capability.", step_id)
+        dependencies = step["depends_on"]
+        if not isinstance(dependencies, list) or any(dep not in earlier for dep in dependencies):
+            return _error("Depend only on earlier steps.", step_id)
+        if not isinstance(step["reason"], str) or not 1 <= len(step["reason"].strip()) <= 240:
+            return _error("Give the step a short reason.", step_id)
+        tool = registry[capability]
+        arguments = step["arguments"]
+        if not isinstance(arguments, dict):
+            return _error("Use an argument object.", step_id)
+        references = {field: value for field, value in arguments.items()
+                      if _has_reference(value)}
+        schema = tool.definition.parameters
+        selected = original_tool(registry, capability, arguments) if capability in (READ_NAME, COMPARE_NAME) else None
+        if selected is not None and unsupported_fields(selected, arguments):
+            return _error(unsupported_field_error(selected, arguments), step_id)
+        if not _valid_arguments(arguments, schema, set(dependencies)):
+            return _error("Arguments must match the capability schema.", step_id)
+        if capability in (READ_NAME, COMPARE_NAME):
+            if selected is None or not _valid_arguments(
+                original_arguments(arguments), selected.definition.parameters,
+                set(dependencies),
+            ):
+                return _error("Use the fields supported by this report kind.", step_id)
+        contract = (SAVED_REPORT_CONTRACTS[selected.definition.name] if selected is not None
+                    else CONTRACTS.get(capability))
+        if contract is not None:
+            if any(kind == "resolved" and owner == step_id for kind, owner, _ in periods) and any(
+                field in arguments for field in (*contract.latest_fields, *contract.bounded_fields)
+            ):
+                return _error("Resolve the latest or current key without a page selector.", step_id)
+            retained = any(field in arguments for field in contract.retained_fields)
+            bound = frozenset(named) | frozenset(
+                _kind(kind) for field, kind in contract.entity_fields if field in contract.retained_fields
+            ) if retained else frozenset()
+            issue, offered = _source_check(contract, arguments, named, entities, references,
+                                          bound)
+            if issue:
+                return _error(issue, step_id, offered)
+            step_periods = tuple(period for period in periods
+                                 if not (period[0] == "resolved" and period[1] == step_id))
+            issue = _time_check(contract, arguments, step_periods, earlier)
+            if issue:
+                return _error(issue, step_id)
+            if not references:
+                try:
+                    compile_capability_call(
+                        selected or tool,
+                        original_arguments(arguments) if selected else arguments,
+                        contract=contract,
+                    )
+                except CapabilityBindError as error:
+                    return _error(str(error), step_id)
+        earlier.add(step_id)
+    return earlier
+
+
 def check_plan(
     raw: Any, registry: Mapping[str, RegisteredAgentTool],
     named_sources: Mapping[str, frozenset[Any]] | None = None,
@@ -249,71 +318,10 @@ def check_plan(
         for kind, values in named.items():
             if not values <= entities.get(kind, set()):
                 return _error("Declare each named source in the plan entities.")
-        earlier: set[str] = set()
-        for step in raw["steps"]:
-            if not isinstance(step, dict) or set(step) != {
-                "id", "capability", "arguments", "reason", "depends_on",
-            }:
-                return _error("Each step needs id, capability, arguments, reason and depends_on.")
-            step_id = step["id"]
-            if not isinstance(step_id, str) or not 1 <= len(step_id) <= 40 or step_id in earlier:
-                return _error("Give each step a unique short ID.")
-            capability = step["capability"]
-            if not isinstance(capability, str) or capability not in registry:
-                return _error("Choose a registered capability.", step_id)
-            dependencies = step["depends_on"]
-            if not isinstance(dependencies, list) or any(dep not in earlier for dep in dependencies):
-                return _error("Depend only on earlier steps.", step_id)
-            if not isinstance(step["reason"], str) or not 1 <= len(step["reason"].strip()) <= 240:
-                return _error("Give the step a short reason.", step_id)
-            tool = registry[capability]
-            arguments = step["arguments"]
-            if not isinstance(arguments, dict):
-                return _error("Use an argument object.", step_id)
-            references = {field: value for field, value in arguments.items()
-                          if _has_reference(value)}
-            schema = tool.definition.parameters
-            selected = original_tool(registry, capability, arguments) if capability in (READ_NAME, COMPARE_NAME) else None
-            if selected is not None and unsupported_fields(selected, arguments):
-                return _error(unsupported_field_error(selected, arguments), step_id)
-            if not _valid_arguments(arguments, schema, set(dependencies)):
-                return _error("Arguments must match the capability schema.", step_id)
-            if capability in (READ_NAME, COMPARE_NAME):
-                if selected is None or not _valid_arguments(
-                    original_arguments(arguments), selected.definition.parameters,
-                    set(dependencies),
-                ):
-                    return _error("Use the fields supported by this report kind.", step_id)
-            contract = (SAVED_REPORT_CONTRACTS[selected.definition.name] if selected is not None
-                        else CONTRACTS.get(capability))
-            if contract is not None:
-                if any(kind == "resolved" and owner == step_id for kind, owner, _ in periods) and any(
-                    field in arguments for field in (*contract.latest_fields, *contract.bounded_fields)
-                ):
-                    return _error("Resolve the latest or current key without a page selector.", step_id)
-                retained = any(field in arguments for field in contract.retained_fields)
-                bound = frozenset(named) | frozenset(
-                    _kind(kind) for field, kind in contract.entity_fields if field in contract.retained_fields
-                ) if retained else frozenset()
-                issue, offered = _source_check(contract, arguments, named, entities, references,
-                                              bound)
-                if issue:
-                    return _error(issue, step_id, offered)
-                step_periods = tuple(period for period in periods
-                                     if not (period[0] == "resolved" and period[1] == step_id))
-                issue = _time_check(contract, arguments, step_periods, earlier)
-                if issue:
-                    return _error(issue, step_id)
-                if not references:
-                    try:
-                        compile_capability_call(
-                            selected or tool,
-                            original_arguments(arguments) if selected else arguments,
-                            contract=contract,
-                        )
-                    except CapabilityBindError as error:
-                        return _error(str(error), step_id)
-            earlier.add(step_id)
+        checked = _check_steps(raw, registry, periods, entities, named)
+        if isinstance(checked, PlanCheck):
+            return checked
+        earlier = checked
         for entity in raw["entities"]:
             if isinstance(entity["value"], dict) and not _reference(entity["value"], earlier):
                 return _error("Resolve each entity with a planned step and result path.")
