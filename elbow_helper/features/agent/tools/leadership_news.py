@@ -18,6 +18,7 @@ from ..wording import (
     ACTION_NEWS_PUBLISH_LABEL, ACTION_NEWS_PUBLISH_UNAVAILABLE,
     ACTION_PREVIEW_BLANK,
     ACTION_NEWS_DISMISS_LINE, ACTION_NEWS_DISMISS_LABEL,
+    ACTION_NEWS_PUBLISH_PROMPT,
 )
 from .discord_safety import check_post_access, check_view_access, resolve_channel
 
@@ -99,6 +100,9 @@ async def prepare_lead_news(context: AgentRequestContext,
                  for line in str(prepared["content"]).splitlines())
     lines.extend(ACTION_NEWS_PUBLISH_FILE.format(name=file.filename)
                  for file in prepared["attachments"])
+    prompts = await workflow.find_public_news_prompts(message)
+    lines.extend(ACTION_NEWS_PUBLISH_PROMPT.format(
+        prompt_id=prompt.id, channel=source.mention) for prompt in prompts)
     fingerprint = (prepared["content"], tuple(
         (file.id, file.filename, file.size) for file in prepared["attachments"]))
 
@@ -110,13 +114,18 @@ async def prepare_lead_news(context: AgentRequestContext,
         except Exception:
             return False
         latest = workflow.public_news_preview(current)
-        return (latest["content"], tuple(
+        latest_prompts = await workflow.find_public_news_prompts(current)
+        return ((latest["content"], tuple(
             (file.id, file.filename, file.size) for file in latest["attachments"])) == fingerprint
+                and tuple(prompt.id for prompt in latest_prompts)
+                == tuple(prompt.id for prompt in prompts))
 
     async def run() -> CommandOutcome:
         current = await source.fetch_message(message.id)
+        current_prompts = await workflow.find_public_news_prompts(current)
         sent = await workflow.publish_public_news(
-            current, target, prepared=workflow.public_news_preview(current))
+            current, target, prepared=workflow.public_news_preview(current),
+            prompts=current_prompts)
         return CommandOutcome("complete", "private",
                               text=ACTION_NEWS_PUBLISH_DONE.format(url=sent.jump_url))
 

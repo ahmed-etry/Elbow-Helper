@@ -46,6 +46,14 @@ class LeadNews(commands.Cog):
             return False
         return True
 
+    async def find_public_news_prompts(self, source_message: discord.Message) -> tuple[discord.Message, ...]:
+        """Find prompts that still offer to publish this update."""
+        matches = []
+        async for message in source_message.channel.history(after=source_message, limit=None):
+            if self.public_news_prompt_source(message) == source_message.id:
+                matches.append(message)
+        return tuple(matches)
+
     @staticmethod
     def public_news_preview(source_message: discord.Message) -> dict[str, object]:
         """Describe the exact text and attachments forwarded from a lead update."""
@@ -55,7 +63,8 @@ class LeadNews(commands.Cog):
 
     async def publish_public_news(self, source_message: discord.Message,
                                   target_channel: discord.TextChannel,
-                                  *, prepared: dict[str, object] | None = None) -> discord.Message:
+                                  *, prepared: dict[str, object] | None = None,
+                                  prompts: tuple[discord.Message, ...] = ()) -> discord.Message:
         """Forward one update for its panel button and the agent."""
         prepared = prepared or self.public_news_preview(source_message)
         files = []
@@ -64,13 +73,16 @@ class LeadNews(commands.Cog):
                 files.append(await attachment.to_file())
             except discord.HTTPException:
                 LOGGER.debug("Failed converting attachment %s", attachment.id)
-        return await target_channel.send(
+        sent = await target_channel.send(
             content=prepared["content"] or None,
             files=files or None,
             allowed_mentions=discord.AllowedMentions(
                 everyone=False, roles=False, users=True,
             ),
         )
+        for prompt in prompts:
+            await self.dismiss_public_news_prompt(prompt)
+        return sent
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):

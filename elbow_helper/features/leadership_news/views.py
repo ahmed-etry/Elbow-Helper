@@ -89,9 +89,10 @@ class ForwardView(BaseTimeoutView):
                     "I couldn't publish that post. Try again in a moment.", ephemeral=True,
                 )
                 return
-            await cog.publish_public_news(source_message, target_channel)
+            await cog.publish_public_news(
+                source_message, target_channel,
+                prompts=(interaction.message,) if interaction.message else ())
             await interaction.response.send_message(f"Published to <#{PUBLIC_NEWS}>", ephemeral=True)
-            await self._delete_prompt(interaction)
         except (discord.Forbidden, discord.HTTPException):
             LOGGER.exception("Failed publishing message %s", self.source_message_id)
             await interaction.response.send_message(

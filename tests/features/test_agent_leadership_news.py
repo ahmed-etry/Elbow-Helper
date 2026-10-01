@@ -11,6 +11,7 @@ from elbow_helper.features.agent.tools.leadership_news import prepare_lead_news
 class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
     async def test_publication_waits_for_confirm_and_rechecks_source(self):
         attachment = SimpleNamespace(id=5, filename="photo.png", size=10)
+        prompt = SimpleNamespace(id=8)
         message = SimpleNamespace(id=7, content="A public update", attachments=[attachment])
         source = SimpleNamespace(id=1, mention="<#1>", fetch_message=AsyncMock(return_value=message))
         target = SimpleNamespace(id=2, mention="<#2>")
@@ -18,6 +19,7 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
             public_news_preview=lambda item: {
                 "content": item.content, "attachments": tuple(item.attachments[:3]),
             },
+            find_public_news_prompts=AsyncMock(return_value=(prompt,)),
             publish_public_news=AsyncMock(return_value=SimpleNamespace(jump_url="posted-url")),
         )
         context = SimpleNamespace(
@@ -35,6 +37,7 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
         action = context.state.command_proposals[0]
         self.assertTrue(any("A public update" in line for line in action.preview.lines))
         self.assertTrue(any("photo.png" in line for line in action.preview.lines))
+        self.assertTrue(any("prompt 8" in line for line in action.preview.lines))
         workflow.publish_public_news.assert_not_awaited()
         with (patch("elbow_helper.features.agent.tools.leadership_news.check_view_access"),
               patch("elbow_helper.features.agent.tools.leadership_news.check_post_access")):
@@ -42,3 +45,4 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
         outcome = await action.run()
         self.assertIn("posted-url", outcome.text)
         workflow.publish_public_news.assert_awaited_once()
+        self.assertEqual(workflow.publish_public_news.await_args.kwargs["prompts"], (prompt,))
