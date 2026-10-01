@@ -26,6 +26,34 @@ LOGGER = logging.getLogger(__name__)
 
 
 class SupportCommandMixin:
+    @staticmethod
+    def can_manage_ticket_controls(member: discord.Member) -> bool:
+        return any(role.id in (LEAD | RECRUITERS) for role in member.roles)
+
+    def support_reopen_state(self, guild: discord.Guild,
+                             channel: discord.TextChannel) -> discord.Member | None:
+        """Resolve the ticket owner for the panel and the agent."""
+        ticket_info = load_tickets().get(str(channel.id), {})
+        return self._resolve_support_ticket_owner(guild, channel, ticket_info)
+
+    async def reopen_support_ticket(self, guild: discord.Guild,
+                                    channel: discord.TextChannel,
+                                    actor: discord.Member) -> tuple[discord.Member | None, bool]:
+        """Restore a ticket owner's messaging access."""
+        owner = self.support_reopen_state(guild, channel)
+        if owner is None:
+            LOGGER.warning("Could not resolve support ticket owner for channel %s during reopen.", channel.id)
+            return None, False
+        try:
+            await channel.set_permissions(
+                owner, send_messages=True,
+                reason=f"Support ticket reopened by {actor}",
+            )
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            LOGGER.warning("Could not unlock support ticket %s for owner %s", channel.id, owner.id)
+            return owner, False
+        return owner, True
+
     def prepare_support_close(self, guild: discord.Guild | None,
                               channel: discord.abc.GuildChannel | None,
                               actor: discord.Member) -> dict[str, object]:
@@ -403,24 +431,7 @@ class SupportCommandMixin:
         channel = interaction.channel
         owner_member: discord.Member | None = None
         if guild is not None and isinstance(channel, discord.TextChannel):
-            tickets = load_tickets()
-            ticket_info = tickets.get(str(channel.id), {})
-            owner_member = self._resolve_support_ticket_owner(guild, channel, ticket_info)
-            if owner_member is not None:
-                try:
-                    await channel.set_permissions(
-                        owner_member,
-                        send_messages=True,
-                        reason=f"Support ticket reopened by {interaction.user}",
-                    )
-                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                    LOGGER.warning(
-                        "Could not unlock support ticket %s for owner %s",
-                        channel.id,
-                        owner_member.id,
-                )
-            else:
-                LOGGER.warning("Could not resolve support ticket owner for channel %s during reopen.", channel.id)
+            owner_member, _ = await self.reopen_support_ticket(guild, channel, interaction.user)
 
         restored_text = (
             f"Restored messaging access for {owner_member.mention}."

@@ -47,6 +47,7 @@ from .saved_reports import replace_report_tools
 from .spreadsheets import spreadsheet_tools
 from .support import support_tools
 from .threads import thread_tools
+from .ticket_reopen import ticket_reopen_tools
 from .transfers import transfer_tools
 from .transfer_management import transfer_management_tools
 from .wars import war_tools
@@ -88,6 +89,7 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
         "member_cases": (
             *member_lifecycle_tools(), *hibernation_tools(), *support_tools(),
             *recruitment_tools(), *examination_tools(), *examiner_profile_tools(),
+            *ticket_reopen_tools(),
             *record_tools(),
         ),
         "files": attachment_tools(),

@@ -29,7 +29,7 @@ class SupportTicketConfirmView(BaseTimeoutView):
         custom_id="support_ticket_reopen",
     )
     async def reopen_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not _can_close_ticket(interaction.user):
+        if not self.cog.can_manage_ticket_controls(interaction.user):
             await interaction.response.send_message("You don't have permission to use these controls.", ephemeral=True)
             return
         await self.cog._reopen_ticket(interaction)
