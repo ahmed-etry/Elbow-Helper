@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import time
 from datetime import datetime
 from datetime import timedelta
@@ -266,6 +267,58 @@ class PromoIntakeView(BaseTimeoutView):
 
 
 class ExaminationPromoIntakeMixin:
+    def can_change_promotion_route(self, member: discord.Member) -> bool:
+        return self._has_exam_permissions(member)
+
+    def promotion_route_snapshot(self, ticket_channel_id: int) -> Dict[str, Any] | None:
+        """Read a promotion case without exposing its mutable state."""
+        case = self._get_case(ticket_channel_id)
+        return copy.deepcopy(case) if case and case.get("type") == "clan_promo" else None
+
+    async def change_promotion_route(
+        self, *, ticket_channel_id: int, routing_message_id: int,
+        from_clan: str, to_clan: str, actor: discord.Member, on_ready=None,
+    ) -> None:
+        """Change a leadership promotion route for its panel and the agent."""
+        case = self._get_case(ticket_channel_id)
+        if not case or case.get("type") != "clan_promo":
+            raise ValueError("This promotion request is no longer available.")
+        if not self.can_change_promotion_route(actor):
+            raise ValueError("You don't have permission to use this.")
+        from_clan = str(from_clan or "").upper()
+        to_clan = str(to_clan or "").upper()
+        if not is_valid_route(from_clan, to_clan):
+            raise ValueError("That promotion isn't available from the selected clan.")
+        ticket_channel = self.bot.get_channel(ticket_channel_id)
+        if not isinstance(ticket_channel, discord.TextChannel):
+            raise ValueError("The ticket channel is no longer available.")
+        routing_message = None
+        routing_channel = await self._get_routing_channel()
+        if routing_channel:
+            try:
+                routing_message = await routing_channel.fetch_message(int(routing_message_id))
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException, TypeError, ValueError):
+                routing_message = None
+        if on_ready is not None:
+            await on_ready()
+        await self._retire_routing_message_for_route_change(
+            case, ticket_channel, source_message=routing_message)
+        await self._retire_availability_prompt_for_route_change(ticket_channel, case)
+        apply_completed_route(case, from_clan, to_clan)
+        case["intake_state"] = "complete"
+        case["intake_completed_at"] = _now_iso()
+        case["intake_last_interaction_at"] = _now_iso()
+        self._reset_case_review_state(case, actor.id)
+        self._pending_ticket_retries.pop(ticket_channel.id, None)
+        self._pending_ticket_notified.discard(ticket_channel.id)
+        self._pending_ticket_failed.discard(ticket_channel.id)
+        self._save()
+        await self._render_promo_intake_message(ticket_channel, case)
+        await self.route_ticket(ticket_channel, "clan_promo")
+        updated_case = self._get_case(ticket_channel.id)
+        if updated_case and updated_case.get("exam_required") is False:
+            await self._update_promo_intake_message(ticket_channel.id)
+
     def _ensure_promo_intake_defaults(self, case: Dict[str, Any]) -> Dict[str, Any]:
         for key, value in default_case_fields().items():
             case.setdefault(key, value)
@@ -618,53 +671,21 @@ class ExaminationPromoIntakeMixin:
         from_clan: str,
         to_clan: str,
     ) -> None:
-        case = self._get_case(ticket_channel_id)
-        if not case or case.get("type") != "clan_promo":
-            await interaction.response.send_message("This promotion request is no longer available.", ephemeral=True)
-            return
-        if not isinstance(interaction.user, discord.Member) or not self._has_exam_permissions(interaction.user):
+        if not isinstance(interaction.user, discord.Member):
             await interaction.response.send_message("You don't have permission to use this.", ephemeral=True)
             return
-        from_clan = str(from_clan or "").upper()
-        to_clan = str(to_clan or "").upper()
-        if not is_valid_route(from_clan, to_clan):
-            await interaction.response.send_message("That promotion isn't available from the selected clan.", ephemeral=True)
+        async def ready() -> None:
+            await interaction.response.edit_message(content="Updating the promotion request...", view=None)
+        try:
+            await self.change_promotion_route(
+                ticket_channel_id=ticket_channel_id,
+                routing_message_id=routing_message_id,
+                from_clan=from_clan, to_clan=to_clan,
+                actor=interaction.user, on_ready=ready,
+            )
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc), ephemeral=True)
             return
-        ticket_channel = self.bot.get_channel(ticket_channel_id)
-        if not isinstance(ticket_channel, discord.TextChannel):
-            await interaction.response.send_message("The ticket channel is no longer available.", ephemeral=True)
-            return
-
-        routing_message = None
-        routing_channel = await self._get_routing_channel()
-        if routing_channel:
-            try:
-                routing_message = await routing_channel.fetch_message(int(routing_message_id))
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException, TypeError, ValueError):
-                routing_message = None
-
-        await interaction.response.edit_message(content="Updating the promotion request...", view=None)
-        await self._retire_routing_message_for_route_change(
-            case,
-            ticket_channel,
-            source_message=routing_message,
-        )
-        await self._retire_availability_prompt_for_route_change(ticket_channel, case)
-        apply_completed_route(case, from_clan, to_clan)
-        case["intake_state"] = "complete"
-        case["intake_completed_at"] = _now_iso()
-        case["intake_last_interaction_at"] = _now_iso()
-        self._reset_case_review_state(case, interaction.user.id)
-        self._pending_ticket_retries.pop(ticket_channel.id, None)
-        self._pending_ticket_notified.discard(ticket_channel.id)
-        self._pending_ticket_failed.discard(ticket_channel.id)
-        self._save()
-
-        await self._render_promo_intake_message(ticket_channel, case)
-        await self.route_ticket(ticket_channel, "clan_promo")
-        updated_case = self._get_case(ticket_channel.id)
-        if updated_case and updated_case.get("exam_required") is False:
-            await self._update_promo_intake_message(ticket_channel.id)
         await interaction.followup.send("Promotion request updated.", ephemeral=True)
 
     async def _reconcile_promo_route_controls(self) -> None:

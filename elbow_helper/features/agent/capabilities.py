@@ -220,6 +220,7 @@ CONTRACTS: Mapping[str, CapabilityContract] = {
     "leave_examiner_roster": CapabilityContract((), (), source_scope='request_context'),
     "reopen_support_ticket": CapabilityContract((('channel_id', 'support_ticket_channel'),), (), source_scope='request_context', channel_fields=('channel_id',)),
     "reopen_reactivation_ticket": CapabilityContract((('channel_id', 'support_ticket_channel'),), (), source_scope='request_context', channel_fields=('channel_id',)),
+    "change_promotion_route": CapabilityContract((('ticket_channel_id', 'examination_ticket_channel'),), (), source_scope='request_context', channel_fields=('ticket_channel_id',), filter_fields=('from_clan', 'to_clan')),
     "remember_task_instruction": CapabilityContract((('replaces_id', 'task_instruction'),), (), source_scope='request_context'),
     "retire_task_instruction": CapabilityContract((('instruction_id', 'task_instruction'),), (), source_scope='request_context'),
     "prepare_spreadsheet": CapabilityContract((), (), source_scope='request_context'),

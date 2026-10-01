@@ -35,6 +35,7 @@ from .members import member_tools
 from .missing_elder_board import missing_elder_board_tools
 from .research import research_tools
 from .records import record_tools
+from .promotion_route import promotion_route_tools
 from .recruitment import recruitment_tools
 from .roles import role_tools
 from .role_connections import role_connection_tools
@@ -89,7 +90,7 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
         "member_cases": (
             *member_lifecycle_tools(), *hibernation_tools(), *support_tools(),
             *recruitment_tools(), *examination_tools(), *examiner_profile_tools(),
-            *ticket_reopen_tools(),
+            *promotion_route_tools(), *ticket_reopen_tools(),
             *record_tools(),
         ),
         "files": attachment_tools(),
