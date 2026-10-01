@@ -158,6 +158,10 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
     selected_accounts = [account for account in picker.accounts
                          if account.player_tag in selected]
     posts = (await workflow.roster_edit_state(roster))["posts"]
+    channels = [await resolve_channel(context, channel_id)
+                for channel_id, _ in posts]
+    for channel in channels:
+        check_post_access(channel, context.member, context.guild.me)
     lines = [ACTION_ROSTER_ACCOUNT_LINE.format(
         action="Sign up" if mode == "signup" else "Remove",
         member=member.mention, name=roster.name)]
@@ -172,12 +176,20 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
     snapshots = {account.player_tag: account for account in picker.accounts}
 
     async def recheck() -> bool:
-        current_roster, current = await workflow.prepare_roster_account_selection(
-            roster_id, member_id, mode=mode,
-            for_other_member=member_id != context.member.id)
-        if current_roster != roster or current is None:
+        try:
+            check_member(member, context.guild.me)
+            if role is not None:
+                check_role(role, context.guild, context.guild.me, {})
+            for channel in channels:
+                check_post_access(channel, context.member, context.guild.me)
+            current_roster, current = await workflow.prepare_roster_account_selection(
+                roster_id, member_id, mode=mode,
+                for_other_member=member_id != context.member.id)
+            if current_roster != roster or current is None:
+                return False
+            return all(snapshots[tag] in current.accounts for tag in selected)
+        except Exception:
             return False
-        return all(snapshots[tag] in current.accounts for tag in selected)
 
     async def run() -> CommandOutcome:
         result = await workflow.change_roster_accounts(

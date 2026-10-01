@@ -28,7 +28,26 @@ from ..wording import (
     ACTION_ROSTER_REFRESH_LINE, ACTION_ROSTER_REFRESH_MEMBER,
     ACTION_ROSTER_REFRESH_LABEL, ACTION_ROSTER_REFRESH_UNAVAILABLE,
 )
-from .discord_safety import check_member, check_role, resolve_member
+from .discord_safety import (
+    check_member, check_post_access, check_role, resolve_channel, resolve_member,
+)
+
+
+async def _check_posts(context: AgentRequestContext,
+                       posts: tuple[tuple[int, int], ...]) -> None:
+    for channel_id, _ in posts:
+        channel = await resolve_channel(context, channel_id)
+        check_post_access(channel, context.member, context.guild.me)
+
+
+async def _check_members(context: AgentRequestContext,
+                         roster: Any, member_ids: tuple[int, ...]) -> None:
+    role = context.guild.get_role(roster.role_id) if roster.role_id else None
+    if role is not None:
+        check_role(role, context.guild, context.guild.me, {})
+    for member_id in member_ids:
+        member = await resolve_member(context.guild, member_id)
+        check_member(member, context.guild.me)
 
 
 _OPERATIONS = (
@@ -88,6 +107,7 @@ async def prepare_roster_refresh(context: AgentRequestContext,
     if state is None or state["roster"].guild_id != context.guild.id:
         raise ValueError(ACTION_ROSTER_UNAVAILABLE)
     roster = state["roster"]
+    await _check_posts(context, state["posts"])
     role = context.guild.get_role(roster.role_id) if roster.role_id else None
     if role is not None:
         check_role(role, context.guild, context.guild.me, {})
@@ -107,11 +127,12 @@ async def prepare_roster_refresh(context: AgentRequestContext,
         if current is None or current != state:
             return False
         try:
+            await _check_posts(context, state["posts"])
             if role is not None:
                 check_role(role, context.guild, context.guild.me, {})
             for member in members:
                 check_member(member, context.guild.me)
-        except ValueError:
+        except Exception:
             return False
         return True
 
@@ -146,6 +167,7 @@ async def prepare_roster_layout(context: AgentRequestContext,
     if not changes:
         return {"status": "no_change"}
     posts = (await workflow.roster_edit_state(roster))["posts"]
+    await _check_posts(context, posts)
     lines = [ACTION_ROSTER_LAYOUT_LINE.format(name=roster.name)]
     lines.extend(ACTION_ROSTER_LAYOUT_FIELD.format(
         field=field.replace("_", " ").title(), old=before[field], new=value)
@@ -156,7 +178,13 @@ async def prepare_roster_layout(context: AgentRequestContext,
 
     async def recheck() -> bool:
         live = await workflow.roster_layout_state(roster_id)
-        return live is not None and live[0] == roster and live[1] == layout
+        if live is None or live[0] != roster or live[1] != layout:
+            return False
+        try:
+            await _check_posts(context, posts)
+        except Exception:
+            return False
+        return True
 
     async def run() -> CommandOutcome:
         updated, result = await workflow.set_roster_layout(roster_id, **changes)
@@ -186,6 +214,8 @@ async def prepare_roster_layout_undo(context: AgentRequestContext,
     roster, layout = state
     prior = log["before"]["layout"]
     expected = log["after"]["layout"]
+    posts = (await workflow.roster_edit_state(roster))["posts"]
+    await _check_posts(context, posts)
     lines = [ACTION_ROSTER_LAYOUT_LINE.format(name=roster.name)]
     lines.extend(ACTION_ROSTER_LAYOUT_FIELD.format(
         field=field.replace("_", " ").title(), old=getattr(layout, field), new=value)
@@ -193,7 +223,13 @@ async def prepare_roster_layout_undo(context: AgentRequestContext,
 
     async def recheck() -> bool:
         live = await workflow.roster_layout_state(roster_id)
-        return live is not None and asdict(live[1]) == expected
+        if live is None or asdict(live[1]) != expected:
+            return False
+        try:
+            await _check_posts(context, posts)
+        except Exception:
+            return False
+        return True
 
     async def run() -> CommandOutcome:
         updated, result = await workflow.set_roster_layout(roster_id, **prior)
@@ -222,6 +258,10 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
     if state is None or state["roster"].guild_id != context.guild.id:
         raise ValueError(ACTION_ROSTER_UNAVAILABLE)
     roster = state["roster"]
+    await _check_posts(context, state["posts"])
+    check_members = operation == "clear" or (operation == "open" and roster.reset_on_open)
+    if check_members:
+        await _check_members(context, roster, state["member_ids"])
     if name == "show_roster_controls" and not roster.buttons_hidden:
         return {"status": "no_change"}
     if name == "hide_roster_controls" and roster.buttons_hidden:
@@ -248,7 +288,15 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
 
     async def recheck() -> bool:
         current = await workflow.roster_management_state(roster_id)
-        return current is not None and signature(current) == signature(state)
+        if current is None or signature(current) != signature(state):
+            return False
+        try:
+            await _check_posts(context, current["posts"])
+            if check_members:
+                await _check_members(context, current["roster"], current["member_ids"])
+        except Exception:
+            return False
+        return True
 
     async def run() -> CommandOutcome:
         if operation == "clear":

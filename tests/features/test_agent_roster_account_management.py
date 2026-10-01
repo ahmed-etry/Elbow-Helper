@@ -21,17 +21,22 @@ class RosterAccountManagementTests(unittest.IsolatedAsyncioTestCase):
             change_roster_accounts=AsyncMock(return_value=SimpleNamespace(
                 changed=True, message="Signed up Player.")),
         )
-        member = SimpleNamespace(id=4, mention="<@4>")
+        member = SimpleNamespace(id=4, mention="<@4>",
+                                 top_role=SimpleNamespace(position=1))
+        bot_member = SimpleNamespace(id=999, top_role=SimpleNamespace(position=10))
+        guild = SimpleNamespace(id=1, me=bot_member, get_role=lambda role_id: None)
+        channel = SimpleNamespace(guild=guild, permissions_for=lambda actor: SimpleNamespace(
+            view_channel=True, send_messages=True))
+        guild.get_channel_or_thread = lambda channel_id: channel
         context = SimpleNamespace(
             bot=SimpleNamespace(get_cog=lambda name: workflow),
-            guild=SimpleNamespace(id=1, me=object(), get_role=lambda role_id: None),
+            guild=guild,
             member=member, state=AgentTurnState(),
         )
         with (patch("elbow_helper.features.agent.tools.roster_account_management.require_evidence_access",
                     new_callable=AsyncMock),
               patch("elbow_helper.features.agent.tools.roster_account_management.resolve_member",
-                    new_callable=AsyncMock, return_value=member),
-              patch("elbow_helper.features.agent.tools.roster_account_management.check_member")):
+                    new_callable=AsyncMock, return_value=member)):
             result = await prepare_roster_signup(
                 context, {"roster_id": 17, "accounts": ["Player"]})
         self.assertEqual(result["status"], "confirmation_required")

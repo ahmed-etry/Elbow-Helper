@@ -31,9 +31,13 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
             roster_edit_state=AsyncMock(return_value={"posts": ((9, 91),)}),
             set_roster_layout=AsyncMock(side_effect=change),
         )
+        guild = SimpleNamespace(id=1, me=object())
+        channel = SimpleNamespace(guild=guild, permissions_for=lambda actor: SimpleNamespace(
+            view_channel=True, send_messages=True))
+        guild.get_channel_or_thread = lambda channel_id: channel
         context = SimpleNamespace(
             bot=SimpleNamespace(get_cog=lambda name: workflow),
-            guild=SimpleNamespace(id=1), state=AgentTurnState(),
+            guild=guild, member=object(), state=AgentTurnState(),
         )
         tool = next(tool for tool in roster_management_tools()
                     if tool.definition.name == "set_roster_layout")
@@ -65,10 +69,18 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
             roster_management_state=AsyncMock(return_value=snapshot),
             clear_roster_signups=AsyncMock(return_value=SimpleNamespace(message="Cleared signups.")),
         )
+        bot_member = SimpleNamespace(id=999, top_role=SimpleNamespace(position=10))
+        role = SimpleNamespace(id=8, mention="<@&8>", managed=False, position=1,
+                               permissions=SimpleNamespace(), is_default=lambda: False)
+        guild = SimpleNamespace(id=1, me=bot_member, get_role=lambda role_id: role,
+                                get_member=lambda member_id: SimpleNamespace(
+                                    id=member_id, top_role=SimpleNamespace(position=1)))
+        channel = SimpleNamespace(guild=guild, permissions_for=lambda actor: SimpleNamespace(
+            view_channel=True, send_messages=True))
+        guild.get_channel_or_thread = lambda channel_id: channel
         context = SimpleNamespace(
             bot=SimpleNamespace(get_cog=lambda name: workflow),
-            guild=SimpleNamespace(id=1, get_role=lambda role_id: SimpleNamespace(mention="<@&8>")),
-            state=AgentTurnState(),
+            guild=guild, member=object(), state=AgentTurnState(),
         )
         tool = next(tool for tool in roster_management_tools()
                     if tool.definition.name == "clear_roster_signups")

@@ -39,7 +39,7 @@ async def prepare_cc_status(context: AgentRequestContext,
     if workflow is None or not workflow.can_change_cc_status(context.member):
         raise ValueError(ACTION_CC_STATUS_UNAVAILABLE)
     snapshot = await workflow.cc_status_snapshot(values["clan_code"])
-    if snapshot is None:
+    if snapshot is None or not snapshot["sticky_message_id"]:
         raise ValueError(ACTION_CC_STATUS_UNAVAILABLE)
     if snapshot["status"] == values["status"]:
         return {"status": "no_change"}
