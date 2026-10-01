@@ -50,6 +50,7 @@ from elbow_helper.infrastructure.persistence import write_json_atomic
 
 LOGGER = logging.getLogger(__name__)
 timezone = dt_timezone
+PENDING_ROSTER_HUB_LINK = "{CWL_TRANSFER_HUB_LINK}"
 
 
 class CwlBriefUnavailable(ValueError):
@@ -74,6 +75,125 @@ def _signup_reminder_times(
 
 
 class CwlAnnouncementMixin:
+    async def resolve_roster_announcement_channel(self, client=None):
+        client = client or self.bot
+        channel = client.get_channel(CLAN_TRANSFERS)
+        if channel is None:
+            try:
+                channel = await client.fetch_channel(CLAN_TRANSFERS)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                return None
+        return channel
+
+    def prepare_roster_announcement(
+        self, *, mode: str, deadline: str, timezone_name: str,
+        delayed_deadline: str | None = None, intro: str | None = None,
+        require_hub: bool = False, now: datetime | None = None,
+    ) -> dict[str, object]:
+        now = now or datetime.now(dt_timezone.utc)
+        deadline_day, deadline_hour, deadline_minute = self._parse_dd_hh_mm(deadline)
+        if deadline_day is None:
+            return {"issue": (
+                "Enter the deadline as DD-HH:mm: the day of the month followed by 24-hour time. "
+                "For example, 01-20:00 means the 1st at 20:00."
+            )}
+        delayed_day = delayed_hour = delayed_minute = None
+        if mode == "preferred_delayed":
+            if not delayed_deadline:
+                return {"issue": "Enter the later deadline when some clans receive extra time."}
+            delayed_day, delayed_hour, delayed_minute = self._parse_dd_hh_mm(delayed_deadline)
+            if delayed_day is None:
+                return {"issue": (
+                    "Enter the later deadline as DD-HH:mm: the day of the month followed by "
+                    "24-hour time. For example, 02-20:00 means the 2nd at 20:00."
+                )}
+        try:
+            tz_info = resolve_timezone(timezone_name)
+            if tz_info is None:
+                return {"issue": "Choose a timezone from the list."}
+            now_local = now.astimezone(tz_info)
+            deadline_local = self._resolve_next_local_deadline(
+                now_local, deadline_day, deadline_hour, deadline_minute,
+            )
+            delayed_local = None
+            if mode == "preferred_delayed":
+                delayed_local = self._resolve_next_local_deadline(
+                    now_local, delayed_day, delayed_hour, delayed_minute,
+                )
+                if delayed_local < deadline_local:
+                    return {"issue": "Delayed deadline must be the same as or after the main deadline."}
+            deadline_ts = int(deadline_local.timestamp())
+            delayed_ts = int(delayed_local.timestamp()) if delayed_local else None
+        except (TypeError, ValueError, OverflowError):
+            return {"issue": "Enter the time as `DD-HH:mm` and choose a timezone from the list."}
+        deadline_text = f"<t:{deadline_ts}:F> (<t:{deadline_ts}:R>)"
+        delayed_deadline_text = (
+            f"<t:{delayed_ts}:F> (<t:{delayed_ts}:R>)" if delayed_ts is not None else None
+        )
+        hub_url = self._transfer_hub_url()
+        if require_hub and hub_url is None:
+            return {"issue": "The **CWL Rosters and Transfers** message isn't available."}
+        intro_text = intro.strip() if intro else (
+            "You may already have been pinged or invited in-game. If not, check where "
+            "you’re playing now and whether you still need to move."
+        )
+        deadline_section = self._build_roster_deadline_section(
+            mode, deadline_text, delayed_deadline_text,
+        )
+        content_template = ROSTER_TEMPLATE.format(
+            intro_text=intro_text,
+            deadline_section=deadline_section,
+            hub_message_url=PENDING_ROSTER_HUB_LINK,
+            war_specialist_role=WAR_SPECIALIST_ROLE_MENTION,
+        )
+        return {"issue": None, "content_template": content_template,
+                "content_preview": content_template.replace(
+                    PENDING_ROSTER_HUB_LINK, hub_url or PENDING_ROSTER_HUB_LINK,
+                ),
+                "hub_url": hub_url, "deadline_ts": deadline_ts,
+                "delayed_ts": delayed_ts}
+
+    async def roster_announcement_cycles(self, guild_id: int):
+        return await self._current_cwl_roster_cycles(guild_id)
+
+    def roster_announcement_released(self, cycles: dict[str, int]) -> bool:
+        return self.transfer_state.get("released_roster_cycles") == cycles
+
+    def roster_announcement_release_state(self) -> dict[str, int]:
+        value = self.transfer_state.get("released_roster_cycles")
+        return dict(value) if isinstance(value, dict) else {}
+
+    async def post_roster_announcement(self, prepared: dict[str, object],
+                                       channel) -> dict[str, object]:
+        if not await self.ensure_transfer_hub():
+            return {"issue": (
+                "I couldn't update **CWL Rosters and Transfers**, so the announcement "
+                "wasn't posted."
+            ), "messages": ()}
+        cycles = await self.roster_announcement_cycles(channel.guild.id)
+        if cycles is None:
+            return {"issue": "CWL rosters aren't available, so the announcement wasn't posted.",
+                    "messages": ()}
+        hub_url = self._transfer_hub_url()
+        if hub_url is None:
+            return {"issue": "The **CWL Rosters and Transfers** message isn't available.",
+                    "messages": ()}
+        content = prepared["content_template"].replace(PENDING_ROSTER_HUB_LINK, hub_url)
+        sent_messages = await self._send_chunked(channel, content)
+        if sent_messages:
+            await self._react_with_detected_emojis(sent_messages[-1], content)
+        self._release_cwl_placements(cycles)
+        if await self.ensure_transfer_hub():
+            message = "The roster announcement is live."
+        else:
+            message = (
+                "The roster announcement is live, but **Where Am I Playing?** and "
+                "**CWL Channels** couldn't be enabled."
+            )
+        return {"issue": None, "message": message,
+                "messages": tuple(sent_messages), "content": content,
+                "hub_url": hub_url, "cycles": cycles}
+
     def _load_scheduler_state(self) -> dict[str, Any]:
         try:
             if os.path.exists(SCHEDULER_STATE_FILE):
@@ -375,152 +495,34 @@ class CwlAnnouncementMixin:
         )
         target_channel = None
         if not preview:
-            target_channel = interaction.client.get_channel(CLAN_TRANSFERS)
-            if not target_channel:
-                try:
-                    target_channel = await interaction.client.fetch_channel(CLAN_TRANSFERS)
-                    LOGGER.info("fetched roster channel %s", target_channel)
-                except (discord.NotFound, discord.Forbidden, discord.HTTPException) as fetch_err:
-                    LOGGER.warning("roster channel fetch failed: %s", fetch_err)
-                    await interaction.followup.send("The CWL roster channel hasn't been set up. Check the CWL setup.", ephemeral=True)
-                    return
-        now = datetime.now(dt_timezone.utc)
-        deadline_day, deadline_hour, deadline_minute = self._parse_dd_hh_mm(deadline)
-        if deadline_day is None:
-            await warn(
-                interaction,
-                "Enter the deadline as DD-HH:mm: the day of the month followed by 24-hour time. For example, 01-20:00 means the 1st at 20:00.",
-            )
-            return
-
-        delayed_day = delayed_hour = delayed_minute = None
-        if mode_value == "preferred_delayed":
-            if not delayed_deadline:
+            target_channel = await self.resolve_roster_announcement_channel(interaction.client)
+            if target_channel is None:
                 await interaction.followup.send(
-                    "Enter the later deadline when some clans receive extra time.",
+                    "The CWL roster channel hasn't been set up. Check the CWL setup.",
                     ephemeral=True,
                 )
                 return
-            delayed_day, delayed_hour, delayed_minute = self._parse_dd_hh_mm(delayed_deadline)
-            if delayed_day is None:
-                await warn(
-                    interaction,
-                    "Enter the later deadline as DD-HH:mm: the day of the month followed by 24-hour time. For example, 02-20:00 means the 2nd at 20:00.",
-                )
-                return
-        try:
-            tz_info = resolve_timezone(timezone)
-            if tz_info is None:
-                await warn(
-                    interaction,
-                    "Choose a timezone from the list.",
-                )
-                return
-            now_local = now.astimezone(tz_info)
-            deadline_local = self._resolve_next_local_deadline(
-                now_local,
-                deadline_day,
-                deadline_hour,
-                deadline_minute,
-            )
-            delayed_local = None
-            if mode_value == "preferred_delayed":
-                delayed_local = self._resolve_next_local_deadline(
-                    now_local,
-                    delayed_day,
-                    delayed_hour,
-                    delayed_minute,
-                )
-                if delayed_local < deadline_local:
-                    await interaction.followup.send(
-                        "Delayed deadline must be the same as or after the main deadline.",
-                        ephemeral=True,
-                    )
-                    return
-            deadline_ts = int(deadline_local.timestamp())
-            delayed_ts = int(delayed_local.timestamp()) if delayed_local else None
-            LOGGER.info(
-                "resolved tz=%s mode=%s deadline_local=%s delayed_local=%s",
-                tz_info,
-                mode_value,
-                deadline_local,
-                delayed_local,
-            )
-        except (TypeError, ValueError, OverflowError) as e:
-            LOGGER.warning("error computing timestamps: %s", e)
-            await warn(
-                interaction,
-                "Enter the time as `DD-HH:mm` and choose a timezone from the list.",
-            )
+        prepared = self.prepare_roster_announcement(
+            mode=mode_value, deadline=deadline, timezone_name=timezone,
+            delayed_deadline=delayed_deadline, intro=intro,
+            require_hub=preview,
+        )
+        if prepared["issue"]:
+            await warn(interaction, prepared["issue"])
             return
-
-        deadline_text = f"<t:{deadline_ts}:F> (<t:{deadline_ts}:R>)"
-        delayed_deadline_text = (
-            f"<t:{delayed_ts}:F> (<t:{delayed_ts}:R>)" if delayed_ts is not None else None
-        )
-
-        hub_message_url = self._transfer_hub_url()
-        release_cycles = None
-        if not preview:
-            if not await self.ensure_transfer_hub():
-                await interaction.followup.send(
-                    "I couldn't update **CWL Rosters and Transfers**, so the announcement "
-                    "wasn't posted.",
-                    ephemeral=True,
-                )
-                return
-            hub_message_url = self._transfer_hub_url()
-            release_cycles = await self._current_cwl_roster_cycles(target_channel.guild.id)
-            if release_cycles is None:
-                await interaction.followup.send(
-                    "CWL rosters aren't available, so the announcement wasn't posted.",
-                    ephemeral=True,
-                )
-                return
-        if hub_message_url is None:
-            await interaction.followup.send(
-                "The **CWL Rosters and Transfers** message isn't available.",
-                ephemeral=True,
-            )
-            return
-
-        intro_text = intro.strip() if intro else (
-            "You may already have been pinged or invited in-game. If not, check where "
-            "you’re playing now and whether you still need to move."
-        )
-        deadline_section = self._build_roster_deadline_section(
-            mode_value,
-            deadline_text,
-            delayed_deadline_text,
-        )
-        content = ROSTER_TEMPLATE.format(
-            intro_text=intro_text,
-            deadline_section=deadline_section,
-            hub_message_url=hub_message_url,
-            war_specialist_role=WAR_SPECIALIST_ROLE_MENTION,
-        )
         if preview:
-            await self._send_chunked_ephemeral_preview(interaction, content)
-            await interaction.followup.send("Preview only. Nothing was posted.", ephemeral=True)
+            await self._send_chunked_ephemeral_preview(
+                interaction, prepared["content_preview"],
+            )
+            await interaction.followup.send(
+                "Preview only. Nothing was posted.", ephemeral=True,
+            )
             return
         try:
-            LOGGER.info("sending roster announcement to channel %s", target_channel.id)
-            sent_messages = await self._send_chunked(target_channel, content)
-            if sent_messages:
-                last_message = sent_messages[-1]
-                await self._react_with_detected_emojis(last_message, content)
-            self._release_cwl_placements(release_cycles)
-            if await self.ensure_transfer_hub():
-                await interaction.followup.send(
-                    "The roster announcement is live.",
-                    ephemeral=True,
-                )
-            else:
-                await interaction.followup.send(
-                    "The roster announcement is live, but **Where Am I Playing?** and "
-                    "**CWL Channels** couldn't be enabled.",
-                    ephemeral=True,
-                )
+            result = await self.post_roster_announcement(prepared, target_channel)
+            await interaction.followup.send(
+                result["issue"] or result["message"], ephemeral=True,
+            )
         except (discord.Forbidden, discord.HTTPException) as send_err:
             LOGGER.exception("failed to send roster announcement: %s", send_err)
             await interaction.followup.send(
