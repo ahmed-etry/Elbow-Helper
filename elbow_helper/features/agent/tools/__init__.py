@@ -26,6 +26,7 @@ from .event_management import event_management_tools
 from .hibernation import hibernation_tools
 from .history import history_tools
 from .knowledge import knowledge_tools
+from .leadership_news import leadership_news_tools
 from .member_lifecycle import member_lifecycle_tools
 from .members import member_tools
 from .research import research_tools
@@ -84,6 +85,7 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
         ),
         "files": attachment_tools(),
         "knowledge_history": (*history_tools(), *knowledge_tools(), *action_log_tools()),
+        "news": leadership_news_tools(),
         "planning_output": (*working_state_tools(), *spreadsheet_tools()),
     }
 

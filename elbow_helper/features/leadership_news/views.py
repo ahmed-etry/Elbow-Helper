@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from typing import Optional
 
 import discord
@@ -74,28 +73,19 @@ class ForwardView(BaseTimeoutView):
             )
             return
 
-        content = source_message.content or ""
-        content = re.sub(r"<@&\d+>", "", content).strip()
-        files = []
-        if source_message.attachments:
-            for attachment in source_message.attachments[:3]:
-                try:
-                    files.append(await attachment.to_file())
-                except discord.HTTPException:
-                    LOGGER.debug("Failed converting attachment %s", attachment.id)
-                    continue
-
         target_channel: Optional[discord.TextChannel] = interaction.client.get_channel(PUBLIC_NEWS)
         if not target_channel:
             await interaction.response.send_message("The public news channel hasn't been set up. Check the lead news setup.", ephemeral=True)
             return
 
         try:
-            await target_channel.send(
-                content=content or None,
-                files=files or None,
-                allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True),
-            )
+            cog = interaction.client.get_cog("LeadNews")
+            if cog is None:
+                await interaction.response.send_message(
+                    "I couldn't publish that post. Try again in a moment.", ephemeral=True,
+                )
+                return
+            await cog.publish_public_news(source_message, target_channel)
             await interaction.response.send_message(f"Published to <#{PUBLIC_NEWS}>", ephemeral=True)
             await self._delete_prompt(interaction)
         except (discord.Forbidden, discord.HTTPException):

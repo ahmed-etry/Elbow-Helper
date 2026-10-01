@@ -210,6 +210,7 @@ CONTRACTS: Mapping[str, CapabilityContract] = {
     "remove_role_connection": CapabilityContract((('connection_id', 'role_connection'), ('channel_id', 'discord_channel')), (), source_scope='request_context'),
     "apply_role_connections": CapabilityContract((), (), source_scope='request_context'),
     "buy_raffle_ticket": CapabilityContract((), (), source_scope='request_context'),
+    "publish_lead_news": CapabilityContract((('message_id', 'discord_message'),), (), source_scope='request_context'),
     "remember_task_instruction": CapabilityContract((('replaces_id', 'task_instruction'),), (), source_scope='request_context'),
     "retire_task_instruction": CapabilityContract((('instruction_id', 'task_instruction'),), (), source_scope='request_context'),
     "prepare_spreadsheet": CapabilityContract((), (), source_scope='request_context'),

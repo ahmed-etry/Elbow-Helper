@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 
 import discord
 from discord.ext import commands
@@ -24,6 +25,32 @@ class LeadNews(commands.Cog):
         for task in self._cleanup_tasks:
             if not task.done():
                 task.cancel()
+
+    @staticmethod
+    def public_news_preview(source_message: discord.Message) -> dict[str, object]:
+        """Describe the exact text and attachments forwarded from a lead update."""
+        content = re.sub(r"<@&\d+>", "", source_message.content or "").strip()
+        attachments = tuple(source_message.attachments[:3])
+        return {"content": content, "attachments": attachments}
+
+    async def publish_public_news(self, source_message: discord.Message,
+                                  target_channel: discord.TextChannel,
+                                  *, prepared: dict[str, object] | None = None) -> discord.Message:
+        """Forward one update for its panel button and the agent."""
+        prepared = prepared or self.public_news_preview(source_message)
+        files = []
+        for attachment in prepared["attachments"]:
+            try:
+                files.append(await attachment.to_file())
+            except discord.HTTPException:
+                LOGGER.debug("Failed converting attachment %s", attachment.id)
+        return await target_channel.send(
+            content=prepared["content"] or None,
+            files=files or None,
+            allowed_mentions=discord.AllowedMentions(
+                everyone=False, roles=False, users=True,
+            ),
+        )
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
