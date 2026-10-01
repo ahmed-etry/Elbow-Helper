@@ -142,6 +142,15 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["value"], 7)
         self.assertEqual(result["flags"], {"status": "complete", "truncated": False})
 
+    async def test_max_effort_is_reserved_for_the_answer_round(self):
+        plan = _plan([_step("first")], effort="max")
+        session = _Session([_model_step(plan), AgentStep("Seven.", (), AgentUsage())],
+                           self.events)
+        answer, _ = await self._answer(session)
+        self.assertEqual(answer, "Seven.")
+        self.assertEqual([call[2] for call in session.calls],
+                         [AgentReasoningEffort.LOW, AgentReasoningEffort.MAX])
+
     async def test_dependent_steps_run_before_the_answer_call(self):
         plan = _plan([_step("first"), _step("second", {
             "value": {"step": "first", "path": ["value"]},

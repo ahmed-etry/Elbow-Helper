@@ -97,7 +97,7 @@ def plan_definition(registry: Mapping[str, RegisteredAgentTool]) -> AgentToolDef
             "type": "object",
             "properties": {
                 "goal": {"type": "string", "maxLength": 240},
-                "effort": {"type": "string", "enum": ["low", "high"]},
+                "effort": {"type": "string", "enum": ["low", "high", "max"]},
                 "output": {"type": "string", "enum": list(output_forms(registry))},
                 "periods": {"type": "array", "maxItems": 12, "items": {
                     "type": "object", "properties": {
@@ -133,11 +133,11 @@ def plan_definition(registry: Mapping[str, RegisteredAgentTool]) -> AgentToolDef
 
 PLANNING_INSTRUCTIONS = """For each request, either reply directly from the supplied context or call submit_request_plan once. A direct reply needs no lookup.
 
-A plan has one goal, low or high answer effort, an available output form, explicit periods, entities and short steps. Use only capabilities needed for the request. Each step has id, capability, arguments, reason and depends_on. Independent steps have empty depends_on lists. A dependent argument can refer to an earlier result with {"step":"earlier_id","path":["field"]}.
+A plan has one goal, low, high or max answer effort, an available output form, explicit periods, entities and short steps. Use only capabilities needed for the request. Each step has id, capability, arguments, reason and depends_on. Independent steps have empty depends_on lists. A dependent argument can refer to an earlier result with {"step":"earlier_id","path":["field"]}.
 
 For a utc_range, write kind, start and exclusive end in UTC. For a key, write kind, field and value using a registered time field. For a resolved period, write kind, step, selector and the exact result path advertised by the owning capability. Entities have kind and value; a value may use the same earlier-result reference as an argument. Declare resolved entities before later reads. Use the catalogue argument types, required fields, choices and bounds. Use a period key only when its owning capability defines it. To select a latest or current period, plan an earlier lookup that returns the key, declare a resolved period, then refer to that result. Empty periods mean current state; latest-N selectors are allowed only then. Name the sources the requester named. Offer other sources in the answer instead of reading them. Never broaden a period or source to make a lookup work.
 
-Use low effort unless the answer needs substantial synthesis. After checked results arrive, answer from those results. Request more steps only for a remaining gap, and stay inside the declared scope unless a revision is needed. Mention a limit only if it changes the conclusion."""
+Use low effort unless the answer needs substantial synthesis. Use max only for the hardest synthesis. After checked results arrive, answer from those results. Request more steps only for a remaining gap, and stay inside the declared scope unless a revision is needed. Mention a limit only if it changes the conclusion."""
 
 
 ACTION_PLANNING_INSTRUCTIONS = """

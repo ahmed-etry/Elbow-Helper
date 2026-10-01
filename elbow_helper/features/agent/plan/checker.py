@@ -220,8 +220,8 @@ def check_plan(
             return _error("Supply goal, effort, output, periods, entities and steps.")
         if not isinstance(raw["goal"], str) or not 1 <= len(raw["goal"].strip()) <= 240:
             return _error("Write a short goal.")
-        if raw["effort"] not in ("low", "high"):
-            return _error("Choose low or high effort.")
+        if raw["effort"] not in ("low", "high", "max"):
+            return _error("Choose low, high or max effort.")
         if raw["output"] not in output_forms(registry):
             return _error("Choose an available output form.")
         periods = _periods(raw["periods"])

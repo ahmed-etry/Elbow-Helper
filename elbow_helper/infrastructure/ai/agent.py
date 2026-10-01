@@ -51,6 +51,7 @@ class AgentReasoningEffort(StrEnum):
 
     LOW = "low"
     HIGH = "high"
+    MAX = "max"
 
 
 @dataclass(frozen=True, slots=True)
