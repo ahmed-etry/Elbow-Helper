@@ -54,6 +54,10 @@ class ExaminationPanelMixin:
             "availability_valid": False, "profile_complete": False,
         }
 
+    def examiner_roster_snapshot(self) -> tuple[Dict[str, Any], ...]:
+        """Read the roster shown by the panel's View Roster control."""
+        return tuple(copy.deepcopy(entry) for entry in self._get_roster_entries())
+
     def prepare_examiner_profile_change(self, member: discord.Member,
                                         changes: Dict[str, Any]) -> Dict[str, Any]:
         """Validate and show one panel profile change."""

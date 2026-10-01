@@ -19,7 +19,7 @@ from ..wording import (
     ACTION_EXAMINER_PROFILE_LABEL, ACTION_EXAMINER_PROFILE_LEAVE,
     ACTION_EXAMINER_PROFILE_UNAVAILABLE,
 )
-from .discord_safety import check_post_access, resolve_channel
+from .discord_safety import check_post_access, check_view_access, resolve_channel
 
 
 PROFILE_FIELDS = ("th_levels", "status", "timezone", "availability")
@@ -35,6 +35,19 @@ def examiner_profile_tools() -> tuple[RegisteredAgentTool, ...]:
     }, "additionalProperties": False}
     return (
         RegisteredAgentTool(AgentToolDefinition(
+            name="read_my_examiner_profile",
+            description="Read your examiner Town Hall coverage, status, timezone and availability.",
+            parameters={"type": "object", "properties": {}, "additionalProperties": False},
+        ), read_examiner_profile),
+        RegisteredAgentTool(AgentToolDefinition(
+            name="read_examiner_roster",
+            description="Read a page of examiner profiles shown by the examiner panel.",
+            parameters={"type": "object", "properties": {
+                "offset": {"type": "integer", "minimum": 0},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 25},
+            }, "additionalProperties": False},
+        ), read_examiner_roster),
+        RegisteredAgentTool(AgentToolDefinition(
             name="set_examiner_profile",
             description="Set your examiner Town Hall coverage, status, timezone or availability after confirmation.",
             parameters=schema,
@@ -47,13 +60,37 @@ def examiner_profile_tools() -> tuple[RegisteredAgentTool, ...]:
     )
 
 
-async def _workflow(context: AgentRequestContext):
+async def read_examiner_profile(context: AgentRequestContext,
+                                values: Mapping[str, Any]) -> Mapping[str, Any]:
+    workflow, channel = await _workflow(context, post=False)
+    profile = workflow.examiner_profile_snapshot(context.member)
+    await require_evidence_access(context)
+    return {"panel_channel_id": channel.id,
+            "registered": workflow.has_examiner_profile(context.member),
+            "profile": {key: profile[key] for key in PROFILE_FIELDS},
+            "profile_complete": profile["profile_complete"]}
+
+
+async def read_examiner_roster(context: AgentRequestContext,
+                               values: Mapping[str, Any]) -> Mapping[str, Any]:
+    workflow, channel = await _workflow(context, post=False)
+    rows = workflow.examiner_roster_snapshot()
+    offset, limit = values.get("offset", 0), values.get("limit", 25)
+    await require_evidence_access(context)
+    return {"panel_channel_id": channel.id, "total": len(rows),
+            "offset": offset, "profiles": rows[offset:offset + limit]}
+
+
+async def _workflow(context: AgentRequestContext, *, post: bool = True):
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Examination")
     if workflow is None or not workflow.can_edit_examiner_profile(context.member):
         raise ValueError(ACTION_EXAMINER_PROFILE_UNAVAILABLE)
     channel = await resolve_channel(context, EXAMINATION_PANEL_THREAD)
-    check_post_access(channel, context.member, context.guild.me)
+    if post:
+        check_post_access(channel, context.member, context.guild.me)
+    else:
+        check_view_access(channel, context.member, context.guild.me)
     return workflow, channel
 
 

@@ -230,6 +230,8 @@ CONTRACTS: Mapping[str, CapabilityContract] = {
     "dismiss_lead_news_prompt": CapabilityContract((('prompt_message_id', 'discord_message'),), (), source_scope='request_context'),
     "read_my_cwl_placement": CapabilityContract((), (), source_scope='request_context'),
     "read_my_cwl_channels": CapabilityContract((), (), source_scope='request_context'),
+    "read_my_examiner_profile": CapabilityContract((), (), source_scope='channel_status', result_channel_fields=('panel_channel_id',)),
+    "read_examiner_roster": CapabilityContract((), (), source_scope='channel_status', result_channel_fields=('panel_channel_id',), filter_fields=('offset', 'limit')),
     "change_promotion_route": CapabilityContract((('ticket_channel_id', 'examination_ticket_channel'),), (), source_scope='request_context', channel_fields=('ticket_channel_id',), filter_fields=('from_clan', 'to_clan')),
     "remember_task_instruction": CapabilityContract((('replaces_id', 'task_instruction'),), (), source_scope='request_context'),
     "retire_task_instruction": CapabilityContract((('instruction_id', 'task_instruction'),), (), source_scope='request_context'),
