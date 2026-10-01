@@ -52,10 +52,8 @@ async def read_request(
             raise PlanNotSettled("A corrected plan is required.")
         if len(step.tool_calls) != 1 or step.tool_calls[0].name != PLAN_TOOL_NAME:
             issue = "Submit one request plan."
-            call_id = step.tool_calls[0].call_id
             step_id, offered = "", ()
         else:
-            call_id = step.tool_calls[0].call_id
             try:
                 plan = json.loads(step.tool_calls[0].arguments)
             except (TypeError, ValueError):

@@ -135,7 +135,7 @@ async def prepare_roster_row_removal(context: AgentRequestContext,
                     check_member(owner, context.guild.me)
             for channel in channels:
                 check_post_access(channel, context.member, context.guild.me)
-        except Exception:
+        except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
             return False
         return True
 
@@ -290,7 +290,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
             if current_roster != roster or current is None:
                 return False
             return all(snapshots[tag] in current.accounts for tag in selected)
-        except Exception:
+        except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
             return False
 
     async def run() -> CommandOutcome:

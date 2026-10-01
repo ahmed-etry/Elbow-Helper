@@ -23,6 +23,7 @@ from .private_view import PrivateCommandView
 LOGGER = logging.getLogger(__name__)
 CONFIRMATION_TIMEOUT = 300.0
 PreparedCommand = PreparedAction
+__all__ = ["ChangePreview", "PreparedCommand", "ConfirmationView", "preview_text"]
 
 
 def preview_text(proposals: list[PreparedCommand]) -> str:

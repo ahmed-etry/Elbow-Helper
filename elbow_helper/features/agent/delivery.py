@@ -19,7 +19,7 @@ from .models import AgentAttachment, AgentDelivery, AgentRequestContext
 from .service import AgentUnavailableError
 from .commands.private_view import PrivateCommandView
 from .commands.confirmation import ConfirmationView
-from .message_parts import DISCORD_MESSAGE_LIMIT, chunk_response as _chunk_response
+from .message_parts import chunk_response as _chunk_response
 
 LOGGER = logging.getLogger(__name__)
 MAX_RESPONSE_CHARACTERS = 12_000
@@ -163,6 +163,7 @@ class AgentDeliveryMixin:
             except asyncio.CancelledError:
                 raise
             except Exception:
+                LOGGER.exception("Agent delivery reconciliation failed: nonce=%s", nonce)
                 raise AgentDeliveryUnknown(
                     "Discord delivery reconciliation failed"
                 ) from error

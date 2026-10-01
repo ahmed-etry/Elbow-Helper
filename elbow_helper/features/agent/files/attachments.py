@@ -7,6 +7,7 @@ import csv
 from datetime import date, datetime, time, timedelta, timezone
 import hashlib
 import io
+import logging
 import math
 from pathlib import PurePosixPath
 import re
@@ -15,7 +16,6 @@ from typing import Any
 from zipfile import BadZipFile, ZIP_DEFLATED, ZIP_STORED, ZipFile
 
 from openpyxl import load_workbook
-
 
 from .contracts import (
     MAX_CSV_BYTES,
@@ -51,6 +51,9 @@ from .contracts import (
     _unsupported_text_control,
     _safe_filename,
 )
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def attachment_metadata(message: Any) -> tuple[dict[str, Any], ...]:
@@ -343,6 +346,7 @@ def parse_xlsx(data: bytes) -> tuple[tuple[XlsxSheet, ...], int]:
             io.BytesIO(data), read_only=True, data_only=False, keep_links=False,
         )
     except Exception as error:
+        LOGGER.exception("XLSX workbook could not be opened")
         raise AttachmentValidationError("The XLSX workbook could not be parsed safely") from error
     try:
         _check_xlsx_deadline(deadline)
@@ -397,6 +401,7 @@ def parse_xlsx(data: bytes) -> tuple[tuple[XlsxSheet, ...], int]:
     except AttachmentValidationError:
         raise
     except Exception as error:
+        LOGGER.exception("XLSX workbook could not be parsed")
         raise AttachmentValidationError("The XLSX workbook could not be parsed safely") from error
     finally:
         workbook.close()

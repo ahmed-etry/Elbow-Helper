@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import sqlite3
 import time
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence
 from uuid import uuid4
 
 from elbow_helper.infrastructure.persistence import (

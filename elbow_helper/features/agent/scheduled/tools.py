@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
+import discord
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
@@ -151,7 +152,7 @@ async def prepare_save(context: AgentRequestContext,
             return not identifier or repository.standing(
                 kind=kind, identifier=identifier, requester_id=context.member.id,
             ) is not None
-        except Exception:
+        except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
             return False
 
     async def run() -> CommandOutcome:

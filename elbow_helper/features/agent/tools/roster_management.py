@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import asdict
 from typing import Any
+import discord
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from elbow_helper.features.rosters.config import (
@@ -158,7 +159,7 @@ async def prepare_roster_refresh(context: AgentRequestContext,
                 check_role(role, context.guild, context.guild.me, {})
             for member in members:
                 check_member(member, context.guild.me)
-        except Exception:
+        except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
             return False
         return True
 
@@ -208,7 +209,7 @@ async def prepare_roster_layout(context: AgentRequestContext,
             return False
         try:
             await _check_posts(context, posts)
-        except Exception:
+        except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
             return False
         return True
 
@@ -253,7 +254,7 @@ async def prepare_roster_layout_undo(context: AgentRequestContext,
             return False
         try:
             await _check_posts(context, posts)
-        except Exception:
+        except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
             return False
         return True
 
@@ -320,7 +321,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
             await _check_posts(context, current["posts"])
             if check_members:
                 await _check_members(context, current["roster"], current["member_ids"])
-        except Exception:
+        except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
             return False
         return True
 

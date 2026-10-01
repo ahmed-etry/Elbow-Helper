@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
+import discord
 
 from elbow_helper.configuration.channels import CLAN_LEADERSHIP_CHANNELS
 from elbow_helper.infrastructure.ai import AgentToolDefinition
@@ -51,7 +52,7 @@ async def prepare_missing_elder_board(context: AgentRequestContext,
         try:
             check_post_access(channel, context.member, context.guild.me)
             return workflow.missing_elder_board_location(values["clan_code"]) == location
-        except Exception:
+        except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
             return False
 
     async def run() -> CommandOutcome:

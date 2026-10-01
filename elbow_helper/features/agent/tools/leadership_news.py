@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
+import discord
 
 from elbow_helper.configuration.channels import LEAD_NEWS, PUBLIC_NEWS
 from elbow_helper.infrastructure.ai import AgentToolDefinition
@@ -65,7 +66,7 @@ async def prepare_news_dismiss(context: AgentRequestContext,
             check_post_access(source, context.member, context.guild.me)
             current = await source.fetch_message(prompt.id)
             return workflow.public_news_prompt_source(current) == source_id
-        except Exception:
+        except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
             return False
 
     async def run() -> CommandOutcome:
@@ -114,7 +115,7 @@ async def prepare_lead_news(context: AgentRequestContext,
             check_view_access(source, context.member, context.guild.me)
             check_post_access(target, context.member, context.guild.me)
             current = await source.fetch_message(message.id)
-        except Exception:
+        except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
             return False
         latest = workflow.public_news_preview(current)
         latest_prompts = await workflow.find_public_news_prompts(current)
