@@ -20,6 +20,8 @@ from ..wording import (
     ACTION_EVENT_FORM_CREATE, ACTION_EVENT_FORM_EDIT, ACTION_EVENT_FORM_FIELD,
     ACTION_EVENT_FORM_CHANNEL, ACTION_EVENT_FORM_LABEL,
     ACTION_EVENT_FORM_REFRESH,
+    ACTION_EVENT_REFRESH_LINE, ACTION_EVENT_REFRESH_ITEM,
+    ACTION_EVENT_REFRESH_LABEL,
 )
 
 
@@ -77,7 +79,44 @@ def event_management_tools() -> tuple[RegisteredAgentTool, ...]:
             "grace_hours": {"type": "integer", "minimum": 0},
         }, "required": ["event", "name"], "additionalProperties": False},
     ), _prepare_preset, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True))
+    tools.append(RegisteredAgentTool(AgentToolDefinition(
+        name="refresh_event_trackers",
+        description="Refresh all event tracker voice channels after confirmation.",
+        parameters={"type": "object", "properties": {}, "additionalProperties": False},
+    ), prepare_event_refresh, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True))
     return tuple(tools)
+
+
+async def prepare_event_refresh(context: AgentRequestContext,
+                                values: Mapping[str, Any]) -> Mapping[str, Any]:
+    await require_evidence_access(context)
+    workflow = context.bot.get_cog("EventStatsCog")
+    if workflow is None or not workflow.can_manage_event_trackers(context.member):
+        raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+    snapshot = workflow.event_refresh_snapshot()
+    if not snapshot:
+        return {"status": "no_change"}
+    lines = [ACTION_EVENT_REFRESH_LINE.format(
+        count=len(snapshot), noun="tracker" if len(snapshot) == 1 else "trackers")]
+    lines.extend(ACTION_EVENT_REFRESH_ITEM.format(
+        name=event["name"], status="enabled" if event["enabled"] else "disabled",
+        channel=f"<#{event['channel_id']}>" if event["channel_id"] else "no channel")
+        for event in snapshot)
+
+    async def recheck() -> bool:
+        return (workflow.can_manage_event_trackers(context.member)
+                and workflow.event_refresh_snapshot() == snapshot)
+
+    async def run() -> CommandOutcome:
+        await workflow.force_refresh(context.guild)
+        return CommandOutcome("complete", "private", text=ACTION_EVENT_REFRESH_LABEL)
+
+    context.state.command_proposals.append(PreparedAction(
+        "refresh_event_trackers", {},
+        ChangePreview(tuple(lines), recheck, summary=ACTION_EVENT_REFRESH_LABEL),
+        run, action_class=ActionClass.CHANGE,
+    ))
+    return {"status": "confirmation_required"}
 
 
 async def _prepare_form(context: AgentRequestContext, values: Mapping[str, Any],

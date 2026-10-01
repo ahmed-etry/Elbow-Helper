@@ -40,6 +40,17 @@ LOGGER = logging.getLogger(__name__)
 
 
 class EventStatsCog(EventStatsCommandsMixin, EventStatsChannelsMixin, commands.Cog):
+    def can_manage_event_trackers(self, member: discord.Member) -> bool:
+        return self._can_manage(member)
+
+    def event_refresh_snapshot(self) -> tuple[dict[str, Any], ...]:
+        """Show the trackers affected by the panel's Update control."""
+        return tuple({"key": event["key"], "name": event["name"],
+                      "enabled": event.get("enabled", True),
+                      "channel_id": event.get("channel_id"),
+                      "type": event.get("type")}
+                     for event in self.events)
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self._startup_task: Optional[asyncio.Task] = None

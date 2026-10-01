@@ -225,6 +225,7 @@ CONTRACTS: Mapping[str, CapabilityContract] = {
     "read_account_suggestions": CapabilityContract((), (), source_scope='channel_status', result_channel_fields=('review_channel_id',), filter_fields=('offset', 'limit')),
     "link_account_suggestion": CapabilityContract((('player_tag', 'clash_account'), ('member_id', 'discord_member')), (), source_scope='request_context'),
     "ignore_account_suggestion": CapabilityContract((('player_tag', 'clash_account'),), (), source_scope='request_context'),
+    "refresh_event_trackers": CapabilityContract((), (), source_scope='request_context'),
     "change_promotion_route": CapabilityContract((('ticket_channel_id', 'examination_ticket_channel'),), (), source_scope='request_context', channel_fields=('ticket_channel_id',), filter_fields=('from_clan', 'to_clan')),
     "remember_task_instruction": CapabilityContract((('replaces_id', 'task_instruction'),), (), source_scope='request_context'),
     "retire_task_instruction": CapabilityContract((('instruction_id', 'task_instruction'),), (), source_scope='request_context'),
