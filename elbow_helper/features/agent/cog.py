@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import AsyncExitStack
+from datetime import datetime, timezone
 import json
 import logging
 import re
@@ -400,7 +401,7 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
                 content=message.content,
                 replied_to_message_id=getattr(message.reference, "message_id", None),
             )
-        local_context = await self._build_local_context(message, referenced)
+        local_context = await self._build_local_context(message, referenced, conversation)
         history = await self._conversation_history(conversation, context)
 
         try:
@@ -488,6 +489,7 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
         self,
         message: discord.Message,
         referenced: discord.Message | None,
+        conversation: Conversation | None = None,
     ) -> str:
         recent: list[discord.Message] = []
         try:
@@ -510,15 +512,30 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
                 exc_info=True,
             )
 
+        def render(item: discord.Message) -> str:
+            guild = getattr(message, "guild", None)
+            owner = (self._conversations.find_message(guild.id, message.channel.id, item.id)
+                     if guild is not None else None)
+            bot_id = getattr(getattr(self.bot, "user", None), "id", None)
+            is_request = bot_id is not None and bot_id in getattr(item, "raw_mentions", ())
+            is_agent_reply = bot_id is not None and item.author.id == bot_id
+            other = ((owner is not None and owner is not conversation)
+                     or (owner is None and (is_request or is_agent_reply)))
+            if not other:
+                return _render_local_message(item)
+            now = getattr(message, "created_at", None) or datetime.now(timezone.utc)
+            age = max(0, int((now - item.created_at).total_seconds()))
+            return _render_local_message(item, context_note=f"other agent conversation, {age}s old")
+
         lines = [
             "Immediate channel conversation (oldest to newest):",
-            *(_render_local_message(item) for item in recent),
+            *(render(item) for item in recent),
         ]
         if referenced is not None:
             lines.extend(
                 (
                     "Message directly replied to by the asker:",
-                    _render_local_message(referenced),
+                    render(referenced),
                 )
             )
         targets = [
@@ -560,7 +577,7 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
             return None
 
 
-def _render_local_message(message: discord.Message) -> str:
+def _render_local_message(message: discord.Message, *, context_note: str = "") -> str:
     content = message_text(message)
     if len(content) > LOCAL_MESSAGE_CHARACTER_LIMIT:
         content = f"{content[: LOCAL_MESSAGE_CHARACTER_LIMIT - 3]}..."
@@ -568,5 +585,6 @@ def _render_local_message(message: discord.Message) -> str:
     return (
         f"- {message.author.display_name} ({author_type}, member_id={message.author.id}, "
         f"message_id={message.id}, timestamp={message.created_at.isoformat()}, "
-        f"source={message.jump_url}): {content or '[no text]'}"
+        f"source={message.jump_url}"
+        f"{', ' + context_note if context_note else ''}): {content or '[no text]'}"
     )

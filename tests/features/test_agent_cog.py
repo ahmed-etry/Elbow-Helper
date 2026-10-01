@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from contextlib import nullcontext
 import asyncio
 import json
@@ -1275,6 +1275,42 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(anchors, [old])
         self.assertIn("relevant context", result)
         self.assertIn("original point", result)
+
+    async def test_nearby_agent_messages_from_other_conversations_show_their_age(self):
+        current = self.cog._conversations.create(GUILD_ID, 100, 10)
+        other = self.cog._conversations.create(GUILD_ID, 100, 20)
+        self.cog._conversations.register_reply(current, 11)
+        self.cog._conversations.register_reply(other, 21)
+        now = datetime.now(timezone.utc)
+        author = SimpleNamespace(id=42, bot=False, display_name="Member")
+        bot = SimpleNamespace(id=999, bot=True, display_name="Elbow Helper")
+
+        def nearby(message_id, sender, *, mentions=()):
+            return SimpleNamespace(
+                id=message_id, content=f"text-{message_id}", attachments=[], embeds=[],
+                author=sender, raw_mentions=mentions,
+                created_at=now - timedelta(seconds=60), jump_url=f"source/{message_id}",
+            )
+
+        items = [nearby(11, bot), nearby(20, author, mentions=(999,)),
+                 nearby(21, bot), nearby(22, bot)]
+
+        async def history(*, limit, before, oldest_first):
+            for item in reversed(items):
+                yield item
+
+        message = SimpleNamespace(
+            id=30, guild=SimpleNamespace(id=GUILD_ID), created_at=now,
+            channel=SimpleNamespace(id=100, history=history), mentions=[],
+        )
+        result = await self.cog._build_local_context(message, None, current)
+
+        self.assertIn("message_id=11", result)
+        own_line = next(line for line in result.splitlines() if "message_id=11" in line)
+        self.assertNotIn("other agent conversation", own_line)
+        for message_id in (20, 21, 22):
+            line = next(line for line in result.splitlines() if f"message_id={message_id}" in line)
+            self.assertIn("other agent conversation, 60s old", line)
 
     async def test_long_reply_preserves_complete_answer_as_attachment(self):
         message = SimpleNamespace(id=1, mentions=[], reply=AsyncMock())

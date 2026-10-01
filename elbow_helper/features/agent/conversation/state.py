@@ -261,6 +261,19 @@ class ConversationStore:
         key = self._replies.get((guild_id, channel_id, reply_id))
         return self._conversations.get(key)
 
+    def find_message(self, guild_id: int, channel_id: int, message_id: int) -> Conversation | None:
+        """Find the conversation that owns an agent request or reply."""
+        self._prune()
+        reply = self.find(guild_id, channel_id, message_id)
+        if reply is not None:
+            return reply
+        for root_id, conversation in self._conversations.items():
+            if (conversation.guild_id, conversation.channel_id) != (guild_id, channel_id):
+                continue
+            if root_id == message_id or conversation.record_for_request(message_id) is not None:
+                return conversation
+        return None
+
     def get(self, root_message_id: int) -> Conversation | None:
         self._prune()
         return self._conversations.get(root_message_id)

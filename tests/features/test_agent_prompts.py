@@ -7,6 +7,8 @@ from elbow_helper.features.agent.prompts import ACTION_SYSTEM_PROMPT, SYSTEM_PRO
 class RequestPromptTests(unittest.TestCase):
     def test_action_switch_changes_only_action_authority_text(self):
         self.assertIn("cannot change live Discord, roster, role, or other bot data", SYSTEM_PROMPT)
+        self.assertIn("facts this conversation already established", SYSTEM_PROMPT)
+        self.assertNotIn("facts already present in the local context", SYSTEM_PROMPT)
         self.assertIn("Changes run only after the member who asked confirms", ACTION_SYSTEM_PROMPT)
         self.assertIn("An irreversible change has its own confirmation", ACTION_SYSTEM_PROMPT)
         self.assertNotEqual(SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT)
