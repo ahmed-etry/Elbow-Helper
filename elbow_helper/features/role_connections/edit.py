@@ -330,9 +330,8 @@ class TargetRoleEditSelect(discord.ui.RoleSelect):
             )
             return
         try:
-            updated = self._parent_view.cog.update_connection_target(
-                self._parent_view.conn_id,
-                role_id,
+            updated = self._parent_view.cog.replace_connection(
+                self._parent_view.conn_id, candidate,
             )
         except (OSError, TypeError):
             await interaction.response.send_message(
@@ -403,11 +402,8 @@ class RoleListAddSelect(discord.ui.RoleSelect):
             )
             return
         try:
-            updated = self._parent_view.cog.add_connection_roles(
-                self._parent_view.conn_id,
-                self._parent_view.list_name,
-                self._parent_view.kind,
-                role_ids,
+            updated = self._parent_view.cog.replace_connection(
+                self._parent_view.conn_id, candidate,
             )
         except (OSError, TypeError):
             await interaction.response.send_message(
@@ -439,12 +435,18 @@ class RoleListRemoveSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         role_ids = [int(value) for value in self.values]
+        connection = self._parent_view.cog.role_connection_state(self._parent_view.conn_id)
+        if connection is None:
+            await interaction.response.send_message("That role connection is no longer available.", ephemeral=True)
+            return
+        key = "has" if self._parent_view.kind == "has" else "not"
+        target = connection.get(self._parent_view.list_name, [])
+        connection[self._parent_view.list_name] = [
+            condition for condition in target if condition.get(key) not in role_ids
+        ]
         try:
-            updated = self._parent_view.cog.remove_connection_roles(
-                self._parent_view.conn_id,
-                self._parent_view.list_name,
-                self._parent_view.kind,
-                role_ids,
+            updated = self._parent_view.cog.replace_connection(
+                self._parent_view.conn_id, connection,
             )
         except (OSError, TypeError):
             await interaction.response.send_message(

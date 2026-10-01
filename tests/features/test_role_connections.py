@@ -146,7 +146,7 @@ class RoleConnectionValidationTests(unittest.IsolatedAsyncioTestCase):
         cog = SimpleNamespace(
             get_connection=MagicMock(return_value=connection),
             connection_change_is_valid=MagicMock(return_value=False),
-            update_connection_target=MagicMock(),
+            replace_connection=MagicMock(),
         )
         parent_view = SimpleNamespace(cog=cog, conn_id="role-a")
         select = SimpleNamespace(
@@ -159,7 +159,7 @@ class RoleConnectionValidationTests(unittest.IsolatedAsyncioTestCase):
 
         await TargetRoleEditSelect.callback(select, interaction)
 
-        cog.update_connection_target.assert_not_called()
+        cog.replace_connection.assert_not_called()
         interaction.response.send_message.assert_awaited_once_with(
             INVALID_DEPENDENCY_MESSAGE,
             ephemeral=True,
@@ -170,7 +170,7 @@ class RoleConnectionValidationTests(unittest.IsolatedAsyncioTestCase):
         cog = SimpleNamespace(
             get_connection=MagicMock(return_value=connection),
             connection_change_is_valid=MagicMock(return_value=False),
-            add_connection_roles=MagicMock(),
+            replace_connection=MagicMock(),
         )
         parent_view = SimpleNamespace(
             cog=cog,
@@ -188,7 +188,7 @@ class RoleConnectionValidationTests(unittest.IsolatedAsyncioTestCase):
 
         await RoleListAddSelect.callback(select, interaction)
 
-        cog.add_connection_roles.assert_not_called()
+        cog.replace_connection.assert_not_called()
         interaction.response.send_message.assert_awaited_once_with(
             INVALID_DEPENDENCY_MESSAGE,
             ephemeral=True,
@@ -312,7 +312,7 @@ class RoleConnectionPersistenceTests(unittest.IsolatedAsyncioTestCase):
                                 return_value=_connection("role-a", 10)
                             ),
                             connection_change_is_valid=MagicMock(return_value=True),
-                            update_connection_target=update_target,
+                            replace_connection=update_target,
                         ),
                         conn_id="role-a",
                     ),
@@ -334,7 +334,7 @@ class RoleConnectionPersistenceTests(unittest.IsolatedAsyncioTestCase):
                                 return_value=_connection("role-a", 10)
                             ),
                             connection_change_is_valid=MagicMock(return_value=True),
-                            add_connection_roles=add_roles,
+                            replace_connection=add_roles,
                         ),
                         conn_id="role-a",
                         list_name="all",
@@ -353,7 +353,12 @@ class RoleConnectionPersistenceTests(unittest.IsolatedAsyncioTestCase):
                 SimpleNamespace(
                     values=["20"],
                     _parent_view=SimpleNamespace(
-                        cog=SimpleNamespace(remove_connection_roles=remove_roles),
+                        cog=SimpleNamespace(
+                            role_connection_state=MagicMock(
+                                return_value=_connection("role-a", 10, has=(20,))
+                            ),
+                            replace_connection=remove_roles,
+                        ),
                         conn_id="role-a",
                         list_name="all",
                         kind="has",
