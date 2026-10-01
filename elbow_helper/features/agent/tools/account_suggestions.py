@@ -45,7 +45,7 @@ def account_suggestion_tools() -> tuple[RegisteredAgentTool, ...]:
             description="Confirm or correct a pending account match after confirmation.",
             parameters=tag_schema,
         ), prepare_suggestion_link, AgentCapabilityEffect.COMMAND,
-            ActionClass.IRREVERSIBLE, True),
+            ActionClass.CHANGE, True),
         RegisteredAgentTool(AgentToolDefinition(
             name="ignore_account_suggestion",
             description="Permanently ignore a pending account match after confirmation.",
@@ -152,6 +152,6 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         "ignore_account_suggestion" if ignore else "link_account_suggestion",
         {"player_tag": tag, **({"member_id": member.id} if member else {})},
         ChangePreview(tuple(lines), recheck, summary=label),
-        run, action_class=ActionClass.IRREVERSIBLE,
+        run, action_class=(ActionClass.IRREVERSIBLE if ignore else ActionClass.CHANGE),
     ))
     return {"status": "confirmation_required"}

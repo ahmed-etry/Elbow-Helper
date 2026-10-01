@@ -97,4 +97,4 @@ async def run_attack_plan(context: Any,
 def attack_plan_adapters() -> tuple[CommandAdapter, ...]:
     return (CommandAdapter("/plan", "confirm", run_attack_plan,
                            prepare=prepare_attack_plan,
-                           action_class=ActionClass.IRREVERSIBLE),)
+                           action_class=ActionClass.CHANGE),)

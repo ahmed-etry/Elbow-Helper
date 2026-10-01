@@ -32,7 +32,7 @@ def cwl_bonus_review_tools() -> tuple[RegisteredAgentTool, ...]:
             "source_text": {"type": "string"},
         }, "required": ["clan_code", "decision"], "additionalProperties": False},
     ), prepare_cwl_bonus_review, AgentCapabilityEffect.COMMAND,
-        ActionClass.IRREVERSIBLE, True),)
+        ActionClass.CHANGE, True),)
 
 
 async def prepare_cwl_bonus_review(context: AgentRequestContext,
@@ -100,6 +100,6 @@ async def prepare_cwl_bonus_review(context: AgentRequestContext,
         "review_cwl_bonus", {"clan_code": clan_code, "mode": mode,
                               "month_key": month_key, "decision": decision},
         ChangePreview(tuple(lines), recheck, summary=ACTION_CWL_BONUS_REVIEW_LABEL),
-        run, action_class=ActionClass.IRREVERSIBLE,
+        run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}

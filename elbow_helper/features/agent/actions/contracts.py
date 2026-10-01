@@ -61,8 +61,11 @@ def check_bundle(actions: tuple[PreparedAction, ...]) -> None:
         raise ValueError("No changes were prepared")
     if len(actions) > 1 and any(
         action.action_class is ActionClass.IRREVERSIBLE for action in actions
+    ) and not all(
+        action.action_class is ActionClass.IRREVERSIBLE
+        and action.path == actions[0].path for action in actions
     ):
-        raise ValueError("An irreversible change needs its own confirmation")
+        raise ValueError("Only irreversible changes of the same kind may share a preview")
 
 
 def audit_reason(member: Any) -> str:

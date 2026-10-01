@@ -56,7 +56,7 @@ def event_management_tools() -> tuple[RegisteredAgentTool, ...]:
         "grace_hours": {"type": "integer", "minimum": 0},
     }
     for name, operation, classification in (
-        ("create_event_tracker", "create", ActionClass.IRREVERSIBLE),
+        ("create_event_tracker", "create", ActionClass.CHANGE),
         ("edit_event_tracker", "edit", ActionClass.CHANGE),
     ):
         async def prepare(context: AgentRequestContext, values: Mapping[str, Any],

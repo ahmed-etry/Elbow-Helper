@@ -216,5 +216,5 @@ def account_link_adapters() -> tuple[CommandAdapter, ...]:
                        prepare=prepare_account_add),
         CommandAdapter("/account remove", "confirm", run_account_remove,
                        prepare=prepare_account_remove,
-                       action_class=ActionClass.IRREVERSIBLE),
+                       action_class=ActionClass.CHANGE),
     )

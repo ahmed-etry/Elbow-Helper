@@ -92,7 +92,7 @@ def _adapter(path: str, kind: str) -> CommandAdapter:
         )
 
     return CommandAdapter(path, "confirm", run, prepare=prepare,
-                          action_class=ActionClass.IRREVERSIBLE)
+                          action_class=ActionClass.CHANGE)
 
 
 def war_statement_adapters() -> tuple[CommandAdapter, ...]:

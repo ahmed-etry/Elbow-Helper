@@ -44,7 +44,7 @@ def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
             name="remove_roster_accounts",
             description="Remove selected Clash accounts from an open roster after confirmation.",
             parameters=schema,
-        ), prepare_roster_removal, AgentCapabilityEffect.COMMAND, ActionClass.IRREVERSIBLE, True),
+        ), prepare_roster_removal, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True),
         RegisteredAgentTool(AgentToolDefinition(
             name="bulk_add_roster_accounts",
             description="Add several linked Clash accounts to one open roster from player tags after confirmation.",
@@ -63,7 +63,7 @@ def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
                              "minItems": 1, "uniqueItems": True},
             }, "required": ["roster_id", "accounts"], "additionalProperties": False},
         ), prepare_roster_row_removal, AgentCapabilityEffect.COMMAND,
-            ActionClass.IRREVERSIBLE, True),
+            ActionClass.CHANGE, True),
     )
 
 
@@ -145,7 +145,7 @@ async def prepare_roster_row_removal(context: AgentRequestContext,
         "remove_roster_signup_rows", {"roster_id": roster.id,
                                       "accounts": [row.player_tag for row in selected]},
         ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_REMOVE_LABEL),
-        run, action_class=ActionClass.IRREVERSIBLE,
+        run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}
 
@@ -303,7 +303,6 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         "signup_roster_accounts" if mode == "signup" else "remove_roster_accounts",
         {"roster_id": roster_id, "member_id": member_id, "accounts": selected},
         ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_ACCOUNT_LABEL),
-        run, action_class=(ActionClass.CHANGE if mode == "signup"
-                           else ActionClass.IRREVERSIBLE),
+        run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}

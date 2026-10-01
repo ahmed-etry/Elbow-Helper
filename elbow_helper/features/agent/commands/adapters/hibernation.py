@@ -234,12 +234,12 @@ def hibernation_adapters() -> tuple[CommandAdapter, ...]:
     return (
         CommandAdapter(
             "/hibernate", "confirm", run_hibernate,
-            prepare=prepare_hibernate, action_class=ActionClass.IRREVERSIBLE,
+            prepare=prepare_hibernate, action_class=ActionClass.CHANGE,
             entity_options=(("user", "discord_member"),),
         ),
         CommandAdapter(
             "/reactivate", "confirm", run_reactivate,
-            prepare=prepare_reactivate, action_class=ActionClass.IRREVERSIBLE,
+            prepare=prepare_reactivate, action_class=ActionClass.CHANGE,
             entity_options=(("user", "discord_member"),),
         ),
     )

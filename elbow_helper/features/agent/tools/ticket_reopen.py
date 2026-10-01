@@ -44,7 +44,7 @@ def ticket_reopen_tools() -> tuple[RegisteredAgentTool, ...]:
             description="Close a reactivation ticket and save its transcript after confirmation.",
             parameters=schema,
         ), prepare_reactivation_close, AgentCapabilityEffect.COMMAND,
-            ActionClass.IRREVERSIBLE, True),)
+            ActionClass.CHANGE, True),)
 
 
 async def prepare_support_reopen(context: AgentRequestContext,
@@ -188,6 +188,6 @@ async def prepare_reactivation_close(context: AgentRequestContext,
     context.state.command_proposals.append(PreparedAction(
         "close_reactivation_ticket", {"channel_id": channel.id},
         ChangePreview(tuple(lines), recheck, summary=ACTION_TICKET_CLOSE_LABEL),
-        run, action_class=ActionClass.IRREVERSIBLE,
+        run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}

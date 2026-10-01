@@ -108,4 +108,4 @@ async def run_cwl_register(context: Any,
 def cwl_register_adapters() -> tuple[CommandAdapter, ...]:
     return (CommandAdapter("/cwl register", "confirm", run_cwl_register,
                            prepare=prepare_cwl_register,
-                           action_class=ActionClass.IRREVERSIBLE),)
+                           action_class=ActionClass.CHANGE),)

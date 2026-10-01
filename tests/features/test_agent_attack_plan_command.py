@@ -61,7 +61,7 @@ class AttackPlanCommandTests(unittest.IsolatedAsyncioTestCase):
                       prepared.preview.lines)
         self.assertTrue(any("Page 3:" in line for line in prepared.preview.lines))
         self.assertIs(attack_plan_adapters()[0].classification,
-                      ActionClass.IRREVERSIBLE)
+                      ActionClass.CHANGE)
         channel.send.assert_not_awaited()
         result = await prepared.run()
         self.assertEqual(result.result["message_id"], 99)

@@ -183,13 +183,15 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         view.runner.submit.assert_not_awaited()
         self.assertTrue(all(item.disabled for item in view.children[:2]))
 
-    async def test_irreversible_preview_warns_and_cannot_be_bundled(self):
+    async def test_irreversible_preview_warns_and_groups_same_kind(self):
         proposal, _, _ = self.proposal(1)
         irreversible = PreparedCommand(
             proposal.path, proposal.values, proposal.preview, proposal.run,
             action_class=ActionClass.IRREVERSIBLE,
         )
         self.assertIn("This can't be undone.", preview_text([irreversible]))
+        grouped = preview_text([irreversible, irreversible])
+        self.assertEqual(grouped.count("This can't be undone."), 1)
         with self.assertRaises(ValueError):
             preview_text([irreversible, proposal])
 

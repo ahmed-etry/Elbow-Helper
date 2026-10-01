@@ -73,7 +73,7 @@ class HibernationCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.after["ticket_channel_id"], 99)
         self.assertIs(next(adapter for adapter in hibernation_adapters()
                            if adapter.path == "/reactivate").classification,
-                      ActionClass.IRREVERSIBLE)
+                      ActionClass.CHANGE)
 
     async def test_hibernate_previews_roles_notice_and_persists_after_confirm(self):
         role = SimpleNamespace(
@@ -124,7 +124,7 @@ class HibernationCommandTests(unittest.IsolatedAsyncioTestCase):
         result = await change.run()
         self.assertEqual(result.after["state"]["roles"], [20])
         self.assertIs(hibernation_adapters()[0].classification,
-                      ActionClass.IRREVERSIBLE)
+                      ActionClass.CHANGE)
 
 
 if __name__ == "__main__":

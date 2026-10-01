@@ -69,7 +69,7 @@ class SupportCloseCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.after["log_message_id"], 88)
         self.assertIs(next(adapter for adapter in support_ticket_adapters()
                            if adapter.path == "/close").classification,
-                      ActionClass.IRREVERSIBLE)
+                      ActionClass.CHANGE)
 
 
 if __name__ == "__main__":

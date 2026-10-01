@@ -49,7 +49,7 @@ class WarStatementCommandTests(unittest.IsolatedAsyncioTestCase):
                     values["players"] = "<@7> <@8>"
                 preview = await adapter.prepare(context, values)
                 self.assertTrue(await preview.recheck())
-                self.assertIs(adapter.classification, ActionClass.IRREVERSIBLE)
+                self.assertIs(adapter.classification, ActionClass.CHANGE)
                 self.assertIn("(blank line)", preview.lines)
                 prior_count = post_channel.send.await_count
                 outcome = await adapter.run(context, values)

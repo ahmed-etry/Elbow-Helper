@@ -101,7 +101,7 @@ class CwlTransferReminderCommandTests(unittest.IsolatedAsyncioTestCase):
         result = await change.run()
         self.assertEqual(result.after["message_ids"], [99])
         self.assertIs(cwl_transfer_reminder_adapters()[0].classification,
-                      ActionClass.IRREVERSIBLE)
+                      ActionClass.CHANGE)
 
 
 if __name__ == "__main__":

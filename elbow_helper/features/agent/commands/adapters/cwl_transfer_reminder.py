@@ -113,5 +113,5 @@ def cwl_transfer_reminder_adapters() -> tuple[CommandAdapter, ...]:
     return (CommandAdapter(
         "/transfer reminder", "confirm", run_transfer_reminder,
         prepare=prepare_transfer_reminder,
-        action_class=ActionClass.IRREVERSIBLE,
+        action_class=ActionClass.CHANGE,
     ),)

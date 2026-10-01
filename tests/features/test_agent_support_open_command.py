@@ -70,7 +70,7 @@ class SupportOpenCommandTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Welcome to this ticket.", prepared.preview.lines)
             guild.create_text_channel.assert_not_awaited()
             self.assertIs(support_ticket_adapters()[0].classification,
-                          ActionClass.IRREVERSIBLE)
+                          ActionClass.CHANGE)
             result = await prepared.run()
             self.assertEqual(result.result["channel_id"], 9)
             self.assertEqual(saved["9"]["owner"], 7)

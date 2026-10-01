@@ -31,7 +31,7 @@ def leadership_news_tools() -> tuple[RegisteredAgentTool, ...]:
             "message_id": {"type": "integer", "minimum": 1},
         }, "required": ["message_id"], "additionalProperties": False},
     ), prepare_lead_news, AgentCapabilityEffect.COMMAND,
-        ActionClass.IRREVERSIBLE, True),
+        ActionClass.CHANGE, True),
         RegisteredAgentTool(AgentToolDefinition(
             name="dismiss_lead_news_prompt",
             description="Dismiss a lead update's publication prompt without publishing it.",
@@ -74,7 +74,7 @@ async def prepare_news_dismiss(context: AgentRequestContext,
     context.state.command_proposals.append(PreparedAction(
         "dismiss_lead_news_prompt", {"prompt_message_id": prompt.id},
         ChangePreview(lines, recheck, summary=ACTION_NEWS_DISMISS_LABEL),
-        run, action_class=ActionClass.IRREVERSIBLE,
+        run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}
 

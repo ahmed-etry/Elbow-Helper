@@ -240,10 +240,10 @@ def support_ticket_adapters() -> tuple[CommandAdapter, ...]:
     return (
         CommandAdapter("/open", "confirm", run_support_open,
                        prepare=prepare_support_open,
-                       action_class=ActionClass.IRREVERSIBLE),
+                       action_class=ActionClass.CHANGE),
         CommandAdapter("/close", "confirm", run_support_close,
                        prepare=prepare_support_close,
-                       action_class=ActionClass.IRREVERSIBLE,
+                       action_class=ActionClass.CHANGE,
                        options=(ParameterInfo(
                            "channel", ACTION_SUPPORT_CLOSE_CHANNEL_OPTION,
                            False, "channel",

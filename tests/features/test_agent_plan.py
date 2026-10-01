@@ -115,7 +115,7 @@ def _period_end(encoding):
 
 
 class PlanContractTests(unittest.TestCase):
-    def test_irreversible_step_never_bundles_with_another_change(self):
+    def test_only_same_kind_irreversible_steps_share_a_preview(self):
         schema = {"type": "object", "properties": {}, "required": [],
                   "additionalProperties": False}
         registry = {
@@ -126,6 +126,7 @@ class PlanContractTests(unittest.TestCase):
                 ("read", ActionClass.READ),
                 ("change", ActionClass.CHANGE),
                 ("irreversible", ActionClass.IRREVERSIBLE),
+                ("other_irreversible", ActionClass.IRREVERSIBLE),
             )
         }
         def plan(names):
@@ -136,7 +137,8 @@ class PlanContractTests(unittest.TestCase):
                     } for index, name in enumerate(names)]}
         self.assertTrue(check_plan(plan(("read", "irreversible")), registry).ok)
         self.assertFalse(check_plan(plan(("irreversible", "change")), registry).ok)
-        self.assertFalse(check_plan(plan(("irreversible", "irreversible")), registry).ok)
+        self.assertTrue(check_plan(plan(("irreversible", "irreversible")), registry).ok)
+        self.assertFalse(check_plan(plan(("irreversible", "other_irreversible")), registry).ok)
 
     @classmethod
     def setUpClass(cls):

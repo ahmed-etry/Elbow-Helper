@@ -25,7 +25,7 @@ def raffle_purchase_tools() -> tuple[RegisteredAgentTool, ...]:
         parameters={"type": "object", "properties": {}, "required": [],
                     "additionalProperties": False},
     ), prepare_raffle_purchase, AgentCapabilityEffect.COMMAND,
-        ActionClass.IRREVERSIBLE, True),)
+        ActionClass.CHANGE, True),)
 
 
 async def prepare_raffle_purchase(context: AgentRequestContext,
@@ -63,6 +63,6 @@ async def prepare_raffle_purchase(context: AgentRequestContext,
         ChangePreview(lines, recheck, summary=ACTION_RAFFLE_BUY_LABEL,
                       before={"balance": before["balance"],
                               "has_ticket": before["has_ticket"]}),
-        run, action_class=ActionClass.IRREVERSIBLE,
+        run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}

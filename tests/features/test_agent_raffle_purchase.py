@@ -27,7 +27,7 @@ class RafflePurchaseActionTests(unittest.IsolatedAsyncioTestCase):
             result = await prepare_raffle_purchase(context, {})
         self.assertEqual(result["status"], "confirmation_required")
         action = context.state.command_proposals[0]
-        self.assertIs(action.action_class, ActionClass.IRREVERSIBLE)
+        self.assertIs(action.action_class, ActionClass.CHANGE)
         self.assertTrue(any("250 to 150" in line for line in action.preview.lines))
         workflow.buy_raffle_ticket.assert_not_awaited()
         self.assertTrue(await action.preview.recheck())

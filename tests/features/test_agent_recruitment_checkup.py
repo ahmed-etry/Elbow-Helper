@@ -50,7 +50,7 @@ class CheckupCommandTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(any("<@3>" in line for line in prepared.preview.lines))
             self.assertIs(next(adapter for adapter in recruitment_adapters()
                                if adapter.path == "/checkup").classification,
-                          ActionClass.IRREVERSIBLE)
+                          ActionClass.CHANGE)
             channel.send.assert_not_awaited()
             result = await prepared.run()
         self.assertEqual(result.result["channel_id"], 4)

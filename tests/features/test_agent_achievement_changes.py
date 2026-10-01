@@ -237,7 +237,7 @@ class AchievementChangeTests(unittest.IsolatedAsyncioTestCase):
         await run_achievement_remove(context, values)
         self.assertFalse(await removal.recheck())
         self.assertTrue(all(
-            adapter.classification is ActionClass.IRREVERSIBLE
+            adapter.classification is ActionClass.CHANGE
             for adapter in achievement_adapters()
             if adapter.path.startswith("/achievement ")
         ))

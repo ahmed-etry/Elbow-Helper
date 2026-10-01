@@ -119,5 +119,5 @@ def cwl_announcement_adapters() -> tuple[CommandAdapter, ...]:
     return (CommandAdapter(
         "/roster announcement", "confirm", run_roster_announcement,
         prepare=prepare_roster_announcement,
-        action_class=ActionClass.IRREVERSIBLE,
+        action_class=ActionClass.CHANGE,
     ),)

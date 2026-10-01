@@ -50,7 +50,7 @@ class CwlAnnouncementCommandTests(unittest.IsolatedAsyncioTestCase):
                   "timezone": "Europe/Paris"}
         change = await prepare_roster_announcement(context, values)
         self.assertIs(cwl_announcement_adapters()[0].classification,
-                      ActionClass.IRREVERSIBLE)
+                      ActionClass.CHANGE)
         self.assertTrue(await change.preview.recheck())
         self.assertIn("Roster 7, cycle 8", change.preview.lines)
         self.assertTrue(any("link created on Confirm" in line

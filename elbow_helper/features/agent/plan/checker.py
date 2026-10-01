@@ -324,8 +324,12 @@ def check_plan(
         if len(changes) > 1 and any(
             registry[step["capability"]].action_class is ActionClass.IRREVERSIBLE
             for step in changes
+        ) and not all(
+            registry[step["capability"]].action_class is ActionClass.IRREVERSIBLE
+            and step["capability"] == changes[0]["capability"]
+            for step in changes
         ):
-            return _error("Confirm an irreversible change on its own.")
+            return _error("Only irreversible changes of the same kind may share a preview.")
         steps_by_id = {step["id"]: step for step in raw["steps"]}
         for kind, step_id, path in periods:
             if kind != "resolved":

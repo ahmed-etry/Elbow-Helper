@@ -45,7 +45,7 @@ def promotion_route_tools() -> tuple[RegisteredAgentTool, ...]:
         }, "required": ["ticket_channel_id", "from_clan", "to_clan"],
             "additionalProperties": False},
     ), prepare_promotion_route, AgentCapabilityEffect.COMMAND,
-        ActionClass.IRREVERSIBLE, True),)
+        ActionClass.CHANGE, True),)
 
 
 async def read_promotion_review(context: AgentRequestContext,
@@ -124,6 +124,6 @@ async def prepare_promotion_route(context: AgentRequestContext,
     context.state.command_proposals.append(PreparedAction(
         "change_promotion_route", {"ticket_channel_id": ticket.id},
         ChangePreview(tuple(lines), recheck, summary=ACTION_PROMOTION_ROUTE_LABEL),
-        run, action_class=ActionClass.IRREVERSIBLE,
+        run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}

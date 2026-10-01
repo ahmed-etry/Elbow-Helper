@@ -13,6 +13,10 @@ from elbow_helper.features.help.catalog import HELP_ENTRIES
 
 
 EXCLUDED_COMMANDS = frozenset({"/help", "/ping"})
+IRREVERSIBLE_COMMANDS = frozenset({
+    "/accept", "/decline", "/finalize", "/record remove", "/roster delete",
+    "/raffle clear", "/raffle draw", "/raffle reroll",
+})
 
 READ_COVERAGE = {
     "/achievements": ("read_member_achievements",),
@@ -29,6 +33,13 @@ READ_COVERAGE = {
 }
 
 class AgentRegistryCoverageTests(unittest.TestCase):
+    def test_command_classes_follow_action_effects(self):
+        adapters = {adapter.path: adapter for adapter in enabled_adapters()}
+        self.assertEqual({path for path, adapter in adapters.items()
+                          if adapter.classification is ActionClass.IRREVERSIBLE},
+                         IRREVERSIBLE_COMMANDS)
+        self.assertIs(adapters["/roster export"].classification, ActionClass.OUTPUT)
+
     def test_every_help_command_has_one_explicit_route(self):
         help_paths = [entry.path for entry in HELP_ENTRIES]
         adapters = [adapter.path for adapter in enabled_adapters()]
