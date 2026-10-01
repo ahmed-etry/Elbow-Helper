@@ -35,26 +35,30 @@ class ForwardView(BaseTimeoutView):
         self.prompt_channel_id = prompt_channel_id
 
     async def _delete_prompt(self, interaction: discord.Interaction):
+        cog = interaction.client.get_cog("LeadNews")
         try:
-            if interaction.message:
-                await interaction.message.delete()
-                return
+            if cog and interaction.message and (
+                    cog.public_news_prompt_source(interaction.message) == self.source_message_id):
+                if await cog.dismiss_public_news_prompt(interaction.message):
+                    return
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             LOGGER.debug("Failed to delete interaction prompt message")
         try:
             channel = interaction.client.get_channel(self.prompt_channel_id)
-            if channel:
+            if cog and channel:
                 message = await channel.fetch_message(self.prompt_message_id)
-                await message.delete()
+                await cog.dismiss_public_news_prompt(message)
+                return
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             LOGGER.debug("Failed to delete fallback prompt message %s", self.prompt_message_id)
 
     async def on_timeout(self) -> None:
+        cog = self.bot.get_cog("LeadNews")
         try:
             channel = self.bot.get_channel(self.prompt_channel_id)
-            if channel:
+            if cog and channel:
                 message = await channel.fetch_message(self.prompt_message_id)
-                await message.delete()
+                await cog.dismiss_public_news_prompt(message)
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             LOGGER.debug("Prompt already unavailable on timeout: %s", self.prompt_message_id)
 

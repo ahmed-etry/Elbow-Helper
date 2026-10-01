@@ -17,6 +17,7 @@ from ..wording import (
     ACTION_NEWS_PUBLISH_CONTENT, ACTION_NEWS_PUBLISH_DONE,
     ACTION_NEWS_PUBLISH_LABEL, ACTION_NEWS_PUBLISH_UNAVAILABLE,
     ACTION_PREVIEW_BLANK,
+    ACTION_NEWS_DISMISS_LINE, ACTION_NEWS_DISMISS_LABEL,
 )
 from .discord_safety import check_post_access, check_view_access, resolve_channel
 
@@ -29,7 +30,52 @@ def leadership_news_tools() -> tuple[RegisteredAgentTool, ...]:
             "message_id": {"type": "integer", "minimum": 1},
         }, "required": ["message_id"], "additionalProperties": False},
     ), prepare_lead_news, AgentCapabilityEffect.COMMAND,
-        ActionClass.IRREVERSIBLE, True),)
+        ActionClass.IRREVERSIBLE, True),
+        RegisteredAgentTool(AgentToolDefinition(
+            name="dismiss_lead_news_prompt",
+            description="Dismiss a lead update's publication prompt without publishing it.",
+            parameters={"type": "object", "properties": {
+                "prompt_message_id": {"type": "integer", "minimum": 1},
+            }, "required": ["prompt_message_id"], "additionalProperties": False},
+        ), prepare_news_dismiss, AgentCapabilityEffect.COMMAND,
+            ActionClass.IRREVERSIBLE, True),)
+
+
+async def prepare_news_dismiss(context: AgentRequestContext,
+                               values: Mapping[str, Any]) -> Mapping[str, Any]:
+    await require_evidence_access(context)
+    workflow = context.bot.get_cog("LeadNews")
+    if workflow is None:
+        raise ValueError(ACTION_NEWS_PUBLISH_UNAVAILABLE)
+    source = await resolve_channel(context, LEAD_NEWS)
+    check_post_access(source, context.member, context.guild.me)
+    prompt = await source.fetch_message(values["prompt_message_id"])
+    source_id = workflow.public_news_prompt_source(prompt)
+    if source_id is None:
+        raise ValueError(ACTION_NEWS_PUBLISH_UNAVAILABLE)
+    lines = (ACTION_NEWS_DISMISS_LINE.format(
+        prompt_id=prompt.id, channel=source.mention, source_id=source_id),)
+
+    async def recheck() -> bool:
+        try:
+            check_post_access(source, context.member, context.guild.me)
+            current = await source.fetch_message(prompt.id)
+            return workflow.public_news_prompt_source(current) == source_id
+        except Exception:
+            return False
+
+    async def run() -> CommandOutcome:
+        current = await source.fetch_message(prompt.id)
+        if not await workflow.dismiss_public_news_prompt(current):
+            raise ValueError(ACTION_NEWS_PUBLISH_UNAVAILABLE)
+        return CommandOutcome("complete", "private", text=ACTION_NEWS_DISMISS_LABEL)
+
+    context.state.command_proposals.append(PreparedAction(
+        "dismiss_lead_news_prompt", {"prompt_message_id": prompt.id},
+        ChangePreview(lines, recheck, summary=ACTION_NEWS_DISMISS_LABEL),
+        run, action_class=ActionClass.IRREVERSIBLE,
+    ))
+    return {"status": "confirmation_required"}
 
 
 async def prepare_lead_news(context: AgentRequestContext,

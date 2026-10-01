@@ -26,6 +26,26 @@ class LeadNews(commands.Cog):
             if not task.done():
                 task.cancel()
 
+    def public_news_prompt_source(self, prompt: discord.Message) -> int | None:
+        """Identify one live publication prompt from this feature."""
+        source_id = getattr(getattr(prompt, "reference", None), "message_id", None)
+        if (getattr(getattr(prompt, "author", None), "id", None)
+                != getattr(getattr(self.bot, "user", None), "id", None)
+                or prompt.content != f"Publish this update to <#{PUBLIC_NEWS}>?"
+                or not source_id):
+            return None
+        return int(source_id)
+
+    async def dismiss_public_news_prompt(self, prompt: discord.Message) -> bool:
+        """Remove a publication prompt for its button and the agent."""
+        if self.public_news_prompt_source(prompt) is None:
+            return False
+        try:
+            await prompt.delete()
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            return False
+        return True
+
     @staticmethod
     def public_news_preview(source_message: discord.Message) -> dict[str, object]:
         """Describe the exact text and attachments forwarded from a lead update."""
