@@ -553,8 +553,35 @@ class AgentService:
                 results = await run_plan(plan)
                 if any(item.status == "needs_input" for item in context.state.command_outcomes):
                     context.state.command_proposals.clear()
+                    missing = [item for item in context.state.command_outcomes
+                               if item.status == "needs_input"]
+                    options = list({option["name"]: option for item in missing
+                                    for option in item.missing_options}.values())
+                    hints = list(dict.fromkeys(description for item in missing
+                                              for description in item.missing))
+                    pending = (AgentToolResult(
+                        decision.rounds[-1].tool_calls[0].call_id,
+                        json.dumps({
+                            "results": results,
+                            "missing_options": options,
+                            "missing_hints": hints,
+                            "instruction": (
+                                "Ask the member for all missing values together in your own words. "
+                                "Use the option descriptions and choices as data. Suggest only values "
+                                "the data supports. Do not say the command ran."
+                            ),
+                        }, ensure_ascii=False, default=str),
+                    ),)
+                    reply = await advance_model(
+                        pending, allow_tools=False,
+                        reasoning_effort=AgentReasoningEffort.LOW,
+                        max_output_tokens=FINAL_MAX_OUTPUT_TOKENS,
+                    )
+                    if reply.tool_calls or not reply.content:
+                        raise AgentUnavailableError("The agent did not ask for missing values")
+                    await require_disclosure_access(context)
                     status = "completed"
-                    return command_reply(context.state.command_outcomes)
+                    return reply.content
                 expected_previews = sum(
                     results[step["id"]].get("prepared_count", 1)
                     for step in plan["steps"]

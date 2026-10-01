@@ -703,7 +703,9 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             tools, capabilities = build_command_tools(object(), (CommandAdapter(path, "public", run),))
         command_name = next(iter(tools))
         async def answer(plan, history=""):
-            session = _Session([_model_step(plan)], self.events)
+            session = _Session([
+                _model_step(plan), AgentStep("Which value should I use?", (), AgentUsage()),
+            ], self.events)
             model = _Model(session)
             context = _context()
             with (patch("elbow_helper.features.agent.service.build_agent_tools", return_value=self.registry),
@@ -716,8 +718,12 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             return response, session, context, model
         incomplete = _plan([{**_step("command"), "capability": command_name}])
         question, session, context, model = await answer(incomplete)
-        self.assertEqual(question, "I still need:\n- A required value.")
-        self.assertEqual(len(session.calls), 1)
+        self.assertEqual(question, "Which value should I use?")
+        self.assertEqual(len(session.calls), 2)
+        missing_data = json.loads(session.calls[1][0][0].content)
+        self.assertEqual(missing_data["missing_options"], [{
+            "name": "value", "description": "A required value.", "choices": [],
+        }])
         self.assertIn(command_name, model.request["system_prompt"])
         self.assertIn("Use only listed capabilities", model.request["system_prompt"])
         run.assert_not_awaited()

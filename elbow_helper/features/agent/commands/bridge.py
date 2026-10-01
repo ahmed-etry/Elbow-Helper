@@ -25,6 +25,27 @@ def _missing_value(value: Any) -> bool:
     return isinstance(value, (list, tuple, dict, set)) and not value
 
 
+def _option_data(option: Any) -> dict[str, Any]:
+    return {
+        "name": option.name,
+        "description": option.description,
+        "choices": [
+            {"label": label, "value": value}
+            for label, value in zip(option.choices, option.choice_values)
+        ],
+    }
+
+
+def _with_option_data(outcome: CommandOutcome, selected: CommandCapability,
+                      values: Mapping[str, Any]) -> CommandOutcome:
+    if outcome.status != "needs_input" or outcome.missing_options:
+        return outcome
+    return replace(outcome, missing_options=tuple(
+        _option_data(option) for option in selected.option_info
+        if option.name in selected.required or option.name not in values
+    ))
+
+
 def _record_outcome(context: Any, outcome: CommandOutcome,
                     command_name: str) -> CommandOutcome:
     outcome = replace(outcome, command_name=command_name)
@@ -47,17 +68,21 @@ def build_command_tools(
     tools: dict[str, RegisteredAgentTool] = {}
     for name, capability in capabilities.items():
         async def handle(context, values, selected=capability):
-            missing = tuple(
-                option.description or option.name.replace("_", " ")
-                for option in selected.option_info if option.name in selected.required
+            missing_options = tuple(
+                option for option in selected.option_info
+                if option.name in selected.required
                 and (option.name not in values or _missing_value(values[option.name]))
             )
+            missing = tuple(option.description or option.name.replace("_", " ")
+                            for option in missing_options)
             if not missing and selected.adapter.delivery == "confirm":
                 if selected.adapter.prepare is None:
                     raise ValueError("Confirmed command needs a preview function")
                 preview = await selected.adapter.prepare(context, values)
                 if isinstance(preview, CommandOutcome):
-                    outcome = _record_outcome(context, preview, selected.adapter.path)
+                    outcome = _record_outcome(
+                        context, _with_option_data(preview, selected, values), selected.adapter.path,
+                    )
                     return {"command": selected.adapter.path, "status": outcome.status,
                             "visibility": outcome.visibility}
                 prepared_run = lambda: selected.adapter.run(context, values)
@@ -73,10 +98,13 @@ def build_command_tools(
                 )
                 context.state.command_proposals.append(prepared)
                 return {"command": selected.adapter.path, "status": "confirmation_required"}
-            outcome = (CommandOutcome.needs_input(missing) if missing
+            outcome = (CommandOutcome.needs_input(
+                missing, options=tuple(_option_data(option) for option in missing_options),
+            ) if missing
                        else await selected.adapter.run(context, values))
             if not isinstance(outcome, CommandOutcome):
                 raise TypeError("Command adapter returned an invalid result")
+            outcome = _with_option_data(outcome, selected, values)
             outcome = _record_outcome(context, outcome, selected.adapter.path)
             return {"command": selected.adapter.path, "status": outcome.status,
                     "visibility": outcome.visibility}

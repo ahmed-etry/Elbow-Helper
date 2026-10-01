@@ -45,8 +45,9 @@ class CommandBridgeTests(unittest.IsolatedAsyncioTestCase):
         result = await tool.handler(context, {})
         self.assertEqual(result["status"], "needs_input")
         self.assertEqual(context.state.command_outcomes[0].missing, ("Choose a target.",))
-        self.assertEqual(command_reply(context.state.command_outcomes),
-                         "I still need:\n- Choose a target.")
+        self.assertEqual(context.state.command_outcomes[0].missing_options, ({
+            "name": "target", "description": "Choose a target.", "choices": [],
+        },))
         self.run.assert_not_awaited()
 
     async def test_all_missing_values_use_option_descriptions(self):

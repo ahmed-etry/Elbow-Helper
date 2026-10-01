@@ -4,7 +4,6 @@ FAILURE_MESSAGE = "I couldn't finish that right now. Try again in a moment."
 LONG_REPLY_FILENAME = "Elbow Helper.txt"
 SPREADSHEET_FILENAME_STEM = "spreadsheet"
 
-COMMAND_MISSING_VALUE = "I still need:\n{values}"
 COMMAND_PRIVATE_NOTE = "Result is ready. Open it privately below."
 COMMAND_PRIVATE_BUTTON = "View result"
 COMMAND_PRIVATE_SELECT = "Choose a result"
