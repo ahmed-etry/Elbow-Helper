@@ -233,6 +233,7 @@ CONTRACTS: Mapping[str, CapabilityContract] = {
     "read_my_examiner_profile": CapabilityContract((), (), source_scope='channel_status', result_channel_fields=('panel_channel_id',)),
     "read_examiner_roster": CapabilityContract((), (), source_scope='channel_status', result_channel_fields=('panel_channel_id',), filter_fields=('offset', 'limit')),
     "read_promotion_review": CapabilityContract((('ticket_channel_id', 'examination_ticket_channel'),), (), source_scope='channel_status', channel_fields=('ticket_channel_id',), result_channel_fields=('ticket_channel_id', 'review_channel_id'), filter_fields=('view',)),
+    "read_clan_health_settings": CapabilityContract((('clan_code', 'clan'),), (), source_scope='request_context', filter_fields=('block',)),
     "change_promotion_route": CapabilityContract((('ticket_channel_id', 'examination_ticket_channel'),), (), source_scope='request_context', channel_fields=('ticket_channel_id',), filter_fields=('from_clan', 'to_clan')),
     "remember_task_instruction": CapabilityContract((('replaces_id', 'task_instruction'),), (), source_scope='request_context'),
     "retire_task_instruction": CapabilityContract((('instruction_id', 'task_instruction'),), (), source_scope='request_context'),

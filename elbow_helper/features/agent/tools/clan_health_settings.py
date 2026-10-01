@@ -9,7 +9,8 @@ from elbow_helper.configuration.clans import CLAN_ORDER
 from elbow_helper.features.clan_health.config_labels import PLAYER_BLOCK_ORDER, PLAYER_LABELS
 from elbow_helper.features.clan_health.database.config_store import ConfigValidationError
 from elbow_helper.features.clan_health.ui.config_panel import (
-    prepare_player_config_block, save_player_config_block,
+    player_health_settings_snapshot, prepare_player_config_block,
+    save_player_config_block,
 )
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
@@ -28,6 +29,14 @@ def clan_health_settings_tools() -> tuple[RegisteredAgentTool, ...]:
              for block in PLAYER_BLOCK_ORDER
              for key, spec in PLAYER_LABELS[block].items() if not key.startswith("_")}
     return (RegisteredAgentTool(AgentToolDefinition(
+        name="read_clan_health_settings",
+        description="Read a clan's current member health expectations and field descriptions.",
+        parameters={"type": "object", "properties": {
+            "clan_code": {"type": "string", "enum": list(CLAN_ORDER)},
+            "block": {"type": "string", "enum": PLAYER_BLOCK_ORDER},
+        }, "required": ["clan_code"], "additionalProperties": False},
+    ), read_health_settings),
+        RegisteredAgentTool(AgentToolDefinition(
         name="set_clan_health_settings",
         description="Set one section of a clan's member health expectations after confirmation.",
         parameters={"type": "object", "properties": {
@@ -38,6 +47,22 @@ def clan_health_settings_tools() -> tuple[RegisteredAgentTool, ...]:
         }, "required": ["clan_code", "block", "values"], "additionalProperties": False},
     ), prepare_health_settings, AgentCapabilityEffect.COMMAND,
         ActionClass.CHANGE, True),)
+
+
+async def read_health_settings(context: AgentRequestContext,
+                               values: Mapping[str, Any]) -> Mapping[str, Any]:
+    await require_evidence_access(context)
+    payload, _ = player_health_settings_snapshot(values["clan_code"])
+    blocks = (values["block"],) if values.get("block") else PLAYER_BLOCK_ORDER
+    return {"clan_code": values["clan_code"],
+            "sections": [{"name": PLAYER_LABELS[block]["_title"],
+                          "fields": [{"name": spec["label"], "key": key,
+                                      "description": spec["help"],
+                                      "value": payload[block][key],
+                                      "unit": spec.get("unit", "")}
+                                     for key, spec in PLAYER_LABELS[block].items()
+                                     if not key.startswith("_")]}
+                         for block in blocks]}
 
 
 def _lines(clan: str, block: str, before: Mapping[str, Any],

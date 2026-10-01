@@ -35,6 +35,11 @@ def _get_payload_with_snapshot(clan_code: str) -> tuple[Dict[str, Any], str | No
     return result if result is not None else (get_player_template_payload(clan_code), None)
 
 
+def player_health_settings_snapshot(clan_code: str) -> tuple[Dict[str, Any], str | None]:
+    """Read the settings shown by the Clan Health panel."""
+    return _get_payload_with_snapshot(clan_code)
+
+
 def _field_keys(block_labels: Dict[str, Dict[str, Any]]) -> List[str]:
     return [key for key in block_labels.keys() if not key.startswith("_")]
 
