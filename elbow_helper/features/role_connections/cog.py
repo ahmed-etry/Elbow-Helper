@@ -195,7 +195,10 @@ class RoleConnections(commands.Cog):
 
     def _connection_matches(self, member: discord.Member, connection: Dict[str, Any]) -> bool:
         # `all` must fully match; `any` acts as an optional OR gate.
-        member_role_ids = {r.id for r in member.roles}
+        return self._connection_matches_ids({r.id for r in member.roles}, connection)
+
+    @staticmethod
+    def _connection_matches_ids(member_role_ids: set[int], connection: Dict[str, Any]) -> bool:
         all_conditions = connection.get("all", [])
         for cond in all_conditions:
             if "has" in cond and cond["has"] not in member_role_ids:
@@ -214,6 +217,48 @@ class RoleConnections(commands.Cog):
                     break
             if not matched:
                 return False
+        return True
+
+    async def role_connection_scan_plan(self, guild: discord.Guild):
+        """Calculate ordered role changes before a panel or agent scan."""
+        try:
+            members = [member async for member in guild.fetch_members(limit=None)]
+        except (discord.Forbidden, discord.HTTPException):
+            LOGGER.warning("Falling back to guild member cache during role connection scan.")
+            members = list(guild.members)
+        connections = self.state["connections"]
+        invalid = self._invalid_connection_indexes(connections)
+        plan = []
+        for member in members:
+            member_roles = {role.id for role in member.roles}
+            changes = []
+            for index, connection in enumerate(connections):
+                if index in invalid:
+                    continue
+                role = guild.get_role(connection["target_role_id"])
+                if role is None:
+                    continue
+                add = self._connection_matches_ids(member_roles, connection)
+                if (role.id in member_roles) == add:
+                    continue
+                changes.append((role, add))
+                if add:
+                    member_roles.add(role.id)
+                else:
+                    member_roles.remove(role.id)
+            plan.append((member, tuple(changes)))
+        return tuple(plan)
+
+    async def apply_role_connection_change(self, member: discord.Member,
+                                           role: discord.Role, *, add: bool) -> bool:
+        """Apply one scanned role change for the panel and agent."""
+        try:
+            if add:
+                await member.add_roles(role, reason="Apply role connections")
+            else:
+                await member.remove_roles(role, reason="Apply role connections")
+        except (discord.Forbidden, discord.HTTPException):
+            return False
         return True
 
     async def _apply_connections_to_member(self, member: discord.Member, reason: str) -> Tuple[int, int]:
@@ -345,23 +390,22 @@ class RoleConnections(commands.Cog):
             guild = message.guild or self.bot.get_guild(GUILD_ID)
             if not guild:
                 return
-            try:
-                members = [member async for member in guild.fetch_members(limit=None)]
-            except (discord.Forbidden, discord.HTTPException):
-                LOGGER.warning("Falling back to guild member cache during role connection scan.")
-                members = list(guild.members)
-            if not members:
+            plan = await self.role_connection_scan_plan(guild)
+            if not plan:
                 return
-            total = len(members)
+            total = len(plan)
             added_total = 0
             removed_total = 0
             processed = 0
             last_update = time.monotonic()
 
-            for member in members:
-                added, removed = await self._apply_connections_to_member(member, reason="Apply role connections")
-                added_total += added
-                removed_total += removed
+            for member, changes in plan:
+                for role, add in changes:
+                    changed = await self.apply_role_connection_change(member, role, add=add)
+                    if changed and add:
+                        added_total += 1
+                    elif changed:
+                        removed_total += 1
                 processed += 1
                 if processed == total or (time.monotonic() - last_update) >= 2:
                     progress = discord.Embed(

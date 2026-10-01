@@ -32,6 +32,7 @@ from .recruitment import recruitment_tools
 from .roles import role_tools
 from .role_connections import role_connection_tools
 from .role_connection_management import role_connection_management_tools
+from .role_connection_scan import role_connection_scan_tools
 from .rosters import roster_tools
 from .roster_management import roster_management_tools
 from .roster_account_management import roster_account_management_tools
@@ -61,6 +62,7 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
         "members_roles": (
             *member_tools(), *role_tools(), *role_connection_tools(),
             *role_connection_management_tools(),
+            *role_connection_scan_tools(),
             *discord_role_tools(),
         ),
         "achievements_events": (

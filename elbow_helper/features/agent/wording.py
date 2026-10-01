@@ -428,3 +428,5 @@ ACTION_CONNECTION_MANAGE_BOARD = "Post the updated role connections board in {ch
 ACTION_CONNECTION_MANAGE_LABEL = "Change role connection"
 ACTION_CONNECTION_MANAGE_DONE = "Role connections board posted in {channel}: {url}"
 ACTION_CONNECTION_MANAGE_UNAVAILABLE = "That role connection is unavailable."
+ACTION_ROLE_SCAN_LABEL = "Apply role connections"
+ACTION_ROLE_SCAN_UNAVAILABLE = "Role connections are unavailable."

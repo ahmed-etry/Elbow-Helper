@@ -207,6 +207,7 @@ CONTRACTS: Mapping[str, CapabilityContract] = {
     "edit_preset_event": CapabilityContract((('event', 'event_tracker'),), (), source_scope='request_context', filter_fields=('name', 'grace_hours')),
     "manage_role_connection": CapabilityContract((('connection_id', 'role_connection'), ('target_role_id', 'discord_role'), ('channel_id', 'discord_channel')), (), source_scope='request_context', filter_fields=('operation', 'all', 'any')),
     "remove_role_connection": CapabilityContract((('connection_id', 'role_connection'), ('channel_id', 'discord_channel')), (), source_scope='request_context'),
+    "apply_role_connections": CapabilityContract((), (), source_scope='request_context'),
     "remember_task_instruction": CapabilityContract((('replaces_id', 'task_instruction'),), (), source_scope='request_context'),
     "retire_task_instruction": CapabilityContract((('instruction_id', 'task_instruction'),), (), source_scope='request_context'),
     "prepare_spreadsheet": CapabilityContract((), (), source_scope='request_context'),
