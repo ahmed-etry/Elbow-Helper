@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from elbow_helper.configuration.channels import EXAMINATION_PANEL_THREAD
-from elbow_helper.features.examination.config import TIMEZONE_SELECT_OPTIONS
+from elbow_helper.features.examination.config import TH_COVERAGE_OPTIONS, TIMEZONE_SELECT_OPTIONS
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..access import require_evidence_access
@@ -102,7 +102,15 @@ async def prepare_examiner_profile(context: AgentRequestContext,
     try:
         after = workflow.prepare_examiner_profile_change(context.member, dict(values))
     except ValueError as exc:
-        return {"status": "needs_input", "issue": str(exc), "prepared_count": 0}
+        issue = str(exc)
+        if "panel list" in issue:
+            if "Town Hall" in issue:
+                issue = ("Town Hall coverage is invalid. Choose up to eight from: "
+                         + ", ".join(option.label for option in TH_COVERAGE_OPTIONS) + ".")
+            else:
+                issue = ("Timezone is invalid. Choose one of: "
+                         + ", ".join(option.value for option in TIMEZONE_SELECT_OPTIONS) + ".")
+        return {"status": "needs_input", "issue": issue, "prepared_count": 0}
     changed = [key for key in PROFILE_FIELDS if before.get(key) != after.get(key)]
     if not changed:
         return {"status": "no_change"}

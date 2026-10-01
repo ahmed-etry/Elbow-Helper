@@ -40,7 +40,7 @@ async def prepare_attack_plan(context: Any,
     player_tag, issue = await workflow.resolve_plan_account(values["player"])
     if issue:
         raise ValueError(ACTION_PLAN_ACCOUNT_AMBIGUOUS if issue == "ambiguous"
-                         else ACTION_PLAN_ACCOUNT_INVALID)
+                         else "That Clash account is invalid. Use a player tag or an exact account name.")
     prepared = await workflow.prepare_attack_plan(
         player_tag, values["thinking"], strategy_image, base_image,
     )
