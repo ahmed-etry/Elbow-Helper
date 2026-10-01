@@ -92,6 +92,29 @@ def _watcher_reads(reads: Any) -> None:
             raise ValueError("Watchers use current or latest results only.")
 
 
+def _preview_lines(values: Mapping[str, Any], *, kind: str, request: str,
+                   zone: str, times: tuple[datetime, ...], channel: Any,
+                   actions: list[Mapping[str, Any]]) -> tuple[str, ...]:
+    formatted = ", ".join(item.astimezone(ZoneInfo(zone)).strftime("%d %b %Y %H:%M")
+                          for item in times)
+    lines = [
+        ACTION_STANDING_SAVE.format(kind=kind, request=request),
+        ACTION_STANDING_TIME.format(times=formatted, timezone=zone),
+        ACTION_STANDING_DESTINATION.format(channel=channel.mention),
+        (ACTION_STANDING_SCOPE.format(
+            actions="; ".join(item["scope_text"] for item in actions),
+            targets=max(item["max_targets"] for item in actions),
+        ) if actions else ACTION_STANDING_NO_CHANGES),
+    ]
+    if kind == "watcher":
+        lines.append(ACTION_STANDING_WATCHER.format(
+            condition=values["condition"],
+            repeat=ACTION_STANDING_REPEAT if values.get("repeat", False)
+                   else ACTION_STANDING_ONCE,
+        ))
+    return tuple(lines)
+
+
 async def prepare_save(context: AgentRequestContext,
                        values: Mapping[str, Any]) -> Mapping[str, Any]:
     repository = _repository(context)
@@ -118,23 +141,8 @@ async def prepare_save(context: AgentRequestContext,
         _watcher_reads(values.get("reads"))
         if not str(values.get("condition", "")).strip():
             raise ValueError("Describe when the watcher should alert.")
-    destination = channel.mention
-    formatted = ", ".join(item.astimezone(ZoneInfo(zone)).strftime("%d %b %Y %H:%M")
-                          for item in times)
-    lines = [
-        ACTION_STANDING_SAVE.format(kind=kind, request=request),
-        ACTION_STANDING_TIME.format(times=formatted, timezone=zone),
-        ACTION_STANDING_DESTINATION.format(channel=destination),
-        (ACTION_STANDING_SCOPE.format(
-            actions="; ".join(item["scope_text"] for item in actions),
-            targets=max(item["max_targets"] for item in actions),
-        ) if actions else ACTION_STANDING_NO_CHANGES),
-    ]
-    if kind == "watcher":
-        lines.append(ACTION_STANDING_WATCHER.format(
-            condition=values["condition"],
-            repeat=ACTION_STANDING_REPEAT if values.get("repeat", False) else ACTION_STANDING_ONCE,
-        ))
+    lines = _preview_lines(values, kind=kind, request=request, zone=zone,
+                           times=times, channel=channel, actions=actions)
     rule = dict(values)
     rule["timezone"] = zone
     rule["allowed_actions"] = actions
@@ -176,7 +184,7 @@ async def prepare_save(context: AgentRequestContext,
 
     context.state.command_proposals.append(PreparedAction(
         "save_standing_rule", rule,
-        ChangePreview(tuple(lines), recheck, summary="Save standing rule"),
+        ChangePreview(lines, recheck, summary="Save standing rule"),
         run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}
