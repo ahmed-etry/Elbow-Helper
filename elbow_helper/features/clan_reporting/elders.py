@@ -40,10 +40,10 @@ class ClanReportingElderMixin:
 
         return tuple(CLAN_LEADERSHIP_CHANNELS.keys())
 
-    async def _update_missing_elder_message(self, clan_code: str, *, reposition_if_buried: bool = False) -> None:
+    async def _update_missing_elder_message(self, clan_code: str, *, reposition_if_buried: bool = False) -> bool:
         channel = await self._get_leadership_channel(clan_code)
         if channel is None:
-            return
+            return False
 
         lock = self._get_board_repost_lock(clan_code)
         async with lock:
@@ -59,14 +59,14 @@ class ClanReportingElderMixin:
                     message_id,
                 )
                 if not fetch_completed:
-                    return
+                    return False
             if message is None:
                 recovered_message, is_buried, recovery_completed = await self._find_missing_elder_board_in_history(
                     channel,
                     clan_code,
                 )
                 if not recovery_completed:
-                    return
+                    return False
                 if recovered_message is not None:
                     board_messages[clan_code] = recovered_message.id
                     save_state(self.state)
@@ -79,7 +79,7 @@ class ClanReportingElderMixin:
                             embed=embed,
                             view=view,
                         )
-                        return
+                        return True
 
             if message is None:
                 new_message = await self._run_discord_http_operation(
@@ -88,13 +88,13 @@ class ClanReportingElderMixin:
                     lambda: channel.send(embed=embed, view=view),
                 )
                 if new_message is None:
-                    return
+                    return False
                 board_messages[clan_code] = new_message.id
                 save_state(self.state)
-                return
+                return True
 
             try:
-                await self._run_discord_http_operation(
+                updated = await self._run_discord_http_operation(
                     clan_code,
                     "edit missing-elder board",
                     lambda: message.edit(embed=embed, view=view),
@@ -106,30 +106,34 @@ class ClanReportingElderMixin:
                     clan_code,
                 )
                 if not recovery_completed:
-                    return
+                    return False
                 if recovered_message is not None:
                     board_messages[clan_code] = recovered_message.id
                     save_state(self.state)
                     try:
-                        await self._run_discord_http_operation(
+                        updated = await self._run_discord_http_operation(
                             clan_code,
                             "edit recovered missing-elder board",
                             lambda: recovered_message.edit(embed=embed, view=view),
                         )
                     except (discord.NotFound, discord.Forbidden, discord.HTTPException) as edit_exc:
                         LOGGER.warning("Failed to edit recovered missing-elder board for %s: %s", clan_code, edit_exc)
-                    return
+                        return False
+                    return updated is not None
                 new_message = await self._run_discord_http_operation(
                     clan_code,
                     "send replacement missing-elder board",
                     lambda: channel.send(embed=embed, view=view),
                 )
                 if new_message is None:
-                    return
+                    return False
                 board_messages[clan_code] = new_message.id
                 save_state(self.state)
+                return True
             except (discord.Forbidden, discord.HTTPException) as exc:
                 LOGGER.warning("Failed to edit missing-elder board for %s: %s", clan_code, exc)
+                return False
+            return updated is not None
 
     def _get_board_repost_lock(self, clan_code: str) -> asyncio.Lock:
         lock = self._board_repost_locks.get(clan_code)

@@ -29,6 +29,7 @@ from .knowledge import knowledge_tools
 from .leadership_news import leadership_news_tools
 from .member_lifecycle import member_lifecycle_tools
 from .members import member_tools
+from .missing_elder_board import missing_elder_board_tools
 from .research import research_tools
 from .records import record_tools
 from .recruitment import recruitment_tools
@@ -72,7 +73,8 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
             *achievement_tools(), *achievement_economy_tools(), *raffle_purchase_tools(), *event_tools(),
             *event_management_tools(),
         ),
-        "clan_operations": (*clan_reporting_tools(), *clan_health_tools()),
+        "clan_operations": (*clan_reporting_tools(), *clan_health_tools(),
+                            *missing_elder_board_tools()),
         "wars": war_tools(),
         "rosters": (*roster_tools(), *roster_management_tools(),
                     *roster_account_management_tools()),
