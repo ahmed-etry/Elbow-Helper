@@ -221,6 +221,7 @@ CONTRACTS: Mapping[str, CapabilityContract] = {
     "reopen_support_ticket": CapabilityContract((('channel_id', 'support_ticket_channel'),), (), source_scope='request_context', channel_fields=('channel_id',)),
     "reopen_reactivation_ticket": CapabilityContract((('channel_id', 'support_ticket_channel'),), (), source_scope='request_context', channel_fields=('channel_id',)),
     "close_reactivation_ticket": CapabilityContract((('channel_id', 'support_ticket_channel'),), (), source_scope='request_context', channel_fields=('channel_id',)),
+    "end_recruitment_trial": CapabilityContract((('ticket_channel_id', 'recruitment_ticket_channel'), ('applicant_id', 'discord_member')), (), source_scope='request_context', channel_fields=('ticket_channel_id',)),
     "change_promotion_route": CapabilityContract((('ticket_channel_id', 'examination_ticket_channel'),), (), source_scope='request_context', channel_fields=('ticket_channel_id',), filter_fields=('from_clan', 'to_clan')),
     "remember_task_instruction": CapabilityContract((('replaces_id', 'task_instruction'),), (), source_scope='request_context'),
     "retire_task_instruction": CapabilityContract((('instruction_id', 'task_instruction'),), (), source_scope='request_context'),

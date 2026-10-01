@@ -71,20 +71,14 @@ class PersistentEndTrialView(BaseTimeoutView):
             await interaction.response.send_message("This reminder has already been handled.", ephemeral=True)
             return
 
-        ok = await cog.end_trial_now(
+        await cog.end_trial_now(
             interaction,
             self.ticket_channel_id,
             self.applicant_id,
             allow_missing=True,
             show_success_confirmation=False,
+            resolve_reminder=True,
         )
-        if ok:
-            await cog._mark_trial_reminder_resolved(
-                ticket_channel_id=self.ticket_channel_id,
-                applicant_id=self.applicant_id,
-                resolver_id=interaction.user.id,
-                message=interaction.message if isinstance(interaction.message, discord.Message) else None,
-            )
 
 
 class AcceptConfirmationView(BaseTimeoutView):

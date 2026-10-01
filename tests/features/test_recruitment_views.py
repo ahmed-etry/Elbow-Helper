@@ -13,7 +13,6 @@ class PersistentEndTrialViewTests(unittest.IsolatedAsyncioTestCase):
         cog = MagicMock()
         cog._get_trial_reminder_entry = AsyncMock(return_value=None)
         cog.end_trial_now = AsyncMock(return_value=True)
-        cog._mark_trial_reminder_resolved = AsyncMock()
         interaction = MagicMock()
         interaction.client.get_cog.return_value = cog
         interaction.user.id = 789
@@ -26,8 +25,8 @@ class PersistentEndTrialViewTests(unittest.IsolatedAsyncioTestCase):
             456,
             allow_missing=True,
             show_success_confirmation=False,
+            resolve_reminder=True,
         )
-        cog._mark_trial_reminder_resolved.assert_awaited_once()
 
 
 if __name__ == "__main__":

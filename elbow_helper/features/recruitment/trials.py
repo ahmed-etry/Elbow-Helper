@@ -34,7 +34,38 @@ class TrialStartResult:
     ticket_renamed: bool = True
 
 
+@dataclass(frozen=True, slots=True)
+class TrialEndResult:
+    ended: bool
+    error: str | None = None
+    notices: tuple[str, ...] = ()
+
+
 class TrialMixin:
+    @staticmethod
+    def trial_end_followup_text(applicant_id: int) -> str:
+        return (
+            f"Hey <@{applicant_id}>, your trial has ended. Are you planning to stay with us? "
+            "We'd also appreciate any feedback about how it went."
+        )
+
+    @staticmethod
+    def can_end_trial(member: discord.Member) -> bool:
+        return any(getattr(role, "id", None) in (CORE | RECRUITERS)
+                   for role in getattr(member, "roles", ()))
+
+    async def trial_end_snapshot(self, ticket_channel_id: int) -> dict[str, Any]:
+        """Read the ticket, tracking post and reminder before ending a trial."""
+        channel = self.bot.get_channel(ticket_channel_id)
+        trial = self.state_store.load_trial_data().get(str(ticket_channel_id))
+        reminder = await self._get_trial_reminder_entry(ticket_channel_id)
+        return {"channel_id": ticket_channel_id,
+                "channel_name": getattr(channel, "name", None),
+                "new_name": rename_ticket_channel(channel, TRIAL_TICKET_PREFIXES_END)
+                if channel else None,
+                "trial": dict(trial) if isinstance(trial, dict) else None,
+                "reminder": reminder}
+
 
     async def _rename_trial_ticket(self, channel: discord.TextChannel) -> bool:
         new_name = rename_ticket_channel(channel, TRIAL_TICKET_PREFIXES_START)
@@ -373,35 +404,55 @@ class TrialMixin:
         allow_missing: bool = False,
         *,
         show_success_confirmation: bool = True,
+        resolve_reminder: bool = False,
     ) -> bool:
         """End a trial early from the tracking message button."""
-        user_roles = getattr(interaction.user, "roles", ())
-        if not any(getattr(role, "id", None) in (CORE | RECRUITERS) for role in user_roles):
+        if not self.can_end_trial(interaction.user):
             await deny(interaction)
             return False
-
         if not interaction.response.is_done():
             await interaction.response.defer(ephemeral=show_success_confirmation)
+        result = await self.complete_trial_end(
+            ticket_channel_id, applicant_id, interaction.user,
+            allow_missing=allow_missing, resolve_reminder=resolve_reminder,
+            reminder_message=(interaction.message if resolve_reminder
+                              and isinstance(interaction.message, discord.Message) else None),
+        )
+        if not result.ended:
+            if result.error:
+                await interaction.followup.send(result.error, ephemeral=True)
+            else:
+                await fail(interaction)
+            return False
+        confirmation_lines = ["Trial ended."] if show_success_confirmation else []
+        confirmation_lines.extend(result.notices)
+        if confirmation_lines:
+            await interaction.followup.send("\n".join(confirmation_lines), ephemeral=True)
+        return True
 
+    async def complete_trial_end(
+        self, ticket_channel_id: int, applicant_id: int,
+        actor: discord.Member, *, allow_missing: bool = False,
+        resolve_reminder: bool = False,
+        reminder_message: discord.Message | None = None,
+    ) -> TrialEndResult:
+        """End the trial and send its follow-up for the panel and agent."""
+        if not self.can_end_trial(actor):
+            return TrialEndResult(False, "You don't have permission to use this.")
         async with self._trial_lock:
             trial_key = str(ticket_channel_id)
             trials = self.state_store.load_trial_data()
             trial_info = trials.get(trial_key)
             if not trial_info and not allow_missing:
-                await interaction.followup.send("This ticket no longer has an active trial.", ephemeral=True)
-                return False
+                return TrialEndResult(False, "This ticket no longer has an active trial.")
 
             ticket_channel = self.bot.get_channel(ticket_channel_id)
             if not ticket_channel:
-                await interaction.followup.send("The trial ticket is no longer available.", ephemeral=True)
-                return False
+                return TrialEndResult(False, "The trial ticket is no longer available.")
             if not applicant_id:
                 applicant_id = await self._resolve_applicant_id(ticket_channel)
                 if not applicant_id:
-                    await interaction.followup.send(
-                        "The applicant for this ticket couldn't be identified.", ephemeral=True
-                    )
-                    return False
+                    return TrialEndResult(False, "The applicant for this ticket couldn't be identified.")
 
             rename_notice: Optional[str] = None
             new_name = rename_ticket_channel(ticket_channel, TRIAL_TICKET_PREFIXES_END)
@@ -440,15 +491,11 @@ class TrialMixin:
                         "Trial end retained state because tracking cleanup failed for ticket %s",
                         ticket_channel_id,
                     )
-                    await fail(interaction)
-                    return False
+                    return TrialEndResult(False)
 
             feedback_notice: Optional[str] = None
             try:
-                await ticket_channel.send(
-                    f"Hey <@{applicant_id}>, your trial has ended. Are you planning to stay with us? "
-                    "We'd also appreciate any feedback about how it went."
-                )
+                await ticket_channel.send(self.trial_end_followup_text(applicant_id))
             except discord.Forbidden:
                 feedback_notice = "The bot couldn't post the trial follow-up because it can't send messages in the ticket."
             except discord.HTTPException as e:
@@ -463,16 +510,24 @@ class TrialMixin:
             if trial_info:
                 trials.pop(trial_key, None)
                 self.state_store.save_trial_data(trials)
-
-            confirmation_lines = ["Trial ended."] if show_success_confirmation else []
-            if rename_notice:
-                confirmation_lines.append(rename_notice)
-            if feedback_notice:
-                confirmation_lines.append(feedback_notice)
-
-            if confirmation_lines:
-                await interaction.followup.send("\n".join(confirmation_lines), ephemeral=True)
-            return True
+            if resolve_reminder:
+                if reminder_message is None:
+                    reminder = await self._get_trial_reminder_entry(ticket_channel_id)
+                    if reminder and reminder.get("channel_id") and reminder.get("message_id"):
+                        channel = self.bot.get_channel(int(reminder["channel_id"]))
+                        if channel:
+                            try:
+                                reminder_message = await channel.fetch_message(int(reminder["message_id"]))
+                            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                                reminder_message = None
+                await self._mark_trial_reminder_resolved(
+                    ticket_channel_id=ticket_channel_id,
+                    applicant_id=applicant_id,
+                    resolver_id=actor.id,
+                    message=reminder_message,
+                )
+            return TrialEndResult(True, notices=tuple(
+                notice for notice in (rename_notice, feedback_notice) if notice))
 
 
     @commands.Cog.listener()
