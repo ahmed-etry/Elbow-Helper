@@ -11,8 +11,10 @@ from elbow_helper.configuration.channels import (
 )
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.access import AgentAccessLost
+from elbow_helper.features.agent.commands.confirmation import preview_text
+from elbow_helper.features.agent.tools.examiner_profile import prepare_examiner_leave
 from elbow_helper.features.agent.reports.examination import ExaminationCaseReport
-from elbow_helper.features.agent.models import AgentRequestContext
+from elbow_helper.features.agent.models import AgentRequestContext, AgentTurnState
 from elbow_helper.features.agent.reports.roles import RoleAccountReport
 from elbow_helper.features.agent.tools.examination import (
     read_accessible_examination_cases,
@@ -59,6 +61,27 @@ class _Channel:
 
 
 class AgentExaminationToolTests(unittest.IsolatedAsyncioTestCase):
+    async def test_leave_examiner_preview_formats_the_heading_and_targets(self):
+        member = SimpleNamespace(id=10, mention="<@10>")
+        channel = SimpleNamespace(id=200, mention="<#200>")
+        workflow = SimpleNamespace(
+            has_examiner_profile=lambda _: True,
+            examiner_profile_snapshot=lambda _: {},
+            leave_examiner_roster=AsyncMock(),
+        )
+        context = SimpleNamespace(member=member, state=AgentTurnState())
+        with patch("elbow_helper.features.agent.tools.examiner_profile._workflow",
+                   return_value=(workflow, channel)):
+            result = await prepare_examiner_leave(context, {})
+        self.assertEqual(result["status"], "confirmation_required")
+        preview = preview_text(context.state.command_proposals)
+        self.assertEqual(context.state.command_proposals[0].preview.summary, "Leave examiner roster")
+        self.assertIn("Leave examiner roster", preview)
+        self.assertNotIn("{", preview)
+        self.assertNotIn("}", preview)
+        self.assertIn("Remove <@10> from the examiner roster in <#200>.", preview)
+        workflow.leave_examiner_roster.assert_not_awaited()
+
     def setUp(self):
         requester = SimpleNamespace(
             id=10, roles=[SimpleNamespace(id=next(iter(CORE)))],

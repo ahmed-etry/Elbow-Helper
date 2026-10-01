@@ -23,6 +23,7 @@ from .discord_threads import discord_thread_tools
 from .discord_message_controls import discord_message_control_tools
 from .discord_nicknames import discord_nickname_tools
 from .examination import examination_tools
+from .examiner_profile import examiner_profile_tools
 from .events import event_tools
 from .event_management import event_management_tools
 from .hibernation import hibernation_tools
@@ -86,7 +87,8 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
         "transfers": (*transfer_tools(), *transfer_management_tools()),
         "member_cases": (
             *member_lifecycle_tools(), *hibernation_tools(), *support_tools(),
-            *recruitment_tools(), *examination_tools(), *record_tools(),
+            *recruitment_tools(), *examination_tools(), *examiner_profile_tools(),
+            *record_tools(),
         ),
         "files": attachment_tools(),
         "knowledge_history": (*history_tools(), *knowledge_tools(), *action_log_tools()),

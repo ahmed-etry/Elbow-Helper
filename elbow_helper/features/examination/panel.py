@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
@@ -38,6 +39,76 @@ if TYPE_CHECKING:
 
 
 class ExaminationPanelMixin:
+    def can_edit_examiner_profile(self, member: discord.Member) -> bool:
+        return self._has_panel_permissions(member)
+
+    def has_examiner_profile(self, member: discord.Member) -> bool:
+        return str(member.id) in self._get_examiner_roster()
+
+    def examiner_profile_snapshot(self, member: discord.Member) -> Dict[str, Any]:
+        """Read a member's current panel profile without creating it."""
+        profile = self._get_examiner_roster().get(str(member.id))
+        return copy.deepcopy(profile) if profile else {
+            "name": member.display_name, "th_levels": [], "availability": "",
+            "status": "Active", "timezone": "UTC", "updated_at": None,
+            "availability_valid": False, "profile_complete": False,
+        }
+
+    def prepare_examiner_profile_change(self, member: discord.Member,
+                                        changes: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate and show one panel profile change."""
+        allowed = {"th_levels", "status", "timezone", "availability"}
+        if not changes or any(key not in allowed for key in changes):
+            raise ValueError("Choose examiner profile settings to change.")
+        if "th_levels" in changes:
+            levels = changes["th_levels"]
+            valid_levels = {int(option.value) for option in TH_COVERAGE_OPTIONS}
+            if (not isinstance(levels, list) or len(levels) > 8
+                    or any(not isinstance(value, int) or value not in valid_levels
+                           for value in levels)):
+                raise ValueError("Choose Town Hall coverage from the panel list.")
+        if "status" in changes and changes["status"] not in {"Active", "Away"}:
+            raise ValueError("Choose Active or Away.")
+        if "timezone" in changes and changes["timezone"] not in {
+                option.value for option in TIMEZONE_SELECT_OPTIONS}:
+            raise ValueError("Choose a timezone from the panel list.")
+        profile = self.examiner_profile_snapshot(member)
+        if "availability" in changes:
+            raw_availability = str(changes["availability"]).strip()
+            canonical = _canonicalize_availability_text(
+                raw_availability,
+                str(changes.get("timezone", profile.get("timezone") or "UTC")),
+                allow_input_timezone=False,
+            ) if raw_availability else ""
+            if raw_availability and not canonical:
+                raise ValueError(
+                    "Enter availability like `Daily 10:00-22:00`, "
+                    "`Mon-Fri 07:00-17:00`, or `Sat-Sun 12:00-18:00`.")
+            changes = {**changes, "availability": canonical}
+        profile.update(changes)
+        self._refresh_examiner_profile(profile)
+        return profile
+
+    async def change_examiner_profile(self, member: discord.Member,
+                                      changes: Dict[str, Any]) -> Dict[str, Any]:
+        """Save one panel profile change for controls and the agent."""
+        prepared = self.prepare_examiner_profile_change(member, changes)
+        profile = self._ensure_examiner_profile(member)
+        profile.update({key: prepared[key] for key in ("name", "th_levels", "status", "timezone", "availability")})
+        self._refresh_examiner_profile(profile, touched=True)
+        self._save()
+        await self._post_panel()
+        return copy.deepcopy(profile)
+
+    async def leave_examiner_roster(self, member: discord.Member) -> bool:
+        """Remove the member's profile for its button and the agent."""
+        roster = self._get_examiner_roster()
+        if roster.pop(str(member.id), None) is None:
+            return False
+        self._save()
+        await self._post_panel()
+        return True
+
     async def _get_panel_thread(self) -> Optional[discord.Thread]:
         channel = self.bot.get_channel(EXAMINATION_PANEL_THREAD)
         if isinstance(channel, discord.Thread):
@@ -432,26 +503,25 @@ class ExaminerAvailabilityModal(BaseErrorModal):
         if not self.cog._has_panel_permissions(interaction.user):
             await interaction.response.send_message("You don't have permission to edit this.", ephemeral=True)
             return
-        profile = self.cog._ensure_examiner_profile(interaction.user)
-        profile["name"] = interaction.user.display_name
-        raw_input = self.availability.value.strip()
-        timezone_text = profile.get("timezone") or "UTC"
-        canonical = _canonicalize_availability_text(
-            raw_input,
-            timezone_text,
-            allow_input_timezone=False,
-        )
-        if not canonical:
+        if not self.availability.value.strip():
             await interaction.response.send_message(
                 "Enter availability like "
                 "`Daily 10:00-22:00`, `Mon-Fri 07:00-17:00`, or `Sat-Sun 12:00-18:00`.",
                 ephemeral=True,
             )
             return
-        profile["availability"] = canonical
-        self.cog._refresh_examiner_profile(profile, touched=True)
-        self.cog._save()
-        await self.cog._post_panel()
+        timezone_text = self.cog.examiner_profile_snapshot(interaction.user).get("timezone") or "UTC"
+        try:
+            profile = await self.cog.change_examiner_profile(
+                interaction.user, {"availability": self.availability.value.strip()})
+        except ValueError:
+            await interaction.response.send_message(
+                "Enter availability like "
+                "`Daily 10:00-22:00`, `Mon-Fri 07:00-17:00`, or `Sat-Sun 12:00-18:00`.",
+                ephemeral=True,
+            )
+            return
+        canonical = profile["availability"]
         await interaction.response.send_message(
             "Your availability has been saved.\n"
             f"Timezone: {format_timezone_display(str(timezone_text))}\n"
@@ -489,12 +559,7 @@ class ExaminerPanelView(BaseTimeoutView):
             )
             return
         levels = sorted({int(value) for value in select.values})
-        profile = self.cog._ensure_examiner_profile(interaction.user)
-        profile["name"] = interaction.user.display_name
-        profile["th_levels"] = levels
-        self.cog._refresh_examiner_profile(profile, touched=True)
-        self.cog._save()
-        await self.cog._post_panel()
+        await self.cog.change_examiner_profile(interaction.user, {"th_levels": levels})
         await interaction.response.send_message("Your Town Hall coverage has been updated.", ephemeral=True)
 
     @discord.ui.select(
@@ -518,12 +583,7 @@ class ExaminerPanelView(BaseTimeoutView):
                 ephemeral=True,
             )
             return
-        profile = self.cog._ensure_examiner_profile(interaction.user)
-        profile["name"] = interaction.user.display_name
-        profile["status"] = select.values[0]
-        self.cog._refresh_examiner_profile(profile, touched=True)
-        self.cog._save()
-        await self.cog._post_panel()
+        await self.cog.change_examiner_profile(interaction.user, {"status": select.values[0]})
         await interaction.response.send_message("Your examiner status has been updated.", ephemeral=True)
 
     @discord.ui.select(
@@ -544,12 +604,7 @@ class ExaminerPanelView(BaseTimeoutView):
                 ephemeral=True,
             )
             return
-        profile = self.cog._ensure_examiner_profile(interaction.user)
-        profile["name"] = interaction.user.display_name
-        profile["timezone"] = select.values[0]
-        self.cog._refresh_examiner_profile(profile, touched=True)
-        self.cog._save()
-        await self.cog._post_panel()
+        await self.cog.change_examiner_profile(interaction.user, {"timezone": select.values[0]})
         await interaction.response.send_message("Your timezone has been updated.", ephemeral=True)
 
     @discord.ui.button(
@@ -665,10 +720,7 @@ class ExaminerPanelView(BaseTimeoutView):
                 ephemeral=True,
             )
             return
-        roster = self.cog._get_examiner_roster()
-        if roster.pop(str(interaction.user.id), None) is not None:
-            self.cog._save()
-            await self.cog._post_panel()
+        if await self.cog.leave_examiner_roster(interaction.user):
             await interaction.response.send_message("You have been removed from the examiner roster.", ephemeral=True)
             return
         await interaction.response.send_message("You aren't on the examiner roster.", ephemeral=True)

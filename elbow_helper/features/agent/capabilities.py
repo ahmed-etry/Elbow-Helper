@@ -215,6 +215,8 @@ CONTRACTS: Mapping[str, CapabilityContract] = {
     "refresh_missing_elder_board": CapabilityContract((('clan_code', 'clan'),), (), source_scope='request_context'),
     "refresh_cwl_prep_board": CapabilityContract((('clan_code', 'clan'),), (), source_scope='request_context'),
     "set_clan_health_settings": CapabilityContract((('clan_code', 'clan'),), (), source_scope='request_context', filter_fields=('block', 'values')),
+    "set_examiner_profile": CapabilityContract((), (), source_scope='request_context', filter_fields=('th_levels', 'status', 'timezone', 'availability')),
+    "leave_examiner_roster": CapabilityContract((), (), source_scope='request_context'),
     "remember_task_instruction": CapabilityContract((('replaces_id', 'task_instruction'),), (), source_scope='request_context'),
     "retire_task_instruction": CapabilityContract((('instruction_id', 'task_instruction'),), (), source_scope='request_context'),
     "prepare_spreadsheet": CapabilityContract((), (), source_scope='request_context'),
