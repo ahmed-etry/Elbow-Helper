@@ -1,15 +1,59 @@
 """Panel roster changes use feature operations after a complete preview."""
 
 from types import SimpleNamespace
+from dataclasses import replace
 import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.agent.models import AgentTurnState
-from elbow_helper.features.agent.tools.roster_management import roster_management_tools
+from elbow_helper.features.agent.tools.roster_management import (
+    roster_management_tools, prepare_roster_layout_undo,
+)
+from elbow_helper.features.rosters.models import RosterLayout
 
 
 class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_layout_preview_and_undo_restore_prior_columns(self):
+        roster = SimpleNamespace(id=17, guild_id=1, name="War")
+        current = RosterLayout()
+
+        async def state(roster_id):
+            return roster, current
+
+        async def change(roster_id, **values):
+            nonlocal current
+            current = replace(current, **values)
+            return roster, current
+
+        workflow = SimpleNamespace(
+            roster_layout_state=AsyncMock(side_effect=state),
+            roster_edit_state=AsyncMock(return_value={"posts": ((9, 91),)}),
+            set_roster_layout=AsyncMock(side_effect=change),
+        )
+        context = SimpleNamespace(
+            bot=SimpleNamespace(get_cog=lambda name: workflow),
+            guild=SimpleNamespace(id=1), state=AgentTurnState(),
+        )
+        tool = next(tool for tool in roster_management_tools()
+                    if tool.definition.name == "set_roster_layout")
+        with patch("elbow_helper.features.agent.tools.roster_management.require_evidence_access",
+                   new_callable=AsyncMock):
+            await tool.handler(context, {"roster_id": 17, "show_clan": False})
+        action = context.state.command_proposals[0]
+        self.assertTrue(any("Show Clan: True to False" in line for line in action.preview.lines))
+        self.assertTrue(await action.preview.recheck())
+        workflow.set_roster_layout.assert_not_awaited()
+        result = await action.run()
+        self.assertFalse(current.show_clan)
+        undo = await prepare_roster_layout_undo(context, {
+            "targets": action.values, "before": action.preview.before,
+            "after": result.after,
+        })
+        self.assertTrue(await undo.preview.recheck())
+        await undo.run()
+        self.assertTrue(current.show_clan)
+
     async def test_clear_previews_members_and_posts_before_calling_feature(self):
         roster = SimpleNamespace(
             id=17, guild_id=1, name="War", status="open", buttons_hidden=False,

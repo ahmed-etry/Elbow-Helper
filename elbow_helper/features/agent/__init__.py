@@ -23,6 +23,7 @@ from .tools.discord_nicknames import prepare_nickname_undo
 from .commands.adapters.records import prepare_record_add_undo, prepare_record_edit_undo
 from .commands.adapters.achievements import prepare_raffle_prize_undo
 from .commands.adapters.account_links import prepare_account_add_undo
+from .tools.roster_management import prepare_roster_layout_undo
 from .knowledge.store import KnowledgeStore
 
 
@@ -115,6 +116,8 @@ async def setup(bot) -> None:
         "undo_raffle_prize": prepare_raffle_prize_undo,
         "/account add": prepare_account_add_undo,
         "undo_account_add": prepare_account_add_undo,
+        "set_roster_layout": prepare_roster_layout_undo,
+        "undo_roster_layout": prepare_roster_layout_undo,
     })
     knowledge_store = KnowledgeStore(
         bot.paths.data_root / "agent" / "knowledge",

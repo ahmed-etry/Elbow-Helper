@@ -909,6 +909,17 @@ class Rosters(commands.Cog):
             view=RosterLayoutView(self, roster.id, layout),
         )
 
+    async def roster_layout_state(self, roster_id: int):
+        roster = await self.service.get(roster_id)
+        if roster is None:
+            return None
+        return roster, await self.service.get_layout(roster_id)
+
+    async def set_roster_layout(self, roster_id: int, **changes):
+        """Apply layout changes for the panel and agent."""
+        async with self._lock(roster_id):
+            return await self.service.update_layout(roster_id, **changes)
+
     async def update_roster_layout_columns(
         self,
         interaction: discord.Interaction,
@@ -919,19 +930,17 @@ class Rosters(commands.Cog):
             await deny(interaction, action="manage this roster")
             return
         await interaction.response.defer()
-        async with self._lock(roster_id):
-            roster, layout = await self.service.update_layout(
-                roster_id,
-                show_townhall="townhall" in columns,
-                show_discord="discord" in columns,
-                show_clan="clan" in columns,
+        roster, layout = await self.set_roster_layout(
+            roster_id,
+            show_townhall="townhall" in columns,
+            show_discord="discord" in columns,
+            show_clan="clan" in columns,
+        )
+        if roster is None:
+            await interaction.edit_original_response(
+                content="That roster no longer exists.", view=None,
             )
-            if roster is None:
-                await interaction.edit_original_response(
-                    content="That roster no longer exists.",
-                    view=None,
-                )
-                return
+            return
         await interaction.edit_original_response(
             content=roster_layout_columns_feedback(layout),
             view=RosterLayoutView(self, roster.id, layout),
@@ -949,18 +958,15 @@ class Rosters(commands.Cog):
             await deny(interaction, action="manage this roster")
             return
         await interaction.response.defer()
-        async with self._lock(roster_id):
-            roster, layout = await self.service.update_layout(
-                roster_id,
-                player_width=player_width,
-                discord_width=discord_width,
+        roster, layout = await self.set_roster_layout(
+            roster_id, player_width=player_width,
+            discord_width=discord_width,
+        )
+        if roster is None:
+            await interaction.edit_original_response(
+                content="That roster no longer exists.", view=None,
             )
-            if roster is None:
-                await interaction.edit_original_response(
-                    content="That roster no longer exists.",
-                    view=None,
-                )
-                return
+            return
         await interaction.edit_original_response(
             content=roster_layout_lengths_feedback(layout),
             view=RosterLayoutView(self, roster.id, layout),

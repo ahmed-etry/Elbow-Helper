@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import asdict
 from typing import Any
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
+from elbow_helper.features.rosters.config import (
+    ROSTER_PLAYER_COLUMN_MIN_WIDTH, ROSTER_PLAYER_COLUMN_MAX_WIDTH,
+    ROSTER_DISCORD_COLUMN_MIN_WIDTH, ROSTER_DISCORD_COLUMN_MAX_WIDTH,
+)
 
 from ..access import require_evidence_access
 from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
@@ -18,6 +23,8 @@ from ..wording import (
     ACTION_ROSTER_CONTROL_COUNT, ACTION_ROSTER_CONTROL_OPEN,
     ACTION_ROSTER_CONTROL_CLOSE, ACTION_ROSTER_CONTROL_SHOW,
     ACTION_ROSTER_CONTROL_HIDE, ACTION_ROSTER_CONTROL_CLEAR,
+    ACTION_ROSTER_LAYOUT_FIELD, ACTION_ROSTER_LAYOUT_LINE,
+    ACTION_ROSTER_LAYOUT_LABEL, ACTION_ROSTER_LAYOUT_POST,
 )
 
 
@@ -45,7 +52,102 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
                                 parameters=schema),
             prepare, AgentCapabilityEffect.COMMAND, classification, True,
         ))
+    tools.append(RegisteredAgentTool(AgentToolDefinition(
+        name="set_roster_layout",
+        description="Set roster columns or displayed name lengths after confirmation.",
+        parameters={"type": "object", "properties": {
+            "roster_id": {"type": "integer", "minimum": 1},
+            "show_townhall": {"type": "boolean"},
+            "show_discord": {"type": "boolean"},
+            "show_clan": {"type": "boolean"},
+            "player_width": {"type": "integer", "minimum": ROSTER_PLAYER_COLUMN_MIN_WIDTH,
+                             "maximum": ROSTER_PLAYER_COLUMN_MAX_WIDTH},
+            "discord_width": {"type": "integer", "minimum": ROSTER_DISCORD_COLUMN_MIN_WIDTH,
+                              "maximum": ROSTER_DISCORD_COLUMN_MAX_WIDTH},
+        }, "required": ["roster_id"], "additionalProperties": False},
+    ), prepare_roster_layout, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True))
     return tuple(tools)
+
+
+async def prepare_roster_layout(context: AgentRequestContext,
+                                values: Mapping[str, Any]) -> Mapping[str, Any]:
+    await require_evidence_access(context)
+    workflow = context.bot.get_cog("Rosters")
+    if workflow is None:
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+    roster_id = values["roster_id"]
+    state = await workflow.roster_layout_state(roster_id)
+    if state is None or state[0].guild_id != context.guild.id:
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+    roster, layout = state
+    before = asdict(layout)
+    changes = {field: values[field] for field in before if field in values
+               and values[field] != before[field]}
+    if not changes:
+        return {"status": "no_change"}
+    posts = (await workflow.roster_edit_state(roster))["posts"]
+    lines = [ACTION_ROSTER_LAYOUT_LINE.format(name=roster.name)]
+    lines.extend(ACTION_ROSTER_LAYOUT_FIELD.format(
+        field=field.replace("_", " ").title(), old=before[field], new=value)
+        for field, value in changes.items())
+    lines.extend(ACTION_ROSTER_LAYOUT_POST.format(
+        message_id=message_id, channel=f"<#{channel_id}>")
+        for channel_id, message_id in posts)
+
+    async def recheck() -> bool:
+        live = await workflow.roster_layout_state(roster_id)
+        return live is not None and live[0] == roster and live[1] == layout
+
+    async def run() -> CommandOutcome:
+        updated, result = await workflow.set_roster_layout(roster_id, **changes)
+        if updated is None:
+            raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        return CommandOutcome("complete", "private",
+                              text=ACTION_ROSTER_LAYOUT_LINE.format(name=updated.name),
+                              after={"layout": asdict(result)})
+
+    context.state.command_proposals.append(PreparedAction(
+        "set_roster_layout", {"roster_id": roster_id},
+        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_LAYOUT_LABEL,
+                      before={"layout": before}), run,
+    ))
+    return {"status": "confirmation_required"}
+
+
+async def prepare_roster_layout_undo(context: AgentRequestContext,
+                                     log: Mapping[str, Any]) -> PreparedAction:
+    workflow = context.bot.get_cog("Rosters")
+    if workflow is None:
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+    roster_id = log["targets"]["roster_id"]
+    state = await workflow.roster_layout_state(roster_id)
+    if state is None or state[0].guild_id != context.guild.id:
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+    roster, layout = state
+    prior = log["before"]["layout"]
+    expected = log["after"]["layout"]
+    lines = [ACTION_ROSTER_LAYOUT_LINE.format(name=roster.name)]
+    lines.extend(ACTION_ROSTER_LAYOUT_FIELD.format(
+        field=field.replace("_", " ").title(), old=getattr(layout, field), new=value)
+        for field, value in prior.items() if getattr(layout, field) != value)
+
+    async def recheck() -> bool:
+        live = await workflow.roster_layout_state(roster_id)
+        return live is not None and asdict(live[1]) == expected
+
+    async def run() -> CommandOutcome:
+        updated, result = await workflow.set_roster_layout(roster_id, **prior)
+        if updated is None:
+            raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        return CommandOutcome("complete", "private",
+                              text=ACTION_ROSTER_LAYOUT_LINE.format(name=updated.name),
+                              after={"layout": asdict(result)})
+
+    return PreparedAction(
+        "undo_roster_layout", {"roster_id": roster_id},
+        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_LAYOUT_LABEL,
+                      before={"layout": expected}), run,
+    )
 
 
 async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],

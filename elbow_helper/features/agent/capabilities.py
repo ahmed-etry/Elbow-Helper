@@ -192,6 +192,7 @@ CONTRACTS: Mapping[str, CapabilityContract] = {
     "show_roster_controls": CapabilityContract((('roster_id', 'roster'),), (), source_scope='request_context'),
     "hide_roster_controls": CapabilityContract((('roster_id', 'roster'),), (), source_scope='request_context'),
     "clear_roster_signups": CapabilityContract((('roster_id', 'roster'),), (), source_scope='request_context'),
+    "set_roster_layout": CapabilityContract((('roster_id', 'roster'),), (), source_scope='request_context', filter_fields=('show_townhall', 'show_discord', 'show_clan', 'player_width', 'discord_width')),
     "clear_transfer_queue": CapabilityContract((('clan_code', 'clan'),), (), source_scope='request_context'),
     "set_event_enabled": CapabilityContract((('event', 'event_tracker'),), (), source_scope='request_context', filter_fields=('enabled',)),
     "set_event_category": CapabilityContract((('event', 'event_tracker'), ('category_id', 'discord_channel')), (), source_scope='request_context'),
