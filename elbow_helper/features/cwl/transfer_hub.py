@@ -39,6 +39,42 @@ TRANSFER_HUB_RETRY_DELAYS_SECONDS = (0.0, 2.0, 5.0)
 
 
 class CwlTransferHubMixin:
+    async def member_cwl_release_issue(self, guild_id: int | None) -> str | None:
+        status = (await self._cwl_placements_release_status(guild_id)
+                  if guild_id is not None else None)
+        if status is True:
+            return None
+        return ("CWL roster details aren't available." if status is None
+                else "The CWL rosters haven’t been announced yet.")
+
+    async def member_cwl_information(self, guild_id: int | None, member_id: int,
+                                     *, channels_only: bool = False) -> tuple[str | None, discord.Embed | None]:
+        """Build the member's placement or channel answer for hub and agent."""
+        assignments = await self._member_cwl_assignments(guild_id, member_id)
+        if assignments is None:
+            return ("Your CWL channels aren't available." if channels_only
+                    else "Your CWL roster details aren't available."), None
+        if not assignments:
+            return "You aren't on a CWL roster.", None
+        if channels_only:
+            return None, self._build_member_channels_embed(assignments)
+        account_map: Dict[str, LinkedAccount] = {}
+        for members in assignments.values():
+            for member in members:
+                account_map.setdefault(
+                    member.player_tag,
+                    LinkedAccount(
+                        player_tag=member.player_tag,
+                        player_name=member.player_name,
+                        clan_code=member.clan_code,
+                        townhall=member.townhall,
+                        hero_sum=member.hero_sum,
+                    ),
+                )
+        profiles, failed_tags = await fetch_account_profiles(
+            list(account_map.values()), self.clash_client)
+        return None, self._build_member_cwl_embed(assignments, profiles, failed_tags)
+
     @staticmethod
     def _full_rosters_url() -> str:
         return f"https://discord.com/channels/{GUILD_ID}/{CWL_FULL_ROSTERS_THREAD}"
@@ -356,18 +392,9 @@ class CwlTransferHubMixin:
         return embed
 
     async def _allow_cwl_placement_lookup(self, interaction: discord.Interaction) -> bool:
-        release_status = (
-            await self._cwl_placements_release_status(interaction.guild_id)
-            if interaction.guild_id is not None
-            else None
-        )
-        if release_status is True:
+        message = await self.member_cwl_release_issue(interaction.guild_id)
+        if message is None:
             return True
-        message = (
-            "CWL roster details aren't available."
-            if release_status is None
-            else "The CWL rosters haven’t been announced yet."
-        )
         await interaction.response.send_message(message, ephemeral=True)
         return False
 
@@ -375,60 +402,20 @@ class CwlTransferHubMixin:
         if not await self._allow_cwl_placement_lookup(interaction):
             return
         await interaction.response.defer(ephemeral=True)
-        assignments = await self._member_cwl_assignments(
-            interaction.guild_id,
-            interaction.user.id,
-        )
-        if assignments is None:
-            await interaction.followup.send(
-                "Your CWL roster details aren't available.",
-                ephemeral=True,
-            )
-            return
-        if not assignments:
-            await interaction.followup.send("You aren't on a CWL roster.", ephemeral=True)
-            return
-
-        account_map: Dict[str, LinkedAccount] = {}
-        for members in assignments.values():
-            for member in members:
-                account_map.setdefault(
-                    member.player_tag,
-                    LinkedAccount(
-                        player_tag=member.player_tag,
-                        player_name=member.player_name,
-                        clan_code=member.clan_code,
-                        townhall=member.townhall,
-                        hero_sum=member.hero_sum,
-                    ),
-                )
-        profiles, failed_tags = await fetch_account_profiles(
-            list(account_map.values()),
-            self.clash_client,
-        )
-        await interaction.followup.send(
-            embed=self._build_member_cwl_embed(assignments, profiles, failed_tags),
-            ephemeral=True,
-        )
+        issue, embed = await self.member_cwl_information(
+            interaction.guild_id, interaction.user.id)
+        if issue:
+            await interaction.followup.send(issue, ephemeral=True)
+        else:
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     async def show_member_cwl_channels(self, interaction: discord.Interaction) -> None:
         if not await self._allow_cwl_placement_lookup(interaction):
             return
         await interaction.response.defer(ephemeral=True)
-        assignments = await self._member_cwl_assignments(
-            interaction.guild_id,
-            interaction.user.id,
-        )
-        if assignments is None:
-            await interaction.followup.send(
-                "Your CWL channels aren't available.",
-                ephemeral=True,
-            )
-            return
-        if not assignments:
-            await interaction.followup.send("You aren't on a CWL roster.", ephemeral=True)
-            return
-        await interaction.followup.send(
-            embed=self._build_member_channels_embed(assignments),
-            ephemeral=True,
-        )
+        issue, embed = await self.member_cwl_information(
+            interaction.guild_id, interaction.user.id, channels_only=True)
+        if issue:
+            await interaction.followup.send(issue, ephemeral=True)
+        else:
+            await interaction.followup.send(embed=embed, ephemeral=True)
