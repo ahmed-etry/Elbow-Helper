@@ -26,6 +26,38 @@ LOGGER = logging.getLogger(__name__)
 
 
 class SupportCommandMixin:
+    def prepare_support_close(self, guild: discord.Guild | None,
+                              channel: discord.abc.GuildChannel | None,
+                              actor: discord.Member) -> dict[str, object]:
+        if guild is None or not isinstance(channel, discord.TextChannel):
+            return {"issue": "Use this command inside a support ticket."}
+        ticket_info = load_tickets().get(str(channel.id))
+        if ticket_info is None:
+            return {"issue": "This channel is not a ticket created by Elbow Helper."}
+        owner = self._resolve_support_ticket_owner(guild, channel, ticket_info)
+        source = str(ticket_info.get("source", "reactivation"))
+        log_channel_id = SUPPORT_TRANSCRIPTS if source == "open" else TICKETS_LOG
+        return {"issue": None, "guild": guild, "channel": channel,
+                "actor": actor, "ticket_info": ticket_info,
+                "owner": owner, "source": source,
+                "log_channel_id": log_channel_id,
+                "log_channel": guild.get_channel(log_channel_id),
+                "transcript_filename": f"transcript-{channel.name}.html"}
+
+    async def support_close_history(self, channel: discord.TextChannel) -> tuple[tuple[object, ...], ...]:
+        rows = []
+        async for message in channel.history(limit=None):
+            rows.append((
+                message.id, message.author.id,
+                message.content, message.edited_at.isoformat() if message.edited_at else None,
+                tuple((attachment.id, attachment.filename, attachment.url)
+                      for attachment in message.attachments),
+                tuple(embed.to_dict() for embed in message.embeds),
+                tuple((str(reaction.emoji), reaction.count)
+                      for reaction in message.reactions),
+            ))
+        return tuple(rows)
+
     def support_ticket_target_state(self, guild: discord.Guild,
                                     user: discord.Member, topic: str,
                                     actor: discord.Member) -> dict[str, object]:
@@ -168,19 +200,12 @@ class SupportCommandMixin:
         if not any(role.id in (LEAD | RECRUITERS) for role in interaction.user.roles):
             await deny(interaction)
             return
-
-        guild = interaction.guild
-        channel = interaction.channel
-        if guild is None or not isinstance(channel, discord.TextChannel):
-            await warn(interaction, "Use this command inside a support ticket.")
+        prepared = self.prepare_support_close(
+            interaction.guild, interaction.channel, interaction.user,
+        )
+        if prepared["issue"]:
+            await warn(interaction, prepared["issue"])
             return
-
-        tickets = load_tickets()
-        ticket_info = tickets.get(str(channel.id))
-        if ticket_info is None:
-            await warn(interaction, "This channel is not a ticket created by Elbow Helper.")
-            return
-
         if not interaction.response.is_done():
             await interaction.response.defer()
 
@@ -188,13 +213,23 @@ class SupportCommandMixin:
             try:
                 await interaction.followup.send(message, ephemeral=True)
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                LOGGER.warning("Could not send followup in support close flow for channel %s", channel.id)
+                LOGGER.warning(
+                    "Could not send followup in support close flow for channel %s",
+                    prepared["channel"].id,
+                )
 
+        await self.close_support_ticket(prepared, safe_followup)
+
+    async def close_support_ticket(self, prepared: dict[str, object],
+                                   report) -> dict[str, object]:
+        guild = prepared["guild"]
+        channel = prepared["channel"]
+        actor = prepared["actor"]
         transcript_status_message: discord.Message | None = None
         try:
             await channel.send(
                 embed=build_status_embed(
-                    f"Ticket Closed by {interaction.user.mention}",
+                    f"Ticket Closed by {actor.mention}",
                     discord.Color.gold(),
                 )
             )
@@ -202,13 +237,13 @@ class SupportCommandMixin:
                 embed=build_status_embed("Saving Transcript", discord.Color.gold())
             )
 
-            owner_member = self._resolve_support_ticket_owner(guild, channel, ticket_info)
+            owner_member = prepared["owner"]
             if owner_member is not None:
                 try:
                     await channel.set_permissions(
                         owner_member,
                         send_messages=False,
-                        reason=f"Support ticket closed by {interaction.user}",
+                        reason=f"Support ticket closed by {actor}",
                     )
                 except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                     LOGGER.warning("Could not lock support ticket %s for owner %s", channel.id, owner_member.id)
@@ -220,11 +255,8 @@ class SupportCommandMixin:
                 await transcript_status_message.edit(
                     embed=build_status_embed("Transcript Couldn't Be Saved", discord.Color.red())
                 )
-                await fail(
-                    interaction,
-                    "I couldn't generate the transcript for this ticket. Try again in a moment.",
-                )
-                return
+                await report("I couldn't generate the transcript for this ticket. Try again in a moment.")
+                return {"status": "partial", "issue": "I couldn't generate the transcript for this ticket. Try again in a moment."}
 
             transcript_bytes = transcript.encode()
             max_upload_bytes = guild.filesize_limit if guild else 8 * 1024 * 1024
@@ -280,7 +312,6 @@ class SupportCommandMixin:
             detail_embed.add_field(name="Ticket Owner", value=ticket_owner, inline=True)
             detail_embed.add_field(name="Ticket Name", value=channel.name, inline=True)
             detail_embed.add_field(name="Messages", value=str(len(messages)), inline=True)
-            source = str(ticket_info.get("source", "reactivation"))
             participant_lines = []
             for user_id, count in top_users:
                 label = user_labels.get(user_id, f"<@{user_id}>")
@@ -301,23 +332,23 @@ class SupportCommandMixin:
             )
             detail_embed.set_footer(text="Ticket closed • Support Ticket")
 
-            log_channel_id = SUPPORT_TRANSCRIPTS if source == "open" else TICKETS_LOG
+            log_channel_id = prepared["log_channel_id"]
             log_channel = guild.get_channel(log_channel_id)
             if log_channel is None:
                 await transcript_status_message.edit(
                     embed=build_status_embed("Transcript Couldn't Be Saved", discord.Color.red())
                 )
-                await safe_followup("The transcript log channel hasn't been set up.")
-                return
+                await report("The transcript log channel hasn't been set up.")
+                return {"status": "partial", "issue": "The transcript log channel hasn't been set up."}
 
             if transcript_file:
-                await log_channel.send(
+                log_message = await log_channel.send(
                     embed=detail_embed,
                     file=transcript_file,
                     view=self._build_transcript_link_view(),
                 )
             else:
-                await log_channel.send(embed=detail_embed)
+                log_message = await log_channel.send(embed=detail_embed)
 
             transcript_saved_text = (
                 f"Transcript saved to <#{log_channel_id}>"
@@ -333,7 +364,7 @@ class SupportCommandMixin:
                     "Transcript saved, but its status message could not be updated for support ticket %s",
                     channel.id,
                 )
-                await safe_followup(transcript_saved_text)
+                await report(transcript_saved_text)
 
             try:
                 await channel.send(
@@ -348,6 +379,9 @@ class SupportCommandMixin:
                     "Transcript saved, but ticket controls could not be restored for support ticket %s",
                     channel.id,
                 )
+            return {"status": "complete", "log_channel_id": log_channel_id,
+                    "log_message_id": getattr(log_message, "id", None),
+                    "transcript_uploaded": transcript_file is not None}
         except (discord.Forbidden, discord.HTTPException, RuntimeError, TypeError, ValueError):
             LOGGER.exception("Failed during close flow for channel %s", channel.id)
             if transcript_status_message is not None:
@@ -360,7 +394,9 @@ class SupportCommandMixin:
                         "Could not update transcript status message for support ticket %s",
                         channel.id,
                     )
-            await safe_followup("I couldn't save the transcript. Try again in a moment.")
+            await report("I couldn't save the transcript. Try again in a moment.")
+
+        return {"status": "partial", "issue": "I couldn't save the transcript. Try again in a moment."}
 
     async def _reopen_ticket(self, interaction: discord.Interaction) -> None:
         guild = interaction.guild
