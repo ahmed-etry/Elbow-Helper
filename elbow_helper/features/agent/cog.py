@@ -142,6 +142,46 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
                 except (OSError, sqlite3.Error, RuntimeError):
                     LOGGER.exception("Agent action log expiry failed")
 
+    async def _run_member_request(self, message, member, question, conversation,
+                                  queued_at):
+        member_lock = self._member_locks.setdefault(member.id, asyncio.Lock())
+        async with AsyncExitStack() as locks:
+            async with asyncio.timeout(AGENT_QUEUE_WAIT_TIMEOUT_SECONDS):
+                await locks.enter_async_context(conversation.lock)
+                await locks.enter_async_context(member_lock)
+                await locks.enter_async_context(self._semaphore)
+            request_started_at = time.monotonic()
+            async with asyncio.timeout(AGENT_REQUEST_TIMEOUT_SECONDS):
+                LOGGER.info(
+                    "Agent queue: request=%s invoker=%s wait_ms=%s",
+                    message.id, member.id,
+                    int((time.monotonic() - queued_at) * 1_000),
+                )
+                require_access(message.guild, member.id, message.channel)
+                reconciled = await self._reconcile_unknown_deliveries(
+                    conversation, message.channel,
+                )
+                if reconciled and self.persistence is not None:
+                    try:
+                        await self.persistence.save(
+                            self._conversations, conversation,
+                        )
+                    except (
+                        OSError, sqlite3.Error, RuntimeError,
+                        TypeError, ValueError,
+                    ):
+                        LOGGER.exception(
+                            "Agent delivery reconciliation save failed: request=%s",
+                            message.id,
+                        )
+                if conversation.record_for_request(message.id) is not None:
+                    LOGGER.debug("Ignoring already delivered agent request: message=%s", message.id)
+                    return
+                await self._answer(
+                    message, member, question, conversation,
+                    deadline_monotonic=request_started_at + AGENT_REQUEST_TIMEOUT_SECONDS,
+                )
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
         if not self._is_agent_request(message):
@@ -171,43 +211,9 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
                 message.guild.id, message.channel.id, message.id,
             )
             conversation.pending += 1
-            member_lock = self._member_locks.setdefault(member.id, asyncio.Lock())
-            async with AsyncExitStack() as locks:
-                async with asyncio.timeout(AGENT_QUEUE_WAIT_TIMEOUT_SECONDS):
-                    await locks.enter_async_context(conversation.lock)
-                    await locks.enter_async_context(member_lock)
-                    await locks.enter_async_context(self._semaphore)
-                request_started_at = time.monotonic()
-                async with asyncio.timeout(AGENT_REQUEST_TIMEOUT_SECONDS):
-                    LOGGER.info(
-                        "Agent queue: request=%s invoker=%s wait_ms=%s",
-                        message.id, member.id,
-                        int((time.monotonic() - queued_at) * 1_000),
-                    )
-                    require_access(message.guild, member.id, message.channel)
-                    reconciled = await self._reconcile_unknown_deliveries(
-                        conversation, message.channel,
-                    )
-                    if reconciled and self.persistence is not None:
-                        try:
-                            await self.persistence.save(
-                                self._conversations, conversation,
-                            )
-                        except (
-                            OSError, sqlite3.Error, RuntimeError,
-                            TypeError, ValueError,
-                        ):
-                            LOGGER.exception(
-                                "Agent delivery reconciliation save failed: request=%s",
-                                message.id,
-                            )
-                    if conversation.record_for_request(message.id) is not None:
-                        LOGGER.debug("Ignoring already delivered agent request: message=%s", message.id)
-                        return
-                    await self._answer(
-                        message, member, question, conversation,
-                        deadline_monotonic=request_started_at + AGENT_REQUEST_TIMEOUT_SECONDS,
-                    )
+            await self._run_member_request(
+                message, member, question, conversation, queued_at,
+            )
         except AgentAccessLost as error:
             LOGGER.warning(
                 "Agent access lost: request=%s invoker=%s channel=%s error=%s",
@@ -341,17 +347,8 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
         mention_pattern = re.compile(rf"<@!?{bot_user.id}>")
         return mention_pattern.sub("", message.content or "").strip()
 
-    async def _answer(
-        self,
-        message: discord.Message,
-        member: discord.Member,
-        question: str,
-        conversation: Conversation,
-        *,
-        deadline_monotonic: float | None = None,
-    ) -> None:
-        member = require_access(message.guild, member.id, message.channel)
-        referenced = await self._resolve_referenced_message(message)
+    def _request_context(self, message, member, referenced, conversation,
+                         deadline_monotonic):
         root_id = next(
             key for key, value in self._conversations.entries()
             if value is conversation
@@ -391,6 +388,73 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
             attachment_sources=tuple(item for item in (message, referenced) if item is not None),
             deadline_monotonic=deadline_monotonic,
         )
+        return context, root_id
+
+    async def _record_turn(self, message, member, question, response,
+                           local_context, context, delivery, conversation):
+        if delivery.attempted_nonces:
+            self._commit_reports(conversation, context.state)
+            conversation.working = context.state.working
+            delivered_answer = response if delivery.complete else "\n".join(delivery.text_parts)
+            conversation.append(ConversationTurn(
+                text=json.dumps({
+                    "asker": member.display_name, "member_id": member.id,
+                    "question": question, "answer": delivered_answer[:16_000],
+                    "answer_truncated": len(delivered_answer) > 16_000,
+                    "local_context": local_context[:12_000],
+                    "lookup_excerpts": [item[:5_000] for item in context.state.evidence[-4:]],
+                    "report_ids": list(context.state.reports),
+                }, ensure_ascii=False),
+                source_channels=frozenset(context.state.source_channels),
+                required_access=frozenset(context.state.required_access),
+                knowledge_refs=tuple(sorted(
+                    (section.section_id, section.content_sha256)
+                    for report in context.state.reports.values()
+                    if isinstance(report, KnowledgeReport)
+                    for section in report.sections
+                )),
+                record=ConversationRecord(
+                    request_message_id=message.id,
+                    member_id=member.id,
+                    created_at=message.created_at.isoformat(),
+                    question=question,
+                    generated_answer=response,
+                    delivered_answer=delivered_answer,
+                    local_context=local_context,
+                    evidence=tuple(context.state.evidence),
+                    report_ids=tuple(context.state.reports),
+                    reply_ids=tuple(delivery.message_ids),
+                    delivery_complete=delivery.complete,
+                    delivery_unknown=delivery.unknown,
+                    attempted_nonces=tuple(delivery.attempted_nonces),
+                    uncertain_nonce=delivery.uncertain_nonce,
+                ),
+            ))
+            self._refresh_history_checkpoint(
+                conversation, context.state,
+                created_at=message.created_at,
+                previous_turn_count=len(conversation.turns) - 1,
+            )
+            if self.persistence is not None:
+                try:
+                    await self.persistence.save(self._conversations, conversation)
+                except (OSError, sqlite3.Error, RuntimeError, TypeError, ValueError):
+                    LOGGER.exception("Agent checkpoint save failed: request=%s", message.id)
+
+    async def _answer(
+        self,
+        message: discord.Message,
+        member: discord.Member,
+        question: str,
+        conversation: Conversation,
+        *,
+        deadline_monotonic: float | None = None,
+    ) -> None:
+        member = require_access(message.guild, member.id, message.channel)
+        referenced = await self._resolve_referenced_message(message)
+        context, root_id = self._request_context(
+            message, member, referenced, conversation, deadline_monotonic,
+        )
         await self._load_authorized_reports(conversation, context)
         await self._check_sources(context)
         if self.transcript_archive is not None:
@@ -421,54 +485,10 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
                     delivery=delivery, context=context,
                 )
             finally:
-                if delivery.attempted_nonces:
-                    self._commit_reports(conversation, context.state)
-                    conversation.working = context.state.working
-                    delivered_answer = response if delivery.complete else "\n".join(delivery.text_parts)
-                    conversation.append(ConversationTurn(
-                        text=json.dumps({
-                            "asker": member.display_name, "member_id": member.id,
-                            "question": question, "answer": delivered_answer[:16_000],
-                            "answer_truncated": len(delivered_answer) > 16_000,
-                            "local_context": local_context[:12_000],
-                            "lookup_excerpts": [item[:5_000] for item in context.state.evidence[-4:]],
-                            "report_ids": list(context.state.reports),
-                        }, ensure_ascii=False),
-                        source_channels=frozenset(context.state.source_channels),
-                        required_access=frozenset(context.state.required_access),
-                        knowledge_refs=tuple(sorted(
-                            (section.section_id, section.content_sha256)
-                            for report in context.state.reports.values()
-                            if isinstance(report, KnowledgeReport)
-                            for section in report.sections
-                        )),
-                        record=ConversationRecord(
-                            request_message_id=message.id,
-                            member_id=member.id,
-                            created_at=message.created_at.isoformat(),
-                            question=question,
-                            generated_answer=response,
-                            delivered_answer=delivered_answer,
-                            local_context=local_context,
-                            evidence=tuple(context.state.evidence),
-                            report_ids=tuple(context.state.reports),
-                            reply_ids=tuple(delivery.message_ids),
-                            delivery_complete=delivery.complete,
-                            delivery_unknown=delivery.unknown,
-                            attempted_nonces=tuple(delivery.attempted_nonces),
-                            uncertain_nonce=delivery.uncertain_nonce,
-                        ),
-                    ))
-                    self._refresh_history_checkpoint(
-                        conversation, context.state,
-                        created_at=message.created_at,
-                        previous_turn_count=len(conversation.turns) - 1,
-                    )
-                    if self.persistence is not None:
-                        try:
-                            await self.persistence.save(self._conversations, conversation)
-                        except (OSError, sqlite3.Error, RuntimeError, TypeError, ValueError):
-                            LOGGER.exception("Agent checkpoint save failed: request=%s", message.id)
+                await self._record_turn(
+                    message, member, question, response, local_context,
+                    context, delivery, conversation,
+                )
         except AgentAccessLost:
             raise
         except AgentUnavailableError as error:

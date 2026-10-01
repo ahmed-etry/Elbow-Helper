@@ -72,6 +72,11 @@ def _message(*, author: _Member, bot_id: int, content: str):
 
 
 class AgentCogTests(unittest.IsolatedAsyncioTestCase):
+    def test_discord_registers_only_the_message_handler(self):
+        self.assertIn(("on_message", "on_message"), AgentCog.__cog_listeners__)
+        self.assertNotIn(("_run_member_request", "_run_member_request"),
+                         AgentCog.__cog_listeners__)
+
     async def test_unexpected_generation_errors_send_existing_failure_without_retry(self):
         for error_type in (AttributeError, KeyError, IndexError, ZeroDivisionError):
             with self.subTest(error=error_type.__name__):
