@@ -1,6 +1,9 @@
 """Fixed text shown by the agent."""
 
 FAILURE_MESSAGE = "I couldn't finish that right now. Try again in a moment."
+AGENT_PLAN_UNFINISHED = "I couldn't work out how to handle that. What should I focus on first?"
+AGENT_RESEARCH_UNFINISHED = "I couldn't finish checking everything. Ask me to continue."
+AGENT_ANSWER_UNFINISHED = "That got too long to finish in one go. Ask me for a shorter version or one part at a time."
 LONG_REPLY_FILENAME = "Elbow Helper.txt"
 SPREADSHEET_FILENAME_STEM = "spreadsheet"
 

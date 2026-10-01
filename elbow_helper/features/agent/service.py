@@ -41,7 +41,7 @@ from .access import can_disclose_provenance
 from .plan.checker import _has_reference, _kind, _periods, _source_check, _time_check, _valid_arguments, check_plan
 from .plan.executor import execute_plan, resolve_arguments
 from .plan.format import PLAN_TOOL_NAME, plan_definition, system_instructions
-from .plan.planning import read_request
+from .plan.planning import PlanNotSettled, read_request
 from .plan.results import model_result, plan_feedback
 from .plan.sources import named_sources
 from .plan.scope import ScopeLedger, resource_ids
@@ -49,7 +49,10 @@ from .commands.adapters import enabled_adapters
 from .commands.bridge import build_command_tools, check_command_plan
 from .commands.outcomes import command_reply
 from .commands.confirmation import preview_text
-from .wording import COMMAND_UNAVAILABLE
+from .wording import (
+    AGENT_ANSWER_UNFINISHED, AGENT_PLAN_UNFINISHED,
+    AGENT_RESEARCH_UNFINISHED, COMMAND_UNAVAILABLE,
+)
 from .reports.base import retain_reports
 
 
@@ -74,7 +77,7 @@ ANSWER_OUTPUT_LIMITS = {
     AgentReasoningEffort.MAX: 64_000,
 }
 MIN_FINAL_OUTPUT_TOKENS = 1_024
-MAX_SCOPE_REVISIONS = 2
+MAX_SCOPE_REVISIONS = 4
 
 
 def _scope_entries(plan: Mapping[str, Any]) -> frozenset[str]:
@@ -84,6 +87,10 @@ def _scope_entries(plan: Mapping[str, Any]) -> frozenset[str]:
 
 class AgentUnavailableError(RuntimeError):
     """Raised when an agent request cannot produce a final answer."""
+
+
+class AgentGracefulEnd(RuntimeError):
+    """Return a bounded response when planning or answering cannot continue."""
 
 
 class AgentService:
@@ -293,9 +300,9 @@ class AgentService:
             remaining = (max_output_tokens if budget.context_window_tokens is None else
                          min(max_output_tokens, budget.context_window_tokens - projected))
             if remaining < MIN_FINAL_OUTPUT_TOKENS:
-                raise AgentUnavailableError("The agent lacks context room for an answer")
+                raise AgentGracefulEnd(AGENT_RESEARCH_UNFINISHED)
             if rounds >= MAX_MODEL_ROUNDS + 1:
-                raise AgentUnavailableError("The agent reached its model-round limit")
+                raise AgentGracefulEnd(AGENT_RESEARCH_UNFINISHED)
             budget.output_reserve = remaining
             usage.attempted_rounds += 1
             rounds += 1
@@ -324,7 +331,7 @@ class AgentService:
                     LOGGER.warning("Agent model output limit reached: request=%s round=%s limit=%s",
                                    request_id, rounds, remaining)
                     if continued:
-                        raise AgentUnavailableError("The agent reached its output limit twice")
+                        raise AgentGracefulEnd(AGENT_ANSWER_UNFINISHED)
                     incomplete_calls = tuple(AgentToolResult(
                         call.call_id,
                         json.dumps({"error": "The prior model output was incomplete. Submit the full plan again."}),
@@ -613,7 +620,7 @@ class AgentService:
                         max_output_tokens=FINAL_MAX_OUTPUT_TOKENS,
                     )
                     if reply.tool_calls or not reply.content:
-                        raise AgentUnavailableError("The agent did not ask for missing values")
+                        raise AgentGracefulEnd(AGENT_PLAN_UNFINISHED)
                     await require_disclosure_access(context)
                     status = "completed"
                     return reply.content
@@ -652,7 +659,7 @@ class AgentService:
                              budget.context_window_tokens - projected_input)
                 )
                 if available_output < MIN_FINAL_OUTPUT_TOKENS:
-                    raise AgentUnavailableError("The agent lacks context room for an answer")
+                    raise AgentGracefulEnd(AGENT_RESEARCH_UNFINISHED)
                 budget.output_reserve = available_output
                 allow_more = (
                     rounds < MAX_MODEL_ROUNDS - 1
@@ -671,7 +678,7 @@ class AgentService:
                 )
                 if not model_step.tool_calls:
                     if not model_step.content:
-                        raise AgentUnavailableError("The agent returned no final answer")
+                        raise AgentGracefulEnd(AGENT_ANSWER_UNFINISHED)
                     await require_disclosure_access(context)
                     status = "completed"
                     return model_step.content
@@ -686,16 +693,16 @@ class AgentService:
                         max_output_tokens=available_output,
                     )
                     if recovery.tool_calls or not recovery.content:
-                        raise AgentUnavailableError("The agent did not answer after lookups ended")
+                        raise AgentGracefulEnd(AGENT_RESEARCH_UNFINISHED)
                     await require_disclosure_access(context)
                     status = "completed"
                     return recovery.content
                 if len(model_step.tool_calls) != 1 or model_step.tool_calls[0].name != PLAN_TOOL_NAME:
-                    raise AgentUnavailableError("The agent requested an unknown planning action")
+                    raise AgentGracefulEnd(AGENT_PLAN_UNFINISHED)
                 try:
                     next_plan = json.loads(model_step.tool_calls[0].arguments)
                 except (TypeError, ValueError):
-                    raise AgentUnavailableError("The agent returned an invalid plan") from None
+                    raise AgentGracefulEnd(AGENT_PLAN_UNFINISHED) from None
                 check = check_plan(next_plan, registry, sources)
                 if check.ok:
                     command_issue = command_check(next_plan)
@@ -707,7 +714,7 @@ class AgentService:
                             request_id, revisions + 1, check.ok, check.step_id, check.error)
                 if not check.ok:
                     if correction_used:
-                        raise AgentUnavailableError(check.error)
+                        raise AgentGracefulEnd(AGENT_PLAN_UNFINISHED)
                     correction_used = True
                     corrected = await advance_model((AgentToolResult(
                         model_step.tool_calls[0].call_id,
@@ -718,31 +725,38 @@ class AgentService:
                         status = "completed"
                         return corrected.content
                     if len(corrected.tool_calls) != 1 or corrected.tool_calls[0].name != PLAN_TOOL_NAME:
-                        raise AgentUnavailableError("A corrected plan is required")
+                        raise AgentGracefulEnd(AGENT_PLAN_UNFINISHED)
                     next_plan = json.loads(corrected.tool_calls[0].arguments)
                     check = check_plan(next_plan, registry, sources)
                     LOGGER.info("Agent plan correction: request=%s ok=%s plan=%s error=%s",
                                 request_id, check.ok, json.dumps(next_plan, ensure_ascii=False), check.error)
                     if not check.ok:
-                        raise AgentUnavailableError(check.error)
+                        raise AgentGracefulEnd(AGENT_PLAN_UNFINISHED)
                     model_step = corrected
                 changed = _scope_entries(next_plan)
                 if changed - scope:
                     revisions += 1
                     LOGGER.info("Agent scope revision: request=%s revision=%s", request_id, revisions)
                     if revisions > MAX_SCOPE_REVISIONS:
-                        raise AgentUnavailableError("The request reached its scope revision limit")
+                        raise AgentGracefulEnd(AGENT_RESEARCH_UNFINISHED)
                 scope |= changed
                 plan = next_plan
                 budget.final_answer_reserve = ANSWER_OUTPUT_LIMITS[AgentReasoningEffort(plan["effort"])]
                 decision = type(decision)(None, plan, (model_step,))
-            raise AgentUnavailableError("The agent reached its model-round limit")
+            raise AgentGracefulEnd(AGENT_RESEARCH_UNFINISHED)
+        except AgentGracefulEnd as error:
+            await require_disclosure_access(context)
+            status = "incomplete"
+            return str(error)
         except TextGenerationError as error:
             status = "provider_error"
             raise AgentUnavailableError(str(error)) from error
-        except ValueError as error:
-            status = "invalid_plan"
-            raise AgentUnavailableError(str(error)) from error
+        except PlanNotSettled as error:
+            LOGGER.warning("Agent plan not settled: request=%s reason=%s",
+                           getattr(context.source_message, "id", None), error)
+            await require_disclosure_access(context)
+            status = "incomplete"
+            return AGENT_PLAN_UNFINISHED
         except asyncio.CancelledError:
             status = "cancelled"
             raise

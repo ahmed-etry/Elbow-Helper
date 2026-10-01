@@ -20,6 +20,10 @@ from .results import plan_feedback
 LOGGER = logging.getLogger(__name__)
 
 
+class PlanNotSettled(ValueError):
+    """The model gave neither a reply nor a checked plan after its correction."""
+
+
 @dataclass(frozen=True, slots=True)
 class ReadDecision:
     answer: str | None
@@ -45,7 +49,7 @@ async def read_request(
         if not step.tool_calls:
             if step.content:
                 return ReadDecision(step.content, None, tuple(rounds))
-            raise ValueError("A corrected plan is required.")
+            raise PlanNotSettled("A corrected plan is required.")
         if len(step.tool_calls) != 1 or step.tool_calls[0].name != PLAN_TOOL_NAME:
             issue = "Submit one request plan."
             call_id = step.tool_calls[0].call_id
@@ -76,8 +80,8 @@ async def read_request(
             issue = check.error
             step_id, offered = check.step_id, check.offered
         if attempt:
-            raise ValueError(issue)
+            raise PlanNotSettled(issue)
         pending = tuple(AgentToolResult(call.call_id, json.dumps(plan_feedback(
             issue, step_id=step_id, offered=offered,
         ))) for call in step.tool_calls)
-    raise ValueError("A checked plan is required.")
+    raise PlanNotSettled("A checked plan is required.")

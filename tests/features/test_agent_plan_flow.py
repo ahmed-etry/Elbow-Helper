@@ -21,7 +21,10 @@ from elbow_helper.features.agent.commands.outcomes import CommandOutcome
 from elbow_helper.features.agent.commands.confirmation import ChangePreview
 from elbow_helper.features.agent.actions.contracts import ActionClass, PreparedAction
 from elbow_helper.features.agent.commands.registry import CommandAdapter
-from elbow_helper.features.agent.wording import COMMAND_UNAVAILABLE
+from elbow_helper.features.agent.wording import (
+    AGENT_ANSWER_UNFINISHED, AGENT_PLAN_UNFINISHED,
+    COMMAND_UNAVAILABLE,
+)
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.capabilities import CapabilityContract
@@ -152,13 +155,14 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("incomplete", session.calls[1][0][0].content)
         self.assertEqual(self.events, ["model", "model", "read", "model"])
 
-    async def test_second_output_limit_is_not_delivered(self):
+    async def test_second_output_limit_ends_with_a_short_note(self):
         session = _Session([
             AgentStep("First part", (), AgentUsage(), output_limit_reached=True),
             AgentStep("Second part", (), AgentUsage(), output_limit_reached=True),
         ], self.events)
-        with self.assertRaises(AgentUnavailableError):
-            await self._answer(session)
+        answer, _ = await self._answer(session)
+        self.assertEqual(answer, AGENT_ANSWER_UNFINISHED)
+        self.assertNotIn("First part", answer)
 
     async def test_one_step_plan_uses_two_model_calls(self):
         plan = _plan([_step("first")], effort="high")
@@ -231,18 +235,19 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.events, ["model", "read", "read", "model"])
         self.assertEqual(len(session.calls), 2)
 
-    async def test_scope_revisions_stop_after_two(self):
+    async def test_scope_revisions_stop_after_four(self):
         self.registry["read_value"] = replace(self.registry["read_value"], definition=AgentToolDefinition(
             "read_value", "Read a value.", {"type": "object", "properties": {
                 "period": {"type": "integer", "minimum": 0}}, "required": ["period"]}))
         plans = [_plan([_step("first", {"period": n})], periods=[{"kind": "key", "field": "period", "value": n}])
-                 for n in range(4)]
+                 for n in range(6)]
         session = _Session([_model_step(plan) for plan in plans], self.events)
         with patch.dict("elbow_helper.features.agent.capabilities.CONTRACTS", {
             "read_value": CapabilityContract((), ("period",))
-        }), self.assertRaisesRegex(AgentUnavailableError, "revision limit"):
-            await self._answer(session)
-        self.assertEqual(len(session.calls), 4)
+        }):
+            answer, _ = await self._answer(session)
+        self.assertIn("couldn't finish checking", answer)
+        self.assertEqual(len(session.calls), 6)
 
     async def test_answer_only_round_refuses_extra_calls_once(self):
         plan = _plan([_step("first")])
@@ -345,16 +350,25 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             patch("elbow_helper.features.agent.service.can_disclose_provenance",
                   return_value=False),
         ):
-            with self.assertRaisesRegex(AgentUnavailableError, "cannot be shared"):
-                await self._answer(session)
+            answer, _ = await self._answer(session)
+        self.assertEqual(answer, AGENT_PLAN_UNFINISHED)
         self.assertEqual(len(session.calls), 2)
         self.assertNotIn("read", self.events)
+
+    async def test_unexpected_value_error_is_not_reported_as_an_unsettled_plan(self):
+        session = _Session([], self.events)
+        with (
+            patch("elbow_helper.features.agent.service.read_request",
+                  AsyncMock(side_effect=ValueError("broken lookup"))),
+            self.assertRaisesRegex(ValueError, "broken lookup"),
+        ):
+            await self._answer(session)
 
     async def test_exhausted_context_does_not_run_tools_or_send_another_provider_request(self):
         session = _Session([_model_step(_plan([_step("first")]))], self.events)
         session.context_window_tokens = 100
-        with self.assertRaisesRegex(AgentUnavailableError, "context room"):
-            await self._answer(session)
+        answer, _ = await self._answer(session)
+        self.assertIn("couldn't finish checking", answer)
         self.assertEqual(self.events, [])
 
     async def test_interrupted_provider_round_is_logged_as_unknown_usage(self):
@@ -425,8 +439,8 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         plan = _plan([_step("first")])
         session = _Session([_model_step(plan)] * 3, self.events)
         with patch("elbow_helper.features.agent.service.MAX_MODEL_ROUNDS", 2):
-            with self.assertRaisesRegex(AgentUnavailableError, "did not answer"):
-                await self._answer(session)
+            answer, _ = await self._answer(session)
+        self.assertIn("couldn't finish checking", answer)
         self.assertEqual(len(session.calls), 3)
         self.assertEqual(self.events.count("read"), 1)
 
