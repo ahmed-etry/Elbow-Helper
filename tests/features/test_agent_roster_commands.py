@@ -111,7 +111,7 @@ class RosterCommandTests(unittest.IsolatedAsyncioTestCase):
         prepared = await prepare_roster_delete(context, {"roster": "4"})
         self.assertTrue(await prepared.preview.recheck())
         self.assertIn("Delete 1 signup across 1 cycle.", prepared.preview.lines)
-        self.assertIn("Disable controls on roster post 99 in <#9>.",
+        self.assertIn("Disable controls on the roster post in <#9>.",
                       prepared.preview.lines)
         workflow.delete_roster.assert_not_awaited()
         self.assertTrue((await prepared.run()).after["deleted"])
@@ -149,9 +149,9 @@ class RosterCommandTests(unittest.IsolatedAsyncioTestCase):
             "roster": "4", "max_members": 50, "min_townhall": 0,
         })
         self.assertTrue(await prepared.preview.recheck())
-        self.assertIn("Maximum accounts: 40 → 50", prepared.preview.lines)
-        self.assertIn("Minimum Town Hall: 15 → None", prepared.preview.lines)
-        self.assertIn("Refresh roster post 99 in <#9>.", prepared.preview.lines)
+        self.assertIn("Maximum accounts: 40 to 50", prepared.preview.lines)
+        self.assertIn("Minimum Town Hall: 15 to None", prepared.preview.lines)
+        self.assertIn("Refresh the roster post in <#9>.", prepared.preview.lines)
         workflow.update_roster_settings.assert_not_awaited()
         result = await prepared.run()
         self.assertEqual(result.after["changes"], {
@@ -237,7 +237,7 @@ class RosterCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await prepared.preview.recheck())
         self.assertIn("Disable monthly scheduling for **Signup**.",
                       prepared.preview.lines)
-        self.assertIn("Automatic scheduling: Yes → No", prepared.preview.lines)
+        self.assertIn("Automatic scheduling: Yes to No", prepared.preview.lines)
         self.assertEqual((await prepared.run()).after["schedule_enabled"], False)
         self.assertFalse(await prepared.preview.recheck())
 

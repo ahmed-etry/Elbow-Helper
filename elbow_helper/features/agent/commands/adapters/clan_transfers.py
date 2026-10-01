@@ -10,10 +10,13 @@ from elbow_helper.features.clan_transfers.config import CLAN_TRANSFER_QUEUES
 
 from ...actions.contracts import ActionClass, ChangePreview
 from ...wording import (
-    ACTION_TRANSFER_BOARD, ACTION_TRANSFER_CANCEL_LABEL,
-    ACTION_TRANSFER_CANCEL_LINE, ACTION_TRANSFER_COUNT, ACTION_TRANSFER_PING,
-    ACTION_TRANSFER_REQUEST_LABEL, ACTION_TRANSFER_REQUEST_LINE,
-    ACTION_TRANSFER_UNAVAILABLE,
+    ACTION_TRANSFER_BOARD,
+    ACTION_TRANSFER_CANCEL_LABEL,
+    ACTION_TRANSFER_CANCEL_LINE,
+    ACTION_TRANSFER_COUNT,
+    ACTION_TRANSFER_PING,
+    ACTION_TRANSFER_REQUEST_LABEL,
+    ACTION_TRANSFER_REQUEST_LINE,
 )
 from ..outcomes import CommandOutcome
 from ..registry import CommandAdapter, PreparedCommandChange
@@ -23,10 +26,10 @@ async def _prepare(context: Any, values: Mapping[str, Any],
                    *, cancel: bool) -> PreparedCommandChange:
     workflow = context.bot.get_cog("ClanTransfers")
     if workflow is None:
-        raise ValueError(ACTION_TRANSFER_UNAVAILABLE)
+        raise ValueError('That transfer queue is unavailable.')
     clan_code = values["destination"]
     if clan_code not in CLAN_TRANSFER_QUEUES:
-        raise ValueError(ACTION_TRANSFER_UNAVAILABLE)
+        raise ValueError('That transfer queue is unavailable.')
     state = workflow.transfer_request_preview(
         clan_code, context.member.id, cancel=cancel,
     )

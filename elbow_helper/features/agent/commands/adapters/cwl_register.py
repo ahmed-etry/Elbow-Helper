@@ -11,11 +11,12 @@ from elbow_helper.features.agent.tools.discord_safety import (
 
 from ...actions.contracts import ActionClass, ChangePreview
 from ...wording import (
-    ACTION_CWL_REGISTER_LABEL, ACTION_CWL_REGISTER_LINE,
-    ACTION_CWL_REGISTER_OLD, ACTION_CWL_REGISTER_CLOSED,
+    ACTION_CWL_REGISTER_LABEL,
+    ACTION_CWL_REGISTER_LINE,
+    ACTION_CWL_REGISTER_OLD,
+    ACTION_CWL_REGISTER_CLOSED,
     ACTION_CWL_REGISTER_WELCOME,
-    ACTION_CWL_REGISTER_BOARD, ACTION_CWL_REGISTER_STATUS_UNAVAILABLE,
-    ACTION_CWL_REGISTER_THREAD_UNAVAILABLE, ACTION_CWL_REGISTER_UNAVAILABLE,
+    ACTION_CWL_REGISTER_BOARD,
 )
 from ..outcomes import CommandOutcome, embed_text
 from ..registry import CommandAdapter
@@ -24,7 +25,7 @@ from ..registry import CommandAdapter
 async def _registration(context: Any, values: Mapping[str, Any]):
     workflow = context.bot.get_cog("CwlManagement")
     if workflow is None:
-        raise ValueError(ACTION_CWL_REGISTER_UNAVAILABLE)
+        raise ValueError('CWL registration is unavailable.')
     prepared = await workflow.prepare_cwl_thread_registration(
         values["clan"], values["thread_id"],
     )
@@ -32,7 +33,7 @@ async def _registration(context: Any, values: Mapping[str, Any]):
         raise ValueError(prepared["issue"])
     thread = prepared["thread"]
     if thread.guild.id != context.guild.id:
-        raise ValueError(ACTION_CWL_REGISTER_THREAD_UNAVAILABLE)
+        raise ValueError('That thread is unavailable here.')
     if getattr(thread, "archived", False) or getattr(thread, "locked", False):
         raise ValueError(ACTION_CWL_REGISTER_CLOSED)
     check_post_access(thread, context.member, context.guild.me)
@@ -41,7 +42,7 @@ async def _registration(context: Any, values: Mapping[str, Any]):
             prepared["clan"],
         )
         if prepared["status_preview"]["kind"] == "unavailable":
-            raise ValueError(ACTION_CWL_REGISTER_STATUS_UNAVAILABLE)
+            raise ValueError('CWL status is unavailable right now.')
     return workflow, prepared
 
 

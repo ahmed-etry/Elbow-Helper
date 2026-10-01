@@ -8,6 +8,7 @@ from typing import Any
 import discord
 
 from elbow_helper.configuration.channels import GENERAL_CHAT
+from elbow_helper.features.achievements.raffle import RAFFLE_COLLECTION_CONTACT
 from elbow_helper.features.agent.tools.discord_safety import (
     check_post_access, resolve_channel,
 )
@@ -15,34 +16,52 @@ from elbow_helper.features.help.discovery import ParameterInfo
 
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...wording import (
-    ACTION_ACHIEVEMENT_ALREADY_HELD, ACTION_ACHIEVEMENT_AMBIGUOUS,
-    ACTION_ACHIEVEMENT_ANNOUNCE_LINE, ACTION_ACHIEVEMENT_AWARD_LABEL,
-    ACTION_ACHIEVEMENT_AWARD_LINE, ACTION_ACHIEVEMENT_COIN_LINE,
-    ACTION_ACHIEVEMENT_COIN_ADD, ACTION_ACHIEVEMENT_COIN_REMOVE,
-    ACTION_ACHIEVEMENT_COIN_PLURAL, ACTION_ACHIEVEMENT_COIN_SINGULAR,
-    ACTION_ACHIEVEMENT_MEMBER_UNAVAILABLE, ACTION_ACHIEVEMENT_NOT_HELD,
+    ACTION_ACHIEVEMENT_ANNOUNCE_LINE,
+    ACTION_ACHIEVEMENT_AWARD_LABEL,
+    ACTION_ACHIEVEMENT_AWARD_LINE,
+    ACTION_ACHIEVEMENT_COIN_LINE,
+    ACTION_ACHIEVEMENT_COIN_ADD,
+    ACTION_ACHIEVEMENT_COIN_REMOVE,
+    ACTION_ACHIEVEMENT_COIN_PLURAL,
+    ACTION_ACHIEVEMENT_COIN_SINGULAR,
     ACTION_ACHIEVEMENT_REMOVE_LABEL,
-    ACTION_ACHIEVEMENT_REMOVE_LINE, ACTION_ACHIEVEMENT_UNKNOWN,
-    ACTION_RAFFLE_PRIZE_LABEL, ACTION_RAFFLE_PRIZE_LINE,
-    ACTION_RAFFLE_PRIZE_UNDO_LABEL, ACTION_RAFFLE_PRIZE_VALUE,
-    ACTION_RAFFLE_WINNERS_VALUE, ACTION_UNDO_CHANGED,
-    ACTION_COIN_GRANT_BALANCE, ACTION_COIN_GRANT_LABEL,
-    ACTION_COIN_GRANT_LINE, ACTION_COIN_GRANT_REASON,
-    ACTION_TICKET_GRANT_HUB, ACTION_TICKET_GRANT_LABEL,
-    ACTION_TICKET_GRANT_LINE, ACTION_TICKET_GRANT_REASON,
-    ACTION_RAFFLE_REMOVE_LINE, ACTION_RAFFLE_REMOVE_NONE,
-    ACTION_RAFFLE_REMOVE_LABEL, ACTION_RAFFLE_CLEAR_LINE,
-    ACTION_RAFFLE_CLEAR_TICKETS_LINE, ACTION_RAFFLE_CLEAR_WINNER,
-    ACTION_RAFFLE_CLEAR_TICKET, ACTION_RAFFLE_CLEAR_NONE,
-    ACTION_RAFFLE_CLEAR_HUB, ACTION_RAFFLE_CLEAR_LABEL,
-    ACTION_RAFFLE_DRAW_LINE, ACTION_RAFFLE_REROLL_LINE,
-    ACTION_RAFFLE_DRAW_ELIGIBLE, ACTION_RAFFLE_DRAW_OLD,
-    ACTION_RAFFLE_DRAW_PRIOR, ACTION_RAFFLE_DRAW_PRIZE,
-    ACTION_RAFFLE_DRAW_PINGS, ACTION_RAFFLE_DRAW_COLLECT,
-    ACTION_RAFFLE_DRAW_HISTORY, ACTION_RAFFLE_DRAW_HUB,
-    ACTION_RAFFLE_DRAW_LABEL, ACTION_RAFFLE_REROLL_LABEL,
-    ACTION_RAFFLE_WINNER_ONE, ACTION_RAFFLE_WINNER_MANY,
-    ACTION_RAFFLE_CURRENT_MONTH, ACTION_RAFFLE_NO_PRIZE,
+    ACTION_ACHIEVEMENT_REMOVE_LINE,
+    ACTION_RAFFLE_PRIZE_LABEL,
+    ACTION_RAFFLE_PRIZE_LINE,
+    ACTION_RAFFLE_PRIZE_UNDO_LABEL,
+    ACTION_RAFFLE_PRIZE_VALUE,
+    ACTION_RAFFLE_WINNERS_VALUE,
+    ACTION_UNDO_CHANGED,
+    ACTION_COIN_GRANT_BALANCE,
+    ACTION_COIN_GRANT_LABEL,
+    ACTION_COIN_GRANT_LINE,
+    ACTION_REASON_LINE,
+    ACTION_RAFFLE_HUB_UPDATE,
+    ACTION_TICKET_GRANT_LABEL,
+    ACTION_TICKET_GRANT_LINE,
+    ACTION_RAFFLE_REMOVE_LINE,
+    ACTION_RAFFLE_REMOVE_LABEL,
+    ACTION_RAFFLE_CLEAR_LINE,
+    ACTION_RAFFLE_CLEAR_TICKETS_LINE,
+    ACTION_RAFFLE_CLEAR_WINNER,
+    ACTION_RAFFLE_CLEAR_TICKET,
+    ACTION_RAFFLE_CLEAR_NONE,
+    ACTION_RAFFLE_CLEAR_LABEL,
+    ACTION_RAFFLE_DRAW_LINE,
+    ACTION_RAFFLE_REROLL_LINE,
+    ACTION_RAFFLE_DRAW_ELIGIBLE,
+    ACTION_RAFFLE_DRAW_OLD,
+    ACTION_RAFFLE_DRAW_PRIOR,
+    ACTION_RAFFLE_DRAW_PRIZE,
+    ACTION_RAFFLE_DRAW_PINGS,
+    ACTION_RAFFLE_DRAW_COLLECT,
+    ACTION_RAFFLE_DRAW_HISTORY,
+    ACTION_RAFFLE_DRAW_LABEL,
+    ACTION_RAFFLE_REROLL_LABEL,
+    ACTION_RAFFLE_WINNER_ONE,
+    ACTION_RAFFLE_WINNER_MANY,
+    ACTION_RAFFLE_CURRENT_MONTH,
+    ACTION_RAFFLE_NO_PRIZE,
 )
 from ..outcomes import CommandOutcome
 from ..registry import CommandAdapter
@@ -69,9 +88,9 @@ async def _achievement_state(workflow: Any, member_id: int, query: str):
     try:
         state = await workflow.achievement_change_state(member_id, query)
     except ValueError as error:
-        raise ValueError(ACTION_ACHIEVEMENT_AMBIGUOUS) from error
+        raise ValueError('More than one achievement matches that name.') from error
     if state is None:
-        raise ValueError(ACTION_ACHIEVEMENT_UNKNOWN)
+        raise ValueError('No achievement matches that name.')
     return state
 
 
@@ -88,10 +107,10 @@ async def prepare_achievement_award(context: Any,
     workflow = _workflow(context)
     member = await _member(context, values["user"])
     if member is None:
-        raise ValueError(ACTION_ACHIEVEMENT_MEMBER_UNAVAILABLE)
+        raise ValueError('That member is unavailable.')
     state = await _achievement_state(workflow, member.id, values["achievement"])
     if state["completed_date"] is not None:
-        raise ValueError(ACTION_ACHIEVEMENT_ALREADY_HELD)
+        raise ValueError('That member already has that achievement.')
     silent = bool(values.get("silent", False))
     lines = [ACTION_ACHIEVEMENT_AWARD_LINE.format(
         achievement=state["name"], member=member.mention,
@@ -140,10 +159,10 @@ async def prepare_achievement_remove(context: Any,
     workflow = _workflow(context)
     member = await _member(context, values["user"])
     if member is None:
-        raise ValueError(ACTION_ACHIEVEMENT_MEMBER_UNAVAILABLE)
+        raise ValueError('That member is unavailable.')
     state = await _achievement_state(workflow, member.id, values["achievement"])
     if state["completed_date"] is None:
-        raise ValueError(ACTION_ACHIEVEMENT_NOT_HELD)
+        raise ValueError('That member does not have that achievement.')
     lines = [ACTION_ACHIEVEMENT_REMOVE_LINE.format(
         achievement=state["name"], member=member.mention,
     )]
@@ -183,7 +202,7 @@ async def prepare_grant_coins(context: Any,
     workflow = _workflow(context)
     member = await _member(context, values["user"])
     if member is None:
-        raise ValueError(ACTION_ACHIEVEMENT_MEMBER_UNAVAILABLE)
+        raise ValueError('That member is unavailable.')
     category = values["category"]
     amount = max(1, min(int(values["amount"]), 10))
     state = await workflow.manual_coin_grant_state(
@@ -206,7 +225,7 @@ async def prepare_grant_coins(context: Any,
                        else ACTION_ACHIEVEMENT_COIN_PLURAL),
             member=member.mention, category=category,
         ),
-        ACTION_COIN_GRANT_REASON.format(reason=values["reason"]),
+        ACTION_REASON_LINE.format(reason=values["reason"]),
         ACTION_COIN_GRANT_BALANCE.format(
             old=state["balance"], new=state["balance"] + amount,
         ),
@@ -243,7 +262,7 @@ async def prepare_grant_ticket(context: Any,
     workflow = _workflow(context)
     member = await _member(context, values["user"])
     if member is None:
-        raise ValueError(ACTION_ACHIEVEMENT_MEMBER_UNAVAILABLE)
+        raise ValueError('That member is unavailable.')
     state = await workflow.ticket_grant_state(member.id)
     if state["issue"]:
         raise ValueError(state["issue"])
@@ -255,8 +274,8 @@ async def prepare_grant_ticket(context: Any,
 
     return ChangePreview((
         ACTION_TICKET_GRANT_LINE.format(member=member.mention),
-        ACTION_TICKET_GRANT_REASON.format(reason=values["reason"]),
-        ACTION_TICKET_GRANT_HUB,
+        ACTION_REASON_LINE.format(reason=values["reason"]),
+        ACTION_RAFFLE_HUB_UPDATE,
     ), recheck, summary=ACTION_TICKET_GRANT_LABEL,
         before={"ticket_state": state})
 
@@ -282,10 +301,10 @@ async def prepare_raffle_remove(context: Any,
     workflow = _workflow(context)
     member = await _member(context, values["user"])
     if member is None:
-        raise ValueError(ACTION_ACHIEVEMENT_MEMBER_UNAVAILABLE)
+        raise ValueError('That member is unavailable.')
     state = await workflow.raffle_member_ticket_state(member.id)
     if not state["has_ticket"]:
-        raise ValueError(ACTION_RAFFLE_REMOVE_NONE)
+        raise ValueError('That member has no raffle ticket this month.')
 
     async def recheck() -> bool:
         if await _member(context, member.id) is None:
@@ -326,7 +345,7 @@ async def prepare_raffle_clear(context: Any,
                      for member_id in state["tickets"])
     if len(lines) == 1:
         lines.append(ACTION_RAFFLE_CLEAR_NONE)
-    lines.append(ACTION_RAFFLE_CLEAR_HUB)
+    lines.append(ACTION_RAFFLE_HUB_UPDATE)
 
     async def recheck() -> bool:
         return await workflow.raffle_clear_state() == state
@@ -402,8 +421,8 @@ async def _prepare_draw(context: Any, values: Mapping[str, Any], *,
                  for member_id in state["eligible"])
     lines.append(ACTION_RAFFLE_DRAW_PINGS)
     if not reroll:
-        lines.append(ACTION_RAFFLE_DRAW_COLLECT)
-    lines.append(ACTION_RAFFLE_DRAW_HUB)
+        lines.append(ACTION_RAFFLE_DRAW_COLLECT.format(contact=RAFFLE_COLLECTION_CONTACT))
+    lines.append(ACTION_RAFFLE_HUB_UPDATE)
 
     async def recheck() -> bool:
         try:

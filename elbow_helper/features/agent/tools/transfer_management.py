@@ -12,9 +12,11 @@ from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ..commands.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
-    ACTION_TRANSFER_CLEAR_LINE, ACTION_TRANSFER_CLEAR_MEMBER,
-    ACTION_TRANSFER_CLEAR_PING, ACTION_TRANSFER_CLEAR_BOARDS,
-    ACTION_TRANSFER_CLEAR_LABEL, ACTION_TRANSFER_UNAVAILABLE,
+    ACTION_TRANSFER_CLEAR_LINE,
+    ACTION_TRANSFER_CLEAR_MEMBER,
+    ACTION_TRANSFER_CLEAR_PING,
+    ACTION_TRANSFER_CLEAR_BOARDS,
+    ACTION_TRANSFER_CLEAR_LABEL,
 )
 
 
@@ -34,11 +36,11 @@ async def prepare_clear_transfer_queue(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("ClanTransfers")
     if workflow is None:
-        raise ValueError(ACTION_TRANSFER_UNAVAILABLE)
+        raise ValueError('That transfer queue is unavailable.')
     clan_code = values["clan_code"]
     state = workflow.transfer_queue_clear_state(clan_code)
     if state is None:
-        raise ValueError(ACTION_TRANSFER_UNAVAILABLE)
+        raise ValueError('That transfer queue is unavailable.')
     lines = [ACTION_TRANSFER_CLEAR_LINE.format(clan=clan_code)]
     lines.extend(ACTION_TRANSFER_CLEAR_MEMBER.format(member=f"<@{member_id}>")
                  for member_id in state["member_ids"])

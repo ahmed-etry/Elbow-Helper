@@ -14,20 +14,30 @@ from elbow_helper.features.help.discovery import ParameterInfo
 
 from ...actions.contracts import ActionClass, ChangePreview
 from ...wording import (
-    ACTION_SUPPORT_MEMBER_UNAVAILABLE, ACTION_SUPPORT_OPEN_MEMBER_ACCESS,
-    ACTION_SUPPORT_OPEN_BOT_ACCESS, ACTION_SUPPORT_OPEN_ROLE_ACCESS,
-    ACTION_SUPPORT_OPEN_DEFAULT_DENY, ACTION_SUPPORT_OPEN_NO_CATEGORY,
-    ACTION_SUPPORT_OPEN_DEFAULT_TOPIC, ACTION_SUPPORT_UNAVAILABLE,
-    ACTION_SUPPORT_OPEN_CATEGORY, ACTION_SUPPORT_OPEN_CONTROLS,
-    ACTION_SUPPORT_OPEN_LABEL, ACTION_SUPPORT_OPEN_LINE,
-    ACTION_SUPPORT_OPEN_POST, ACTION_SUPPORT_OPEN_TOPIC,
-    ACTION_SUPPORT_CLOSE_CHANNEL_OPTION, ACTION_SUPPORT_CLOSE_LABEL,
-    ACTION_SUPPORT_CLOSE_LINE, ACTION_SUPPORT_CLOSE_STATUS,
-    ACTION_SUPPORT_CLOSE_OWNER_LOCK, ACTION_SUPPORT_CLOSE_LOG,
-    ACTION_SUPPORT_CLOSE_TRANSCRIPT, ACTION_SUPPORT_CLOSE_HISTORY,
-    ACTION_SUPPORT_CLOSE_MESSAGE, ACTION_SUPPORT_CLOSE_ATTACHMENT,
-    ACTION_SUPPORT_CLOSE_CONTROLS, ACTION_SUPPORT_CLOSE_DONE,
-    ACTION_SUPPORT_CLOSE_EMBED, ACTION_SUPPORT_CLOSE_REACTION,
+    ACTION_TICKET_MEMBER,
+    ACTION_TICKET_SUPPORT_ROLE,
+    ACTION_NO_CATEGORY,
+    ACTION_SUPPORT_OPEN_DEFAULT_TOPIC,
+    ACTION_SUPPORT_OPEN_CATEGORY,
+    ACTION_TICKET_CONTROLS,
+    ACTION_SUPPORT_OPEN_LABEL,
+    ACTION_SUPPORT_OPEN_LINE,
+    ACTION_SUPPORT_OPEN_POST,
+    ACTION_SUPPORT_OPEN_TOPIC,
+    ACTION_SUPPORT_CLOSE_CHANNEL_OPTION,
+    ACTION_SUPPORT_CLOSE_LABEL,
+    ACTION_SUPPORT_CLOSE_LINE,
+    ACTION_SUPPORT_CLOSE_STATUS,
+    ACTION_TICKET_CLOSE_ACCESS,
+    ACTION_SUPPORT_CLOSE_LOG,
+    ACTION_SUPPORT_CLOSE_TRANSCRIPT,
+    ACTION_SUPPORT_CLOSE_HISTORY,
+    ACTION_SUPPORT_CLOSE_MESSAGE,
+    ACTION_SUPPORT_CLOSE_ATTACHMENT,
+    ACTION_SUPPORT_CLOSE_CONTROLS,
+    ACTION_SUPPORT_CLOSE_DONE,
+    ACTION_SUPPORT_CLOSE_EMBED,
+    ACTION_SUPPORT_CLOSE_REACTION,
     ACTION_PREVIEW_BLANK,
 )
 from ..outcomes import CommandOutcome, embed_text
@@ -37,7 +47,7 @@ from ..registry import CommandAdapter, PreparedCommandChange
 def _workflow(context: Any):
     workflow = context.bot.get_cog("SupportActions")
     if workflow is None:
-        raise ValueError(ACTION_SUPPORT_UNAVAILABLE)
+        raise ValueError('Support tickets are unavailable.')
     return workflow
 
 
@@ -47,7 +57,7 @@ async def _member(context: Any, member_id: int):
         try:
             member = await context.guild.fetch_member(member_id)
         except discord.DiscordException:
-            raise ValueError(ACTION_SUPPORT_MEMBER_UNAVAILABLE) from None
+            raise ValueError('That member is unavailable.') from None
     check_member(member, context.guild.me)
     return member
 
@@ -74,18 +84,16 @@ async def prepare_support_open(context: Any,
             topic=prepared["topic"] or ACTION_SUPPORT_OPEN_DEFAULT_TOPIC,
         ),
         ACTION_SUPPORT_OPEN_CATEGORY.format(
-            category=category.mention if category else ACTION_SUPPORT_OPEN_NO_CATEGORY,
+            category=category.mention if category else ACTION_NO_CATEGORY,
         ),
-        ACTION_SUPPORT_OPEN_DEFAULT_DENY,
-        ACTION_SUPPORT_OPEN_MEMBER_ACCESS.format(member=member.mention),
-        ACTION_SUPPORT_OPEN_BOT_ACCESS,
-        *(ACTION_SUPPORT_OPEN_ROLE_ACCESS.format(role=f"<@&{role_id}>")
+        ACTION_TICKET_MEMBER.format(member=member.mention),
+        *(ACTION_TICKET_SUPPORT_ROLE.format(role=f"<@&{role_id}>")
           for role_id in prepared["visible_roles"]),
         ACTION_SUPPORT_OPEN_POST,
         member.mention,
         prepared["welcome"],
         *embed_text(prepared["embed"]).splitlines(),
-        ACTION_SUPPORT_OPEN_CONTROLS,
+        ACTION_TICKET_CONTROLS,
     ]
     signature = _target_signature(prepared)
 
@@ -145,7 +153,7 @@ async def prepare_support_close(context: Any,
         ACTION_SUPPORT_CLOSE_STATUS.format(member=context.member.mention),
     ]
     if owner is not None:
-        lines.append(ACTION_SUPPORT_CLOSE_OWNER_LOCK.format(member=owner.mention))
+        lines.append(ACTION_TICKET_CLOSE_ACCESS.format(member=owner.mention))
     lines.extend((
         ACTION_SUPPORT_CLOSE_LOG.format(channel=log_channel.mention),
         ACTION_SUPPORT_CLOSE_TRANSCRIPT.format(

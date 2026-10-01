@@ -13,21 +13,29 @@ from elbow_helper.features.agent.tools.discord_safety import (
 
 from ...actions.contracts import ActionClass, ChangePreview
 from ...wording import (
-    ACTION_PREVIEW_BLANK, ACTION_RECSTATEMENT_APPLICANT_UNAVAILABLE,
-    ACTION_RECSTATEMENT_LABEL, ACTION_RECSTATEMENT_LINE,
-    ACTION_RECSTATEMENT_UNAVAILABLE, ACTION_CHECKUP_LABEL,
+    ACTION_PREVIEW_BLANK,
+    ACTION_RECSTATEMENT_LABEL,
+    ACTION_RECSTATEMENT_LINE,
+    ACTION_CHECKUP_LABEL,
     ACTION_CHECKUP_LINE,
-    ACTION_DECLINE_LABEL, ACTION_DECLINE_LINE, ACTION_DECLINE_RENAME,
+    ACTION_DECLINE_LABEL,
+    ACTION_DECLINE_LINE,
+    ACTION_TICKET_RENAME,
     ACTION_DECLINE_RENAME_SKIP,
-    ACTION_FINALIZE_LABEL, ACTION_FINALIZE_LINE,
-    ACTION_FINALIZE_RENAME, ACTION_FINALIZE_ROLE_ADD,
-    ACTION_FINALIZE_ROLE_REMOVE,
-    ACTION_ACCEPT_ACCOUNT, ACTION_ACCEPT_ACCOUNT_OLD,
-    ACTION_ACCEPT_ACHIEVEMENT, ACTION_ACCEPT_BOARD,
-    ACTION_ACCEPT_LABEL, ACTION_ACCEPT_LINE,
-    ACTION_ACCEPT_NICKNAME, ACTION_ACCEPT_ROLE_ADD,
-    ACTION_ACCEPT_ROLE_REMOVE, ACTION_ACCEPT_TRACK,
-    ACTION_ACCEPT_WARNING, ACTION_ACCEPT_NO_LINK,
+    ACTION_FINALIZE_LABEL,
+    ACTION_FINALIZE_LINE,
+    ACTION_ROLE_ADD_LINE,
+    ACTION_ROLE_REMOVE_LINE,
+    ACTION_ACCEPT_ACCOUNT,
+    ACTION_ACCEPT_ACCOUNT_OLD,
+    ACTION_ACCEPT_ACHIEVEMENT,
+    ACTION_ACCEPT_BOARD,
+    ACTION_ACCEPT_LABEL,
+    ACTION_ACCEPT_LINE,
+    ACTION_ACCEPT_NICKNAME,
+    ACTION_ACCEPT_TRACK,
+    ACTION_ACCEPT_WARNING,
+    ACTION_ACCEPT_NO_LINK,
     ACTION_ACCEPT_ROLE_MISSING,
 )
 from ..outcomes import CommandOutcome
@@ -53,13 +61,13 @@ async def run_opinion(context: Any, values: Mapping[str, Any]) -> CommandOutcome
 async def _recstatement(context: Any, values: Mapping[str, Any]):
     workflow = context.bot.get_cog("Recruitment")
     if workflow is None:
-        raise ValueError(ACTION_RECSTATEMENT_UNAVAILABLE)
+        raise ValueError('Recruitment messages are unavailable.')
     member = context.guild.get_member(values["applicant"])
     if member is None:
         try:
             member = await context.guild.fetch_member(values["applicant"])
         except discord.DiscordException:
-            raise ValueError(ACTION_RECSTATEMENT_APPLICANT_UNAVAILABLE) from None
+            raise ValueError('That applicant is unavailable.') from None
     channel_id = values.get("channel") or context.source_message.channel.id
     channel = await resolve_channel(context, channel_id)
     if not isinstance(channel, discord.TextChannel):
@@ -105,7 +113,7 @@ async def prepare_checkup(context: Any,
                           values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Recruitment")
     if workflow is None:
-        raise ValueError(ACTION_RECSTATEMENT_UNAVAILABLE)
+        raise ValueError('Recruitment messages are unavailable.')
     member = await resolve_member(context.guild, values["applicant"])
     check_member(member, context.guild.me)
     channel = await resolve_channel(
@@ -156,7 +164,7 @@ async def prepare_decline(context: Any,
                           values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Recruitment")
     if workflow is None:
-        raise ValueError(ACTION_RECSTATEMENT_UNAVAILABLE)
+        raise ValueError('Recruitment messages are unavailable.')
     member = await resolve_member(context.guild, values["applicant"])
     check_member(member, context.guild.me)
     channel = await resolve_channel(
@@ -172,7 +180,7 @@ async def prepare_decline(context: Any,
     lines = [ACTION_DECLINE_LINE.format(member=member.mention,
                                         channel=channel.mention)]
     if candidate and candidate != channel.name:
-        lines.append((ACTION_DECLINE_RENAME if len(candidate) <= 100
+        lines.append((ACTION_TICKET_RENAME if len(candidate) <= 100
                       else ACTION_DECLINE_RENAME_SKIP).format(
             old=channel.name, new=candidate,
         ))
@@ -214,7 +222,7 @@ async def prepare_finalize(context: Any,
                            values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Recruitment")
     if workflow is None:
-        raise ValueError(ACTION_RECSTATEMENT_UNAVAILABLE)
+        raise ValueError('Recruitment messages are unavailable.')
     member = await resolve_member(context.guild, values["applicant"])
     check_member(member, context.guild.me)
     channel = await resolve_channel(
@@ -235,13 +243,13 @@ async def prepare_finalize(context: Any,
     lines = [ACTION_FINALIZE_LINE.format(member=member.mention,
                                          channel=channel.mention)]
     if prepared["old_name"] != prepared["new_name"]:
-        lines.append(ACTION_FINALIZE_RENAME.format(
+        lines.append(ACTION_TICKET_RENAME.format(
             old=prepared["old_name"], new=prepared["new_name"],
         ))
-    lines.extend(ACTION_FINALIZE_ROLE_REMOVE.format(
+    lines.extend(ACTION_ROLE_REMOVE_LINE.format(
         role=role.mention, member=member.mention,
     ) for role in prepared["remove_roles"])
-    lines.extend(ACTION_FINALIZE_ROLE_ADD.format(
+    lines.extend(ACTION_ROLE_ADD_LINE.format(
         role=role.mention, member=member.mention,
     ) for role in prepared["add_roles"])
     lines.extend(line or ACTION_PREVIEW_BLANK
@@ -296,7 +304,7 @@ async def prepare_accept(context: Any,
                          values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Recruitment")
     if workflow is None:
-        raise ValueError(ACTION_RECSTATEMENT_UNAVAILABLE)
+        raise ValueError('Recruitment messages are unavailable.')
     member = await resolve_member(context.guild, values["applicant"])
     check_member(member, context.guild.me)
     channel = await resolve_channel(
@@ -334,10 +342,10 @@ async def prepare_accept(context: Any,
         old=effects["nickname_before"] or member.display_name,
         new=effects["nickname_after"],
     ))
-    lines.extend(ACTION_ACCEPT_ROLE_REMOVE.format(
+    lines.extend(ACTION_ROLE_REMOVE_LINE.format(
         role=role.mention, member=member.mention,
     ) for role in effects["remove_roles"])
-    lines.extend(ACTION_ACCEPT_ROLE_ADD.format(
+    lines.extend(ACTION_ROLE_ADD_LINE.format(
         role=role.mention, member=member.mention,
     ) for role in effects["add_roles"])
     for row in prepared["player_rows"]:

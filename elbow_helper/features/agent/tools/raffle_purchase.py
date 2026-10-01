@@ -12,9 +12,10 @@ from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ..commands.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
-    ACTION_RAFFLE_BUY_LINE, ACTION_RAFFLE_BUY_BALANCE,
-    ACTION_RAFFLE_BUY_HUB, ACTION_RAFFLE_BUY_LABEL,
-    ACTION_RAFFLE_BUY_UNAVAILABLE,
+    ACTION_RAFFLE_BUY_LINE,
+    ACTION_RAFFLE_BUY_BALANCE,
+    ACTION_RAFFLE_HUB_UPDATE,
+    ACTION_RAFFLE_BUY_LABEL,
 )
 
 
@@ -33,7 +34,7 @@ async def prepare_raffle_purchase(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Achievements")
     if workflow is None:
-        raise ValueError(ACTION_RAFFLE_BUY_UNAVAILABLE)
+        raise ValueError('Raffle ticket purchases are unavailable.')
     before = await workflow.raffle_purchase_state(context.member.id)
     if before["issue"]:
         return {"status": "needs_input", "issue": before["issue"],
@@ -43,7 +44,7 @@ async def prepare_raffle_purchase(context: AgentRequestContext,
                                      cost=before["cost"]),
         ACTION_RAFFLE_BUY_BALANCE.format(
             old=before["balance"], new=before["balance"] - before["cost"]),
-        ACTION_RAFFLE_BUY_HUB,
+        ACTION_RAFFLE_HUB_UPDATE,
     )
 
     async def recheck() -> bool:

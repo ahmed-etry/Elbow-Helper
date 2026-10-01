@@ -17,9 +17,11 @@ from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ..commands.outcomes import CommandOutcome, embed_text
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
-    ACTION_PROMOTION_ROUTE_LINE, ACTION_PROMOTION_ROUTE_FIELD,
-    ACTION_PROMOTION_ROUTE_REVIEW, ACTION_PROMOTION_ROUTE_PROMPT,
-    ACTION_PROMOTION_ROUTE_LABEL, ACTION_PROMOTION_ROUTE_UNAVAILABLE,
+    ACTION_PROMOTION_ROUTE_LINE,
+    ACTION_FIELD_CHANGE,
+    ACTION_PROMOTION_ROUTE_REVIEW,
+    ACTION_PROMOTION_ROUTE_PROMPT,
+    ACTION_PROMOTION_ROUTE_LABEL,
 )
 from .discord_safety import check_post_access, check_view_access, resolve_channel
 
@@ -53,10 +55,10 @@ async def read_promotion_review(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Examination")
     if workflow is None or not workflow.can_change_promotion_route(context.member):
-        return {"error": ACTION_PROMOTION_ROUTE_UNAVAILABLE}
+        return {"error": "That promotion request isn't available."}
     case = workflow.promotion_route_snapshot(values["ticket_channel_id"])
     if case is None or not case.get("routing_message_id"):
-        return {"error": ACTION_PROMOTION_ROUTE_UNAVAILABLE}
+        return {"error": "That promotion request isn't available."}
     ticket = await resolve_channel(context, values["ticket_channel_id"])
     review = await resolve_channel(context, EXAMINATION_ROOM)
     for channel in (ticket, review):
@@ -78,14 +80,14 @@ async def prepare_promotion_route(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Examination")
     if workflow is None or not workflow.can_change_promotion_route(context.member):
-        raise ValueError(ACTION_PROMOTION_ROUTE_UNAVAILABLE)
+        raise ValueError("That promotion request isn't available.")
     case = workflow.promotion_route_snapshot(values["ticket_channel_id"])
     if case is None:
-        raise ValueError(ACTION_PROMOTION_ROUTE_UNAVAILABLE)
+        raise ValueError("That promotion request isn't available.")
     ticket = await resolve_channel(context, values["ticket_channel_id"])
     review = await resolve_channel(context, EXAMINATION_ROOM)
     if not isinstance(ticket, discord.TextChannel):
-        raise ValueError(ACTION_PROMOTION_ROUTE_UNAVAILABLE)
+        raise ValueError("That promotion request isn't available.")
     for channel in (ticket, review):
         check_post_access(channel, context.member, context.guild.me)
     from_clan, to_clan = values["from_clan"], values["to_clan"]
@@ -95,9 +97,9 @@ async def prepare_promotion_route(context: AgentRequestContext,
     if case.get("from_clan") == from_clan and case.get("to_clan") == to_clan:
         return {"status": "no_change"}
     lines = [ACTION_PROMOTION_ROUTE_LINE.format(channel=ticket.mention)]
-    lines.append(ACTION_PROMOTION_ROUTE_FIELD.format(
+    lines.append(ACTION_FIELD_CHANGE.format(
         field="Current clan", old=case.get("from_clan") or "Not set", new=from_clan))
-    lines.append(ACTION_PROMOTION_ROUTE_FIELD.format(
+    lines.append(ACTION_FIELD_CHANGE.format(
         field="Promotion target", old=case.get("to_clan") or "Not set", new=to_clan))
     lines.append(ACTION_PROMOTION_ROUTE_REVIEW.format(channel=review.mention))
     if case.get("availability_prompt_id"):

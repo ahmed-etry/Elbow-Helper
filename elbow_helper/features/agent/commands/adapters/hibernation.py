@@ -13,19 +13,27 @@ from elbow_helper.features.agent.tools.discord_safety import (
 
 from ...actions.contracts import ActionClass, ChangePreview
 from ...wording import (
-    ACTION_HIBERNATE_FALLBACK, ACTION_HIBERNATE_LABEL,
-    ACTION_HIBERNATE_LINE, ACTION_HIBERNATE_LOG,
-    ACTION_HIBERNATE_MISSING_ROLE, ACTION_HIBERNATE_NOTICE,
-    ACTION_HIBERNATE_ROLE_ADD, ACTION_HIBERNATE_ROLE_REMOVE,
-    ACTION_HIBERNATE_SAVE_ROLE, ACTION_HIBERNATE_SAVE_RANK,
-    ACTION_HIBERNATE_UNAVAILABLE, ACTION_PREVIEW_BLANK,
-    ACTION_REACTIVATE_LINE, ACTION_REACTIVATE_ROLE_ADD,
-    ACTION_REACTIVATE_ROLE_REMOVE, ACTION_REACTIVATE_ACHIEVEMENT,
-    ACTION_REACTIVATE_TICKET, ACTION_REACTIVATE_CATEGORY,
-    ACTION_REACTIVATE_NO_CATEGORY, ACTION_REACTIVATE_DEFAULT_DENY,
-    ACTION_REACTIVATE_MEMBER_ACCESS, ACTION_REACTIVATE_BOT_ACCESS,
-    ACTION_REACTIVATE_ROLE_ACCESS, ACTION_REACTIVATE_CONTROLS,
-    ACTION_REACTIVATE_FALLBACK, ACTION_REACTIVATE_LABEL,
+    ACTION_HIBERNATE_FALLBACK,
+    ACTION_HIBERNATE_LABEL,
+    ACTION_HIBERNATE_LINE,
+    ACTION_HIBERNATE_LOG,
+    ACTION_HIBERNATE_MISSING_ROLE,
+    ACTION_HIBERNATE_NOTICE,
+    ACTION_ROLE_ADD_LINE,
+    ACTION_ROLE_REMOVE_LINE,
+    ACTION_HIBERNATE_SAVE_ROLE,
+    ACTION_HIBERNATE_SAVE_RANK,
+    ACTION_PREVIEW_BLANK,
+    ACTION_REACTIVATE_LINE,
+    ACTION_REACTIVATE_ACHIEVEMENT,
+    ACTION_REACTIVATE_TICKET,
+    ACTION_REACTIVATE_CATEGORY,
+    ACTION_NO_CATEGORY,
+    ACTION_TICKET_MEMBER,
+    ACTION_TICKET_SUPPORT_ROLE,
+    ACTION_TICKET_CONTROLS,
+    ACTION_REACTIVATE_FALLBACK,
+    ACTION_REACTIVATE_LABEL,
 )
 from ..outcomes import CommandOutcome, embed_text
 from ..registry import CommandAdapter, PreparedCommandChange
@@ -35,7 +43,7 @@ async def prepare_hibernate(context: Any,
                             values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Hibernate")
     if workflow is None:
-        raise ValueError(ACTION_HIBERNATE_UNAVAILABLE)
+        raise ValueError('Hibernation is unavailable.')
     member = await resolve_member(context.guild, values["user"])
     check_member(member, context.guild.me)
     plan = workflow.prepare_hibernation(context.guild, member)
@@ -58,10 +66,10 @@ async def prepare_hibernate(context: Any,
                  for role_id in plan["stored_role_ids"])
     lines.extend(ACTION_HIBERNATE_SAVE_RANK.format(role=f"<@&{role_id}>")
                  for role_id in plan["snapshot_role_ids"])
-    lines.extend(ACTION_HIBERNATE_ROLE_REMOVE.format(
+    lines.extend(ACTION_ROLE_REMOVE_LINE.format(
         role=role.mention, member=member.mention,
     ) for role in plan["to_remove"])
-    lines.extend(ACTION_HIBERNATE_ROLE_ADD.format(
+    lines.extend(ACTION_ROLE_ADD_LINE.format(
         role=role.mention, member=member.mention,
     ) for role in plan["to_add"])
     lines.append(ACTION_HIBERNATE_LOG.format(channel=f"<#{plan['log_channel_id']}>"))
@@ -121,7 +129,7 @@ async def prepare_reactivate(context: Any,
                              values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Hibernate")
     if workflow is None:
-        raise ValueError(ACTION_HIBERNATE_UNAVAILABLE)
+        raise ValueError('Hibernation is unavailable.')
     target_id = values.get("user") or context.member.id
     target = await resolve_member(context.guild, target_id)
     check_member(target, context.guild.me)
@@ -145,30 +153,27 @@ async def prepare_reactivate(context: Any,
     ticket = plan["ticket"]
     category = ticket["category"]
     lines = [ACTION_REACTIVATE_LINE.format(member=target.mention)]
-    lines.extend(ACTION_REACTIVATE_ROLE_REMOVE.format(
+    lines.extend(ACTION_ROLE_REMOVE_LINE.format(
         role=role.mention, member=target.mention,
     ) for role in plan["to_remove"])
-    lines.extend(ACTION_REACTIVATE_ROLE_ADD.format(
+    lines.extend(ACTION_ROLE_ADD_LINE.format(
         role=role.mention, member=target.mention,
     ) for role in plan["to_add"])
     lines.append(ACTION_REACTIVATE_ACHIEVEMENT.format(member=target.mention))
     lines.append(ACTION_REACTIVATE_TICKET.format(name=ticket["name"]))
     lines.append(ACTION_REACTIVATE_CATEGORY.format(
-        category=category.mention if category else ACTION_REACTIVATE_NO_CATEGORY,
+        category=category.mention if category else ACTION_NO_CATEGORY,
     ))
     lines.extend((
-        ACTION_REACTIVATE_DEFAULT_DENY,
-        ACTION_REACTIVATE_MEMBER_ACCESS.format(member=target.mention),
+        ACTION_TICKET_MEMBER.format(member=target.mention),
     ))
-    if ticket["bot_member_id"]:
-        lines.append(ACTION_REACTIVATE_BOT_ACCESS)
-    lines.extend(ACTION_REACTIVATE_ROLE_ACCESS.format(role=f"<@&{role_id}>")
+    lines.extend(ACTION_TICKET_SUPPORT_ROLE.format(role=f"<@&{role_id}>")
                  for role_id in ticket["visible_role_ids"])
     lines.extend(line or ACTION_PREVIEW_BLANK
                  for line in ticket["welcome"].splitlines())
     lines.extend(line or ACTION_PREVIEW_BLANK
                  for line in embed_text(ticket["embed"]).splitlines())
-    lines.append(ACTION_REACTIVATE_CONTROLS)
+    lines.append(ACTION_TICKET_CONTROLS)
     if plan["fallback_thread_id"]:
         lines.append(ACTION_REACTIVATE_FALLBACK.format(
             thread=f"<#{plan['fallback_thread_id']}>",

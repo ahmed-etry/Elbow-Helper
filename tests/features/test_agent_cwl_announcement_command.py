@@ -38,6 +38,7 @@ class CwlAnnouncementCommandTests(unittest.IsolatedAsyncioTestCase):
             prepare_roster_announcement=lambda **_: prepared,
             resolve_roster_announcement_channel=AsyncMock(return_value=channel),
             roster_announcement_cycles=AsyncMock(return_value={"7": 8}),
+            roster_announcement_roster_names=AsyncMock(return_value=("CWL signup",)),
             roster_announcement_release_state=lambda: dict(release),
             post_roster_announcement=AsyncMock(side_effect=post),
             roster_announcement_released=lambda cycles: release == cycles,
@@ -52,7 +53,7 @@ class CwlAnnouncementCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(cwl_announcement_adapters()[0].classification,
                       ActionClass.CHANGE)
         self.assertTrue(await change.preview.recheck())
-        self.assertIn("Roster 7, cycle 8", change.preview.lines)
+        self.assertIn("**CWL signup**", change.preview.lines)
         self.assertTrue(any("link created on Confirm" in line
                             for line in change.preview.lines))
         workflow.post_roster_announcement.assert_not_awaited()

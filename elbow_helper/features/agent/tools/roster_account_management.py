@@ -14,12 +14,17 @@ from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ..commands.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
-    ACTION_ROSTER_ACCOUNT_LINE, ACTION_ROSTER_ACCOUNT_ITEM,
-    ACTION_ROSTER_ACCOUNT_ROLE, ACTION_ROSTER_ACCOUNT_POST,
-    ACTION_ROSTER_ACCOUNT_LABEL, ACTION_ROSTER_UNAVAILABLE,
-    ACTION_ROSTER_BULK_LINE, ACTION_ROSTER_BULK_ACCOUNT,
-    ACTION_ROSTER_BULK_SIGNED, ACTION_ROSTER_BULK_LABEL,
-    ACTION_ROSTER_REMOVE_LINE, ACTION_ROSTER_REMOVE_ROW,
+    ACTION_ROSTER_ACCOUNT_LINE,
+    ACTION_ROSTER_ACCOUNT_ITEM,
+    ACTION_ROSTER_ACCOUNT_ROLE,
+    ACTION_ROSTER_POST_REFRESH,
+    ACTION_ROSTER_ACCOUNT_LABEL,
+    ACTION_ROSTER_BULK_LINE,
+    ACTION_ROSTER_BULK_ACCOUNT,
+    ACTION_ROSTER_BULK_SIGNED,
+    ACTION_ROSTER_BULK_LABEL,
+    ACTION_ROSTER_REMOVE_LINE,
+    ACTION_ROSTER_REMOVE_ROW,
     ACTION_ROSTER_REMOVE_LABEL,
 )
 from .discord_safety import (
@@ -72,10 +77,10 @@ async def prepare_roster_row_removal(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     state = await workflow.roster_signed_rows(values["roster_id"])
     if state is None or state["roster"].guild_id != context.guild.id:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     roster = state["roster"]
     selected = []
     for value in values["accounts"]:
@@ -114,7 +119,7 @@ async def prepare_roster_row_removal(context: AgentRequestContext,
         member=f"<@{row.discord_user_id}>") for row in selected)
     if role is not None:
         lines.append(ACTION_ROSTER_ACCOUNT_ROLE.format(role=role.mention))
-    lines.extend(ACTION_ROSTER_ACCOUNT_POST.format(
+    lines.extend(ACTION_ROSTER_POST_REFRESH.format(
         message_id=message_id, channel=f"<#{channel_id}>")
         for channel_id, message_id in state["posts"])
 
@@ -155,7 +160,7 @@ async def prepare_bulk_roster_add(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     raw_tags = " ".join(values["player_tags"])
     try:
         state = await workflow.bulk_add_roster_preview(values["roster_id"], raw_tags)
@@ -163,7 +168,7 @@ async def prepare_bulk_roster_add(context: AgentRequestContext,
         return {"status": "needs_input", "issue": str(exc), "prepared_count": 0}
     roster = state["roster"]
     if roster.guild_id != context.guild.id:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     if all(row[3] for row in state["accounts"]):
         return {"status": "no_change"}
     role = context.guild.get_role(roster.role_id) if roster.role_id else None
@@ -184,7 +189,7 @@ async def prepare_bulk_roster_add(context: AgentRequestContext,
         for tag, name, member_id, signed in state["accounts"])
     if role is not None:
         lines.append(ACTION_ROSTER_ACCOUNT_ROLE.format(role=role.mention))
-    lines.extend(ACTION_ROSTER_ACCOUNT_POST.format(
+    lines.extend(ACTION_ROSTER_POST_REFRESH.format(
         message_id=message_id, channel=f"<#{channel_id}>")
         for channel_id, message_id in state["posts"])
 
@@ -230,7 +235,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     roster_id = values["roster_id"]
     member_id = values.get("member_id") or context.member.id
     member = await resolve_member(context.guild, member_id)
@@ -240,7 +245,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         for_other_member=member_id != context.member.id)
     roster, picker = state
     if roster is None or roster.guild_id != context.guild.id or not picker.accounts:
-        return {"status": "needs_input", "issue": picker.message if picker else ACTION_ROSTER_UNAVAILABLE,
+        return {"status": "needs_input", "issue": picker.message if picker else 'That roster is unavailable.',
                 "prepared_count": 0}
     selected, issue = workflow.resolve_roster_account_choices(
         picker.accounts, list(values["accounts"]))
@@ -267,7 +272,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         for account in selected_accounts)
     if role is not None:
         lines.append(ACTION_ROSTER_ACCOUNT_ROLE.format(role=role.mention))
-    lines.extend(ACTION_ROSTER_ACCOUNT_POST.format(
+    lines.extend(ACTION_ROSTER_POST_REFRESH.format(
         message_id=message_id, channel=f"<#{channel_id}>")
         for channel_id, message_id in posts)
     snapshots = {account.player_tag: account for account in picker.accounts}

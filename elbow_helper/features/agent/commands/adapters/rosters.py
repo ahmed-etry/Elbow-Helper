@@ -16,43 +16,75 @@ from elbow_helper.features.help.discovery import ParameterInfo
 from ...actions.contracts import ActionClass, ChangePreview
 from ...models import AgentAttachment
 from ...wording import (
-    ACTION_ROSTER_CREATE_CLAN, ACTION_ROSTER_CREATE_LABEL,
-    ACTION_ROSTER_CREATE_LINE, ACTION_ROSTER_CREATE_LIMIT,
-    ACTION_ROSTER_CREATE_NAME_INVALID, ACTION_ROSTER_CREATE_ROLE,
-    ACTION_ROSTER_CLONE_CONTROLS, ACTION_ROSTER_CLONE_LABEL,
-    ACTION_ROSTER_CLONE_LINE, ACTION_ROSTER_CLONE_MINIMUM,
-    ACTION_ROSTER_CLONE_RESET, ACTION_ROSTER_CLONE_SCHEDULE,
-    ACTION_ROSTER_CLONE_START, ACTION_ROSTER_NAME_TAKEN, ACTION_ROSTER_NO_ROLE,
-    ACTION_ROSTER_UNAVAILABLE, ACTION_VALUE_YES, ACTION_VALUE_NO,
-    ACTION_VALUE_HIDDEN, ACTION_VALUE_VISIBLE, ACTION_VALUE_OFF,
-    ACTION_ROSTER_DELETE_LABEL, ACTION_ROSTER_DELETE_LINE,
-    ACTION_ROSTER_DELETE_MEMBER, ACTION_ROSTER_DELETE_POST,
+    ACTION_ROSTER_CREATE_CLAN,
+    ACTION_ROSTER_CREATE_LABEL,
+    ACTION_ROSTER_CREATE_LINE,
+    ACTION_ROSTER_CREATE_LIMIT,
+    ACTION_SIGNUP_ROLE,
+    ACTION_ROSTER_CLONE_CONTROLS,
+    ACTION_ROSTER_CLONE_LABEL,
+    ACTION_ROSTER_CLONE_LINE,
+    ACTION_ROSTER_CLONE_MINIMUM,
+    ACTION_ROSTER_CLONE_RESET,
+    ACTION_ROSTER_CLONE_SCHEDULE,
+    ACTION_ROSTER_CLONE_START,
+    ACTION_ROSTER_NO_ROLE,
+    ACTION_VALUE_YES,
+    ACTION_VALUE_NO,
+    ACTION_VALUE_HIDDEN,
+    ACTION_VALUE_VISIBLE,
+    ACTION_VALUE_OFF,
+    ACTION_ROSTER_DELETE_LABEL,
+    ACTION_ROSTER_DELETE_LINE,
+    ACTION_MEMBER_LINE,
+    ACTION_ROSTER_DELETE_POST,
     ACTION_ROSTER_DELETE_ROLE,
-    ACTION_ROSTER_DELETE_HISTORY, ACTION_ROSTER_CYCLE_ONE,
-    ACTION_ROSTER_CYCLE_MANY, ACTION_ROSTER_SIGNUP_ONE,
+    ACTION_ROSTER_DELETE_HISTORY,
+    ACTION_ROSTER_CYCLE_ONE,
+    ACTION_ROSTER_CYCLE_MANY,
+    ACTION_ROSTER_SIGNUP_ONE,
     ACTION_ROSTER_SIGNUP_MANY,
-    ACTION_ROSTER_EDIT_FIELD, ACTION_ROSTER_EDIT_FIELDS,
-    ACTION_ROSTER_EDIT_LABEL, ACTION_ROSTER_EDIT_LINE,
-    ACTION_ROSTER_EDIT_POST, ACTION_ROSTER_EDIT_ROLE_SYNC,
-    ACTION_ROSTER_TIMING_CLEAR, ACTION_ROSTER_TIMING_SET,
-    ACTION_ROSTER_TIMING_RESET, ACTION_ROSTER_TIMING_KEEP,
-    ACTION_ROSTER_TIMING_ROLE, ACTION_ROSTER_TIMING_MEMBER,
-    ACTION_ROSTER_TIMING_LABEL, ACTION_ROSTER_TIMING_ROLE_KEEP,
-    ACTION_ROSTER_SCHEDULE_DISABLE, ACTION_ROSTER_SCHEDULE_ENABLE,
-    ACTION_ROSTER_SCHEDULE_RULE, ACTION_ROSTER_SCHEDULE_WINDOW,
-    ACTION_ROSTER_SCHEDULE_RESET, ACTION_ROSTER_SCHEDULE_KEEP,
-    ACTION_ROSTER_SCHEDULE_LABEL, ACTION_ROSTER_SCHEDULE_FIELDS,
-    ACTION_VALUE_CURRENT, ACTION_VALUE_NEXT,
-    ACTION_ROSTER_POST_ACCOUNTS, ACTION_ROSTER_POST_CHANNEL_OPTION,
-    ACTION_ROSTER_POST_CLOSED, ACTION_ROSTER_POST_CONTROLS,
-    ACTION_ROSTER_POST_HIDDEN, ACTION_ROSTER_POST_LABEL,
-    ACTION_ROSTER_POST_LINE, ACTION_ROSTER_POST_OPEN,
+    ACTION_FIELD_CHANGE,
+    ACTION_ROSTER_EDIT_FIELDS,
+    ACTION_ROSTER_EDIT_LABEL,
+    ACTION_ROSTER_EDIT_LINE,
+    ACTION_ROSTER_POST_REFRESH,
+    ACTION_ROSTER_EDIT_ROLE_SYNC,
+    ACTION_ROSTER_TIMING_CLEAR,
+    ACTION_ROSTER_TIMING_SET,
+    ACTION_ROSTER_TIMING_RESET,
+    ACTION_ROSTER_TIMING_KEEP,
+    ACTION_ROSTER_TIMING_ROLE,
+    ACTION_ROSTER_TIMING_LABEL,
+    ACTION_ROSTER_TIMING_ROLE_KEEP,
+    ACTION_ROSTER_SCHEDULE_DISABLE,
+    ACTION_ROSTER_SCHEDULE_ENABLE,
+    ACTION_ROSTER_SCHEDULE_RULE,
+    ACTION_ROSTER_SCHEDULE_WINDOW,
+    ACTION_ROSTER_SCHEDULE_RESET,
+    ACTION_ROSTER_SCHEDULE_KEEP,
+    ACTION_ROSTER_SCHEDULE_LABEL,
+    ACTION_ROSTER_SCHEDULE_FIELDS,
+    ACTION_VALUE_CURRENT,
+    ACTION_VALUE_NEXT,
+    ACTION_ROSTER_POST_ACCOUNTS,
+    ACTION_ROSTER_POST_CHANNEL_OPTION,
+    ACTION_ROSTER_POST_CLOSED,
+    ACTION_ROSTER_POST_CONTROLS,
+    ACTION_ROSTER_POST_HIDDEN,
+    ACTION_ROSTER_POST_LABEL,
+    ACTION_ROSTER_POST_LINE,
+    ACTION_ROSTER_POST_OPEN,
     ACTION_ROSTER_POST_RESET,
-    ACTION_ROSTER_POST_PAGE, ACTION_ROSTER_POST_IMAGE,
+    ACTION_ROSTER_POST_PAGE,
+    ACTION_ROSTER_POST_IMAGE,
     ACTION_PREVIEW_BLANK,
-    ACTION_ROSTER_EXPORT_ACCOUNT, ACTION_ROSTER_EXPORT_FILE,
-    ACTION_ROSTER_EXPORT_GOOGLE, ACTION_ROSTER_EXPORT_LABEL,
-    ACTION_ROSTER_EXPORT_LINE, ACTION_ROSTER_EXPORT_LINK,
+    ACTION_ROSTER_EXPORT_ACCOUNT,
+    ACTION_ROSTER_EXPORT_FILE,
+    ACTION_ROSTER_EXPORT_GOOGLE,
+    ACTION_ROSTER_EXPORT_LABEL,
+    ACTION_ROSTER_EXPORT_LINE,
+    ACTION_ROSTER_EXPORT_LINK,
 )
 from ..outcomes import CommandOutcome, embed_text
 from ..registry import CommandAdapter, PreparedCommandChange
@@ -62,25 +94,25 @@ async def prepare_roster_create(context: Any,
                                 values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     name = workflow.validate_roster_name(values["name"])
     if name is None:
-        raise ValueError(ACTION_ROSTER_CREATE_NAME_INVALID)
+        raise ValueError('Enter a roster name between 1 and 100 characters.')
     max_members = int(values.get("max_members", DEFAULT_MAX_MEMBERS))
     if not 1 <= max_members <= MAX_ROSTER_MEMBERS:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     role_id = values.get("signup_role")
     role = context.guild.get_role(role_id) if role_id else None
     if role_id:
         check_role(role, context.guild, context.guild.me, {})
     if not await workflow.roster_name_available(context.guild.id, name):
-        raise ValueError(ACTION_ROSTER_NAME_TAKEN)
+        raise ValueError('A roster with that name already exists.')
     clan_code = values["clan"]
     lines = [
         ACTION_ROSTER_CREATE_LINE.format(name=name),
         ACTION_ROSTER_CREATE_CLAN.format(clan=clan_code),
         ACTION_ROSTER_CREATE_LIMIT.format(count=max_members),
-        ACTION_ROSTER_CREATE_ROLE.format(role=role.mention if role else ACTION_ROSTER_NO_ROLE),
+        ACTION_SIGNUP_ROLE.format(role=role.mention if role else ACTION_ROSTER_NO_ROLE),
     ]
 
     async def recheck() -> bool:
@@ -119,26 +151,26 @@ async def prepare_roster_clone(context: Any,
                                values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     try:
         source_id = int(values["roster"])
     except (TypeError, ValueError):
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE) from None
+        raise ValueError('That roster is unavailable.') from None
     source = await workflow.get_roster(source_id)
     if source is None or source.guild_id != context.guild.id:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     name = workflow.validate_roster_name(values["name"])
     if name is None:
-        raise ValueError(ACTION_ROSTER_CREATE_NAME_INVALID)
+        raise ValueError('Enter a roster name between 1 and 100 characters.')
     if not await workflow.roster_name_available(context.guild.id, name):
-        raise ValueError(ACTION_ROSTER_NAME_TAKEN)
+        raise ValueError('A roster with that name already exists.')
     role_id = values.get("signup_role")
     max_members = values.get("max_members")
     min_townhall = values.get("min_townhall")
     if max_members is not None and not 1 <= int(max_members) <= MAX_ROSTER_MEMBERS:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     if min_townhall is not None and int(min_townhall) < 0:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     options = {
         "name": name, "clan_code": values.get("clan"),
         "role_id": role_id,
@@ -156,7 +188,7 @@ async def prepare_roster_clone(context: Any,
             "schedule_utc_offset",
         )
     ):
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     schedule = (
         f"{settings['open_day']} {settings['open_time']} to "
         f"{settings['close_day']} {settings['close_time']} "
@@ -167,7 +199,7 @@ async def prepare_roster_clone(context: Any,
         ACTION_ROSTER_CLONE_LINE.format(name=name, source=source.name),
         ACTION_ROSTER_CREATE_CLAN.format(clan=settings["clan_code"]),
         ACTION_ROSTER_CREATE_LIMIT.format(count=settings["max_members"]),
-        ACTION_ROSTER_CREATE_ROLE.format(role=role.mention if role else ACTION_ROSTER_NO_ROLE),
+        ACTION_SIGNUP_ROLE.format(role=role.mention if role else ACTION_ROSTER_NO_ROLE),
         ACTION_ROSTER_CLONE_MINIMUM.format(
             minimum=settings["min_townhall"] or ACTION_ROSTER_NO_ROLE,
         ),
@@ -217,14 +249,14 @@ async def prepare_roster_delete(context: Any,
                                 values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     try:
         roster_id = int(values["roster"])
     except (TypeError, ValueError):
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE) from None
+        raise ValueError('That roster is unavailable.') from None
     roster = await workflow.get_roster(roster_id)
     if roster is None or roster.guild_id != context.guild.id:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     state = await workflow.roster_deletion_state(roster)
 
     def check_targets() -> None:
@@ -248,7 +280,7 @@ async def prepare_roster_delete(context: Any,
     ))
     if roster.role_id and state["member_ids"]:
         lines.append(ACTION_ROSTER_DELETE_ROLE.format(role=f"<@&{roster.role_id}>"))
-    lines.extend(ACTION_ROSTER_DELETE_MEMBER.format(member=f"<@{member_id}>")
+    lines.extend(ACTION_MEMBER_LINE.format(member=f"<@{member_id}>")
                  for member_id in state["member_ids"])
     lines.extend(ACTION_ROSTER_DELETE_POST.format(
         channel=f"<#{channel_id}>", message_id=message_id,
@@ -289,20 +321,20 @@ async def prepare_roster_edit(context: Any,
                               values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     try:
         roster_id = int(values["roster"])
     except (TypeError, ValueError):
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE) from None
+        raise ValueError('That roster is unavailable.') from None
     roster = await workflow.get_roster(roster_id)
     if roster is None or roster.guild_id != context.guild.id:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     max_members = values.get("max_members")
     min_townhall = values.get("min_townhall")
     if max_members is not None and not 1 <= int(max_members) <= MAX_ROSTER_MEMBERS:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     if min_townhall is not None and int(min_townhall) < 0:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     changes, issue = workflow.roster_edit_changes(
         name=values.get("name"), clan_code=values.get("clan"),
         role_id=values.get("signup_role"),
@@ -316,7 +348,7 @@ async def prepare_roster_edit(context: Any,
             and not await workflow.roster_name_available(
                 context.guild.id, changes["name"],
             )):
-        raise ValueError(ACTION_ROSTER_NAME_TAKEN)
+        raise ValueError('A roster with that name already exists.')
     state = await workflow.roster_edit_state(roster)
     if ("max_members" in changes
             and changes["max_members"] < state["account_count"]):
@@ -342,14 +374,14 @@ async def prepare_roster_edit(context: Any,
         return str(value) if value is not None else ACTION_ROSTER_NO_ROLE
 
     lines = [ACTION_ROSTER_EDIT_LINE.format(name=roster.name, roster_id=roster.id)]
-    lines.extend(ACTION_ROSTER_EDIT_FIELD.format(
+    lines.extend(ACTION_FIELD_CHANGE.format(
         field=ACTION_ROSTER_EDIT_FIELDS[key],
         old=display(key, getattr(roster, key)), new=display(key, new),
     ) for key, new in changes.items())
     if "role_id" in changes and changes["role_id"] != roster.role_id:
         lines.extend(ACTION_ROSTER_EDIT_ROLE_SYNC.format(member=f"<@{member_id}>")
                      for member_id in state["member_ids"])
-    lines.extend(ACTION_ROSTER_EDIT_POST.format(
+    lines.extend(ACTION_ROSTER_POST_REFRESH.format(
         channel=f"<#{channel_id}>", message_id=message_id,
     ) for channel_id, message_id in state["posts"])
 
@@ -397,14 +429,14 @@ async def prepare_roster_timing(context: Any,
                                 values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     try:
         roster_id = int(values["roster"])
     except (TypeError, ValueError):
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE) from None
+        raise ValueError('That roster is unavailable.') from None
     roster = await workflow.get_roster(roster_id)
     if roster is None or roster.guild_id != context.guild.id:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     options = {
         "opens_on": values.get("opens_on"),
         "closes_on": values.get("closes_on"),
@@ -447,9 +479,9 @@ async def prepare_roster_timing(context: Any,
                           else ACTION_ROSTER_TIMING_ROLE_KEEP).format(
                 role=f"<@&{roster.role_id}>",
             ))
-            lines.extend(ACTION_ROSTER_TIMING_MEMBER.format(member=f"<@{member_id}>")
+            lines.extend(ACTION_MEMBER_LINE.format(member=f"<@{member_id}>")
                          for member_id in state["member_ids"])
-    lines.extend(ACTION_ROSTER_EDIT_POST.format(
+    lines.extend(ACTION_ROSTER_POST_REFRESH.format(
         channel=f"<#{channel_id}>", message_id=message_id,
     ) for channel_id, message_id in state["posts"])
 
@@ -516,14 +548,14 @@ async def prepare_roster_schedule(context: Any,
                                   values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     try:
         roster_id = int(values["roster"])
     except (TypeError, ValueError):
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE) from None
+        raise ValueError('That roster is unavailable.') from None
     roster = await workflow.get_roster(roster_id)
     if roster is None or roster.guild_id != context.guild.id:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     options = {
         "open_day": values.get("open_day"),
         "open_time": values.get("open_time"),
@@ -561,7 +593,7 @@ async def prepare_roster_schedule(context: Any,
         if key in ("schedule_enabled", "reset_on_open"):
             old = ACTION_VALUE_YES if old else ACTION_VALUE_NO
             new = ACTION_VALUE_YES if new else ACTION_VALUE_NO
-        lines.append(ACTION_ROSTER_EDIT_FIELD.format(
+        lines.append(ACTION_FIELD_CHANGE.format(
             field=ACTION_ROSTER_SCHEDULE_FIELDS[key],
             old=old if old is not None else ACTION_ROSTER_NO_ROLE,
             new=new if new is not None else ACTION_ROSTER_NO_ROLE,
@@ -586,9 +618,9 @@ async def prepare_roster_schedule(context: Any,
                           else ACTION_ROSTER_TIMING_ROLE_KEEP).format(
                 role=f"<@&{roster.role_id}>",
             ))
-            lines.extend(ACTION_ROSTER_TIMING_MEMBER.format(member=f"<@{member_id}>")
+            lines.extend(ACTION_MEMBER_LINE.format(member=f"<@{member_id}>")
                          for member_id in state["member_ids"])
-    lines.extend(ACTION_ROSTER_EDIT_POST.format(
+    lines.extend(ACTION_ROSTER_POST_REFRESH.format(
         channel=f"<#{channel_id}>", message_id=message_id,
     ) for channel_id, message_id in state["posts"])
 
@@ -643,19 +675,19 @@ async def prepare_roster_post(context: Any,
                               values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     try:
         roster_id = int(values["roster"])
     except (TypeError, ValueError):
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE) from None
+        raise ValueError('That roster is unavailable.') from None
     roster = await workflow.get_roster(roster_id)
     if roster is None or roster.guild_id != context.guild.id:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     channel = await resolve_channel(
         context, values.get("channel") or context.source_message.channel.id,
     )
     if not isinstance(channel, (discord.TextChannel, discord.Thread)):
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     check_post_access(channel, context.member, context.guild.me)
     state = await workflow.roster_edit_state(roster)
     render = await workflow.preview_roster_post(roster)
@@ -670,7 +702,7 @@ async def prepare_roster_post(context: Any,
     ]
     if effect["clears_signups"]:
         lines.append(ACTION_ROSTER_POST_RESET)
-    lines.extend(ACTION_ROSTER_EDIT_POST.format(
+    lines.extend(ACTION_ROSTER_POST_REFRESH.format(
         channel=f"<#{channel_id}>", message_id=message_id,
     ) for channel_id, message_id in state["posts"])
     for page_number, embeds in enumerate(render["pages"], start=1):
@@ -702,7 +734,7 @@ async def prepare_roster_post(context: Any,
             roster_id, channel.send, rendered=render["rendered"],
         )
         if result is None:
-            raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+            raise ValueError('That roster is unavailable.')
         opened, message = result
         if not await workflow.roster_post_registered(roster_id, message.id):
             raise OSError("Roster post could not be verified")
@@ -730,14 +762,14 @@ async def prepare_roster_export(context: Any,
                                 values: Mapping[str, Any]) -> PreparedCommandChange | CommandOutcome:
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     try:
         roster_id = int(values["roster"])
     except (TypeError, ValueError):
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE) from None
+        raise ValueError('That roster is unavailable.') from None
     roster = await workflow.get_roster(roster_id)
     if roster is None or roster.guild_id != context.guild.id:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     plan = await workflow.roster_export_plan(roster)
     if not plan["accounts"]:
         return CommandOutcome(

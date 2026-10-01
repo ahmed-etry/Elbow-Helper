@@ -13,8 +13,8 @@ from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ..commands.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
-    ACTION_CWL_PREP_REFRESH_LINE, ACTION_CWL_PREP_REFRESH_LABEL,
-    ACTION_CWL_PREP_REFRESH_UNAVAILABLE,
+    ACTION_CWL_PREP_REFRESH_LINE,
+    ACTION_CWL_PREP_REFRESH_LABEL,
 )
 from .discord_safety import check_post_access, resolve_channel
 
@@ -35,7 +35,7 @@ async def prepare_cwl_prep_refresh(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("CwlManagement")
     if workflow is None:
-        raise ValueError(ACTION_CWL_PREP_REFRESH_UNAVAILABLE)
+        raise ValueError("That CWL prep board couldn't be refreshed.")
     channel = await resolve_channel(context, DASHBOARD_THREADS[values["clan_code"]])
     check_post_access(channel, context.member, context.guild.me)
     lines = (ACTION_CWL_PREP_REFRESH_LINE.format(
@@ -51,7 +51,7 @@ async def prepare_cwl_prep_refresh(context: AgentRequestContext,
     async def run() -> CommandOutcome:
         status, _ = await workflow.refresh_prep_dashboard(values["clan_code"])
         if status != "complete":
-            raise ValueError(ACTION_CWL_PREP_REFRESH_UNAVAILABLE)
+            raise ValueError("That CWL prep board couldn't be refreshed.")
         return CommandOutcome("complete", "private", text=ACTION_CWL_PREP_REFRESH_LABEL)
 
     context.state.command_proposals.append(PreparedAction(

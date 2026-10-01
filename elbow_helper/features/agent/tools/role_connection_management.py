@@ -13,11 +13,13 @@ from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ..commands.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
-    ACTION_CONNECTION_MANAGE_LINE, ACTION_CONNECTION_MANAGE_TARGET,
+    ACTION_CONNECTION_MANAGE_LINE,
+    ACTION_CONNECTION_MANAGE_TARGET,
     ACTION_CONNECTION_MANAGE_BOARD,
-    ACTION_CONNECTION_MANAGE_LABEL, ACTION_CONNECTION_MANAGE_DONE,
-    ACTION_CONNECTION_MANAGE_UNAVAILABLE,
-    ACTION_CONNECTION_MANAGE_OLD_RULE, ACTION_CONNECTION_MANAGE_NEW_RULE,
+    ACTION_CONNECTION_MANAGE_LABEL,
+    ACTION_CONNECTION_MANAGE_DONE,
+    ACTION_CONNECTION_MANAGE_OLD_RULE,
+    ACTION_CONNECTION_MANAGE_NEW_RULE,
 )
 from .discord_safety import check_post_access, check_role, resolve_channel
 
@@ -62,26 +64,26 @@ async def prepare_role_connection_change(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("RoleConnections")
     if workflow is None:
-        raise ValueError(ACTION_CONNECTION_MANAGE_UNAVAILABLE)
+        raise ValueError('That role connection is unavailable.')
     channel = await resolve_channel(
         context, values.get("channel_id") or context.source_message.channel.id)
     if not isinstance(channel, discord.TextChannel):
-        raise ValueError(ACTION_CONNECTION_MANAGE_UNAVAILABLE)
+        raise ValueError('That role connection is unavailable.')
     check_post_access(channel, context.member, context.guild.me)
     operation = values["operation"]
     connection_id = values.get("connection_id")
     before = workflow.role_connection_state(connection_id) if connection_id else None
     if operation == "create":
         if connection_id or "target_role_id" not in values:
-            raise ValueError(ACTION_CONNECTION_MANAGE_UNAVAILABLE)
+            raise ValueError('That role connection is unavailable.')
         connection_id = workflow.new_connection_id()
         after = {"id": connection_id, "target_role_id": values["target_role_id"],
                  "all": list(values.get("all", [])), "any": list(values.get("any", []))}
         if not after["all"] and not after["any"]:
-            raise ValueError(ACTION_CONNECTION_MANAGE_UNAVAILABLE)
+            raise ValueError('That role connection is unavailable.')
     elif operation == "update":
         if before is None:
-            raise ValueError(ACTION_CONNECTION_MANAGE_UNAVAILABLE)
+            raise ValueError('That role connection is unavailable.')
         after = {**before}
         for field in ("target_role_id", "all", "any"):
             if field in values:
@@ -90,16 +92,16 @@ async def prepare_role_connection_change(context: AgentRequestContext,
             return {"status": "no_change"}
     elif operation == "remove":
         if before is None:
-            raise ValueError(ACTION_CONNECTION_MANAGE_UNAVAILABLE)
+            raise ValueError('That role connection is unavailable.')
         after = None
     else:
-        raise ValueError(ACTION_CONNECTION_MANAGE_UNAVAILABLE)
+        raise ValueError('That role connection is unavailable.')
     candidate = after or before
     role = context.guild.get_role(candidate["target_role_id"])
     check_role(role, context.guild, context.guild.me, {})
     if after is not None and not workflow.connection_change_is_valid(
         after, replacing_id=connection_id if before is not None else None):
-        raise ValueError(ACTION_CONNECTION_MANAGE_UNAVAILABLE)
+        raise ValueError('That role connection is unavailable.')
     lines = [ACTION_CONNECTION_MANAGE_LINE.format(operation=operation, role=role.mention)]
     if before is not None and after is not None and before["target_role_id"] != after["target_role_id"]:
         previous = context.guild.get_role(before["target_role_id"])
@@ -140,9 +142,9 @@ async def prepare_role_connection_change(context: AgentRequestContext,
             workflow.add_connection(after)
         elif operation == "update":
             if not workflow.replace_connection(connection_id, after):
-                raise ValueError(ACTION_CONNECTION_MANAGE_UNAVAILABLE)
+                raise ValueError('That role connection is unavailable.')
         elif not workflow.remove_connection(connection_id):
-            raise ValueError(ACTION_CONNECTION_MANAGE_UNAVAILABLE)
+            raise ValueError('That role connection is unavailable.')
         board = await workflow.refresh_connections_message(channel)
         return CommandOutcome(
             "complete", "private",
@@ -164,17 +166,17 @@ async def prepare_role_connection_undo(context: AgentRequestContext,
                                        log: Mapping[str, Any]) -> PreparedAction:
     workflow = context.bot.get_cog("RoleConnections")
     if workflow is None:
-        raise ValueError(ACTION_CONNECTION_MANAGE_UNAVAILABLE)
+        raise ValueError('That role connection is unavailable.')
     connection_id = log["targets"]["connection_id"]
     channel = await resolve_channel(context, log["targets"]["channel_id"])
     if not isinstance(channel, discord.TextChannel):
-        raise ValueError(ACTION_CONNECTION_MANAGE_UNAVAILABLE)
+        raise ValueError('That role connection is unavailable.')
     check_post_access(channel, context.member, context.guild.me)
     prior = log["before"]["connection"]
     expected = log["after"]["connection"]
     current = workflow.role_connection_state(connection_id)
     if current != expected:
-        raise ValueError(ACTION_CONNECTION_MANAGE_UNAVAILABLE)
+        raise ValueError('That role connection is unavailable.')
     candidate = prior or expected
     role = context.guild.get_role(candidate["target_role_id"])
     check_role(role, context.guild, context.guild.me, {})
@@ -185,9 +187,9 @@ async def prepare_role_connection_undo(context: AgentRequestContext,
     async def run() -> CommandOutcome:
         if prior is None:
             if not workflow.remove_connection(connection_id):
-                raise ValueError(ACTION_CONNECTION_MANAGE_UNAVAILABLE)
+                raise ValueError('That role connection is unavailable.')
         elif not workflow.replace_connection(connection_id, prior):
-            raise ValueError(ACTION_CONNECTION_MANAGE_UNAVAILABLE)
+            raise ValueError('That role connection is unavailable.')
         board = await workflow.refresh_connections_message(channel)
         return CommandOutcome("complete", "private",
                               text=ACTION_CONNECTION_MANAGE_DONE.format(

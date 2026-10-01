@@ -13,14 +13,21 @@ from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ..commands.outcomes import CommandOutcome, embed_text
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
-    ACTION_EVENT_MANAGE_CATEGORY, ACTION_EVENT_MANAGE_DELETE,
-    ACTION_EVENT_MANAGE_ENABLED, ACTION_EVENT_MANAGE_MOVE,
-    ACTION_EVENT_MANAGE_RESET, ACTION_EVENT_MANAGE_CHANNEL,
-    ACTION_EVENT_MANAGE_LABEL, ACTION_EVENT_MANAGE_UNAVAILABLE,
-    ACTION_EVENT_FORM_CREATE, ACTION_EVENT_FORM_EDIT, ACTION_EVENT_FORM_FIELD,
-    ACTION_EVENT_FORM_CHANNEL, ACTION_EVENT_FORM_LABEL,
+    ACTION_EVENT_MANAGE_CATEGORY,
+    ACTION_EVENT_MANAGE_DELETE,
+    ACTION_EVENT_MANAGE_ENABLED,
+    ACTION_EVENT_MANAGE_MOVE,
+    ACTION_EVENT_MANAGE_RESET,
+    ACTION_EVENT_MANAGE_CHANNEL,
+    ACTION_EVENT_MANAGE_LABEL,
+    ACTION_EVENT_FORM_CREATE,
+    ACTION_EVENT_FORM_EDIT,
+    ACTION_FIELD_CHANGE,
+    ACTION_EVENT_FORM_CHANNEL,
+    ACTION_EVENT_FORM_LABEL,
     ACTION_EVENT_FORM_REFRESH,
-    ACTION_EVENT_REFRESH_LINE, ACTION_EVENT_REFRESH_ITEM,
+    ACTION_EVENT_REFRESH_LINE,
+    ACTION_EVENT_REFRESH_ITEM,
     ACTION_EVENT_REFRESH_LABEL,
 )
 
@@ -92,7 +99,7 @@ async def prepare_event_refresh(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("EventStatsCog")
     if workflow is None or not workflow.can_manage_event_trackers(context.member):
-        raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+        raise ValueError('That event tracker is unavailable.')
     snapshot = workflow.event_refresh_snapshot()
     if not snapshot:
         return {"status": "no_change"}
@@ -124,10 +131,10 @@ async def _prepare_form(context: AgentRequestContext, values: Mapping[str, Any],
     await require_evidence_access(context)
     workflow = context.bot.get_cog("EventStatsCog")
     if workflow is None:
-        raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+        raise ValueError('That event tracker is unavailable.')
     current = workflow.event_management_state(values["event"]) if operation == "edit" else None
     if operation == "edit" and (current is None or current["event"]["source"] != "custom"):
-        raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+        raise ValueError('That event tracker is unavailable.')
     prepared, issue = workflow.prepare_one_time_event_values(
         name=values["name"], start_text=values["start"],
         end_text=values["end"], timezone_text=values["timezone"],
@@ -141,7 +148,7 @@ async def _prepare_form(context: AgentRequestContext, values: Mapping[str, Any],
     for field, value in prepared.items():
         old = before.get("grace_period_hours" if field == "grace_hours" else field)
         if old != value:
-            lines.append(ACTION_EVENT_FORM_FIELD.format(
+            lines.append(ACTION_FIELD_CHANGE.format(
                 field=field.replace("_", " ").title(), old=old if old is not None else "None",
                 new=value))
     if current is None or not before.get("channel_id"):
@@ -160,7 +167,7 @@ async def _prepare_form(context: AgentRequestContext, values: Mapping[str, Any],
         else:
             key = before["key"]
             if not workflow.update_one_time_event(key, **prepared):
-                raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+                raise ValueError('That event tracker is unavailable.')
         await workflow.force_refresh(context.guild)
         return CommandOutcome("complete", "private",
                               text=embed_text(workflow.build_event_detail_embed(context.guild, key)))
@@ -179,22 +186,22 @@ async def _prepare_preset(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("EventStatsCog")
     if workflow is None:
-        raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+        raise ValueError('That event tracker is unavailable.')
     current = workflow.event_management_state(values["event"])
     if current is None or current["event"]["source"] != "preset":
-        raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+        raise ValueError('That event tracker is unavailable.')
     event = current["event"]
     name = values["name"].strip()
     if not name:
-        raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+        raise ValueError('That event tracker is unavailable.')
     grace = values.get("grace_hours")
     if name == event["name"] and (grace is None or grace == event.get("grace_period_hours")):
         return {"status": "no_change"}
     lines = [ACTION_EVENT_FORM_EDIT.format(name=event["name"])]
     if name != event["name"]:
-        lines.append(ACTION_EVENT_FORM_FIELD.format(field="Name", old=event["name"], new=name))
+        lines.append(ACTION_FIELD_CHANGE.format(field="Name", old=event["name"], new=name))
     if grace is not None and grace != event.get("grace_period_hours"):
-        lines.append(ACTION_EVENT_FORM_FIELD.format(
+        lines.append(ACTION_FIELD_CHANGE.format(
             field="Grace hours", old=event.get("grace_period_hours"), new=grace))
 
     async def recheck() -> bool:
@@ -202,7 +209,7 @@ async def _prepare_preset(context: AgentRequestContext,
 
     async def run() -> CommandOutcome:
         if not workflow.update_preset_event(event["key"], name=name, grace_hours=grace):
-            raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+            raise ValueError('That event tracker is unavailable.')
         await workflow.force_refresh(context.guild)
         return CommandOutcome("complete", "private", text=embed_text(
             workflow.build_event_detail_embed(context.guild, event["key"])))
@@ -220,10 +227,10 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
     await require_evidence_access(context)
     workflow = context.bot.get_cog("EventStatsCog") or context.bot.get_cog("EventStats")
     if workflow is None:
-        raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+        raise ValueError('That event tracker is unavailable.')
     state = workflow.event_management_state(values["event"])
     if state is None:
-        raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+        raise ValueError('That event tracker is unavailable.')
     event = state["event"]
     key = event["key"]
     lines: list[str] = []
@@ -238,7 +245,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         if category_id is not None:
             category = context.guild.get_channel(category_id)
             if not isinstance(category, discord.CategoryChannel):
-                raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+                raise ValueError('That event tracker is unavailable.')
         else:
             category = None
         if event.get("category_id") == category_id:
@@ -251,26 +258,26 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         edge = values.get("edge")
         position = values.get("position")
         if (edge is None) == (position is None):
-            raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+            raise ValueError('That event tracker is unavailable.')
         target = (0 if edge == "top" else state["count"] - 1) if edge else position - 1
         if not 0 <= target < state["count"]:
-            raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+            raise ValueError('That event tracker is unavailable.')
         if state["position"] == target:
             return {"status": "no_change"}
         lines.append(ACTION_EVENT_MANAGE_MOVE.format(
             name=event["name"], old=state["position"] + 1, new=target + 1))
     elif operation == "restore_event_defaults":
         if event["source"] != "preset":
-            raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+            raise ValueError('That event tracker is unavailable.')
         lines.append(ACTION_EVENT_MANAGE_RESET.format(name=event["name"]))
     elif operation == "delete_event":
         if event["source"] != "custom":
-            raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+            raise ValueError('That event tracker is unavailable.')
         lines.append(ACTION_EVENT_MANAGE_DELETE.format(name=event["name"]))
         if event.get("channel_id"):
             lines.append(ACTION_EVENT_MANAGE_CHANNEL.format(channel=f"<#{event['channel_id']}>"))
     else:
-        raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+        raise ValueError('That event tracker is unavailable.')
 
     async def recheck() -> bool:
         live = workflow.event_management_state(key)
@@ -288,7 +295,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         else:
             ok, message = await workflow.delete_custom_event(context.guild, key)
         if not ok:
-            raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+            raise ValueError('That event tracker is unavailable.')
         await workflow.force_refresh(context.guild)
         return CommandOutcome("complete", "private", text=(
             message if operation == "delete_event" else lines[0]))

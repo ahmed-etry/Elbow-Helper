@@ -17,16 +17,23 @@ from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ..commands.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
-    ACTION_ROSTER_UNAVAILABLE, ACTION_ROSTER_CONTROL_LINE,
-    ACTION_ROSTER_CONTROL_STATUS, ACTION_ROSTER_CONTROL_POST,
-    ACTION_ROSTER_CONTROL_MEMBER, ACTION_ROSTER_CONTROL_ROLE,
-    ACTION_ROSTER_CONTROL_COUNT, ACTION_ROSTER_CONTROL_OPEN,
-    ACTION_ROSTER_CONTROL_CLOSE, ACTION_ROSTER_CONTROL_SHOW,
-    ACTION_ROSTER_CONTROL_HIDE, ACTION_ROSTER_CONTROL_CLEAR,
-    ACTION_ROSTER_LAYOUT_FIELD, ACTION_ROSTER_LAYOUT_LINE,
-    ACTION_ROSTER_LAYOUT_LABEL, ACTION_ROSTER_LAYOUT_POST,
-    ACTION_ROSTER_REFRESH_LINE, ACTION_ROSTER_REFRESH_MEMBER,
-    ACTION_ROSTER_REFRESH_LABEL, ACTION_ROSTER_REFRESH_UNAVAILABLE,
+    ACTION_ROSTER_CONTROL_LINE,
+    ACTION_ROSTER_CONTROL_STATUS,
+    ACTION_ROSTER_POST_REFRESH,
+    ACTION_ROSTER_CONTROL_MEMBER,
+    ACTION_SIGNUP_ROLE,
+    ACTION_ROSTER_CONTROL_COUNT,
+    ACTION_ROSTER_CONTROL_OPEN,
+    ACTION_ROSTER_CONTROL_CLOSE,
+    ACTION_ROSTER_CONTROL_SHOW,
+    ACTION_ROSTER_CONTROL_HIDE,
+    ACTION_ROSTER_CONTROL_CLEAR,
+    ACTION_FIELD_CHANGE,
+    ACTION_ROSTER_LAYOUT_LINE,
+    ACTION_ROSTER_LAYOUT_LABEL,
+    ACTION_ROSTER_REFRESH_LINE,
+    ACTION_ROSTER_REFRESH_MEMBER,
+    ACTION_ROSTER_REFRESH_LABEL,
 )
 from .discord_safety import (
     check_member, check_post_access, check_role, resolve_channel, resolve_member,
@@ -120,11 +127,11 @@ async def prepare_roster_refresh(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     roster_id = values["roster_id"]
     state = await workflow.roster_management_state(roster_id)
     if state is None or state["roster"].guild_id != context.guild.id:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     roster = state["roster"]
     await _check_posts(context, state["posts"])
     role = context.guild.get_role(roster.role_id) if roster.role_id else None
@@ -137,7 +144,7 @@ async def prepare_roster_refresh(context: AgentRequestContext,
     lines = [ACTION_ROSTER_REFRESH_LINE.format(name=roster.name)]
     lines.extend(ACTION_ROSTER_REFRESH_MEMBER.format(member=member.mention)
                  for member in members)
-    lines.extend(ACTION_ROSTER_CONTROL_POST.format(message_id=message_id,
+    lines.extend(ACTION_ROSTER_POST_REFRESH.format(message_id=message_id,
                                                    channel=f"<#{channel_id}>")
                  for channel_id, message_id in state["posts"])
 
@@ -158,7 +165,7 @@ async def prepare_roster_refresh(context: AgentRequestContext,
     async def run() -> CommandOutcome:
         status = await workflow.refresh_roster(roster_id)
         if status != "complete":
-            raise ValueError(ACTION_ROSTER_REFRESH_UNAVAILABLE)
+            raise ValueError("That roster couldn't be refreshed.")
         return CommandOutcome("complete", "private", text=ACTION_ROSTER_REFRESH_LABEL)
 
     context.state.command_proposals.append(PreparedAction(
@@ -174,11 +181,11 @@ async def prepare_roster_layout(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     roster_id = values["roster_id"]
     state = await workflow.roster_layout_state(roster_id)
     if state is None or state[0].guild_id != context.guild.id:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     roster, layout = state
     before = asdict(layout)
     changes = {field: values[field] for field in before if field in values
@@ -188,10 +195,10 @@ async def prepare_roster_layout(context: AgentRequestContext,
     posts = (await workflow.roster_edit_state(roster))["posts"]
     await _check_posts(context, posts)
     lines = [ACTION_ROSTER_LAYOUT_LINE.format(name=roster.name)]
-    lines.extend(ACTION_ROSTER_LAYOUT_FIELD.format(
+    lines.extend(ACTION_FIELD_CHANGE.format(
         field=field.replace("_", " ").title(), old=before[field], new=value)
         for field, value in changes.items())
-    lines.extend(ACTION_ROSTER_LAYOUT_POST.format(
+    lines.extend(ACTION_ROSTER_POST_REFRESH.format(
         message_id=message_id, channel=f"<#{channel_id}>")
         for channel_id, message_id in posts)
 
@@ -208,7 +215,7 @@ async def prepare_roster_layout(context: AgentRequestContext,
     async def run() -> CommandOutcome:
         updated, result = await workflow.set_roster_layout(roster_id, **changes)
         if updated is None:
-            raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+            raise ValueError('That roster is unavailable.')
         return CommandOutcome("complete", "private",
                               text=ACTION_ROSTER_LAYOUT_LINE.format(name=updated.name),
                               after={"layout": asdict(result)})
@@ -225,18 +232,18 @@ async def prepare_roster_layout_undo(context: AgentRequestContext,
                                      log: Mapping[str, Any]) -> PreparedAction:
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     roster_id = log["targets"]["roster_id"]
     state = await workflow.roster_layout_state(roster_id)
     if state is None or state[0].guild_id != context.guild.id:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     roster, layout = state
     prior = log["before"]["layout"]
     expected = log["after"]["layout"]
     posts = (await workflow.roster_edit_state(roster))["posts"]
     await _check_posts(context, posts)
     lines = [ACTION_ROSTER_LAYOUT_LINE.format(name=roster.name)]
-    lines.extend(ACTION_ROSTER_LAYOUT_FIELD.format(
+    lines.extend(ACTION_FIELD_CHANGE.format(
         field=field.replace("_", " ").title(), old=getattr(layout, field), new=value)
         for field, value in prior.items() if getattr(layout, field) != value)
 
@@ -253,7 +260,7 @@ async def prepare_roster_layout_undo(context: AgentRequestContext,
     async def run() -> CommandOutcome:
         updated, result = await workflow.set_roster_layout(roster_id, **prior)
         if updated is None:
-            raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+            raise ValueError('That roster is unavailable.')
         return CommandOutcome("complete", "private",
                               text=ACTION_ROSTER_LAYOUT_LINE.format(name=updated.name),
                               after={"layout": asdict(result)})
@@ -271,11 +278,11 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     roster_id = values["roster_id"]
     state = await workflow.roster_management_state(roster_id)
     if state is None or state["roster"].guild_id != context.guild.id:
-        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+        raise ValueError('That roster is unavailable.')
     roster = state["roster"]
     await _check_posts(context, state["posts"])
     check_members = operation == "clear" or (operation == "open" and roster.reset_on_open)
@@ -293,10 +300,10 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         lines.append(ACTION_ROSTER_CONTROL_COUNT.format(count=state["account_count"]))
         role = context.guild.get_role(roster.role_id) if roster.role_id else None
         if role is not None and state["member_ids"]:
-            lines.append(ACTION_ROSTER_CONTROL_ROLE.format(role=role.mention))
+            lines.append(ACTION_SIGNUP_ROLE.format(role=role.mention))
         lines.extend(ACTION_ROSTER_CONTROL_MEMBER.format(member=f"<@{member_id}>")
                      for member_id in state["member_ids"])
-    lines.extend(ACTION_ROSTER_CONTROL_POST.format(message_id=message_id,
+    lines.extend(ACTION_ROSTER_POST_REFRESH.format(message_id=message_id,
                                                    channel=f"<#{channel_id}>")
                  for channel_id, message_id in state["posts"])
 

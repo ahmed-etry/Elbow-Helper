@@ -156,6 +156,18 @@ class CwlAnnouncementMixin:
     async def roster_announcement_cycles(self, guild_id: int):
         return await self._current_cwl_roster_cycles(guild_id)
 
+    async def roster_announcement_roster_names(self, cycles: dict[str, int]) -> tuple[str, ...]:
+        rosters = self.bot.get_cog("Rosters")
+        if rosters is None:
+            raise ValueError("CWL rosters are unavailable")
+        names = []
+        for roster_id in sorted(cycles):
+            roster = await rosters.get_roster(int(roster_id))
+            if roster is None:
+                raise ValueError("CWL roster is unavailable")
+            names.append(roster.name)
+        return tuple(names)
+
     def roster_announcement_released(self, cycles: dict[str, int]) -> bool:
         return self.transfer_state.get("released_roster_cycles") == cycles
 

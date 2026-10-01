@@ -14,8 +14,9 @@ from elbow_helper.features.wars.commands import resolve_statement_members
 
 from ...actions.contracts import ActionClass, ChangePreview
 from ...wording import (
-    ACTION_PREVIEW_BLANK, ACTION_WAR_STATEMENT_LABEL,
-    ACTION_WAR_STATEMENT_LINE, ACTION_WAR_STATEMENT_PLAYER_UNAVAILABLE,
+    ACTION_PREVIEW_BLANK,
+    ACTION_WAR_STATEMENT_LABEL,
+    ACTION_WAR_STATEMENT_LINE,
 )
 from ..outcomes import CommandOutcome
 from ..registry import CommandAdapter
@@ -39,7 +40,7 @@ async def _statement(context: Any, values: Mapping[str, Any], kind: str):
         victim = await _member(context.guild, values["victim"])
         attacker = await _member(context.guild, values["attacker"])
         if victim is None or attacker is None:
-            raise ValueError(ACTION_WAR_STATEMENT_PLAYER_UNAVAILABLE)
+            raise ValueError('That player is unavailable.')
         prepared = workflow.prepare_statement(
             kind, context.guild, values["clan"],
             victim=victim, attacker=attacker, notes=values.get("notes"),

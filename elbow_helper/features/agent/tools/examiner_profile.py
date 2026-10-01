@@ -14,10 +14,11 @@ from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ..commands.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
+    ACTION_EXAMINER_PROFILE_LINE,
+    ACTION_FIELD_CHANGE,
+    ACTION_EXAMINER_PROFILE_LABEL,
+    ACTION_EXAMINER_PROFILE_LEAVE,
     ACTION_EXAMINER_PROFILE_LEAVE_LABEL,
-    ACTION_EXAMINER_PROFILE_LINE, ACTION_EXAMINER_PROFILE_FIELD,
-    ACTION_EXAMINER_PROFILE_LABEL, ACTION_EXAMINER_PROFILE_LEAVE,
-    ACTION_EXAMINER_PROFILE_UNAVAILABLE,
 )
 from .discord_safety import check_post_access, check_view_access, resolve_channel
 
@@ -85,7 +86,7 @@ async def _workflow(context: AgentRequestContext, *, post: bool = True):
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Examination")
     if workflow is None or not workflow.can_edit_examiner_profile(context.member):
-        raise ValueError(ACTION_EXAMINER_PROFILE_UNAVAILABLE)
+        raise ValueError("That examiner profile isn't available.")
     channel = await resolve_channel(context, EXAMINATION_PANEL_THREAD)
     if post:
         check_post_access(channel, context.member, context.guild.me)
@@ -116,7 +117,7 @@ async def prepare_examiner_profile(context: AgentRequestContext,
         return {"status": "no_change"}
     lines = [ACTION_EXAMINER_PROFILE_LINE.format(member=context.member.mention,
                                                  channel=channel.mention)]
-    lines.extend(ACTION_EXAMINER_PROFILE_FIELD.format(
+    lines.extend(ACTION_FIELD_CHANGE.format(
         field=key.replace("_", " ").title(), old=before.get(key) or "Not set",
         new=after.get(key) or "Not set") for key in changed)
 
@@ -161,7 +162,7 @@ async def prepare_examiner_leave(context: AgentRequestContext,
 
     async def run() -> CommandOutcome:
         if not await workflow.leave_examiner_roster(context.member):
-            raise ValueError(ACTION_EXAMINER_PROFILE_UNAVAILABLE)
+            raise ValueError("That examiner profile isn't available.")
         return CommandOutcome("complete", "private", text=ACTION_EXAMINER_PROFILE_LEAVE.format(
             member=context.member.mention, channel=channel.mention))
 
@@ -180,10 +181,10 @@ async def prepare_examiner_profile_undo(context: AgentRequestContext,
     current = workflow.examiner_profile_snapshot(context.member)
     if not workflow.has_examiner_profile(context.member) or any(
             current[key] != expected["profile"][key] for key in PROFILE_FIELDS):
-        raise ValueError(ACTION_EXAMINER_PROFILE_UNAVAILABLE)
+        raise ValueError("That examiner profile isn't available.")
     lines = [ACTION_EXAMINER_PROFILE_LINE.format(member=context.member.mention,
                                                  channel=channel.mention)]
-    lines.extend(ACTION_EXAMINER_PROFILE_FIELD.format(
+    lines.extend(ACTION_FIELD_CHANGE.format(
         field=key.replace("_", " ").title(), old=current[key] or "Not set",
         new=prior["profile"][key] or "Not set")
         for key in PROFILE_FIELDS if current[key] != prior["profile"][key])

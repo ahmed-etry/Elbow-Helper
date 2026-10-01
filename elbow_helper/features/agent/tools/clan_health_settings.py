@@ -19,8 +19,9 @@ from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ..commands.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
-    ACTION_HEALTH_SETTINGS_LINE, ACTION_HEALTH_SETTINGS_FIELD,
-    ACTION_HEALTH_SETTINGS_LABEL, ACTION_HEALTH_SETTINGS_UNAVAILABLE,
+    ACTION_HEALTH_SETTINGS_LINE,
+    ACTION_FIELD_CHANGE,
+    ACTION_HEALTH_SETTINGS_LABEL,
 )
 
 
@@ -69,7 +70,7 @@ def _lines(clan: str, block: str, before: Mapping[str, Any],
            after: Mapping[str, Any]) -> tuple[str, ...]:
     lines = [ACTION_HEALTH_SETTINGS_LINE.format(clan=clan,
                                                 section=PLAYER_LABELS[block]["_title"])]
-    lines.extend(ACTION_HEALTH_SETTINGS_FIELD.format(
+    lines.extend(ACTION_FIELD_CHANGE.format(
         field=PLAYER_LABELS[block][key]["label"], old=before[key], new=value)
         for key, value in after.items() if before[key] != value)
     return tuple(lines)
@@ -119,9 +120,9 @@ async def prepare_health_settings_undo(context: AgentRequestContext,
     try:
         current, _, revision = prepare_player_config_block(clan, block, prior)
     except (RuntimeError, ValueError) as exc:
-        raise ValueError(ACTION_HEALTH_SETTINGS_UNAVAILABLE) from exc
+        raise ValueError('Those Clan Health settings have changed.') from exc
     if current[block] != expected:
-        raise ValueError(ACTION_HEALTH_SETTINGS_UNAVAILABLE)
+        raise ValueError('Those Clan Health settings have changed.')
     lines = _lines(clan, block, expected, prior)
 
     async def recheck() -> bool:

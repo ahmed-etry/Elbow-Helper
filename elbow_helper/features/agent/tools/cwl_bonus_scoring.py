@@ -13,10 +13,12 @@ from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ..commands.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
-    ACTION_BONUS_SCORING_LINE, ACTION_BONUS_SCORING_FIELD,
-    ACTION_BONUS_SCORING_DONE, ACTION_BONUS_SCORING_LABEL,
-    ACTION_BONUS_SCORING_UNAVAILABLE,
-    ACTION_BONUS_SCORING_COPY_LINE, ACTION_BONUS_SCORING_RESTORE,
+    ACTION_BONUS_SCORING_LINE,
+    ACTION_FIELD_CHANGE,
+    ACTION_BONUS_SCORING_DONE,
+    ACTION_BONUS_SCORING_LABEL,
+    ACTION_BONUS_SCORING_COPY_LINE,
+    ACTION_BONUS_SCORING_RESTORE,
 )
 
 
@@ -51,12 +53,12 @@ def _changed_lines(before: Mapping[str, Any], after: Mapping[str, Any]) -> list[
     new_scores = after.get("matchup_expected") or {}
     for key in sorted(set(old_scores) | set(new_scores)):
         if old_scores.get(key) != new_scores.get(key):
-            lines.append(ACTION_BONUS_SCORING_FIELD.format(
+            lines.append(ACTION_FIELD_CHANGE.format(
                 field=f"TH {key.replace(':', ' vs ')} Expected Score",
                 old=old_scores.get(key), new=new_scores.get(key)))
     for field in _ADJUSTMENTS:
         if before.get(field) != after.get(field):
-            lines.append(ACTION_BONUS_SCORING_FIELD.format(
+            lines.append(ACTION_FIELD_CHANGE.format(
                 field=field.replace("_", " ").title(),
                 old=before.get(field), new=after.get(field)))
     return lines
@@ -67,7 +69,7 @@ async def prepare_cwl_bonus_scoring(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("CwlManagement")
     if workflow is None:
-        raise ValueError(ACTION_BONUS_SCORING_UNAVAILABLE)
+        raise ValueError('That CWL bonus scoring setup is unavailable.')
     clan = str(values["clan_code"]).upper()
     before, _, revision = workflow.bonus_scoring_snapshot(clan)
     after = copy.deepcopy(before)
@@ -79,7 +81,7 @@ async def prepare_cwl_bonus_scoring(context: AgentRequestContext,
             return {"status": "needs_input", "missing": list(required), "prepared_count": 0}
         key = f"{values['attacker_th']}:{values['defender_th']}"
         if key not in after.get("matchup_expected", {}):
-            raise ValueError(ACTION_BONUS_SCORING_UNAVAILABLE)
+            raise ValueError('That CWL bonus scoring setup is unavailable.')
         after["matchup_expected"][key] = float(values["score"])
     elif operation == "adjustments":
         changes = {field: values[field] for field in _ADJUSTMENTS if field in values}
@@ -94,9 +96,9 @@ async def prepare_cwl_bonus_scoring(context: AgentRequestContext,
                     "prepared_count": 0}
         after, _, source_revision = workflow.bonus_scoring_snapshot(source)
         if source_revision != revision:
-            raise ValueError(ACTION_BONUS_SCORING_UNAVAILABLE)
+            raise ValueError('That CWL bonus scoring setup is unavailable.')
     else:
-        raise ValueError(ACTION_BONUS_SCORING_UNAVAILABLE)
+        raise ValueError('That CWL bonus scoring setup is unavailable.')
     errors = workflow.bonus_scoring_issues(clan, after)
     if errors:
         raise ValueError("\n".join(errors))
@@ -142,13 +144,13 @@ async def prepare_cwl_bonus_scoring_undo(context: AgentRequestContext,
                                          log: Mapping[str, Any]) -> PreparedAction:
     workflow = context.bot.get_cog("CwlManagement")
     if workflow is None:
-        raise ValueError(ACTION_BONUS_SCORING_UNAVAILABLE)
+        raise ValueError('That CWL bonus scoring setup is unavailable.')
     clan = log["targets"]["clan_code"]
     current, _, revision = workflow.bonus_scoring_snapshot(clan)
     expected = log["after"]["payload"]
     prior = log["before"]["payload"]
     if current != expected:
-        raise ValueError(ACTION_BONUS_SCORING_UNAVAILABLE)
+        raise ValueError('That CWL bonus scoring setup is unavailable.')
     lines = [ACTION_BONUS_SCORING_LINE.format(clan=clan),
              *_changed_lines(current, prior)]
 

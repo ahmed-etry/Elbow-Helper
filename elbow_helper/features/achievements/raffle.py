@@ -21,6 +21,7 @@ from .config import TICKET_COST
 from .views import RaffleHubView
 
 RAFFLE_HUB_HTTP_RETRY_DELAYS_SECONDS = (1.0, 2.0, 5.0)
+RAFFLE_COLLECTION_CONTACT = "<@327057918992187395>"
 
 
 class AchievementRaffleMixin:
@@ -109,7 +110,7 @@ class AchievementRaffleMixin:
         reward_text = reward.strip() if isinstance(reward, str) and reward.strip() else "Prize not set"
         announcement = (
             f"Congratulations, {winner_mentions}! You won this month's raffle prize: **{reward_text}**. "
-            f"Contact <@327057918992187395> to collect it."
+            f"Contact {RAFFLE_COLLECTION_CONTACT} to collect it."
         )
         await post(announcement)
         await self.update_raffle_hub_message()

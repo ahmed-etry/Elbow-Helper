@@ -14,11 +14,14 @@ from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ..commands.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
-    ACTION_TICKET_REOPEN_LINE, ACTION_TICKET_REOPEN_ACCESS,
-    ACTION_TICKET_REOPEN_LABEL, ACTION_TICKET_REOPEN_UNAVAILABLE,
-    ACTION_TICKET_CLOSE_LINE, ACTION_TICKET_CLOSE_ACCESS,
-    ACTION_TICKET_CLOSE_LOG, ACTION_TICKET_CLOSE_CONTROLS,
-    ACTION_TICKET_CLOSE_LABEL, ACTION_TICKET_CLOSE_UNAVAILABLE,
+    ACTION_TICKET_REOPEN_LINE,
+    ACTION_TICKET_REOPEN_ACCESS,
+    ACTION_TICKET_REOPEN_LABEL,
+    ACTION_TICKET_CLOSE_LINE,
+    ACTION_TICKET_CLOSE_ACCESS,
+    ACTION_TICKET_CLOSE_LOG,
+    ACTION_TICKET_CLOSE_CONTROLS,
+    ACTION_TICKET_CLOSE_LABEL,
 )
 from .discord_safety import check_member, check_post_access, resolve_channel
 
@@ -52,10 +55,10 @@ async def prepare_support_reopen(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("SupportActions")
     if workflow is None or not workflow.can_manage_ticket_controls(context.member):
-        raise ValueError(ACTION_TICKET_REOPEN_UNAVAILABLE)
+        raise ValueError("That ticket couldn't be reopened.")
     channel = await resolve_channel(context, values.get("channel_id") or context.source_message.channel.id)
     if not isinstance(channel, discord.TextChannel):
-        raise ValueError(ACTION_TICKET_REOPEN_UNAVAILABLE)
+        raise ValueError("That ticket couldn't be reopened.")
     check_post_access(channel, context.member, context.guild.me)
     owner = workflow.support_reopen_state(context.guild, channel)
     check_member(owner, context.guild.me)
@@ -82,7 +85,7 @@ async def prepare_support_reopen(context: AgentRequestContext,
         _, restored = await workflow.reopen_support_ticket(context.guild, channel,
                                                             context.member)
         if not restored:
-            raise ValueError(ACTION_TICKET_REOPEN_UNAVAILABLE)
+            raise ValueError("That ticket couldn't be reopened.")
         return CommandOutcome("complete", "private", text=ACTION_TICKET_REOPEN_LABEL)
 
     context.state.command_proposals.append(PreparedAction(
@@ -98,10 +101,10 @@ async def prepare_reactivation_reopen(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Hibernate")
     if workflow is None or not workflow.can_manage_reactivation_ticket(context.member):
-        raise ValueError(ACTION_TICKET_REOPEN_UNAVAILABLE)
+        raise ValueError("That ticket couldn't be reopened.")
     channel = await resolve_channel(context, values.get("channel_id") or context.source_message.channel.id)
     if not isinstance(channel, discord.TextChannel):
-        raise ValueError(ACTION_TICKET_REOPEN_UNAVAILABLE)
+        raise ValueError("That ticket couldn't be reopened.")
     check_post_access(channel, context.member, context.guild.me)
     owner = await workflow.reactivation_reopen_state(context.guild, channel)
     check_member(owner, context.guild.me)
@@ -128,7 +131,7 @@ async def prepare_reactivation_reopen(context: AgentRequestContext,
         _, restored = await workflow.reopen_reactivation_ticket(context.guild, channel,
                                                                  context.member)
         if not restored:
-            raise ValueError(ACTION_TICKET_REOPEN_UNAVAILABLE)
+            raise ValueError("That ticket couldn't be reopened.")
         return CommandOutcome("complete", "private", text=ACTION_TICKET_REOPEN_LABEL)
 
     context.state.command_proposals.append(PreparedAction(
@@ -144,11 +147,11 @@ async def prepare_reactivation_close(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Hibernate")
     if workflow is None or not workflow.can_manage_reactivation_ticket(context.member):
-        raise ValueError(ACTION_TICKET_CLOSE_UNAVAILABLE)
+        raise ValueError("That reactivation ticket couldn't be closed.")
     channel = await resolve_channel(context, values.get("channel_id") or context.source_message.channel.id)
     log_channel = await resolve_channel(context, TICKETS_LOG)
     if not isinstance(channel, discord.TextChannel):
-        raise ValueError(ACTION_TICKET_CLOSE_UNAVAILABLE)
+        raise ValueError("That reactivation ticket couldn't be closed.")
     for target in (channel, log_channel):
         check_post_access(target, context.member, context.guild.me)
     owner = await workflow.reactivation_reopen_state(context.guild, channel)
@@ -182,7 +185,7 @@ async def prepare_reactivation_close(context: AgentRequestContext,
         ok, issue = await workflow.close_reactivation_ticket(
             context.guild, channel, context.member)
         if not ok:
-            raise ValueError(issue or ACTION_TICKET_CLOSE_UNAVAILABLE)
+            raise ValueError(issue or "That reactivation ticket couldn't be closed.")
         return CommandOutcome("complete", "private", text=ACTION_TICKET_CLOSE_LABEL)
 
     context.state.command_proposals.append(PreparedAction(

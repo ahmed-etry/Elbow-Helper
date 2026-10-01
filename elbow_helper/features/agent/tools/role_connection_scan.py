@@ -12,8 +12,9 @@ from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ..commands.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
-    ACTION_ROLE_ADD_LINE, ACTION_ROLE_REMOVE_LINE,
-    ACTION_ROLE_SCAN_LABEL, ACTION_ROLE_SCAN_UNAVAILABLE,
+    ACTION_ROLE_ADD_LINE,
+    ACTION_ROLE_REMOVE_LINE,
+    ACTION_ROLE_SCAN_LABEL,
 )
 from .discord_safety import check_member, check_role, resolve_member
 
@@ -33,7 +34,7 @@ async def prepare_role_connection_scan(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("RoleConnections")
     if workflow is None:
-        raise ValueError(ACTION_ROLE_SCAN_UNAVAILABLE)
+        raise ValueError('Role connections are unavailable.')
     signature = workflow.connections_board_signature()
     plan = await workflow.role_connection_scan_plan(context.guild)
     changes = [(member, role, add) for member, actions in plan
@@ -75,7 +76,7 @@ def _scan_action(context: AgentRequestContext, workflow: Any,
     async def run() -> CommandOutcome:
         member, role = await targets()
         if not await workflow.apply_role_connection_change(member, role, add=add):
-            raise ValueError(ACTION_ROLE_SCAN_UNAVAILABLE)
+            raise ValueError('Role connections are unavailable.')
         return CommandOutcome("complete", after={"has_role": add})
 
     line = (ACTION_ROLE_ADD_LINE if add else ACTION_ROLE_REMOVE_LINE).format(
@@ -93,7 +94,7 @@ async def prepare_role_connection_scan_undo(context: AgentRequestContext,
                                             log: Mapping[str, Any]) -> PreparedAction:
     workflow = context.bot.get_cog("RoleConnections")
     if workflow is None:
-        raise ValueError(ACTION_ROLE_SCAN_UNAVAILABLE)
+        raise ValueError('Role connections are unavailable.')
     values = log["targets"]
     member = await resolve_member(context.guild, values["member_id"])
     role = context.guild.get_role(values["role_id"])

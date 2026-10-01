@@ -13,8 +13,9 @@ from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ..commands.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
-    ACTION_ELDER_REFRESH_LINE, ACTION_ELDER_REFRESH_BOARD,
-    ACTION_ELDER_REFRESH_LABEL, ACTION_ELDER_REFRESH_UNAVAILABLE,
+    ACTION_ELDER_REFRESH_LINE,
+    ACTION_ELDER_REFRESH_BOARD,
+    ACTION_ELDER_REFRESH_LABEL,
 )
 from .discord_safety import check_post_access, resolve_channel
 
@@ -35,10 +36,10 @@ async def prepare_missing_elder_board(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("ClanReporting")
     if workflow is None:
-        raise ValueError(ACTION_ELDER_REFRESH_UNAVAILABLE)
+        raise ValueError("That Missing Elder board couldn't be refreshed.")
     location = workflow.missing_elder_board_location(values["clan_code"])
     if location is None:
-        raise ValueError(ACTION_ELDER_REFRESH_UNAVAILABLE)
+        raise ValueError("That Missing Elder board couldn't be refreshed.")
     channel = await resolve_channel(context, location["channel_id"])
     check_post_access(channel, context.member, context.guild.me)
     lines = [ACTION_ELDER_REFRESH_LINE.format(clan=values["clan_code"],
@@ -55,7 +56,7 @@ async def prepare_missing_elder_board(context: AgentRequestContext,
 
     async def run() -> CommandOutcome:
         if not await workflow.refresh_missing_elder_board_from_accounts(values["clan_code"]):
-            raise ValueError(ACTION_ELDER_REFRESH_UNAVAILABLE)
+            raise ValueError("That Missing Elder board couldn't be refreshed.")
         return CommandOutcome("complete", "private", text=ACTION_ELDER_REFRESH_LABEL)
 
     context.state.command_proposals.append(PreparedAction(

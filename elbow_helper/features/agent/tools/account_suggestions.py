@@ -15,10 +15,13 @@ from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ..commands.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
-    ACTION_SUGGESTION_LINK, ACTION_SUGGESTION_OLD,
-    ACTION_SUGGESTION_IGNORE, ACTION_SUGGESTION_REVIEW,
-    ACTION_SUGGESTION_BOARD, ACTION_SUGGESTION_UNAVAILABLE,
-    ACTION_SUGGESTION_LINK_LABEL, ACTION_SUGGESTION_IGNORE_LABEL,
+    ACTION_ACCOUNT_ADD_LINE,
+    ACTION_SUGGESTION_OLD,
+    ACTION_SUGGESTION_IGNORE,
+    ACTION_SUGGESTION_REVIEW,
+    ACTION_SUGGESTION_BOARD,
+    ACTION_SUGGESTION_LINK_LABEL,
+    ACTION_SUGGESTION_IGNORE_LABEL,
 )
 from .discord_safety import (
     check_member, check_post_access, check_view_access,
@@ -61,7 +64,7 @@ async def _workflow(context: AgentRequestContext):
     await require_evidence_access(context)
     workflow = context.bot.get_cog("AccountLinks")
     if workflow is None or not workflow.can_review_links(context.member):
-        raise ValueError(ACTION_SUGGESTION_UNAVAILABLE)
+        raise ValueError("That account suggestion isn't available.")
     review = await resolve_channel(context, REVIEW_CHANNEL_ID)
     check_view_access(review, context.member, context.guild.me)
     return workflow, review
@@ -101,7 +104,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
                 "prepared_count": 0}
     suggestion = workflow.account_suggestion_snapshot(tag)
     if suggestion is None:
-        raise ValueError(ACTION_SUGGESTION_UNAVAILABLE)
+        raise ValueError("That account suggestion isn't available.")
     member = None
     old = workflow.get_links_by_tags([tag]).get(tag)
     if not ignore:
@@ -116,7 +119,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
     board = await resolve_channel(context, board_id) if board_id and not ignore else None
     if board is not None:
         check_post_access(board, context.member, context.guild.me)
-    lines = [(ACTION_SUGGESTION_IGNORE if ignore else ACTION_SUGGESTION_LINK).format(
+    lines = [(ACTION_SUGGESTION_IGNORE if ignore else ACTION_ACCOUNT_ADD_LINE).format(
         name=suggestion.get("player_name") or tag, tag=tag,
         member=member.mention if member else "")]
     if old:

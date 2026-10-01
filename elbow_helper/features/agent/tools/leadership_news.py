@@ -13,11 +13,14 @@ from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ..commands.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
-    ACTION_NEWS_PUBLISH_LINE, ACTION_NEWS_PUBLISH_FILE,
-    ACTION_NEWS_PUBLISH_CONTENT, ACTION_NEWS_PUBLISH_DONE,
-    ACTION_NEWS_PUBLISH_LABEL, ACTION_NEWS_PUBLISH_UNAVAILABLE,
+    ACTION_NEWS_PUBLISH_LINE,
+    ACTION_NEWS_PUBLISH_FILE,
+    ACTION_NEWS_PUBLISH_CONTENT,
+    ACTION_NEWS_PUBLISH_DONE,
+    ACTION_NEWS_PUBLISH_LABEL,
     ACTION_PREVIEW_BLANK,
-    ACTION_NEWS_DISMISS_LINE, ACTION_NEWS_DISMISS_LABEL,
+    ACTION_NEWS_DISMISS_LINE,
+    ACTION_NEWS_DISMISS_LABEL,
     ACTION_NEWS_PUBLISH_PROMPT,
 )
 from .discord_safety import check_post_access, check_view_access, resolve_channel
@@ -47,13 +50,13 @@ async def prepare_news_dismiss(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("LeadNews")
     if workflow is None:
-        raise ValueError(ACTION_NEWS_PUBLISH_UNAVAILABLE)
+        raise ValueError('That lead update is unavailable.')
     source = await resolve_channel(context, LEAD_NEWS)
     check_post_access(source, context.member, context.guild.me)
     prompt = await source.fetch_message(values["prompt_message_id"])
     source_id = workflow.public_news_prompt_source(prompt)
     if source_id is None:
-        raise ValueError(ACTION_NEWS_PUBLISH_UNAVAILABLE)
+        raise ValueError('That lead update is unavailable.')
     lines = (ACTION_NEWS_DISMISS_LINE.format(
         prompt_id=prompt.id, channel=source.mention, source_id=source_id),)
 
@@ -68,7 +71,7 @@ async def prepare_news_dismiss(context: AgentRequestContext,
     async def run() -> CommandOutcome:
         current = await source.fetch_message(prompt.id)
         if not await workflow.dismiss_public_news_prompt(current):
-            raise ValueError(ACTION_NEWS_PUBLISH_UNAVAILABLE)
+            raise ValueError('That lead update is unavailable.')
         return CommandOutcome("complete", "private", text=ACTION_NEWS_DISMISS_LABEL)
 
     context.state.command_proposals.append(PreparedAction(
@@ -84,7 +87,7 @@ async def prepare_lead_news(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("LeadNews")
     if workflow is None:
-        raise ValueError(ACTION_NEWS_PUBLISH_UNAVAILABLE)
+        raise ValueError('That lead update is unavailable.')
     source = await resolve_channel(context, LEAD_NEWS)
     target = await resolve_channel(context, PUBLIC_NEWS)
     check_view_access(source, context.member, context.guild.me)
@@ -92,7 +95,7 @@ async def prepare_lead_news(context: AgentRequestContext,
     message = await source.fetch_message(values["message_id"])
     prepared = workflow.public_news_preview(message)
     if not prepared["content"] and not prepared["attachments"]:
-        raise ValueError(ACTION_NEWS_PUBLISH_UNAVAILABLE)
+        raise ValueError('That lead update is unavailable.')
     lines = [ACTION_NEWS_PUBLISH_LINE.format(
         source=source.mention, target=target.mention)]
     lines.append(ACTION_NEWS_PUBLISH_CONTENT)

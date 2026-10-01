@@ -9,13 +9,18 @@ import discord
 
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...wording import (
-    ACTION_ACCOUNT_ADD_LABEL, ACTION_ACCOUNT_ADD_LINE,
-    ACTION_ACCOUNT_ADD_UNDO_LABEL, ACTION_ACCOUNT_BOARD,
-    ACTION_ACCOUNT_INVALID, ACTION_ACCOUNT_LOCATION_CLEAR,
-    ACTION_ACCOUNT_NAME_LINE, ACTION_ACCOUNT_NO_LINK,
-    ACTION_ACCOUNT_PRIMARY_LINE, ACTION_ACCOUNT_REASSIGN_LINE,
-    ACTION_ACCOUNT_REMOVE_LABEL, ACTION_ACCOUNT_REMOVE_LINE,
-    ACTION_ACCOUNT_MEMBER_UNAVAILABLE, ACTION_UNDO_CHANGED,
+    ACTION_ACCOUNT_ADD_LABEL,
+    ACTION_ACCOUNT_ADD_LINE,
+    ACTION_ACCOUNT_ADD_UNDO_LABEL,
+    ACTION_ACCOUNT_BOARD,
+    ACTION_ACCOUNT_LOCATION_CLEAR,
+    ACTION_ACCOUNT_NAME_LINE,
+    ACTION_ACCOUNT_NO_LINK,
+    ACTION_ACCOUNT_PRIMARY_LINE,
+    ACTION_ACCOUNT_REASSIGN_LINE,
+    ACTION_ACCOUNT_REMOVE_LABEL,
+    ACTION_ACCOUNT_REMOVE_LINE,
+    ACTION_UNDO_CHANGED,
 )
 from ..outcomes import CommandOutcome
 from ..registry import CommandAdapter
@@ -63,7 +68,7 @@ def _add_lines(prepared: Mapping[str, Any], member: Any) -> tuple[str, ...]:
                 "last_seen_clan_tag", "last_seen_clan_code", "last_seen_role")):
             lines.append(ACTION_ACCOUNT_LOCATION_CLEAR.format(tag=tag))
     if prepared["invalid_tags"]:
-        lines.append(ACTION_ACCOUNT_INVALID.format(
+        lines.append('Invalid player tags: {tags}'.format(
             tags=", ".join(prepared["invalid_tags"]),
         ))
     if prepared["refresh_boards"]:
@@ -76,7 +81,7 @@ async def prepare_account_add(context: Any,
     workflow = _workflow(context)
     member = await _member(context, values["member"])
     if member is None:
-        raise ValueError(ACTION_ACCOUNT_MEMBER_UNAVAILABLE)
+        raise ValueError('That member is unavailable.')
     prepared = await workflow.account_add_operation(member, values["tags"], commit=False)
     if prepared["error"]:
         raise ValueError(prepared["error"])
@@ -180,7 +185,7 @@ async def prepare_account_remove(context: Any,
     lines.extend(ACTION_ACCOUNT_NO_LINK.format(tag=tag)
                  for tag, owner in prepared["before"].items() if owner is None)
     if prepared["invalid_tags"]:
-        lines.append(ACTION_ACCOUNT_INVALID.format(
+        lines.append('Invalid player tags: {tags}'.format(
             tags=", ".join(prepared["invalid_tags"]),
         ))
     if prepared["refresh_boards"]:

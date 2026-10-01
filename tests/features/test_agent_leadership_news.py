@@ -37,7 +37,7 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
         action = context.state.command_proposals[0]
         self.assertTrue(any("A public update" in line for line in action.preview.lines))
         self.assertTrue(any("photo.png" in line for line in action.preview.lines))
-        self.assertTrue(any("prompt 8" in line for line in action.preview.lines))
+        self.assertTrue(any("publication prompt in" in line for line in action.preview.lines))
         workflow.publish_public_news.assert_not_awaited()
         with (patch("elbow_helper.features.agent.tools.leadership_news.check_view_access"),
               patch("elbow_helper.features.agent.tools.leadership_news.check_post_access")):

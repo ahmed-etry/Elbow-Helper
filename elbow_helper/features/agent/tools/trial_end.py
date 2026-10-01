@@ -12,10 +12,12 @@ from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ..commands.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
-    ACTION_TRIAL_END_LINE, ACTION_TRIAL_END_RENAME,
-    ACTION_TRIAL_END_TRACKING, ACTION_TRIAL_END_REMINDER,
-    ACTION_TRIAL_END_FOLLOWUP, ACTION_TRIAL_END_LABEL,
-    ACTION_TRIAL_END_UNAVAILABLE,
+    ACTION_TRIAL_END_LINE,
+    ACTION_TRIAL_END_RENAME,
+    ACTION_TRIAL_END_TRACKING,
+    ACTION_TRIAL_END_REMINDER,
+    ACTION_TRIAL_END_FOLLOWUP,
+    ACTION_TRIAL_END_LABEL,
 )
 from .discord_safety import check_member, check_post_access, resolve_channel
 
@@ -37,11 +39,11 @@ async def prepare_trial_end(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Recruitment")
     if workflow is None or not workflow.can_end_trial(context.member):
-        raise ValueError(ACTION_TRIAL_END_UNAVAILABLE)
+        raise ValueError("That trial isn't available.")
     snapshot = await workflow.trial_end_snapshot(values["ticket_channel_id"])
     trial, reminder = snapshot["trial"], snapshot["reminder"]
     if not snapshot["channel_name"] or not trial and not reminder:
-        raise ValueError(ACTION_TRIAL_END_UNAVAILABLE)
+        raise ValueError("That trial isn't available.")
     if reminder and reminder.get("resolved_at"):
         return {"status": "no_change"}
     applicant_id = values.get("applicant_id") or (trial or {}).get("applicant_id") or (
@@ -50,7 +52,7 @@ async def prepare_trial_end(context: AgentRequestContext,
         return {"status": "needs_input", "issue": "Which applicant's trial should end?",
                 "prepared_count": 0}
     if trial and trial.get("applicant_id") and int(trial["applicant_id"]) != applicant_id:
-        raise ValueError(ACTION_TRIAL_END_UNAVAILABLE)
+        raise ValueError("That trial isn't available.")
     ticket = await resolve_channel(context, values["ticket_channel_id"])
     check_post_access(ticket, context.member, context.guild.me)
     member = context.guild.get_member(applicant_id)
@@ -96,7 +98,7 @@ async def prepare_trial_end(context: AgentRequestContext,
             ticket.id, applicant_id, context.member,
             allow_missing=trial is None, resolve_reminder=reminder is not None)
         if not result.ended:
-            raise ValueError(result.error or ACTION_TRIAL_END_UNAVAILABLE)
+            raise ValueError(result.error or "That trial isn't available.")
         return CommandOutcome("complete", "private", text="\n".join(
             (ACTION_TRIAL_END_LABEL, *result.notices)))
 

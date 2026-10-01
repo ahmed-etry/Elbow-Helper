@@ -10,12 +10,14 @@ from elbow_helper.features.cwl.announcements import PENDING_ROSTER_HUB_LINK
 
 from ...actions.contracts import ActionClass, ChangePreview
 from ...wording import (
-    ACTION_CWL_ANNOUNCEMENT_CHANNEL, ACTION_CWL_ANNOUNCEMENT_CYCLE,
-    ACTION_CWL_ANNOUNCEMENT_HUB, ACTION_CWL_ANNOUNCEMENT_LABEL,
-    ACTION_CWL_ANNOUNCEMENT_LINK, ACTION_CWL_ANNOUNCEMENT_RELEASE,
-    ACTION_CWL_ANNOUNCEMENT_UNAVAILABLE,
-    ACTION_CWL_ANNOUNCEMENT_CYCLES_UNAVAILABLE,
-    ACTION_CWL_ANNOUNCEMENT_PREVIEW_ONLY, ACTION_PREVIEW_BLANK,
+    ACTION_CWL_ANNOUNCEMENT_CHANNEL,
+    ACTION_CWL_ANNOUNCEMENT_CYCLE,
+    ACTION_CWL_ANNOUNCEMENT_HUB,
+    ACTION_CWL_ANNOUNCEMENT_LABEL,
+    ACTION_CWL_ANNOUNCEMENT_LINK,
+    ACTION_CWL_ANNOUNCEMENT_RELEASE,
+    ACTION_CWL_ANNOUNCEMENT_PREVIEW_ONLY,
+    ACTION_PREVIEW_BLANK,
 )
 from ..outcomes import CommandOutcome
 from ..registry import CommandAdapter, PreparedCommandChange
@@ -35,7 +37,7 @@ async def prepare_roster_announcement(
 ) -> PreparedCommandChange | CommandOutcome:
     workflow = context.bot.get_cog("CwlManagement")
     if workflow is None:
-        raise ValueError(ACTION_CWL_ANNOUNCEMENT_UNAVAILABLE)
+        raise ValueError('CWL roster announcements are unavailable.')
     preview_only = bool(values.get("preview", False))
     prepared = workflow.prepare_roster_announcement(
         **_options(values), require_hub=preview_only,
@@ -49,11 +51,12 @@ async def prepare_roster_announcement(
         )
     channel = await workflow.resolve_roster_announcement_channel()
     if channel is None or channel.guild.id != context.guild.id:
-        raise ValueError(ACTION_CWL_ANNOUNCEMENT_UNAVAILABLE)
+        raise ValueError('CWL roster announcements are unavailable.')
     check_post_access(channel, context.member, context.guild.me)
     cycles = await workflow.roster_announcement_cycles(context.guild.id)
     if cycles is None:
-        raise ValueError(ACTION_CWL_ANNOUNCEMENT_CYCLES_UNAVAILABLE)
+        raise ValueError("CWL rosters aren't available, so the announcement wasn't posted.")
+    names = await workflow.roster_announcement_roster_names(cycles)
     prior_release = workflow.roster_announcement_release_state()
     content = prepared["content_preview"].replace(
         f"]({PENDING_ROSTER_HUB_LINK})",
@@ -64,8 +67,8 @@ async def prepare_roster_announcement(
         lines.append(ACTION_CWL_ANNOUNCEMENT_HUB)
     lines.append(ACTION_CWL_ANNOUNCEMENT_RELEASE)
     lines.extend(ACTION_CWL_ANNOUNCEMENT_CYCLE.format(
-        roster_id=roster_id, cycle_id=cycle_id,
-    ) for roster_id, cycle_id in sorted(cycles.items()))
+        name=name,
+    ) for name in names)
     lines.extend(line or ACTION_PREVIEW_BLANK for line in content.splitlines())
 
     async def recheck() -> bool:
@@ -83,6 +86,7 @@ async def prepare_roster_announcement(
                 or live["hub_url"] != prepared["hub_url"]):
             return False
         return (await workflow.roster_announcement_cycles(context.guild.id) == cycles
+                and await workflow.roster_announcement_roster_names(cycles) == names
                 and workflow.roster_announcement_release_state() == prior_release)
 
     async def run() -> CommandOutcome:

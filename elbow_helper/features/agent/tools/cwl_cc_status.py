@@ -13,9 +13,10 @@ from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ..commands.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
-    ACTION_CC_STATUS_LINE, ACTION_CC_STATUS_FIELD,
-    ACTION_CC_STATUS_POST, ACTION_CC_STATUS_LABEL,
-    ACTION_CC_STATUS_UNAVAILABLE,
+    ACTION_CC_STATUS_LINE,
+    ACTION_CC_STATUS_FIELD,
+    ACTION_CC_STATUS_POST,
+    ACTION_CC_STATUS_LABEL,
 )
 from .discord_safety import check_post_access, resolve_channel
 
@@ -37,10 +38,10 @@ async def prepare_cc_status(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("CwlManagement")
     if workflow is None or not workflow.can_change_cc_status(context.member):
-        raise ValueError(ACTION_CC_STATUS_UNAVAILABLE)
+        raise ValueError("That CWL Clan Castle status isn't available.")
     snapshot = await workflow.cc_status_snapshot(values["clan_code"])
     if snapshot is None or not snapshot["sticky_message_id"]:
-        raise ValueError(ACTION_CC_STATUS_UNAVAILABLE)
+        raise ValueError("That CWL Clan Castle status isn't available.")
     if snapshot["status"] == values["status"]:
         return {"status": "no_change"}
     thread = await resolve_channel(context, snapshot["thread_id"])
@@ -83,12 +84,12 @@ async def prepare_cc_status_undo(context: AgentRequestContext,
                                  log: Mapping[str, Any]) -> PreparedAction:
     workflow = context.bot.get_cog("CwlManagement")
     if workflow is None:
-        raise ValueError(ACTION_CC_STATUS_UNAVAILABLE)
+        raise ValueError("That CWL Clan Castle status isn't available.")
     clan = log["targets"]["clan_code"]
     snapshot = await workflow.cc_status_snapshot(clan)
     if snapshot is None or snapshot["war_tag"] != log["after"]["war_tag"] or (
             snapshot["status"] != log["after"]["status"]):
-        raise ValueError(ACTION_CC_STATUS_UNAVAILABLE)
+        raise ValueError("That CWL Clan Castle status isn't available.")
     thread = await resolve_channel(context, snapshot["thread_id"])
     check_post_access(thread, context.member, context.guild.me)
     prior = log["before"]["status"]

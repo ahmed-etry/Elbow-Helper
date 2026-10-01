@@ -11,11 +11,13 @@ from elbow_helper.features.agent.tools.discord_safety import check_post_access
 
 from ...actions.contracts import ActionClass, ChangePreview
 from ...wording import (
-    ACTION_PLAN_BASE, ACTION_PLAN_IMAGE_UNAVAILABLE, ACTION_PLAN_LABEL,
-    ACTION_PLAN_LINE, ACTION_PLAN_PAGE, ACTION_PLAN_PINGS,
-    ACTION_PLAN_STRATEGY, ACTION_PREVIEW_BLANK,
-    ACTION_PLAN_ACCOUNT_AMBIGUOUS, ACTION_PLAN_ACCOUNT_INVALID,
-    ACTION_PLAN_UNAVAILABLE,
+    ACTION_PLAN_BASE,
+    ACTION_PLAN_LABEL,
+    ACTION_PLAN_LINE,
+    ACTION_PLAN_PAGE,
+    ACTION_PLAN_PINGS,
+    ACTION_PLAN_STRATEGY,
+    ACTION_PREVIEW_BLANK,
 )
 from ..outcomes import CommandOutcome, embed_text
 from ..registry import CommandAdapter, PreparedCommandChange
@@ -30,16 +32,16 @@ async def prepare_attack_plan(context: Any,
                               values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Planning")
     if workflow is None:
-        raise ValueError(ACTION_PLAN_UNAVAILABLE)
+        raise ValueError('Attack plans are unavailable.')
     channel = context.source_message.channel
     check_post_access(channel, context.member, context.guild.me)
     strategy_image = _image(context, values["strategy_image"])
     base_image = _image(context, values["base_image"])
     if strategy_image is None or base_image is None:
-        raise ValueError(ACTION_PLAN_IMAGE_UNAVAILABLE)
+        raise ValueError('Attach both screenshots to your message.')
     player_tag, issue = await workflow.resolve_plan_account(values["player"])
     if issue:
-        raise ValueError(ACTION_PLAN_ACCOUNT_AMBIGUOUS if issue == "ambiguous"
+        raise ValueError("More than one Clash account matches that name. Use a player tag." if issue == "ambiguous"
                          else "That Clash account is invalid. Use a player tag or an exact account name.")
     prepared = await workflow.prepare_attack_plan(
         player_tag, values["thinking"], strategy_image, base_image,
