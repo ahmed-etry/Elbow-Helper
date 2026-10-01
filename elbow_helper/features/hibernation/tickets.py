@@ -558,25 +558,38 @@ class HibernationTicketMixin:
         return ticket_channel
 
     async def _close_reactivation_ticket(self, interaction: discord.Interaction) -> None:
-        channel = interaction.channel
-        guild = interaction.guild
-        channel_id = getattr(interaction, "channel_id", None) or getattr(channel, "id", 0)
-        channel_name = getattr(channel, "name", "unknown-channel")
-
-        async def safe_followup(message: str) -> None:
+        async def report(message: str) -> None:
             try:
                 await interaction.followup.send(message, ephemeral=True)
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                LOGGER.warning("Could not send followup in close_ticket for channel %s", channel_id)
+                LOGGER.warning("Could not send followup in close_ticket for channel %s",
+                               interaction.channel_id)
+        await self.close_reactivation_ticket(interaction.guild, interaction.channel,
+                                             interaction.user, report=report)
+
+    async def close_reactivation_ticket(self, guild: discord.Guild | None,
+                                        channel: discord.abc.GuildChannel | None,
+                                        actor: discord.Member,
+                                        *, report=None) -> tuple[bool, str | None]:
+        """Close a reactivation ticket for its panel and the agent."""
+        channel_id = getattr(channel, "id", 0)
+        channel_name = getattr(channel, "name", "unknown-channel")
+        last_issue: str | None = None
+
+        async def safe_followup(message: str) -> None:
+            nonlocal last_issue
+            last_issue = message
+            if report is not None:
+                await report(message)
 
         if guild is None or channel is None:
             await safe_followup("This ticket channel is no longer available.")
-            return
+            return False, last_issue
 
         try:
             await channel.send(
                 embed=build_status_embed(
-                    f"Ticket Closed by {interaction.user.mention}",
+                    f"Ticket Closed by {actor.mention}",
                     discord.Color.gold(),
                 )
             )
@@ -586,7 +599,7 @@ class HibernationTicketMixin:
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             LOGGER.warning("Could not post close status messages in ticket %s", channel_id)
             await safe_followup("I couldn't post the ticket close update. Try again in a moment.")
-            return
+            return False, last_issue
 
         owner_member = await self._resolve_ticket_owner_from_topic(guild, channel)
         if owner_member is not None:
@@ -594,7 +607,7 @@ class HibernationTicketMixin:
                 await channel.set_permissions(
                     owner_member,
                     send_messages=False,
-                    reason=f"Hibernation ticket closed by {interaction.user}",
+                    reason=f"Hibernation ticket closed by {actor}",
                 )
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                 LOGGER.warning("Could not lock ticket %s for owner %s", channel_id, owner_member.id)
@@ -616,7 +629,7 @@ class HibernationTicketMixin:
                 except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                     LOGGER.warning("Could not update transcript status message in ticket %s", channel_id)
                 await safe_followup("I couldn't generate the transcript. Try again in a moment.")
-                return
+                return False, last_issue
 
             transcript_bytes = transcript.encode()
             max_upload_bytes = guild.filesize_limit if guild else 8 * 1024 * 1024
@@ -640,7 +653,7 @@ class HibernationTicketMixin:
                 except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                     LOGGER.warning("Could not update transcript status message in ticket %s", channel_id)
                 await safe_followup("The transcript log channel hasn't been set up.")
-                return
+                return False, last_issue
 
             try:
                 messages = [message async for message in channel.history(limit=1000)]
@@ -723,7 +736,7 @@ class HibernationTicketMixin:
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                 LOGGER.warning("Could not update transcript status message in ticket %s", channel_id)
             await safe_followup("I couldn't save the transcript. Try again in a moment.")
-            return
+            return False, last_issue
 
         transcript_saved_text = (
             f"Transcript saved to <#{TICKETS_LOG}>"
@@ -751,6 +764,7 @@ class HibernationTicketMixin:
                 "Ticket channel %s became unavailable before close controls could be posted.",
                 channel_id,
             )
+        return True, None
 
     async def _reopen_reactivation_ticket(self, interaction: discord.Interaction) -> None:
         guild = interaction.guild
