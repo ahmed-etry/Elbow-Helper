@@ -172,6 +172,30 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
                     temperature=0.2,
                 )
 
+    async def test_agent_session_reports_output_limit_and_accepts_continuation(self):
+        transport = MagicMock()
+        transport.chat.completions.create = AsyncMock(side_effect=[
+            self._response("First part", finish_reason="length"),
+            self._response("Last part", finish_reason="stop"),
+        ])
+        with patch("elbow_helper.infrastructure.ai.client.AsyncOpenAI",
+                   return_value=transport):
+            client = DeepSeekTextClient("deepseek-token")
+            session = client.create_agent_session(
+                system_prompt="trusted", prompt="question", tools=(),
+                max_output_tokens=8_000,
+            )
+            first = await session.advance(max_output_tokens=8_000)
+            second = await session.advance(
+                max_output_tokens=8_000,
+                continuation_instruction="Continue without repeating.",
+            )
+        self.assertTrue(first.output_limit_reached)
+        self.assertFalse(second.output_limit_reached)
+        request = transport.chat.completions.create.await_args_list[1].kwargs
+        self.assertEqual(request["messages"][-1]["content"],
+                         "Continue without repeating.")
+
     def test_provider_error_message_is_bounded(self) -> None:
         rendered = DeepSeekTextClient._format_provider_error(
             OpenAIError("x" * 1_000)

@@ -64,6 +64,7 @@ class AgentStep:
     provider_request_id: str | None = None
     model_identity: str | None = None
     provider_duration_ms: int | None = None
+    output_limit_reached: bool = False
 
 
 class AgentSession(Protocol):
@@ -81,6 +82,7 @@ class AgentSession(Protocol):
         allow_tools: bool = True,
         reasoning_effort: AgentReasoningEffort = AgentReasoningEffort.HIGH,
         max_output_tokens: int | None = None,
+        continuation_instruction: str | None = None,
     ) -> AgentStep: ...
 
 

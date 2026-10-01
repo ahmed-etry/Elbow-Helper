@@ -79,7 +79,8 @@ class _Session:
         self.calls = []
 
     async def advance(self, results=(), *, allow_tools=True,
-                      reasoning_effort=None, max_output_tokens=None):
+                      reasoning_effort=None, max_output_tokens=None,
+                      continuation_instruction=None):
         self.events.append("model")
         self.calls.append((tuple(results), allow_tools, reasoning_effort))
         return self.steps.pop(0)
@@ -128,6 +129,36 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.calls[0][2], AgentReasoningEffort.LOW)
         self.assertEqual([tool.name for tool in model.request["tools"]],
                          ["submit_request_plan"])
+
+    async def test_cut_off_direct_reply_continues_once(self):
+        session = _Session([
+            AgentStep("First part", (), AgentUsage(), output_limit_reached=True),
+            AgentStep("last part.", (), AgentUsage()),
+        ], self.events)
+        answer, _ = await self._answer(session)
+        self.assertEqual(answer, "First part\nlast part.")
+        self.assertEqual(len(session.calls), 2)
+
+    async def test_cut_off_plan_is_reissued_before_parsing(self):
+        complete = _plan([_step("first")])
+        session = _Session([
+            AgentStep("", (AgentToolCall("partial", "submit_request_plan", "{"),),
+                      AgentUsage(), output_limit_reached=True),
+            _model_step(complete),
+            AgentStep("Seven.", (), AgentUsage()),
+        ], self.events)
+        answer, _ = await self._answer(session)
+        self.assertEqual(answer, "Seven.")
+        self.assertIn("incomplete", session.calls[1][0][0].content)
+        self.assertEqual(self.events, ["model", "model", "read", "model"])
+
+    async def test_second_output_limit_is_not_delivered(self):
+        session = _Session([
+            AgentStep("First part", (), AgentUsage(), output_limit_reached=True),
+            AgentStep("Second part", (), AgentUsage(), output_limit_reached=True),
+        ], self.events)
+        with self.assertRaises(AgentUnavailableError):
+            await self._answer(session)
 
     async def test_one_step_plan_uses_two_model_calls(self):
         plan = _plan([_step("first")], effort="high")

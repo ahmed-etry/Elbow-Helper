@@ -274,7 +274,8 @@ class AgentService:
         unpublished_scope = None
 
         async def advance_model(results=(), *, allow_tools=True, reasoning_effort=AgentReasoningEffort.LOW,
-                                max_output_tokens=INITIAL_MAX_OUTPUT_TOKENS):
+                                max_output_tokens=INITIAL_MAX_OUTPUT_TOKENS,
+                                continuation_instruction=None, continued=False):
             nonlocal rounds, unpublished, unpublished_scope
             try:
                 await require_disclosure_access(context)
@@ -288,7 +289,7 @@ class AgentService:
                     "instruction": "Answer using the remaining authorized context.",
                 })) for item in results)
             unpublished = unpublished_scope = None
-            projected = budget.projected_input(results)
+            projected = budget.projected_input(results) + estimate_tokens(continuation_instruction or "")
             remaining = (max_output_tokens if budget.context_window_tokens is None else
                          min(max_output_tokens, budget.context_window_tokens - projected))
             if remaining < MIN_FINAL_OUTPUT_TOKENS:
@@ -305,6 +306,8 @@ class AgentService:
                     model_step = await session.advance(
                         results, allow_tools=allow_tools, reasoning_effort=reasoning_effort,
                         max_output_tokens=remaining,
+                        **({"continuation_instruction": continuation_instruction}
+                           if continuation_instruction else {}),
                     )
                 usage.observe(model_step.usage)
                 budget.observe(model_step.usage, projected_input=projected)
@@ -317,6 +320,32 @@ class AgentService:
                     model_step.usage.completion_tokens, model_step.usage.prompt_cache_hit_tokens,
                     model_step.usage.prompt_cache_miss_tokens,
                 )
+                if model_step.output_limit_reached:
+                    LOGGER.warning("Agent model output limit reached: request=%s round=%s limit=%s",
+                                   request_id, rounds, remaining)
+                    if continued:
+                        raise AgentUnavailableError("The agent reached its output limit twice")
+                    incomplete_calls = tuple(AgentToolResult(
+                        call.call_id,
+                        json.dumps({"error": "The prior model output was incomplete. Submit the full plan again."}),
+                    ) for call in model_step.tool_calls)
+                    instruction = (
+                        "Submit the full tool call again; the previous one was incomplete."
+                        if incomplete_calls else
+                        "Continue the previous answer from where it stopped. Do not repeat it."
+                    )
+                    continuation = await advance_model(
+                        incomplete_calls, allow_tools=allow_tools,
+                        reasoning_effort=reasoning_effort,
+                        max_output_tokens=max_output_tokens,
+                        continuation_instruction=instruction, continued=True,
+                    )
+                    if incomplete_calls or continuation.tool_calls:
+                        return continuation
+                    return replace(continuation, content=(
+                        model_step.content + "\n" + continuation.content
+                        if model_step.content else continuation.content
+                    ))
                 return model_step
             finally:
                 LOGGER.info("Agent model round: request=%s round=%s outcome=%s effort=%s output_limit=%s elapsed_ms=%s",

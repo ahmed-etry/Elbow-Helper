@@ -275,6 +275,7 @@ class _DeepSeekAgentSession:
         allow_tools: bool = True,
         reasoning_effort: AgentReasoningEffort = AgentReasoningEffort.HIGH,
         max_output_tokens: int | None = None,
+        continuation_instruction: str | None = None,
     ) -> AgentStep:
         for result in tool_results:
             self._messages.append(
@@ -284,6 +285,9 @@ class _DeepSeekAgentSession:
                     "content": result.content,
                 }
             )
+
+        if continuation_instruction:
+            self._messages.append({"role": "user", "content": continuation_instruction})
 
         request_messages = list(self._messages)
         if not allow_tools:
@@ -383,7 +387,8 @@ class _DeepSeekAgentSession:
         self._messages.append(message)
 
         cleaned = str(content or "").strip()
-        if not cleaned and not tool_calls:
+        output_limit_reached = getattr(choice, "finish_reason", None) == "length"
+        if not cleaned and not tool_calls and not output_limit_reached:
             raise TextGenerationError(
                 "DeepSeek returned no agent content or tool calls"
             )
@@ -413,6 +418,7 @@ class _DeepSeekAgentSession:
             provider_duration_ms=max(
                 0, int((time.monotonic() - started_at) * 1_000),
             ),
+            output_limit_reached=output_limit_reached,
         )
 
 
