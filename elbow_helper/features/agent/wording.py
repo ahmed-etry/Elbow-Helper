@@ -452,3 +452,7 @@ ACTION_ELDER_REFRESH_LINE = "Refresh {clan}'s Missing Elder board in {channel} f
 ACTION_ELDER_REFRESH_BOARD = "Board message: {message_id}"
 ACTION_ELDER_REFRESH_LABEL = "Refresh Missing Elder board"
 ACTION_ELDER_REFRESH_UNAVAILABLE = "That Missing Elder board couldn't be refreshed."
+ACTION_ROSTER_REFRESH_LINE = "Refresh account details, signup roles and posts for **{name}**."
+ACTION_ROSTER_REFRESH_MEMBER = "Check signup role for {member}."
+ACTION_ROSTER_REFRESH_LABEL = "Refresh roster"
+ACTION_ROSTER_REFRESH_UNAVAILABLE = "That roster couldn't be refreshed."

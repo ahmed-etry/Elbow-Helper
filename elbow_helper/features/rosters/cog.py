@@ -718,16 +718,23 @@ class Rosters(commands.Cog):
         )
 
     async def handle_refresh(self, interaction: discord.Interaction, roster_id: int) -> None:
+        status = await self.refresh_roster(roster_id, on_ready=interaction.response.defer)
+        if status == "cooldown":
+            await warn(interaction, "This roster was just refreshed. Try again in a moment.")
+        elif status == "missing":
+            await warn(interaction, "That roster no longer exists.")
+
+    async def refresh_roster(self, roster_id: int, *, on_ready=None) -> str:
+        """Refresh roster profiles, roles and post for its button and the agent."""
         now = time.monotonic()
         last = self._refresh_times.get(roster_id)
         if last is not None and now - last < REFRESH_COOLDOWN_SECONDS:
-            await warn(interaction, "This roster was just refreshed. Try again in a moment.")
-            return
+            return "cooldown"
         roster = await self.service.get(roster_id)
         if roster is None:
-            await warn(interaction, "That roster no longer exists.")
-            return
-        await interaction.response.defer()
+            return "missing"
+        if on_ready is not None:
+            await on_ready()
         self._refresh_times[roster_id] = now
         members = await self.service.list_members(roster)
         members = await self.profiles.refresh(roster, members)
@@ -738,6 +745,7 @@ class Rosters(commands.Cog):
                 should_have=True,
             )
         await self.posts.refresh(roster)
+        return "complete"
 
     async def handle_page(
         self,

@@ -25,7 +25,10 @@ from ..wording import (
     ACTION_ROSTER_CONTROL_HIDE, ACTION_ROSTER_CONTROL_CLEAR,
     ACTION_ROSTER_LAYOUT_FIELD, ACTION_ROSTER_LAYOUT_LINE,
     ACTION_ROSTER_LAYOUT_LABEL, ACTION_ROSTER_LAYOUT_POST,
+    ACTION_ROSTER_REFRESH_LINE, ACTION_ROSTER_REFRESH_MEMBER,
+    ACTION_ROSTER_REFRESH_LABEL, ACTION_ROSTER_REFRESH_UNAVAILABLE,
 )
+from .discord_safety import check_member, check_role, resolve_member
 
 
 _OPERATIONS = (
@@ -53,6 +56,11 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
             prepare, AgentCapabilityEffect.COMMAND, classification, True,
         ))
     tools.append(RegisteredAgentTool(AgentToolDefinition(
+        name="refresh_roster",
+        description="Refresh a roster's account details, signup roles and post after confirmation.",
+        parameters=schema,
+    ), prepare_roster_refresh, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True))
+    tools.append(RegisteredAgentTool(AgentToolDefinition(
         name="set_roster_layout",
         description="Set roster columns or displayed name lengths after confirmation.",
         parameters={"type": "object", "properties": {
@@ -67,6 +75,58 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
         }, "required": ["roster_id"], "additionalProperties": False},
     ), prepare_roster_layout, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True))
     return tuple(tools)
+
+
+async def prepare_roster_refresh(context: AgentRequestContext,
+                                 values: Mapping[str, Any]) -> Mapping[str, Any]:
+    await require_evidence_access(context)
+    workflow = context.bot.get_cog("Rosters")
+    if workflow is None:
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+    roster_id = values["roster_id"]
+    state = await workflow.roster_management_state(roster_id)
+    if state is None or state["roster"].guild_id != context.guild.id:
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+    roster = state["roster"]
+    role = context.guild.get_role(roster.role_id) if roster.role_id else None
+    if role is not None:
+        check_role(role, context.guild, context.guild.me, {})
+    members = [await resolve_member(context.guild, member_id)
+               for member_id in state["member_ids"]]
+    for member in members:
+        check_member(member, context.guild.me)
+    lines = [ACTION_ROSTER_REFRESH_LINE.format(name=roster.name)]
+    lines.extend(ACTION_ROSTER_REFRESH_MEMBER.format(member=member.mention)
+                 for member in members)
+    lines.extend(ACTION_ROSTER_CONTROL_POST.format(message_id=message_id,
+                                                   channel=f"<#{channel_id}>")
+                 for channel_id, message_id in state["posts"])
+
+    async def recheck() -> bool:
+        current = await workflow.roster_management_state(roster_id)
+        if current is None or current != state:
+            return False
+        try:
+            if role is not None:
+                check_role(role, context.guild, context.guild.me, {})
+            for member in members:
+                check_member(member, context.guild.me)
+        except ValueError:
+            return False
+        return True
+
+    async def run() -> CommandOutcome:
+        status = await workflow.refresh_roster(roster_id)
+        if status != "complete":
+            raise ValueError(ACTION_ROSTER_REFRESH_UNAVAILABLE)
+        return CommandOutcome("complete", "private", text=ACTION_ROSTER_REFRESH_LABEL)
+
+    context.state.command_proposals.append(PreparedAction(
+        "refresh_roster", dict(values),
+        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_REFRESH_LABEL),
+        run, action_class=ActionClass.CHANGE,
+    ))
+    return {"status": "confirmation_required"}
 
 
 async def prepare_roster_layout(context: AgentRequestContext,
