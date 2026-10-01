@@ -57,6 +57,7 @@ from .trial_end import trial_end_tools
 from .transfer_management import transfer_management_tools
 from .wars import war_tools
 from .working_state import working_state_tools
+from ..scheduled.tools import standing_tools
 from ..models import RegisteredAgentTool
 from ..actions.contracts import ActionClass
 from ..models import AgentCapabilityEffect
@@ -103,6 +104,7 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
         "knowledge_history": (*history_tools(), *knowledge_tools(), *action_log_tools()),
         "news": leadership_news_tools(),
         "planning_output": (*working_state_tools(), *spreadsheet_tools()),
+        "standing_rules": standing_tools(),
     }
 
 
