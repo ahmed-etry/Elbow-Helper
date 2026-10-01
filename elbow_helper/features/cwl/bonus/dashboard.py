@@ -86,6 +86,45 @@ class BonusGrantSummary:
 
 
 class CwlBonusDashboardMixin:
+    def bonus_current_month_key(self) -> int:
+        return self._bonus_month_key()
+
+    def bonus_review_state(self, clan_code: str, *, mode: str,
+                           month_key: int) -> Dict[str, Any] | None:
+        """Read one existing board entry for a confirmed review action."""
+        board_key = self._bonus_board_key(mode, month_key)
+        board = self.bonus_dashboard_store.state.get("boards", {}).get(board_key)
+        if not isinstance(board, dict) or clan_code not in board.get("clans", {}):
+            return None
+        return {"board_key": board_key, "board": board,
+                "clan": dict(board["clans"][clan_code]),
+                "closed": bool(board.get("closed")),
+                "month_label": self._bonus_month_label(month_key)}
+
+    async def prepare_bonus_review_candidate(self, clan_code: str, *,
+                                             month_key: int, source: str,
+                                             text: str = "") -> tuple[Optional[BonusCandidate], str]:
+        """Resolve the post that a bonus review would use, without changing its board."""
+        if source == "scan":
+            return await self._scan_bonus_thread(clan_code, month_key=month_key)
+        if source == "link":
+            candidate = await self._parse_bonus_message_link(clan_code, text, month_key=month_key)
+            return candidate, "" if candidate else "That link didn't point to a valid bonus post for this clan."
+        if source == "text":
+            candidate = self._build_bonus_candidate_from_text(
+                clan_code, text, month_key=month_key, require_month=False)
+            return candidate, "" if candidate else self._bonus_text_parse_failure_detail(
+                text, month_key=month_key, require_month=False)
+        return None, "Unknown bonus post source."
+
+    def bonus_review_preview(self, candidate: BonusCandidate) -> discord.Embed:
+        return self._bonus_preview_embed(candidate)
+
+    def bonus_review_result(self, candidate: BonusCandidate,
+                            summary: BonusGrantSummary,
+                            actor: discord.Member) -> discord.Embed:
+        return self._bonus_success_embed(candidate, summary, actor)
+
     def _bonus_month_key(self) -> int:
         now = datetime.now(dt_timezone.utc)
         return now.year * 12 + now.month
@@ -844,6 +883,27 @@ class CwlBonusDashboardMixin:
         board["updated_at"] = int(datetime.now(dt_timezone.utc).timestamp())
         self.bonus_dashboard_store.save()
 
+    async def set_bonus_review_status(self, board_key: str, clan_code: str,
+                                      status: str, actor: discord.Member) -> str:
+        """Apply a review disposition for panel and agent controls."""
+        board = self.bonus_dashboard_store.state.get("boards", {}).get(board_key)
+        if not isinstance(board, dict) or board.get("closed"):
+            raise ValueError("This board is already complete for this month.")
+        if clan_code not in board.get("clans", {}):
+            raise ValueError("That clan is unavailable on this board.")
+        lock = self._get_bonus_board_lock(board_key)
+        async with lock:
+            if status == BONUS_STATUS_SKIPPED:
+                await self._set_bonus_board_skipped(board, clan_code, actor)
+                message = f"Skipped {clan_code} for this month."
+            elif status == BONUS_STATUS_ON_HOLD:
+                await self._set_bonus_board_on_hold(board, clan_code, actor)
+                message = f"{clan_code} put on hold for now."
+            else:
+                raise ValueError("Unknown bonus review status")
+            await self._edit_bonus_board_message(board)
+            return message
+
     async def _edit_bonus_board_message(
         self,
         board: Dict[str, Any],
@@ -1047,70 +1107,38 @@ class CwlBonusDashboardMixin:
             view=BonusPreviewView(self, board_key, board, candidate),
         )
 
-    async def _confirm_bonus_candidate(
-        self,
-        interaction: discord.Interaction,
-        board_key: str,
-        board: Dict[str, Any],
-        candidate: BonusCandidate,
-    ) -> None:
+    async def complete_bonus_review(
+        self, board_key: str, candidate: BonusCandidate, actor: discord.Member,
+    ) -> tuple[str, BonusGrantSummary | str | None]:
+        """Grant a reviewed bonus and update its board for panel and agent flows."""
         if not CWL_BONUS_ECONOMY_ENABLED:
-            await interaction.edit_original_response(
-                content="CWL economy rewards are temporarily disabled.",
-                embed=None,
-                view=None,
-            )
-            return
+            return "disabled", None
+        board = self.bonus_dashboard_store.state.get("boards", {}).get(board_key)
+        if not isinstance(board, dict):
+            return "unavailable", None
         lock = self._get_bonus_board_lock(board_key)
         async with lock:
             if board.get("closed"):
-                await interaction.edit_original_response(
-                    content="This board is already complete for this month.",
-                    embed=None,
-                    view=BonusContinueView(self, board_key, board, board_closed=True),
-                )
-                return
+                return "closed", None
             clan_state = board["clans"][candidate.clan_code]
             if clan_state.get("status") == BONUS_STATUS_COMPLETED:
-                await interaction.edit_original_response(
-                    content=f"{candidate.clan_code} has already been completed for this month.",
-                    embed=None,
-                    view=BonusContinueView(self, board_key, board, board_closed=bool(board.get("closed"))),
-                )
-                return
+                return "already_completed", None
             try:
-                summary = await self._process_bonus_candidate(candidate, interaction.user)
-            except RuntimeError as e:
-                clan_state["status"] = BONUS_STATUS_NEEDS_REVIEW
-                clan_state["last_actor_id"] = interaction.user.id
-                board["updated_at"] = int(datetime.now(dt_timezone.utc).timestamp())
-                self.bonus_dashboard_store.save()
+                summary = await self._process_bonus_candidate(candidate, actor)
+            except RuntimeError as error:
+                await self._set_bonus_board_needs_review(board, candidate.clan_code, actor)
                 await self._edit_bonus_board_message(board)
-                await interaction.edit_original_response(
-                    content=str(e),
-                    embed=None,
-                    view=BonusContinueView(self, board_key, board, board_closed=bool(board.get("closed"))),
-                )
-                return
+                return "error", str(error)
             except Exception:
                 LOGGER.exception("Failed to process CWL bonus candidate for %s", candidate.clan_code)
-                clan_state["status"] = BONUS_STATUS_NEEDS_REVIEW
-                clan_state["last_actor_id"] = interaction.user.id
-                board["updated_at"] = int(datetime.now(dt_timezone.utc).timestamp())
-                self.bonus_dashboard_store.save()
+                await self._set_bonus_board_needs_review(board, candidate.clan_code, actor)
                 await self._edit_bonus_board_message(board)
-                await interaction.edit_original_response(
-                    content="The rewards couldn't be sent, so the clan was left for review.",
-                    embed=None,
-                    view=BonusContinueView(self, board_key, board, board_closed=bool(board.get("closed"))),
-                )
-                return
-            clan_state = board["clans"][candidate.clan_code]
+                return "error", "The rewards couldn't be sent, so the clan was left for review."
             clan_state["status"] = BONUS_STATUS_COMPLETED
-            clan_state["completed_by_id"] = interaction.user.id
-            clan_state["completed_by_name"] = interaction.user.display_name
+            clan_state["completed_by_id"] = actor.id
+            clan_state["completed_by_name"] = actor.display_name
             clan_state["completed_at"] = int(datetime.now(dt_timezone.utc).timestamp())
-            clan_state["last_actor_id"] = interaction.user.id
+            clan_state["last_actor_id"] = actor.id
             clan_state["source_type"] = candidate.source_type
             clan_state["source_message_id"] = candidate.source_message_id
             clan_state["source_channel_id"] = candidate.source_channel_id
@@ -1122,11 +1150,38 @@ class CwlBonusDashboardMixin:
             self.bonus_dashboard_store.save()
             await self._mark_bonus_board_complete(board)
             await self._edit_bonus_board_message(board)
+            return "complete", summary
+
+    async def _confirm_bonus_candidate(
+        self,
+        interaction: discord.Interaction,
+        board_key: str,
+        board: Dict[str, Any],
+        candidate: BonusCandidate,
+    ) -> None:
+        status, detail = await self.complete_bonus_review(board_key, candidate, interaction.user)
+        if status == "complete":
             await interaction.edit_original_response(
                 content=None,
-                embed=self._bonus_success_embed(candidate, summary, interaction.user),
+                embed=self._bonus_success_embed(candidate, detail, interaction.user),
                 view=BonusContinueView(self, board_key, board, board_closed=bool(board.get("closed"))),
             )
+            return
+        if status == "disabled":
+            await interaction.edit_original_response(
+                content="CWL economy rewards are temporarily disabled.", embed=None, view=None,
+            )
+            return
+        if status == "closed":
+            message = "This board is already complete for this month."
+        elif status == "already_completed":
+            message = f"{candidate.clan_code} has already been completed for this month."
+        else:
+            message = detail if isinstance(detail, str) else "The rewards couldn't be sent, so the clan was left for review."
+        await interaction.edit_original_response(
+            content=message, embed=None,
+            view=BonusContinueView(self, board_key, board, board_closed=bool(board.get("closed"))),
+        )
 
     async def _parse_bonus_message_link(
         self,
@@ -1411,20 +1466,20 @@ class BonusFallbackView(discord.ui.View):
 
     async def skip_clan(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        await self.cog._set_bonus_board_skipped(self.board, self.clan_code, interaction.user)
-        await self.cog._edit_bonus_board_message(self.board)
+        message = await self.cog.set_bonus_review_status(
+            self.board_key, self.clan_code, BONUS_STATUS_SKIPPED, interaction.user)
         await interaction.edit_original_response(
-            content=f"Skipped {self.clan_code} for this month.",
+            content=message,
             embed=None,
             view=BonusContinueView(self.cog, self.board_key, self.board),
         )
 
     async def hold_clan(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        await self.cog._set_bonus_board_on_hold(self.board, self.clan_code, interaction.user)
-        await self.cog._edit_bonus_board_message(self.board)
+        message = await self.cog.set_bonus_review_status(
+            self.board_key, self.clan_code, BONUS_STATUS_ON_HOLD, interaction.user)
         await interaction.edit_original_response(
-            content=f"{self.clan_code} put on hold for now.",
+            content=message,
             embed=None,
             view=BonusContinueView(self.cog, self.board_key, self.board),
         )

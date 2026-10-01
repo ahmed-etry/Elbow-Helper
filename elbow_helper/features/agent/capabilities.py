@@ -198,6 +198,7 @@ CONTRACTS: Mapping[str, CapabilityContract] = {
     "move_event": CapabilityContract((('event', 'event_tracker'),), (), source_scope='request_context', filter_fields=('position', 'edge')),
     "restore_event_defaults": CapabilityContract((('event', 'event_tracker'),), (), source_scope='request_context'),
     "delete_event": CapabilityContract((('event', 'event_tracker'),), (), source_scope='request_context'),
+    "review_cwl_bonus": CapabilityContract((('clan_code', 'clan'),), (), source_scope='request_context', filter_fields=('mode', 'month_key', 'decision', 'source', 'source_text')),
     "remember_task_instruction": CapabilityContract((('replaces_id', 'task_instruction'),), (), source_scope='request_context'),
     "retire_task_instruction": CapabilityContract((('instruction_id', 'task_instruction'),), (), source_scope='request_context'),
     "prepare_spreadsheet": CapabilityContract((), (), source_scope='request_context'),
