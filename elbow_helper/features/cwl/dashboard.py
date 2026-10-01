@@ -42,6 +42,7 @@ from .config import DASHBOARD_THREADS
 from .config import DASHBOARD_WARNING_COOLDOWN_SECONDS
 from .config import HERO_SUM_CACHE_SECONDS
 from .config import LEAGUE_NAME_CACHE_SECONDS
+from .config import MANUAL_DASHBOARD_REFRESH_COOLDOWN_SECONDS
 from .views import CwlPrepRefreshView
 
 
@@ -50,6 +51,24 @@ timezone = dt_timezone
 
 
 class CwlDashboardMixin:
+    async def refresh_prep_dashboard(self, clan_code: str, *, on_ready=None) -> tuple[str, int]:
+        """Refresh a clan's prep board for its button and the agent."""
+        lock = self._get_manual_dashboard_refresh_lock(clan_code)
+        if lock.locked():
+            return "busy", 0
+        remaining = int(MANUAL_DASHBOARD_REFRESH_COOLDOWN_SECONDS - (
+            time.time() - self._manual_dashboard_refresh_last_ts.get(clan_code, 0.0)))
+        if remaining > 0:
+            return "cooldown", remaining
+        if on_ready is not None:
+            await on_ready()
+        async with lock:
+            ok = await self._refresh_dashboard_with_retry(clan_code, context="manual")
+            if not ok:
+                return "failed", 0
+            self._manual_dashboard_refresh_last_ts[clan_code] = time.time()
+        return "complete", 0
+
     def _get_manual_dashboard_refresh_lock(self, clan_code: str) -> asyncio.Lock:
         lock = self._manual_dashboard_refresh_locks.get(clan_code)
         if lock is None:

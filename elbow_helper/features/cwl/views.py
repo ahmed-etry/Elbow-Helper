@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import time
 from typing import TYPE_CHECKING
 
 import discord
 from elbow_helper.discord.views import BaseTimeoutView
-from .config import MANUAL_DASHBOARD_REFRESH_COOLDOWN_SECONDS
 
 if TYPE_CHECKING:
     from .cog import CwlManagement
@@ -66,19 +64,20 @@ class CwlPrepRefreshView(BaseTimeoutView):
         self.add_item(refresh_button)
 
     async def refresh(self, interaction: discord.Interaction) -> None:
-        lock = self.cog._get_manual_dashboard_refresh_lock(self.clan_code)
-        if lock.locked():
+        async def defer() -> None:
+            await interaction.response.defer()
+
+        try:
+            status, remaining = await self.cog.refresh_prep_dashboard(self.clan_code, on_ready=defer)
+        except discord.NotFound:
+            return
+        if status == "busy":
             await interaction.response.send_message(
                 "This clan's roster is already being updated.",
                 ephemeral=True,
             )
             return
-
-        now_ts = time.time()
-        last_ts = self.cog._manual_dashboard_refresh_last_ts.get(self.clan_code, 0.0)
-        cooldown_seconds = MANUAL_DASHBOARD_REFRESH_COOLDOWN_SECONDS
-        remaining = int(cooldown_seconds - (now_ts - last_ts))
-        if remaining > 0:
+        if status == "cooldown":
             if remaining == 1:
                 cooldown_message = "Wait 1 second before updating the rosters again."
             else:
@@ -91,13 +90,5 @@ class CwlPrepRefreshView(BaseTimeoutView):
             )
             return
 
-        try:
-            await interaction.response.defer()
-        except discord.NotFound:
-            return
-        async with lock:
-            ok = await self.cog._refresh_dashboard_with_retry(self.clan_code, context="manual")
-            if not ok:
-                await interaction.followup.send("The roster couldn't be updated. Try again in a moment.", ephemeral=True)
-                return
-            self.cog._manual_dashboard_refresh_last_ts[self.clan_code] = time.time()
+        if status == "failed":
+            await interaction.followup.send("The roster couldn't be updated. Try again in a moment.", ephemeral=True)

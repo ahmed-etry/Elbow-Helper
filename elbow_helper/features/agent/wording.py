@@ -456,3 +456,6 @@ ACTION_ROSTER_REFRESH_LINE = "Refresh account details, signup roles and posts fo
 ACTION_ROSTER_REFRESH_MEMBER = "Check signup role for {member}."
 ACTION_ROSTER_REFRESH_LABEL = "Refresh roster"
 ACTION_ROSTER_REFRESH_UNAVAILABLE = "That roster couldn't be refreshed."
+ACTION_CWL_PREP_REFRESH_LINE = "Refresh {clan}'s CWL prep board in {channel}."
+ACTION_CWL_PREP_REFRESH_LABEL = "Refresh CWL prep board"
+ACTION_CWL_PREP_REFRESH_UNAVAILABLE = "That CWL prep board couldn't be refreshed."

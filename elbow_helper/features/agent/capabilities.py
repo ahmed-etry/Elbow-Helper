@@ -213,6 +213,7 @@ CONTRACTS: Mapping[str, CapabilityContract] = {
     "buy_raffle_ticket": CapabilityContract((), (), source_scope='request_context'),
     "publish_lead_news": CapabilityContract((('message_id', 'discord_message'),), (), source_scope='request_context'),
     "refresh_missing_elder_board": CapabilityContract((('clan_code', 'clan'),), (), source_scope='request_context'),
+    "refresh_cwl_prep_board": CapabilityContract((('clan_code', 'clan'),), (), source_scope='request_context'),
     "remember_task_instruction": CapabilityContract((('replaces_id', 'task_instruction'),), (), source_scope='request_context'),
     "retire_task_instruction": CapabilityContract((('instruction_id', 'task_instruction'),), (), source_scope='request_context'),
     "prepare_spreadsheet": CapabilityContract((), (), source_scope='request_context'),
