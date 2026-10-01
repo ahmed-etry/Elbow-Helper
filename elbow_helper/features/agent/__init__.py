@@ -15,6 +15,7 @@ from .research.repository import ResearchJobRepository
 from .research.runner import ResearchJobRunner
 from .actions.repository import AgentActionRepository
 from .actions.runner import AgentActionRunner
+from .scheduled.runner import ScheduledRunner
 from .tools.discord_roles import prepare_role_undo
 from .tools.discord_messages import prepare_edit_undo
 from .tools.discord_threads import prepare_thread_member_undo, prepare_thread_update_undo
@@ -140,33 +141,36 @@ async def setup(bot) -> None:
     knowledge_store = KnowledgeStore(
         bot.paths.data_root / "agent" / "knowledge",
     )
-    await bot.add_cog(
-        AgentCog(
-            bot,
-            account_links=account_links,
-            clan_health=clan_health_queries,
-            message_search=message_search,
-            thread_discovery=thread_discovery,
-            roster_queries=rosters.queries,
-            cwl_queries=cwl_queries,
-            war_queries=war_queries,
-            transfer_queries=transfer_queries,
-            hibernation_queries=hibernation_queries,
-            support_queries=support_queries,
-            recruitment_queries=recruitment_queries,
-            examination_queries=examination_queries,
-            record_queries=record_queries,
-            achievement_queries=achievement_queries,
-            event_queries=event_queries,
-            member_lifecycle_queries=member_lifecycle_queries,
-            clan_reporting_queries=clan_reporting_queries,
-            role_connection_queries=role_connection_queries,
-            knowledge_store=knowledge_store,
-            research_jobs=research_jobs,
-            research_runner=research_runner,
-            action_runner=action_runner,
-            action_repository=action_repository,
-            transcript_archive=archive,
-            persistence=ConversationPersistence(repository),
-        )
+    cog = AgentCog(
+        bot,
+        account_links=account_links,
+        clan_health=clan_health_queries,
+        message_search=message_search,
+        thread_discovery=thread_discovery,
+        roster_queries=rosters.queries,
+        cwl_queries=cwl_queries,
+        war_queries=war_queries,
+        transfer_queries=transfer_queries,
+        hibernation_queries=hibernation_queries,
+        support_queries=support_queries,
+        recruitment_queries=recruitment_queries,
+        examination_queries=examination_queries,
+        record_queries=record_queries,
+        achievement_queries=achievement_queries,
+        event_queries=event_queries,
+        member_lifecycle_queries=member_lifecycle_queries,
+        clan_reporting_queries=clan_reporting_queries,
+        role_connection_queries=role_connection_queries,
+        knowledge_store=knowledge_store,
+        research_jobs=research_jobs,
+        research_runner=research_runner,
+        action_runner=action_runner,
+        action_repository=action_repository,
+        transcript_archive=archive,
+        persistence=ConversationPersistence(repository),
     )
+    cog.scheduled_runner = ScheduledRunner(
+        bot=bot, repository=action_repository, guild_id=GUILD_ID,
+        agent=cog, enabled=getattr(bot, "agent_actions_enabled", True),
+    )
+    await bot.add_cog(cog)

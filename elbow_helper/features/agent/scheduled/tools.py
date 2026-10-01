@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import datetime, timezone
+import json
+import re
 from typing import Any
 from zoneinfo import ZoneInfo
 import discord
@@ -17,11 +19,12 @@ from ..wording import (
     ACTION_STANDING_DESTINATION, ACTION_STANDING_MANAGE,
     ACTION_STANDING_MANAGED, ACTION_STANDING_ONCE, ACTION_STANDING_REPEAT,
     ACTION_STANDING_SAVE, ACTION_STANDING_SAVED, ACTION_STANDING_SCOPE,
-    ACTION_STANDING_NO_CHANGES,
+    ACTION_STANDING_NO_CHANGES, ACTION_STANDING_FIXED, ACTION_STANDING_ACTION,
     ACTION_STANDING_TIME, ACTION_STANDING_WATCHER,
+    ACTION_VALUE_YES, ACTION_VALUE_NO,
 )
 from ..tools.discord_safety import check_post_access, resolve_channel
-from .scope import validate_scope
+from .scope import has_raw_id, validate_scope
 from .time_rules import next_occurrences, timezone_name
 
 
@@ -54,7 +57,7 @@ def _allowed_capabilities(actions: list[Mapping[str, Any]], context: AgentReques
     from ..commands.bridge import build_command_tools
 
     registry = build_agent_tools()
-    command_tools, _ = build_command_tools(context.bot, enabled_adapters())
+    command_tools, command_capabilities = build_command_tools(context.bot, enabled_adapters())
     registry.update(command_tools)
     for entry in actions:
         name = entry["capability"]
@@ -67,14 +70,17 @@ def _allowed_capabilities(actions: list[Mapping[str, Any]], context: AgentReques
         required = set(selected.definition.parameters.get("required", ()))
         if not named <= set(properties) or not required <= named:
             raise ValueError("Set the fixed and changing values for each required action option.")
+        if name in command_capabilities:
+            entry["action_path"] = command_capabilities[name].adapter.path
 
 
 def _watcher_reads(reads: Any) -> None:
     from ..tools import build_agent_tools
     from ..capabilities import CONTRACTS
+    from ..plan.checker import _valid_arguments
 
     registry = build_agent_tools()
-    if not isinstance(reads, list) or not reads:
+    if not isinstance(reads, list) or not 1 <= len(reads) <= 8:
         raise ValueError("Choose at least one current or latest lookup.")
     for read in reads:
         if not isinstance(read, Mapping):
@@ -82,30 +88,127 @@ def _watcher_reads(reads: Any) -> None:
         name = read.get("capability")
         arguments = read.get("arguments")
         tool = registry.get(name)
-        if tool is None or tool.action_class is not ActionClass.READ or not isinstance(arguments, Mapping):
+        if (tool is None or tool.action_class is not ActionClass.READ
+                or tool.effect is not AgentCapabilityEffect.READ
+                or not isinstance(arguments, Mapping)):
             raise ValueError("Watchers use read lookups only.")
+        if not _valid_arguments(arguments, tool.definition.parameters):
+            raise ValueError("Choose valid values for each watcher lookup.")
         contract = CONTRACTS.get(name)
         if contract is None:
             raise ValueError("That lookup cannot be watched.")
+        if contract.retained_fields or contract.source_scope in (
+            "retained_channel_evidence", "retained_attachment", "request_attachment",
+        ):
+            raise ValueError("Watchers need fresh lookups, not earlier reports or attachments.")
+        if contract.time_window is not None:
+            raise ValueError("Watchers use current or latest results, not a historical window.")
         if any(field in arguments and arguments[field] not in ("current", "latest")
                for field in contract.time_fields):
             raise ValueError("Watchers use current or latest results only.")
 
 
+def _validate_watcher(values: Mapping[str, Any], actions) -> None:
+    if actions:
+        raise ValueError("Watchers send alerts only.")
+    _watcher_reads(values.get("reads"))
+    condition = values.get("condition")
+    if not isinstance(condition, str) or not condition.strip():
+        raise ValueError("Describe when the watcher should alert.")
+    if has_raw_id(condition):
+        raise ValueError("Describe the watcher condition with names instead of IDs.")
+
+
+def _evidence_label(context: AgentRequestContext, name: str, value: Any) -> str | None:
+    keys = {name, name + "_id"}
+    labels: set[str] = set()
+
+    def visit(item):
+        if isinstance(item, Mapping):
+            if any(str(item.get(key)) == str(value) for key in keys):
+                label = next((item.get(key) for key in ("jump_url", "mention", "name", "title")
+                              if isinstance(item.get(key), str) and item[key].strip()), None)
+                if label:
+                    labels.add(label)
+            for child in item.values():
+                visit(child)
+        elif isinstance(item, list):
+            for child in item:
+                visit(child)
+
+    state = getattr(context, "state", None)
+    for record in getattr(state, "evidence", ()):
+        try:
+            result = json.loads(record).get("result")
+            visit(json.loads(result) if isinstance(result, str) else result)
+        except (TypeError, ValueError, AttributeError):
+            continue
+    return next(iter(labels)) if len(labels) == 1 else None
+
+
+def _field_label(name: str) -> str:
+    if name.endswith("_ids"):
+        name = name[:-4] + "s"
+    else:
+        name = name.removesuffix("_id")
+    return name.replace("_", " ")
+
+
+def _fixed_display(context: AgentRequestContext, name: str, value: Any) -> str:
+    if isinstance(value, list):
+        return ", ".join(_fixed_display(context, name.removesuffix("s"), item)
+                         for item in value)
+    if isinstance(value, Mapping):
+        return ", ".join(f"{_field_label(key)}: {_fixed_display(context, key, item)}"
+                         for key, item in value.items())
+    if name.endswith("role_id") or name == "role":
+        role = context.guild.get_role(value)
+        if role is None:
+            raise ValueError("Choose a role still in this server.")
+        return role.mention
+    if name.endswith(("channel_id", "thread_id")) or name in ("channel", "thread"):
+        channel = context.guild.get_channel_or_thread(value)
+        if channel is None:
+            raise ValueError("Choose a channel still in this server.")
+        return channel.mention
+    if name.endswith(("member_id", "user_id")) or name in ("member", "user"):
+        member = context.guild.get_member(value)
+        if member is None:
+            raise ValueError("Choose a member still in this server.")
+        return member.mention
+    if isinstance(value, bool):
+        return ACTION_VALUE_YES if value else ACTION_VALUE_NO
+    label = _evidence_label(context, name, value)
+    if label:
+        return label
+    if name.endswith("_id") or re.fullmatch(r"\d{17,20}", str(value)):
+        raise ValueError("Choose a named target for each fixed action value.")
+    return str(value)
+
+
 def _preview_lines(values: Mapping[str, Any], *, kind: str, request: str,
                    zone: str, times: tuple[datetime, ...], channel: Any,
-                   actions: list[Mapping[str, Any]]) -> tuple[str, ...]:
+                   actions: list[Mapping[str, Any]], context: AgentRequestContext) -> tuple[str, ...]:
     formatted = ", ".join(item.astimezone(ZoneInfo(zone)).strftime("%d %b %Y %H:%M")
                           for item in times)
     lines = [
         ACTION_STANDING_SAVE.format(kind=kind, request=request),
         ACTION_STANDING_TIME.format(times=formatted, timezone=zone),
         ACTION_STANDING_DESTINATION.format(channel=channel.mention),
-        (ACTION_STANDING_SCOPE.format(
-            actions="; ".join(item["scope_text"] for item in actions),
-            targets=max(item["max_targets"] for item in actions),
-        ) if actions else ACTION_STANDING_NO_CHANGES),
+        ACTION_STANDING_SCOPE if actions else ACTION_STANDING_NO_CHANGES,
     ]
+    for action in actions:
+        lines.append(ACTION_STANDING_ACTION.format(
+            action=action["scope_text"].rstrip(". "), targets=action["max_targets"],
+            target_word="target" if action["max_targets"] == 1 else "targets",
+        ))
+        fixed = action["fixed_values"]
+        if fixed:
+            rendered = ", ".join(
+                f"{_field_label(name)}: {_fixed_display(context, name, value)}"
+                for name, value in fixed.items()
+            )
+            lines.append(ACTION_STANDING_FIXED.format(values=rendered))
     if kind == "watcher":
         lines.append(ACTION_STANDING_WATCHER.format(
             condition=values["condition"],
@@ -132,34 +235,37 @@ async def prepare_save(context: AgentRequestContext,
     actions = values.get("allowed_actions", [])
     if not isinstance(actions, list):
         raise ValueError("Choose the changes this request may make.")
+    actions = [dict(item) if isinstance(item, Mapping) else item for item in actions]
     validate_scope(actions)
     if actions:
         _allowed_capabilities(actions, context)
     if kind == "watcher":
-        if actions:
-            raise ValueError("Watchers send alerts only.")
-        _watcher_reads(values.get("reads"))
-        if not str(values.get("condition", "")).strip():
-            raise ValueError("Describe when the watcher should alert.")
+        _validate_watcher(values, actions)
     lines = _preview_lines(values, kind=kind, request=request, zone=zone,
-                           times=times, channel=channel, actions=actions)
+                           times=times, channel=channel, actions=actions,
+                           context=context)
     rule = dict(values)
     rule["timezone"] = zone
     rule["allowed_actions"] = actions
     identifier = values.get("replace_id")
+    version = None
     if identifier:
         current = repository.standing(kind=kind, identifier=identifier,
                                       requester_id=context.member.id)
-        if current is None:
+        if current is None or current["status"] == "cancelled":
             raise ValueError("That saved rule is unavailable.")
+        version = current["version"]
 
     async def recheck() -> bool:
         try:
             refreshed = await resolve_channel(context, values["destination_channel_id"])
             check_post_access(refreshed, context.member, context.guild.me)
-            return not identifier or repository.standing(
+            if not identifier:
+                return True
+            updated = repository.standing(
                 kind=kind, identifier=identifier, requester_id=context.member.id,
-            ) is not None
+            )
+            return updated is not None and updated["version"] == version
         except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
             return False
 
@@ -168,7 +274,7 @@ async def prepare_save(context: AgentRequestContext,
             changed = repository.replace_standing(
                 kind=kind, identifier=identifier, requester_id=context.member.id,
                 rule=rule, destination_channel_id=channel.id,
-                next_at=times[0].timestamp(),
+                next_at=times[0].timestamp(), expected_version=version,
             )
             if not changed:
                 raise ValueError("That saved rule changed.")
@@ -212,7 +318,7 @@ async def prepare_manage(context: AgentRequestContext,
     identifier = values["id"]
     current = repository.standing(kind=kind, identifier=identifier,
                                   requester_id=context.member.id)
-    if current is None or current["status"] == "cancelled":
+    if current is None or current["status"] not in ("active", "paused"):
         raise ValueError("That saved rule is unavailable.")
     target = "active" if operation == "resume" else ("paused" if operation == "pause" else "cancelled")
     line = ACTION_STANDING_MANAGE.format(operation=operation.capitalize(), kind=kind,
@@ -231,7 +337,9 @@ async def prepare_manage(context: AgentRequestContext,
                                               requester_id=context.member.id, status=target):
             raise ValueError("That saved rule changed.")
         return CommandOutcome("complete", "public",
-                              text=ACTION_STANDING_MANAGED.format(kind=kind, status=target))
+                              text=ACTION_STANDING_MANAGED.format(
+                                  kind=kind, result={"resume": "resumed", "pause": "paused",
+                                                     "cancel": "cancelled"}[operation]))
 
     context.state.command_proposals.append(PreparedAction(
         "manage_standing_rule", dict(values),

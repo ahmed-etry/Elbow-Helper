@@ -231,23 +231,25 @@ class AgentActionRepository:
         with self.connect() as connection, sqlite_transaction(connection, immediate=True):
             changed = connection.execute(f"""
                 UPDATE {table} SET status=?, version=version+1, updated_at=?
-                WHERE {key}=? AND requester_id=? AND status!='cancelled'
+                WHERE {key}=? AND requester_id=? AND status IN ('active', 'paused')
             """, (status, time.time() if now is None else now,
                   identifier, requester_id))
             return changed.rowcount == 1
 
     def replace_standing(self, *, kind: str, identifier: str, requester_id: int,
                          rule: Mapping[str, Any], destination_channel_id: int,
-                         next_at: float, now: float | None = None) -> bool:
+                         next_at: float, expected_version: int,
+                         now: float | None = None) -> bool:
         table, key, due = self._standing_columns(kind)
         with self.connect() as connection, sqlite_transaction(connection, immediate=True):
             changed = connection.execute(f"""
                 UPDATE {table} SET rule_json=?, destination_channel_id=?,
                     {due}=?, status='active', version=version+1, updated_at=?
-                WHERE {key}=? AND requester_id=? AND status!='cancelled'
+                WHERE {key}=? AND requester_id=? AND version=? AND status!='cancelled'
                     AND lease_owner IS NULL
             """, (_json(rule), destination_channel_id, next_at,
-                  time.time() if now is None else now, identifier, requester_id))
+                  time.time() if now is None else now, identifier,
+                  requester_id, expected_version))
             return changed.rowcount == 1
 
     def due_standing(self, *, kind: str, guild_id: int, now: float | None = None,
@@ -299,7 +301,7 @@ class AgentActionRepository:
                         next_at: float | None, status: str = "active",
                         last_result: Any = None, holding: bool | None = None,
                         now: float | None = None) -> bool:
-        if status not in {"active", "paused", "cancelled"}:
+        if status not in {"active", "paused", "cancelled", "completed"}:
             raise ValueError("Invalid standing rule status")
         table, key, due = self._standing_columns(kind)
         parts = [f"{due}=?", "status=CASE WHEN status IN ('paused', 'cancelled') THEN status ELSE ? END",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import AsyncExitStack
+from dataclasses import replace
 from datetime import datetime, timezone
 import json
 import logging
@@ -19,14 +20,17 @@ from elbow_helper.configuration.guild import GUILD_ID
 
 from .conversation.preparation import ConversationContextMixin
 from .delivery import AgentDeliveryMixin, AgentDeliveryUnknown
+from .commands.outcomes import command_reply
 from .access import AgentAccessLost, has_agent_entry_access, require_access, require_disclosure_access
 from .conversation.state import (
     Conversation, ConversationRecord, ConversationStore, ConversationTurn,
 )
+from .conversation.instructions import WorkingState
 from .message_content import message_text
 from .models import AgentDelivery, AgentRequestContext, AgentTurnState
 from .reports.knowledge import KnowledgeReport
 from .service import AgentUnavailableError, AgentService
+from .scheduled.scope import within_scope
 from .conversation.transcripts import TranscriptArchive, archive_write
 from .conversation.persistence import ConversationPersistence
 
@@ -41,7 +45,7 @@ MAX_PENDING_REQUESTS = 64
 
 
 class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
-    """Answer eligible direct mentions without changing server state."""
+    """Answer eligible mentions and run confirmed member requests."""
 
     def __init__(
         self,
@@ -96,6 +100,7 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
         self.research_jobs = research_jobs
         self.research_runner = research_runner
         self.action_runner = action_runner
+        self.scheduled_runner = None
         if self.action_runner is not None:
             self.action_runner.on_finish = self._record_action_outcome
         self.action_repository = action_repository
@@ -122,6 +127,8 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
             self.research_runner.start()
         if self.action_runner is not None:
             self.action_runner.start()
+        if self.scheduled_runner is not None:
+            self.scheduled_runner.start()
 
     async def _prune_checkpoints(self) -> None:
         while True:
@@ -264,6 +271,8 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
             self.research_runner.cancel()
         if self.action_runner is not None:
             self.action_runner.cancel()
+        if self.scheduled_runner is not None:
+            self.scheduled_runner.cancel()
         for task in tuple(self._tasks):
             task.cancel()
 
@@ -349,10 +358,8 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
 
     def _request_context(self, message, member, referenced, conversation,
                          deadline_monotonic):
-        root_id = next(
-            key for key, value in self._conversations.entries()
-            if value is conversation
-        )
+        root_id = (next(key for key, value in self._conversations.entries()
+                        if value is conversation) if conversation is not None else None)
         context = AgentRequestContext(
             bot=self.bot,
             guild=message.guild,
@@ -363,9 +370,10 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
             message_search=self.message_search,
             thread_discovery=self.thread_discovery,
             state=AgentTurnState(
-                source_channels={message.channel.id}, working=conversation.working,
+                source_channels={message.channel.id},
+                working=conversation.working if conversation is not None else WorkingState(),
             ),
-            history=tuple(conversation.turns),
+            history=tuple(conversation.turns) if conversation is not None else (),
             roster_queries=self.roster_queries,
             cwl_queries=self.cwl_queries,
             war_queries=self.war_queries,
@@ -389,6 +397,50 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
             deadline_monotonic=deadline_monotonic,
         )
         return context, root_id
+
+    def scheduled_context(self, message, member):
+        context, _ = self._request_context(
+            message, member, None, None,
+            time.monotonic() + AGENT_REQUEST_TIMEOUT_SECONDS,
+        )
+        return context
+
+    async def run_saved_request(self, context, rule):
+        message = context.source_message
+        allowed = rule.get("allowed_actions", [])
+        local_context = "Confirmed standing scope: " + json.dumps(
+            allowed, ensure_ascii=False, default=str,
+        )
+        response = await self.service.answer(
+            question=rule["request"], local_context=local_context,
+            context=context,
+        )
+        proposals = tuple(context.state.command_proposals)
+        if proposals and within_scope(proposals, allowed):
+            run_id = await self.action_runner.submit(
+                context, proposals, confirmer_id=context.member.id,
+            )
+            run = await self.action_runner.wait_run(run_id)
+            if context.state.command_outcomes or context.state.attachments:
+                output_context = replace(
+                    context,
+                    state=replace(context.state, command_proposals=[]),
+                )
+                await self._send_response(
+                    message,
+                    command_reply(context.state.command_outcomes)
+                    if context.state.command_outcomes else "",
+                    None, context.state.attachments, context=output_context,
+                )
+            return run
+        await self._send_response(
+            message, response, None, context.state.attachments, context=context,
+        )
+        return None
+
+    async def check_watcher(self, context, rule):
+        from .scheduled.watchers import check_watcher
+        return await check_watcher(context, rule)
 
     async def _record_turn(self, message, member, question, response,
                            local_context, context, delivery, conversation):

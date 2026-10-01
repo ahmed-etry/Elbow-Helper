@@ -117,7 +117,8 @@ class AgentDeliveryMixin:
                 delivery.record(sent.id, response if chunks == [None] else (chunks[0] if chunks else ""))
             if conversation is not None:
                 self._conversations.register_reply(conversation, sent.id)
-            await self._archive_reply(message.id, sent.id, response if chunks == [None] else (chunks[0] if chunks else ""))
+            if getattr(message, "archive_reply", True):
+                await self._archive_reply(message.id, sent.id, response if chunks == [None] else (chunks[0] if chunks else ""))
             for index, chunk in enumerate(chunks[1:], start=1):
                 if context is not None:
                     await require_disclosure_access(context)
@@ -137,7 +138,8 @@ class AgentDeliveryMixin:
                     delivery.record(sent.id, chunk)
                 if conversation is not None:
                     self._conversations.register_reply(conversation, sent.id)
-                await self._archive_reply(message.id, sent.id, chunk)
+                if getattr(message, "archive_reply", True):
+                    await self._archive_reply(message.id, sent.id, chunk)
             if delivery is not None:
                 delivery.complete = True
         finally:

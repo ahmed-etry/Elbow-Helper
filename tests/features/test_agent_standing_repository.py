@@ -94,3 +94,22 @@ class StandingRepositoryTests(unittest.TestCase):
         self.assertEqual(row["holding"], 1)
         self.repository.set_member_timezone(2, "Europe/Paris")
         self.assertEqual(self.repository.member_timezone(2), "Europe/Paris")
+
+    def test_replacement_rejects_a_stale_preview(self):
+        identifier = self.repository.create_standing(
+            kind="request", guild_id=1, requester_id=2,
+            destination_channel_id=3, rule={"request": "First"},
+            next_at=1000, now=900,
+        )
+        self.assertTrue(self.repository.replace_standing(
+            kind="request", identifier=identifier, requester_id=2,
+            rule={"request": "Second"}, destination_channel_id=3,
+            next_at=2000, expected_version=0,
+        ))
+        self.assertFalse(self.repository.replace_standing(
+            kind="request", identifier=identifier, requester_id=2,
+            rule={"request": "Old preview"}, destination_channel_id=3,
+            next_at=2000, expected_version=0,
+        ))
+        self.assertEqual(self.repository.standing(kind="request", identifier=identifier)["rule"],
+                         {"request": "Second"})
