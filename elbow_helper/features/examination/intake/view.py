@@ -267,6 +267,67 @@ class PromoIntakeView(BaseTimeoutView):
 
 
 class ExaminationPromoIntakeMixin:
+    def build_promotion_review_details(
+        self, case: Dict[str, Any], member: discord.Member,
+        guild: discord.Guild, *, overlap_only: bool = False,
+    ) -> discord.Embed:
+        """Build routing details for its buttons and the agent."""
+        if overlap_only and case.get("exam_required") is False:
+            raise ValueError("This promotion doesn't require an exam.")
+        if overlap_only:
+            availability_text = self._format_applicant_availability(
+                case.get("availability") or "",
+                case.get("availability_structured") or case.get("availability_windows") or [],
+            )
+            embed = discord.Embed(
+                title="Availability Overlap",
+                color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
+                timestamp=datetime.now(timezone.utc),
+            )
+            embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
+            embed.add_field(name="Applicant Availability", value=availability_text, inline=False)
+            embed.add_field(name="Your Overlap", value=self._format_overlap_windows(
+                self._get_member_overlap_windows(case, member), limit=4), inline=False)
+            return embed
+        if case.get("exam_required") is False:
+            embed = discord.Embed(
+                title="Promotion Details",
+                color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
+                timestamp=datetime.now(timezone.utc),
+            )
+            embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
+            embed.add_field(name="Promotion", value=case.get("route_summary") or "Not provided",
+                            inline=False)
+            embed.add_field(name="Town Hall",
+                            value=str(case.get("th_level")) if case.get("th_level") else "Not provided",
+                            inline=False)
+            embed.add_field(name="Review Team", value="Leadership review", inline=False)
+            return embed
+        availability = case.get("availability") or ""
+        applicant_windows = case.get("availability_structured") or case.get("availability_windows") or []
+        availability_text = self._format_applicant_availability(availability, applicant_windows)
+        availability_examples = self._format_applicant_availability_examples(
+            availability, applicant_windows)
+        embed = discord.Embed(
+            title="Exam Details", color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
+            timestamp=datetime.now(timezone.utc),
+        )
+        embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
+        embed.add_field(name="Applicant Availability", value=availability_text, inline=False)
+        if availability_examples:
+            embed.add_field(name="Upcoming Available Times", value=availability_examples,
+                            inline=False)
+        if self._is_leadership_member(member):
+            matched_members = self._get_case_matched_members(case, guild)
+            embed.add_field(name="Matched Examiners",
+                            value=self._format_matched_examiners(matched_members), inline=False)
+            embed.add_field(name="Shared Availability by Examiner",
+                            value=self._build_overlap_details_text(case, matched_members), inline=False)
+        else:
+            embed.add_field(name="Your Overlap", value=self._format_overlap_windows(
+                self._get_member_overlap_windows(case, member), limit=4), inline=False)
+        return embed
+
     def can_change_promotion_route(self, member: discord.Member) -> bool:
         return self._has_exam_permissions(member)
 

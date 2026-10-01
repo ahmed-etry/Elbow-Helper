@@ -14,18 +14,26 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..access import require_evidence_access
 from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ..commands.outcomes import CommandOutcome
+from ..commands.outcomes import CommandOutcome, embed_text
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
     ACTION_PROMOTION_ROUTE_LINE, ACTION_PROMOTION_ROUTE_FIELD,
     ACTION_PROMOTION_ROUTE_REVIEW, ACTION_PROMOTION_ROUTE_PROMPT,
     ACTION_PROMOTION_ROUTE_LABEL, ACTION_PROMOTION_ROUTE_UNAVAILABLE,
 )
-from .discord_safety import check_post_access, resolve_channel
+from .discord_safety import check_post_access, check_view_access, resolve_channel
 
 
 def promotion_route_tools() -> tuple[RegisteredAgentTool, ...]:
     return (RegisteredAgentTool(AgentToolDefinition(
+        name="read_promotion_review",
+        description="Read a promotion review's details or your availability overlap.",
+        parameters={"type": "object", "properties": {
+            "ticket_channel_id": {"type": "integer", "minimum": 1},
+            "view": {"type": "string", "enum": ["details", "availability"]},
+        }, "required": ["ticket_channel_id", "view"], "additionalProperties": False},
+    ), read_promotion_review),
+        RegisteredAgentTool(AgentToolDefinition(
         name="change_promotion_route",
         description="Change the current clan and target for a promotion review after confirmation.",
         parameters={"type": "object", "properties": {
@@ -38,6 +46,31 @@ def promotion_route_tools() -> tuple[RegisteredAgentTool, ...]:
             "additionalProperties": False},
     ), prepare_promotion_route, AgentCapabilityEffect.COMMAND,
         ActionClass.IRREVERSIBLE, True),)
+
+
+async def read_promotion_review(context: AgentRequestContext,
+                                values: Mapping[str, Any]) -> Mapping[str, Any]:
+    await require_evidence_access(context)
+    workflow = context.bot.get_cog("Examination")
+    if workflow is None or not workflow.can_change_promotion_route(context.member):
+        return {"error": ACTION_PROMOTION_ROUTE_UNAVAILABLE}
+    case = workflow.promotion_route_snapshot(values["ticket_channel_id"])
+    if case is None or not case.get("routing_message_id"):
+        return {"error": ACTION_PROMOTION_ROUTE_UNAVAILABLE}
+    ticket = await resolve_channel(context, values["ticket_channel_id"])
+    review = await resolve_channel(context, EXAMINATION_ROOM)
+    for channel in (ticket, review):
+        check_view_access(channel, context.member, context.guild.me)
+    try:
+        embed = workflow.build_promotion_review_details(
+            case, context.member, context.guild,
+            overlap_only=values["view"] == "availability")
+    except ValueError as exc:
+        return {"error": str(exc)}
+    await require_evidence_access(context)
+    context.state.source_channels.update((ticket.id, review.id))
+    return {"ticket_channel_id": ticket.id, "review_channel_id": review.id,
+            "text": embed_text(embed)}
 
 
 async def prepare_promotion_route(context: AgentRequestContext,

@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import discord
 from elbow_helper.discord.views import BaseTimeoutView
 
-from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX, DEFAULT_THUMBNAIL_URL
 from ..intake.logic import PROMO_SOURCES
 from ..intake.logic import is_valid_route
 from ..intake.logic import valid_targets_for_source
@@ -207,25 +205,8 @@ class ExamRoutingView(BaseTimeoutView):
                 ephemeral=True,
             )
             return
-        availability_text = self.cog._format_applicant_availability(
-            case.get("availability") or "",
-            case.get("availability_structured") or case.get("availability_windows") or [],
-        )
-        embed = discord.Embed(
-            title="Availability Overlap",
-            color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
-            timestamp=datetime.now(timezone.utc),
-        )
-        embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
-        embed.add_field(name="Applicant Availability", value=availability_text, inline=False)
-        embed.add_field(
-            name="Your Overlap",
-            value=self.cog._format_overlap_windows(
-                self.cog._get_member_overlap_windows(case, interaction.user),
-                limit=4,
-            ),
-            inline=False,
-        )
+        embed = self.cog.build_promotion_review_details(
+            case, interaction.user, interaction.guild, overlap_only=True)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @discord.ui.button(
@@ -247,66 +228,8 @@ class ExamRoutingView(BaseTimeoutView):
         if not case:
             await interaction.response.send_message("This promotion request is no longer available.", ephemeral=True)
             return
-        if case.get("exam_required") is False:
-            embed = discord.Embed(
-                title="Promotion Details",
-                color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
-                timestamp=datetime.now(timezone.utc),
-            )
-            embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
-            embed.add_field(
-                name="Promotion",
-                value=case.get("route_summary") or "Not provided",
-                inline=False,
-            )
-            embed.add_field(
-                name="Town Hall",
-                value=str(case.get("th_level")) if case.get("th_level") else "Not provided",
-                inline=False,
-            )
-            embed.add_field(name="Review Team", value="Leadership review", inline=False)
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-        availability = case.get("availability") or ""
-        applicant_windows = case.get("availability_structured") or case.get("availability_windows") or []
-        availability_text = self.cog._format_applicant_availability(
-            availability,
-            applicant_windows,
-        )
-        availability_examples = self.cog._format_applicant_availability_examples(
-            availability,
-            applicant_windows,
-        )
-        embed = discord.Embed(
-            title="Exam Details",
-            color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
-            timestamp=datetime.now(timezone.utc),
-        )
-        embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
-        embed.add_field(name="Applicant Availability", value=availability_text, inline=False)
-        if availability_examples:
-            embed.add_field(name="Upcoming Available Times", value=availability_examples, inline=False)
-        if self.cog._is_leadership_member(interaction.user):
-            matched_members = self.cog._get_case_matched_members(case, interaction.guild)
-            embed.add_field(
-                name="Matched Examiners",
-                value=self.cog._format_matched_examiners(matched_members),
-                inline=False,
-            )
-            embed.add_field(
-                name="Shared Availability by Examiner",
-                value=self.cog._build_overlap_details_text(case, matched_members),
-                inline=False,
-            )
-        else:
-            embed.add_field(
-                name="Your Overlap",
-                value=self.cog._format_overlap_windows(
-                    self.cog._get_member_overlap_windows(case, interaction.user),
-                    limit=4,
-                ),
-                inline=False,
-            )
+        embed = self.cog.build_promotion_review_details(
+            case, interaction.user, interaction.guild)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @discord.ui.button(
