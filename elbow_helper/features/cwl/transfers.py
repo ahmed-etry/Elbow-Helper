@@ -42,6 +42,214 @@ LOGGER = logging.getLogger(__name__)
 
 
 class CwlTransferMixin:
+    def transfer_reminder_exclusions(self, raw: str | None) -> tuple[set[str], str | None]:
+        excluded, unknown = self._parse_excluded_clans(raw)
+        if unknown:
+            return excluded, (
+                f"Unrecognized clans: {', '.join(unknown)}. "
+                f"Choose from: {', '.join(sorted(CWL_CLAN_CODES))}."
+            )
+        return excluded, None
+
+    def transfer_reminder_state(self) -> tuple[dict[str, object], ...]:
+        return tuple(dict(entry) for entry in self.transfer_state.get("reminder_messages", []))
+
+    def transfer_reminder_content(self, mismatches: dict[str, list[int]]) -> str:
+        lines: list[str] = [
+            "# CWL Transfer Reminder", "",
+            "## Please move to your CWL clan as soon as possible so you don't miss "
+            "the spin <:pray:1209861423963045928>", "",
+        ]
+        for code in CWL_CLAN_CODES:
+            ids = mismatches.get(code)
+            if not ids:
+                continue
+            clan_name = CLAN_NAMES.get(code, code)
+            mentions = " ".join(f"<@{user_id}>" for user_id in ids)
+            lines.append(f"### {mentions}")
+            lines.append(f"Move to {clan_name} ({code}) for CWL.")
+            lines.append("")
+        lines.append("### Clans have been linked below for easier access <:hold:1353791394078265406>")
+        lines.append("\n".join(
+            f"{code}: {CLAN_LINKS[code]}"
+            for code in CWL_CLAN_CODES
+            if code in mismatches and code in CLAN_LINKS
+        ))
+        return "\n".join(lines)
+
+    async def prepare_transfer_reminder(
+        self, guild_id: int, exclude: str | None = None,
+        *, progress=None,
+    ) -> dict[str, object]:
+        excluded_clans, issue = self.transfer_reminder_exclusions(exclude)
+        if issue:
+            return {"issue": issue}
+        if not self.clash_client.configured:
+            return {"issue": "CWL transfer checks aren't available because Clash API access hasn't been set up."}
+        candidate_codes = (set(CWL_CLAN_ROSTER_IDS) & set(CWL_CLAN_CODES)) - excluded_clans
+        if not candidate_codes:
+            return {"issue": "Every CWL roster was left out of this check."}
+        if progress is not None:
+            await progress()
+        started_clans, unavailable_statuses = await self._cwl_spin_statuses(candidate_codes)
+        checked_codes = candidate_codes - started_clans - unavailable_statuses
+        roster_members: Dict[str, List[RosterMember]] = {}
+        unavailable_rosters: Set[str] = set()
+        empty_rosters: Set[str] = set()
+        for clan_code in CWL_CLAN_CODES:
+            if clan_code not in checked_codes:
+                continue
+            roster_id = CWL_CLAN_ROSTER_IDS[clan_code]
+            try:
+                roster = await self.roster_queries.get(roster_id)
+                if (roster is None or roster.clan_code != clan_code
+                        or roster.guild_id != guild_id):
+                    unavailable_rosters.add(clan_code)
+                    continue
+                members = await self.roster_queries.members(roster)
+            except (OSError, sqlite3.Error):
+                LOGGER.exception("Could not read native CWL roster clan=%s", clan_code)
+                unavailable_rosters.add(clan_code)
+                continue
+            roster_members[clan_code] = members
+            if not members:
+                empty_rosters.add(clan_code)
+        accounts_by_tag: Dict[str, LinkedAccount] = {}
+        for members in roster_members.values():
+            for member in members:
+                accounts_by_tag.setdefault(
+                    member.player_tag,
+                    LinkedAccount(
+                        player_tag=member.player_tag,
+                        player_name=member.player_name,
+                        clan_code=member.clan_code,
+                        townhall=member.townhall,
+                        hero_sum=member.hero_sum,
+                    ),
+                )
+        profiles, failed_tags = await fetch_account_profiles(
+            list(accounts_by_tag.values()), self.clash_client,
+        )
+        incomplete_account_rosters = {
+            code for code, members in roster_members.items()
+            if any(member.player_tag in failed_tags for member in members)
+        }
+        result_lines: list[str] = []
+        if started_clans:
+            result_lines.append(
+                f"CWL has started for: {', '.join(code for code in CWL_CLAN_CODES if code in started_clans)}. "
+                "Those rosters were left out."
+            )
+        if unavailable_statuses:
+            labels = ", ".join(code for code in CWL_CLAN_CODES if code in unavailable_statuses)
+            result_lines.append(f"I couldn't check whether CWL has started for: {labels}.")
+        if unavailable_rosters:
+            labels = ", ".join(code for code in CWL_CLAN_CODES if code in unavailable_rosters)
+            result_lines.append(f"I couldn't check these rosters: {labels}.")
+        if incomplete_account_rosters:
+            labels = ", ".join(code for code in CWL_CLAN_CODES if code in incomplete_account_rosters)
+            result_lines.append(f"I couldn't check every account on: {labels}.")
+        if empty_rosters and any(roster_members.values()):
+            result_lines.append(
+                f"No players are on: {', '.join(code for code in CWL_CLAN_CODES if code in empty_rosters)}."
+            )
+        if unavailable_statuses or unavailable_rosters or incomplete_account_rosters:
+            result_lines.insert(0, "I couldn't check every CWL roster, so the reminder wasn't changed.")
+            return {"issue": None, "status": "unavailable",
+                    "result_lines": tuple(result_lines)}
+        mismatches = self._native_roster_mismatches(roster_members, profiles)
+        content = None
+        target_channel = None
+        if not mismatches:
+            if roster_members and any(roster_members.values()):
+                result_lines.insert(0, "No one in the checked rosters still needs to transfer.")
+            elif started_clans:
+                result_lines.insert(0, "No transfer reminder is needed.")
+            else:
+                result_lines.insert(0, "No players are on the checked rosters.")
+        else:
+            content = self.transfer_reminder_content(mismatches)
+            target_channel = await self._resolve_clan_transfers_channel()
+            if target_channel is None:
+                result_lines.append(
+                    "The CWL transfer channel hasn't been set up, so no reminder was posted. Check the CWL setup."
+                )
+                return {"issue": None, "status": "unavailable",
+                        "result_lines": tuple(result_lines)}
+        previous = self.transfer_reminder_state()
+        return {"issue": None,
+                "status": ("post" if mismatches else
+                           "clear" if previous else "no_change"),
+                "candidate_codes": tuple(sorted(candidate_codes)),
+                "mismatches": mismatches, "content": content,
+                "chunks": tuple(self._chunk_content(content)) if content else (),
+                "channel": target_channel, "previous_entries": previous,
+                "result_lines": tuple(result_lines)}
+
+    async def apply_transfer_reminder(self, prepared: dict[str, object],
+                                      *, enforce_state: bool = False) -> dict[str, object]:
+        if prepared["status"] not in ("post", "clear"):
+            return {"status": prepared["status"],
+                    "result_lines": prepared["result_lines"]}
+        result_lines = list(prepared["result_lines"])
+        async with self._transfer_reminder_lock:
+            current_entries = self.transfer_reminder_state()
+            if enforce_state and current_entries != prepared["previous_entries"]:
+                raise ValueError("Transfer reminder changed before execution")
+            previous_entries = list(current_entries)
+            unresolved = await self._delete_transfer_reminder_messages(previous_entries)
+            if prepared["status"] == "clear":
+                self.transfer_state["reminder_messages"] = unresolved
+                self._save_transfer_state()
+                if unresolved:
+                    result_lines.append("I couldn't clear the previous reminder.")
+                return {"status": "partial" if unresolved else "complete",
+                        "result_lines": tuple(result_lines),
+                        "message_ids": ()}
+            if unresolved:
+                self.transfer_state["reminder_messages"] = unresolved
+                self._save_transfer_state()
+                result_lines.insert(0, "Couldn't clear the old reminder, so no new one was posted.")
+                return {"status": "partial", "result_lines": tuple(result_lines),
+                        "message_ids": ()}
+            if previous_entries:
+                self.transfer_state["reminder_messages"] = []
+                self._save_transfer_state()
+            sent_messages: list[discord.Message] = []
+            try:
+                for chunk in prepared["chunks"]:
+                    sent_messages.append(await prepared["channel"].send(
+                        chunk,
+                        allowed_mentions=discord.AllowedMentions(
+                            users=True, roles=False, everyone=False,
+                        ),
+                    ))
+            except (discord.Forbidden, discord.HTTPException) as error:
+                LOGGER.warning("Failed to post transfer reminder: %s", error)
+                partial_visible = False
+                if sent_messages:
+                    refs = self._build_transfer_reminder_message_refs(sent_messages)
+                    unresolved_partial = await self._delete_transfer_reminder_messages(refs)
+                    if unresolved_partial:
+                        partial_visible = True
+                        self.transfer_state["reminder_messages"] = unresolved_partial
+                        self._save_transfer_state()
+                if partial_visible:
+                    message = (
+                        "I couldn't post the full transfer reminder. Part of it may still be "
+                        "visible in the CWL transfer channel."
+                    )
+                else:
+                    message = "I couldn't post the transfer reminder. Nothing was posted."
+                result_lines.insert(0, message)
+                return {"status": "partial", "result_lines": tuple(result_lines),
+                        "message_ids": tuple(message.id for message in sent_messages)}
+            self.transfer_state["reminder_messages"] = self._build_transfer_reminder_message_refs(sent_messages)
+            self._save_transfer_state()
+        result_lines.insert(0, "Transfer reminder posted.")
+        return {"status": "complete", "result_lines": tuple(result_lines),
+                "message_ids": tuple(message.id for message in sent_messages)}
+
     def _build_transfer_reminder_delete_at(self, now: Optional[datetime] = None) -> str:
         base = now or datetime.now(dt_timezone.utc)
         return (base + timedelta(hours=TRANSFER_REMINDER_RETENTION_HOURS)).isoformat()
@@ -440,236 +648,32 @@ class CwlTransferMixin:
 
 
     async def _run_transfer_reminder(
-        self,
-        interaction: discord.Interaction,
-        excluded_clans: Optional[Set[str]] = None,
+        self, interaction: discord.Interaction,
+        exclude: str | None = None,
     ) -> None:
-        excluded_clans = excluded_clans or set()
         if not interaction.response.is_done():
             await interaction.response.defer(ephemeral=True)
-        if not self.clash_client.configured:
-            await interaction.followup.send(
-                "CWL transfer checks aren't available because Clash API access hasn't been set up.",
-                ephemeral=True,
-            )
-            return
-        candidate_codes = set(CWL_CLAN_ROSTER_IDS) & set(CWL_CLAN_CODES) - excluded_clans
-        if not candidate_codes:
-            await interaction.followup.send("Every CWL roster was left out of this check.", ephemeral=True)
-            return
+        status_message = None
 
-        status_message = await interaction.followup.send(
-            "Checking CWL rosters...",
-            ephemeral=True,
-            wait=True,
+        async def progress() -> None:
+            nonlocal status_message
+            status_message = await interaction.followup.send(
+                "Checking CWL rosters...", ephemeral=True, wait=True,
+            )
+
+        prepared = await self.prepare_transfer_reminder(
+            interaction.guild_id, exclude, progress=progress,
         )
-
-        async def finish_status(lines: List[str]) -> None:
-            final_content = "\n".join(lines)
-            try:
-                await status_message.edit(content=final_content)
-            except discord.HTTPException:
-                LOGGER.debug("Unable to replace transfer reminder progress message")
-                await interaction.followup.send(final_content, ephemeral=True)
-
-        started_clans, unavailable_statuses = await self._cwl_spin_statuses(candidate_codes)
-        checked_codes = candidate_codes - started_clans - unavailable_statuses
-        roster_members: Dict[str, List[RosterMember]] = {}
-        unavailable_rosters: Set[str] = set()
-        empty_rosters: Set[str] = set()
-        for clan_code in CWL_CLAN_CODES:
-            if clan_code not in checked_codes:
-                continue
-            roster_id = CWL_CLAN_ROSTER_IDS[clan_code]
-            try:
-                roster = await self.roster_queries.get(roster_id)
-                if (
-                    roster is None
-                    or roster.clan_code != clan_code
-                    or roster.guild_id != interaction.guild_id
-                ):
-                    unavailable_rosters.add(clan_code)
-                    continue
-                members = await self.roster_queries.members(roster)
-            except (OSError, sqlite3.Error):
-                LOGGER.exception("Could not read native CWL roster clan=%s", clan_code)
-                unavailable_rosters.add(clan_code)
-                continue
-            roster_members[clan_code] = members
-            if not members:
-                empty_rosters.add(clan_code)
-
-        accounts_by_tag: Dict[str, LinkedAccount] = {}
-        for members in roster_members.values():
-            for member in members:
-                accounts_by_tag.setdefault(
-                    member.player_tag,
-                    LinkedAccount(
-                        player_tag=member.player_tag,
-                        player_name=member.player_name,
-                        clan_code=member.clan_code,
-                        townhall=member.townhall,
-                        hero_sum=member.hero_sum,
-                    ),
-                )
-        profiles, failed_tags = await fetch_account_profiles(
-            list(accounts_by_tag.values()),
-            self.clash_client,
-        )
-        incomplete_account_rosters = {
-            clan_code
-            for clan_code, members in roster_members.items()
-            if any(member.player_tag in failed_tags for member in members)
-        }
-
-        result_lines: List[str] = []
-        if started_clans:
-            result_lines.append(
-                f"CWL has started for: {', '.join(code for code in CWL_CLAN_CODES if code in started_clans)}. "
-                "Those rosters were left out."
-            )
-        if unavailable_statuses:
-            unavailable_status_labels = ", ".join(
-                code for code in CWL_CLAN_CODES if code in unavailable_statuses
-            )
-            result_lines.append(
-                f"I couldn't check whether CWL has started for: {unavailable_status_labels}."
-            )
-        if unavailable_rosters:
-            unavailable_roster_labels = ", ".join(
-                code for code in CWL_CLAN_CODES if code in unavailable_rosters
-            )
-            result_lines.append(
-                f"I couldn't check these rosters: {unavailable_roster_labels}."
-            )
-        if incomplete_account_rosters:
-            incomplete_account_labels = ", ".join(
-                code for code in CWL_CLAN_CODES if code in incomplete_account_rosters
-            )
-            result_lines.append(
-                f"I couldn't check every account on: {incomplete_account_labels}."
-            )
-        if empty_rosters and any(roster_members.values()):
-            result_lines.append(
-                f"No players are on: {', '.join(code for code in CWL_CLAN_CODES if code in empty_rosters)}."
-            )
-
-        if unavailable_statuses or unavailable_rosters or incomplete_account_rosters:
-            result_lines.insert(0, "I couldn't check every CWL roster, so the reminder wasn't changed.")
-            await finish_status(result_lines)
+        if prepared["issue"]:
+            await interaction.followup.send(prepared["issue"], ephemeral=True)
             return
-
-        mismatches = self._native_roster_mismatches(roster_members, profiles)
-
-        content: Optional[str] = None
-        target_channel: Optional[discord.abc.Messageable] = None
-        if not mismatches:
-            if roster_members and any(roster_members.values()):
-                result_lines.insert(0, "No one in the checked rosters still needs to transfer.")
-            elif started_clans:
-                result_lines.insert(0, "No transfer reminder is needed.")
-            else:
-                result_lines.insert(0, "No players are on the checked rosters.")
-        else:
-            lines: List[str] = [
-                "# CWL Transfer Reminder",
-                "",
-                "## Please move to your CWL clan as soon as possible so you don't miss "
-                "the spin <:pray:1209861423963045928>",
-                "",
-            ]
-            ordered_clans = CWL_CLAN_CODES
-            for code in ordered_clans:
-                ids = mismatches.get(code)
-                if not ids:
-                    continue
-                clan_name = CLAN_NAMES.get(code, code)
-                # Build mentions from user IDs so tags are always accurate.
-                mentions = " ".join(f"<@{user_id}>" for user_id in ids)
-                lines.append(f"### {mentions}")
-                lines.append(f"Move to {clan_name} ({code}) for CWL.")
-                lines.append("")
-            lines.append("### Clans have been linked below for easier access <:hold:1353791394078265406>")
-            lines.append("\n".join(
-                f"{code}: {CLAN_LINKS[code]}"
-                for code in ordered_clans
-                if code in mismatches and code in CLAN_LINKS
-            ))
-
-            content = "\n".join(lines)
-            target_channel = await self._resolve_clan_transfers_channel()
-            if target_channel is None:
-                result_lines.append(
-                    "The CWL transfer channel hasn't been set up, so no reminder was posted. Check the CWL setup."
-                )
-        if not mismatches:
-            async with self._transfer_reminder_lock:
-                previous_entries = list(self.transfer_state.get("reminder_messages", []))
-                unresolved_entries = await self._delete_transfer_reminder_messages(previous_entries)
-                self.transfer_state["reminder_messages"] = unresolved_entries
-                self._save_transfer_state()
-            if unresolved_entries:
-                result_lines.append("I couldn't clear the previous reminder.")
-            await finish_status(result_lines)
-            return
-        if target_channel is None:
-            await finish_status(result_lines)
-            return
-        async with self._transfer_reminder_lock:
-            previous_entries = list(self.transfer_state.get("reminder_messages", []))
-            unresolved_entries = await self._delete_transfer_reminder_messages(previous_entries)
-            if unresolved_entries:
-                self.transfer_state["reminder_messages"] = unresolved_entries
-                self._save_transfer_state()
-                result_lines.insert(0, "Couldn't clear the old reminder, so no new one was posted.")
-                await finish_status(result_lines)
-                return
-            if previous_entries:
-                self.transfer_state["reminder_messages"] = []
-                self._save_transfer_state()
-
-            sent_messages: List[discord.Message] = []
-            try:
-                for chunk in self._chunk_content(content):
-                    sent_messages.append(
-                        await target_channel.send(
-                            chunk,
-                            allowed_mentions=discord.AllowedMentions(
-                                users=True,
-                                roles=False,
-                                everyone=False,
-                            ),
-                        )
-                    )
-            except (discord.Forbidden, discord.HTTPException) as e:
-                LOGGER.warning("Failed to post transfer reminder: %s", e)
-                partial_reminder_visible = False
-                if sent_messages:
-                    partial_entries = self._build_transfer_reminder_message_refs(sent_messages)
-                    unresolved_partial_entries = await self._delete_transfer_reminder_messages(
-                        partial_entries
-                    )
-                    if unresolved_partial_entries:
-                        partial_reminder_visible = True
-                        self.transfer_state["reminder_messages"] = unresolved_partial_entries
-                        self._save_transfer_state()
-                if partial_reminder_visible:
-                    failure_message = (
-                        "I couldn't post the full transfer reminder. Part of it may still be "
-                        "visible in the CWL transfer channel."
-                    )
-                else:
-                    failure_message = "I couldn't post the transfer reminder. Nothing was posted."
-                result_lines.insert(0, failure_message)
-                await finish_status(result_lines)
-                return
-
-            self.transfer_state["reminder_messages"] = self._build_transfer_reminder_message_refs(
-                sent_messages
-            )
-            self._save_transfer_state()
-        result_lines.insert(0, "Transfer reminder posted.")
-        await finish_status(result_lines)
+        result = await self.apply_transfer_reminder(prepared)
+        content = "\n".join(result["result_lines"])
+        try:
+            await status_message.edit(content=content)
+        except discord.HTTPException:
+            LOGGER.debug("Unable to replace transfer reminder progress message")
+            await interaction.followup.send(content, ephemeral=True)
 
 
     @app_commands.describe(
@@ -683,11 +687,11 @@ class CwlTransferMixin:
         if not self._has_any_role(interaction, (LEAD_PLUS | CWL_HELPERS)):
             await deny(interaction)
             return
-        excluded_clans, unknown = self._parse_excluded_clans(exclude)
-        if unknown:
+        _, issue = self.transfer_reminder_exclusions(exclude)
+        if issue:
             await interaction.response.send_message(
-                f"Unrecognized clans: {', '.join(unknown)}. Choose from: {', '.join(sorted(CWL_CLAN_CODES))}.",
+                issue,
                 ephemeral=True,
             )
             return
-        await self._run_transfer_reminder(interaction, excluded_clans)
+        await self._run_transfer_reminder(interaction, exclude)

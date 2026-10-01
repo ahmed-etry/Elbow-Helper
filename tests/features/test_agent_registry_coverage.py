@@ -28,22 +28,15 @@ READ_COVERAGE = {
     "/recstats": ("read_member_lifecycle",),
 }
 
-# Remove each entry when its feature adapter is added.
-NOT_YET_ADAPTED = frozenset({
-    "/transfer reminder",
-})
-
-
 class AgentRegistryCoverageTests(unittest.TestCase):
     def test_every_help_command_has_one_explicit_route(self):
         help_paths = [entry.path for entry in HELP_ENTRIES]
         adapters = [adapter.path for adapter in enabled_adapters()]
         self.assertEqual(len(help_paths), len(set(help_paths)))
         self.assertEqual(len(adapters), len(set(adapters)))
-        covered = set(adapters) | set(READ_COVERAGE) | EXCLUDED_COMMANDS | NOT_YET_ADAPTED
+        covered = set(adapters) | set(READ_COVERAGE) | EXCLUDED_COMMANDS
         self.assertEqual(set(help_paths), covered)
-        categories = (set(adapters), set(READ_COVERAGE), EXCLUDED_COMMANDS,
-                      NOT_YET_ADAPTED)
+        categories = (set(adapters), set(READ_COVERAGE), EXCLUDED_COMMANDS)
         for index, first in enumerate(categories):
             for second in categories[index + 1:]:
                 self.assertFalse(first & second, first & second)
