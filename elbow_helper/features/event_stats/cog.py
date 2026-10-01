@@ -17,12 +17,14 @@ from discord.ext import commands
 from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import LEAD
 from elbow_helper.domain.timezones import format_timezone_display
+from elbow_helper.domain.timezones import canonical_timezone_name, resolve_timezone_input
 from elbow_helper.infrastructure.time import UTC
 from elbow_helper.infrastructure.time import utc_now
 
 from .channels import EventStatsChannelsMixin
 from .commands import EventStatsCommandsMixin
 from .config import DEFAULT_GRACE_HOURS
+from .config import MAX_EVENT_NAME_LENGTH, MAX_GRACE_HOURS
 from .config import EVENT_LIST_PAGE_SIZE
 from .config import HIGH_PRECISION_REFRESH_INTERVAL_SECONDS
 from .config import POINT_FUNCTIONS
@@ -32,6 +34,7 @@ from .config import get_preset_definition
 from .state import ensure_state
 from .state import save_state
 from .queries import EventStatsQueries
+from .timeutils import parse_event_datetime_input
 
 LOGGER = logging.getLogger(__name__)
 
@@ -195,6 +198,34 @@ class EventStatsCog(EventStatsCommandsMixin, EventStatsChannelsMixin, commands.C
         )
         self._persist_state()
         return key
+
+    def prepare_one_time_event_values(self, *, name: str, start_text: str,
+                                      end_text: str, timezone_text: str,
+                                      grace_text: str) -> tuple[dict[str, Any] | None, str | None]:
+        """Validate the one-time event form for the panel and agent."""
+        name = name.strip()
+        if not name or len(name) > MAX_EVENT_NAME_LENGTH:
+            return None, "Enter an event name."
+        timezone_text = timezone_text.strip()
+        zone = resolve_timezone_input(timezone_text)
+        if zone is None:
+            return None, "That timezone wasn't recognized. Try a city name like Paris or a zone like Europe/Paris."
+        try:
+            hours = int(grace_text.strip()) if grace_text.strip() else DEFAULT_GRACE_HOURS
+        except ValueError:
+            return None, f"Grace hours must be a whole number between 0 and {MAX_GRACE_HOURS}."
+        grace_hours = max(0, min(hours, MAX_GRACE_HOURS))
+        start = parse_event_datetime_input(start_text, zone)
+        end = parse_event_datetime_input(end_text, zone)
+        if start is None or end is None:
+            return None, "That date/time wasn't recognized. Try YYYY-MM-DD HH:MM — for example, 2025-12-01 14:00."
+        if end <= start:
+            return None, "End time must be after the start time."
+        return {
+            "name": name, "start": start, "end": end,
+            "timezone": canonical_timezone_name(timezone_text) or "UTC",
+            "grace_hours": grace_hours,
+        }, None
 
     def update_one_time_event(
         self,

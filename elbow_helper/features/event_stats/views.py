@@ -15,7 +15,6 @@ from elbow_helper.discord.pagination import PREV_PAGE_LABEL
 from elbow_helper.discord.views import BaseErrorModal
 from elbow_helper.discord.views import BaseTimeoutView
 
-from elbow_helper.domain.timezones import canonical_timezone_name
 from elbow_helper.domain.timezones import resolve_timezone_input
 
 from .config import DEFAULT_GRACE_HOURS
@@ -24,7 +23,6 @@ from .config import EVENT_SELECTOR_PAGE_SIZE
 from .config import MAX_EVENT_NAME_LENGTH
 from .config import MAX_GRACE_HOURS
 from .timeutils import format_event_datetime_local
-from .timeutils import parse_event_datetime_input
 
 if TYPE_CHECKING:
     from .cog import EventStatsCog
@@ -609,60 +607,19 @@ class OneTimeEventModal(BaseErrorModal):
         if not self.cog._can_manage(interaction.user):
             await interaction.response.send_message("You don't have permission to manage events.", ephemeral=True)
             return
-
-        event_name = self.name_input.value.strip()
-        if not event_name:
-            await interaction.response.send_message("Enter an event name.", ephemeral=True)
+        values, issue = self.cog.prepare_one_time_event_values(
+            name=self.name_input.value, start_text=self.start_input.value,
+            end_text=self.end_input.value, timezone_text=self.timezone_input.value,
+            grace_text=self.grace_input.value,
+        )
+        if issue:
+            await interaction.response.send_message(issue, ephemeral=True)
             return
-
-        timezone_name = self.timezone_input.value.strip()
-        tzinfo = resolve_timezone_input(timezone_name)
-        if tzinfo is None:
-            await interaction.response.send_message(
-                "That timezone wasn't recognized. Try a city name like Paris or a zone like Europe/Paris.",
-                ephemeral=True,
-            )
-            return
-
-        grace_hours = _parse_grace_hours(self.grace_input.value)
-        if grace_hours is None:
-            await interaction.response.send_message(
-                f"Grace hours must be a whole number between 0 and {MAX_GRACE_HOURS}.",
-                ephemeral=True,
-            )
-            return
-
-        start = parse_event_datetime_input(self.start_input.value, tzinfo)
-        end = parse_event_datetime_input(self.end_input.value, tzinfo)
-        if start is None or end is None:
-            await interaction.response.send_message(
-                "That date/time wasn't recognized. Try YYYY-MM-DD HH:MM — for example, 2025-12-01 14:00.",
-                ephemeral=True,
-            )
-            return
-        if end <= start:
-            await interaction.response.send_message("End time must be after the start time.", ephemeral=True)
-            return
-
-        timezone_value = canonical_timezone_name(timezone_name) or "UTC"
         await interaction.response.defer(ephemeral=True)
         if self.event_key is None:
-            event_key = self.cog.create_one_time_event(
-                name=event_name,
-                start=start,
-                end=end,
-                timezone=timezone_value,
-                grace_hours=grace_hours,
-            )
+            event_key = self.cog.create_one_time_event(**values)
         else:
-            updated = self.cog.update_one_time_event(
-                self.event_key,
-                name=event_name,
-                start=start,
-                end=end,
-                timezone=timezone_value,
-                grace_hours=grace_hours,
-            )
+            updated = self.cog.update_one_time_event(self.event_key, **values)
             if not updated:
                 await interaction.followup.send("That event no longer exists.", ephemeral=True)
                 return

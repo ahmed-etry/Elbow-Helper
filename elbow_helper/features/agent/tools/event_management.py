@@ -10,13 +10,16 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..access import require_evidence_access
 from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ..commands.outcomes import CommandOutcome
+from ..commands.outcomes import CommandOutcome, embed_text
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
     ACTION_EVENT_MANAGE_CATEGORY, ACTION_EVENT_MANAGE_DELETE,
     ACTION_EVENT_MANAGE_ENABLED, ACTION_EVENT_MANAGE_MOVE,
     ACTION_EVENT_MANAGE_RESET, ACTION_EVENT_MANAGE_CHANNEL,
     ACTION_EVENT_MANAGE_LABEL, ACTION_EVENT_MANAGE_UNAVAILABLE,
+    ACTION_EVENT_FORM_CREATE, ACTION_EVENT_FORM_EDIT, ACTION_EVENT_FORM_FIELD,
+    ACTION_EVENT_FORM_CHANNEL, ACTION_EVENT_FORM_LABEL,
+    ACTION_EVENT_FORM_REFRESH,
 )
 
 
@@ -44,7 +47,133 @@ def event_management_tools() -> tuple[RegisteredAgentTool, ...]:
             }, "required": ["event", *(list(extra) if name == "set_event_enabled" else [])],
                 "additionalProperties": False},
         ), prepare, AgentCapabilityEffect.COMMAND, classification, True))
+    form_fields = {
+        "name": {"type": "string", "minLength": 1},
+        "start": {"type": "string"}, "end": {"type": "string"},
+        "timezone": {"type": "string"},
+        "grace_hours": {"type": "integer", "minimum": 0},
+    }
+    for name, operation, classification in (
+        ("create_event_tracker", "create", ActionClass.IRREVERSIBLE),
+        ("edit_event_tracker", "edit", ActionClass.CHANGE),
+    ):
+        async def prepare(context: AgentRequestContext, values: Mapping[str, Any],
+                          selected=operation, action_class=classification) -> Mapping[str, Any]:
+            return await _prepare_form(context, values, selected, action_class)
+        tools.append(RegisteredAgentTool(AgentToolDefinition(
+            name=name, description=f"{operation.title()} a one-time event tracker after confirmation.",
+            parameters={"type": "object", "properties": {
+                **({"event": {"type": "string"}} if operation == "edit" else {}),
+                **form_fields,
+            }, "required": [*(["event"] if operation == "edit" else []),
+                             "name", "start", "end", "timezone"],
+                "additionalProperties": False},
+        ), prepare, AgentCapabilityEffect.COMMAND, classification, True))
+    tools.append(RegisteredAgentTool(AgentToolDefinition(
+        name="edit_preset_event",
+        description="Change a preset event tracker name and grace period after confirmation.",
+        parameters={"type": "object", "properties": {
+            "event": {"type": "string"}, "name": {"type": "string", "minLength": 1},
+            "grace_hours": {"type": "integer", "minimum": 0},
+        }, "required": ["event", "name"], "additionalProperties": False},
+    ), _prepare_preset, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True))
     return tuple(tools)
+
+
+async def _prepare_form(context: AgentRequestContext, values: Mapping[str, Any],
+                        operation: str, classification: ActionClass) -> Mapping[str, Any]:
+    await require_evidence_access(context)
+    workflow = context.bot.get_cog("EventStatsCog")
+    if workflow is None:
+        raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+    current = workflow.event_management_state(values["event"]) if operation == "edit" else None
+    if operation == "edit" and (current is None or current["event"]["source"] != "custom"):
+        raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+    prepared, issue = workflow.prepare_one_time_event_values(
+        name=values["name"], start_text=values["start"],
+        end_text=values["end"], timezone_text=values["timezone"],
+        grace_text=str(values.get("grace_hours", "")),
+    )
+    if issue:
+        raise ValueError(issue)
+    lines = [ACTION_EVENT_FORM_CREATE.format(name=prepared["name"]) if current is None
+             else ACTION_EVENT_FORM_EDIT.format(name=current["event"]["name"])]
+    before = current["event"] if current else {}
+    for field, value in prepared.items():
+        old = before.get("grace_period_hours" if field == "grace_hours" else field)
+        if old != value:
+            lines.append(ACTION_EVENT_FORM_FIELD.format(
+                field=field.replace("_", " ").title(), old=old if old is not None else "None",
+                new=value))
+    if current is None or not before.get("channel_id"):
+        lines.append(ACTION_EVENT_FORM_CHANNEL)
+    elif before.get("channel_id"):
+        lines.append(ACTION_EVENT_FORM_REFRESH.format(channel=f"<#{before['channel_id']}>"))
+
+    async def recheck() -> bool:
+        if current is None:
+            return True
+        return workflow.event_management_state(before["key"]) == current
+
+    async def run() -> CommandOutcome:
+        if current is None:
+            key = workflow.create_one_time_event(**prepared)
+        else:
+            key = before["key"]
+            if not workflow.update_one_time_event(key, **prepared):
+                raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+        await workflow.force_refresh(context.guild)
+        return CommandOutcome("complete", "private",
+                              text=embed_text(workflow.build_event_detail_embed(context.guild, key)))
+
+    context.state.command_proposals.append(PreparedAction(
+        "create_event_tracker" if current is None else "edit_event_tracker",
+        {"event": before.get("key"), "name": prepared["name"]},
+        ChangePreview(tuple(lines), recheck, summary=ACTION_EVENT_FORM_LABEL),
+        run, action_class=classification,
+    ))
+    return {"status": "confirmation_required"}
+
+
+async def _prepare_preset(context: AgentRequestContext,
+                          values: Mapping[str, Any]) -> Mapping[str, Any]:
+    await require_evidence_access(context)
+    workflow = context.bot.get_cog("EventStatsCog")
+    if workflow is None:
+        raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+    current = workflow.event_management_state(values["event"])
+    if current is None or current["event"]["source"] != "preset":
+        raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+    event = current["event"]
+    name = values["name"].strip()
+    if not name:
+        raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+    grace = values.get("grace_hours")
+    if name == event["name"] and (grace is None or grace == event.get("grace_period_hours")):
+        return {"status": "no_change"}
+    lines = [ACTION_EVENT_FORM_EDIT.format(name=event["name"])]
+    if name != event["name"]:
+        lines.append(ACTION_EVENT_FORM_FIELD.format(field="Name", old=event["name"], new=name))
+    if grace is not None and grace != event.get("grace_period_hours"):
+        lines.append(ACTION_EVENT_FORM_FIELD.format(
+            field="Grace hours", old=event.get("grace_period_hours"), new=grace))
+
+    async def recheck() -> bool:
+        return workflow.event_management_state(event["key"]) == current
+
+    async def run() -> CommandOutcome:
+        if not workflow.update_preset_event(event["key"], name=name, grace_hours=grace):
+            raise ValueError(ACTION_EVENT_MANAGE_UNAVAILABLE)
+        await workflow.force_refresh(context.guild)
+        return CommandOutcome("complete", "private", text=embed_text(
+            workflow.build_event_detail_embed(context.guild, event["key"])))
+
+    context.state.command_proposals.append(PreparedAction(
+        "edit_preset_event", {"event": event["key"]},
+        ChangePreview(tuple(lines), recheck, summary=ACTION_EVENT_FORM_LABEL),
+        run,
+    ))
+    return {"status": "confirmation_required"}
 
 
 async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
