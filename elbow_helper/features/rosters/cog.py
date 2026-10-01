@@ -110,6 +110,7 @@ class Rosters(commands.Cog):
     ):
         self.bot = bot
         self._repository = repository
+        self._account_directory = account_directory
         self._roles = role_synchronizer
         self._locks: dict[int, asyncio.Lock] = {}
         self._refresh_times: dict[int, float] = {}
@@ -901,8 +902,43 @@ class Rosters(commands.Cog):
             await deny(interaction, action="manage this roster")
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
-        result = await self.membership.bulk_add(roster_id, raw_tags)
+        result = await self.bulk_add_roster_tags(roster_id, raw_tags)
         await interaction.edit_original_response(content=result.message, view=None)
+
+    async def bulk_add_roster_preview(self, roster_id: int,
+                                      raw_tags: str) -> dict[str, object]:
+        """Resolve every tag and affected member before a bulk add."""
+        roster = await self.service.get(roster_id)
+        if roster is None or roster.status != "open" or roster.active_cycle_id is None:
+            raise ValueError("This roster is closed.")
+        tags = []
+        for value in re.split(r"[\s,;]+", raw_tags.strip()):
+            if not value:
+                continue
+            tag = normalize_player_tag(value)
+            if tag is None:
+                raise ValueError("Enter valid player tags.")
+            if tag not in tags:
+                tags.append(tag)
+        if not tags:
+            raise ValueError("Enter at least one valid player tag.")
+        signed = {row.player_tag for row in await self.service.list_members(roster)}
+        rows = []
+        for tag in tags:
+            member_id = await asyncio.to_thread(self._account_directory.member_id_for_tag, tag)
+            if member_id is None:
+                raise ValueError(f"{tag} isn't linked to a member.")
+            linked = await asyncio.to_thread(self._account_directory.for_member, member_id)
+            account = next((row for row in linked if row.player_tag == tag), None)
+            if account is None:
+                raise ValueError(f"{tag} isn't linked to a member.")
+            rows.append((tag, account.player_name, member_id, tag in signed))
+        return {"roster": roster, "accounts": tuple(rows),
+                "posts": (await self.roster_edit_state(roster))["posts"]}
+
+    async def bulk_add_roster_tags(self, roster_id: int, raw_tags: str):
+        """Add linked accounts for the panel and the agent."""
+        return await self.membership.bulk_add(roster_id, raw_tags)
 
     async def show_settings(self, interaction: discord.Interaction, roster_id: int) -> None:
         roster = await self.service.get(roster_id)

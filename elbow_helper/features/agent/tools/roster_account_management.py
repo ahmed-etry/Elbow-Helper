@@ -15,8 +15,12 @@ from ..wording import (
     ACTION_ROSTER_ACCOUNT_LINE, ACTION_ROSTER_ACCOUNT_ITEM,
     ACTION_ROSTER_ACCOUNT_ROLE, ACTION_ROSTER_ACCOUNT_POST,
     ACTION_ROSTER_ACCOUNT_LABEL, ACTION_ROSTER_UNAVAILABLE,
+    ACTION_ROSTER_BULK_LINE, ACTION_ROSTER_BULK_ACCOUNT,
+    ACTION_ROSTER_BULK_SIGNED, ACTION_ROSTER_BULK_LABEL,
 )
-from .discord_safety import check_member, check_role, resolve_member
+from .discord_safety import (
+    check_member, check_post_access, check_role, resolve_channel, resolve_member,
+)
 
 
 def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
@@ -37,7 +41,81 @@ def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
             description="Remove selected Clash accounts from an open roster after confirmation.",
             parameters=schema,
         ), prepare_roster_removal, AgentCapabilityEffect.COMMAND, ActionClass.IRREVERSIBLE, True),
+        RegisteredAgentTool(AgentToolDefinition(
+            name="bulk_add_roster_accounts",
+            description="Add several linked Clash accounts to one open roster from player tags after confirmation.",
+            parameters={"type": "object", "properties": {
+                "roster_id": {"type": "integer", "minimum": 1},
+                "player_tags": {"type": "array", "items": {"type": "string"},
+                                "minItems": 1, "uniqueItems": True},
+            }, "required": ["roster_id", "player_tags"], "additionalProperties": False},
+        ), prepare_bulk_roster_add, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True),
     )
+
+
+async def prepare_bulk_roster_add(context: AgentRequestContext,
+                                  values: Mapping[str, Any]) -> Mapping[str, Any]:
+    await require_evidence_access(context)
+    workflow = context.bot.get_cog("Rosters")
+    if workflow is None:
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+    raw_tags = " ".join(values["player_tags"])
+    try:
+        state = await workflow.bulk_add_roster_preview(values["roster_id"], raw_tags)
+    except ValueError as exc:
+        return {"status": "needs_input", "issue": str(exc), "prepared_count": 0}
+    roster = state["roster"]
+    if roster.guild_id != context.guild.id:
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+    if all(row[3] for row in state["accounts"]):
+        return {"status": "no_change"}
+    role = context.guild.get_role(roster.role_id) if roster.role_id else None
+    if role is not None:
+        check_role(role, context.guild, context.guild.me, {})
+    members = {member_id: await resolve_member(context.guild, member_id)
+               for _, _, member_id, _ in state["accounts"]}
+    for member in members.values():
+        check_member(member, context.guild.me)
+    channels = [await resolve_channel(context, channel_id)
+                for channel_id, _ in state["posts"]]
+    for channel in channels:
+        check_post_access(channel, context.member, context.guild.me)
+    lines = [ACTION_ROSTER_BULK_LINE.format(name=roster.name)]
+    lines.extend(ACTION_ROSTER_BULK_ACCOUNT.format(
+        name=name, tag=tag, member=members[member_id].mention,
+        status=ACTION_ROSTER_BULK_SIGNED if signed else "")
+        for tag, name, member_id, signed in state["accounts"])
+    if role is not None:
+        lines.append(ACTION_ROSTER_ACCOUNT_ROLE.format(role=role.mention))
+    lines.extend(ACTION_ROSTER_ACCOUNT_POST.format(
+        message_id=message_id, channel=f"<#{channel_id}>")
+        for channel_id, message_id in state["posts"])
+
+    async def recheck() -> bool:
+        try:
+            current = await workflow.bulk_add_roster_preview(values["roster_id"], raw_tags)
+            if current != state:
+                return False
+            if role is not None:
+                check_role(role, context.guild, context.guild.me, {})
+            for member in members.values():
+                check_member(member, context.guild.me)
+            for channel in channels:
+                check_post_access(channel, context.member, context.guild.me)
+        except (ValueError, LookupError):
+            return False
+        return True
+
+    async def run() -> CommandOutcome:
+        result = await workflow.bulk_add_roster_tags(values["roster_id"], raw_tags)
+        return CommandOutcome("complete", "private", text=result.message)
+
+    context.state.command_proposals.append(PreparedAction(
+        "bulk_add_roster_accounts", {"roster_id": roster.id},
+        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_BULK_LABEL),
+        run, action_class=ActionClass.CHANGE,
+    ))
+    return {"status": "confirmation_required"}
 
 
 async def prepare_roster_signup(context: AgentRequestContext,
