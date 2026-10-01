@@ -25,7 +25,7 @@ from .config import (
     RESTORE_ROLE_IDS,
     SNAPSHOT_ONLY_ROLE_IDS,
 )
-from .state import load_hibernation_state, save_hibernation_state
+from .state import get_fallback_thread_entry, load_hibernation_state, save_hibernation_state
 
 LOGGER = logging.getLogger(__name__)
 
@@ -82,6 +82,84 @@ class HibernationCommandMixin:
         state = load_hibernation_state().get(str(member_id))
         return dict(state) if isinstance(state, dict) else None
 
+    def prepare_reactivation(self, *, guild: discord.Guild,
+                             actor: discord.Member | discord.User,
+                             target: discord.Member,
+                             force_reactivate: bool) -> dict[str, object]:
+        if force_reactivate and not (
+            isinstance(actor, discord.Member)
+            and any(role.id in LEAD_PLUS for role in actor.roles)
+        ):
+            return {"issue": "You don't have permission to reactivate another member."}
+        info = self.hibernation_member_state(target.id)
+        if info is None:
+            message = (f"{target.mention} is not currently hibernating."
+                       if force_reactivate else "You're not currently hibernating.")
+            return {"issue": message}
+        to_add = [guild.get_role(MEMBER_ROLE_ID), guild.get_role(ALLIANCE_MEMBER_ROLE_ID)]
+        to_remove = [guild.get_role(HIBERNATING_ROLE_ID)]
+        if SLEEPING_CO_ROLE_ID in [role.id for role in target.roles]:
+            to_add.append(guild.get_role(CO_LEADER_ROLE_ID))
+            to_remove.append(guild.get_role(SLEEPING_CO_ROLE_ID))
+        if SLEEPING_CROSS_ROLE_ID in [role.id for role in target.roles]:
+            to_add.append(guild.get_role(CROSS_LEADER_ROLE_ID))
+            to_remove.append(guild.get_role(SLEEPING_CROSS_ROLE_ID))
+        for role_id in info["roles"]:
+            role = guild.get_role(role_id)
+            if role is not None:
+                to_add.append(role)
+        to_add = tuple(role for role in to_add if role is not None)
+        to_remove = tuple(role for role in to_remove if role is not None)
+        removed_ids = {role.id for role in to_remove}
+        projected_roles = [role for role in target.roles if role.id not in removed_ids]
+        projected_ids = {role.id for role in projected_roles}
+        projected_roles.extend(role for role in to_add if role.id not in projected_ids)
+        ticket = self.prepare_reactivation_ticket(
+            guild, actor, target, info, projected_roles=projected_roles,
+        )
+        fallback = get_fallback_thread_entry(load_hibernation_state(), target.id)
+        return {"issue": None, "actor": actor, "target": target,
+                "guild": guild, "info": info,
+                "force_reactivate": force_reactivate,
+                "to_add": to_add, "to_remove": to_remove,
+                "missing_role_ids": tuple(role_id for role_id in info["roles"]
+                                          if guild.get_role(role_id) is None),
+                "ticket": ticket,
+                "fallback_thread_id": fallback.get("thread_id") if fallback else None}
+
+    async def reactivate_member(self, plan: dict[str, object]) -> dict[str, object]:
+        guild = plan["guild"]
+        actor = plan["actor"]
+        target = plan["target"]
+        info = plan["info"]
+        if plan["to_remove"]:
+            await target.remove_roles(*plan["to_remove"],
+                                      reason=f"Reactivated by {actor}")
+        if plan["to_add"]:
+            await target.add_roles(*plan["to_add"],
+                                   reason=f"Reactivated by {actor}")
+        try:
+            await self.achievement_rewards.track_hibernation_survivor(target.id)
+        except (RuntimeError, TypeError):
+            LOGGER.exception("Failed tracking hibernation survivor achievement")
+        target = await guild.fetch_member(target.id)
+        data = load_hibernation_state()
+        data.pop(str(target.id), None)
+        save_hibernation_state(data)
+        ticket = await self._create_reactivation_ticket(
+            guild=guild, actor=actor, target=target,
+            hibernation_info=info,
+        )
+        await self._archive_fallback_thread_for_member(
+            target.id, reason=f"Hibernation ended by {actor}",
+        )
+        message = (f"Reactivated {target.mention}. Their roles were restored and a ticket was created."
+                   if plan["force_reactivate"] else
+                   "Welcome back. Your roles have been restored.")
+        return {"message": message, "ticket": ticket,
+                "ticket_channel_id": ticket.id,
+                "member_id": target.id}
+
     async def hibernate_member(self, guild: discord.Guild,
                                actor: discord.Member,
                                plan: dict[str, object],
@@ -125,100 +203,24 @@ class HibernationCommandMixin:
         await interaction.followup.send(message, ephemeral=ephemeral)
 
     async def _complete_reactivation(
-        self,
-        interaction: discord.Interaction,
-        *,
-        guild: discord.Guild,
-        actor: discord.Member | discord.User,
-        target: discord.Member,
-        force_reactivate: bool,
+        self, interaction: discord.Interaction, *,
+        guild: discord.Guild, actor: discord.Member | discord.User,
+        target: discord.Member, force_reactivate: bool,
         response_ephemeral: bool,
     ) -> None:
-        data = load_hibernation_state()
-
-        if force_reactivate and not (
-            isinstance(actor, discord.Member)
-            and any(role.id in LEAD_PLUS for role in actor.roles)
-        ):
+        plan = self.prepare_reactivation(
+            guild=guild, actor=actor, target=target,
+            force_reactivate=force_reactivate,
+        )
+        if plan["issue"]:
             await self._send_reactivation_reply(
-                interaction,
-                "You don't have permission to reactivate another member.",
-                ephemeral=response_ephemeral,
+                interaction, plan["issue"], ephemeral=response_ephemeral,
             )
             return
-
-        if str(target.id) not in data:
-            message = (
-                f"{target.mention} is not currently hibernating."
-                if force_reactivate
-                else "You're not currently hibernating."
-            )
-            await self._send_reactivation_reply(
-                interaction,
-                message,
-                ephemeral=response_ephemeral,
-            )
-            return
-
-        hibernation_info = data[str(target.id)]
-
-        to_add = [guild.get_role(MEMBER_ROLE_ID), guild.get_role(ALLIANCE_MEMBER_ROLE_ID)]
-        to_remove = [guild.get_role(HIBERNATING_ROLE_ID)]
-
-        if SLEEPING_CO_ROLE_ID in [role.id for role in target.roles]:
-            to_add.append(guild.get_role(CO_LEADER_ROLE_ID))
-            to_remove.append(guild.get_role(SLEEPING_CO_ROLE_ID))
-        if SLEEPING_CROSS_ROLE_ID in [role.id for role in target.roles]:
-            to_add.append(guild.get_role(CROSS_LEADER_ROLE_ID))
-            to_remove.append(guild.get_role(SLEEPING_CROSS_ROLE_ID))
-
-        for role_id in hibernation_info["roles"]:
-            role = guild.get_role(role_id)
-            if role is not None:
-                to_add.append(role)
-
-        to_add = [role for role in to_add if role is not None]
-        to_remove = [role for role in to_remove if role is not None]
-
-        if to_remove:
-            await target.remove_roles(*to_remove, reason=f"Reactivated by {actor}")
-        if to_add:
-            await target.add_roles(*to_add, reason=f"Reactivated by {actor}")
-
-        try:
-            await self.achievement_rewards.track_hibernation_survivor(
-                target.id
-            )
-        except (RuntimeError, TypeError):
-            LOGGER.exception("Failed tracking hibernation survivor achievement")
-
-        target = await guild.fetch_member(target.id)
-        del data[str(target.id)]
-        save_hibernation_state(data)
-
-        await self._create_reactivation_ticket(
-            guild=guild,
-            actor=actor,
-            target=target,
-            hibernation_info=hibernation_info,
+        result = await self.reactivate_member(plan)
+        await self._send_reactivation_reply(
+            interaction, result["message"], ephemeral=response_ephemeral,
         )
-        await self._archive_fallback_thread_for_member(
-            target.id,
-            reason=f"Hibernation ended by {actor}",
-        )
-
-        if force_reactivate:
-            await self._send_reactivation_reply(
-                interaction,
-                f"Reactivated {target.mention}. Their roles were restored and a ticket was created.",
-                ephemeral=response_ephemeral,
-            )
-        else:
-            await self._send_reactivation_reply(
-                interaction,
-                "Welcome back. Your roles have been restored.",
-                ephemeral=response_ephemeral,
-            )
 
     async def reactivate_from_button(self, interaction: discord.Interaction) -> None:
         response_ephemeral = interaction.guild is not None

@@ -432,6 +432,64 @@ class HibernationTicketMixin:
         except (discord.Forbidden, discord.HTTPException):
             await self._post_hibernation_notice_in_fallback_thread(user)
 
+    def prepare_reactivation_ticket(
+        self, guild: discord.Guild,
+        actor: discord.Member | discord.User,
+        target: discord.Member,
+        hibernation_info: dict[str, object],
+        *, projected_roles=None,
+    ) -> dict[str, object]:
+        bot_member = guild.me or guild.get_member(self.bot.user.id if self.bot.user else 0)
+        overwrites: dict[discord.abc.Snowflake, discord.PermissionOverwrite] = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            target: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+        }
+        if bot_member is not None:
+            overwrites[bot_member] = discord.PermissionOverwrite(
+                view_channel=True, send_messages=True,
+            )
+        visible_role_ids = []
+        for role_id in sorted(RECRUITERS | CORE):
+            role = guild.get_role(role_id)
+            if role is not None:
+                overwrites[role] = discord.PermissionOverwrite(
+                    view_channel=True, send_messages=True,
+                )
+                visible_role_ids.append(role_id)
+        base_name = re.sub(r"[^\w-]", "", target.name.lower()) or str(target.id)
+        category = guild.get_channel(RECRUITMENT_TICKET_CATEGORY)
+        recruiter_mentions = " ".join(f"<@&{role_id}>" for role_id in sorted(RECRUITERS))
+        welcome = (f"Welcome back, {target.mention}! {recruiter_mentions} "
+                   "will help you get settled again soon.")
+        rank_role_names = [
+            guild.get_role(role_id).name
+            for role_id in hibernation_info.get("rank_roles", [])
+            if guild.get_role(role_id) is not None
+        ]
+        roles = projected_roles if projected_roles is not None else target.roles
+        townhall_roles = [role.name for role in roles if role.name.startswith("TH")]
+        clan_roles = [HIBERNATION_CLAN_NAMES[role.id] for role in roles
+                      if role.id in HIBERNATION_CLAN_NAMES]
+        embed = discord.Embed(
+            title="Reactivation Notice",
+            description="Welcome back! We'll get you sorted into the clan family shortly.",
+            color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
+        )
+        embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
+        embed.add_field(name="Member", value=target.mention, inline=False)
+        if actor.id != target.id:
+            embed.add_field(name="Reactivated By", value=actor.mention, inline=False)
+        embed.add_field(name="Town Hall Roles", value=", ".join(townhall_roles) or "*None*", inline=False)
+        embed.add_field(name="Clan Roles", value=", ".join(clan_roles) or "*None*", inline=False)
+        embed.add_field(name="Previous Ranks", value=", ".join(rank_role_names) or "*None*", inline=False)
+        embed.add_field(name="Hibernating Since", value=str(hibernation_info["hibernation_date"]), inline=False)
+        return {
+            "name": f"🔗ticket-{base_name}", "category": category,
+            "overwrites": overwrites, "visible_role_ids": tuple(visible_role_ids),
+            "bot_member_id": bot_member.id if bot_member else None,
+            "topic": target.mention, "welcome": welcome, "embed": embed,
+        }
+
     async def _create_reactivation_ticket(
         self,
         guild: discord.Guild,
@@ -439,29 +497,16 @@ class HibernationTicketMixin:
         target: discord.Member,
         hibernation_info: dict[str, object],
     ) -> discord.TextChannel:
-        bot_member = guild.me or guild.get_member(self.bot.user.id if self.bot.user else 0)
-        overwrites: dict[discord.abc.Snowflake, discord.PermissionOverwrite] = {
-            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            target: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-        }
-        if bot_member is not None:
-            overwrites[bot_member] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-        for role_id in sorted(RECRUITERS | CORE):
-            role = guild.get_role(role_id)
-            if role is not None:
-                overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-
-        base_name = re.sub(r"[^\w-]", "", target.name.lower()) or str(target.id)
-        category = guild.get_channel(RECRUITMENT_TICKET_CATEGORY)
-        ticket_channel = await guild.create_text_channel(
-            name=f"🔗ticket-{base_name}",
-            category=category,
-            overwrites=overwrites,
+        prepared = self.prepare_reactivation_ticket(
+            guild, actor, target, hibernation_info,
         )
-        await ticket_channel.edit(topic=target.mention)
-
-        recruiter_mentions = " ".join(f"<@&{role_id}>" for role_id in sorted(RECRUITERS))
-        await ticket_channel.send(f"Welcome back, {target.mention}! {recruiter_mentions} will help you get settled again soon.")
+        ticket_channel = await guild.create_text_channel(
+            name=prepared["name"],
+            category=prepared["category"],
+            overwrites=prepared["overwrites"],
+        )
+        await ticket_channel.edit(topic=prepared["topic"])
+        await ticket_channel.send(prepared["welcome"])
 
         CREATED_TICKETS_FILE.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -479,34 +524,9 @@ class HibernationTicketMixin:
         except OSError:
             LOGGER.exception("Failed writing %s", CREATED_TICKETS_FILE)
 
-        rank_role_names = [
-            guild.get_role(role_id).name
-            for role_id in hibernation_info.get("rank_roles", [])
-            if guild.get_role(role_id) is not None
-        ]
-        townhall_roles = [role.name for role in target.roles if role.name.startswith("TH")]
-        clan_roles = [
-            HIBERNATION_CLAN_NAMES[role.id]
-            for role in target.roles
-            if role.id in HIBERNATION_CLAN_NAMES
-        ]
-
-        embed = discord.Embed(
-            title="Reactivation Notice",
-            description=(
-                "Welcome back! We'll get you sorted into the clan family shortly."
-            ),
-            color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
+        await ticket_channel.send(
+            embed=prepared["embed"], view=self._build_close_ticket_view(),
         )
-        embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
-        embed.add_field(name="Member", value=target.mention, inline=False)
-        if actor.id != target.id:
-            embed.add_field(name="Reactivated By", value=actor.mention, inline=False)
-        embed.add_field(name="Town Hall Roles", value=", ".join(townhall_roles) or "*None*", inline=False)
-        embed.add_field(name="Clan Roles", value=", ".join(clan_roles) or "*None*", inline=False)
-        embed.add_field(name="Previous Ranks", value=", ".join(rank_role_names) or "*None*", inline=False)
-        embed.add_field(name="Hibernating Since", value=str(hibernation_info["hibernation_date"]), inline=False)
-        await ticket_channel.send(embed=embed, view=self._build_close_ticket_view())
         return ticket_channel
 
     async def _close_reactivation_ticket(self, interaction: discord.Interaction) -> None:
