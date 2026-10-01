@@ -1107,8 +1107,21 @@ class Rosters(commands.Cog):
             content=None,
             view=RosterProgressView("Removing accounts…"),
         )
-        result = await self.membership.remove_players(roster_id, player_tags)
+        result = await self.remove_roster_signup_rows(roster_id, player_tags)
         await interaction.edit_original_response(content=result.message, view=None)
+
+    async def roster_signed_rows(self, roster_id: int):
+        """Read all current signup rows for the removal panel and agent."""
+        roster = await self.service.get(roster_id)
+        if roster is None:
+            return None
+        members = await self.service.list_members(roster)
+        return {"roster": roster, "members": tuple(members),
+                "posts": (await self.roster_edit_state(roster))["posts"]}
+
+    async def remove_roster_signup_rows(self, roster_id: int, player_tags: list[str]):
+        """Remove selected signup rows for the panel and agent."""
+        return await self.membership.remove_players(roster_id, player_tags)
 
     async def handle_management_action(
         self,

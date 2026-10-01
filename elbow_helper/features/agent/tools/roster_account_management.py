@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+import discord
+from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..access import require_evidence_access
@@ -17,6 +19,8 @@ from ..wording import (
     ACTION_ROSTER_ACCOUNT_LABEL, ACTION_ROSTER_UNAVAILABLE,
     ACTION_ROSTER_BULK_LINE, ACTION_ROSTER_BULK_ACCOUNT,
     ACTION_ROSTER_BULK_SIGNED, ACTION_ROSTER_BULK_LABEL,
+    ACTION_ROSTER_REMOVE_LINE, ACTION_ROSTER_REMOVE_ROW,
+    ACTION_ROSTER_REMOVE_LABEL,
 )
 from .discord_safety import (
     check_member, check_post_access, check_role, resolve_channel, resolve_member,
@@ -50,7 +54,100 @@ def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
                                 "minItems": 1, "uniqueItems": True},
             }, "required": ["roster_id", "player_tags"], "additionalProperties": False},
         ), prepare_bulk_roster_add, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True),
+        RegisteredAgentTool(AgentToolDefinition(
+            name="remove_roster_signup_rows",
+            description="Remove any selected current signup rows from a roster after confirmation.",
+            parameters={"type": "object", "properties": {
+                "roster_id": {"type": "integer", "minimum": 1},
+                "accounts": {"type": "array", "items": {"type": "string"},
+                             "minItems": 1, "uniqueItems": True},
+            }, "required": ["roster_id", "accounts"], "additionalProperties": False},
+        ), prepare_roster_row_removal, AgentCapabilityEffect.COMMAND,
+            ActionClass.IRREVERSIBLE, True),
     )
+
+
+async def prepare_roster_row_removal(context: AgentRequestContext,
+                                     values: Mapping[str, Any]) -> Mapping[str, Any]:
+    await require_evidence_access(context)
+    workflow = context.bot.get_cog("Rosters")
+    if workflow is None:
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+    state = await workflow.roster_signed_rows(values["roster_id"])
+    if state is None or state["roster"].guild_id != context.guild.id:
+        raise ValueError(ACTION_ROSTER_UNAVAILABLE)
+    roster = state["roster"]
+    selected = []
+    for value in values["accounts"]:
+        tag = normalize_player_tag(value)
+        matches = [row for row in state["members"]
+                   if row.player_tag == tag
+                   or row.player_name.casefold() == value.strip().casefold()]
+        if len(matches) != 1:
+            return {"status": "needs_input",
+                    "issue": ("More than one signed-up account has that name. Use a player tag."
+                              if matches else "That account isn't signed up for this roster."),
+                    "prepared_count": 0}
+        if matches[0].player_tag not in {row.player_tag for row in selected}:
+            selected.append(matches[0])
+    role = context.guild.get_role(roster.role_id) if roster.role_id else None
+    if role is not None:
+        check_role(role, context.guild, context.guild.me, {})
+    owners = {}
+    for row in selected:
+        owner = context.guild.get_member(row.discord_user_id)
+        if owner is None:
+            try:
+                owner = await context.guild.fetch_member(row.discord_user_id)
+            except discord.NotFound:
+                owner = None
+        if owner is not None:
+            check_member(owner, context.guild.me)
+        owners[row.discord_user_id] = owner
+    channels = [await resolve_channel(context, channel_id)
+                for channel_id, _ in state["posts"]]
+    for channel in channels:
+        check_post_access(channel, context.member, context.guild.me)
+    lines = [ACTION_ROSTER_REMOVE_LINE.format(name=roster.name)]
+    lines.extend(ACTION_ROSTER_REMOVE_ROW.format(
+        name=row.player_name, tag=row.player_tag,
+        member=f"<@{row.discord_user_id}>") for row in selected)
+    if role is not None:
+        lines.append(ACTION_ROSTER_ACCOUNT_ROLE.format(role=role.mention))
+    lines.extend(ACTION_ROSTER_ACCOUNT_POST.format(
+        message_id=message_id, channel=f"<#{channel_id}>")
+        for channel_id, message_id in state["posts"])
+
+    async def recheck() -> bool:
+        current = await workflow.roster_signed_rows(values["roster_id"])
+        if current != state:
+            return False
+        try:
+            if role is not None:
+                check_role(role, context.guild, context.guild.me, {})
+            for owner in owners.values():
+                if owner is not None:
+                    check_member(owner, context.guild.me)
+            for channel in channels:
+                check_post_access(channel, context.member, context.guild.me)
+        except Exception:
+            return False
+        return True
+
+    async def run() -> CommandOutcome:
+        result = await workflow.remove_roster_signup_rows(
+            values["roster_id"], [row.player_tag for row in selected])
+        if not result.changed:
+            raise ValueError(result.message)
+        return CommandOutcome("complete", "private", text=result.message)
+
+    context.state.command_proposals.append(PreparedAction(
+        "remove_roster_signup_rows", {"roster_id": roster.id,
+                                      "accounts": [row.player_tag for row in selected]},
+        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_REMOVE_LABEL),
+        run, action_class=ActionClass.IRREVERSIBLE,
+    ))
+    return {"status": "confirmation_required"}
 
 
 async def prepare_bulk_roster_add(context: AgentRequestContext,
