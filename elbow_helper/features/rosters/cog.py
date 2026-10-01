@@ -488,6 +488,37 @@ class Rosters(commands.Cog):
             "posts": tuple(sorted((post.channel_id, post.message_id) for post in posts)),
         }
 
+    async def roster_management_state(self, roster_id: int) -> dict[str, object] | None:
+        roster = await self.service.get(roster_id)
+        return await self.roster_edit_state(roster) if roster is not None else None
+
+    async def change_roster_management(self, roster_id: int, action: str) -> str:
+        """Apply a roster management control and return its existing reply text."""
+        if action not in {"open", "close", "toggle_buttons"}:
+            raise ValueError("Unknown roster management action")
+        async with self._lock(roster_id):
+            roster = await self.service.get(roster_id)
+            if roster is None:
+                return "That roster no longer exists."
+            if action == "open":
+                roster = await self.service.open(roster)
+                if roster.status == "open":
+                    return f"Opened **{roster.name}**."
+                if (roster.one_off_open_ts is not None
+                        and int(time.time()) < roster.one_off_open_ts):
+                    return (f"**{roster.name}** opens "
+                            f"{discord.utils.format_dt(datetime.fromtimestamp(roster.one_off_open_ts, dt_timezone.utc))}.")
+                return f"**{roster.name}** has passed its closing time."
+            if action == "close":
+                roster = await self.service.close(roster)
+                return f"Closed **{roster.name}**."
+            roster = await self.service.toggle_buttons(roster)
+            return "Buttons shown." if not roster.buttons_hidden else "Buttons hidden."
+
+    async def clear_roster_signups(self, roster_id: int):
+        """Clear current signups for both the panel and agent."""
+        return await self.membership.clear(roster_id)
+
     @staticmethod
     def roster_capacity_issue(current_count: int) -> str:
         return (f"This roster already has {account_count(current_count)} signed up. "
@@ -1009,47 +1040,27 @@ class Rosters(commands.Cog):
             )
         else:
             await interaction.response.defer()
-        async with self._lock(roster_id):
-            roster = await self.service.get(roster_id)
-            if roster is None:
-                await interaction.edit_original_response(
-                    content="That roster no longer exists.",
-                    view=None,
-                )
-                return
-            if action == "open":
-                roster = await self.service.open(roster)
-                if roster.status == "open":
-                    text = f"Opened **{roster.name}**."
-                elif (
-                    roster.one_off_open_ts is not None
-                    and int(time.time()) < roster.one_off_open_ts
-                ):
-                    text = (
-                        f"**{roster.name}** opens "
-                        f"{discord.utils.format_dt(datetime.fromtimestamp(roster.one_off_open_ts, dt_timezone.utc))}."
+        if action == "export":
+            async with self._lock(roster_id):
+                roster = await self.service.get(roster_id)
+                if roster is None:
+                    await interaction.edit_original_response(
+                        content="That roster no longer exists.", view=None,
                     )
-                else:
-                    text = f"**{roster.name}** has passed its closing time."
-            elif action == "close":
-                roster = await self.service.close(roster)
-                text = f"Closed **{roster.name}**."
-            elif action == "export":
+                    return
                 await self._send_roster_export(interaction, roster)
-                return
-            elif action == "toggle_buttons":
-                roster = await self.service.toggle_buttons(roster)
-                text = "Buttons shown." if not roster.buttons_hidden else "Buttons hidden."
-            else:
-                text = "That roster action isn't available."
-            await interaction.edit_original_response(content=text, view=None)
+            return
+        text = (await self.change_roster_management(roster_id, action)
+                if action in {"open", "close", "toggle_buttons"}
+                else "That roster action isn't available.")
+        await interaction.edit_original_response(content=text, view=None)
 
     async def confirm_clear(self, interaction: discord.Interaction, roster_id: int) -> None:
         await interaction.response.edit_message(
             content=None,
             view=RosterProgressView("Clearing signups…"),
         )
-        result = await self.membership.clear(roster_id)
+        result = await self.clear_roster_signups(roster_id)
         await interaction.edit_original_response(content=result.message, view=None)
 
     @staticmethod
