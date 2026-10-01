@@ -262,6 +262,25 @@ class AgentActionRepository:
             """, (guild_id, current, limit)).fetchall()
         return [self._standing_record(row) for row in rows]
 
+    def recover_standing_leases(self, *, guild_id: int,
+                                now: float | None = None) -> list[dict[str, Any]]:
+        current = time.time() if now is None else now
+        interrupted = []
+        with self.connect() as connection, sqlite_transaction(connection, immediate=True):
+            for kind in ("request", "watcher"):
+                table, key, _ = self._standing_columns(kind)
+                rows = connection.execute(f"""
+                    SELECT * FROM {table} WHERE guild_id=? AND lease_owner IS NOT NULL
+                """, (guild_id,)).fetchall()
+                for row in rows:
+                    connection.execute(f"""
+                        UPDATE {table} SET status='paused', lease_owner=NULL,
+                            lease_expires_at=NULL, version=version+1, updated_at=?
+                        WHERE {key}=? AND lease_owner=?
+                    """, (current, row[key], row["lease_owner"]))
+                    interrupted.append({**self._standing_record(row), "kind": kind})
+        return interrupted
+
     def claim_standing(self, *, kind: str, identifier: str, version: int,
                        owner: str, now: float | None = None) -> bool:
         table, key, due = self._standing_columns(kind)

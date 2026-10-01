@@ -72,6 +72,15 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
                          self.progress.edit.await_args.kwargs["content"])
         self.assertEqual(len(self.repository.recent_log(requester_id=4)), 2)
 
+    async def test_wait_run_returns_the_finished_action_record(self):
+        action, _, _ = self.action("first")
+        with (patch("elbow_helper.features.agent.actions.runner.require_access"),
+              patch("elbow_helper.features.agent.actions.runner.require_disclosure_access",
+                    new_callable=AsyncMock)):
+            run_id = await self.runner.submit(self.context, (action,), confirmer_id=4)
+            finished = await self.runner.wait_run(run_id)
+        self.assertEqual(finished["status"], "completed")
+
     async def test_failure_stops_before_later_change(self):
         first, _, first_run = self.action("first", allowed=False)
         second, _, second_run = self.action("second")

@@ -73,6 +73,7 @@ class AgentActionRunner:
         self.undo_handlers = dict(undo_handlers or {})
         self.on_finish = on_finish
         self._tasks: set[asyncio.Task] = set()
+        self._runs: dict[str, asyncio.Task] = {}
         self._ready = asyncio.Event()
 
     def start(self) -> None:
@@ -110,7 +111,15 @@ class AgentActionRunner:
         task = asyncio.create_task(self._execute(run_id, context, actions))
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
+        self._runs[run_id] = task
+        task.add_done_callback(lambda _: self._runs.pop(run_id, None))
         return run_id
+
+    async def wait_run(self, run_id: str) -> Mapping[str, Any] | None:
+        task = self._runs.get(run_id)
+        if task is not None:
+            await asyncio.shield(task)
+        return await asyncio.to_thread(self.repository.run, run_id)
 
     async def prepare_undo(self, context: Any, log_id: str) -> PreparedAction:
         if not self.enabled:

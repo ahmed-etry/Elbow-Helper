@@ -51,6 +51,18 @@ class StandingRepositoryTests(unittest.TestCase):
         self.assertTrue(self.repository.set_standing_status(
             kind="request", identifier=identifier, requester_id=2, status="paused",
         ))
+        interrupted = self.repository.recover_standing_leases(guild_id=1, now=1001)
+        self.assertEqual([item["request_id"] for item in interrupted], [identifier])
+        self.assertEqual(self.repository.standing(kind="request", identifier=identifier)["status"],
+                         "paused")
+        self.assertTrue(self.repository.set_standing_status(
+            kind="request", identifier=identifier, requester_id=2, status="active",
+        ))
+        self.assertTrue(self.repository.claim_standing(
+            kind="request", identifier=identifier,
+            version=self.repository.standing(kind="request", identifier=identifier)["version"],
+            owner="worker", now=1001,
+        ))
         self.assertTrue(self.repository.finish_standing(
             kind="request", identifier=identifier, owner="worker", next_at=2000,
         ))
