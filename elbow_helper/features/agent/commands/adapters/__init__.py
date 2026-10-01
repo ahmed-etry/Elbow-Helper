@@ -20,6 +20,7 @@ from .attack_plans import attack_plan_adapters
 from .clan_transfers import clan_transfer_adapters
 from .rosters import roster_adapters
 from .cwl_announcement import cwl_announcement_adapters
+from .hibernation import hibernation_adapters
 
 
 def enabled_adapters():
@@ -30,7 +31,8 @@ def enabled_adapters():
             *war_statement_adapters(), *cwl_register_adapters(),
             *cwl_roster_adapters(), *support_ticket_adapters(),
             *attack_plan_adapters(), *clan_transfer_adapters(),
-            *roster_adapters(), *cwl_announcement_adapters())
+            *roster_adapters(), *cwl_announcement_adapters(),
+            *hibernation_adapters())
 
 
 __all__ = ["enabled_adapters", "run_health_player", "run_opinion"]

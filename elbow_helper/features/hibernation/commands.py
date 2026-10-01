@@ -6,6 +6,7 @@ from datetime import datetime
 import discord
 from discord import app_commands
 from elbow_helper.discord.interactions import deny
+from elbow_helper.configuration.channels import HIBERNATION_FALLBACK, HIBERNATION_LOG
 
 from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import (
@@ -30,6 +31,87 @@ LOGGER = logging.getLogger(__name__)
 
 
 class HibernationCommandMixin:
+    def prepare_hibernation(self, guild: discord.Guild,
+                            user: discord.Member) -> dict[str, object]:
+        if str(user.id) in load_hibernation_state():
+            return {"issue": "That member is already hibernating."}
+        stored_role_ids = [
+            role.id for role in user.roles
+            if not role.is_default() and role.id not in SNAPSHOT_ONLY_ROLE_IDS
+        ]
+        snapshot_role_ids = [role.id for role in user.roles
+                             if role.id in SNAPSHOT_ONLY_ROLE_IDS]
+        unix_ts = int(datetime.now().timestamp())
+        get_role = getattr(guild, "get_role", lambda _: None)
+        to_remove = [
+            get_role(role_id)
+            for role_id in HIBERNATE_REMOVE_ROLE_IDS
+            if get_role(role_id) in user.roles
+        ]
+        to_remove.extend(
+            role for role_id in (*RESTORE_ROLE_IDS, *SNAPSHOT_ONLY_ROLE_IDS)
+            if (role := get_role(role_id)) in user.roles
+        )
+        to_add = [get_role(HIBERNATING_ROLE_ID)]
+        required_ids = [HIBERNATING_ROLE_ID]
+        if get_role(CO_LEADER_ROLE_ID) in user.roles:
+            to_add.append(get_role(SLEEPING_CO_ROLE_ID))
+            to_remove.append(get_role(CO_LEADER_ROLE_ID))
+            required_ids.append(SLEEPING_CO_ROLE_ID)
+        if get_role(CROSS_LEADER_ROLE_ID) in user.roles:
+            to_add.append(get_role(SLEEPING_CROSS_ROLE_ID))
+            to_remove.append(get_role(CROSS_LEADER_ROLE_ID))
+            required_ids.append(SLEEPING_CROSS_ROLE_ID)
+        return {
+            "issue": None, "user": user,
+            "stored_role_ids": stored_role_ids,
+            "snapshot_role_ids": snapshot_role_ids,
+            "unix_ts": unix_ts,
+            "to_remove": tuple(role for role in to_remove if role is not None),
+            "to_add": tuple(role for role in to_add if role is not None),
+            "missing_role_ids": tuple(role_id for role_id in required_ids
+                                      if get_role(role_id) is None),
+            "log_channel_id": HIBERNATION_LOG,
+            "fallback_channel_id": HIBERNATION_FALLBACK,
+        }
+
+    def hibernation_notice_preview(self, user: discord.Member) -> str:
+        return self._build_hibernation_notice_message(user)
+
+    def hibernation_member_state(self, member_id: int) -> dict[str, object] | None:
+        state = load_hibernation_state().get(str(member_id))
+        return dict(state) if isinstance(state, dict) else None
+
+    async def hibernate_member(self, guild: discord.Guild,
+                               actor: discord.Member,
+                               plan: dict[str, object],
+                               *, reply=None) -> str:
+        user = plan["user"]
+        data = load_hibernation_state()
+        if str(user.id) in data:
+            return "That member is already hibernating."
+        data[str(user.id)] = {
+            "roles": list(plan["stored_role_ids"]),
+            "rank_roles": list(plan["snapshot_role_ids"]),
+            "hibernation_date": f"<t:{plan['unix_ts']}:F>",
+        }
+        save_hibernation_state(data)
+        if plan["to_remove"]:
+            await user.remove_roles(*plan["to_remove"],
+                                    reason=f"Moved to hibernation by {actor}")
+        if plan["to_add"]:
+            await user.add_roles(*plan["to_add"],
+                                 reason=f"Moved to hibernation by {actor}")
+        await self.send_hibernation_log(
+            guild, actor, user, list(plan["stored_role_ids"]),
+            list(plan["snapshot_role_ids"]), plan["unix_ts"],
+        )
+        message = f"Moved {user.mention} to hibernation."
+        if reply is not None:
+            await reply(message)
+        await self._send_hibernation_notice(user)
+        return message
+
     async def _send_reactivation_reply(
         self,
         interaction: discord.Interaction,
@@ -208,58 +290,16 @@ class HibernationCommandMixin:
                 await interaction.followup.send("Run this command in the server, not in DMs.", ephemeral=True)
                 return
 
-            data = load_hibernation_state()
-            if str(user.id) in data:
-                await interaction.followup.send("That member is already hibernating.", ephemeral=True)
+            plan = self.prepare_hibernation(guild, user)
+            if plan["issue"]:
+                await interaction.followup.send(plan["issue"], ephemeral=True)
                 return
-
-            stored_role_ids = [
-                role.id
-                for role in user.roles
-                if not role.is_default() and role.id not in SNAPSHOT_ONLY_ROLE_IDS
-            ]
-            snapshot_role_ids = [role.id for role in user.roles if role.id in SNAPSHOT_ONLY_ROLE_IDS]
-
-            unix_ts = int(datetime.now().timestamp())
-            data[str(user.id)] = {
-                "roles": stored_role_ids,
-                "rank_roles": snapshot_role_ids,
-                "hibernation_date": f"<t:{unix_ts}:F>",
-            }
-            save_hibernation_state(data)
-
-            to_remove = [
-                guild.get_role(role_id)
-                for role_id in HIBERNATE_REMOVE_ROLE_IDS
-                if guild.get_role(role_id) in user.roles
-            ]
-            to_remove.extend(
-                [
-                    role
-                    for role_id in (*RESTORE_ROLE_IDS, *SNAPSHOT_ONLY_ROLE_IDS)
-                    if (role := guild.get_role(role_id)) in user.roles
-                ]
+            await self.hibernate_member(
+                guild, interaction.user, plan,
+                reply=lambda message: interaction.followup.send(
+                    message, ephemeral=True,
+                ),
             )
-            to_add = [guild.get_role(HIBERNATING_ROLE_ID)]
-
-            if guild.get_role(CO_LEADER_ROLE_ID) in user.roles:
-                to_add.append(guild.get_role(SLEEPING_CO_ROLE_ID))
-                to_remove.append(guild.get_role(CO_LEADER_ROLE_ID))
-            if guild.get_role(CROSS_LEADER_ROLE_ID) in user.roles:
-                to_add.append(guild.get_role(SLEEPING_CROSS_ROLE_ID))
-                to_remove.append(guild.get_role(CROSS_LEADER_ROLE_ID))
-
-            to_remove = [role for role in to_remove if role is not None]
-            to_add = [role for role in to_add if role is not None]
-
-            if to_remove:
-                await user.remove_roles(*to_remove, reason=f"Moved to hibernation by {interaction.user}")
-            if to_add:
-                await user.add_roles(*to_add, reason=f"Moved to hibernation by {interaction.user}")
-
-            await self._send_hibernation_log(interaction, user, stored_role_ids, snapshot_role_ids, unix_ts)
-            await interaction.followup.send(f"Moved {user.mention} to hibernation.", ephemeral=True)
-            await self._send_hibernation_notice(user)
 
         except (discord.Forbidden, discord.HTTPException, OSError, RuntimeError, TypeError, ValueError):
             LOGGER.exception("/hibernate failed for user %s", user.id)

@@ -379,7 +379,17 @@ class HibernationTicketMixin:
         snapshot_role_ids: list[int],
         unix_ts: int,
     ) -> None:
-        guild = interaction.guild
+        await self.send_hibernation_log(
+            interaction.guild, interaction.user, user,
+            stored_role_ids, snapshot_role_ids, unix_ts,
+        )
+
+    async def send_hibernation_log(
+        self, guild: discord.Guild | None,
+        actor: discord.Member | discord.User,
+        user: discord.Member, stored_role_ids: list[int],
+        snapshot_role_ids: list[int], unix_ts: int,
+    ) -> None:
         if guild is None:
             return
         log_channel = guild.get_channel(HIBERNATION_LOG)
@@ -405,9 +415,9 @@ class HibernationTicketMixin:
         )
         embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
         member_name = user.nick or user.name
-        actor_name = getattr(interaction.user, "nick", None) or interaction.user.name
+        actor_name = getattr(actor, "nick", None) or actor.name
         embed.add_field(name="Member", value=f"{user.mention} ({member_name})", inline=False)
-        embed.add_field(name="Moved By", value=f"{interaction.user.mention} ({actor_name})", inline=True)
+        embed.add_field(name="Moved By", value=f"{actor.mention} ({actor_name})", inline=True)
         embed.add_field(name="Date Moved", value=f"<t:{unix_ts}:F>", inline=True)
         embed.add_field(name="Roles Saved", value=str(len(stored_role_ids)), inline=True)
         embed.add_field(name="Previous Clan", value=", ".join(snapshot_clans) if snapshot_clans else "*None*", inline=False)
