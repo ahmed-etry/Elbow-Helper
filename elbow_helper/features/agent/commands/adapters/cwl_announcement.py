@@ -19,7 +19,7 @@ from ...wording import (
     ACTION_CWL_ANNOUNCEMENT_PREVIEW_ONLY,
     ACTION_PREVIEW_BLANK,
 )
-from ..outcomes import CommandOutcome
+from ...actions.outcomes import CommandOutcome
 from ..registry import CommandAdapter, PreparedCommandChange
 
 

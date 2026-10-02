@@ -10,7 +10,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..access import require_evidence_access
 from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ..commands.outcomes import CommandOutcome, embed_text
+from ..actions.outcomes import CommandOutcome, embed_text
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
     ACTION_EVENT_MANAGE_CATEGORY,

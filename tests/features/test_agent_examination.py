@@ -11,7 +11,7 @@ from elbow_helper.configuration.channels import (
 )
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.access import AgentAccessLost
-from elbow_helper.features.agent.commands.confirmation import preview_text
+from elbow_helper.features.agent.actions.preview import preview_text
 from elbow_helper.features.agent.tools.examiner_profile import prepare_examiner_leave
 from elbow_helper.features.agent.reports.examination import ExaminationCaseReport
 from elbow_helper.features.agent.models import AgentRequestContext, AgentTurnState

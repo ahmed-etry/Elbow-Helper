@@ -63,7 +63,7 @@ from ...wording import (
     ACTION_RAFFLE_CURRENT_MONTH,
     ACTION_RAFFLE_NO_PRIZE,
 )
-from ..outcomes import CommandOutcome
+from ...actions.outcomes import CommandOutcome
 from ..registry import CommandAdapter
 
 

@@ -13,7 +13,7 @@ from elbow_helper.features.help.discovery import ParameterInfo
 
 from ...models import AgentAttachment
 from ...wording import COMMAND_UNAVAILABLE
-from ..outcomes import CommandOutcome
+from ...actions.outcomes import CommandOutcome
 from ..registry import CommandAdapter
 
 

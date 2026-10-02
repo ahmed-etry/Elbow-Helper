@@ -13,7 +13,7 @@ from ..access import require_evidence_access
 from ..actions.contracts import (
     ActionClass, ChangePreview, PreparedAction, audit_reason, earlier_result_label,
 )
-from ..commands.outcomes import CommandOutcome
+from ..actions.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
     ACTION_THREAD_ACTIONS, ACTION_THREAD_MEMBER_ADD, ACTION_THREAD_MEMBER_REMOVE,

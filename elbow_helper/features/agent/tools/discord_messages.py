@@ -16,7 +16,7 @@ from ..access import require_evidence_access
 from ..actions.contracts import (
     ActionClass, ChangePreview, PreparedAction, earlier_result_label,
 )
-from ..commands.outcomes import CommandOutcome
+from ..actions.outcomes import CommandOutcome
 from ..message_parts import chunk_response
 from ..models import AgentAttachment, AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (

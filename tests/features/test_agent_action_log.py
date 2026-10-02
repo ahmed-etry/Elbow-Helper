@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.agent.actions.contracts import ChangePreview, PreparedAction
-from elbow_helper.features.agent.tools.action_log import (
+from elbow_helper.features.agent.actions.log_tools import (
     read_agent_action_log, undo_agent_action,
 )
 
@@ -23,7 +23,7 @@ class ActionLogToolTests(unittest.IsolatedAsyncioTestCase):
             member=SimpleNamespace(id=4),
             action_repository=SimpleNamespace(recent_log=recent_log),
         )
-        with patch("elbow_helper.features.agent.tools.action_log.require_evidence_access",
+        with patch("elbow_helper.features.agent.actions.log_tools.require_evidence_access",
                    new_callable=AsyncMock):
             result = await read_agent_action_log(context, {"limit": 1})
         self.assertEqual(calls, [(4, 0, 2)])
@@ -42,7 +42,7 @@ class ActionLogToolTests(unittest.IsolatedAsyncioTestCase):
             action_runner=runner,
             state=SimpleNamespace(command_proposals=[]),
         )
-        with patch("elbow_helper.features.agent.tools.action_log.require_evidence_access",
+        with patch("elbow_helper.features.agent.actions.log_tools.require_evidence_access",
                    new_callable=AsyncMock):
             result = await undo_agent_action(context, {"log_id": "one"})
         self.assertEqual(result["status"], "confirmation_required")

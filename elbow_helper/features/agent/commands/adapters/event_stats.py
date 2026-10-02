@@ -14,7 +14,7 @@ from ...wording import (
     ACTION_EVENT_UPDATE_LABEL, ACTION_EVENT_UPDATE_LINE,
     ACTION_EVENT_UPDATE_TARGET,
 )
-from ..outcomes import CommandOutcome
+from ...actions.outcomes import CommandOutcome
 from ..registry import CommandAdapter
 
 

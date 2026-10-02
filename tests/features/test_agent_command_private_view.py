@@ -4,8 +4,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
-from elbow_helper.features.agent.commands.private_view import PrivateCommandView
-from elbow_helper.features.agent.commands.outcomes import CommandOutcome
+from elbow_helper.features.agent.actions.private_view import PrivateCommandView
+from elbow_helper.features.agent.actions.outcomes import CommandOutcome
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin
 from elbow_helper.features.agent.models import AgentDelivery, AgentTurnState
 from elbow_helper.features.agent.models import AgentAttachment

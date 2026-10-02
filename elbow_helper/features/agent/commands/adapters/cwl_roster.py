@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from ...models import AgentAttachment
-from ..outcomes import CommandOutcome
+from ...actions.outcomes import CommandOutcome
 from ..registry import CommandAdapter
 
 

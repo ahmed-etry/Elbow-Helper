@@ -14,9 +14,9 @@ from elbow_helper.features.agent.actions.contracts import (
 )
 from elbow_helper.features.agent.actions.repository import AgentActionRepository
 from elbow_helper.features.agent.actions.runner import AgentActionRunner, StopActionRunView
-from elbow_helper.features.agent.commands.outcomes import CommandOutcome
-from elbow_helper.features.agent.commands.confirmation import preview_text
-from elbow_helper.features.agent.commands.private_view import PrivateCommandView
+from elbow_helper.features.agent.actions.outcomes import CommandOutcome
+from elbow_helper.features.agent.actions.preview import preview_text
+from elbow_helper.features.agent.actions.private_view import PrivateCommandView
 
 
 class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):

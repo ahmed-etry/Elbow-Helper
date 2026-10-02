@@ -5,10 +5,10 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.features.agent.commands.confirmation import (
+from elbow_helper.features.agent.actions.preview import (
     ChangePreview, ConfirmationView, PreparedCommand, preview_text,
 )
-from elbow_helper.features.agent.commands.outcomes import CommandOutcome
+from elbow_helper.features.agent.actions.outcomes import CommandOutcome
 from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin
 from elbow_helper.features.agent.models import AgentDelivery, AgentTurnState
@@ -342,7 +342,7 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_multiple_private_panels_can_each_be_opened(self):
         first, second = AsyncMock(), AsyncMock()
-        from elbow_helper.features.agent.commands.private_view import PrivateCommandView
+        from elbow_helper.features.agent.actions.private_view import PrivateCommandView
         view = PrivateCommandView(
             202, (), panels=(first, second),
             panel_labels=("/synthetic first", "/synthetic second"),

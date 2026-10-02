@@ -86,7 +86,7 @@ from ...wording import (
     ACTION_ROSTER_EXPORT_LINE,
     ACTION_ROSTER_EXPORT_LINK,
 )
-from ..outcomes import CommandOutcome, embed_text
+from ...actions.outcomes import CommandOutcome, embed_text
 from ..registry import CommandAdapter, PreparedCommandChange
 
 

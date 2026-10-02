@@ -13,8 +13,8 @@ from uuid import uuid4
 import discord
 
 from ..access import require_access, require_disclosure_access
-from ..commands.outcomes import CommandOutcome
-from ..commands.private_view import PrivateCommandView
+from .outcomes import CommandOutcome
+from .private_view import PrivateCommandView
 from ..message_parts import chunk_response
 from ..wording import (
     ACTION_PREVIEW_UNIT_MANY, ACTION_PREVIEW_UNIT_ONE,

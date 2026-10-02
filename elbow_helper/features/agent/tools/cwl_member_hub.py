@@ -8,7 +8,7 @@ from typing import Any
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..access import require_evidence_access
-from ..commands.outcomes import embed_text
+from ..actions.outcomes import embed_text
 from ..models import AgentRequestContext, RegisteredAgentTool
 
 

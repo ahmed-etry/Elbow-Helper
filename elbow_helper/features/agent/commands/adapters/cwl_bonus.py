@@ -10,7 +10,7 @@ from elbow_helper.features.cwl.bonus.commands import bonus_report_lines
 from elbow_helper.features.cwl.bonus.service import BonusReportError
 
 from ...models import AgentAttachment
-from ..outcomes import CommandOutcome
+from ...actions.outcomes import CommandOutcome
 from ..registry import CommandAdapter
 
 

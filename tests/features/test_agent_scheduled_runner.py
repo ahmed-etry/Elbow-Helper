@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.features.agent.actions.repository import AgentActionRepository
 from elbow_helper.features.agent.actions.contracts import ChangePreview, PreparedAction
 from elbow_helper.features.agent.cog import AgentCog
-from elbow_helper.features.agent.commands.outcomes import CommandOutcome
+from elbow_helper.features.agent.actions.outcomes import CommandOutcome
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin
 from elbow_helper.features.agent.models import AgentRequestContext, AgentTurnState
 from elbow_helper.features.agent.scheduled.runner import ScheduledMessage, ScheduledRunner

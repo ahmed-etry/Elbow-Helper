@@ -15,7 +15,7 @@ from elbow_helper.features.help.discovery import ParameterInfo
 
 from ...actions.contracts import ChangePreview
 from ...wording import ACTION_CONNECTIONS_BOARD_LABEL, ACTION_CONNECTIONS_BOARD_LINE
-from ..outcomes import CommandOutcome, embed_text
+from ...actions.outcomes import CommandOutcome, embed_text
 from ..registry import CommandAdapter
 
 

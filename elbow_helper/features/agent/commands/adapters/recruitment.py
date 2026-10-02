@@ -38,7 +38,7 @@ from ...wording import (
     ACTION_ACCEPT_NO_LINK,
     ACTION_ACCEPT_ROLE_MISSING,
 )
-from ..outcomes import CommandOutcome
+from ...actions.outcomes import CommandOutcome
 from ..registry import CommandAdapter, PreparedCommandChange
 
 

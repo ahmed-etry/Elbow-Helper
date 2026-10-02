@@ -18,7 +18,7 @@ from ...wording import (
     ACTION_CWL_REGISTER_WELCOME,
     ACTION_CWL_REGISTER_BOARD,
 )
-from ..outcomes import CommandOutcome, embed_text
+from ...actions.outcomes import CommandOutcome, embed_text
 from ..registry import CommandAdapter
 
 

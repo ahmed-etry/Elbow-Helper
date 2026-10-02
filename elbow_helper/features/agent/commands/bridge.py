@@ -9,8 +9,8 @@ from typing import Any
 from elbow_helper.domain.player_tags import normalize_player_tag
 
 from ..models import AgentCapabilityEffect, RegisteredAgentTool
-from .outcomes import CommandOutcome, command_reply
-from .confirmation import ChangePreview, PreparedCommand
+from ..actions.outcomes import CommandOutcome, command_reply
+from ..actions.preview import ChangePreview, PreparedCommand
 from .registry import (
     CommandAdapter, CommandCapability, PreparedCommandChange,
     build_command_capabilities,

@@ -15,7 +15,7 @@ from elbow_helper.features.rosters.config import (
 
 from ..access import require_evidence_access
 from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ..commands.outcomes import CommandOutcome
+from ..actions.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
     ACTION_ROSTER_CONTROL_LINE,

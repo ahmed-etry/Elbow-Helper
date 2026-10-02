@@ -8,7 +8,7 @@ from typing import Any
 
 import discord
 
-from ..actions.contracts import ActionClass, ChangePreview, PreparedAction, check_bundle
+from .contracts import ActionClass, ChangePreview, PreparedAction, check_bundle
 from ..wording import (
     ACTION_CANNOT_UNDO, ACTION_PREVIEW_SUMMARY, ACTION_PREVIEW_BLANK,
     ACTION_PREVIEW_UNIT_MANY, ACTION_PREVIEW_UNIT_ONE,

@@ -30,7 +30,7 @@ from ...wording import (
     ACTION_RECORD_REMOVE_DONE, ACTION_RECORD_REMOVE_LABEL,
     ACTION_RECORD_REMOVE_LINE, ACTION_RECORD_UNDO_LABEL, ACTION_UNDO_CHANGED,
 )
-from ..outcomes import CommandOutcome
+from ...actions.outcomes import CommandOutcome
 from ..registry import CommandAdapter
 
 

@@ -17,8 +17,8 @@ from .conversation.state import Conversation
 from .conversation.transcripts import archive_write
 from .models import AgentAttachment, AgentDelivery, AgentRequestContext
 from .service import AgentUnavailableError
-from .commands.private_view import PrivateCommandView
-from .commands.confirmation import ConfirmationView
+from .actions.private_view import PrivateCommandView
+from .actions.preview import ConfirmationView
 from .message_parts import chunk_response as _chunk_response
 
 LOGGER = logging.getLogger(__name__)

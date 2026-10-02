@@ -35,7 +35,7 @@ from ...wording import (
     ACTION_REACTIVATE_FALLBACK,
     ACTION_REACTIVATE_LABEL,
 )
-from ..outcomes import CommandOutcome, embed_text
+from ...actions.outcomes import CommandOutcome, embed_text
 from ..registry import CommandAdapter, PreparedCommandChange
 
 

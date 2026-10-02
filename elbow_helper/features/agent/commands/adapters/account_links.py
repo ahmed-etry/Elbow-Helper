@@ -22,7 +22,7 @@ from ...wording import (
     ACTION_ACCOUNT_REMOVE_LINE,
     ACTION_UNDO_CHANGED,
 )
-from ..outcomes import CommandOutcome
+from ...actions.outcomes import CommandOutcome
 from ..registry import CommandAdapter
 
 

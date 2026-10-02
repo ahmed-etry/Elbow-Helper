@@ -5,8 +5,8 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.agent.commands.bridge import build_command_tools, check_command_plan
-from elbow_helper.features.agent.commands.confirmation import ChangePreview
-from elbow_helper.features.agent.commands.outcomes import CommandOutcome, command_reply
+from elbow_helper.features.agent.actions.preview import ChangePreview
+from elbow_helper.features.agent.actions.outcomes import CommandOutcome, command_reply
 from elbow_helper.features.agent.commands.registry import (
     CommandAdapter, PreparedCommandChange,
 )

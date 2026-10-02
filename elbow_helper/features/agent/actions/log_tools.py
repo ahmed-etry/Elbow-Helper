@@ -11,7 +11,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ..access import require_evidence_access
 from ..models import AgentRequestContext, RegisteredAgentTool
 from ..models import AgentCapabilityEffect
-from ..actions.contracts import ActionClass
+from .contracts import ActionClass
 
 
 def action_log_tools() -> tuple[RegisteredAgentTool, ...]:

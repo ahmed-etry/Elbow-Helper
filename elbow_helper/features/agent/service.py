@@ -48,8 +48,8 @@ from .plan.sources import named_sources
 from .plan.scope import ScopeLedger, resource_ids
 from .commands.adapters import enabled_adapters
 from .commands.bridge import build_command_tools, check_command_plan
-from .commands.outcomes import command_reply
-from .commands.confirmation import preview_text
+from .actions.outcomes import command_reply
+from .actions.preview import preview_text
 from .wording import (
     AGENT_ANSWER_UNFINISHED, AGENT_PLAN_UNFINISHED,
     AGENT_RESEARCH_UNFINISHED, COMMAND_UNAVAILABLE,

@@ -13,7 +13,7 @@ import discord
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ..commands.outcomes import CommandOutcome
+from ..actions.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
     ACTION_STANDING_DESTINATION, ACTION_STANDING_MANAGE,

@@ -18,7 +18,7 @@ from ...wording import (
     ACTION_TRANSFER_REQUEST_LABEL,
     ACTION_TRANSFER_REQUEST_LINE,
 )
-from ..outcomes import CommandOutcome
+from ...actions.outcomes import CommandOutcome
 from ..registry import CommandAdapter, PreparedCommandChange
 
 

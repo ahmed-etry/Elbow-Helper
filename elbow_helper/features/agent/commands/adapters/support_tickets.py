@@ -40,7 +40,7 @@ from ...wording import (
     ACTION_SUPPORT_CLOSE_REACTION,
     ACTION_PREVIEW_BLANK,
 )
-from ..outcomes import CommandOutcome, embed_text
+from ...actions.outcomes import CommandOutcome, embed_text
 from ..registry import CommandAdapter, PreparedCommandChange
 
 

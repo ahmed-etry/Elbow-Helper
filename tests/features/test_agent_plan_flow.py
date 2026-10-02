@@ -17,8 +17,8 @@ from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.models import AgentRequestContext, RegisteredAgentTool, AgentCapabilityEffect
 from elbow_helper.features.agent.service import AgentService, AgentUnavailableError
 from elbow_helper.features.agent.commands.bridge import build_command_tools
-from elbow_helper.features.agent.commands.outcomes import CommandOutcome
-from elbow_helper.features.agent.commands.confirmation import ChangePreview
+from elbow_helper.features.agent.actions.outcomes import CommandOutcome
+from elbow_helper.features.agent.actions.preview import ChangePreview
 from elbow_helper.features.agent.actions.contracts import ActionClass, PreparedAction
 from elbow_helper.features.agent.commands.registry import CommandAdapter
 from elbow_helper.features.agent.wording import (

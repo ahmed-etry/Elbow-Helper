@@ -19,7 +19,7 @@ from elbow_helper.features.agent.commands.adapters import enabled_adapters
 from elbow_helper.features.agent.plan.format import capability_list, system_instructions
 from elbow_helper.features.agent.models import RegisteredAgentTool, AgentCapabilityEffect
 from elbow_helper.features.agent.models import AgentTurnState
-from elbow_helper.features.agent.commands.outcomes import CommandOutcome
+from elbow_helper.features.agent.actions.outcomes import CommandOutcome
 from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin
 from elbow_helper.features.clan_health.commands.health import ClanHealthRootCommandMixin

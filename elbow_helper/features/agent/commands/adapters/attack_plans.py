@@ -19,7 +19,7 @@ from ...wording import (
     ACTION_PLAN_STRATEGY,
     ACTION_PREVIEW_BLANK,
 )
-from ..outcomes import CommandOutcome, embed_text
+from ...actions.outcomes import CommandOutcome, embed_text
 from ..registry import CommandAdapter, PreparedCommandChange
 
 

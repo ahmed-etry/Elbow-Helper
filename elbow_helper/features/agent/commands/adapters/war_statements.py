@@ -18,7 +18,7 @@ from ...wording import (
     ACTION_WAR_STATEMENT_LABEL,
     ACTION_WAR_STATEMENT_LINE,
 )
-from ..outcomes import CommandOutcome
+from ...actions.outcomes import CommandOutcome
 from ..registry import CommandAdapter
 
 

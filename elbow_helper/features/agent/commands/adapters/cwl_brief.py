@@ -9,7 +9,7 @@ from elbow_helper.features.agent.tools.discord_safety import check_post_access
 
 from ...actions.contracts import ChangePreview
 from ...wording import ACTION_CWL_BRIEF_LABEL, ACTION_CWL_BRIEF_LINE
-from ..outcomes import CommandOutcome
+from ...actions.outcomes import CommandOutcome
 from ..registry import CommandAdapter
 
 
