@@ -30,7 +30,7 @@ from .examiner_profile import examiner_profile_tools
 from .events import event_tools
 from .event_management import event_management_tools
 from .hibernation import hibernation_tools
-from .history import history_tools
+from ..conversation.history_tool import history_tools
 from .knowledge import knowledge_tools
 from .leadership_news import leadership_news_tools
 from .member_lifecycle import member_lifecycle_tools
@@ -56,7 +56,7 @@ from .transfers import transfer_tools
 from .trial_end import trial_end_tools
 from .transfer_management import transfer_management_tools
 from .wars import war_tools
-from .working_state import working_state_tools
+from ..conversation.instruction_tools import working_state_tools
 from ..scheduled.tools import standing_tools
 from ..models import RegisteredAgentTool
 from ..actions.contracts import ActionClass

@@ -8,7 +8,7 @@ from typing import Any, Mapping
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..access import accessible_message_channel, require_evidence_access
-from ..conversation.state import ConversationTurn
+from .state import ConversationTurn
 from ..models import AgentRequestContext, RegisteredAgentTool
 
 
