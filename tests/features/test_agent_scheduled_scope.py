@@ -52,7 +52,7 @@ class ScheduledScopeTests(unittest.TestCase):
                 self.assertFalse(await action.preview.recheck())
 
     def test_weekly_schema_uses_monday_zero_and_preserves_monthly_days(self):
-        tool = next(tool for tool in standing_tools() if tool.definition.name == "save_standing_rule")
+        tool = next(tool for tool in standing_tools(lambda: {}) if tool.definition.name == "save_standing_rule")
         schedule = tool.definition.parameters["properties"]["schedule"]
         weekly, monthly, _ = schedule["anyOf"]
         self.assertEqual(weekly["properties"]["days"]["items"], {"type": "integer", "minimum": 0, "maximum": 6})
@@ -148,7 +148,7 @@ class ScheduledScopeTests(unittest.TestCase):
             CapabilityContract((), (), retained_fields=("report_id",)),
             CapabilityContract((), (), time_window=("after", "before", "iso_utc")),
         ):
-            with patch("elbow_helper.features.agent.tools.build_agent_tools",
+            with patch("elbow_helper.features.agent.engine.registry.build_agent_tools",
                        return_value={"synthetic": tool}), patch(
                        "elbow_helper.features.agent.engine.capability_contract.CONTRACTS",
                        {"synthetic": contract}), self.assertRaises(ValueError):
@@ -159,7 +159,7 @@ class ScheduledScopeTests(unittest.TestCase):
             "synthetic", "Read state", {"type": "object", "properties": {}})
         reads = [{"capability": "synthetic", "arguments": {}}]
         for effect in (AgentCapabilityEffect.READ, AgentCapabilityEffect.STATE):
-            with patch("elbow_helper.features.agent.tools.build_agent_tools",
+            with patch("elbow_helper.features.agent.engine.registry.build_agent_tools",
                        return_value={"synthetic": RegisteredAgentTool(definition, _run, effect)}), patch(
                        "elbow_helper.features.agent.engine.capability_contract.CONTRACTS",
                        {"synthetic": CapabilityContract((), ())}):

@@ -1,0 +1,69 @@
+"""Collect the enabled read, output and change capabilities."""
+
+from __future__ import annotations
+from dataclasses import replace
+
+from ..capabilities import FEATURES
+
+from ..files.attachment_tools import attachment_tools
+from ..actions.log_tools import action_log_tools
+from ..commands.help_tool import command_tools
+from ..research.history import discord_tools
+from ..discord_actions.roles import discord_role_tools
+from ..discord_actions.messages import discord_message_tools
+from ..discord_actions.threads import discord_thread_tools
+from ..discord_actions.message_controls import discord_message_control_tools
+from ..discord_actions.nicknames import discord_nickname_tools
+from ..conversation.history_tool import history_tools
+from ..knowledge.tools import knowledge_tools
+from ..research.tools import research_tools
+from ..reports.tools import replace_report_tools
+from ..files.spreadsheet_tools import spreadsheet_tools
+from ..research.threads import thread_tools
+from ..conversation.instruction_tools import working_state_tools
+from ..scheduled.tools import standing_tools
+from ..models import RegisteredAgentTool
+from ..actions.contracts import ActionClass
+from ..models import AgentCapabilityEffect
+from .capability_contract import validate_contract_catalogue
+from ..plan.results import result_handler
+
+
+def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
+    """Group the registered read capabilities."""
+
+    return {
+        "commands": command_tools(),
+        "discord_research": (*discord_tools(), *thread_tools(), *research_tools()),
+        "discord_actions": (*discord_message_tools(), *discord_thread_tools(),
+                            *discord_message_control_tools(),
+                            *discord_nickname_tools(), *discord_role_tools()),
+        "files": attachment_tools(),
+        "knowledge_history": (*history_tools(), *knowledge_tools(), *action_log_tools()),
+        "planning_output": (*working_state_tools(), *spreadsheet_tools()),
+        "standing_rules": standing_tools(),
+        **{name: feature.TOOLS for name, feature in FEATURES.items()},
+    }
+
+
+def build_agent_tools() -> dict[str, RegisteredAgentTool]:
+    """Build the complete catalogue without exposing arbitrary capabilities."""
+
+    tools = replace_report_tools(tuple(
+        tool
+        for group in build_agent_tool_groups().values()
+        for tool in group
+    ))
+    registry = {tool.definition.name: tool for tool in tools}
+    if len(registry) != len(tools):
+        raise ValueError("Duplicate agent capability")
+    validate_contract_catalogue(registry)
+    return {name: replace(
+        tool, handler=result_handler(tool.handler),
+        action_class=(ActionClass.OUTPUT if tool.effect is AgentCapabilityEffect.ARTIFACT
+                      else tool.action_class),
+    )
+            for name, tool in registry.items()}
+
+
+__all__ = ["build_agent_tool_groups", "build_agent_tools"]

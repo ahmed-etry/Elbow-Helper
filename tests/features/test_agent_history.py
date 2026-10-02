@@ -11,7 +11,7 @@ from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.conversation.state import ConversationRecord, ConversationTurn
 from elbow_helper.features.agent.models import AgentRequestContext
 from elbow_helper.features.agent.service import AgentService, _valid_arguments
-from elbow_helper.features.agent.tools import build_agent_tools
+from elbow_helper.features.agent.engine.registry import build_agent_tools
 from elbow_helper.features.agent.conversation.history_tool import _document, read_conversation_history
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
 

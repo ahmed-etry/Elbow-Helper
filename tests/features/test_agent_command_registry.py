@@ -12,10 +12,10 @@ from discord import app_commands
 
 from elbow_helper.features.agent.commands import CommandAdapter, build_command_capabilities
 from elbow_helper.features.agent.commands.bridge import build_command_tools
-from elbow_helper.features.agent.tools import build_agent_tools
+from elbow_helper.features.agent.engine.registry import build_agent_tools
 from elbow_helper.features.agent.conversation.context import estimate_tokens
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
-from elbow_helper.features.agent.commands.adapters import enabled_adapters
+from elbow_helper.features.agent.capabilities import enabled_adapters
 from elbow_helper.features.agent.plan.format import capability_list, system_instructions
 from elbow_helper.features.agent.models import RegisteredAgentTool, AgentCapabilityEffect
 from elbow_helper.features.agent.models import AgentTurnState

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock
 
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.models import AgentRequestContext, AgentTurnState
-from elbow_helper.features.agent.tools import build_agent_tools
+from elbow_helper.features.agent.engine.registry import build_agent_tools
 
 
 class _Channel:

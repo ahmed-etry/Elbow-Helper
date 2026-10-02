@@ -18,7 +18,7 @@ from elbow_helper.features.agent.models import AgentRequestContext
 from elbow_helper.configuration.roles import CORE, LEAD, LEAD_PLUS
 from elbow_helper.features.agent.service import AgentService
 from elbow_helper.features.agent.engine.capability_contract import compile_capability_call
-from elbow_helper.features.agent.tools import build_agent_tools
+from elbow_helper.features.agent.engine.registry import build_agent_tools
 from elbow_helper.features.agent.service import _valid_arguments, _bound_tool_result, _evidence_record
 from elbow_helper.features.agent.access import ACCESS_LEAD_PLUS, AgentAccessLost
 from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport

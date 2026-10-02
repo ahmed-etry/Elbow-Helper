@@ -3,7 +3,7 @@
 import unittest
 
 from elbow_helper.features.agent.plan.results import model_result, result_handler, plan_feedback
-from elbow_helper.features.agent.tools import build_agent_tools
+from elbow_helper.features.agent.engine.registry import build_agent_tools
 from unittest.mock import AsyncMock
 
 

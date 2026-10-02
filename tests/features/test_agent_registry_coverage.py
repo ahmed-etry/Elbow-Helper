@@ -7,8 +7,8 @@ from pathlib import Path
 import unittest
 
 from elbow_helper.features.agent.actions.contracts import ActionClass
-from elbow_helper.features.agent.commands.adapters import enabled_adapters
-from elbow_helper.features.agent.tools import build_agent_tools
+from elbow_helper.features.agent.capabilities import enabled_adapters
+from elbow_helper.features.agent.engine.registry import build_agent_tools
 from elbow_helper.features.help.catalog import HELP_ENTRIES
 
 

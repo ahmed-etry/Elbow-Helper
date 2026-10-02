@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.discord.message_search import DiscordSearchMessage
 from elbow_helper.configuration.roles import CORE
-from elbow_helper.features.agent.tools import (
+from elbow_helper.features.agent.engine.registry import (
     build_agent_tool_groups, build_agent_tools,
 )
 from elbow_helper.features.agent.plan import capability_list, check_plan
@@ -142,7 +142,7 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
         registry = build_agent_tools()
         duplicated = build_agent_tool_groups()
         duplicated["wars"] = (*duplicated["wars"], duplicated["files"][0])
-        with patch("elbow_helper.features.agent.tools.build_agent_tool_groups",
+        with patch("elbow_helper.features.agent.engine.registry.build_agent_tool_groups",
                    return_value=duplicated):
             with self.assertRaisesRegex(ValueError, "Duplicate"):
                 build_agent_tools()

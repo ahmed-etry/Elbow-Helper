@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.configuration.roles import LEAD_PLUS
-from elbow_helper.features.agent.commands.adapters import run_health_player, run_opinion
+from elbow_helper.features.agent.capabilities import run_health_player, run_opinion
 from elbow_helper.features.agent.capabilities.clan_health.commands import (
     run_health_clan, run_health_settings,
 )

@@ -11,7 +11,7 @@ from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentAttachment, AgentRequestContext
 from elbow_helper.features.agent.files.spreadsheets import parse_agent_spreadsheet
-from elbow_helper.features.agent.tools import build_agent_tools
+from elbow_helper.features.agent.engine.registry import build_agent_tools
 from elbow_helper.features.agent.files.spreadsheet_tools import prepare_report_spreadsheet, prepare_spreadsheet
 from elbow_helper.infrastructure.exports import LocalExportStore, WorkbookWriter
 

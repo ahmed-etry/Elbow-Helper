@@ -10,7 +10,7 @@ from elbow_helper.features.agent.engine import capability_contract as capabiliti
 from elbow_helper.features.agent.engine.capability_contract import CapabilityBindError
 from elbow_helper.features.agent.engine.capability_contract import require_source_provenance
 from elbow_helper.features.agent.engine.capability_contract import validate_contract_catalogue
-from elbow_helper.features.agent.tools import build_agent_tool_groups, build_agent_tools
+from elbow_helper.features.agent.engine.registry import build_agent_tool_groups, build_agent_tools
 from elbow_helper.features.agent.engine.capability_contract import SAVED_REPORT_CONTRACTS
 
 

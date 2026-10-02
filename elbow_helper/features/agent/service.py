@@ -29,7 +29,7 @@ from .access import (
 )
 from .prompts import SYSTEM_PROMPT
 from .conversation.context import compile_context, estimate_tokens
-from .tools import build_agent_tools
+from .engine.registry import build_agent_tools
 from .engine.usage import RequestUsage
 from .engine.budgets import ContextBudget
 from .engine.capability_contract import CapabilityBindError
@@ -46,7 +46,7 @@ from .plan.planning import PlanNotSettled, read_request
 from .plan.results import model_result, plan_feedback
 from .plan.sources import named_sources
 from .plan.scope import ScopeLedger, resource_ids
-from .commands.adapters import enabled_adapters
+from .capabilities import enabled_adapters
 from .commands.bridge import build_command_tools, check_command_plan
 from .actions.outcomes import command_reply
 from .actions.preview import preview_text

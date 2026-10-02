@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
-from elbow_helper.features.agent.tools import build_agent_tool_groups, build_agent_tools
+from elbow_helper.features.agent.engine.registry import build_agent_tool_groups, build_agent_tools
 from elbow_helper.features.agent.reports import tools as saved_reports
 from elbow_helper.features.agent.models import RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentToolDefinition

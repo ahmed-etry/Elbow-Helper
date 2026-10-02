@@ -52,8 +52,8 @@ def _schedule(values: Mapping[str, Any], *, watcher: bool, zone: str) -> tuple[d
 
 
 def _allowed_capabilities(actions: list[Mapping[str, Any]], context: AgentRequestContext) -> None:
-    from ..tools import build_agent_tools
-    from ..commands.adapters import enabled_adapters
+    from ..engine.registry import build_agent_tools
+    from ..capabilities import enabled_adapters
     from ..commands.bridge import build_command_tools
 
     registry = build_agent_tools()
@@ -75,7 +75,7 @@ def _allowed_capabilities(actions: list[Mapping[str, Any]], context: AgentReques
 
 
 def _watcher_reads(reads: Any) -> None:
-    from ..tools import build_agent_tools
+    from ..engine.registry import build_agent_tools
     from ..engine.capability_contract import CONTRACTS
     from ..plan.checker import _valid_arguments
 

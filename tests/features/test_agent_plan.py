@@ -13,7 +13,7 @@ from elbow_helper.features.agent.plan import capability_list, check_plan, plan_d
 from elbow_helper.features.agent.plan.checker import _kind, _source_check, _time_check
 from elbow_helper.features.agent.engine.capability_contract import CONTRACTS
 from elbow_helper.features.agent.engine.capability_contract import SAVED_REPORT_CONTRACTS
-from elbow_helper.features.agent.tools import build_agent_tools
+from elbow_helper.features.agent.engine.registry import build_agent_tools
 from elbow_helper.features.agent.reports.tools import original_tool
 from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.agent.models import RegisteredAgentTool
