@@ -14,9 +14,9 @@ from elbow_helper.features.agent.actions.contracts import (
 )
 from elbow_helper.features.agent.actions.store import AgentActionRepository
 from elbow_helper.features.agent.actions.runner import AgentActionRunner, StopActionRunView
-from elbow_helper.features.agent.actions.outcomes import CommandOutcome
+from elbow_helper.features.agent.actions.outcomes import ActionOutcome
 from elbow_helper.features.agent.actions.preview import preview_text
-from elbow_helper.features.agent.actions.private_view import PrivateCommandView
+from elbow_helper.features.agent.actions.private_view import PrivateResultView
 
 
 class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
@@ -50,7 +50,7 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
     def action(self, name, *, outcome=None, allowed=True,
                action_class=ActionClass.CHANGE, verify=None):
         check = AsyncMock(return_value=allowed)
-        run = AsyncMock(return_value=outcome or CommandOutcome("complete", text=name))
+        run = AsyncMock(return_value=outcome or ActionOutcome("complete", text=name))
         return PreparedAction(
             name, {"target": name},
             ChangePreview((f"Change {name}",), check, before={"value": "old"}),
@@ -96,7 +96,7 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_adjacent_actions_share_one_report_group(self):
         actions = []
         for name in ("one", "two", "three"):
-            action, _, _ = self.action(name, outcome=CommandOutcome("complete"))
+            action, _, _ = self.action(name, outcome=ActionOutcome("complete"))
             actions.append(replace(action, preview=replace(
                 action.preview, summary="Add role",
             )))
@@ -122,7 +122,7 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
         async def stop_during_first():
             run_id = self.repository.recent_log(requester_id=4)[0]["run_id"]
             self.repository.request_stop(run_id, requester_id=4)
-            return CommandOutcome("complete", text="first")
+            return ActionOutcome("complete", text="first")
         first_run.side_effect = stop_during_first
         run = await self.run_actions(first, second)
         self.assertEqual(run["status"], "stopped")
@@ -144,12 +144,12 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
         interaction.response.defer.assert_not_awaited()
 
     async def test_private_result_is_behind_normal_message_button(self):
-        action, _, _ = self.action("private", outcome=CommandOutcome(
+        action, _, _ = self.action("private", outcome=ActionOutcome(
             "complete", "private", private_parts=("secret",),
         ))
         await self.run_actions(action)
         view = self.progress.edit.await_args.kwargs["view"]
-        self.assertIsInstance(view, PrivateCommandView)
+        self.assertIsInstance(view, PrivateResultView)
         self.assertNotIn("secret", str(self.channel.send.await_args_list))
 
     async def test_uncertain_result_is_checked_without_running_twice(self):
@@ -162,11 +162,11 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
         verify.assert_awaited_once()
 
     async def test_later_action_binds_an_earlier_action_result_once(self):
-        first, _, first_run = self.action("first", outcome=CommandOutcome(
+        first, _, first_run = self.action("first", outcome=ActionOutcome(
             "complete", result={"target_id": 7},
         ))
         first = replace(first, step_id="created")
-        second_run = AsyncMock(return_value=CommandOutcome("complete"))
+        second_run = AsyncMock(return_value=ActionOutcome("complete"))
         placeholder = {"step": "created", "path": ["target_id"]}
         async def bind(results):
             target_id = results["created"]["target_id"]
@@ -194,7 +194,7 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
         action, _, run = self.action("change")
         async def apply():
             state["value"] = "new"
-            return CommandOutcome("complete", after={"value": "new"})
+            return ActionOutcome("complete", after={"value": "new"})
         run.side_effect = apply
         await self.run_actions(action)
         entry = self.repository.recent_log(requester_id=4)[0]
@@ -202,7 +202,7 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
         async def undo_handler(context, log):
             async def execute_undo():
                 state["value"] = log["before"]["value"]
-                return CommandOutcome("complete", after=dict(state))
+                return ActionOutcome("complete", after=dict(state))
             return PreparedAction(
                 "undo_change", log["targets"],
                 ChangePreview(("Restore prior value",),

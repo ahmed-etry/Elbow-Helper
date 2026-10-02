@@ -8,28 +8,27 @@ from typing import Any
 
 import discord
 
-from .contracts import ActionClass, ChangePreview, PreparedAction, check_bundle
+from .contracts import ActionClass, PreparedAction, check_bundle
 from ..wording import (
     ACTION_CANNOT_UNDO, ACTION_PREVIEW_SUMMARY, ACTION_PREVIEW_BLANK,
     ACTION_PREVIEW_UNIT_MANY, ACTION_PREVIEW_UNIT_ONE,
-    COMMAND_CANCEL_BUTTON, COMMAND_CANCELLED, COMMAND_CONFIRM_BUTTON,
-    COMMAND_PREVIEW_EXPIRED,
-    COMMAND_PREVIEW_HEADER, COMMAND_PREVIEW_OWNER,
-    COMMAND_PREVIEW_USED, COMMAND_UNAVAILABLE,
+    ACTION_CANCEL_BUTTON, ACTION_CANCELLED, ACTION_CONFIRM_BUTTON,
+    ACTION_PREVIEW_EXPIRED,
+    ACTION_PREVIEW_HEADER, ACTION_PREVIEW_OWNER,
+    ACTION_PREVIEW_USED, ACTION_UNAVAILABLE,
 )
-from .private_view import PrivateCommandView
+from .private_view import PrivateResultView
 
 
 LOGGER = logging.getLogger(__name__)
 CONFIRMATION_TIMEOUT = 300.0
-PreparedCommand = PreparedAction
-__all__ = ["ChangePreview", "PreparedCommand", "ConfirmationView", "preview_text"]
+__all__ = ["ConfirmationView", "preview_text"]
 
 
-def preview_text(proposals: list[PreparedCommand]) -> str:
+def preview_text(proposals: list[PreparedAction]) -> str:
     check_bundle(tuple(proposals))
     lines = []
-    groups: list[list[PreparedCommand]] = []
+    groups: list[list[PreparedAction]] = []
     for proposal in proposals:
         if (groups and (groups[-1][0].preview.summary or groups[-1][0].path,
                         groups[-1][0].action_class) ==
@@ -49,12 +48,12 @@ def preview_text(proposals: list[PreparedCommand]) -> str:
                      for line in item.preview.lines for part in line.split("\n"))
         if proposal.action_class is ActionClass.IRREVERSIBLE:
             lines.append(ACTION_CANNOT_UNDO)
-    return COMMAND_PREVIEW_HEADER + "\n" + "\n".join(lines)
+    return ACTION_PREVIEW_HEADER + "\n" + "\n".join(lines)
 
 
 class ConfirmationView(discord.ui.View):
-    def __init__(self, owner_id: int, proposals: tuple[PreparedCommand, ...], context: Any,
-                 private_result: PrivateCommandView | None = None, runner: Any = None):
+    def __init__(self, owner_id: int, proposals: tuple[PreparedAction, ...], context: Any,
+                 private_result: PrivateResultView | None = None, runner: Any = None):
         super().__init__(timeout=CONFIRMATION_TIMEOUT)
         check_bundle(proposals)
         self.owner_id = owner_id
@@ -66,8 +65,8 @@ class ConfirmationView(discord.ui.View):
         self.expired = False
         self.used = False
         self._lock = asyncio.Lock()
-        confirm = discord.ui.Button(label=COMMAND_CONFIRM_BUTTON, style=discord.ButtonStyle.success)
-        cancel = discord.ui.Button(label=COMMAND_CANCEL_BUTTON, style=discord.ButtonStyle.secondary)
+        confirm = discord.ui.Button(label=ACTION_CONFIRM_BUTTON, style=discord.ButtonStyle.success)
+        cancel = discord.ui.Button(label=ACTION_CANCEL_BUTTON, style=discord.ButtonStyle.secondary)
         confirm.callback = self.confirm
         cancel.callback = self.cancel
         self.add_item(confirm)
@@ -91,13 +90,13 @@ class ConfirmationView(discord.ui.View):
 
     async def _claim(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message(COMMAND_PREVIEW_OWNER, ephemeral=True)
+            await interaction.response.send_message(ACTION_PREVIEW_OWNER, ephemeral=True)
             return False
         if self.expired:
-            await interaction.response.send_message(COMMAND_PREVIEW_EXPIRED, ephemeral=True)
+            await interaction.response.send_message(ACTION_PREVIEW_EXPIRED, ephemeral=True)
             return False
         if self.used:
-            await interaction.response.send_message(COMMAND_PREVIEW_USED, ephemeral=True)
+            await interaction.response.send_message(ACTION_PREVIEW_USED, ephemeral=True)
             return False
         self.used = True
         self._disable()
@@ -108,7 +107,7 @@ class ConfirmationView(discord.ui.View):
             if not await self._claim(interaction):
                 return
             await interaction.response.edit_message(
-                content=self._replacement(COMMAND_CANCELLED), view=self,
+                content=self._replacement(ACTION_CANCELLED), view=self,
             )
             LOGGER.info("Agent command preview cancelled: requester=%s", self.owner_id)
 
@@ -127,7 +126,7 @@ class ConfirmationView(discord.ui.View):
             except Exception:
                 LOGGER.exception("Agent preview could not be queued: requester=%s", self.owner_id)
                 await self.context.source_message.channel.send(
-                    COMMAND_UNAVAILABLE, allowed_mentions=discord.AllowedMentions.none(),
+                    ACTION_UNAVAILABLE, allowed_mentions=discord.AllowedMentions.none(),
                 )
             finally:
                 if self.message is not None:
@@ -155,7 +154,7 @@ class ConfirmationView(discord.ui.View):
         if self.message is not None:
             try:
                 await self.message.edit(
-                    **({} if self.used else {"content": self._replacement(COMMAND_PREVIEW_EXPIRED)}),
+                    **({} if self.used else {"content": self._replacement(ACTION_PREVIEW_EXPIRED)}),
                     view=self,
                 )
             except discord.DiscordException:

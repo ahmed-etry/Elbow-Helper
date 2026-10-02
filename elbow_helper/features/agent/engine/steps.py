@@ -266,10 +266,10 @@ class PlanRunner:
                 else limits.TOOL_TIMEOUT_SECONDS
             ),
         )
-        for index in range(len(previous["command_proposals"]), len(local.state.command_proposals)):
-            proposal = local.state.command_proposals[index]
+        for index in range(len(previous["proposed_changes"]), len(local.state.proposed_changes)):
+            proposal = local.state.proposed_changes[index]
             if isinstance(proposal, PreparedAction):
-                local.state.command_proposals[index] = replace(
+                local.state.proposed_changes[index] = replace(
                     proposal,
                     step_id=step["id"],
                 )

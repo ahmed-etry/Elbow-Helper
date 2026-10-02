@@ -40,7 +40,7 @@ from ...wording import (
     ACTION_SUPPORT_CLOSE_REACTION,
     ACTION_PREVIEW_BLANK,
 )
-from ...actions.outcomes import CommandOutcome, embed_text
+from ...actions.outcomes import ActionOutcome, embed_text
 from ...commands.registry import CommandAdapter, PreparedCommandChange
 
 
@@ -107,12 +107,12 @@ async def prepare_support_open(context: Any,
         )
         return _target_signature(live) == signature
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         channel, message = await workflow.open_support_ticket(prepared)
         registration = workflow.support_ticket_registration(channel.id)
         if registration is None or registration.get("owner") != member.id:
             raise OSError("Support ticket creation could not be verified")
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "private", text=message,
             result={"channel_id": channel.id}, after={"channel_id": channel.id},
         )
@@ -124,7 +124,7 @@ async def prepare_support_open(context: Any,
 
 
 async def run_support_open(context: Any,
-                           values: Mapping[str, Any]) -> CommandOutcome:
+                           values: Mapping[str, Any]) -> ActionOutcome:
     return await (await prepare_support_open(context, values)).run()
 
 
@@ -206,7 +206,7 @@ async def prepare_support_close(context: Any,
         return (live_signature == signature
                 and await workflow.support_close_history(channel) == history)
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         reports = []
 
         async def report(message: str) -> None:
@@ -221,7 +221,7 @@ async def prepare_support_close(context: Any,
             result["log_message_id"], int,
         ):
             raise OSError("Support ticket close could not be verified")
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "private", text=text,
             result={"channel_id": channel.id, "status": result["status"],
                     "log_channel_id": prepared["log_channel_id"],
@@ -240,7 +240,7 @@ async def prepare_support_close(context: Any,
 
 
 async def run_support_close(context: Any,
-                            values: Mapping[str, Any]) -> CommandOutcome:
+                            values: Mapping[str, Any]) -> ActionOutcome:
     return await (await prepare_support_close(context, values)).run()
 
 

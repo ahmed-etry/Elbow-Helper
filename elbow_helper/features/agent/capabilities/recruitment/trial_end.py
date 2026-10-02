@@ -10,7 +10,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
     ACTION_TRIAL_END_LINE,
@@ -32,7 +32,7 @@ def trial_end_tools() -> tuple[RegisteredAgentTool, ...]:
             "applicant_id": {"type": "integer", "minimum": 1},
         }, "required": ["ticket_channel_id"], "additionalProperties": False},
     ), prepare_trial_end, AgentCapabilityEffect.COMMAND,
-        ActionClass.IRREVERSIBLE, True,
+        ActionClass.IRREVERSIBLE,
         contract=CapabilityContract(
             entity_fields=(
                 ("ticket_channel_id", "recruitment_ticket_channel"),
@@ -102,16 +102,16 @@ async def prepare_trial_end(context: AgentRequestContext,
         except ValueError:
             return False
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         result = await workflow.complete_trial_end(
             ticket.id, applicant_id, context.member,
             allow_missing=trial is None, resolve_reminder=reminder is not None)
         if not result.ended:
             raise ValueError(result.error or "That trial isn't available.")
-        return CommandOutcome("complete", "private", text="\n".join(
+        return ActionOutcome("complete", "private", text="\n".join(
             (ACTION_TRIAL_END_LABEL, *result.notices)))
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "end_recruitment_trial", {"ticket_channel_id": ticket.id,
                                   "applicant_id": applicant_id},
         ChangePreview(tuple(lines), recheck, summary=ACTION_TRIAL_END_LABEL),

@@ -6,30 +6,30 @@ from collections.abc import Mapping
 from typing import Any
 
 from ...models import AgentAttachment
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...commands.registry import CommandAdapter
 
 
 async def run_cwl_roster(context: Any,
-                         values: Mapping[str, Any]) -> CommandOutcome:
+                         values: Mapping[str, Any]) -> ActionOutcome:
     workflow = context.bot.get_cog("CwlManagement")
     if workflow is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     requested_limit = int(values.get("history", 3))
     prepared = await workflow.prepare_cwl_roster(context.guild, requested_limit)
     if prepared["status"] != "complete":
-        return CommandOutcome("complete", "private", text=prepared["issue"])
+        return ActionOutcome("complete", "private", text=prepared["issue"])
     try:
         filename, data = await workflow.build_cwl_roster_attachment(
             prepared["sheets"],
         )
     except (OSError, TypeError, ValueError):
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     lines = workflow.cwl_roster_summary(
         prepared["history_label"], prepared["signed_member_count"],
         prepared["signed_account_count"],
     )
-    return CommandOutcome(
+    return ActionOutcome(
         "complete", "private", text="\n".join(lines),
         attachments=(AgentAttachment(filename, data),),
     )

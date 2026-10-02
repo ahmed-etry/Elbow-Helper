@@ -35,7 +35,7 @@ from ...wording import (
     ACTION_REACTIVATE_FALLBACK,
     ACTION_REACTIVATE_LABEL,
 )
-from ...actions.outcomes import CommandOutcome, embed_text
+from ...actions.outcomes import ActionOutcome, embed_text
 from ...commands.registry import CommandAdapter, PreparedCommandChange
 
 
@@ -101,12 +101,12 @@ async def prepare_hibernate(context: Any,
             workflow.hibernation_notice_preview(current_member),
         )
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         message = await workflow.hibernate_member(context.guild, context.member, plan)
         state = workflow.hibernation_member_state(member.id)
         if state is None or state.get("roles") != list(plan["stored_role_ids"]):
             raise OSError("Hibernation state could not be verified")
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "private", text=message,
             result={"member_id": member.id},
             after={"member_id": member.id, "state": state},
@@ -121,7 +121,7 @@ async def prepare_hibernate(context: Any,
 
 
 async def run_hibernate(context: Any,
-                        values: Mapping[str, Any]) -> CommandOutcome:
+                        values: Mapping[str, Any]) -> ActionOutcome:
     return await (await prepare_hibernate(context, values)).run()
 
 
@@ -207,14 +207,14 @@ async def prepare_reactivate(context: Any,
             return False
         return signature(current) == initial
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         result = await workflow.reactivate_member(plan)
         if workflow.hibernation_member_state(target.id) is not None:
             raise OSError("Reactivation state could not be verified")
         channel = result["ticket"]
         if channel.id != result["ticket_channel_id"]:
             raise OSError("Reactivation ticket could not be verified")
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "private", text=result["message"],
             result={"member_id": target.id,
                     "ticket_channel_id": result["ticket_channel_id"]},
@@ -231,7 +231,7 @@ async def prepare_reactivate(context: Any,
 
 
 async def run_reactivate(context: Any,
-                         values: Mapping[str, Any]) -> CommandOutcome:
+                         values: Mapping[str, Any]) -> ActionOutcome:
     return await (await prepare_reactivate(context, values)).run()
 
 

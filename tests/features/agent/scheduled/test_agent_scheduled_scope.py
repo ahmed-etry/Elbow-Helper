@@ -48,7 +48,7 @@ class ScheduledScopeTests(unittest.TestCase):
                     version=0, owner="worker", now=2))
                 self.assertTrue(repository.finish_standing(kind="request", identifier=identifier,
                     owner="worker", next_at=3))
-                action = context.state.command_proposals[0]
+                action = context.state.proposed_changes[0]
                 self.assertTrue(await action.preview.recheck())
                 await action.run()
                 self.assertFalse(await action.preview.recheck())

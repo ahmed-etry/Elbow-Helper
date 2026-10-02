@@ -40,11 +40,11 @@ class ActionLogToolTests(unittest.IsolatedAsyncioTestCase):
         runner = SimpleNamespace(prepare_undo=AsyncMock(return_value=action))
         context = SimpleNamespace(
             action_runner=runner,
-            state=SimpleNamespace(command_proposals=[]),
+            state=SimpleNamespace(proposed_changes=[]),
         )
         with patch("elbow_helper.features.agent.actions.log_tools.require_evidence_access",
                    new_callable=AsyncMock):
             result = await undo_agent_action(context, {"log_id": "one"})
         self.assertEqual(result["status"], "confirmation_required")
-        self.assertEqual(context.state.command_proposals, [action])
+        self.assertEqual(context.state.proposed_changes, [action])
         run.assert_not_awaited()

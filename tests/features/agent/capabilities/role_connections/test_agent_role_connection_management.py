@@ -45,7 +45,7 @@ class RoleConnectionManagementTests(unittest.IsolatedAsyncioTestCase):
                 "all": [{"has": 7}],
             })
         self.assertEqual(result["status"], "confirmation_required")
-        action = context.state.command_proposals[0]
+        action = context.state.proposed_changes[0]
         self.assertTrue(any("<@&8>" in line for line in action.preview.lines))
         workflow.add_connection.assert_not_called()
         with patch("elbow_helper.features.agent.capabilities.role_connections.management.check_post_access"), \
@@ -96,4 +96,4 @@ class RoleConnectionManagementTests(unittest.IsolatedAsyncioTestCase):
               patch("elbow_helper.features.agent.capabilities.role_connections.management.discord.TextChannel",
                     _Channel)):
             await prepare_remove_role_connection(context, {"connection_id": "rule-id"})
-        self.assertIs(context.state.command_proposals[0].action_class, ActionClass.IRREVERSIBLE)
+        self.assertIs(context.state.proposed_changes[0].action_class, ActionClass.IRREVERSIBLE)

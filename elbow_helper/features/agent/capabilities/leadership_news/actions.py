@@ -12,7 +12,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
     ACTION_NEWS_PUBLISH_LINE,
@@ -36,7 +36,7 @@ def leadership_news_tools() -> tuple[RegisteredAgentTool, ...]:
             "message_id": {"type": "integer", "minimum": 1},
         }, "required": ["message_id"], "additionalProperties": False},
     ), prepare_lead_news, AgentCapabilityEffect.COMMAND,
-        ActionClass.CHANGE, True,
+        ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("message_id", "discord_message"),),
             time_fields=(),
@@ -50,7 +50,7 @@ def leadership_news_tools() -> tuple[RegisteredAgentTool, ...]:
                 "prompt_message_id": {"type": "integer", "minimum": 1},
             }, "required": ["prompt_message_id"], "additionalProperties": False},
         ), prepare_news_dismiss, AgentCapabilityEffect.COMMAND,
-            ActionClass.IRREVERSIBLE, True,
+            ActionClass.IRREVERSIBLE,
             contract=CapabilityContract(
                 entity_fields=(("prompt_message_id", "discord_message"),),
                 time_fields=(),
@@ -82,13 +82,13 @@ async def prepare_news_dismiss(context: AgentRequestContext,
         except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
             return False
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         current = await source.fetch_message(prompt.id)
         if not await workflow.dismiss_public_news_prompt(current):
             raise ValueError('That lead update is unavailable.')
-        return CommandOutcome("complete", "private", text=ACTION_NEWS_DISMISS_LABEL)
+        return ActionOutcome("complete", "private", text=ACTION_NEWS_DISMISS_LABEL)
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "dismiss_lead_news_prompt", {"prompt_message_id": prompt.id},
         ChangePreview(lines, recheck, summary=ACTION_NEWS_DISMISS_LABEL),
         run, action_class=ActionClass.CHANGE,
@@ -137,16 +137,16 @@ async def prepare_lead_news(context: AgentRequestContext,
                 and tuple(prompt.id for prompt in latest_prompts)
                 == tuple(prompt.id for prompt in prompts))
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         current = await source.fetch_message(message.id)
         current_prompts = await workflow.find_public_news_prompts(current)
         sent = await workflow.publish_public_news(
             current, target, prepared=workflow.public_news_preview(current),
             prompts=current_prompts)
-        return CommandOutcome("complete", "private",
+        return ActionOutcome("complete", "private",
                               text=ACTION_NEWS_PUBLISH_DONE.format(url=sent.jump_url))
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "publish_lead_news", {"source_channel_id": source.id,
                               "message_id": message.id, "target_channel_id": target.id},
         ChangePreview(tuple(lines), recheck, summary=ACTION_NEWS_PUBLISH_LABEL),

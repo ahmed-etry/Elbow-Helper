@@ -12,7 +12,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
     ACTION_TICKET_REOPEN_LINE,
@@ -37,7 +37,7 @@ def support_reopen_tools() -> tuple[RegisteredAgentTool, ...]:
         description="Restore the owner's messaging access to a closed support ticket after confirmation.",
         parameters=schema,
     ), prepare_support_reopen, AgentCapabilityEffect.COMMAND,
-        ActionClass.CHANGE, True,
+        ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("channel_id", "support_ticket_channel"),),
             time_fields=(),
@@ -79,14 +79,14 @@ async def prepare_support_reopen(context: AgentRequestContext,
         except ValueError:
             return False
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         _, restored = await workflow.reopen_support_ticket(context.guild, channel,
                                                             context.member)
         if not restored:
             raise ValueError("That ticket couldn't be reopened.")
-        return CommandOutcome("complete", "private", text=ACTION_TICKET_REOPEN_LABEL)
+        return ActionOutcome("complete", "private", text=ACTION_TICKET_REOPEN_LABEL)
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "reopen_support_ticket", {"channel_id": channel.id, "owner_id": owner.id},
         ChangePreview(lines, recheck, summary=ACTION_TICKET_REOPEN_LABEL),
         run, action_class=ActionClass.CHANGE,

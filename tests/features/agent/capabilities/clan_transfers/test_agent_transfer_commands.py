@@ -29,7 +29,7 @@ class TransferCommandTests(unittest.IsolatedAsyncioTestCase):
                    new_callable=AsyncMock):
             result = await prepare_clear_transfer_queue(context, {"clan_code": "BEH"})
         self.assertEqual(result["status"], "confirmation_required")
-        action = context.state.command_proposals[0]
+        action = context.state.proposed_changes[0]
         self.assertTrue(any("<@4>" in line for line in action.preview.lines))
         self.assertTrue(any("<@5>" in line for line in action.preview.lines))
         self.assertTrue(any("<#8>" in line for line in action.preview.lines))

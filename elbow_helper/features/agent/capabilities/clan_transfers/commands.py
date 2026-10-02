@@ -18,7 +18,7 @@ from ...wording import (
     ACTION_TRANSFER_REQUEST_LABEL,
     ACTION_TRANSFER_REQUEST_LINE,
 )
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...commands.registry import CommandAdapter, PreparedCommandChange
 
 
@@ -57,13 +57,13 @@ async def _prepare(context: Any, values: Mapping[str, Any],
             clan_code, context.member.id, cancel=cancel,
         ) == state
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         message = (await workflow.cancel_transfer(clan_code, context.member.id)
                    if cancel else
                    await workflow.request_transfer(clan_code, context.member.id))
         if workflow.transfer_request_status(clan_code, context.member.id) == cancel:
             raise OSError("Transfer request could not be verified")
-        return CommandOutcome("complete", "private", text=message,
+        return ActionOutcome("complete", "private", text=message,
                               after={"clan_code": clan_code, "pending": not cancel})
 
     label = ACTION_TRANSFER_CANCEL_LABEL if cancel else ACTION_TRANSFER_REQUEST_LABEL
@@ -86,12 +86,12 @@ async def prepare_transfer_cancel(context: Any,
 
 
 async def run_transfer_request(context: Any,
-                               values: Mapping[str, Any]) -> CommandOutcome:
+                               values: Mapping[str, Any]) -> ActionOutcome:
     return await (await prepare_transfer_request(context, values)).run()
 
 
 async def run_transfer_cancel(context: Any,
-                              values: Mapping[str, Any]) -> CommandOutcome:
+                              values: Mapping[str, Any]) -> ActionOutcome:
     return await (await prepare_transfer_cancel(context, values)).run()
 
 

@@ -48,7 +48,6 @@ class AgentService:
 
     execute_tool = staticmethod(execute_tool)
 
-    _execute_tool = execute_tool
 
     @staticmethod
     def _log_completion(

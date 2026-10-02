@@ -102,7 +102,7 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
         context = _context()
 
         with self.assertRaises(AgentAccessLost):
-            await AgentService._execute_tool(
+            await AgentService.execute_tool(
                 name="read_role_connections", handler=handler, arguments={},
                 capability_scope=scope, context=context,
             )
@@ -112,7 +112,7 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
         lead_role = SimpleNamespace(id=next(iter(LEAD)))
         context.member.roles.append(lead_role)
         context.guild.roles.append(lead_role)
-        result = await AgentService._execute_tool(
+        result = await AgentService.execute_tool(
             name="read_role_connections", handler=handler, arguments={},
             capability_scope=scope, context=context,
         )
@@ -137,7 +137,7 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
             request_context.state.reports[report.report_id] = report
             return {"report_id": report.report_id}
 
-        result = await AgentService._execute_tool(
+        result = await AgentService.execute_tool(
             name="read_role_connections", handler=handler, arguments={},
             capability_scope=scope, context=context,
         )
@@ -178,7 +178,7 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
         with self.assertLogs(
             "elbow_helper.features.agent.engine.tool_call", level="ERROR",
         ):
-            result = await AgentService._execute_tool(
+            result = await AgentService.execute_tool(
                 name="failing", handler=failing_handler, arguments={},
                 context=context,
             )
@@ -217,7 +217,7 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
             new=AsyncMock(side_effect=AgentAccessLost("lost")),
         ):
             with self.assertRaises(AgentAccessLost):
-                await AgentService._execute_tool(
+                await AgentService.execute_tool(
                     name="lookup", handler=lookup, arguments={}, context=context,
                 )
         self.assertEqual(context.state.reports, {"original": original})
@@ -236,7 +236,7 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
             raise asyncio.CancelledError
 
         with self.assertRaises(asyncio.CancelledError):
-            await AgentService._execute_tool(
+            await AgentService.execute_tool(
                 name="cancelled", handler=cancelled, arguments={}, context=context,
             )
         self.assertEqual(context.state.reports, {"original": original})
@@ -253,7 +253,7 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
             raise AssertionError("simulated invariant failure")
 
         with self.assertRaises(AssertionError):
-            await AgentService._execute_tool(
+            await AgentService.execute_tool(
                 name="broken", handler=broken, arguments={}, context=context,
             )
         self.assertEqual(context.state.reports, {"original": original})

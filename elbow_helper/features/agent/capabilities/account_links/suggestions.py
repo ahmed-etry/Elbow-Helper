@@ -13,7 +13,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
     ACTION_ACCOUNT_ADD_LINE,
@@ -57,7 +57,7 @@ def account_suggestion_tools() -> tuple[RegisteredAgentTool, ...]:
             description="Confirm or correct a pending account match after confirmation.",
             parameters=tag_schema,
         ), prepare_suggestion_link, AgentCapabilityEffect.COMMAND,
-            ActionClass.CHANGE, True,
+            ActionClass.CHANGE,
             contract=CapabilityContract(
                 entity_fields=(("player_tag", "clash_account"), ("member_id", "discord_member")),
                 time_fields=(),
@@ -71,7 +71,7 @@ def account_suggestion_tools() -> tuple[RegisteredAgentTool, ...]:
                 "player_tag": {"type": "string"},
             }, "required": ["player_tag"], "additionalProperties": False},
         ), prepare_suggestion_ignore, AgentCapabilityEffect.COMMAND,
-            ActionClass.IRREVERSIBLE, True,
+            ActionClass.IRREVERSIBLE,
             contract=CapabilityContract(
                 entity_fields=(("player_tag", "clash_account"),),
                 time_fields=(),
@@ -163,16 +163,16 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         except ValueError:
             return False
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         proposed = int(suggestion.get("proposed_discord_user_id") or 0)
         message = await workflow.resolve_account_suggestion(
             tag, context.member,
             discord_user_id=(member.id if member and member.id != proposed else None),
             ignore=ignore)
-        return CommandOutcome("complete", "private", text=message)
+        return ActionOutcome("complete", "private", text=message)
 
     label = ACTION_SUGGESTION_IGNORE_LABEL if ignore else ACTION_SUGGESTION_LINK_LABEL
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "ignore_account_suggestion" if ignore else "link_account_suggestion",
         {"player_tag": tag, **({"member_id": member.id} if member else {})},
         ChangePreview(tuple(lines), recheck, summary=label),

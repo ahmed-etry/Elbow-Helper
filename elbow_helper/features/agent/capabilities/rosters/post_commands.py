@@ -29,7 +29,7 @@ from ...wording import (
     ACTION_ROSTER_EXPORT_LINE,
     ACTION_ROSTER_EXPORT_LINK,
 )
-from ...actions.outcomes import CommandOutcome, embed_text
+from ...actions.outcomes import ActionOutcome, embed_text
 from ...commands.registry import CommandAdapter, PreparedCommandChange
 
 
@@ -88,7 +88,7 @@ async def prepare_roster_post(context: Any,
         live_render = await workflow.preview_roster_post(roster)
         return live_render["signature"] == render["signature"]
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         if workflow.roster_post_effect(roster) != effect:
             raise ValueError("Roster post changed before execution")
         result = await workflow.post_roster(
@@ -99,7 +99,7 @@ async def prepare_roster_post(context: Any,
         opened, message = result
         if not await workflow.roster_post_registered(roster_id, message.id):
             raise OSError("Roster post could not be verified")
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "public",
             result={"roster_id": roster_id, "channel_id": channel.id,
                     "message_id": message.id},
@@ -115,12 +115,12 @@ async def prepare_roster_post(context: Any,
 
 
 async def run_roster_post(context: Any,
-                          values: Mapping[str, Any]) -> CommandOutcome:
+                          values: Mapping[str, Any]) -> ActionOutcome:
     return await (await prepare_roster_post(context, values)).run()
 
 
 async def prepare_roster_export(context: Any,
-                                values: Mapping[str, Any]) -> PreparedCommandChange | CommandOutcome:
+                                values: Mapping[str, Any]) -> PreparedCommandChange | ActionOutcome:
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
         raise ValueError('That roster is unavailable.')
@@ -133,7 +133,7 @@ async def prepare_roster_export(context: Any,
         raise ValueError('That roster is unavailable.')
     plan = await workflow.roster_export_plan(roster)
     if not plan["accounts"]:
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "private", text=f"No accounts are signed up to **{roster.name}**.",
         )
     lines = [
@@ -152,12 +152,12 @@ async def prepare_roster_export(context: Any,
         fresh = await workflow.roster_export_plan(roster)
         return fresh["accounts"] == plan["accounts"]
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         report, warning = await workflow.export_roster(
             roster, timestamp=plan["timestamp"],
         )
         if report is None:
-            return CommandOutcome("complete", "private", text=warning or "")
+            return ActionOutcome("complete", "private", text=warning or "")
         link, data = await workflow.deliver_roster_export(report)
         text = f"Exported **{roster.name}**."
         if link:
@@ -166,7 +166,7 @@ async def prepare_roster_export(context: Any,
             text += "\n" + report.google_warning
         attachments = ((AgentAttachment(report.workbook_name, data),)
                        if data is not None else ())
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "private", text=text,
             attachments=attachments,
             result={"roster_id": roster_id, "workbook_name": report.workbook_name,
@@ -184,7 +184,7 @@ async def prepare_roster_export(context: Any,
 
 
 async def run_roster_export(context: Any,
-                            values: Mapping[str, Any]) -> CommandOutcome:
+                            values: Mapping[str, Any]) -> ActionOutcome:
     prepared = await prepare_roster_export(context, values)
     return await prepared.run() if isinstance(prepared, PreparedCommandChange) else prepared
 

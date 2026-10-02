@@ -12,7 +12,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
     ACTION_ELDER_REFRESH_LINE,
@@ -30,7 +30,7 @@ def missing_elder_board_tools() -> tuple[RegisteredAgentTool, ...]:
             "clan_code": {"type": "string", "enum": list(CLAN_LEADERSHIP_CHANNELS)},
         }, "required": ["clan_code"], "additionalProperties": False},
     ), prepare_missing_elder_board, AgentCapabilityEffect.COMMAND,
-        ActionClass.CHANGE, True,
+        ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("clan_code", "clan"),),
             time_fields=(),
@@ -62,12 +62,12 @@ async def prepare_missing_elder_board(context: AgentRequestContext,
         except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
             return False
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         if not await workflow.refresh_missing_elder_board_from_accounts(values["clan_code"]):
             raise ValueError("That Missing Elder board couldn't be refreshed.")
-        return CommandOutcome("complete", "private", text=ACTION_ELDER_REFRESH_LABEL)
+        return ActionOutcome("complete", "private", text=ACTION_ELDER_REFRESH_LABEL)
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "refresh_missing_elder_board", dict(values),
         ChangePreview(tuple(lines), recheck, summary=ACTION_ELDER_REFRESH_LABEL),
         run, action_class=ActionClass.CHANGE,

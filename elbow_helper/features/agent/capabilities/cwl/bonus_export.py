@@ -10,30 +10,30 @@ from elbow_helper.features.cwl.bonus.commands import bonus_report_lines
 from elbow_helper.features.cwl.bonus.service import BonusReportError
 
 from ...models import AgentAttachment
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...commands.registry import CommandAdapter
 
 
-async def run_cwl_bonus(context: Any, values: Mapping[str, Any]) -> CommandOutcome:
+async def run_cwl_bonus(context: Any, values: Mapping[str, Any]) -> ActionOutcome:
     workflow = context.bot.get_cog("CwlManagement")
     if workflow is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     try:
         report = await workflow.bonus_reports.create(values["clan"], values.get("season"))
     except BonusReportError as error:
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", text=workflow.bonus_report_error_message(error),
         )
     try:
         if report.google_link:
-            return CommandOutcome(
+            return ActionOutcome(
                 "complete", text="\n".join((
                     f"**CWL Bonus Estimate ({report.scope_label}, {report.season})**",
                     report.google_link,
                 )),
             )
         data = await asyncio.to_thread(report.workbook_path.read_bytes)
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", text="\n".join(bonus_report_lines(report)),
             attachments=(AgentAttachment(report.workbook_name, data),),
         )

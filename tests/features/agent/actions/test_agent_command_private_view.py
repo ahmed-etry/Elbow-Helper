@@ -4,13 +4,13 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
-from elbow_helper.features.agent.actions.private_view import PrivateCommandView
-from elbow_helper.features.agent.actions.outcomes import CommandOutcome
+from elbow_helper.features.agent.actions.private_view import PrivateResultView
+from elbow_helper.features.agent.actions.outcomes import ActionOutcome
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin
 from elbow_helper.features.agent.models import AgentDelivery, AgentTurnState
 from elbow_helper.features.agent.models import AgentAttachment
 from elbow_helper.features.agent.wording import (
-    COMMAND_PRIVATE_BUTTON, COMMAND_RESULT_EXPIRED, COMMAND_RESULT_OWNER,
+    ACTION_PRIVATE_BUTTON, ACTION_RESULT_EXPIRED, ACTION_RESULT_OWNER,
 )
 
 
@@ -23,24 +23,24 @@ class PrivateCommandViewTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_other_member_cannot_open_result(self):
-        view = PrivateCommandView(101, ("synthetic private data",))
-        self.assertEqual(view.children[0].label, COMMAND_PRIVATE_BUTTON)
+        view = PrivateResultView(101, ("synthetic private data",))
+        self.assertEqual(view.children[0].label, ACTION_PRIVATE_BUTTON)
         other = self.interaction(202)
         await view.open_result(other)
         other.response.send_message.assert_awaited_once_with(
-            COMMAND_RESULT_OWNER, ephemeral=True,
+            ACTION_RESULT_OWNER, ephemeral=True,
         )
         self.assertNotIn("synthetic private data", str(other.response.send_message.await_args))
 
     async def test_requester_receives_every_part_privately(self):
-        view = PrivateCommandView(101, ("synthetic one", "synthetic two"))
+        view = PrivateResultView(101, ("synthetic one", "synthetic two"))
         member = self.interaction(101)
         await view.open_result(member)
         member.response.send_message.assert_awaited_once_with("synthetic one", ephemeral=True)
         member.followup.send.assert_awaited_once_with("synthetic two", ephemeral=True)
 
     async def test_private_attachment_is_sent_only_on_owner_click(self):
-        view = PrivateCommandView(101, (), (AgentAttachment("synthetic.txt", b"secret"),))
+        view = PrivateResultView(101, (), (AgentAttachment("synthetic.txt", b"secret"),))
         other = self.interaction(202)
         await view.open_result(other)
         self.assertNotIn("files", other.response.send_message.await_args.kwargs)
@@ -51,14 +51,14 @@ class PrivateCommandViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(sent["files"]), 1)
 
     async def test_expired_view_disables_button_and_refuses_open(self):
-        view = PrivateCommandView(101, ("synthetic private data",))
+        view = PrivateResultView(101, ("synthetic private data",))
         view.message = SimpleNamespace(edit=AsyncMock())
         await view.on_timeout()
         self.assertTrue(view.children[0].disabled)
         view.message.edit.assert_awaited_once_with(view=view)
         member = self.interaction(101)
         await view.open_result(member)
-        member.response.send_message.assert_awaited_once_with(COMMAND_RESULT_EXPIRED, ephemeral=True)
+        member.response.send_message.assert_awaited_once_with(ACTION_RESULT_EXPIRED, ephemeral=True)
 
     async def test_delivery_attaches_the_private_view_to_the_public_note(self):
         delivery_surface = AgentDeliveryMixin()
@@ -71,7 +71,7 @@ class PrivateCommandViewTests(unittest.IsolatedAsyncioTestCase):
             channel=SimpleNamespace(),
         )
         state = AgentTurnState()
-        state.command_outcomes.append(CommandOutcome(
+        state.outcomes.append(ActionOutcome(
             "complete", "private", private_parts=("synthetic private data",),
         ))
         context = SimpleNamespace(state=state)
@@ -83,7 +83,7 @@ class PrivateCommandViewTests(unittest.IsolatedAsyncioTestCase):
                 delivery=AgentDelivery(), context=context,
             )
         kwargs = message.reply.await_args.kwargs
-        self.assertIsInstance(kwargs["view"], PrivateCommandView)
+        self.assertIsInstance(kwargs["view"], PrivateResultView)
         self.assertEqual(kwargs["view"].owner_id, 202)
         self.assertIs(kwargs["view"].message, sent)
         self.assertNotIn("synthetic private data", str(message.reply.await_args))

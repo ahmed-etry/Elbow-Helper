@@ -37,7 +37,7 @@ class RosterAccountManagementTests(unittest.IsolatedAsyncioTestCase):
             result = await prepare_roster_row_removal(
                 context, {"roster_id": 17, "accounts": ["Player"]})
         self.assertEqual(result["status"], "confirmation_required")
-        action = context.state.command_proposals[0]
+        action = context.state.proposed_changes[0]
         self.assertTrue(any("#P2" in line for line in action.preview.lines))
         self.assertTrue(await action.preview.recheck())
         await action.run()
@@ -73,7 +73,7 @@ class RosterAccountManagementTests(unittest.IsolatedAsyncioTestCase):
             result = await prepare_roster_signup(
                 context, {"roster_id": 17, "accounts": ["Player"]})
         self.assertEqual(result["status"], "confirmation_required")
-        action = context.state.command_proposals[0]
+        action = context.state.proposed_changes[0]
         self.assertTrue(any("#P2" in line for line in action.preview.lines))
         self.assertTrue(any("<#9>" in line for line in action.preview.lines))
         workflow.change_roster_accounts.assert_not_awaited()

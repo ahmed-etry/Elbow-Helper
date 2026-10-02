@@ -11,7 +11,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
     ACTION_CONNECTION_MANAGE_LINE,
@@ -42,7 +42,7 @@ def role_connection_management_tools() -> tuple[RegisteredAgentTool, ...]:
             "channel_id": {"type": "integer", "minimum": 1},
         }, "required": ["operation"], "additionalProperties": False},
     ), prepare_role_connection_change, AgentCapabilityEffect.COMMAND,
-        ActionClass.CHANGE, True,
+        ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(
                 ("connection_id", "role_connection"),
@@ -62,7 +62,7 @@ def role_connection_management_tools() -> tuple[RegisteredAgentTool, ...]:
             "channel_id": {"type": "integer", "minimum": 1},
         }, "required": ["connection_id"], "additionalProperties": False},
     ), prepare_remove_role_connection, AgentCapabilityEffect.COMMAND,
-        ActionClass.IRREVERSIBLE, True,
+        ActionClass.IRREVERSIBLE,
         contract=CapabilityContract(
             entity_fields=(
                 ("connection_id", "role_connection"),
@@ -158,7 +158,7 @@ async def prepare_role_connection_change(context: AgentRequestContext,
         return (current == before and (after is None or workflow.connection_change_is_valid(
             after, replacing_id=connection_id if before is not None else None)))
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         if operation == "create":
             workflow.add_connection(after)
         elif operation == "update":
@@ -167,13 +167,13 @@ async def prepare_role_connection_change(context: AgentRequestContext,
         elif not workflow.remove_connection(connection_id):
             raise ValueError('That role connection is unavailable.')
         board = await workflow.refresh_connections_message(channel)
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "private",
             text=ACTION_CONNECTION_MANAGE_DONE.format(channel=channel.mention, url=board.jump_url),
             after={"connection": after},
         )
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "manage_role_connection", {"connection_id": connection_id,
                                    "channel_id": channel.id},
         ChangePreview(tuple(lines), recheck, summary=ACTION_CONNECTION_MANAGE_LABEL,
@@ -205,14 +205,14 @@ async def prepare_role_connection_undo(context: AgentRequestContext,
     async def recheck() -> bool:
         return workflow.role_connection_state(connection_id) == expected
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         if prior is None:
             if not workflow.remove_connection(connection_id):
                 raise ValueError('That role connection is unavailable.')
         elif not workflow.replace_connection(connection_id, prior):
             raise ValueError('That role connection is unavailable.')
         board = await workflow.refresh_connections_message(channel)
-        return CommandOutcome("complete", "private",
+        return ActionOutcome("complete", "private",
                               text=ACTION_CONNECTION_MANAGE_DONE.format(
                                   channel=channel.mention, url=board.jump_url),
                               after={"connection": prior})

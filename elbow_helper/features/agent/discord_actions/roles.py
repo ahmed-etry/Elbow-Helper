@@ -10,7 +10,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ..engine.capability_contract import CapabilityContract
 from ..access import require_evidence_access
 from ..actions.contracts import ActionClass, ChangePreview, PreparedAction, audit_reason
-from ..actions.outcomes import CommandOutcome
+from ..actions.outcomes import ActionOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
     ACTION_ROLE_ADD_LABEL, ACTION_ROLE_ADD_LINE,
@@ -34,7 +34,7 @@ def discord_role_tools() -> tuple[RegisteredAgentTool, ...]:
             name="add_discord_roles",
             description="Add one safe Discord role to the selected members after confirmation.",
             parameters=schema,
-        ), prepare_add_roles, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+        ), prepare_add_roles, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
                 entity_fields=(("role_id", "discord_role"), ("member_ids", "discord_member_set")),
                 time_fields=(),
@@ -45,7 +45,7 @@ def discord_role_tools() -> tuple[RegisteredAgentTool, ...]:
             name="remove_discord_roles",
             description="Remove one safe Discord role from the selected members after confirmation.",
             parameters=schema,
-        ), prepare_remove_roles, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+        ), prepare_remove_roles, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
                 entity_fields=(("role_id", "discord_role"), ("member_ids", "discord_member_set")),
                 time_fields=(),
@@ -82,7 +82,7 @@ async def _prepare_roles(context: AgentRequestContext, arguments: Mapping[str, A
         return {"error": str(error), "prepared_count": 0}
     await require_evidence_access(context)
     for member in selected:
-        context.state.command_proposals.append(_role_action(
+        context.state.proposed_changes.append(_role_action(
             context, role.id, member.id, add=add,
             before=not add, label_role=role.mention, label_member=member.mention,
         ))
@@ -118,13 +118,13 @@ def _role_action(
             return False
         return (role in member.roles) == before
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         role, member = await targets()
         if add:
             await member.add_roles(role, reason=audit_reason(context.member))
         else:
             await member.remove_roles(role, reason=audit_reason(context.member))
-        return CommandOutcome(
+        return ActionOutcome(
             "complete",
             after={"has_role": add},
         )

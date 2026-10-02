@@ -27,7 +27,7 @@ from ...wording import (
     ACTION_RAFFLE_REMOVE_LINE,
     ACTION_RAFFLE_REMOVE_LABEL,
 )
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...commands.registry import CommandAdapter
 
 
@@ -99,22 +99,22 @@ async def prepare_achievement_award(context: Any,
 
 
 async def run_achievement_award(context: Any,
-                                values: Mapping[str, Any]) -> CommandOutcome:
+                                values: Mapping[str, Any]) -> ActionOutcome:
     workflow = achievement_workflow(context)
     member = await _member(context, values["user"])
     if member is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     state = await _achievement_state(workflow, member.id, values["achievement"])
     success, message = await workflow.manually_award_achievement(
         member.id, state["id"], context.member.display_name,
         bool(values.get("silent", False)),
     )
     if not success:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     after = await workflow.achievement_change_state(member.id, state["id"])
     if after is None or after["completed_date"] is None:
         raise OSError("Achievement award could not be verified")
-    return CommandOutcome("complete", "private", text=f"{message} to {member.display_name}.",
+    return ActionOutcome("complete", "private", text=f"{message} to {member.display_name}.",
                           after={"achievement": after})
 
 
@@ -143,21 +143,21 @@ async def prepare_achievement_remove(context: Any,
 
 
 async def run_achievement_remove(context: Any,
-                                 values: Mapping[str, Any]) -> CommandOutcome:
+                                 values: Mapping[str, Any]) -> ActionOutcome:
     workflow = achievement_workflow(context)
     member = await _member(context, values["user"])
     if member is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     state = await _achievement_state(workflow, member.id, values["achievement"])
     success, message = await workflow.manually_remove_achievement(
         member.id, state["id"], context.member.display_name,
     )
     if not success:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     after = await workflow.achievement_change_state(member.id, state["id"])
     if after is None or after["completed_date"] is not None:
         raise OSError("Achievement removal could not be verified")
-    return CommandOutcome("complete", "private", text=f"{message} from {member.display_name}.",
+    return ActionOutcome("complete", "private", text=f"{message} from {member.display_name}.",
                           after={"achievement": after})
 
 
@@ -197,11 +197,11 @@ async def prepare_grant_coins(context: Any,
 
 
 async def run_grant_coins(context: Any,
-                          values: Mapping[str, Any]) -> CommandOutcome:
+                          values: Mapping[str, Any]) -> ActionOutcome:
     workflow = achievement_workflow(context)
     member = await _member(context, values["user"])
     if member is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     category = values["category"]
     amount = max(1, min(int(values["amount"]), 10))
     before = await workflow.manual_coin_grant_state(
@@ -211,13 +211,13 @@ async def run_grant_coins(context: Any,
         member, category, amount, values["reason"], context.member,
     )
     if not ok:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     after = await workflow.manual_coin_grant_state(
         member, category, amount, context.member,
     )
     if after["balance"] != before["balance"] + amount:
         raise OSError("Coin grant could not be verified")
-    return CommandOutcome("complete", "private", text=message,
+    return ActionOutcome("complete", "private", text=message,
                           after={"coin_state": after})
 
 
@@ -245,18 +245,18 @@ async def prepare_grant_ticket(context: Any,
 
 
 async def run_grant_ticket(context: Any,
-                           values: Mapping[str, Any]) -> CommandOutcome:
+                           values: Mapping[str, Any]) -> ActionOutcome:
     workflow = achievement_workflow(context)
     member = await _member(context, values["user"])
     if member is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     ok, message = await workflow.grant_raffle_ticket(member.id, values["reason"])
     if not ok:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     after = await workflow.ticket_grant_state(member.id)
     if not after["has_ticket"]:
         raise OSError("Ticket grant could not be verified")
-    return CommandOutcome("complete", "private", text=message,
+    return ActionOutcome("complete", "private", text=message,
                           after={"ticket_state": after})
 
 
@@ -282,16 +282,16 @@ async def prepare_raffle_remove(context: Any,
 
 
 async def run_raffle_remove(context: Any,
-                            values: Mapping[str, Any]) -> CommandOutcome:
+                            values: Mapping[str, Any]) -> ActionOutcome:
     workflow = achievement_workflow(context)
     member = await _member(context, values["user"])
     if member is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     message = await workflow.remove_raffle_ticket(member.id)
     after = await workflow.raffle_member_ticket_state(member.id)
     if after["has_ticket"] or after["last_ticket_month"] == after["month_key"]:
         raise OSError("Ticket removal could not be verified")
-    return CommandOutcome("complete", "private", text=message,
+    return ActionOutcome("complete", "private", text=message,
                           after={"ticket_state": after})
 
 

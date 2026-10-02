@@ -9,9 +9,9 @@ from collections.abc import Awaitable, Callable
 import discord
 
 from ..wording import (
-    COMMAND_PRIVATE_BUTTON,
-    COMMAND_PRIVATE_SELECT, COMMAND_RESULT_EXPIRED,
-    COMMAND_RESULT_OWNER,
+    ACTION_PRIVATE_BUTTON,
+    ACTION_PRIVATE_SELECT, ACTION_RESULT_EXPIRED,
+    ACTION_RESULT_OWNER,
 )
 from ..models import AgentAttachment
 
@@ -31,7 +31,7 @@ class PrivatePanelSelect(discord.ui.View):
         self.panels = panels
         for start in range(0, len(panels), 25):
             selector = discord.ui.Select(
-                placeholder=COMMAND_PRIVATE_SELECT,
+                placeholder=ACTION_PRIVATE_SELECT,
                 options=[discord.SelectOption(
                     label=labels[index][:100],
                     value=str(index),
@@ -39,14 +39,14 @@ class PrivatePanelSelect(discord.ui.View):
             )
             async def choose(interaction, selected=selector):
                 if interaction.user.id != self.owner_id:
-                    await interaction.response.send_message(COMMAND_RESULT_OWNER, ephemeral=True)
+                    await interaction.response.send_message(ACTION_RESULT_OWNER, ephemeral=True)
                     return
                 await self.panels[int(selected.values[0])](interaction)
             selector.callback = choose
             self.add_item(selector)
 
 
-class PrivateCommandView(discord.ui.View):
+class PrivateResultView(discord.ui.View):
     def __init__(self, owner_id: int, parts: tuple[str, ...],
                  attachments: tuple[AgentAttachment, ...] = (),
                  panel: Callable[[discord.Interaction], Awaitable[None]] | None = None,
@@ -60,17 +60,17 @@ class PrivateCommandView(discord.ui.View):
         self.panel_labels = panel_labels
         self.message = None
         self.expired = False
-        button = discord.ui.Button(label=COMMAND_PRIVATE_BUTTON,
+        button = discord.ui.Button(label=ACTION_PRIVATE_BUTTON,
                                    style=discord.ButtonStyle.secondary)
         button.callback = self.open_result
         self.add_item(button)
 
     async def open_result(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message(COMMAND_RESULT_OWNER, ephemeral=True)
+            await interaction.response.send_message(ACTION_RESULT_OWNER, ephemeral=True)
             return
         if self.expired:
-            await interaction.response.send_message(COMMAND_RESULT_EXPIRED, ephemeral=True)
+            await interaction.response.send_message(ACTION_RESULT_EXPIRED, ephemeral=True)
             return
         files = [discord.File(io.BytesIO(item.data), filename=item.filename)
                  for item in self.attachments]

@@ -10,7 +10,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
     ACTION_ROLE_ADD_LINE,
@@ -27,7 +27,7 @@ def role_connection_scan_tools() -> tuple[RegisteredAgentTool, ...]:
         parameters={"type": "object", "properties": {},
                     "required": [], "additionalProperties": False},
     ), prepare_role_connection_scan, AgentCapabilityEffect.COMMAND,
-        ActionClass.CHANGE, True,
+        ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(),
             time_fields=(),
@@ -53,7 +53,7 @@ async def prepare_role_connection_scan(context: AgentRequestContext,
         check_role(role, context.guild, context.guild.me, {})
     await require_evidence_access(context)
     for member, role, add in changes:
-        context.state.command_proposals.append(_scan_action(
+        context.state.proposed_changes.append(_scan_action(
             context, workflow, member.id, role.id, add,
             member_label=member.mention, role_label=role.mention,
             signature=signature,
@@ -80,11 +80,11 @@ def _scan_action(context: AgentRequestContext, workflow: Any,
         return (workflow.connections_board_signature() == signature
                 and (role in member.roles) != add)
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         member, role = await targets()
         if not await workflow.apply_role_connection_change(member, role, add=add):
             raise ValueError('Role connections are unavailable.')
-        return CommandOutcome("complete", after={"has_role": add})
+        return ActionOutcome("complete", after={"has_role": add})
 
     line = (ACTION_ROLE_ADD_LINE if add else ACTION_ROLE_REMOVE_LINE).format(
         role=role_label, member=member_label)

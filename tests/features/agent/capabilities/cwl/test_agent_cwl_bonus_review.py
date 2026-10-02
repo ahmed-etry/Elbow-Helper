@@ -26,7 +26,7 @@ class CwlBonusReviewActionTests(unittest.IsolatedAsyncioTestCase):
             result = await prepare_cwl_bonus_review(
                 context, {"clan_code": "BEH", "decision": "hold"})
         self.assertEqual(result["status"], "confirmation_required")
-        action = context.state.command_proposals[0]
+        action = context.state.proposed_changes[0]
         self.assertTrue(await action.preview.recheck())
         workflow.set_bonus_review_status.assert_not_awaited()
         outcome = await action.run()

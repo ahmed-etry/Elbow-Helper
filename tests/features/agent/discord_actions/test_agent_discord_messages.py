@@ -63,7 +63,7 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
                 "channel_id": 2, "text": "word " * 500,
             })
         self.assertEqual(result["prepared_count"], 2)
-        for action in self.context.state.command_proposals:
+        for action in self.context.state.proposed_changes:
             self.assertTrue(await action.preview.recheck())
             outcome = await action.run()
             self.assertTrue(await action.verify())
@@ -76,14 +76,14 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
         with patch("elbow_helper.features.agent.discord_actions.messages.require_evidence_access",
                    new_callable=AsyncMock):
             await prepare_post(self.context, {"channel_id": 2, "text": "First"})
-            post = self.context.state.command_proposals.pop()
+            post = self.context.state.proposed_changes.pop()
             posted = await post.run()
             message_id = posted.after["message_id"]
             edit = await prepare_edit(self.context, {
                 "channel_id": 2, "message_id": message_id, "text": "Second",
             })
             self.assertEqual(edit["status"], "confirmation_required")
-            change = self.context.state.command_proposals.pop()
+            change = self.context.state.proposed_changes.pop()
             self.assertTrue(await change.preview.recheck())
             await change.run()
             self.assertEqual(self.messages[message_id].content, "Second")
@@ -91,7 +91,7 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
                 "channel_id": 2, "message_id": message_id,
             })
             self.assertEqual(removal["status"], "confirmation_required")
-            deletion = self.context.state.command_proposals.pop()
+            deletion = self.context.state.proposed_changes.pop()
             self.assertIs(deletion.action_class, ActionClass.IRREVERSIBLE)
             await deletion.run()
             self.assertIsNone(self.repository.agent_message(
@@ -119,7 +119,7 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
                 "file_message_id": 77, "file_name": "result.txt",
             })
             self.assertEqual(result["status"], "confirmation_required")
-            await self.context.state.command_proposals.pop().run()
+            await self.context.state.proposed_changes.pop().run()
             sent_file = self.channel.send.await_args.kwargs["file"]
             self.assertEqual(sent_file.filename, "result.txt")
             refused = await prepare_post(self.context, {
@@ -130,7 +130,7 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_post_can_use_a_thread_created_by_an_earlier_action(self):
         reference = {"step": "created", "path": ["thread_id"]}
-        self.context.state.command_proposals.append(PreparedAction(
+        self.context.state.proposed_changes.append(PreparedAction(
             "create_discord_thread", {},
             ChangePreview(("Create thread Planned in #place.",), AsyncMock(),
                           result_label="thread Planned"),
@@ -142,7 +142,7 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
                 "channel_id": reference, "text": "Opening message",
             })
         self.assertEqual(result["status"], "confirmation_required")
-        pending = self.context.state.command_proposals.pop()
+        pending = self.context.state.proposed_changes.pop()
         self.assertIn("thread Planned", pending.preview.lines[0])
         self.assertNotIn("created", pending.preview.lines[0])
         bound = await pending.bind({"created": {"thread_id": 2}})

@@ -15,7 +15,7 @@ from elbow_helper.features.help.discovery import ParameterInfo
 
 from ...actions.contracts import ChangePreview
 from ...wording import ACTION_CONNECTIONS_BOARD_LABEL, ACTION_CONNECTIONS_BOARD_LINE
-from ...actions.outcomes import CommandOutcome, embed_text
+from ...actions.outcomes import ActionOutcome, embed_text
 from ...commands.registry import CommandAdapter
 
 
@@ -53,10 +53,10 @@ async def prepare_connections(context: Any, values: Mapping[str, Any]) -> Change
     ), recheck, summary=ACTION_CONNECTIONS_BOARD_LABEL)
 
 
-async def run_connections(context: Any, values: Mapping[str, Any]) -> CommandOutcome:
+async def run_connections(context: Any, values: Mapping[str, Any]) -> ActionOutcome:
     workflow, channel = await _target(context, values)
     message = await workflow.post_connections_message(channel)
-    return CommandOutcome(
+    return ActionOutcome(
         "complete", result={"message_id": message.id, "channel_id": channel.id},
         after={"message_id": message.id},
     )

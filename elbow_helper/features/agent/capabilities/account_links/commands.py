@@ -22,7 +22,7 @@ from ...wording import (
     ACTION_ACCOUNT_REMOVE_LINE,
     ACTION_UNDO_CHANGED,
 )
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...commands.registry import CommandAdapter
 
 
@@ -103,14 +103,14 @@ async def prepare_account_add(context: Any,
 
 
 async def run_account_add(context: Any,
-                          values: Mapping[str, Any]) -> CommandOutcome:
+                          values: Mapping[str, Any]) -> ActionOutcome:
     workflow = _workflow(context)
     member = await _member(context, values["member"])
     if member is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     result = await workflow.account_add_operation(member, values["tags"])
     if result["error"]:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     tags = [row["player_tag"] for row in result["rows"]]
     after = workflow.get_links_by_tags(tags)
     if any(
@@ -121,7 +121,7 @@ async def run_account_add(context: Any,
         for row in result["rows"]
     ):
         raise OSError("Account links could not be verified")
-    return CommandOutcome("complete", "private", text=result["message"],
+    return ActionOutcome("complete", "private", text=result["message"],
                           after={"links": after})
 
 
@@ -140,12 +140,12 @@ async def prepare_account_add_undo(context: Any,
         return (workflow.get_links_by_tags(tags) == expected
                 and workflow.account_board_refresh_available() == refresh_boards)
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         await workflow.restore_account_add(before)
         after = workflow.get_links_by_tags(tags)
         if after != before:
             raise OSError("Account link undo could not be verified")
-        return CommandOutcome("complete", "private", after={"links": after})
+        return ActionOutcome("complete", "private", after={"links": after})
 
     lines = []
     for tag, old in before.items():
@@ -172,13 +172,13 @@ async def prepare_account_add_undo(context: Any,
 
 
 async def prepare_account_remove(context: Any,
-                                 values: Mapping[str, Any]) -> ChangePreview | CommandOutcome:
+                                 values: Mapping[str, Any]) -> ChangePreview | ActionOutcome:
     workflow = _workflow(context)
     prepared = await workflow.account_remove_operation(values["tags"], commit=False)
     if prepared["error"]:
         raise ValueError(prepared["error"])
     if not prepared["tags_to_remove"]:
-        return CommandOutcome("complete", "private", text=prepared["message"])
+        return ActionOutcome("complete", "private", text=prepared["message"])
     lines = [ACTION_ACCOUNT_REMOVE_LINE.format(
         tag=tag, member=f"<@{int(prepared['before'][tag]['discord_user_id'])}>",
     ) for tag in prepared["tags_to_remove"]]
@@ -203,15 +203,15 @@ async def prepare_account_remove(context: Any,
 
 
 async def run_account_remove(context: Any,
-                             values: Mapping[str, Any]) -> CommandOutcome:
+                             values: Mapping[str, Any]) -> ActionOutcome:
     workflow = _workflow(context)
     result = await workflow.account_remove_operation(values["tags"])
     if result["error"]:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     after = workflow.get_links_by_tags(result["tags_to_remove"])
     if any(after.values()):
         raise OSError("Account unlink could not be verified")
-    return CommandOutcome("complete", "private", text=result["message"],
+    return ActionOutcome("complete", "private", text=result["message"],
                           after={"links": after})
 
 

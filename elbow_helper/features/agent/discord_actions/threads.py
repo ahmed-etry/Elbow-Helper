@@ -14,7 +14,7 @@ from ..access import require_evidence_access
 from ..actions.contracts import (
     ActionClass, ChangePreview, PreparedAction, audit_reason, earlier_result_label,
 )
-from ..actions.outcomes import CommandOutcome
+from ..actions.outcomes import ActionOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
     ACTION_THREAD_ACTIONS, ACTION_THREAD_MEMBER_ADD, ACTION_THREAD_MEMBER_REMOVE,
@@ -42,7 +42,7 @@ def discord_thread_tools() -> tuple[RegisteredAgentTool, ...]:
                 "private": {"type": "boolean"},
                 "initial_message": {"type": "string", "minLength": 1, "maxLength": 2000},
             }, "required": ["parent_channel_id", "name"], "additionalProperties": False},
-        ), prepare_create_thread, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+        ), prepare_create_thread, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
                 entity_fields=(("parent_channel_id", "parent_discord_channel"),),
                 time_fields=(),
@@ -58,7 +58,7 @@ def discord_thread_tools() -> tuple[RegisteredAgentTool, ...]:
                 "operation": {"type": "string", "enum": list(THREAD_OPERATIONS)},
                 "name": {"type": "string", "minLength": 1, "maxLength": 100},
             }, "required": ["thread_id", "operation"], "additionalProperties": False},
-        ), prepare_update_thread, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+        ), prepare_update_thread, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
                 entity_fields=(("thread_id", "discord_channel"),),
                 time_fields=(),
@@ -76,7 +76,7 @@ def discord_thread_tools() -> tuple[RegisteredAgentTool, ...]:
                                "minItems": 1, "maxItems": 25, "uniqueItems": True},
             }, "required": ["thread_id", "operation", "member_ids"],
                "additionalProperties": False},
-        ), prepare_thread_members, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+        ), prepare_thread_members, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
                 entity_fields=(
                     ("thread_id", "discord_channel"),
@@ -140,7 +140,7 @@ async def prepare_create_thread(context: AgentRequestContext,
             return False
         return True
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         nonlocal created_id
         live_parent = await _parent(context, parent.id, private=private)
         if isinstance(live_parent, discord.ForumChannel):
@@ -157,7 +157,7 @@ async def prepare_create_thread(context: AgentRequestContext,
                 reason=audit_reason(context.member),
             )
         created_id = thread.id
-        return CommandOutcome(
+        return ActionOutcome(
             "complete",
             after={"thread_id": thread.id},
             result={"thread_id": thread.id, "channel_id": thread.id},
@@ -175,7 +175,7 @@ async def prepare_create_thread(context: AgentRequestContext,
     lines = (ACTION_THREAD_CREATE_LINE.format(name=name, channel=parent.mention),)
     if initial:
         lines += tuple(initial.splitlines())
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "create_discord_thread", dict(arguments),
         ChangePreview(lines, recheck, summary=ACTION_THREAD_CREATE_LABEL,
                       result_label=f"thread {name}"),
@@ -209,10 +209,10 @@ def _thread_update_action(context: AgentRequestContext, thread_id: int,
             return False
         return getattr(thread, field) == before
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         thread = await _thread(context, thread_id, fresh=True)
         await thread.edit(**{field: after}, reason=audit_reason(context.member))
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", after={field: after}, result={"thread_id": thread_id},
         )
 
@@ -248,7 +248,7 @@ async def prepare_update_thread(context: AgentRequestContext,
             return {"error": str(error), "prepared_count": 0}
         verb = ACTION_THREAD_ACTIONS[arguments["operation"]][0]
         try:
-            label = earlier_result_label(context.state.command_proposals, reference)
+            label = earlier_result_label(context.state.proposed_changes, reference)
         except ValueError as error:
             return {"error": str(error), "prepared_count": 0}
         async def bind(results: Mapping[str, Mapping[str, Any]]) -> PreparedAction:
@@ -263,9 +263,9 @@ async def prepare_update_thread(context: AgentRequestContext,
             )
         async def recheck() -> bool:
             return True
-        async def unavailable() -> CommandOutcome:
+        async def unavailable() -> ActionOutcome:
             raise RuntimeError("The earlier action result was not bound")
-        context.state.command_proposals.append(PreparedAction(
+        context.state.proposed_changes.append(PreparedAction(
             "update_discord_thread", dict(arguments),
             ChangePreview((ACTION_THREAD_UPDATE_LINE.format(
                 action=verb, thread=label, detail=detail,
@@ -284,7 +284,7 @@ async def prepare_update_thread(context: AgentRequestContext,
     before = getattr(thread, field)
     if before == after:
         return {"status": "no_change", "prepared_count": 0}
-    context.state.command_proposals.append(_thread_update_action(
+    context.state.proposed_changes.append(_thread_update_action(
         context, thread.id, field=field, before=before, after=after,
         operation=arguments["operation"], detail=detail,
     ))
@@ -327,7 +327,7 @@ def _thread_member_action(context: AgentRequestContext, thread_id: int,
             return False
         return (member_id in await _member_ids(thread)) == before
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         thread = await _thread(context, thread_id, fresh=True)
         member = await resolve_member(context.guild, member_id, fresh=True)
         check_member(member, context.guild.me)
@@ -336,7 +336,7 @@ def _thread_member_action(context: AgentRequestContext, thread_id: int,
                 await thread.add_user(member)
             else:
                 await thread.remove_user(member)
-        return CommandOutcome("complete",
+        return ActionOutcome("complete",
                               after={"has_member": add},
                               result={"thread_id": thread_id})
 
@@ -369,7 +369,7 @@ async def prepare_thread_members(context: AgentRequestContext,
     if isinstance(reference, Mapping) and set(reference) == {"step", "path"}:
         add = arguments["operation"] == "add"
         try:
-            label = earlier_result_label(context.state.command_proposals, reference)
+            label = earlier_result_label(context.state.proposed_changes, reference)
         except ValueError as error:
             return {"error": str(error), "prepared_count": 0}
         selected = []
@@ -394,11 +394,11 @@ async def prepare_thread_members(context: AgentRequestContext,
                 )
             async def recheck() -> bool:
                 return True
-            async def unavailable() -> CommandOutcome:
+            async def unavailable() -> ActionOutcome:
                 raise RuntimeError("The earlier action result was not bound")
             verb, _, relation = (ACTION_THREAD_MEMBER_ADD if add
                                  else ACTION_THREAD_MEMBER_REMOVE)
-            context.state.command_proposals.append(PreparedAction(
+            context.state.proposed_changes.append(PreparedAction(
                 "change_discord_thread_members",
                 {"thread_id": dict(reference), "member_id": member.id,
                  "operation": arguments["operation"]},
@@ -423,7 +423,7 @@ async def prepare_thread_members(context: AgentRequestContext,
     except DiscordActionRefused as error:
         return {"error": str(error), "prepared_count": 0}
     for member_id in selected:
-        context.state.command_proposals.append(_thread_member_action(
+        context.state.proposed_changes.append(_thread_member_action(
             context, thread.id, member_id, add=add, before=not add,
         ))
     return {"status": "confirmation_required" if selected else "no_change",

@@ -11,7 +11,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
     ACTION_CWL_PREP_REFRESH_LINE,
@@ -28,7 +28,7 @@ def cwl_prep_refresh_tools() -> tuple[RegisteredAgentTool, ...]:
             "clan_code": {"type": "string", "enum": list(DASHBOARD_THREADS)},
         }, "required": ["clan_code"], "additionalProperties": False},
     ), prepare_cwl_prep_refresh, AgentCapabilityEffect.COMMAND,
-        ActionClass.CHANGE, True,
+        ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("clan_code", "clan"),),
             time_fields=(),
@@ -55,13 +55,13 @@ async def prepare_cwl_prep_refresh(context: AgentRequestContext,
         except ValueError:
             return False
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         status, _ = await workflow.refresh_prep_dashboard(values["clan_code"])
         if status != "complete":
             raise ValueError("That CWL prep board couldn't be refreshed.")
-        return CommandOutcome("complete", "private", text=ACTION_CWL_PREP_REFRESH_LABEL)
+        return ActionOutcome("complete", "private", text=ACTION_CWL_PREP_REFRESH_LABEL)
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "refresh_cwl_prep_board", dict(values),
         ChangePreview(lines, recheck, summary=ACTION_CWL_PREP_REFRESH_LABEL),
         run, action_class=ActionClass.CHANGE,

@@ -39,7 +39,7 @@ class RoleConnectionScanTests(unittest.IsolatedAsyncioTestCase):
                    new_callable=AsyncMock):
             result = await prepare_role_connection_scan(context, {})
         self.assertEqual(result["prepared_count"], 1)
-        action = context.state.command_proposals[0]
+        action = context.state.proposed_changes[0]
         self.assertIn("<@4>", action.preview.lines[0])
         workflow.apply_role_connection_change.assert_not_awaited()
         with patch("elbow_helper.features.agent.capabilities.role_connections.scan.resolve_member",

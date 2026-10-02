@@ -24,7 +24,7 @@ from ..wording import (
     AGENT_ANSWER_UNFINISHED,
     AGENT_PLAN_UNFINISHED,
     AGENT_RESEARCH_UNFINISHED,
-    COMMAND_UNAVAILABLE,
+    ACTION_UNAVAILABLE,
 )
 from . import budgets as limits
 from .rounds import AgentGracefulEnd, ModelRounds
@@ -123,9 +123,9 @@ class AnswerFlow:
 
     async def _result_response(self, results: Mapping[str, Any]) -> str | None:
         state = self.context.state
-        if any(item.status == "needs_input" for item in state.command_outcomes):
-            state.command_proposals.clear()
-            missing = [item for item in state.command_outcomes if item.status == "needs_input"]
+        if any(item.status == "needs_input" for item in state.outcomes):
+            state.proposed_changes.clear()
+            missing = [item for item in state.outcomes if item.status == "needs_input"]
             options = list(
                 {
                     option["name"]: option for item in missing for option in item.missing_options
@@ -168,18 +168,18 @@ class AnswerFlow:
                 ActionClass.IRREVERSIBLE,
             )
         )
-        if expected and len(state.command_proposals) != expected:
-            state.command_proposals.clear()
-            return COMMAND_UNAVAILABLE
-        if state.command_proposals:
-            response = preview_text(state.command_proposals)
-            if state.command_outcomes:
-                response += "\n\n" + command_reply(state.command_outcomes)
+        if expected and len(state.proposed_changes) != expected:
+            state.proposed_changes.clear()
+            return ACTION_UNAVAILABLE
+        if state.proposed_changes:
+            response = preview_text(state.proposed_changes)
+            if state.outcomes:
+                response += "\n\n" + command_reply(state.outcomes)
             await require_disclosure_access(self.context)
             return response
-        if state.command_outcomes:
+        if state.outcomes:
             await require_disclosure_access(self.context)
-            return command_reply(state.command_outcomes)
+            return command_reply(state.outcomes)
         return None
 
     async def _answer_round(self, results: Mapping[str, Any]) -> tuple[str | None, Any]:

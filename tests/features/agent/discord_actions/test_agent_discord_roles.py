@@ -56,7 +56,7 @@ class DiscordRoleActionTests(unittest.IsolatedAsyncioTestCase):
                 context, {"role_id": role.id, "member_ids": [4, 5]},
             )
             self.assertEqual(result["prepared_count"], 1)
-            action = context.state.command_proposals[0]
+            action = context.state.proposed_changes[0]
             self.assertIn("@member4", action.preview.lines[0])
             self.assertTrue(await action.preview.recheck())
             outcome = await action.run()
@@ -72,7 +72,7 @@ class DiscordRoleActionTests(unittest.IsolatedAsyncioTestCase):
               patch("elbow_helper.features.agent.discord_actions.roles.managed_role_commands",
                     new_callable=AsyncMock, return_value={})):
             await prepare_add_roles(context, {"role_id": role.id, "member_ids": [4]})
-            action = context.state.command_proposals[0]
+            action = context.state.proposed_changes[0]
             outcome = await action.run()
             undo = await prepare_role_undo(context, {
                 "targets": action.values, "before": action.preview.before,
@@ -92,7 +92,7 @@ class DiscordRoleActionTests(unittest.IsolatedAsyncioTestCase):
                 context, {"role_id": role.id, "member_ids": [4, 5]},
             )
             self.assertEqual(result["prepared_count"], 1)
-            action = context.state.command_proposals[0]
+            action = context.state.proposed_changes[0]
             self.assertIn("@member5", action.preview.lines[0])
             await action.run()
             self.assertNotIn(role, members[5].roles)

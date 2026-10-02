@@ -12,7 +12,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ..engine.capability_contract import CapabilityContract
 from ..access import require_evidence_access
 from ..actions.contracts import ActionClass, ChangePreview, PreparedAction, audit_reason
-from ..actions.outcomes import CommandOutcome
+from ..actions.outcomes import ActionOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
     ACTION_PIN_ADD, ACTION_PIN_LABEL, ACTION_PIN_LINE,
@@ -38,7 +38,7 @@ def discord_message_control_tools() -> tuple[RegisteredAgentTool, ...]:
                 "emoji": {"type": "string", "minLength": 1, "maxLength": 100},
             }, "required": ["channel_id", "message_id", "operation", "emoji"],
                "additionalProperties": False},
-        ), prepare_reaction, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+        ), prepare_reaction, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
                 entity_fields=(
                     ("channel_id", "discord_channel"),
@@ -57,7 +57,7 @@ def discord_message_control_tools() -> tuple[RegisteredAgentTool, ...]:
                 "operation": {"type": "string", "enum": ["pin", "unpin"]},
             }, "required": ["channel_id", "message_id", "operation"],
                "additionalProperties": False},
-        ), prepare_pin, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+        ), prepare_pin, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
                 entity_fields=(
                     ("channel_id", "discord_channel"),
@@ -106,7 +106,7 @@ def _control_action(context: AgentRequestContext, *, channel_id: int,
             return False
         return active == before
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         _, message, active = await current()
         if active != add:
             if reaction:
@@ -118,7 +118,7 @@ def _control_action(context: AgentRequestContext, *, channel_id: int,
                 await message.pin(reason=audit_reason(context.member))
             else:
                 await message.unpin(reason=audit_reason(context.member))
-        return CommandOutcome("complete", after={"active": add},
+        return ActionOutcome("complete", after={"active": add},
                               result={"message_id": message_id, "channel_id": channel_id})
 
     async def verify() -> bool:
@@ -160,7 +160,7 @@ async def _prepare(context: AgentRequestContext, arguments: Mapping[str, Any],
     before = _reaction_active(message, emoji) if kind == "reaction" else message.pinned
     if before == add:
         return {"status": "no_change", "prepared_count": 0}
-    context.state.command_proposals.append(_control_action(
+    context.state.proposed_changes.append(_control_action(
         context, channel_id=arguments["channel_id"], message_id=message.id,
         kind=kind, add=add, before=before, emoji=emoji,
         label_message=message.jump_url,

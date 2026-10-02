@@ -10,7 +10,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
     ACTION_TRANSFER_CLEAR_LINE,
@@ -29,7 +29,7 @@ def transfer_management_tools() -> tuple[RegisteredAgentTool, ...]:
             "clan_code": {"type": "string"},
         }, "required": ["clan_code"], "additionalProperties": False},
     ), prepare_clear_transfer_queue, AgentCapabilityEffect.COMMAND,
-        ActionClass.IRREVERSIBLE, True,
+        ActionClass.IRREVERSIBLE,
         contract=CapabilityContract(
             entity_fields=(("clan_code", "clan"),),
             time_fields=(),
@@ -62,11 +62,11 @@ async def prepare_clear_transfer_queue(context: AgentRequestContext,
     async def recheck() -> bool:
         return workflow.transfer_queue_clear_state(clan_code) == state
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         text = await workflow.clear_transfer_queue(clan_code)
-        return CommandOutcome("complete", "private", text=text)
+        return ActionOutcome("complete", "private", text=text)
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "clear_transfer_queue", {"clan_code": clan_code},
         ChangePreview(tuple(lines), recheck, summary=ACTION_TRANSFER_CLEAR_LABEL),
         run, action_class=ActionClass.IRREVERSIBLE,

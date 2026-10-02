@@ -16,7 +16,7 @@ from elbow_helper.features.rosters.config import (
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
     ACTION_ROSTER_CONTROL_LINE,
@@ -100,7 +100,7 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
             "roster_id": {"type": "integer", "minimum": 1},
             "operation": {"type": "string", "enum": ["open", "close", "show", "hide"]},
         }, "required": ["roster_id", "operation"], "additionalProperties": False},
-    ), prepare_state, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+    ), prepare_state, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("roster_id", "roster"),),
             time_fields=(),
@@ -115,14 +115,14 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
     tools.append(RegisteredAgentTool(
         AgentToolDefinition(name=name, description="Clear a roster's signups after confirmation.",
                             parameters=schema),
-        prepare_clear, AgentCapabilityEffect.COMMAND, classification, True,
+        prepare_clear, AgentCapabilityEffect.COMMAND, classification,
                             contract=TOOL_CONTRACTS[name],
     ))
     tools.append(RegisteredAgentTool(AgentToolDefinition(
         name="refresh_roster",
         description="Refresh a roster's account details, signup roles and post after confirmation.",
         parameters=schema,
-    ), prepare_roster_refresh, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+    ), prepare_roster_refresh, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("roster_id", "roster"),),
             time_fields=(),
@@ -142,7 +142,7 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
             "discord_width": {"type": "integer", "minimum": ROSTER_DISCORD_COLUMN_MIN_WIDTH,
                               "maximum": ROSTER_DISCORD_COLUMN_MAX_WIDTH},
         }, "required": ["roster_id"], "additionalProperties": False},
-    ), prepare_roster_layout, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+    ), prepare_roster_layout, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("roster_id", "roster"),),
             time_fields=(),
@@ -198,13 +198,13 @@ async def prepare_roster_refresh(context: AgentRequestContext,
             return False
         return True
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         status = await workflow.refresh_roster(roster_id)
         if status != "complete":
             raise ValueError("That roster couldn't be refreshed.")
-        return CommandOutcome("complete", "private", text=ACTION_ROSTER_REFRESH_LABEL)
+        return ActionOutcome("complete", "private", text=ACTION_ROSTER_REFRESH_LABEL)
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "refresh_roster", dict(values),
         ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_REFRESH_LABEL),
         run, action_class=ActionClass.CHANGE,
@@ -248,15 +248,15 @@ async def prepare_roster_layout(context: AgentRequestContext,
             return False
         return True
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         updated, result = await workflow.set_roster_layout(roster_id, **changes)
         if updated is None:
             raise ValueError('That roster is unavailable.')
-        return CommandOutcome("complete", "private",
+        return ActionOutcome("complete", "private",
                               text=ACTION_ROSTER_LAYOUT_LINE.format(name=updated.name),
                               after={"layout": asdict(result)})
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "set_roster_layout", {"roster_id": roster_id},
         ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_LAYOUT_LABEL,
                       before={"layout": before}), run,
@@ -293,11 +293,11 @@ async def prepare_roster_layout_undo(context: AgentRequestContext,
             return False
         return True
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         updated, result = await workflow.set_roster_layout(roster_id, **prior)
         if updated is None:
             raise ValueError('That roster is unavailable.')
-        return CommandOutcome("complete", "private",
+        return ActionOutcome("complete", "private",
                               text=ACTION_ROSTER_LAYOUT_LINE.format(name=updated.name),
                               after={"layout": asdict(result)})
 
@@ -359,15 +359,15 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
             return False
         return True
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         if operation == "clear":
             result = await workflow.clear_roster_signups(roster_id)
             text = result.message
         else:
             text = await workflow.change_roster_management(roster_id, operation)
-        return CommandOutcome("complete", "private", text=text)
+        return ActionOutcome("complete", "private", text=text)
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "clear_roster_signups" if operation == "clear" else "set_roster_state",
         {"roster_id": roster_id, **({"operation": values["operation"]}
                                   if operation != "clear" else {})},

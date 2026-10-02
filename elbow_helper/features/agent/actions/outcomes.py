@@ -9,11 +9,11 @@ from typing import Any, Mapping
 import discord
 
 from ..models import AgentAttachment
-from ..wording import COMMAND_EMPTY, COMMAND_PRIVATE_NOTE, COMMAND_UNAVAILABLE
+from ..wording import ACTION_EMPTY, ACTION_PRIVATE_NOTE, ACTION_UNAVAILABLE
 
 
 @dataclass(frozen=True, slots=True)
-class CommandOutcome:
+class ActionOutcome:
     status: str
     visibility: str = "public"
     text: str = ""
@@ -28,11 +28,11 @@ class CommandOutcome:
 
     @classmethod
     def needs_input(cls, descriptions: tuple[str, ...], *,
-                    options: tuple[Mapping[str, Any], ...] = ()) -> "CommandOutcome":
+                    options: tuple[Mapping[str, Any], ...] = ()) -> "ActionOutcome":
         return cls("needs_input", missing=descriptions, missing_options=options)
 
     @classmethod
-    def unavailable(cls) -> "CommandOutcome":
+    def unavailable(cls) -> "ActionOutcome":
         return cls("unavailable")
 
 
@@ -45,15 +45,15 @@ def embed_text(embed: discord.Embed) -> str:
     return "\n".join(parts)
 
 
-def command_reply(outcomes: list[CommandOutcome]) -> str:
+def command_reply(outcomes: list[ActionOutcome]) -> str:
     parts = [item.text for item in outcomes
              if item.status == "complete" and item.visibility == "public" and item.text]
     if any(item.visibility == "private" and (item.private_parts or item.attachments
                                               or item.private_panel)
            for item in outcomes):
-        parts.append(COMMAND_PRIVATE_NOTE)
+        parts.append(ACTION_PRIVATE_NOTE)
     if parts:
         return "\n\n".join(parts)
     if any(item.status == "empty" for item in outcomes):
-        return COMMAND_EMPTY
-    return COMMAND_UNAVAILABLE
+        return ACTION_EMPTY
+    return ACTION_UNAVAILABLE

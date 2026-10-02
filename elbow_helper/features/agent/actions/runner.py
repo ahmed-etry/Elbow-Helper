@@ -14,14 +14,14 @@ import discord
 
 from ..access import require_access
 from ..disclosure import require_disclosure_access
-from .outcomes import CommandOutcome
-from .private_view import PrivateCommandView
+from .outcomes import ActionOutcome
+from .private_view import PrivateResultView
 from ..text import chunk_response
 from ..wording import (
     ACTION_PREVIEW_UNIT_MANY, ACTION_PREVIEW_UNIT_ONE,
     ACTION_PROGRESS, ACTION_RUNNING,
-    ACTION_STOP_BUTTON, ACTION_STOP_OWNER, COMMAND_CONFIRM_FAILED,
-    ACTION_RUN_DONE, COMMAND_NO_CHANGES,
+    ACTION_STOP_BUTTON, ACTION_STOP_OWNER, ACTION_CONFIRM_FAILED,
+    ACTION_RUN_DONE, ACTION_NO_CHANGES,
 )
 from .contracts import ActionClass, PreparedAction, check_bundle
 from .store import AgentActionRepository
@@ -192,7 +192,7 @@ class AgentActionRunner:
                         raise ActionPreconditionChanged("Action precondition changed")
                     async with asyncio.timeout(ACTION_TIMEOUT_SECONDS):
                         result = await current_action.run()
-                    if not isinstance(result, CommandOutcome):
+                    if not isinstance(result, ActionOutcome):
                         raise TypeError("Action returned an invalid result")
                     if result.status != "complete":
                         raise ValueError("Action did not complete")
@@ -258,7 +258,7 @@ class AgentActionRunner:
             run = await asyncio.to_thread(self.repository.run, run_id)
             report = self._report(run)
             chunks = chunk_response(report) or [report]
-            private_view = (PrivateCommandView(context.member.id,
+            private_view = (PrivateResultView(context.member.id,
                                                tuple(private_parts), tuple(private_files))
                             if private_parts or private_files else None)
             reported = None
@@ -299,14 +299,14 @@ class AgentActionRunner:
             )):
             group = list(items)
             summaries.append(f"{group[0]['action_label']} ({len(group)})")
-        finished = ", ".join(summaries) or COMMAND_NO_CHANGES
+        finished = ", ".join(summaries) or ACTION_NO_CHANGES
         remaining = [line.strip() or "-" for step in run["steps"]
                      if step["status"] != "completed"
                      for item in json.loads(step["preview_json"])
                      for line in item.split("\n")]
         if not remaining:
             return ACTION_RUN_DONE.format(finished=finished)
-        return COMMAND_CONFIRM_FAILED.format(
+        return ACTION_CONFIRM_FAILED.format(
             finished=finished, remaining="\n".join(remaining),
         )
 

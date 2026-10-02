@@ -257,11 +257,11 @@ def merge_tool_state(
     target.state.authorized_instructions = local.state.authorized_instructions
     target.state.stale_knowledge_report_ids.update(local.state.stale_knowledge_report_ids)
     target.state.stale_knowledge_refs.update(local.state.stale_knowledge_refs)
-    target.state.command_outcomes.extend(
-        local.state.command_outcomes[len(previous["command_outcomes"]) :]
+    target.state.outcomes.extend(
+        local.state.outcomes[len(previous["outcomes"]) :]
     )
-    target.state.command_proposals.extend(
-        local.state.command_proposals[len(previous["command_proposals"]) :]
+    target.state.proposed_changes.extend(
+        local.state.proposed_changes[len(previous["proposed_changes"]) :]
     )
 
 

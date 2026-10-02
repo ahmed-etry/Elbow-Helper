@@ -12,8 +12,8 @@ from elbow_helper.features.clan_health.export import PreparedHealthExport
 from elbow_helper.features.help.discovery import ParameterInfo
 
 from ...models import AgentAttachment
-from ...wording import COMMAND_UNAVAILABLE
-from ...actions.outcomes import CommandOutcome
+from ...wording import ACTION_UNAVAILABLE
+from ...actions.outcomes import ActionOutcome
 from ...commands.registry import CommandAdapter
 
 
@@ -47,81 +47,81 @@ def _health_access(context: Any) -> bool:
     return allowed
 
 
-def _export_outcome(export: PreparedHealthExport) -> CommandOutcome:
+def _export_outcome(export: PreparedHealthExport) -> ActionOutcome:
     if export.google_link:
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", text=f"{export.workbook_title}\n{export.google_link}",
         )
-    return CommandOutcome(
+    return ActionOutcome(
         "complete", text="\n".join(export.summary_lines),
         attachments=(AgentAttachment(export.workbook_name, export.workbook_data or b""),),
     )
 
 
-async def run_health_player(context: Any, values: Mapping[str, Any]) -> CommandOutcome:
+async def run_health_player(context: Any, values: Mapping[str, Any]) -> ActionOutcome:
     if not values.get("account"):
-        return CommandOutcome.needs_input(("account",))
+        return ActionOutcome.needs_input(("account",))
     mode = values.get("period", "last_30d")
     if mode == "custom" and (not values.get("date_from") or not values.get("date_to")):
-        return CommandOutcome.needs_input(("start and end dates",))
+        return ActionOutcome.needs_input(("start and end dates",))
     if not _health_access(context):
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     workflow = context.bot.get_cog("ClanHealth")
     if workflow is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     result = await workflow.run_player_health_export(
         values["account"], mode=mode,
         date_from=values.get("date_from"), date_to=values.get("date_to"),
     )
     if result.status in {"invalid_account", "invalid_window"}:
-        return CommandOutcome.needs_input(("account" if result.status == "invalid_account"
+        return ActionOutcome.needs_input(("account" if result.status == "invalid_account"
                                            else result.issue or "period",))
     if result.status == "empty":
-        return CommandOutcome("empty")
+        return ActionOutcome("empty")
     if result.status != "complete" or result.export is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     return _export_outcome(result.export)
 
 
-async def run_health_clan(context: Any, values: Mapping[str, Any]) -> CommandOutcome:
+async def run_health_clan(context: Any, values: Mapping[str, Any]) -> ActionOutcome:
     mode = values.get("period", "last_30d")
     if mode == "custom" and (not values.get("date_from") or not values.get("date_to")):
-        return CommandOutcome.needs_input(("start and end dates",))
+        return ActionOutcome.needs_input(("start and end dates",))
     if not _health_access(context):
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     workflow = context.bot.get_cog("ClanHealth")
     if workflow is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     result = await workflow.run_clan_health_export(
         values["clan"], mode=mode,
         date_from=values.get("date_from"), date_to=values.get("date_to"),
     )
     if result.status == "invalid_window":
-        return CommandOutcome.needs_input((result.issue,))
+        return ActionOutcome.needs_input((result.issue,))
     if result.status == "invalid_clan":
-        return CommandOutcome.needs_input((result.issue,))
+        return ActionOutcome.needs_input((result.issue,))
     if result.status in {"not_configured", "empty", "unavailable"}:
-        return CommandOutcome("complete", text=result.issue)
+        return ActionOutcome("complete", text=result.issue)
     if result.status != "complete" or result.export is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     return _export_outcome(result.export)
 
 
-async def run_health_settings(context: Any, values: Mapping[str, Any]) -> CommandOutcome:
+async def run_health_settings(context: Any, values: Mapping[str, Any]) -> ActionOutcome:
     if not _health_access(context):
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     if context.bot.get_cog("ClanHealth") is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
 
     async def open_panel(interaction):
         if not has_access_requirements(
             context.guild, context.member.id, {ACCESS_LEAD_PLUS},
         ):
-            await interaction.response.send_message(COMMAND_UNAVAILABLE, ephemeral=True)
+            await interaction.response.send_message(ACTION_UNAVAILABLE, ephemeral=True)
             return
         await ClanConfigHomeView.open(interaction, values["clan"])
 
-    return CommandOutcome("complete", "private", private_panel=open_panel)
+    return ActionOutcome("complete", "private", private_panel=open_panel)
 
 
 def health_adapters() -> tuple[CommandAdapter, ...]:

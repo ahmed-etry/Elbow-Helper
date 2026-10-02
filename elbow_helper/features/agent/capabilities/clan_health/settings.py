@@ -17,7 +17,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
     ACTION_HEALTH_SETTINGS_LINE,
@@ -55,7 +55,7 @@ def clan_health_settings_tools() -> tuple[RegisteredAgentTool, ...]:
                        "minProperties": 1, "additionalProperties": False},
         }, "required": ["clan_code", "block", "values"], "additionalProperties": False},
     ), prepare_health_settings, AgentCapabilityEffect.COMMAND,
-        ActionClass.CHANGE, True,
+        ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("clan_code", "clan"),),
             time_fields=(),
@@ -113,14 +113,14 @@ async def prepare_health_settings(context: AgentRequestContext,
         except (RuntimeError, ValueError):
             return False
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         saved = save_player_config_block(
             clan, block, dict(values["values"]), context.member,
             expected_updated_at=revision)
-        return CommandOutcome("complete", "private", text=ACTION_HEALTH_SETTINGS_LABEL,
+        return ActionOutcome("complete", "private", text=ACTION_HEALTH_SETTINGS_LABEL,
                               after={"payload": saved[block]})
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "set_clan_health_settings", {"clan_code": clan, "block": block},
         ChangePreview(lines, recheck, summary=ACTION_HEALTH_SETTINGS_LABEL,
                       before={"payload": before[block]}), run,
@@ -144,10 +144,10 @@ async def prepare_health_settings_undo(context: AgentRequestContext,
         live, _, live_revision = prepare_player_config_block(clan, block, prior)
         return live[block] == expected and live_revision == revision
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         saved = save_player_config_block(clan, block, prior, context.member,
                                          expected_updated_at=revision)
-        return CommandOutcome("complete", "private", text=ACTION_HEALTH_SETTINGS_LABEL,
+        return ActionOutcome("complete", "private", text=ACTION_HEALTH_SETTINGS_LABEL,
                               after={"payload": saved[block]})
 
     return PreparedAction(

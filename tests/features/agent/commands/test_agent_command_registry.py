@@ -19,7 +19,7 @@ from elbow_helper.features.agent.capabilities import enabled_adapters
 from elbow_helper.features.agent.plan.format import capability_list, system_instructions
 from elbow_helper.features.agent.models import RegisteredAgentTool, AgentCapabilityEffect
 from elbow_helper.features.agent.models import AgentTurnState
-from elbow_helper.features.agent.actions.outcomes import CommandOutcome
+from elbow_helper.features.agent.actions.outcomes import ActionOutcome
 from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin
 from elbow_helper.features.clan_health.commands.health import ClanHealthRootCommandMixin
@@ -81,7 +81,7 @@ class CommandRegistryTests(unittest.TestCase):
         self.assertEqual(len(capability_list(registry).splitlines()), len(registry))
         self.assertTrue(all(" | class " in line for line in capability_list(registry).splitlines()))
         self.assertTrue(all(
-            tool.prepares_action for tool in registry.values()
+            tool.effect is AgentCapabilityEffect.COMMAND for tool in registry.values()
             if tool.action_class in (ActionClass.CHANGE, ActionClass.IRREVERSIBLE)
         ))
 
@@ -189,7 +189,7 @@ class ConfirmedCommandInputTests(unittest.IsolatedAsyncioTestCase):
         ))
         help_entry = SimpleNamespace(path=path, summary="Edit a target.",
                                      details="Changes its values.")
-        prepare = AsyncMock(return_value=CommandOutcome.needs_input((
+        prepare = AsyncMock(return_value=ActionOutcome.needs_input((
             "What should change?",
         )))
         adapter = CommandAdapter(path, "confirm", AsyncMock(), prepare=prepare)
@@ -202,8 +202,8 @@ class ConfirmedCommandInputTests(unittest.IsolatedAsyncioTestCase):
             context, {"target": 7},
         )
         self.assertEqual(result["status"], "needs_input")
-        self.assertEqual(context.state.command_proposals, [])
-        self.assertEqual(context.state.command_outcomes[0].missing,
+        self.assertEqual(context.state.proposed_changes, [])
+        self.assertEqual(context.state.outcomes[0].missing,
                          ("What should change?",))
-        self.assertEqual(context.state.command_outcomes[0].command_name,
+        self.assertEqual(context.state.outcomes[0].command_name,
                          "/synthetic edit")

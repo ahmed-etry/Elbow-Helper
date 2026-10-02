@@ -14,7 +14,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
 from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ..actions.outcomes import CommandOutcome
+from ..actions.outcomes import ActionOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
     ACTION_STANDING_DESTINATION, ACTION_STANDING_MANAGE,
@@ -290,7 +290,7 @@ async def prepare_save(context: AgentRequestContext,
         except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
             return False
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         if identifier:
             changed = repository.replace_standing(
                 kind=kind, identifier=identifier, requester_id=context.member.id,
@@ -306,10 +306,10 @@ async def prepare_save(context: AgentRequestContext,
                 next_at=times[0].timestamp(),
             )
         repository.set_member_timezone(context.member.id, zone)
-        return CommandOutcome("complete", "public",
+        return ActionOutcome("complete", "public",
                               text=ACTION_STANDING_SAVED.format(kind=kind))
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "save_standing_rule", rule,
         ChangePreview(lines, recheck, summary="Save standing rule"),
         run, action_class=ActionClass.CHANGE,
@@ -353,16 +353,16 @@ async def prepare_manage(context: AgentRequestContext,
         )
         return refreshed is not None and refreshed["status"] in applicable
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         if not repository.set_standing_status(kind=kind, identifier=identifier,
                                               requester_id=context.member.id, status=target):
             raise ValueError("That saved rule changed.")
-        return CommandOutcome("complete", "public",
+        return ActionOutcome("complete", "public",
                               text=ACTION_STANDING_MANAGED.format(
                                   kind=kind, result={"resume": "resumed", "pause": "paused",
                                                      "cancel": "cancelled"}[operation]))
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "manage_standing_rule", dict(values),
         ChangePreview((line,), recheck, summary="Manage standing rule"),
         run, action_class=ActionClass.CHANGE,
@@ -420,14 +420,14 @@ def standing_tools() -> tuple[RegisteredAgentTool, ...]:
     )
     return (
         RegisteredAgentTool(save, prepare_save, AgentCapabilityEffect.COMMAND,
-                            ActionClass.CHANGE, True,
+                            ActionClass.CHANGE,
             contract=TOOL_CONTRACTS[save.name],
         ),
         RegisteredAgentTool(listing, list_standing,
             contract=TOOL_CONTRACTS[listing.name],
         ),
         RegisteredAgentTool(manage, prepare_manage, AgentCapabilityEffect.COMMAND,
-                            ActionClass.CHANGE, True,
+                            ActionClass.CHANGE,
             contract=TOOL_CONTRACTS[manage.name],
         ),
     )

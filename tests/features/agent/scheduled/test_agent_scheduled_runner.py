@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.agent.actions.store import AgentActionRepository
 from elbow_helper.features.agent.actions.contracts import ChangePreview, PreparedAction
-from elbow_helper.features.agent.actions.outcomes import CommandOutcome
+from elbow_helper.features.agent.actions.outcomes import ActionOutcome
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin
 from elbow_helper.features.agent.models import AgentRequestContext, AgentTurnState
 from elbow_helper.features.agent.scheduled.runner import ScheduledRunner
@@ -371,8 +371,8 @@ class SavedRequestScopeTests(unittest.IsolatedAsyncioTestCase):
             run,
         )
         state = AgentTurnState(
-            command_outcomes=[
-                CommandOutcome("complete", "public", text="Roster posted."),
+            outcomes=[
+                ActionOutcome("complete", "public", text="Roster posted."),
             ]
         )
         context = AgentRequestContext(
@@ -388,7 +388,7 @@ class SavedRequestScopeTests(unittest.IsolatedAsyncioTestCase):
         service = SimpleNamespace(
             answer=AsyncMock(
                 side_effect=lambda **_: (
-                    state.command_proposals.append(proposal) or "Preview"
+                    state.proposed_changes.append(proposal) or "Preview"
                 )
             )
         )
@@ -420,7 +420,7 @@ class SavedRequestScopeTests(unittest.IsolatedAsyncioTestCase):
         agent.send_response.assert_awaited_once()
         self.assertEqual(agent.send_response.await_args.args[1], "Roster posted.")
         self.assertEqual(
-            agent.send_response.await_args.kwargs["context"].state.command_proposals, []
+            agent.send_response.await_args.kwargs["context"].state.proposed_changes, []
         )
 
     async def test_confirmed_scope_runs_without_a_second_confirmation(self):
@@ -437,7 +437,7 @@ class SavedRequestScopeTests(unittest.IsolatedAsyncioTestCase):
             run,
         )
         state = SimpleNamespace(
-            command_proposals=[], command_outcomes=[], attachments=[]
+            proposed_changes=[], outcomes=[], attachments=[]
         )
         context = SimpleNamespace(
             source_message=object(), state=state, member=SimpleNamespace(id=2)
@@ -445,7 +445,7 @@ class SavedRequestScopeTests(unittest.IsolatedAsyncioTestCase):
         service = SimpleNamespace(
             answer=AsyncMock(
                 side_effect=lambda **_: (
-                    state.command_proposals.append(proposal) or "Preview"
+                    state.proposed_changes.append(proposal) or "Preview"
                 )
             )
         )
@@ -491,7 +491,7 @@ class SavedRequestScopeTests(unittest.IsolatedAsyncioTestCase):
             run,
         )
         state = SimpleNamespace(
-            command_proposals=[], command_outcomes=[], attachments=[]
+            proposed_changes=[], outcomes=[], attachments=[]
         )
         context = SimpleNamespace(
             source_message=object(), state=state, member=SimpleNamespace(id=2)
@@ -499,7 +499,7 @@ class SavedRequestScopeTests(unittest.IsolatedAsyncioTestCase):
         service = SimpleNamespace(
             answer=AsyncMock(
                 side_effect=lambda **_: (
-                    state.command_proposals.append(proposal) or "Preview"
+                    state.proposed_changes.append(proposal) or "Preview"
                 )
             )
         )

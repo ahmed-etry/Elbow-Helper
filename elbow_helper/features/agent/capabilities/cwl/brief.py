@@ -9,7 +9,7 @@ from elbow_helper.features.agent.discord_actions.safety import check_post_access
 
 from ...actions.contracts import ChangePreview
 from ...wording import ACTION_CWL_BRIEF_LABEL, ACTION_CWL_BRIEF_LINE
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...commands.registry import CommandAdapter
 
 
@@ -43,10 +43,10 @@ async def prepare_cwl_brief(context: Any, values: Mapping[str, Any]) -> ChangePr
     ), recheck, summary=ACTION_CWL_BRIEF_LABEL)
 
 
-async def run_cwl_brief(context: Any, values: Mapping[str, Any]) -> CommandOutcome:
+async def run_cwl_brief(context: Any, values: Mapping[str, Any]) -> ActionOutcome:
     workflow, brief = await _brief(context, values)
     await workflow.post_cwl_brief(brief)
-    return CommandOutcome("complete", result={"channel_id": brief.channel.id})
+    return ActionOutcome("complete", result={"channel_id": brief.channel.id})
 
 
 def cwl_brief_adapters() -> tuple[CommandAdapter, ...]:

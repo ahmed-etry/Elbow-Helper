@@ -38,7 +38,7 @@ from ...wording import (
     ACTION_RAFFLE_CURRENT_MONTH,
     ACTION_RAFFLE_NO_PRIZE,
 )
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...commands.registry import CommandAdapter
 from .commands import achievement_workflow
 
@@ -69,14 +69,14 @@ async def prepare_raffle_clear(context: Any,
 
 
 async def run_raffle_clear(context: Any,
-                           values: Mapping[str, Any]) -> CommandOutcome:
+                           values: Mapping[str, Any]) -> ActionOutcome:
     workflow = achievement_workflow(context)
     clear_tickets = bool(values.get("clear_tickets", False))
     message = await workflow.clear_raffle(clear_tickets)
     after = await workflow.raffle_clear_state()
     if after["winners"] or (clear_tickets and after["tickets"]):
         raise OSError("Raffle clear could not be verified")
-    return CommandOutcome("complete", "private", text=message,
+    return ActionOutcome("complete", "private", text=message,
                           after={"raffle_state": after})
 
 
@@ -161,7 +161,7 @@ async def prepare_raffle_reroll(context: Any,
 
 
 async def _run_draw(context: Any, values: Mapping[str, Any], *,
-                    reroll: bool) -> CommandOutcome:
+                    reroll: bool) -> ActionOutcome:
     workflow, channel, state = await _draw_state(context, values, reroll=reroll)
     mentions = discord.AllowedMentions(users=True, roles=False, everyone=False)
     if reroll:
@@ -177,23 +177,23 @@ async def _run_draw(context: Any, values: Mapping[str, Any], *,
             context.guild.id, state["month_key"], post,
         )
     if not ok:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     after = await workflow.raffle_draw_state(context.guild.id, state["month_key"])
     if (not after["active_winners"] or
             (not reroll and len(after["winners"]) != state["winners_count"])):
         raise OSError("Raffle draw could not be verified")
-    return CommandOutcome("complete", result={"channel_id": channel.id,
+    return ActionOutcome("complete", result={"channel_id": channel.id,
                                                "winners": after["active_winners"]},
                           after={"raffle_state": after})
 
 
 async def run_raffle_draw(context: Any,
-                          values: Mapping[str, Any]) -> CommandOutcome:
+                          values: Mapping[str, Any]) -> ActionOutcome:
     return await _run_draw(context, values, reroll=False)
 
 
 async def run_raffle_reroll(context: Any,
-                            values: Mapping[str, Any]) -> CommandOutcome:
+                            values: Mapping[str, Any]) -> ActionOutcome:
     return await _run_draw(context, values, reroll=True)
 
 
@@ -229,7 +229,7 @@ async def prepare_raffle_prize(context: Any,
 
 
 async def run_raffle_prize(context: Any,
-                           values: Mapping[str, Any]) -> CommandOutcome:
+                           values: Mapping[str, Any]) -> ActionOutcome:
     workflow = achievement_workflow(context)
     prize = values["prize"].strip()
     winners = int(values.get("winners", 1))
@@ -237,7 +237,7 @@ async def run_raffle_prize(context: Any,
     month_key, saved_prize, saved_winners = await workflow.raffle_prize_state()
     if saved_prize != prize or saved_winners != str(winners):
         raise OSError("Raffle prize change could not be verified")
-    return CommandOutcome(
+    return ActionOutcome(
         "complete", "private", text=message,
         after={"month_key": month_key, "prize": saved_prize,
                "winners": saved_winners},
@@ -257,14 +257,14 @@ async def prepare_raffle_prize_undo(context: Any,
     async def recheck() -> bool:
         return await workflow.raffle_prize_state() == expected
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         await workflow.restore_raffle_prize(
             before["month_key"], before["prize"], before["winners"],
         )
         restored = await workflow.raffle_prize_state()
         if restored != (before["month_key"], before["prize"], before["winners"]):
             raise OSError("Raffle prize undo could not be verified")
-        return CommandOutcome("complete", after={"restored": True})
+        return ActionOutcome("complete", after={"restored": True})
 
     return PreparedAction(
         "undo_raffle_prize", {"month_key": before["month_key"]},

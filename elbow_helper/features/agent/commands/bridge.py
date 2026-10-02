@@ -9,8 +9,8 @@ from typing import Any
 from elbow_helper.domain.player_tags import normalize_player_tag
 
 from ..models import AgentCapabilityEffect, RegisteredAgentTool
-from ..actions.outcomes import CommandOutcome, command_reply
-from ..actions.preview import ChangePreview, PreparedCommand
+from ..actions.outcomes import ActionOutcome, command_reply
+from ..actions.contracts import ChangePreview, PreparedAction
 from .registry import (
     CommandAdapter, CommandCapability, PreparedCommandChange,
     build_command_capabilities,
@@ -36,8 +36,8 @@ def _option_data(option: Any) -> dict[str, Any]:
     }
 
 
-def _with_option_data(outcome: CommandOutcome, selected: CommandCapability,
-                      values: Mapping[str, Any]) -> CommandOutcome:
+def _with_option_data(outcome: ActionOutcome, selected: CommandCapability,
+                      values: Mapping[str, Any]) -> ActionOutcome:
     if outcome.status != "needs_input" or outcome.missing_options:
         return outcome
     return replace(outcome, missing_options=tuple(
@@ -46,8 +46,8 @@ def _with_option_data(outcome: CommandOutcome, selected: CommandCapability,
     ))
 
 
-def _record_outcome(context: Any, outcome: CommandOutcome,
-                    command_name: str) -> CommandOutcome:
+def _record_outcome(context: Any, outcome: ActionOutcome,
+                    command_name: str) -> ActionOutcome:
     outcome = replace(outcome, command_name=command_name)
     if outcome.visibility == "private" and outcome.text:
         outcome = replace(outcome, text="",
@@ -55,7 +55,7 @@ def _record_outcome(context: Any, outcome: CommandOutcome,
     if (outcome.visibility == "private" and not outcome.private_parts
             and not outcome.attachments and outcome.private_panel is None):
         outcome = replace(outcome, private_parts=(command_reply([outcome]),))
-    context.state.command_outcomes.append(outcome)
+    context.state.outcomes.append(outcome)
     if outcome.visibility == "public":
         context.state.attachments.extend(outcome.attachments)
     return outcome
@@ -79,7 +79,7 @@ def build_command_tools(
                 if selected.adapter.prepare is None:
                     raise ValueError("Confirmed command needs a preview function")
                 preview = await selected.adapter.prepare(context, values)
-                if isinstance(preview, CommandOutcome):
+                if isinstance(preview, ActionOutcome):
                     outcome = _record_outcome(
                         context, _with_option_data(preview, selected, values), selected.adapter.path,
                     )
@@ -91,18 +91,18 @@ def build_command_tools(
                     preview = preview.preview
                 if not isinstance(preview, ChangePreview):
                     raise TypeError("Command preview is invalid")
-                prepared = PreparedCommand(
+                prepared = PreparedAction(
                     selected.adapter.path, dict(values), preview,
                     prepared_run,
                     action_class=selected.adapter.classification,
                 )
-                context.state.command_proposals.append(prepared)
+                context.state.proposed_changes.append(prepared)
                 return {"command": selected.adapter.path, "status": "confirmation_required"}
-            outcome = (CommandOutcome.needs_input(
+            outcome = (ActionOutcome.needs_input(
                 missing, options=tuple(_option_data(option) for option in missing_options),
             ) if missing
                        else await selected.adapter.run(context, values))
-            if not isinstance(outcome, CommandOutcome):
+            if not isinstance(outcome, ActionOutcome):
                 raise TypeError("Command adapter returned an invalid result")
             outcome = _with_option_data(outcome, selected, values)
             outcome = _record_outcome(context, outcome, selected.adapter.path)
@@ -111,7 +111,6 @@ def build_command_tools(
         tools[name] = RegisteredAgentTool(
             capability.definition, handle, AgentCapabilityEffect.COMMAND,
             capability.adapter.classification,
-            capability.adapter.delivery == "confirm",
         )
     return tools, capabilities
 

@@ -19,7 +19,7 @@ from ...wording import (
     ACTION_PLAN_STRATEGY,
     ACTION_PREVIEW_BLANK,
 )
-from ...actions.outcomes import CommandOutcome, embed_text
+from ...actions.outcomes import ActionOutcome, embed_text
 from ...commands.registry import CommandAdapter, PreparedCommandChange
 
 
@@ -72,7 +72,7 @@ async def prepare_attack_plan(context: Any,
                     player_tag, strategy_image, base_image,
                 )[1] is None)
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         async def send(**kwargs):
             return await channel.send(
                 **kwargs,
@@ -82,7 +82,7 @@ async def prepare_attack_plan(context: Any,
             )
 
         message = await workflow.post_attack_plan(prepared, send)
-        return CommandOutcome("complete", result={
+        return ActionOutcome("complete", result={
             "channel_id": channel.id, "message_id": message.id,
         }, after={"channel_id": channel.id, "message_id": message.id})
 
@@ -92,7 +92,7 @@ async def prepare_attack_plan(context: Any,
 
 
 async def run_attack_plan(context: Any,
-                          values: Mapping[str, Any]) -> CommandOutcome:
+                          values: Mapping[str, Any]) -> ActionOutcome:
     return await (await prepare_attack_plan(context, values)).run()
 
 

@@ -11,7 +11,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ...actions.outcomes import CommandOutcome, embed_text
+from ...actions.outcomes import ActionOutcome, embed_text
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
     ACTION_EVENT_MANAGE_CATEGORY,
@@ -98,7 +98,7 @@ def event_management_tools() -> tuple[RegisteredAgentTool, ...]:
                 "event": {"type": "string", "minLength": 1}, **extra,
             }, "required": ["event", *(list(extra) if name == "set_event_enabled" else [])],
                 "additionalProperties": False},
-        ), prepare, AgentCapabilityEffect.COMMAND, classification, True,
+        ), prepare, AgentCapabilityEffect.COMMAND, classification,
             contract=TOOL_CONTRACTS[name],
         ))
     form_fields = {
@@ -122,7 +122,7 @@ def event_management_tools() -> tuple[RegisteredAgentTool, ...]:
             }, "required": [*(["event"] if operation == "edit" else []),
                              "name", "start", "end", "timezone"],
                 "additionalProperties": False},
-        ), prepare, AgentCapabilityEffect.COMMAND, classification, True,
+        ), prepare, AgentCapabilityEffect.COMMAND, classification,
             contract=TOOL_CONTRACTS[name],
         ))
     tools.append(RegisteredAgentTool(AgentToolDefinition(
@@ -132,7 +132,7 @@ def event_management_tools() -> tuple[RegisteredAgentTool, ...]:
             "event": {"type": "string"}, "name": {"type": "string", "minLength": 1},
             "grace_hours": {"type": "integer", "minimum": 0},
         }, "required": ["event", "name"], "additionalProperties": False},
-    ), _prepare_preset, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+    ), _prepare_preset, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("event", "event_tracker"),),
             time_fields=(),
@@ -144,7 +144,7 @@ def event_management_tools() -> tuple[RegisteredAgentTool, ...]:
         name="refresh_event_trackers",
         description="Refresh all event tracker voice channels after confirmation.",
         parameters={"type": "object", "properties": {}, "additionalProperties": False},
-    ), prepare_event_refresh, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+    ), prepare_event_refresh, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(),
             time_fields=(),
@@ -174,11 +174,11 @@ async def prepare_event_refresh(context: AgentRequestContext,
         return (workflow.can_manage_event_trackers(context.member)
                 and workflow.event_refresh_snapshot() == snapshot)
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         await workflow.force_refresh(context.guild)
-        return CommandOutcome("complete", "private", text=ACTION_EVENT_REFRESH_LABEL)
+        return ActionOutcome("complete", "private", text=ACTION_EVENT_REFRESH_LABEL)
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "refresh_event_trackers", {},
         ChangePreview(tuple(lines), recheck, summary=ACTION_EVENT_REFRESH_LABEL),
         run, action_class=ActionClass.CHANGE,
@@ -221,7 +221,7 @@ async def _prepare_form(context: AgentRequestContext, values: Mapping[str, Any],
             return True
         return workflow.event_management_state(before["key"]) == current
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         if current is None:
             key = workflow.create_one_time_event(**prepared)
         else:
@@ -229,10 +229,10 @@ async def _prepare_form(context: AgentRequestContext, values: Mapping[str, Any],
             if not workflow.update_one_time_event(key, **prepared):
                 raise ValueError('That event tracker is unavailable.')
         await workflow.force_refresh(context.guild)
-        return CommandOutcome("complete", "private",
+        return ActionOutcome("complete", "private",
                               text=embed_text(workflow.build_event_detail_embed(context.guild, key)))
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "create_event_tracker" if current is None else "edit_event_tracker",
         {"event": before.get("key"), "name": prepared["name"]},
         ChangePreview(tuple(lines), recheck, summary=ACTION_EVENT_FORM_LABEL),
@@ -267,14 +267,14 @@ async def _prepare_preset(context: AgentRequestContext,
     async def recheck() -> bool:
         return workflow.event_management_state(event["key"]) == current
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         if not workflow.update_preset_event(event["key"], name=name, grace_hours=grace):
             raise ValueError('That event tracker is unavailable.')
         await workflow.force_refresh(context.guild)
-        return CommandOutcome("complete", "private", text=embed_text(
+        return ActionOutcome("complete", "private", text=embed_text(
             workflow.build_event_detail_embed(context.guild, event["key"])))
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "edit_preset_event", {"event": event["key"]},
         ChangePreview(tuple(lines), recheck, summary=ACTION_EVENT_FORM_LABEL),
         run,
@@ -343,7 +343,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         live = workflow.event_management_state(key)
         return live is not None and live == state
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         if operation == "set_event_enabled":
             ok = workflow.toggle_event(key)
         elif operation == "set_event_category":
@@ -357,10 +357,10 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         if not ok:
             raise ValueError('That event tracker is unavailable.')
         await workflow.force_refresh(context.guild)
-        return CommandOutcome("complete", "private", text=(
+        return ActionOutcome("complete", "private", text=(
             message if operation == "delete_event" else lines[0]))
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         operation, {"event": key},
         ChangePreview(tuple(lines), recheck, summary=ACTION_EVENT_MANAGE_LABEL),
         run, action_class=classification,

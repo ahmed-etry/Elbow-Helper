@@ -17,7 +17,7 @@ from ..access import require_evidence_access
 from ..actions.contracts import (
     ActionClass, ChangePreview, PreparedAction, earlier_result_label,
 )
-from ..actions.outcomes import CommandOutcome
+from ..actions.outcomes import ActionOutcome
 from ..text import chunk_response
 from ..models import AgentAttachment, AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
@@ -68,7 +68,7 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
                 "file_name": {"type": "string", "minLength": 1, "maxLength": 255},
                 "file_message_id": {"type": "integer", "minimum": 1},
             }, "required": ["channel_id", "text"], "additionalProperties": False},
-        ), prepare_post, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+        ), prepare_post, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
                 entity_fields=(
                     ("channel_id", "discord_channel"),
@@ -89,7 +89,7 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
                 **_content_options(),
             }, "required": ["channel_id", "message_id", "text"],
                "additionalProperties": False},
-        ), prepare_edit, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+        ), prepare_edit, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
                 entity_fields=(
                     ("channel_id", "discord_channel"),
@@ -109,7 +109,7 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
                 "message_id": {"type": "integer", "minimum": 1},
             }, "required": ["channel_id", "message_id"],
                "additionalProperties": False},
-        ), prepare_delete, AgentCapabilityEffect.COMMAND, ActionClass.IRREVERSIBLE, True,
+        ), prepare_delete, AgentCapabilityEffect.COMMAND, ActionClass.IRREVERSIBLE,
             contract=CapabilityContract(
                 entity_fields=(
                     ("channel_id", "discord_channel"),
@@ -254,13 +254,13 @@ async def prepare_post(context: AgentRequestContext,
         return {"error": "The message has no text.", "prepared_count": 0}
     if deferred:
         try:
-            target_label = earlier_result_label(context.state.command_proposals, channel_value)
+            target_label = earlier_result_label(context.state.proposed_changes, channel_value)
         except ValueError as error:
             return {"error": str(error), "prepared_count": 0}
     await require_evidence_access(context)
     for index, chunk in enumerate(chunks):
         make = _deferred_post_part if deferred else _post_part
-        context.state.command_proposals.append(make(
+        context.state.proposed_changes.append(make(
             context, channel_value if deferred else channel.id, chunk, mentions,
             attachment=attachment if index == 0 else None,
             ping_line=_ping_line(context, arguments),
@@ -277,7 +277,7 @@ def _deferred_post_part(context: AgentRequestContext, reference: Mapping[str, An
     async def recheck() -> bool:
         return True
 
-    async def unavailable() -> CommandOutcome:
+    async def unavailable() -> ActionOutcome:
         raise RuntimeError("The earlier action result was not bound")
 
     async def bind(results: Mapping[str, Mapping[str, Any]]) -> PreparedAction:
@@ -323,7 +323,7 @@ def _post_part(context: AgentRequestContext, channel_id: int, text: str,
             channel_id=channel_id, requester_id=context.member.id,
         )
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         nonlocal sent_id
         channel = await _channel_for_post(context, channel_id)
         options = {"allowed_mentions": mentions, "nonce": nonce}
@@ -345,7 +345,7 @@ def _post_part(context: AgentRequestContext, channel_id: int, text: str,
         finally:
             if file is not None:
                 file.close()
-        return CommandOutcome(
+        return ActionOutcome(
             "complete",
             after={"message_id": sent_id},
             result={"message_id": sent_id, "channel_id": channel_id},
@@ -405,7 +405,7 @@ async def prepare_edit(context: AgentRequestContext,
     if len(arguments["text"]) > 2000:
         return {"error": "One edited message must fit Discord's message limit.",
                 "prepared_count": 0}
-    context.state.command_proposals.append(_edit_action(
+    context.state.proposed_changes.append(_edit_action(
         context, channel.id, message.id, new_text=arguments["text"],
         old_text=message.content, mention_values=arguments,
     ))
@@ -423,11 +423,11 @@ def _edit_action(context: AgentRequestContext, channel_id: int, message_id: int,
             return False
         return message.content == old_text
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         channel, message = await _owned_message(context, channel_id, message_id)
         await message.edit(content=new_text,
                            allowed_mentions=_mentions(context, mention_values, new_text))
-        return CommandOutcome(
+        return ActionOutcome(
             "complete",
             after={"content": new_text},
             result={"message_id": message_id, "channel_id": channel_id},
@@ -487,14 +487,14 @@ async def prepare_delete(context: AgentRequestContext,
             return False
         return current.content == before
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         _, current = await _owned_message(context, channel.id, message.id)
         await current.delete()
         await asyncio.to_thread(
             context.action_repository.mark_message_deleted,
             message_id=message.id, guild_id=context.guild.id, channel_id=channel.id,
         )
-        return CommandOutcome("complete", after={"deleted": True})
+        return ActionOutcome("complete", after={"deleted": True})
 
     async def verify() -> bool:
         try:
@@ -509,7 +509,7 @@ async def prepare_delete(context: AgentRequestContext,
 
     lines = (ACTION_DELETE_LINE.format(channel=channel.mention),
              *(before.splitlines() or ("-",)))
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "delete_agent_message", dict(arguments),
         ChangePreview(lines, recheck, summary=ACTION_DELETE_LABEL,
                       before={"content": before}),

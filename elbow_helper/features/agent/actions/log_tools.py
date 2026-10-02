@@ -37,7 +37,7 @@ def action_log_tools() -> tuple[RegisteredAgentTool, ...]:
             parameters={"type": "object", "properties": {
                 "log_id": {"type": "string", "minLength": 1, "maxLength": 32},
             }, "required": ["log_id"], "additionalProperties": False},
-        ), undo_agent_action, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+        ), undo_agent_action, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("log_id", "agent_action_log"),),
             time_fields=(),
@@ -82,5 +82,5 @@ async def undo_agent_action(
         action = await context.action_runner.prepare_undo(context, arguments["log_id"])
     except (RuntimeError, ValueError):
         return {"error": "That change cannot be undone."}
-    context.state.command_proposals.append(action)
+    context.state.proposed_changes.append(action)
     return {"status": "confirmation_required"}

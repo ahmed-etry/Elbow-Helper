@@ -7,7 +7,7 @@ from typing import Any
 
 import discord
 
-from ..wording import COMMAND_UNAVAILABLE as ACTION_UNAVAILABLE
+from ..wording import ACTION_UNAVAILABLE
 
 from elbow_helper.features.hibernation.config import managed_role_ids as hibernation_roles
 from elbow_helper.features.recruitment.config import managed_role_ids as recruitment_roles

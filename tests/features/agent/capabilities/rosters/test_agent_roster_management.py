@@ -44,7 +44,7 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
         with patch("elbow_helper.features.agent.capabilities.rosters.management.require_evidence_access",
                    new_callable=AsyncMock):
             await tool.handler(context, {"roster_id": 17, "show_clan": False})
-        action = context.state.command_proposals[0]
+        action = context.state.proposed_changes[0]
         self.assertTrue(any("Show Clan: True to False" in line for line in action.preview.lines))
         self.assertTrue(await action.preview.recheck())
         workflow.set_roster_layout.assert_not_awaited()
@@ -88,7 +88,7 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
                    new_callable=AsyncMock):
             result = await tool.handler(context, {"roster_id": 17})
         self.assertEqual(result["status"], "confirmation_required")
-        action = context.state.command_proposals[0]
+        action = context.state.proposed_changes[0]
         self.assertIs(action.action_class, ActionClass.IRREVERSIBLE)
         self.assertTrue(any("<@41>" in line for line in action.preview.lines))
         self.assertTrue(any("<@42>" in line for line in action.preview.lines))

@@ -20,13 +20,13 @@ from elbow_helper.features.agent.models import AgentRequestContext, RegisteredAg
 from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.features.agent.engine.service import AgentUnavailableError
 from elbow_helper.features.agent.commands.bridge import build_command_tools
-from elbow_helper.features.agent.actions.outcomes import CommandOutcome
-from elbow_helper.features.agent.actions.preview import ChangePreview
+from elbow_helper.features.agent.actions.outcomes import ActionOutcome
+from elbow_helper.features.agent.actions.contracts import ChangePreview
 from elbow_helper.features.agent.actions.contracts import ActionClass, PreparedAction
 from elbow_helper.features.agent.commands.registry import CommandAdapter
 from elbow_helper.features.agent.wording import (
     AGENT_ANSWER_UNFINISHED, AGENT_PLAN_UNFINISHED,
-    COMMAND_UNAVAILABLE,
+    ACTION_UNAVAILABLE,
 )
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 from elbow_helper.features.agent.access import AgentAccessLost
@@ -789,7 +789,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("run_command_", model.request["system_prompt"])
 
     async def test_enabled_command_asks_once_then_runs_on_reply(self):
-        run = AsyncMock(return_value=CommandOutcome("complete", text="Synthetic result"))
+        run = AsyncMock(return_value=ActionOutcome("complete", text="Synthetic result"))
         path = "/synthetic"
         command = DiscoveredCommand(
             path, "registered", (ParameterInfo(
@@ -828,11 +828,11 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         response, session, context, _ = await answer(complete, history=question)
         self.assertEqual(response, "Synthetic result")
         self.assertEqual(len(session.calls), 1)
-        self.assertEqual(context.state.command_outcomes[0].text, "Synthetic result")
+        self.assertEqual(context.state.outcomes[0].text, "Synthetic result")
         run.assert_awaited_once()
 
     async def test_private_command_data_never_reaches_public_reply_or_model(self):
-        run = AsyncMock(return_value=CommandOutcome(
+        run = AsyncMock(return_value=ActionOutcome(
             "complete", "private", private_parts=("synthetic private data",)))
         path = "/synthetic"
         help_entry = SimpleNamespace(path=path, summary="Get a result.", details="Uses no options.")
@@ -851,12 +851,12 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                 question="synthetic request", local_context="", context=context)
         self.assertNotIn("synthetic private data", answer)
         self.assertNotIn("synthetic private data", str(context.state.evidence))
-        self.assertEqual(context.state.command_outcomes[0].private_parts,
+        self.assertEqual(context.state.outcomes[0].private_parts,
                          ("synthetic private data",))
         self.assertEqual(len(session.calls), 1)
 
     async def test_command_reference_cannot_escape_named_sources(self):
-        run = AsyncMock(return_value=CommandOutcome("complete", text="Unexpected"))
+        run = AsyncMock(return_value=ActionOutcome("complete", text="Unexpected"))
         path = "/synthetic"
         command = DiscoveredCommand(path, "registered", (
             ParameterInfo("target", "Select a target.", True, "integer"),
@@ -888,7 +888,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_confirmed_steps_make_one_preview_without_running(self):
         path = "/synthetic"
-        run = AsyncMock(return_value=CommandOutcome("complete", text="Unexpected"))
+        run = AsyncMock(return_value=ActionOutcome("complete", text="Unexpected"))
         async def prepare(context, values):
             return ChangePreview((f"Change target {values['target']}",),
                                  AsyncMock(return_value=True))
@@ -915,15 +915,15 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                 question="synthetic request", local_context="", context=context)
         self.assertIn("Change target 101", answer)
         self.assertIn("Change target 202", answer)
-        self.assertEqual(len(context.state.command_proposals), 2)
+        self.assertEqual(len(context.state.proposed_changes), 2)
         self.assertEqual(len(session.calls), 1)
         run.assert_not_awaited()
 
     async def test_one_action_step_can_preview_each_selected_target(self):
-        run = AsyncMock(return_value=CommandOutcome("complete"))
+        run = AsyncMock(return_value=ActionOutcome("complete"))
         async def prepare(context, arguments):
             for target in arguments["targets"]:
-                context.state.command_proposals.append(PreparedAction(
+                context.state.proposed_changes.append(PreparedAction(
                     "synthetic_change", {"target": target},
                     ChangePreview((f"Change target {target}",), AsyncMock(return_value=True)),
                     run,
@@ -935,7 +935,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                 "targets": {"type": "array", "items": {"type": "integer", "minimum": 1},
                             "minItems": 1, "maxItems": 5},
             }, "required": ["targets"], "additionalProperties": False},
-        ), prepare, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True)
+        ), prepare, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE)
         plan = _plan([{**_step("many", {"targets": [101, 202]}),
                        "capability": "synthetic_change"}])
         session = _Session([_model_step(plan)], self.events)
@@ -949,16 +949,16 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertIn("Change target 101", answer)
         self.assertIn("Change target 202", answer)
-        self.assertEqual(len(context.state.command_proposals), 2)
+        self.assertEqual(len(context.state.proposed_changes), 2)
         run.assert_not_awaited()
 
     async def test_action_preview_keeps_an_earlier_action_result_reference(self):
         reference = {"step": "created", "path": ["target_id"]}
         async def create(context, arguments):
-            context.state.command_proposals.append(PreparedAction(
+            context.state.proposed_changes.append(PreparedAction(
                 "synthetic_create", {},
                 ChangePreview(("Create a target",), AsyncMock(return_value=True)),
-                AsyncMock(return_value=CommandOutcome("complete", result={"target_id": 7})),
+                AsyncMock(return_value=ActionOutcome("complete", result={"target_id": 7})),
             ))
             return {"status": "confirmation_required"}
         async def use(context, arguments):
@@ -967,9 +967,9 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                 return PreparedAction(
                     "synthetic_use", {"target_id": results["created"]["target_id"]},
                     ChangePreview(("Use the created target",), AsyncMock(return_value=True)),
-                    AsyncMock(return_value=CommandOutcome("complete")),
+                    AsyncMock(return_value=ActionOutcome("complete")),
                 )
-            context.state.command_proposals.append(PreparedAction(
+            context.state.proposed_changes.append(PreparedAction(
                 "synthetic_use", dict(arguments),
                 ChangePreview(("Use the target created above",),
                               AsyncMock(return_value=True)),
@@ -981,13 +981,13 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                 name="synthetic_create", description="Create a target.",
                 parameters={"type": "object", "properties": {}, "required": [],
                             "additionalProperties": False},
-            ), create, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True),
+            ), create, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE),
             "synthetic_use": RegisteredAgentTool(AgentToolDefinition(
                 name="synthetic_use", description="Use a target.",
                 parameters={"type": "object", "properties": {
                     "target_id": {"type": "integer", "minimum": 1},
                 }, "required": ["target_id"], "additionalProperties": False},
-            ), use, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True),
+            ), use, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE),
         }
         plan = _plan([
             {**_step("created"), "capability": "synthetic_create"},
@@ -1004,12 +1004,12 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                 question="synthetic request", local_context="", context=context,
             )
         self.assertIn("Use the target created above", answer)
-        self.assertEqual([item.step_id for item in context.state.command_proposals],
+        self.assertEqual([item.step_id for item in context.state.proposed_changes],
                          ["created", "used"])
 
     async def test_incomplete_change_preview_cannot_be_confirmed(self):
         path = "/synthetic"
-        run = AsyncMock(return_value=CommandOutcome("complete", text="Unexpected"))
+        run = AsyncMock(return_value=ActionOutcome("complete", text="Unexpected"))
         async def prepare(context, values):
             if values["target"] == 202:
                 raise ValueError("Synthetic target unavailable")
@@ -1036,6 +1036,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             context = replace(context, bot=SimpleNamespace(tree=object()))
             answer = await AgentService(_Model(session), actions_enabled=True).answer(
                 question="synthetic request", local_context="", context=context)
-        self.assertEqual(answer, COMMAND_UNAVAILABLE)
-        self.assertEqual(context.state.command_proposals, [])
+        self.assertEqual(answer, ACTION_UNAVAILABLE)
+        self.assertEqual(context.state.proposed_changes, [])
         run.assert_not_awaited()

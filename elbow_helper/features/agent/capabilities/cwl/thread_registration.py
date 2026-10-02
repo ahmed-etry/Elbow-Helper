@@ -18,7 +18,7 @@ from ...wording import (
     ACTION_CWL_REGISTER_WELCOME,
     ACTION_CWL_REGISTER_BOARD,
 )
-from ...actions.outcomes import CommandOutcome, embed_text
+from ...actions.outcomes import ActionOutcome, embed_text
 from ...commands.registry import CommandAdapter
 
 
@@ -55,10 +55,10 @@ def _signature(prepared: Mapping[str, Any]):
 
 
 async def prepare_cwl_register(context: Any,
-                               values: Mapping[str, Any]) -> ChangePreview | CommandOutcome:
+                               values: Mapping[str, Any]) -> ChangePreview | ActionOutcome:
     workflow, prepared = await _registration(context, values)
     if prepared["status"] == "already":
-        return CommandOutcome("complete", "private", text=prepared["message"])
+        return ActionOutcome("complete", "private", text=prepared["message"])
     thread = prepared["thread"]
     lines = [ACTION_CWL_REGISTER_LINE.format(
         thread=thread.mention, clan=prepared["clan"],
@@ -93,7 +93,7 @@ async def prepare_cwl_register(context: Any,
 
 
 async def run_cwl_register(context: Any,
-                           values: Mapping[str, Any]) -> CommandOutcome:
+                           values: Mapping[str, Any]) -> ActionOutcome:
     workflow, prepared = await _registration(context, values)
     message = await workflow.apply_cwl_thread_registration(prepared)
     after = await workflow.prepare_cwl_thread_registration(
@@ -101,7 +101,7 @@ async def run_cwl_register(context: Any,
     )
     if after["issue"] or after["status"] != "already":
         raise OSError("CWL thread registration could not be verified")
-    return CommandOutcome("complete", "private", text=message,
+    return ActionOutcome("complete", "private", text=message,
                           after={"thread_id": prepared["thread"].id,
                                  "clan": prepared["clan"]})
 

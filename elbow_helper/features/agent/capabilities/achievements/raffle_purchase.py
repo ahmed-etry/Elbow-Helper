@@ -10,7 +10,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
     ACTION_RAFFLE_BUY_LINE,
@@ -27,7 +27,7 @@ def raffle_purchase_tools() -> tuple[RegisteredAgentTool, ...]:
         parameters={"type": "object", "properties": {}, "required": [],
                     "additionalProperties": False},
     ), prepare_raffle_purchase, AgentCapabilityEffect.COMMAND,
-        ActionClass.CHANGE, True,
+        ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(),
             time_fields=(),
@@ -57,15 +57,15 @@ async def prepare_raffle_purchase(context: AgentRequestContext,
     async def recheck() -> bool:
         return await workflow.raffle_purchase_state(context.member.id) == before
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         ok, message = await workflow.buy_raffle_ticket(context.member.id)
         if not ok:
             raise ValueError(message)
-        return CommandOutcome("complete", "private", text=message,
+        return ActionOutcome("complete", "private", text=message,
                               after={"balance": before["balance"] - before["cost"],
                                      "has_ticket": True})
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "buy_raffle_ticket", {"member_id": context.member.id,
                               "month_key": before["month_key"]},
         ChangePreview(lines, recheck, summary=ACTION_RAFFLE_BUY_LABEL,

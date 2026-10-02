@@ -74,8 +74,8 @@ class AgentExaminationToolTests(unittest.IsolatedAsyncioTestCase):
                    return_value=(workflow, channel)):
             result = await prepare_examiner_leave(context, {})
         self.assertEqual(result["status"], "confirmation_required")
-        preview = preview_text(context.state.command_proposals)
-        self.assertEqual(context.state.command_proposals[0].preview.summary, "Leave examiner roster")
+        preview = preview_text(context.state.proposed_changes)
+        self.assertEqual(context.state.proposed_changes[0].preview.summary, "Leave examiner roster")
         self.assertIn("Leave examiner roster", preview)
         self.assertNotIn("{", preview)
         self.assertNotIn("}", preview)

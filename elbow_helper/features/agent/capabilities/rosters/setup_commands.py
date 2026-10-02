@@ -42,7 +42,7 @@ from ...wording import (
     ACTION_ROSTER_POST_REFRESH,
     ACTION_ROSTER_EDIT_ROLE_SYNC,
 )
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...commands.registry import CommandAdapter, PreparedCommandChange
 
 
@@ -80,14 +80,14 @@ async def prepare_roster_create(context: Any,
                 return False
         return await workflow.roster_name_available(context.guild.id, name)
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         roster = await workflow.create_roster(
             guild_id=context.guild.id, name=name, clan_code=clan_code,
             role_id=role_id, max_members=max_members,
         )
         if await workflow.get_roster(roster.id) is None:
             raise OSError("Roster creation could not be verified")
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "private", text=f"Created **{roster.name}**.",
             result={"roster_id": roster.id}, after={"roster_id": roster.id},
         )
@@ -99,7 +99,7 @@ async def prepare_roster_create(context: Any,
 
 
 async def run_roster_create(context: Any,
-                            values: Mapping[str, Any]) -> CommandOutcome:
+                            values: Mapping[str, Any]) -> ActionOutcome:
     return await (await prepare_roster_create(context, values)).run()
 
 
@@ -181,11 +181,11 @@ async def prepare_roster_clone(context: Any,
                 return False
         return True
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         clone = await workflow.clone_roster(source, **options)
         if await workflow.get_roster(clone.id) is None:
             raise OSError("Roster clone could not be verified")
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "private",
             text=f"Created **{clone.name}** from **{source.name}**.",
             result={"roster_id": clone.id}, after={"roster_id": clone.id},
@@ -197,7 +197,7 @@ async def prepare_roster_clone(context: Any,
 
 
 async def run_roster_clone(context: Any,
-                           values: Mapping[str, Any]) -> CommandOutcome:
+                           values: Mapping[str, Any]) -> ActionOutcome:
     return await (await prepare_roster_clone(context, values)).run()
 
 
@@ -251,11 +251,11 @@ async def prepare_roster_delete(context: Any,
             return False
         return await workflow.roster_deletion_state(roster) == state
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         await workflow.delete_roster(roster)
         if await workflow.get_roster(roster_id) is not None:
             raise OSError("Roster deletion could not be verified")
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "private", text=f"Deleted **{roster.name}**.",
             after={"roster_id": roster.id, "deleted": True},
         )
@@ -268,7 +268,7 @@ async def prepare_roster_delete(context: Any,
 
 
 async def run_roster_delete(context: Any,
-                            values: Mapping[str, Any]) -> CommandOutcome:
+                            values: Mapping[str, Any]) -> ActionOutcome:
     return await (await prepare_roster_delete(context, values)).run()
 
 
@@ -355,13 +355,13 @@ async def prepare_roster_edit(context: Any,
             return False
         return await workflow.roster_edit_state(roster) == state
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         updated = await workflow.update_roster_settings(roster, changes)
         actual = await workflow.get_roster(roster_id)
         if actual is None or any(getattr(actual, key) != value
                                  for key, value in changes.items()):
             raise OSError("Roster update could not be verified")
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "private", text=f"Updated **{updated.name}**.",
             after={"roster_id": roster_id, "changes": changes},
         )
@@ -375,7 +375,7 @@ async def prepare_roster_edit(context: Any,
 
 
 async def run_roster_edit(context: Any,
-                          values: Mapping[str, Any]) -> CommandOutcome:
+                          values: Mapping[str, Any]) -> ActionOutcome:
     return await (await prepare_roster_edit(context, values)).run()
 
 

@@ -99,7 +99,7 @@ async def run_saved_request(
         local_context=local_context,
         context=context,
     )
-    proposals = tuple(context.state.command_proposals)
+    proposals = tuple(context.state.proposed_changes)
     if proposals and within_scope(proposals, allowed):
         run_id = await action_runner.submit(
             context,
@@ -107,16 +107,16 @@ async def run_saved_request(
             confirmer_id=context.member.id,
         )
         run = await action_runner.wait_run(run_id)
-        if context.state.command_outcomes or context.state.attachments:
+        if context.state.outcomes or context.state.attachments:
             output_context = replace(
                 context,
-                state=replace(context.state, command_proposals=[]),
+                state=replace(context.state, proposed_changes=[]),
             )
             await delivery(
                 message,
                 (
-                    command_reply(context.state.command_outcomes)
-                    if context.state.command_outcomes
+                    command_reply(context.state.outcomes)
+                    if context.state.outcomes
                     else ""
                 ),
                 None,

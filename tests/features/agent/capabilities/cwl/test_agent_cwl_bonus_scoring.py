@@ -46,7 +46,7 @@ class CwlBonusScoringActionTests(unittest.IsolatedAsyncioTestCase):
                 "attacker_th": 1, "defender_th": 1, "score": 2.5,
             })
         self.assertEqual(result["status"], "confirmation_required")
-        action = context.state.command_proposals[0]
+        action = context.state.proposed_changes[0]
         self.assertTrue(any("2.0 to 2.5" in line for line in action.preview.lines))
         self.assertTrue(await action.preview.recheck())
         outcome = await action.run()

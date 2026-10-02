@@ -18,7 +18,7 @@ from ...wording import (
     ACTION_WAR_STATEMENT_LABEL,
     ACTION_WAR_STATEMENT_LINE,
 )
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...commands.registry import CommandAdapter
 
 
@@ -80,14 +80,14 @@ def _adapter(path: str, kind: str) -> CommandAdapter:
             *(line or ACTION_PREVIEW_BLANK for line in message.splitlines()),
         ), recheck, summary=ACTION_WAR_STATEMENT_LABEL)
 
-    async def run(context: Any, values: Mapping[str, Any]) -> CommandOutcome:
+    async def run(context: Any, values: Mapping[str, Any]) -> ActionOutcome:
         workflow, statement = await _statement(context, values, kind)
         ok, result = await workflow.post_statement(
             statement["post_channel"], statement["message"],
         )
         if not ok:
-            return CommandOutcome.unavailable()
-        return CommandOutcome(
+            return ActionOutcome.unavailable()
+        return ActionOutcome(
             "complete", "private", text=result,
             result={"channel_id": statement["post_channel"].id},
         )

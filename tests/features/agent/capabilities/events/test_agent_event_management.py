@@ -33,7 +33,7 @@ class EventManagementActionTests(unittest.IsolatedAsyncioTestCase):
                    new_callable=AsyncMock):
             result = await tool.handler(context, values)
         self.assertEqual(result["status"], "confirmation_required")
-        action = context.state.command_proposals[0]
+        action = context.state.proposed_changes[0]
         self.assertIs(action.action_class, ActionClass.CHANGE)
         self.assertTrue(any("parsed start" in line for line in action.preview.lines))
         self.assertTrue(any("voice channel" in line for line in action.preview.lines))
@@ -61,7 +61,7 @@ class EventManagementActionTests(unittest.IsolatedAsyncioTestCase):
                    new_callable=AsyncMock):
             result = await tool.handler(context, {"event": "Alpha", "edge": "top"})
         self.assertEqual(result["status"], "confirmation_required")
-        action = context.state.command_proposals[0]
+        action = context.state.proposed_changes[0]
         self.assertIs(action.action_class, ActionClass.CHANGE)
         self.assertIn("position 4 to 1", action.preview.lines[0])
         workflow.move_event_to_position.assert_not_called()

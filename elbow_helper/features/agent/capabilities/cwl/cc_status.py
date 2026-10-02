@@ -11,7 +11,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
     ACTION_CC_STATUS_LINE,
@@ -31,7 +31,7 @@ def cwl_cc_status_tools() -> tuple[RegisteredAgentTool, ...]:
             "status": {"type": "string", "enum": ["filled", "partial", "empty"]},
         }, "required": ["clan_code", "status"], "additionalProperties": False},
     ), prepare_cc_status, AgentCapabilityEffect.COMMAND,
-        ActionClass.CHANGE, True,
+        ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("clan_code", "clan"),),
             time_fields=(),
@@ -68,17 +68,17 @@ async def prepare_cc_status(context: AgentRequestContext,
         except ValueError:
             return False
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         ok, message = await workflow.set_cwl_cc_status(
             values["clan_code"], values["status"], context.member,
             thread.id, snapshot["sticky_message_id"])
         if not ok:
             raise ValueError(message)
-        return CommandOutcome("complete", "private", text=message,
+        return ActionOutcome("complete", "private", text=message,
                               after={"status": values["status"],
                                      "war_tag": snapshot["war_tag"]})
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "set_cwl_cc_status", {"clan_code": values["clan_code"]},
         ChangePreview(lines, recheck, summary=ACTION_CC_STATUS_LABEL,
                       before={"status": snapshot["status"] or "empty",
@@ -109,12 +109,12 @@ async def prepare_cc_status_undo(context: AgentRequestContext,
         live = await workflow.cc_status_snapshot(clan)
         return live == snapshot
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         ok, message = await workflow.set_cwl_cc_status(
             clan, prior, context.member, thread.id, snapshot["sticky_message_id"])
         if not ok:
             raise ValueError(message)
-        return CommandOutcome("complete", "private", text=message,
+        return ActionOutcome("complete", "private", text=message,
                               after={"status": prior, "war_tag": snapshot["war_tag"]})
 
     return PreparedAction(

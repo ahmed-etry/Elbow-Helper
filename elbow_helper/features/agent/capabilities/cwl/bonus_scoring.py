@@ -11,7 +11,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
     ACTION_BONUS_SCORING_LINE,
@@ -45,7 +45,7 @@ def cwl_bonus_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
                for field in _ADJUSTMENTS},
         }, "required": ["clan_code", "operation"], "additionalProperties": False},
     ), prepare_cwl_bonus_scoring, AgentCapabilityEffect.COMMAND,
-        ActionClass.CHANGE, True,
+        ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("clan_code", "clan"), ("source_clan", "clan")),
             time_fields=(),
@@ -136,7 +136,7 @@ async def prepare_cwl_bonus_scoring(context: AgentRequestContext,
             return source_current == after
         return True
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         if source is not None:
             updated = workflow.copy_bonus_scoring(
                 source, clan, context.member, expected_revision=revision)
@@ -145,12 +145,12 @@ async def prepare_cwl_bonus_scoring(context: AgentRequestContext,
                 clan, after, context.member, expected_revision=revision,
                 summary="; ".join(differences),
             )
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "private", text=ACTION_BONUS_SCORING_DONE.format(clan=clan),
             after={"payload": copy.deepcopy(updated["clans"][clan])},
         )
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "set_cwl_bonus_scoring", {"clan_code": clan},
         ChangePreview(tuple(lines), recheck, summary=ACTION_BONUS_SCORING_LABEL,
                       before={"payload": before}), run,
@@ -176,12 +176,12 @@ async def prepare_cwl_bonus_scoring_undo(context: AgentRequestContext,
         live, _, live_revision = workflow.bonus_scoring_snapshot(clan)
         return live_revision == revision and live == expected
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         updated = workflow.save_bonus_scoring(
             clan, prior, context.member, expected_revision=revision,
             summary=ACTION_BONUS_SCORING_RESTORE,
         )
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "private", text=ACTION_BONUS_SCORING_DONE.format(clan=clan),
             after={"payload": copy.deepcopy(updated["clans"][clan])},
         )

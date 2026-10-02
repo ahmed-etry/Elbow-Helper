@@ -30,7 +30,7 @@ from ...wording import (
     ACTION_RECORD_REMOVE_DONE, ACTION_RECORD_REMOVE_LABEL,
     ACTION_RECORD_REMOVE_LINE, ACTION_RECORD_UNDO_LABEL, ACTION_UNDO_CHANGED,
 )
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...commands.registry import CommandAdapter
 
 
@@ -82,13 +82,13 @@ async def prepare_record_add(context: Any, values: Mapping[str, Any]) -> ChangeP
     ), recheck, summary=ACTION_RECORD_ADD_LABEL, before={"record": None})
 
 
-async def run_record_add(context: Any, values: Mapping[str, Any]) -> CommandOutcome:
+async def run_record_add(context: Any, values: Mapping[str, Any]) -> ActionOutcome:
     workflow = _workflow(context)
     if workflow is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     member = await _member(context, values["user"])
     if member is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     try:
         record = await asyncio.to_thread(
             workflow.service.create,
@@ -97,27 +97,27 @@ async def run_record_add(context: Any, values: Mapping[str, Any]) -> CommandOutc
             recorder=context.member,
         )
     except ValueError:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     verified = await asyncio.to_thread(
         workflow.service.active_record,
         member_id=member.id, record_id=record["id"],
     )
     if verified is None:
         raise OSError("Record creation could not be verified")
-    return CommandOutcome(
+    return ActionOutcome(
         "complete", "private", text=workflow.service.confirmation(record),
         after={"record_id": record["id"], "member_id": member.id},
         result={"record_id": record["id"], "member_id": member.id},
     )
 
 
-async def run_record_export(context: Any, values: Mapping[str, Any]) -> CommandOutcome:
+async def run_record_export(context: Any, values: Mapping[str, Any]) -> ActionOutcome:
     workflow = _workflow(context)
     if workflow is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     member = await _member(context, values["user"]) if values.get("user") else None
     if values.get("user") and member is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     try:
         report = await workflow.exports.create(
             member_id=member.id if member else None,
@@ -125,13 +125,13 @@ async def run_record_export(context: Any, values: Mapping[str, Any]) -> CommandO
         )
     except (OSError, TypeError, ValueError, zipfile.BadZipFile,
             ElementTree.ParseError):
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     try:
         if report.google_link:
-            return CommandOutcome("complete", "private",
+            return ActionOutcome("complete", "private",
                                   private_parts=(report.google_link,))
         data = await asyncio.to_thread(report.workbook_path.read_bytes)
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "private",
             private_parts=((report.google_warning,) if report.google_warning else ()),
             attachments=(AgentAttachment(report.workbook_name, data),),
@@ -164,7 +164,7 @@ def _edit_lines(record: Mapping[str, Any], target: tuple[str, str, str],
           if previous != updated))
 
 
-async def prepare_record_edit(context: Any, values: Mapping[str, Any]) -> ChangePreview | CommandOutcome:
+async def prepare_record_edit(context: Any, values: Mapping[str, Any]) -> ChangePreview | ActionOutcome:
     workflow = _workflow(context)
     if workflow is None:
         raise ValueError("Leadership records are unavailable")
@@ -177,13 +177,13 @@ async def prepare_record_edit(context: Any, values: Mapping[str, Any]) -> Change
     if record is None:
         raise ValueError("That record is unavailable")
     if not any(key in values for key in ("category", "type", "note")):
-        return CommandOutcome.needs_input((ACTION_RECORD_EDIT_INPUT,))
+        return ActionOutcome.needs_input((ACTION_RECORD_EDIT_INPUT,))
     if (values.get("category", record["category_key"]) != record["category_key"]
             and "type" not in values):
-        return CommandOutcome.needs_input((ACTION_RECORD_EDIT_TYPE_INPUT,))
+        return ActionOutcome.needs_input((ACTION_RECORD_EDIT_TYPE_INPUT,))
     target = _edit_target(workflow.service, record, values)
     if target == (record["category_key"], record["incident_type_key"], record["note"]):
-        return CommandOutcome("complete", "private", text=ACTION_RECORD_EDIT_NO_CHANGE)
+        return ActionOutcome("complete", "private", text=ACTION_RECORD_EDIT_NO_CHANGE)
     signature = _record_signature(record)
 
     async def recheck() -> bool:
@@ -201,19 +201,19 @@ async def prepare_record_edit(context: Any, values: Mapping[str, Any]) -> Change
     )
 
 
-async def run_record_edit(context: Any, values: Mapping[str, Any]) -> CommandOutcome:
+async def run_record_edit(context: Any, values: Mapping[str, Any]) -> ActionOutcome:
     workflow = _workflow(context)
     if workflow is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     member = await _member(context, values["user"])
     if member is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     record_id = int(values["record"])
     old = await asyncio.to_thread(
         workflow.service.active_record, member_id=member.id, record_id=record_id,
     )
     if old is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     target = _edit_target(workflow.service, old, values)
     edited = await asyncio.to_thread(
         workflow.service.edit,
@@ -222,14 +222,14 @@ async def run_record_edit(context: Any, values: Mapping[str, Any]) -> CommandOut
         editor=context.member,
     )
     if edited is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     verified = await asyncio.to_thread(
         workflow.service.active_record, member_id=member.id, record_id=record_id,
     )
     if verified is None or (verified["category_key"], verified["incident_type_key"],
                             verified["note"]) != target:
         raise OSError("Record edit could not be verified")
-    return CommandOutcome(
+    return ActionOutcome(
         "complete", "private",
         text=workflow.service.edit_confirmation(record_id, member),
         after={"record": verified}, result={"record_id": record_id, "member_id": member.id},
@@ -265,7 +265,7 @@ async def prepare_record_edit_undo(context: Any,
         )
         return live is not None and _record_signature(live) == signature
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         restored = await asyncio.to_thread(
             workflow.service.edit,
             record_id=record_id, member_id=member_id,
@@ -273,14 +273,14 @@ async def prepare_record_edit_undo(context: Any,
             editor=context.member,
         )
         if restored is None:
-            return CommandOutcome.unavailable()
+            return ActionOutcome.unavailable()
         verified = await asyncio.to_thread(
             workflow.service.active_record, member_id=member_id, record_id=record_id,
         )
         if verified is None or (verified["category_key"], verified["incident_type_key"],
                                 verified["note"]) != target:
             raise OSError("Record edit undo could not be verified")
-        return CommandOutcome("complete", "private", after={"record": verified})
+        return ActionOutcome("complete", "private", after={"record": verified})
 
     return PreparedAction(
         "undo_record_edit", {"member_id": member_id, "record_id": record_id},
@@ -325,27 +325,27 @@ async def prepare_record_remove(context: Any, values: Mapping[str, Any]) -> Chan
         before={"record": record})
 
 
-async def run_record_remove(context: Any, values: Mapping[str, Any]) -> CommandOutcome:
+async def run_record_remove(context: Any, values: Mapping[str, Any]) -> ActionOutcome:
     workflow = _workflow(context)
     if workflow is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     member = await _member(context, values["user"])
     if member is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     record_id = int(values["record"])
     removed = await asyncio.to_thread(
         workflow.service.remove,
         record_id=record_id, member_id=member.id, remover=context.member,
     )
     if removed is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     current = await asyncio.to_thread(
         workflow.service.active_record,
         member_id=member.id, record_id=record_id,
     )
     if current is not None:
-        return CommandOutcome.unavailable()
-    return CommandOutcome(
+        return ActionOutcome.unavailable()
+    return ActionOutcome(
         "complete", "private",
         text=ACTION_RECORD_REMOVE_DONE.format(
             member=member.display_name,
@@ -385,14 +385,14 @@ async def prepare_record_add_undo(context: Any,
                 (current["category_key"], current["incident_type_key"],
                  current["note"]) == original)
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         removed = await asyncio.to_thread(
             workflow.service.remove,
             record_id=record_id, member_id=member_id, remover=context.member,
         )
         if removed is None:
-            return CommandOutcome.unavailable()
-        return CommandOutcome(
+            return ActionOutcome.unavailable()
+        return ActionOutcome(
             "complete", "private", text=ACTION_RECORD_ADD_UNDO_DONE.format(
                 member=member.mention,
             ), after={"removed": True},

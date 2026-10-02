@@ -10,7 +10,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ..engine.capability_contract import CapabilityContract
 from ..access import require_evidence_access
 from ..actions.contracts import ActionClass, ChangePreview, PreparedAction, audit_reason
-from ..actions.outcomes import CommandOutcome
+from ..actions.outcomes import ActionOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
     ACTION_NICKNAME_LABEL, ACTION_NICKNAME_LINE,
@@ -27,7 +27,7 @@ def discord_nickname_tools() -> tuple[RegisteredAgentTool, ...]:
             "member_id": {"type": "integer", "minimum": 1},
             "nickname": {"type": "string", "minLength": 1, "maxLength": 32},
         }, "required": ["member_id"], "additionalProperties": False},
-    ), prepare_nickname, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+    ), prepare_nickname, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("member_id", "discord_member"),),
             time_fields=(),
@@ -53,10 +53,10 @@ def _nickname_action(context: AgentRequestContext, member_id: int,
             return False
         return member.nick == before
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         member = await current()
         await member.edit(nick=after, reason=audit_reason(context.member))
-        return CommandOutcome("complete", after={"nickname": after},
+        return ActionOutcome("complete", after={"nickname": after},
                               result={"member_id": member_id})
 
     async def verify() -> bool:
@@ -86,7 +86,7 @@ async def prepare_nickname(context: AgentRequestContext,
     after = arguments.get("nickname")
     if member.nick == after:
         return {"status": "no_change", "prepared_count": 0}
-    context.state.command_proposals.append(_nickname_action(
+    context.state.proposed_changes.append(_nickname_action(
         context, member.id, before=member.nick, after=after, label=member.mention,
     ))
     return {"status": "confirmation_required"}

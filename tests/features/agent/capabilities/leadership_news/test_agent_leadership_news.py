@@ -34,7 +34,7 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
               patch("elbow_helper.features.agent.capabilities.leadership_news.actions.check_post_access")):
             result = await prepare_lead_news(context, {"message_id": 7})
         self.assertEqual(result["status"], "confirmation_required")
-        action = context.state.command_proposals[0]
+        action = context.state.proposed_changes[0]
         self.assertTrue(any("A public update" in line for line in action.preview.lines))
         self.assertTrue(any("photo.png" in line for line in action.preview.lines))
         self.assertTrue(any("publication prompt in" in line for line in action.preview.lines))

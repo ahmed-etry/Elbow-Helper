@@ -31,7 +31,7 @@ from ...wording import (
     ACTION_VALUE_CURRENT,
     ACTION_VALUE_NEXT,
 )
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...commands.registry import CommandAdapter, PreparedCommandChange
 
 
@@ -113,7 +113,7 @@ async def prepare_roster_timing(context: Any,
             return False
         return await workflow.roster_edit_state(roster) == state
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         live_plan = workflow.plan_roster_timing(roster, **options)
         if live_plan["issue"] or (not plan["clear"] and (
             live_plan["window"].opens_at <= live_plan["now"]
@@ -134,7 +134,7 @@ async def prepare_roster_timing(context: Any,
                 raise OSError("Roster timing could not be verified")
             text = (f"Set **{updated.name}** to open {discord.utils.format_dt(window.opens_at)} "
                     f"and close {discord.utils.format_dt(window.closes_at)}.")
-        return CommandOutcome("complete", "private", text=text,
+        return ActionOutcome("complete", "private", text=text,
                               after={"roster_id": roster_id,
                                      "one_off_open_ts": actual.one_off_open_ts,
                                      "one_off_close_ts": actual.one_off_close_ts})
@@ -149,7 +149,7 @@ async def prepare_roster_timing(context: Any,
 
 
 async def run_roster_timing(context: Any,
-                            values: Mapping[str, Any]) -> CommandOutcome:
+                            values: Mapping[str, Any]) -> ActionOutcome:
     return await (await prepare_roster_timing(context, values)).run()
 
 
@@ -247,7 +247,7 @@ async def prepare_roster_schedule(context: Any,
             return False
         return await workflow.roster_edit_state(roster) == state
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         if workflow.roster_schedule_preview(roster, plan) != effect:
             raise ValueError("Roster schedule changed before execution")
         updated, message = await workflow.apply_roster_schedule(roster, plan)
@@ -260,7 +260,7 @@ async def prepare_roster_schedule(context: Any,
                        else getattr(actual, key) == value)
             if not matches:
                 raise OSError("Roster schedule could not be verified")
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "private", text=message,
             after={"roster_id": updated.id,
                    "schedule_enabled": updated.schedule_enabled},
@@ -275,7 +275,7 @@ async def prepare_roster_schedule(context: Any,
 
 
 async def run_roster_schedule(context: Any,
-                              values: Mapping[str, Any]) -> CommandOutcome:
+                              values: Mapping[str, Any]) -> ActionOutcome:
     return await (await prepare_roster_schedule(context, values)).run()
 
 

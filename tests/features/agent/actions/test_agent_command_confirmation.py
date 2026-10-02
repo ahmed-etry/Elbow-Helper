@@ -5,17 +5,16 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.features.agent.actions.preview import (
-    ChangePreview, ConfirmationView, PreparedCommand, preview_text,
-)
-from elbow_helper.features.agent.actions.outcomes import CommandOutcome
+from elbow_helper.features.agent.actions.preview import ConfirmationView, preview_text
+from elbow_helper.features.agent.actions.contracts import ChangePreview, PreparedAction
+from elbow_helper.features.agent.actions.outcomes import ActionOutcome
 from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin
 from elbow_helper.features.agent.models import AgentDelivery, AgentTurnState
 from elbow_helper.features.agent.wording import (
-    COMMAND_CANCELLED, COMMAND_PREVIEW_EXPIRED,
-    COMMAND_PREVIEW_HEADER, COMMAND_PREVIEW_OWNER,
-    COMMAND_PREVIEW_USED, ACTION_PREVIEW_BLANK,
+    ACTION_CANCELLED, ACTION_PREVIEW_EXPIRED,
+    ACTION_PREVIEW_HEADER, ACTION_PREVIEW_OWNER,
+    ACTION_PREVIEW_USED, ACTION_PREVIEW_BLANK,
 )
 
 
@@ -34,15 +33,15 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         proposal, _, _ = self.proposal(1)
         view = self.view((proposal,))
         await view.cancel(self.interaction(101))
-        view.message.content = COMMAND_CANCELLED
+        view.message.content = ACTION_CANCELLED
         await view.on_timeout()
         view.message.edit.assert_awaited_once_with(view=view)
         self.assertTrue(all(item.disabled for item in view.children))
 
     def proposal(self, value, *, allowed=True):
         check = AsyncMock(return_value=allowed)
-        run = AsyncMock(return_value=CommandOutcome("complete", text=f"Result {value}"))
-        proposal = PreparedCommand(
+        run = AsyncMock(return_value=ActionOutcome("complete", text=f"Result {value}"))
+        proposal = PreparedAction(
             "/synthetic", {"target": value},
             ChangePreview((f"Change target {value}",), check), run,
         )
@@ -67,15 +66,15 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
     async def test_multiple_targets_share_one_complete_preview(self):
         proposals = [self.proposal(value)[0] for value in (1, 2, 3)]
         text = preview_text(proposals)
-        self.assertTrue(text.startswith(COMMAND_PREVIEW_HEADER))
+        self.assertTrue(text.startswith(ACTION_PREVIEW_HEADER))
         self.assertEqual(text.count("Change target"), 3)
-        self.assertEqual(text.count(COMMAND_PREVIEW_HEADER), 1)
+        self.assertEqual(text.count(ACTION_PREVIEW_HEADER), 1)
 
     async def test_adjacent_actions_share_one_preview_header(self):
         proposals = []
         for value in (1, 2, 3):
             proposal, _, _ = self.proposal(value)
-            proposals.append(PreparedCommand(
+            proposals.append(PreparedAction(
                 proposal.path, proposal.values,
                 ChangePreview(proposal.preview.lines, proposal.preview.recheck,
                               summary="Add role"), proposal.run,
@@ -87,7 +86,7 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_multiline_details_keep_the_preview_free_of_blank_lines(self):
         proposal, _, _ = self.proposal(1)
-        proposal = PreparedCommand(
+        proposal = PreparedAction(
             proposal.path, proposal.values,
             ChangePreview(("Details: first\n\nlast",), proposal.preview.recheck),
             proposal.run,
@@ -101,7 +100,7 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         view = self.view((proposal,))
         other = self.interaction(202)
         await view.confirm(other)
-        other.response.send_message.assert_awaited_once_with(COMMAND_PREVIEW_OWNER, ephemeral=True)
+        other.response.send_message.assert_awaited_once_with(ACTION_PREVIEW_OWNER, ephemeral=True)
         await view.cancel(self.interaction(202))
         check.assert_not_awaited()
         run.assert_not_awaited()
@@ -112,14 +111,14 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         view = self.view((proposal,))
         member = self.interaction(101)
         await view.cancel(member)
-        member.response.edit_message.assert_awaited_once_with(content=COMMAND_CANCELLED, view=view)
+        member.response.edit_message.assert_awaited_once_with(content=ACTION_CANCELLED, view=view)
         self.assertTrue(all(item.disabled for item in view.children))
         await view.confirm(self.interaction(101))
         check.assert_not_awaited()
         run.assert_not_awaited()
         expired = self.view((proposal,))
         await expired.on_timeout()
-        expired.message.edit.assert_awaited_once_with(content=COMMAND_PREVIEW_EXPIRED, view=expired)
+        expired.message.edit.assert_awaited_once_with(content=ACTION_PREVIEW_EXPIRED, view=expired)
         await expired.confirm(self.interaction(101))
         run.assert_not_awaited()
 
@@ -161,10 +160,10 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_blank_preview_line_has_a_fallback(self):
         proposal, _, _ = self.proposal(1)
-        proposal = PreparedCommand(proposal.path, proposal.values,
+        proposal = PreparedAction(proposal.path, proposal.values,
                                    ChangePreview(("",), proposal.preview.recheck), proposal.run)
         self.assertEqual(preview_text([proposal]),
-                         COMMAND_PREVIEW_HEADER + "\n1. /synthetic: 1 change\n" + ACTION_PREVIEW_BLANK)
+                         ACTION_PREVIEW_HEADER + "\n1. /synthetic: 1 change\n" + ACTION_PREVIEW_BLANK)
 
     async def test_second_click_reports_used_preview(self):
         proposal, _, _ = self.proposal(1)
@@ -172,7 +171,7 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         await view.cancel(self.interaction(101))
         member = self.interaction(101)
         await view.confirm(member)
-        member.response.send_message.assert_awaited_once_with(COMMAND_PREVIEW_USED, ephemeral=True)
+        member.response.send_message.assert_awaited_once_with(ACTION_PREVIEW_USED, ephemeral=True)
 
     async def test_revised_preview_invalidates_previous_buttons(self):
         proposal, _, run = self.proposal(1)
@@ -185,7 +184,7 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_irreversible_preview_warns_and_groups_same_kind(self):
         proposal, _, _ = self.proposal(1)
-        irreversible = PreparedCommand(
+        irreversible = PreparedAction(
             proposal.path, proposal.values, proposal.preview, proposal.run,
             action_class=ActionClass.IRREVERSIBLE,
         )
@@ -209,7 +208,7 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_private_result_is_not_sent_through_button(self):
         proposal, _, run = self.proposal(1)
-        run.return_value = CommandOutcome("complete", "private",
+        run.return_value = ActionOutcome("complete", "private",
                                           private_parts=("synthetic private result",))
         view = self.view((proposal,))
         member = self.interaction(101)
@@ -220,7 +219,7 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_private_text_is_not_sent_through_button(self):
         proposal, _, run = self.proposal(1)
-        run.return_value = CommandOutcome("complete", "private",
+        run.return_value = ActionOutcome("complete", "private",
                                           text="synthetic private text")
         view = self.view((proposal,))
         member = self.interaction(101)
@@ -239,12 +238,12 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
             reply=AsyncMock(return_value=sent), channel=SimpleNamespace(),
         )
         state = AgentTurnState()
-        state.command_proposals.extend(self.proposal(value)[0] for value in (1, 2))
+        state.proposed_changes.extend(self.proposal(value)[0] for value in (1, 2))
         context = SimpleNamespace(state=state)
         with patch("elbow_helper.features.agent.delivery.require_disclosure_access",
                    new_callable=AsyncMock):
             await delivery_surface.send_response(
-                message, preview_text(state.command_proposals), None,
+                message, preview_text(state.proposed_changes), None,
                 delivery=AgentDelivery(), context=context,
             )
         view = message.reply.await_args.kwargs["view"]
@@ -267,12 +266,12 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
             reply=AsyncMock(return_value=first), channel=channel,
         )
         state = AgentTurnState()
-        state.command_proposals.append(self.proposal("x" * 2000)[0])
+        state.proposed_changes.append(self.proposal("x" * 2000)[0])
         context = SimpleNamespace(state=state)
         with patch("elbow_helper.features.agent.delivery.require_disclosure_access",
                    new_callable=AsyncMock):
             await delivery_surface.send_response(
-                message, preview_text(state.command_proposals), None,
+                message, preview_text(state.proposed_changes), None,
                 delivery=AgentDelivery(), context=context,
             )
         self.assertNotIn("view", message.reply.await_args.kwargs)
@@ -294,15 +293,15 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
             reply=AsyncMock(return_value=sent), channel=SimpleNamespace(),
         )
         state = AgentTurnState()
-        state.command_proposals.append(self.proposal(1)[0])
-        state.command_outcomes.append(CommandOutcome(
+        state.proposed_changes.append(self.proposal(1)[0])
+        state.outcomes.append(ActionOutcome(
             "complete", "private", private_parts=("synthetic private result",),
         ))
         context = SimpleNamespace(state=state)
         with patch("elbow_helper.features.agent.delivery.require_disclosure_access",
                    new_callable=AsyncMock):
             await delivery_surface.send_response(
-                message, preview_text(state.command_proposals), None,
+                message, preview_text(state.proposed_changes), None,
                 delivery=AgentDelivery(), context=context,
             )
         view = message.reply.await_args.kwargs["view"]
@@ -326,7 +325,7 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         )
         panel = AsyncMock()
         state = AgentTurnState()
-        state.command_outcomes.append(CommandOutcome(
+        state.outcomes.append(ActionOutcome(
             "complete", "private", private_panel=panel,
         ))
         context = SimpleNamespace(state=state)
@@ -342,8 +341,8 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_multiple_private_panels_can_each_be_opened(self):
         first, second = AsyncMock(), AsyncMock()
-        from elbow_helper.features.agent.actions.private_view import PrivateCommandView
-        view = PrivateCommandView(
+        from elbow_helper.features.agent.actions.private_view import PrivateResultView
+        view = PrivateResultView(
             202, (), panels=(first, second),
             panel_labels=("/synthetic first", "/synthetic second"),
         )
@@ -369,7 +368,7 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         )
         state = AgentTurnState()
         for name in ("/synthetic first", "/synthetic second"):
-            state.command_outcomes.append(CommandOutcome(
+            state.outcomes.append(ActionOutcome(
                 "complete", "private", private_panel=AsyncMock(), command_name=name,
             ))
         with patch("elbow_helper.features.agent.delivery.require_disclosure_access",
@@ -392,5 +391,5 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         member = self.interaction(101)
         await view.cancel(member)
         member.response.edit_message.assert_awaited_once_with(
-            content=COMMAND_CANCELLED + "\n\nSynthetic read result", view=view,
+            content=ACTION_CANCELLED + "\n\nSynthetic read result", view=view,
         )

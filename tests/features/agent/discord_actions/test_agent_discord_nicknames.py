@@ -44,7 +44,7 @@ class DiscordNicknameTests(unittest.IsolatedAsyncioTestCase):
             "member_id": 4, "nickname": "After",
         })
         self.assertEqual(result["status"], "confirmation_required")
-        action = self.context.state.command_proposals.pop()
+        action = self.context.state.proposed_changes.pop()
         self.assertTrue(await action.preview.recheck())
         changed = await action.run()
         self.assertEqual(self.member.nick, "After")
@@ -59,7 +59,7 @@ class DiscordNicknameTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_omitting_nickname_resets_it(self):
         await prepare_nickname(self.context, {"member_id": 4})
-        action = self.context.state.command_proposals.pop()
+        action = self.context.state.proposed_changes.pop()
         self.assertIn("Reset", action.preview.lines[0])
         await action.run()
         self.assertIsNone(self.member.nick)

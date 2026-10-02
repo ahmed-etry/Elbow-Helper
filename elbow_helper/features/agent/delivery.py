@@ -12,12 +12,12 @@ import sqlite3
 import discord
 
 from .disclosure import require_disclosure_access
-from .wording import COMMAND_PREVIEW_HEADER, FAILURE_MESSAGE, LONG_REPLY_FILENAME
+from .wording import ACTION_PREVIEW_HEADER, FAILURE_MESSAGE, LONG_REPLY_FILENAME
 from .conversation.state import Conversation
 from .conversation.transcripts import archive_write
 from .models import AgentAttachment, AgentDelivery, AgentRequestContext
 from .engine.service import AgentUnavailableError
-from .actions.private_view import PrivateCommandView
+from .actions.private_view import PrivateResultView
 from .actions.preview import ConfirmationView
 from .text import chunk_response as _chunk_response
 
@@ -57,7 +57,7 @@ class AgentDeliveryMixin:
             replied_user=False,
         )
         files = [discord.File(io.BytesIO(item.data), filename=item.filename) for item in attachments]
-        has_preview = bool(context and context.state.command_proposals)
+        has_preview = bool(context and context.state.proposed_changes)
         if not has_preview and _needs_file(response):
             files.append(discord.File(io.BytesIO(response.encode("utf-8")), filename=LONG_REPLY_FILENAME))
             chunks = [None]
@@ -71,30 +71,30 @@ class AgentDeliveryMixin:
                 await require_disclosure_access(context)
             options = {"files": files} if files else {}
             private_parts = tuple(
-                part for outcome in (context.state.command_outcomes if context else ())
+                part for outcome in (context.state.outcomes if context else ())
                 if outcome.visibility == "private" for part in outcome.private_parts
             )
             private_files = tuple(
-                item for outcome in (context.state.command_outcomes if context else ())
+                item for outcome in (context.state.outcomes if context else ())
                 if outcome.visibility == "private" for item in outcome.attachments
             )
             private_panels = tuple(
-                outcome.private_panel for outcome in (context.state.command_outcomes if context else ())
+                outcome.private_panel for outcome in (context.state.outcomes if context else ())
                 if outcome.private_panel is not None
             )
             panel_labels = tuple(
-                outcome.command_name for outcome in (context.state.command_outcomes if context else ())
+                outcome.command_name for outcome in (context.state.outcomes if context else ())
                 if outcome.private_panel is not None
             )
-            private_view = (PrivateCommandView(
+            private_view = (PrivateResultView(
                 message.author.id, private_parts, private_files,
                 panels=private_panels, panel_labels=panel_labels,
             ) if private_parts or private_files or private_panels else None)
             confirm_view = (ConfirmationView(message.author.id,
-                                             tuple(context.state.command_proposals), context,
+                                             tuple(context.state.proposed_changes), context,
                                              private_view,
                                              runner=getattr(self, "action_runner", None))
-                            if context and context.state.command_proposals else None)
+                            if context and context.state.proposed_changes else None)
             if private_view is not None and confirm_view is None:
                 options["view"] = private_view
             if confirm_view is not None and len(chunks) <= 1:
@@ -258,7 +258,7 @@ class AgentDeliveryMixin:
 def _delivery_part(response: str, part_index: int) -> tuple[str, int]:
     if type(part_index) is not int or part_index < 0:
         raise ValueError("Invalid delivery part index")
-    if not response.startswith(COMMAND_PREVIEW_HEADER) and _needs_file(response):
+    if not response.startswith(ACTION_PREVIEW_HEADER) and _needs_file(response):
         if part_index != 0:
             raise ValueError("Delivery part is outside the generated response")
         return response, 1

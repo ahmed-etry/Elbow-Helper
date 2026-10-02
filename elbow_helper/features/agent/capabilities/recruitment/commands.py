@@ -38,24 +38,24 @@ from ...wording import (
     ACTION_ACCEPT_NO_LINK,
     ACTION_ACCEPT_ROLE_MISSING,
 )
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...commands.registry import CommandAdapter, PreparedCommandChange
 
 
-async def run_opinion(context: Any, values: Mapping[str, Any]) -> CommandOutcome:
+async def run_opinion(context: Any, values: Mapping[str, Any]) -> ActionOutcome:
     ticket = str(values.get("ticket") or "").strip()
     if not ticket:
-        return CommandOutcome.needs_input(("ticket",))
+        return ActionOutcome.needs_input(("ticket",))
     workflow = context.bot.get_cog("Recruitment")
     if workflow is None:
-        return CommandOutcome.unavailable()
+        return ActionOutcome.unavailable()
     channel = workflow.resolve_opinion_ticket(context.guild, context.member, ticket)
     if channel is None:
-        return CommandOutcome.needs_input(("ticket",))
+        return ActionOutcome.needs_input(("ticket",))
     parts = await workflow.build_ticket_second_opinion(channel)
     if not parts:
-        return CommandOutcome("empty", "private")
-    return CommandOutcome("complete", "private", private_parts=tuple(parts))
+        return ActionOutcome("empty", "private")
+    return ActionOutcome("complete", "private", private_parts=tuple(parts))
 
 
 async def _recstatement(context: Any, values: Mapping[str, Any]):
@@ -102,10 +102,10 @@ async def prepare_recstatement(context: Any,
 
 
 async def run_recstatement(context: Any,
-                           values: Mapping[str, Any]) -> CommandOutcome:
+                           values: Mapping[str, Any]) -> ActionOutcome:
     workflow, prepared = await _recstatement(context, values)
     message = await workflow.post_recstatement(prepared)
-    return CommandOutcome("complete", "private", text=message,
+    return ActionOutcome("complete", "private", text=message,
                           result={"channel_id": prepared["channel"].id})
 
 
@@ -141,9 +141,9 @@ async def prepare_checkup(context: Any,
         return (current["issue"] is None
                 and current["message"] == prepared["message"])
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         confirmation = await workflow.post_checkup(prepared)
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "private", text=confirmation,
             result={"channel_id": channel.id},
         )
@@ -156,7 +156,7 @@ async def prepare_checkup(context: Any,
 
 
 async def run_checkup(context: Any,
-                      values: Mapping[str, Any]) -> CommandOutcome:
+                      values: Mapping[str, Any]) -> ActionOutcome:
     return await (await prepare_checkup(context, values)).run()
 
 
@@ -201,9 +201,9 @@ async def prepare_decline(context: Any,
                 and live["message"] == prepared["message"]
                 and live["rename_candidate"] == candidate)
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         message = await workflow.post_decline(prepared)
-        return CommandOutcome("complete", "private", text=message,
+        return ActionOutcome("complete", "private", text=message,
                               result={"channel_id": channel.id},
                               after={"channel_id": channel.id,
                                      "channel_name": channel.name})
@@ -214,7 +214,7 @@ async def prepare_decline(context: Any,
 
 
 async def run_decline(context: Any,
-                      values: Mapping[str, Any]) -> CommandOutcome:
+                      values: Mapping[str, Any]) -> ActionOutcome:
     return await (await prepare_decline(context, values)).run()
 
 
@@ -280,9 +280,9 @@ async def prepare_finalize(context: Any,
             tuple(role.id for role in live["add_roles"]),
         )
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         confirmation = await workflow.post_finalize(prepared)
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "private", text=confirmation,
             result={"channel_id": channel.id, "member_id": member.id},
             after={"channel_id": channel.id, "member_id": member.id,
@@ -296,7 +296,7 @@ async def prepare_finalize(context: Any,
 
 
 async def run_finalize(context: Any,
-                       values: Mapping[str, Any]) -> CommandOutcome:
+                       values: Mapping[str, Any]) -> ActionOutcome:
     return await (await prepare_finalize(context, values)).run()
 
 
@@ -389,7 +389,7 @@ async def prepare_accept(context: Any,
             return False
         return signature(live, live_effects) == initial
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         result = await workflow.perform_accept(
             user=member, valid_clans=list(prepared["valid_clans"]),
             nickname=prepared["nickname"], days=prepared["days"],
@@ -400,7 +400,7 @@ async def prepare_accept(context: Any,
         )
         if result["issue"]:
             raise ValueError(result["issue"])
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "private", text=result["message"] or "",
             result={"member_id": member.id, "channel_id": channel.id,
                     "failures": list(result["failures"])},
@@ -421,7 +421,7 @@ async def prepare_accept(context: Any,
 
 
 async def run_accept(context: Any,
-                     values: Mapping[str, Any]) -> CommandOutcome:
+                     values: Mapping[str, Any]) -> ActionOutcome:
     return await (await prepare_accept(context, values)).run()
 
 

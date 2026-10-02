@@ -54,7 +54,7 @@ class DiscordMessageControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await prepare_reaction(self.context, arguments))["prepared_count"], 0)
         arguments["operation"] = "add"
         await prepare_reaction(self.context, arguments)
-        action = self.context.state.command_proposals.pop()
+        action = self.context.state.proposed_changes.pop()
         self.assertEqual(action.preview.lines[0],
                          f"Add X to {self.message.jump_url}.")
         result = await action.run()
@@ -73,12 +73,12 @@ class DiscordMessageControlTests(unittest.IsolatedAsyncioTestCase):
         await prepare_pin(self.context, {
             "channel_id": 2, "message_id": 6, "operation": "pin",
         })
-        action = self.context.state.command_proposals.pop()
+        action = self.context.state.proposed_changes.pop()
         self.assertTrue(await action.preview.recheck())
         await action.run()
         self.assertTrue(self.message.pinned)
         await prepare_pin(self.context, {
             "channel_id": 2, "message_id": 6, "operation": "unpin",
         })
-        await self.context.state.command_proposals.pop().run()
+        await self.context.state.proposed_changes.pop().run()
         self.assertFalse(self.message.pinned)

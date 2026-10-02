@@ -16,13 +16,13 @@ from ...wording import (
     ACTION_TRANSFER_REMINDER_LABEL,
     ACTION_TRANSFER_REMINDER_PAGE,
 )
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...commands.registry import CommandAdapter, PreparedCommandChange
 
 
 async def prepare_transfer_reminder(
     context: Any, values: Mapping[str, Any],
-) -> PreparedCommandChange | CommandOutcome:
+) -> PreparedCommandChange | ActionOutcome:
     workflow = context.bot.get_cog("CwlManagement")
     if workflow is None:
         raise ValueError('CWL transfer reminders are unavailable.')
@@ -31,7 +31,7 @@ async def prepare_transfer_reminder(
     if prepared["issue"]:
         raise ValueError(prepared["issue"])
     if prepared["status"] in ("unavailable", "no_change"):
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "private", text="\n".join(prepared["result_lines"]),
         )
     channel = prepared["channel"]
@@ -74,7 +74,7 @@ async def prepare_transfer_reminder(
                 return False
         return signature(current) == initial
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         result = await workflow.apply_transfer_reminder(
             prepared, enforce_state=True,
         )
@@ -86,7 +86,7 @@ async def prepare_transfer_reminder(
                 entry["message_id"] for entry in refs
             } != set(result["message_ids"]):
                 raise OSError("Transfer reminder post could not be verified")
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "private", text="\n".join(result["result_lines"]),
             result={"status": result["status"],
                     "message_ids": list(result["message_ids"]),
@@ -105,7 +105,7 @@ async def prepare_transfer_reminder(
 
 
 async def run_transfer_reminder(context: Any,
-                                values: Mapping[str, Any]) -> CommandOutcome:
+                                values: Mapping[str, Any]) -> ActionOutcome:
     prepared = await prepare_transfer_reminder(context, values)
     return await prepared.run() if isinstance(prepared, PreparedCommandChange) else prepared
 

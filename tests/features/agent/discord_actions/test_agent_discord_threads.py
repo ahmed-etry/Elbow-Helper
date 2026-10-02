@@ -96,7 +96,7 @@ class DiscordThreadActionTests(unittest.IsolatedAsyncioTestCase):
             "parent_channel_id": 2, "name": "Before",
         })
         self.assertEqual(result["status"], "confirmation_required")
-        action = self.context.state.command_proposals.pop()
+        action = self.context.state.proposed_changes.pop()
         self.assertTrue(await action.preview.recheck())
         outcome = await action.run()
         self.assertEqual(outcome.result["thread_id"], self.thread.id)
@@ -108,7 +108,7 @@ class DiscordThreadActionTests(unittest.IsolatedAsyncioTestCase):
             "thread_id": 7, "operation": "rename", "name": "After",
         })
         self.assertEqual(result["status"], "confirmation_required")
-        action = self.context.state.command_proposals.pop()
+        action = self.context.state.proposed_changes.pop()
         self.assertTrue(await action.preview.recheck())
         await action.run()
         self.assertEqual(self.thread.name, "After")
@@ -119,7 +119,7 @@ class DiscordThreadActionTests(unittest.IsolatedAsyncioTestCase):
             "thread_id": 7, "operation": "add", "member_ids": [4],
         })
         self.assertEqual(result["prepared_count"], 1)
-        action = self.context.state.command_proposals.pop()
+        action = self.context.state.proposed_changes.pop()
         self.assertTrue(await action.preview.recheck())
         await action.run()
         self.assertIn(4, self.thread.members)
@@ -129,8 +129,8 @@ class DiscordThreadActionTests(unittest.IsolatedAsyncioTestCase):
         await prepare_create_thread(self.context, {
             "parent_channel_id": 2, "name": "Planned",
         })
-        created = self.context.state.command_proposals.pop()
-        self.context.state.command_proposals.append(replace(created, step_id="created"))
+        created = self.context.state.proposed_changes.pop()
+        self.context.state.proposed_changes.append(replace(created, step_id="created"))
         update = await prepare_update_thread(self.context, {
             "thread_id": reference, "operation": "rename", "name": "After",
         })
@@ -139,7 +139,7 @@ class DiscordThreadActionTests(unittest.IsolatedAsyncioTestCase):
         })
         self.assertEqual(update["status"], "confirmation_required")
         self.assertEqual(members["prepared_count"], 1)
-        _, changing, joining = self.context.state.command_proposals
+        _, changing, joining = self.context.state.proposed_changes
         self.assertIn("thread Planned", changing.preview.lines[0])
         self.assertNotIn("created", changing.preview.lines[0])
         bound_change = await changing.bind({"created": {"thread_id": 7}})

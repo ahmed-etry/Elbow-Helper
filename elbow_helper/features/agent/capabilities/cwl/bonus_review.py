@@ -10,7 +10,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ...actions.outcomes import CommandOutcome, embed_text
+from ...actions.outcomes import ActionOutcome, embed_text
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
     ACTION_CWL_BONUS_REVIEW_LINE,
@@ -36,7 +36,7 @@ def cwl_bonus_review_tools() -> tuple[RegisteredAgentTool, ...]:
             "source_text": {"type": "string"},
         }, "required": ["clan_code", "decision"], "additionalProperties": False},
     ), prepare_cwl_bonus_review, AgentCapabilityEffect.COMMAND,
-        ActionClass.CHANGE, True,
+        ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("clan_code", "clan"),),
             time_fields=(),
@@ -94,20 +94,20 @@ async def prepare_cwl_bonus_review(context: AgentRequestContext,
             return fresh == candidate
         return True
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         if decision == "grant":
             status, detail = await workflow.complete_bonus_review(
                 state["board_key"], candidate, context.member)
             if status != "complete":
                 raise ValueError(str(detail or 'That CWL bonus review is unavailable.'))
             result = workflow.bonus_review_result(candidate, detail, context.member)
-            return CommandOutcome("complete", "private", text=embed_text(result))
+            return ActionOutcome("complete", "private", text=embed_text(result))
         status = "skipped" if decision == "skip" else "on_hold"
         text = await workflow.set_bonus_review_status(
             state["board_key"], clan_code, status, context.member)
-        return CommandOutcome("complete", "private", text=text)
+        return ActionOutcome("complete", "private", text=text)
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "review_cwl_bonus", {"clan_code": clan_code, "mode": mode,
                               "month_key": month_key, "decision": decision},
         ChangePreview(tuple(lines), recheck, summary=ACTION_CWL_BONUS_REVIEW_LABEL),

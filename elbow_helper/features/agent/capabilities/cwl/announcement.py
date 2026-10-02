@@ -19,7 +19,7 @@ from ...wording import (
     ACTION_CWL_ANNOUNCEMENT_PREVIEW_ONLY,
     ACTION_PREVIEW_BLANK,
 )
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...commands.registry import CommandAdapter, PreparedCommandChange
 
 
@@ -34,7 +34,7 @@ def _options(values: Mapping[str, Any]) -> dict[str, Any]:
 
 async def prepare_roster_announcement(
     context: Any, values: Mapping[str, Any],
-) -> PreparedCommandChange | CommandOutcome:
+) -> PreparedCommandChange | ActionOutcome:
     workflow = context.bot.get_cog("CwlManagement")
     if workflow is None:
         raise ValueError('CWL roster announcements are unavailable.')
@@ -45,7 +45,7 @@ async def prepare_roster_announcement(
     if prepared["issue"]:
         raise ValueError(prepared["issue"])
     if preview_only:
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "private",
             text=prepared["content_preview"] + "\n" + ACTION_CWL_ANNOUNCEMENT_PREVIEW_ONLY,
         )
@@ -89,14 +89,14 @@ async def prepare_roster_announcement(
                 and await workflow.roster_announcement_roster_names(cycles) == names
                 and workflow.roster_announcement_release_state() == prior_release)
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         result = await workflow.post_roster_announcement(prepared, channel)
         if result["issue"]:
             raise ValueError(result["issue"])
         messages = result["messages"]
         if not messages or not workflow.roster_announcement_released(cycles):
             raise OSError("CWL roster announcement could not be verified")
-        return CommandOutcome(
+        return ActionOutcome(
             "complete", "private", text=result["message"],
             result={"channel_id": channel.id,
                     "message_ids": [message.id for message in messages]},
@@ -114,7 +114,7 @@ async def prepare_roster_announcement(
 
 
 async def run_roster_announcement(context: Any,
-                                  values: Mapping[str, Any]) -> CommandOutcome:
+                                  values: Mapping[str, Any]) -> ActionOutcome:
     prepared = await prepare_roster_announcement(context, values)
     return await prepared.run() if isinstance(prepared, PreparedCommandChange) else prepared
 

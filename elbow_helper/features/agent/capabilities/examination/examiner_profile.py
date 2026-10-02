@@ -12,7 +12,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ...actions.outcomes import CommandOutcome
+from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
     ACTION_EXAMINER_PROFILE_LINE,
@@ -68,7 +68,7 @@ def examiner_profile_tools() -> tuple[RegisteredAgentTool, ...]:
             name="set_examiner_profile",
             description="Set your examiner Town Hall coverage, status, timezone or availability after confirmation.",
             parameters=schema,
-        ), prepare_examiner_profile, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+        ), prepare_examiner_profile, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
                 entity_fields=(),
                 time_fields=(),
@@ -80,7 +80,7 @@ def examiner_profile_tools() -> tuple[RegisteredAgentTool, ...]:
             name="leave_examiner_roster",
             description="Remove yourself from the examiner roster after confirmation.",
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
-        ), prepare_examiner_leave, AgentCapabilityEffect.COMMAND, ActionClass.IRREVERSIBLE, True,
+        ), prepare_examiner_leave, AgentCapabilityEffect.COMMAND, ActionClass.IRREVERSIBLE,
             contract=CapabilityContract(
                 entity_fields=(),
                 time_fields=(),
@@ -158,13 +158,13 @@ async def prepare_examiner_profile(context: AgentRequestContext,
         except ValueError:
             return False
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         profile = await workflow.change_examiner_profile(context.member, dict(values))
-        return CommandOutcome("complete", "private", text=ACTION_EXAMINER_PROFILE_LABEL,
+        return ActionOutcome("complete", "private", text=ACTION_EXAMINER_PROFILE_LABEL,
                               after={"profile": {key: profile[key] for key in PROFILE_FIELDS},
                                      "existed": True})
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "set_examiner_profile", {"member_id": context.member.id},
         ChangePreview(tuple(lines), recheck, summary=ACTION_EXAMINER_PROFILE_LABEL,
                       before={"profile": {key: before[key] for key in PROFILE_FIELDS},
@@ -189,13 +189,13 @@ async def prepare_examiner_leave(context: AgentRequestContext,
         except ValueError:
             return False
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         if not await workflow.leave_examiner_roster(context.member):
             raise ValueError("That examiner profile isn't available.")
-        return CommandOutcome("complete", "private", text=ACTION_EXAMINER_PROFILE_LEAVE.format(
+        return ActionOutcome("complete", "private", text=ACTION_EXAMINER_PROFILE_LEAVE.format(
             member=context.member.mention, channel=channel.mention))
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "leave_examiner_roster", {"member_id": context.member.id},
         ChangePreview(lines, recheck, summary=ACTION_EXAMINER_PROFILE_LEAVE_LABEL),
         run, action_class=ActionClass.IRREVERSIBLE,
@@ -222,14 +222,14 @@ async def prepare_examiner_profile_undo(context: AgentRequestContext,
         live = workflow.examiner_profile_snapshot(context.member)
         return all(live[key] == expected["profile"][key] for key in PROFILE_FIELDS)
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         if prior["existed"]:
             restored = await workflow.change_examiner_profile(context.member, prior["profile"])
             after = {"profile": {key: restored[key] for key in PROFILE_FIELDS}, "existed": True}
         else:
             await workflow.leave_examiner_roster(context.member)
             after = {"profile": prior["profile"], "existed": False}
-        return CommandOutcome("complete", "private", text=ACTION_EXAMINER_PROFILE_LABEL,
+        return ActionOutcome("complete", "private", text=ACTION_EXAMINER_PROFILE_LABEL,
                               after=after)
 
     return PreparedAction(

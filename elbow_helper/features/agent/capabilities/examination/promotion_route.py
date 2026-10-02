@@ -15,7 +15,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
-from ...actions.outcomes import CommandOutcome, embed_text
+from ...actions.outcomes import ActionOutcome, embed_text
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
     ACTION_PROMOTION_ROUTE_LINE,
@@ -57,7 +57,7 @@ def promotion_route_tools() -> tuple[RegisteredAgentTool, ...]:
         }, "required": ["ticket_channel_id", "from_clan", "to_clan"],
             "additionalProperties": False},
     ), prepare_promotion_route, AgentCapabilityEffect.COMMAND,
-        ActionClass.CHANGE, True,
+        ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("ticket_channel_id", "examination_ticket_channel"),),
             time_fields=(),
@@ -132,16 +132,16 @@ async def prepare_promotion_route(context: AgentRequestContext,
         except ValueError:
             return False
 
-    async def run() -> CommandOutcome:
+    async def run() -> ActionOutcome:
         await workflow.change_promotion_route(
             ticket_channel_id=ticket.id,
             routing_message_id=int(case.get("routing_message_id") or 0),
             from_clan=from_clan, to_clan=to_clan,
             actor=context.member,
         )
-        return CommandOutcome("complete", "private", text=ACTION_PROMOTION_ROUTE_LABEL)
+        return ActionOutcome("complete", "private", text=ACTION_PROMOTION_ROUTE_LABEL)
 
-    context.state.command_proposals.append(PreparedAction(
+    context.state.proposed_changes.append(PreparedAction(
         "change_promotion_route", {"ticket_channel_id": ticket.id},
         ChangePreview(tuple(lines), recheck, summary=ACTION_PROMOTION_ROUTE_LABEL),
         run, action_class=ActionClass.CHANGE,
