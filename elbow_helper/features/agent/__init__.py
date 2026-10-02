@@ -16,11 +16,11 @@ from .research.runner import ResearchJobRunner
 from .actions.repository import AgentActionRepository
 from .actions.runner import AgentActionRunner
 from .scheduled.runner import ScheduledRunner
-from .tools.discord_roles import prepare_role_undo
-from .tools.discord_messages import prepare_edit_undo
-from .tools.discord_threads import prepare_thread_member_undo, prepare_thread_update_undo
-from .tools.discord_message_controls import prepare_control_undo
-from .tools.discord_nicknames import prepare_nickname_undo
+from .discord_actions.roles import prepare_role_undo
+from .discord_actions.messages import prepare_edit_undo
+from .discord_actions.threads import prepare_thread_member_undo, prepare_thread_update_undo
+from .discord_actions.message_controls import prepare_control_undo
+from .discord_actions.nicknames import prepare_nickname_undo
 from .commands.adapters.records import prepare_record_add_undo, prepare_record_edit_undo
 from .commands.adapters.achievements import prepare_raffle_prize_undo
 from .commands.adapters.account_links import prepare_account_add_undo

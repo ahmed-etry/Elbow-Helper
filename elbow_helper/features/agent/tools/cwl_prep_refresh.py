@@ -16,7 +16,7 @@ from ..wording import (
     ACTION_CWL_PREP_REFRESH_LINE,
     ACTION_CWL_PREP_REFRESH_LABEL,
 )
-from .discord_safety import check_post_access, resolve_channel
+from ..discord_actions.safety import check_post_access, resolve_channel
 
 
 def cwl_prep_refresh_tools() -> tuple[RegisteredAgentTool, ...]:

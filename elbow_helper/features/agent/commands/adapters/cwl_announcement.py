@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from elbow_helper.features.agent.tools.discord_safety import check_post_access
+from elbow_helper.features.agent.discord_actions.safety import check_post_access
 from elbow_helper.features.cwl.announcements import PENDING_ROSTER_HUB_LINK
 
 from ...actions.contracts import ActionClass, ChangePreview

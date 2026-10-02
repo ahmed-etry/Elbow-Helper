@@ -23,7 +23,7 @@ from ..wording import (
     ACTION_PROMOTION_ROUTE_PROMPT,
     ACTION_PROMOTION_ROUTE_LABEL,
 )
-from .discord_safety import check_post_access, check_view_access, resolve_channel
+from ..discord_actions.safety import check_post_access, check_view_access, resolve_channel
 
 
 def promotion_route_tools() -> tuple[RegisteredAgentTool, ...]:

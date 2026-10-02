@@ -23,7 +23,7 @@ from ..wording import (
     ACTION_TICKET_CLOSE_CONTROLS,
     ACTION_TICKET_CLOSE_LABEL,
 )
-from .discord_safety import check_member, check_post_access, resolve_channel
+from ..discord_actions.safety import check_member, check_post_access, resolve_channel
 
 
 def ticket_reopen_tools() -> tuple[RegisteredAgentTool, ...]:

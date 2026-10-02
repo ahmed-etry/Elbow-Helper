@@ -22,7 +22,7 @@ from ..wording import (
     ACTION_THREAD_UPDATE_LABEL, ACTION_THREAD_UPDATE_LINE,
     ACTION_UNDO_CHANGED,
 )
-from .discord_safety import (DiscordActionRefused, check_member, check_view_access,
+from .safety import (DiscordActionRefused, check_member, check_view_access,
                              resolve_channel, resolve_member)
 
 

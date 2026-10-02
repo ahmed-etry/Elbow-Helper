@@ -27,7 +27,7 @@ from ..wording import (
     ACTION_POST_LABEL, ACTION_POST_LINE,
     ACTION_UNDO_CHANGED,
 )
-from .discord_safety import (DiscordActionRefused, check_post_access,
+from .safety import (DiscordActionRefused, check_post_access,
                              check_view_access, resolve_channel)
 
 

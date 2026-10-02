@@ -36,7 +36,7 @@ from ..wording import (
     ACTION_ROSTER_REFRESH_MEMBER,
     ACTION_ROSTER_REFRESH_LABEL,
 )
-from .discord_safety import (
+from ..discord_actions.safety import (
     check_member, check_post_access, check_role, resolve_channel, resolve_member,
 )
 

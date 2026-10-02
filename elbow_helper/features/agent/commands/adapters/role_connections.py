@@ -8,7 +8,7 @@ from typing import Any
 import discord
 
 from elbow_helper.features.agent.access import ACCESS_LEAD, has_access_requirements
-from elbow_helper.features.agent.tools.discord_safety import (
+from elbow_helper.features.agent.discord_actions.safety import (
     check_post_access, resolve_channel,
 )
 from elbow_helper.features.help.discovery import ParameterInfo

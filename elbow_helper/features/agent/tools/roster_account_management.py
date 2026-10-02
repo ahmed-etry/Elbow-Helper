@@ -27,7 +27,7 @@ from ..wording import (
     ACTION_ROSTER_REMOVE_ROW,
     ACTION_ROSTER_REMOVE_LABEL,
 )
-from .discord_safety import (
+from ..discord_actions.safety import (
     check_member, check_post_access, check_role, resolve_channel, resolve_member,
 )
 

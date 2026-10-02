@@ -7,7 +7,7 @@ from typing import Any
 
 import discord
 
-from elbow_helper.features.agent.tools.discord_safety import (
+from elbow_helper.features.agent.discord_actions.safety import (
     check_post_access, check_view_access,
 )
 from elbow_helper.features.wars.commands import resolve_statement_members

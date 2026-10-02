@@ -15,7 +15,7 @@ from ..wording import (
     ACTION_NICKNAME_LABEL, ACTION_NICKNAME_LINE,
     ACTION_NICKNAME_RESET_LINE, ACTION_UNDO_CHANGED,
 )
-from .discord_safety import DiscordActionRefused, check_raw_nickname, resolve_member
+from .safety import DiscordActionRefused, check_raw_nickname, resolve_member
 
 
 def discord_nickname_tools() -> tuple[RegisteredAgentTool, ...]:

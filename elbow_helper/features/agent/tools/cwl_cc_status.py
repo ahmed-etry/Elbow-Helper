@@ -18,7 +18,7 @@ from ..wording import (
     ACTION_CC_STATUS_POST,
     ACTION_CC_STATUS_LABEL,
 )
-from .discord_safety import check_post_access, resolve_channel
+from ..discord_actions.safety import check_post_access, resolve_channel
 
 
 def cwl_cc_status_tools() -> tuple[RegisteredAgentTool, ...]:

@@ -21,7 +21,7 @@ from ..wording import (
     ACTION_CONNECTION_MANAGE_OLD_RULE,
     ACTION_CONNECTION_MANAGE_NEW_RULE,
 )
-from .discord_safety import check_post_access, check_role, resolve_channel
+from ..discord_actions.safety import check_post_access, check_role, resolve_channel
 
 
 def role_connection_management_tools() -> tuple[RegisteredAgentTool, ...]:

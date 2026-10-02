@@ -23,7 +23,7 @@ from ..wording import (
     ACTION_STANDING_TIME, ACTION_STANDING_WATCHER,
     ACTION_VALUE_YES, ACTION_VALUE_NO,
 )
-from ..tools.discord_safety import check_post_access, resolve_channel
+from ..discord_actions.safety import check_post_access, resolve_channel
 from .scope import has_raw_id, validate_scope
 from .time_rules import next_occurrences, timezone_name
 

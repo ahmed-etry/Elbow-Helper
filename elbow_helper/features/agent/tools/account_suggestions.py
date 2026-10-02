@@ -23,7 +23,7 @@ from ..wording import (
     ACTION_SUGGESTION_LINK_LABEL,
     ACTION_SUGGESTION_IGNORE_LABEL,
 )
-from .discord_safety import (
+from ..discord_actions.safety import (
     check_member, check_post_access, check_view_access,
     resolve_channel, resolve_member,
 )

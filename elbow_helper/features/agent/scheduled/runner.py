@@ -14,7 +14,7 @@ import discord
 
 from ..access import AgentAccessLost, require_access
 from ..service import AgentUnavailableError
-from ..tools.discord_safety import check_post_access
+from ..discord_actions.safety import check_post_access
 from ..wording import (
     ACTION_STANDING_ACCESS_PAUSED,
     ACTION_STANDING_INTERRUPTED,

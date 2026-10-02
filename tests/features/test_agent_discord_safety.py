@@ -4,7 +4,7 @@ from itertools import product
 from types import SimpleNamespace
 import unittest
 
-from elbow_helper.features.agent.tools.discord_safety import (
+from elbow_helper.features.agent.discord_actions.safety import (
     POWERFUL_PERMISSIONS, DiscordActionRefused, check_member, check_post_access,
     check_role, check_raw_role, check_raw_nickname,
 )

@@ -20,11 +20,11 @@ from .cwl_cc_status import cwl_cc_status_tools
 from .cwl_prep_refresh import cwl_prep_refresh_tools
 from .cwl_member_hub import cwl_member_hub_tools
 from .discord import discord_tools
-from .discord_roles import discord_role_tools
-from .discord_messages import discord_message_tools
-from .discord_threads import discord_thread_tools
-from .discord_message_controls import discord_message_control_tools
-from .discord_nicknames import discord_nickname_tools
+from ..discord_actions.roles import discord_role_tools
+from ..discord_actions.messages import discord_message_tools
+from ..discord_actions.threads import discord_thread_tools
+from ..discord_actions.message_controls import discord_message_control_tools
+from ..discord_actions.nicknames import discord_nickname_tools
 from .examination import examination_tools
 from .examiner_profile import examiner_profile_tools
 from .events import event_tools

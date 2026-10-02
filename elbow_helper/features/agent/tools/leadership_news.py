@@ -24,7 +24,7 @@ from ..wording import (
     ACTION_NEWS_DISMISS_LABEL,
     ACTION_NEWS_PUBLISH_PROMPT,
 )
-from .discord_safety import check_post_access, check_view_access, resolve_channel
+from ..discord_actions.safety import check_post_access, check_view_access, resolve_channel
 
 
 def leadership_news_tools() -> tuple[RegisteredAgentTool, ...]:

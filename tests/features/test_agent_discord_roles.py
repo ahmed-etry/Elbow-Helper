@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.agent.models import AgentTurnState
-from elbow_helper.features.agent.tools.discord_roles import (
+from elbow_helper.features.agent.discord_actions.roles import (
     prepare_add_roles, prepare_remove_roles, prepare_role_undo,
 )
 
@@ -48,9 +48,9 @@ class DiscordRoleActionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_bulk_role_change_prepares_only_members_who_need_it(self):
         context, role, members = self.context()
-        with (patch("elbow_helper.features.agent.tools.discord_roles.require_evidence_access",
+        with (patch("elbow_helper.features.agent.discord_actions.roles.require_evidence_access",
                     new_callable=AsyncMock),
-              patch("elbow_helper.features.agent.tools.discord_roles.managed_role_commands",
+              patch("elbow_helper.features.agent.discord_actions.roles.managed_role_commands",
                     new_callable=AsyncMock, return_value={})):
             result = await prepare_add_roles(
                 context, {"role_id": role.id, "member_ids": [4, 5]},
@@ -67,9 +67,9 @@ class DiscordRoleActionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_undo_reverses_the_recorded_change(self):
         context, role, members = self.context()
-        with (patch("elbow_helper.features.agent.tools.discord_roles.require_evidence_access",
+        with (patch("elbow_helper.features.agent.discord_actions.roles.require_evidence_access",
                     new_callable=AsyncMock),
-              patch("elbow_helper.features.agent.tools.discord_roles.managed_role_commands",
+              patch("elbow_helper.features.agent.discord_actions.roles.managed_role_commands",
                     new_callable=AsyncMock, return_value={})):
             await prepare_add_roles(context, {"role_id": role.id, "member_ids": [4]})
             action = context.state.command_proposals[0]
@@ -84,9 +84,9 @@ class DiscordRoleActionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_removal_previews_the_selected_member(self):
         context, role, members = self.context()
-        with (patch("elbow_helper.features.agent.tools.discord_roles.require_evidence_access",
+        with (patch("elbow_helper.features.agent.discord_actions.roles.require_evidence_access",
                     new_callable=AsyncMock),
-              patch("elbow_helper.features.agent.tools.discord_roles.managed_role_commands",
+              patch("elbow_helper.features.agent.discord_actions.roles.managed_role_commands",
                     new_callable=AsyncMock, return_value={})):
             result = await prepare_remove_roles(
                 context, {"role_id": role.id, "member_ids": [4, 5]},

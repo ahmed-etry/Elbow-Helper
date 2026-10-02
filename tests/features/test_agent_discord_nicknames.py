@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.agent.models import AgentTurnState
-from elbow_helper.features.agent.tools.discord_nicknames import (
+from elbow_helper.features.agent.discord_actions.nicknames import (
     prepare_nickname, prepare_nickname_undo,
 )
 
@@ -33,7 +33,7 @@ class DiscordNicknameTests(unittest.IsolatedAsyncioTestCase):
         guild.get_member = lambda identifier: self.context.member if identifier == self.context.member.id else original_get_member(identifier)
         self.member = member
         self.patch = patch(
-            "elbow_helper.features.agent.tools.discord_nicknames.require_evidence_access",
+            "elbow_helper.features.agent.discord_actions.nicknames.require_evidence_access",
             new_callable=AsyncMock,
         )
         self.patch.start()

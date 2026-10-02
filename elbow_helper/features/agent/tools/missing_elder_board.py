@@ -18,7 +18,7 @@ from ..wording import (
     ACTION_ELDER_REFRESH_BOARD,
     ACTION_ELDER_REFRESH_LABEL,
 )
-from .discord_safety import check_post_access, resolve_channel
+from ..discord_actions.safety import check_post_access, resolve_channel
 
 
 def missing_elder_board_tools() -> tuple[RegisteredAgentTool, ...]:

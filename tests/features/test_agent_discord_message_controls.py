@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.agent.models import AgentTurnState
-from elbow_helper.features.agent.tools.discord_message_controls import (
+from elbow_helper.features.agent.discord_actions.message_controls import (
     prepare_control_undo, prepare_pin, prepare_reaction,
 )
 
@@ -41,7 +41,7 @@ class DiscordMessageControlTests(unittest.IsolatedAsyncioTestCase):
         )
         self.message = message
         self.patch = patch(
-            "elbow_helper.features.agent.tools.discord_message_controls.require_evidence_access",
+            "elbow_helper.features.agent.discord_actions.message_controls.require_evidence_access",
             new_callable=AsyncMock,
         )
         self.patch.start()

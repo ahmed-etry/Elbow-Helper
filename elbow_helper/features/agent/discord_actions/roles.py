@@ -16,7 +16,7 @@ from ..wording import (
     ACTION_ROLE_REMOVE_LABEL, ACTION_ROLE_REMOVE_LINE,
     ACTION_ROLE_UNDO_LABEL, ACTION_UNDO_CHANGED,
 )
-from .discord_safety import (
+from .safety import (
     DiscordActionRefused, check_member, check_raw_role, managed_role_commands,
     resolve_member,
 )

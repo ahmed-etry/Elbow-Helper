@@ -7,7 +7,7 @@ from typing import Any
 
 import discord
 
-from elbow_helper.features.agent.tools.discord_safety import check_post_access
+from elbow_helper.features.agent.discord_actions.safety import check_post_access
 
 from ...actions.contracts import ActionClass, ChangePreview
 from ...wording import (

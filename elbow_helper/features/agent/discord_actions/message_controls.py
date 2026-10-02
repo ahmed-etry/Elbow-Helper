@@ -19,7 +19,7 @@ from ..wording import (
     ACTION_REACTION_LABEL, ACTION_REACTION_REMOVE_LINE,
     ACTION_UNDO_CHANGED,
 )
-from .discord_safety import DiscordActionRefused, check_view_access, resolve_channel
+from .safety import DiscordActionRefused, check_view_access, resolve_channel
 
 
 def discord_message_control_tools() -> tuple[RegisteredAgentTool, ...]:

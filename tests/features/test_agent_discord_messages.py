@@ -11,7 +11,7 @@ from elbow_helper.features.agent.actions.contracts import (
 )
 from elbow_helper.features.agent.actions.repository import AgentActionRepository
 from elbow_helper.features.agent.models import AgentTurnState
-from elbow_helper.features.agent.tools.discord_messages import (
+from elbow_helper.features.agent.discord_actions.messages import (
     find_agent_files, prepare_delete, prepare_edit, prepare_post,
 )
 
@@ -57,7 +57,7 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
         self.repository = repository
 
     async def test_long_post_previews_each_part_and_records_only_its_messages(self):
-        with patch("elbow_helper.features.agent.tools.discord_messages.require_evidence_access",
+        with patch("elbow_helper.features.agent.discord_actions.messages.require_evidence_access",
                    new_callable=AsyncMock):
             result = await prepare_post(self.context, {
                 "channel_id": 2, "text": "word " * 500,
@@ -73,7 +73,7 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.channel.send.await_count, 2)
 
     async def test_edit_and_delete_require_a_recorded_agent_post(self):
-        with patch("elbow_helper.features.agent.tools.discord_messages.require_evidence_access",
+        with patch("elbow_helper.features.agent.discord_actions.messages.require_evidence_access",
                    new_callable=AsyncMock):
             await prepare_post(self.context, {"channel_id": 2, "text": "First"})
             post = self.context.state.command_proposals.pop()
@@ -110,7 +110,7 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
             id=77, author=self.context.guild.me, attachments=[attachment],
         )
         self.context.history = (SimpleNamespace(record=SimpleNamespace(reply_ids=(77,))),)
-        with patch("elbow_helper.features.agent.tools.discord_messages.require_evidence_access",
+        with patch("elbow_helper.features.agent.discord_actions.messages.require_evidence_access",
                    new_callable=AsyncMock):
             listed = await find_agent_files(self.context, {})
             self.assertEqual(listed["files"][0]["file_name"], "result.txt")
@@ -136,7 +136,7 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
                           result_label="thread Planned"),
             AsyncMock(), step_id="created",
         ))
-        with patch("elbow_helper.features.agent.tools.discord_messages.require_evidence_access",
+        with patch("elbow_helper.features.agent.discord_actions.messages.require_evidence_access",
                    new_callable=AsyncMock):
             result = await prepare_post(self.context, {
                 "channel_id": reference, "text": "Opening message",

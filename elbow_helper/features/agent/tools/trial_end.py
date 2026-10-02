@@ -19,7 +19,7 @@ from ..wording import (
     ACTION_TRIAL_END_FOLLOWUP,
     ACTION_TRIAL_END_LABEL,
 )
-from .discord_safety import check_member, check_post_access, resolve_channel
+from ..discord_actions.safety import check_member, check_post_access, resolve_channel
 
 
 def trial_end_tools() -> tuple[RegisteredAgentTool, ...]:

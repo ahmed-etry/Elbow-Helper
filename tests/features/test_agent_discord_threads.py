@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.agent.models import AgentTurnState
-from elbow_helper.features.agent.tools.discord_threads import (
+from elbow_helper.features.agent.discord_actions.threads import (
     prepare_create_thread, prepare_thread_members, prepare_update_thread,
 )
 
@@ -77,16 +77,16 @@ class DiscordThreadActionTests(unittest.IsolatedAsyncioTestCase):
         )
         self.patches = ExitStack()
         self.patches.enter_context(patch(
-            "elbow_helper.features.agent.tools.discord_threads.discord.Thread", FakeThread,
+            "elbow_helper.features.agent.discord_actions.threads.discord.Thread", FakeThread,
         ))
         self.patches.enter_context(patch(
-            "elbow_helper.features.agent.tools.discord_threads.discord.TextChannel", FakeTextChannel,
+            "elbow_helper.features.agent.discord_actions.threads.discord.TextChannel", FakeTextChannel,
         ))
         self.patches.enter_context(patch(
-            "elbow_helper.features.agent.tools.discord_threads.discord.ForumChannel", FakeForumChannel,
+            "elbow_helper.features.agent.discord_actions.threads.discord.ForumChannel", FakeForumChannel,
         ))
         self.patches.enter_context(patch(
-            "elbow_helper.features.agent.tools.discord_threads.require_evidence_access",
+            "elbow_helper.features.agent.discord_actions.threads.require_evidence_access",
             new_callable=AsyncMock,
         ))
         self.addCleanup(self.patches.close)

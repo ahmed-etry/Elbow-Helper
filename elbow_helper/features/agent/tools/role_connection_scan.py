@@ -16,7 +16,7 @@ from ..wording import (
     ACTION_ROLE_REMOVE_LINE,
     ACTION_ROLE_SCAN_LABEL,
 )
-from .discord_safety import check_member, check_role, resolve_member
+from ..discord_actions.safety import check_member, check_role, resolve_member
 
 
 def role_connection_scan_tools() -> tuple[RegisteredAgentTool, ...]:

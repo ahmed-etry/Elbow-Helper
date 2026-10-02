@@ -7,7 +7,7 @@ from typing import Any
 
 import discord
 
-from elbow_helper.features.agent.tools.discord_safety import (
+from elbow_helper.features.agent.discord_actions.safety import (
     check_member, check_post_access, check_role, resolve_channel,
 )
 from elbow_helper.features.rosters.config import DEFAULT_MAX_MEMBERS, MAX_ROSTER_MEMBERS
