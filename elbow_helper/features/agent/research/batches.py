@@ -165,7 +165,7 @@ async def start_discord_research_batch(
         if source is None:
             return {"error": "The asker cannot access every research source."}
         sources[channel_id] = source
-    require_destination_access(context, sources)
+    await require_destination_access(context, sources)
     definitions = tuple(ResearchJobDefinition(
         source_channel_id=channel_id,
         query=query,
@@ -187,7 +187,7 @@ async def start_discord_research_batch(
             if await accessible_message_channel(context, channel_id) is None:
                 raise AgentAccessLost("Research source access changed")
             context.state.source_channels.add(channel_id)
-        require_destination_access(context, await require_evidence_access(context))
+        await require_destination_access(context, await require_evidence_access(context))
     except AgentAccessLost:
         await asyncio.to_thread(
             repository.cancel_many,

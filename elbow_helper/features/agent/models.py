@@ -138,6 +138,7 @@ class AgentRequestContext:
     conversation_root_id: int | None = None
     attachment_sources: tuple[discord.Message, ...] = ()
     deadline_monotonic: float | None = None
+    disclosure_thread_members: dict[int, frozenset[int] | None] = field(default_factory=dict)
 
 
 AgentToolHandler = Callable[

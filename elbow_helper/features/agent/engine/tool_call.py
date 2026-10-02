@@ -64,7 +64,7 @@ async def execute_tool(
             )
         record_report_provenance(context, snapshot["reports"])
         sources = await require_evidence_access(context)
-        require_destination_access(context, sources)
+        await require_destination_access(context, sources)
         outcome = "completed"
         content = json.dumps(payload, ensure_ascii=False, default=str, separators=(",", ":"))
         result_characters = len(content)

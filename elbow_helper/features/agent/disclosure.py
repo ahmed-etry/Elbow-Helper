@@ -147,8 +147,9 @@ async def can_disclose_provenance(
         if source is None:
             return False
         sources[channel_id] = source
-    return _resolved_sources_disclosable(
-        destination, context.guild, sources, required_access,
+    return await can_show(
+        destination, sources, required_access, context.guild,
+        thread_members=getattr(context, "disclosure_thread_members", None),
     )
 
 
@@ -169,16 +170,89 @@ def _resolved_sources_disclosable(
     )
 
 
-def require_destination_access(
+async def require_destination_access(
     context: AgentRequestContext, sources: Mapping[int, Any],
 ) -> None:
-    if not _resolved_sources_disclosable(
-        context.source_message.channel, context.guild, sources,
-        context.state.required_access,
+    if not await can_show(
+        context.source_message.channel, sources, context.state.required_access,
+        context.guild,
+        thread_members=getattr(context, "disclosure_thread_members", None),
     ):
         raise AgentDisclosureDenied("Evidence cannot be shared in this channel")
 
 
 async def require_disclosure_access(context: AgentRequestContext) -> None:
     sources = await require_evidence_access(context)
-    require_destination_access(context, sources)
+    await require_destination_access(context, sources)
+
+
+async def _thread_member_ids(thread, cache):
+    if thread.id not in cache:
+        try:
+            cache[thread.id] = frozenset(member.id for member in await thread.fetch_members())
+        except (discord.DiscordException, OSError, TimeoutError):
+            cache[thread.id] = None
+    return cache[thread.id]
+
+
+async def _destination_viewers(destination, guild, cache):
+    if isinstance(destination, discord.Thread):
+        if destination.is_private():
+            identifiers = await _thread_member_ids(destination, cache)
+            if identifiers is None:
+                return None
+            members = tuple(guild.get_member(identifier) for identifier in identifiers)
+            return None if any(member is None for member in members) else members
+        destination = destination.parent
+    if destination is None:
+        return None
+    return tuple(member for member in guild.members
+                 if destination.permissions_for(member).view_channel)
+
+
+async def can_show(
+    destination: Any, sources: Mapping[int, Any],
+    access_levels: frozenset[str] | set[str], guild: discord.Guild,
+    *, thread_members: dict[int, frozenset[int] | None] | None = None,
+) -> bool:
+    """Compare the actual destination audience with every source's readership."""
+    if (getattr(getattr(destination, "guild", None), "id", None) != guild.id
+            or not access_levels <= KNOWN_ACCESS_REQUIREMENTS
+            or any(getattr(getattr(source, "guild", None), "id", None) != guild.id
+                   for source in sources.values())):
+        return False
+    bot_member = guild.me
+    if bot_member is None:
+        return False
+    for source in sources.values():
+        permissions = source.permissions_for(bot_member)
+        if not (permissions.view_channel and permissions.read_message_history):
+            return False
+    if not getattr(guild, "chunked", False):
+        return _resolved_sources_disclosable(destination, guild, sources, access_levels)
+    cache = thread_members if thread_members is not None else {}
+    viewers = await _destination_viewers(destination, guild, cache)
+    if viewers is None:
+        return _resolved_sources_disclosable(destination, guild, sources, access_levels)
+    humans = {member.id: member for member in viewers
+              if member.id != bot_member.id and not getattr(member, "bot", False)}
+    for actor in humans.values():
+        if not has_access_requirements(guild, actor.id, access_levels):
+            return False
+    actors = {**humans, bot_member.id: bot_member}
+    for source in sources.values():
+        same_or_public = source.id == destination.id or _public_read_source(source, guild)
+        private_members = None
+        if not same_or_public and isinstance(source, discord.Thread) and source.is_private():
+            private_members = await _thread_member_ids(source, cache)
+            if private_members is None:
+                return _resolved_sources_disclosable(destination, guild, sources, access_levels)
+        for actor in actors.values():
+            if same_or_public and actor.id != bot_member.id:
+                continue
+            permissions = source.permissions_for(actor)
+            if not (permissions.view_channel and permissions.read_message_history):
+                return False
+            if private_members is not None and actor.id not in private_members:
+                return False
+    return True
