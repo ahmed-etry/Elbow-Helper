@@ -9,6 +9,7 @@ import discord
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ..engine.capability_contract import CapabilityContract
 from ..access import require_evidence_access
 from ..actions.contracts import (
     ActionClass, ChangePreview, PreparedAction, audit_reason, earlier_result_label,
@@ -41,7 +42,14 @@ def discord_thread_tools() -> tuple[RegisteredAgentTool, ...]:
                 "private": {"type": "boolean"},
                 "initial_message": {"type": "string", "minLength": 1, "maxLength": 2000},
             }, "required": ["parent_channel_id", "name"], "additionalProperties": False},
-        ), prepare_create_thread, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True),
+        ), prepare_create_thread, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+            contract=CapabilityContract(
+                entity_fields=(("parent_channel_id", "parent_discord_channel"),),
+                time_fields=(),
+                source_scope="request_context",
+                filter_fields=("name", "private", "initial_message"),
+            ),
+        ),
         RegisteredAgentTool(AgentToolDefinition(
             name="update_discord_thread",
             description="Rename, archive, unarchive, lock or unlock a thread after confirmation.",
@@ -50,7 +58,14 @@ def discord_thread_tools() -> tuple[RegisteredAgentTool, ...]:
                 "operation": {"type": "string", "enum": list(THREAD_OPERATIONS)},
                 "name": {"type": "string", "minLength": 1, "maxLength": 100},
             }, "required": ["thread_id", "operation"], "additionalProperties": False},
-        ), prepare_update_thread, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True),
+        ), prepare_update_thread, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+            contract=CapabilityContract(
+                entity_fields=(("thread_id", "discord_channel"),),
+                time_fields=(),
+                source_scope="request_context",
+                filter_fields=("operation", "name"),
+            ),
+        ),
         RegisteredAgentTool(AgentToolDefinition(
             name="change_discord_thread_members",
             description="Add or remove selected members of a thread after confirmation.",
@@ -61,7 +76,17 @@ def discord_thread_tools() -> tuple[RegisteredAgentTool, ...]:
                                "minItems": 1, "maxItems": 25, "uniqueItems": True},
             }, "required": ["thread_id", "operation", "member_ids"],
                "additionalProperties": False},
-        ), prepare_thread_members, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True),
+        ), prepare_thread_members, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+            contract=CapabilityContract(
+                entity_fields=(
+                    ("thread_id", "discord_channel"),
+                    ("member_ids", "discord_member_set"),
+                ),
+                time_fields=(),
+                source_scope="request_context",
+                filter_fields=("operation",),
+            ),
+        ),
     )
 
 

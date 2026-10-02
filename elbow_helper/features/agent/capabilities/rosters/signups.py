@@ -9,6 +9,7 @@ import discord
 from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import CommandOutcome
@@ -44,12 +45,32 @@ def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
             name="signup_roster_accounts",
             description="Sign up selected linked Clash accounts for an open roster after confirmation.",
             parameters=schema,
-        ), prepare_roster_signup, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True),
+        ), prepare_roster_signup, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+            contract=CapabilityContract(
+                entity_fields=(
+                    ("roster_id", "roster"),
+                    ("member_id", "discord_member"),
+                    ("accounts", "clash_account_set"),
+                ),
+                time_fields=(),
+                source_scope="request_context",
+            ),
+        ),
         RegisteredAgentTool(AgentToolDefinition(
             name="remove_roster_accounts",
             description="Remove selected Clash accounts from an open roster after confirmation.",
             parameters=schema,
-        ), prepare_roster_removal, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True),
+        ), prepare_roster_removal, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+            contract=CapabilityContract(
+                entity_fields=(
+                    ("roster_id", "roster"),
+                    ("member_id", "discord_member"),
+                    ("accounts", "clash_account_set"),
+                ),
+                time_fields=(),
+                source_scope="request_context",
+            ),
+        ),
         RegisteredAgentTool(AgentToolDefinition(
             name="bulk_add_roster_accounts",
             description="Add several linked Clash accounts to one open roster from player tags after confirmation.",
@@ -58,7 +79,13 @@ def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
                 "player_tags": {"type": "array", "items": {"type": "string"},
                                 "minItems": 1, "uniqueItems": True},
             }, "required": ["roster_id", "player_tags"], "additionalProperties": False},
-        ), prepare_bulk_roster_add, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True),
+        ), prepare_bulk_roster_add, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+            contract=CapabilityContract(
+                entity_fields=(("roster_id", "roster"), ("player_tags", "clash_account_set")),
+                time_fields=(),
+                source_scope="request_context",
+            ),
+        ),
         RegisteredAgentTool(AgentToolDefinition(
             name="remove_roster_signup_rows",
             description="Remove any selected current signup rows from a roster after confirmation.",
@@ -68,7 +95,13 @@ def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
                              "minItems": 1, "uniqueItems": True},
             }, "required": ["roster_id", "accounts"], "additionalProperties": False},
         ), prepare_roster_row_removal, AgentCapabilityEffect.COMMAND,
-            ActionClass.CHANGE, True),
+            ActionClass.CHANGE, True,
+            contract=CapabilityContract(
+                entity_fields=(("roster_id", "roster"), ("accounts", "clash_account_set")),
+                time_fields=(),
+                source_scope="request_context",
+            ),
+        ),
     )
 
 
@@ -120,7 +153,7 @@ async def prepare_roster_row_removal(context: AgentRequestContext,
     if role is not None:
         lines.append(ACTION_ROSTER_ACCOUNT_ROLE.format(role=role.mention))
     lines.extend(ACTION_ROSTER_POST_REFRESH.format(
-        message_id=message_id, channel=f"<#{channel_id}>")
+        channel=f"<#{channel_id}>")
         for channel_id, message_id in state["posts"])
 
     async def recheck() -> bool:
@@ -190,7 +223,7 @@ async def prepare_bulk_roster_add(context: AgentRequestContext,
     if role is not None:
         lines.append(ACTION_ROSTER_ACCOUNT_ROLE.format(role=role.mention))
     lines.extend(ACTION_ROSTER_POST_REFRESH.format(
-        message_id=message_id, channel=f"<#{channel_id}>")
+        channel=f"<#{channel_id}>")
         for channel_id, message_id in state["posts"])
 
     async def recheck() -> bool:
@@ -273,7 +306,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
     if role is not None:
         lines.append(ACTION_ROSTER_ACCOUNT_ROLE.format(role=role.mention))
     lines.extend(ACTION_ROSTER_POST_REFRESH.format(
-        message_id=message_id, channel=f"<#{channel_id}>")
+        channel=f"<#{channel_id}>")
         for channel_id, message_id in posts)
     snapshots = {account.player_tag: account for account in picker.accounts}
 

@@ -8,6 +8,7 @@ from typing import Any
 import discord
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import CommandOutcome, embed_text
@@ -32,6 +33,48 @@ from ...wording import (
 )
 
 
+TOOL_CONTRACTS = {
+    'set_event_enabled': CapabilityContract(
+        entity_fields=(('event', 'event_tracker'),),
+        time_fields=(),
+        source_scope='request_context',
+        filter_fields=('enabled',),
+    ),
+    'set_event_category': CapabilityContract(
+        entity_fields=(('event', 'event_tracker'), ('category_id', 'discord_channel')),
+        time_fields=(),
+        source_scope='request_context',
+    ),
+    'move_event': CapabilityContract(
+        entity_fields=(('event', 'event_tracker'),),
+        time_fields=(),
+        source_scope='request_context',
+        filter_fields=('position', 'edge'),
+    ),
+    'restore_event_defaults': CapabilityContract(
+        entity_fields=(('event', 'event_tracker'),),
+        time_fields=(),
+        source_scope='request_context',
+    ),
+    'delete_event': CapabilityContract(
+        entity_fields=(('event', 'event_tracker'),),
+        time_fields=(),
+        source_scope='request_context',
+    ),
+    'create_event_tracker': CapabilityContract(
+        entity_fields=(),
+        time_fields=(),
+        source_scope='request_context',
+        filter_fields=('name', 'start', 'end', 'timezone', 'grace_hours'),
+    ),
+    'edit_event_tracker': CapabilityContract(
+        entity_fields=(('event', 'event_tracker'),),
+        time_fields=(),
+        source_scope='request_context',
+        filter_fields=('name', 'start', 'end', 'timezone', 'grace_hours'),
+    ),
+}
+
 def event_management_tools() -> tuple[RegisteredAgentTool, ...]:
     specs = (
         ("set_event_enabled", "Set whether an event tracker is enabled.", ActionClass.CHANGE,
@@ -55,7 +98,9 @@ def event_management_tools() -> tuple[RegisteredAgentTool, ...]:
                 "event": {"type": "string", "minLength": 1}, **extra,
             }, "required": ["event", *(list(extra) if name == "set_event_enabled" else [])],
                 "additionalProperties": False},
-        ), prepare, AgentCapabilityEffect.COMMAND, classification, True))
+        ), prepare, AgentCapabilityEffect.COMMAND, classification, True,
+            contract=TOOL_CONTRACTS[name],
+        ))
     form_fields = {
         "name": {"type": "string", "minLength": 1},
         "start": {"type": "string"}, "end": {"type": "string"},
@@ -77,7 +122,9 @@ def event_management_tools() -> tuple[RegisteredAgentTool, ...]:
             }, "required": [*(["event"] if operation == "edit" else []),
                              "name", "start", "end", "timezone"],
                 "additionalProperties": False},
-        ), prepare, AgentCapabilityEffect.COMMAND, classification, True))
+        ), prepare, AgentCapabilityEffect.COMMAND, classification, True,
+            contract=TOOL_CONTRACTS[name],
+        ))
     tools.append(RegisteredAgentTool(AgentToolDefinition(
         name="edit_preset_event",
         description="Change a preset event tracker name and grace period after confirmation.",
@@ -85,12 +132,25 @@ def event_management_tools() -> tuple[RegisteredAgentTool, ...]:
             "event": {"type": "string"}, "name": {"type": "string", "minLength": 1},
             "grace_hours": {"type": "integer", "minimum": 0},
         }, "required": ["event", "name"], "additionalProperties": False},
-    ), _prepare_preset, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True))
+    ), _prepare_preset, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+        contract=CapabilityContract(
+            entity_fields=(("event", "event_tracker"),),
+            time_fields=(),
+            source_scope="request_context",
+            filter_fields=("name", "grace_hours"),
+        ),
+                 ))
     tools.append(RegisteredAgentTool(AgentToolDefinition(
         name="refresh_event_trackers",
         description="Refresh all event tracker voice channels after confirmation.",
         parameters={"type": "object", "properties": {}, "additionalProperties": False},
-    ), prepare_event_refresh, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True))
+    ), prepare_event_refresh, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+        contract=CapabilityContract(
+            entity_fields=(),
+            time_fields=(),
+            source_scope="request_context",
+        ),
+                 ))
     return tuple(tools)
 
 

@@ -12,6 +12,7 @@ import discord
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ..engine.capability_contract import CapabilityContract
 from ..access import accessible_message_channel
 from ..models import AgentRequestContext
 from ..text import message_text
@@ -40,6 +41,11 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             find_discord_channels,
+            contract=CapabilityContract(
+                entity_fields=(),
+                time_fields=(),
+                source_scope="channel_locator",
+            ),
         ),
         RegisteredAgentTool(
             AgentToolDefinition(
@@ -84,6 +90,20 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             search_discord_messages,
+            contract=CapabilityContract(
+                entity_fields=(
+                    ("channel_id", "discord_channel"),
+                    ("channel_ids", "discord_channel_set"),
+                    ("author_id", "discord_member"),
+                ),
+                time_fields=("after", "before", "cursor"),
+                source_scope="channel_messages",
+                channel_fields=("channel_id", "channel_ids"),
+                result_channel_lists=(("matches", "channel_id"),),
+                result_sources_within_query=True,
+                time_window=("after", "before", "iso_utc"),
+                bounded_fields=("cursor",),
+            ),
         ),
         RegisteredAgentTool(
             AgentToolDefinition(
@@ -134,6 +154,16 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             read_discord_channel_history,
+            contract=CapabilityContract(
+                entity_fields=(("channel_id", "discord_channel"), ("author_id", "discord_member")),
+                time_fields=("after", "before", "cursor"),
+                source_scope="channel_messages",
+                channel_fields=("channel_id",),
+                result_channel_lists=(("messages", "channel_id"),),
+                result_sources_within_query=True,
+                time_window=("after", "before", "iso_utc"),
+                bounded_fields=("cursor",),
+            ),
         ),
         RegisteredAgentTool(
             AgentToolDefinition(
@@ -161,6 +191,18 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             read_message_context,
+            contract=CapabilityContract(
+                entity_fields=(
+                    ("channel_id", "discord_channel"),
+                    ("message_id", "discord_message"),
+                ),
+                time_fields=("after", "before"),
+                source_scope="channel_messages",
+                channel_fields=("channel_id",),
+                result_channel_fields=("channel_id",),
+                result_sources_within_query=True,
+                time_window=("after", "before", "iso_utc"),
+            ),
         ),
     )
 

@@ -7,6 +7,7 @@ from typing import Any
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import CommandOutcome
@@ -31,7 +32,17 @@ def trial_end_tools() -> tuple[RegisteredAgentTool, ...]:
             "applicant_id": {"type": "integer", "minimum": 1},
         }, "required": ["ticket_channel_id"], "additionalProperties": False},
     ), prepare_trial_end, AgentCapabilityEffect.COMMAND,
-        ActionClass.IRREVERSIBLE, True),)
+        ActionClass.IRREVERSIBLE, True,
+        contract=CapabilityContract(
+            entity_fields=(
+                ("ticket_channel_id", "recruitment_ticket_channel"),
+                ("applicant_id", "discord_member"),
+            ),
+            time_fields=(),
+            source_scope="request_context",
+            channel_fields=("ticket_channel_id",),
+        ),
+            ),)
 
 
 async def prepare_trial_end(context: AgentRequestContext,
@@ -74,13 +85,11 @@ async def prepare_trial_end(context: AgentRequestContext,
             old=snapshot["channel_name"], new=snapshot["new_name"]))
     if trial and trial.get("tracking_msg_id") and trial.get("tracking_channel_id"):
         lines.append(ACTION_TRIAL_END_TRACKING.format(
-            message_id=trial["tracking_msg_id"],
             channel=f"<#{trial['tracking_channel_id']}>"))
     lines.append(ACTION_TRIAL_END_FOLLOWUP)
     lines.append(workflow.trial_end_followup_text(applicant_id))
     if reminder and reminder.get("message_id") and reminder.get("channel_id"):
         lines.append(ACTION_TRIAL_END_REMINDER.format(
-            message_id=reminder["message_id"],
             channel=f"<#{reminder['channel_id']}>"))
 
     async def recheck() -> bool:

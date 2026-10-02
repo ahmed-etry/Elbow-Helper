@@ -49,11 +49,16 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
 def build_agent_tools() -> dict[str, RegisteredAgentTool]:
     """Build the complete catalogue without exposing arbitrary capabilities."""
 
-    tools = replace_report_tools(tuple(
+    originals = tuple(
         tool
         for group in build_agent_tool_groups().values()
         for tool in group
-    ))
+    )
+    original_registry = {tool.definition.name: tool for tool in originals}
+    if len(original_registry) != len(originals):
+        raise ValueError("Duplicate agent capability")
+    validate_contract_catalogue(original_registry)
+    tools = replace_report_tools(originals)
     registry = {tool.definition.name: tool for tool in tools}
     if len(registry) != len(tools):
         raise ValueError("Duplicate agent capability")

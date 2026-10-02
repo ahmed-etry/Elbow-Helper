@@ -8,6 +8,7 @@ from typing import Any
 from elbow_helper.features.cwl.config import CWL_CLAN_TAGS
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import CommandOutcome
@@ -30,7 +31,14 @@ def cwl_cc_status_tools() -> tuple[RegisteredAgentTool, ...]:
             "status": {"type": "string", "enum": ["filled", "partial", "empty"]},
         }, "required": ["clan_code", "status"], "additionalProperties": False},
     ), prepare_cc_status, AgentCapabilityEffect.COMMAND,
-        ActionClass.CHANGE, True),)
+        ActionClass.CHANGE, True,
+        contract=CapabilityContract(
+            entity_fields=(("clan_code", "clan"),),
+            time_fields=(),
+            source_scope="request_context",
+            filter_fields=("status",),
+        ),
+            ),)
 
 
 async def prepare_cc_status(context: AgentRequestContext,
@@ -51,8 +59,7 @@ async def prepare_cc_status(context: AgentRequestContext,
                                           season=snapshot["season"]),
              ACTION_CC_STATUS_FIELD.format(old=snapshot["status"] or "empty",
                                            new=values["status"]),
-             ACTION_CC_STATUS_POST.format(message_id=snapshot["sticky_message_id"],
-                                          channel=thread.mention))
+             ACTION_CC_STATUS_POST.format(channel=thread.mention))
 
     async def recheck() -> bool:
         try:
@@ -96,8 +103,7 @@ async def prepare_cc_status_undo(context: AgentRequestContext,
     lines = (ACTION_CC_STATUS_LINE.format(clan=clan, round=snapshot["round"],
                                           season=snapshot["season"]),
              ACTION_CC_STATUS_FIELD.format(old=snapshot["status"], new=prior),
-             ACTION_CC_STATUS_POST.format(message_id=snapshot["sticky_message_id"],
-                                          channel=thread.mention))
+             ACTION_CC_STATUS_POST.format(channel=thread.mention))
 
     async def recheck() -> bool:
         live = await workflow.cc_status_snapshot(clan)

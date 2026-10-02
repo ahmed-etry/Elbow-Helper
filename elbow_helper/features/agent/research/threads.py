@@ -11,6 +11,7 @@ import discord
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ..engine.capability_contract import CapabilityContract
 from ..access import accessible_message_channel, can_access_message_channel
 from ..models import AgentRequestContext, RegisteredAgentTool
 from ..capabilities.validation import bounded_int, positive_int
@@ -54,6 +55,15 @@ def thread_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             find_discord_threads,
+            contract=CapabilityContract(
+                entity_fields=(("parent_channel_id", "discord_channel"),),
+                time_fields=("cursor",),
+                source_scope="channel_messages",
+                channel_fields=("parent_channel_id",),
+                result_channel_lists=(("threads", "thread_id"),),
+                filter_fields=("state", "visibility"),
+                latest_fields=("cursor",),
+            ),
         ),
     )
 

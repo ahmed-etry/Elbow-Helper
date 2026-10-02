@@ -65,8 +65,7 @@ async def prepare_roster_post(context: Any,
     if effect["clears_signups"]:
         lines.append(ACTION_ROSTER_POST_RESET)
     lines.extend(ACTION_ROSTER_POST_REFRESH.format(
-        channel=f"<#{channel_id}>", message_id=message_id,
-    ) for channel_id, message_id in state["posts"])
+        channel=f"<#{channel_id}>", ) for channel_id, message_id in state["posts"])
     for page_number, embeds in enumerate(render["pages"], start=1):
         lines.append(ACTION_ROSTER_POST_PAGE.format(number=page_number))
         for embed in embeds:
@@ -138,7 +137,7 @@ async def prepare_roster_export(context: Any,
             "complete", "private", text=f"No accounts are signed up to **{roster.name}**.",
         )
     lines = [
-        ACTION_ROSTER_EXPORT_LINE.format(name=roster.name, roster_id=roster.id),
+        ACTION_ROSTER_EXPORT_LINE.format(name=roster.name),
         ACTION_ROSTER_EXPORT_FILE.format(name=plan["workbook_name"]),
         ACTION_ROSTER_EXPORT_GOOGLE,
     ]

@@ -6,13 +6,13 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from ..models import AgentRequestContext
-from ..engine.capability_contract import CONTRACTS
+from ..models import AgentRequestContext, RegisteredAgentTool
+from ..engine.capability_contract import contract_catalogue
 from .checker import source_check, time_check
 
 
-def resource_ids(payload: Any) -> set[str]:
-    fields = {field for contract in CONTRACTS.values() for field in contract.retained_fields}
+def resource_ids(payload: Any, registry: Mapping[str, RegisteredAgentTool]) -> set[str]:
+    fields = {field for contract in contract_catalogue(registry).values() for field in contract.retained_fields}
     result: set[str] = set()
     def visit(value):
         if isinstance(value, Mapping):
@@ -29,7 +29,8 @@ def resource_ids(payload: Any) -> set[str]:
 
 
 class ScopeLedger:
-    def __init__(self, context: AgentRequestContext):
+    def __init__(self, context: AgentRequestContext, registry: Mapping[str, RegisteredAgentTool]) -> None:
+        self.registry = registry
         self.reports: dict[str, tuple[str, Mapping[str, Any]]] = {}
         for turn in context.state.authorized_history or context.history:
             if turn.record is None:
@@ -38,13 +39,13 @@ class ScopeLedger:
                 try:
                     record = json.loads(encoded)
                     result = json.loads(record["result"])
-                    for identity in resource_ids(result):
+                    for identity in resource_ids(result, self.registry):
                         self.remember(identity, record["tool"], record["arguments"])
                 except (AttributeError, KeyError, TypeError, ValueError, RecursionError):
                     continue
 
     def remember(self, identity: str, capability: str, arguments: Mapping[str, Any]) -> None:
-        contract = CONTRACTS.get(capability)
+        contract = getattr(self.registry.get(capability), "contract", None)
         if contract is not None and any(field in arguments for field in contract.retained_fields):
             return
         self.reports.setdefault(identity, (capability, dict(arguments)))
@@ -60,7 +61,7 @@ class ScopeLedger:
                     return "Read this report's source at the declared scope before reusing it."
                 continue
             name, arguments = origin
-            contract = CONTRACTS.get(name)
+            contract = getattr(self.registry.get(name), "contract", None)
             if contract is None:
                 return "The retained scope is unavailable."
             issue, _ = source_check(contract, arguments, named, entities, {})
@@ -78,7 +79,7 @@ class ScopeLedger:
             if origin is None:
                 continue
             name, arguments = origin
-            contract = CONTRACTS.get(name)
+            contract = getattr(self.registry.get(name), "contract", None)
             if contract is None:
                 continue
             for field in contract.channel_fields:

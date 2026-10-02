@@ -12,6 +12,7 @@ from elbow_helper.features.examination.intake.logic import (
 )
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import CommandOutcome, embed_text
@@ -34,7 +35,16 @@ def promotion_route_tools() -> tuple[RegisteredAgentTool, ...]:
             "ticket_channel_id": {"type": "integer", "minimum": 1},
             "view": {"type": "string", "enum": ["details", "availability"]},
         }, "required": ["ticket_channel_id", "view"], "additionalProperties": False},
-    ), read_promotion_review),
+    ), read_promotion_review,
+        contract=CapabilityContract(
+            entity_fields=(("ticket_channel_id", "examination_ticket_channel"),),
+            time_fields=(),
+            source_scope="channel_status",
+            channel_fields=("ticket_channel_id",),
+            result_channel_fields=("ticket_channel_id", "review_channel_id"),
+            filter_fields=("view",),
+        ),
+            ),
         RegisteredAgentTool(AgentToolDefinition(
         name="change_promotion_route",
         description="Change the current clan and target for a promotion review after confirmation.",
@@ -47,7 +57,15 @@ def promotion_route_tools() -> tuple[RegisteredAgentTool, ...]:
         }, "required": ["ticket_channel_id", "from_clan", "to_clan"],
             "additionalProperties": False},
     ), prepare_promotion_route, AgentCapabilityEffect.COMMAND,
-        ActionClass.CHANGE, True),)
+        ActionClass.CHANGE, True,
+        contract=CapabilityContract(
+            entity_fields=(("ticket_channel_id", "examination_ticket_channel"),),
+            time_fields=(),
+            source_scope="request_context",
+            channel_fields=("ticket_channel_id",),
+            filter_fields=("from_clan", "to_clan"),
+        ),
+        ),)
 
 
 async def read_promotion_review(context: AgentRequestContext,
@@ -104,7 +122,7 @@ async def prepare_promotion_route(context: AgentRequestContext,
     lines.append(ACTION_PROMOTION_ROUTE_REVIEW.format(channel=review.mention))
     if case.get("availability_prompt_id"):
         lines.append(ACTION_PROMOTION_ROUTE_PROMPT.format(
-            message_id=case["availability_prompt_id"], channel=ticket.mention))
+            channel=ticket.mention))
 
     async def recheck() -> bool:
         try:

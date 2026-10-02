@@ -8,6 +8,7 @@ from typing import Any
 import discord
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import CommandOutcome
@@ -41,7 +42,18 @@ def role_connection_management_tools() -> tuple[RegisteredAgentTool, ...]:
             "channel_id": {"type": "integer", "minimum": 1},
         }, "required": ["operation"], "additionalProperties": False},
     ), prepare_role_connection_change, AgentCapabilityEffect.COMMAND,
-        ActionClass.CHANGE, True)
+        ActionClass.CHANGE, True,
+        contract=CapabilityContract(
+            entity_fields=(
+                ("connection_id", "role_connection"),
+                ("target_role_id", "discord_role"),
+                ("channel_id", "discord_channel"),
+            ),
+            time_fields=(),
+            source_scope="request_context",
+            filter_fields=("operation", "all", "any"),
+        ),
+             )
     remove = RegisteredAgentTool(AgentToolDefinition(
         name="remove_role_connection",
         description="Remove a role connection after its own confirmation.",
@@ -50,7 +62,16 @@ def role_connection_management_tools() -> tuple[RegisteredAgentTool, ...]:
             "channel_id": {"type": "integer", "minimum": 1},
         }, "required": ["connection_id"], "additionalProperties": False},
     ), prepare_remove_role_connection, AgentCapabilityEffect.COMMAND,
-        ActionClass.IRREVERSIBLE, True)
+        ActionClass.IRREVERSIBLE, True,
+        contract=CapabilityContract(
+            entity_fields=(
+                ("connection_id", "role_connection"),
+                ("channel_id", "discord_channel"),
+            ),
+            time_fields=(),
+            source_scope="request_context",
+        ),
+             )
     return manage, remove
 
 

@@ -14,6 +14,7 @@ from elbow_helper.features.account_links.evidence import (
 )
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...reports.base import ArtifactCapacityError, retain_report
 from ...access import require_evidence_access
 from ...models import AgentRequestContext, RegisteredAgentTool
@@ -52,6 +53,10 @@ def role_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             find_discord_roles,
+            contract=CapabilityContract(
+                entity_fields=(),
+                time_fields=(),
+            ),
         ),
         RegisteredAgentTool(
             AgentToolDefinition(
@@ -79,6 +84,11 @@ def role_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             audit_role_accounts,
+            contract=CapabilityContract(
+                entity_fields=(("role_ids", "discord_role_set"),),
+                time_fields=(),
+                filter_fields=("refresh_locations",),
+            ),
         ),
         RegisteredAgentTool(
             AgentToolDefinition(
@@ -108,6 +118,14 @@ def role_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             refresh_role_account_report,
+            contract=CapabilityContract(
+                entity_fields=(
+                    ("report_id", "role_account_report"),
+                    ("player_tags", "clash_account_set"),
+                ),
+                time_fields=(),
+                retained_fields=("report_id",),
+            ),
         ),
         RegisteredAgentTool(
             AgentToolDefinition(
@@ -136,6 +154,16 @@ def role_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             read_role_account_report,
+            contract=CapabilityContract(
+                entity_fields=(
+                    ("report_id", "role_account_report"),
+                    ("clan_code", "clan"),
+                    ("member_id", "discord_member"),
+                ),
+                time_fields=(),
+                filter_fields=("selection",),
+                retained_fields=("report_id",),
+            ),
         ),
         RegisteredAgentTool(
             AgentToolDefinition(
@@ -162,6 +190,14 @@ def role_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             compare_role_account_reports,
+            contract=CapabilityContract(
+                entity_fields=(
+                    ("before_report_id", "role_account_report"),
+                    ("after_report_id", "role_account_report"),
+                ),
+                time_fields=(),
+                retained_fields=("before_report_id", "after_report_id"),
+            ),
         ),
     )
 

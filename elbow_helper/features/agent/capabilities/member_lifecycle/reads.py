@@ -8,11 +8,26 @@ from uuid import uuid4
 from elbow_helper.configuration.channels import OVERSEEING_TERRACE
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import accessible_message_channel, can_access_message_channel, require_evidence_access
 from ...reports.base import ArtifactCapacityError, retain_report
 from .report import MemberLifecycleReport
 from ...models import AgentRequestContext, RegisteredAgentTool
 
+
+TOOL_CONTRACTS = {
+    'read_member_lifecycle': CapabilityContract(
+        entity_fields=(),
+        time_fields=(),
+        filter_fields=('platform', 'activity', 'overdue_only'),
+    ),
+    'read_member_lifecycle_report': CapabilityContract(
+        entity_fields=(('report_id', 'member_lifecycle_report'),),
+        time_fields=(),
+        filter_fields=('platform', 'activity', 'overdue_only'),
+        retained_fields=('report_id',),
+    ),
+}
 
 def member_lifecycle_tools() -> tuple[RegisteredAgentTool, ...]:
     activity = {
@@ -52,6 +67,7 @@ def member_lifecycle_tools() -> tuple[RegisteredAgentTool, ...]:
                 "required": list(required), "additionalProperties": False,
             },
         ), handler,
+        contract=TOOL_CONTRACTS[name],
     ) for name, description, properties, required, handler in definitions)
 
 

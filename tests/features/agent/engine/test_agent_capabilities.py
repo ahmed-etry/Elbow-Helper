@@ -11,7 +11,14 @@ from elbow_helper.features.agent.engine.capability_contract import CapabilityBin
 from elbow_helper.features.agent.engine.capability_contract import require_source_provenance
 from elbow_helper.features.agent.engine.capability_contract import validate_contract_catalogue
 from elbow_helper.features.agent.engine.registry import build_agent_tool_groups, build_agent_tools
-from elbow_helper.features.agent.engine.capability_contract import SAVED_REPORT_CONTRACTS
+
+from elbow_helper.features.agent.engine.capability_contract import contract_catalogue
+from elbow_helper.features.agent.reports.tools import saved_report_contracts
+from features.agent.engine.helpers import patch_contracts
+
+REGISTRY = build_agent_tools()
+CONTRACTS = contract_catalogue(REGISTRY)
+SAVED_REPORT_CONTRACTS = saved_report_contracts(REGISTRY)
 
 
 class AgentCapabilityTests(unittest.TestCase):
@@ -21,19 +28,20 @@ class AgentCapabilityTests(unittest.TestCase):
 
     def test_every_registered_capability_has_one_structured_contract(self):
         validate_contract_catalogue(self.registry)
-        self.assertEqual(set(self.registry), set(capabilities.CONTRACTS))
+        self.assertTrue(all(tool.contract is not None for tool in self.registry.values()))
         missing = dict(self.registry)
-        missing.pop(next(iter(missing)))
-        with self.assertRaisesRegex(ValueError, "missing tools"):
+        first = next(iter(missing))
+        missing[first] = replace(missing[first], contract=None)
+        with self.assertRaisesRegex(ValueError, "lacks capability contract"):
             validate_contract_catalogue(missing)
-        with self.assertRaisesRegex(ValueError, "lack capability contracts"):
+        with self.assertRaisesRegex(ValueError, "registry key differs"):
             validate_contract_catalogue({**self.registry, "unclassified": next(iter(self.registry.values()))})
 
     def test_available_period_keys_have_one_feature_owner(self):
         owners = {}
         for group, tools in build_agent_tool_groups().items():
             for tool in tools:
-                contract = (capabilities.CONTRACTS.get(tool.definition.name)
+                contract = (CONTRACTS.get(tool.definition.name)
                             or SAVED_REPORT_CONTRACTS.get(tool.definition.name))
                 for _, kind in contract.result_entity_keys:
                     if any(part in kind for part in ("period", "season", "cycle", "run")):
@@ -42,7 +50,7 @@ class AgentCapabilityTests(unittest.TestCase):
         self.assertTrue(all(len(groups) == 1 for groups in owners.values()), owners)
 
     def test_invalid_access_and_field_descriptors_fail_across_registry(self):
-        for name, contract in capabilities.CONTRACTS.items():
+        for name, contract in CONTRACTS.items():
             invalid = [replace(contract, required_access=frozenset({"unknown"})),
                        replace(contract, latest_fields=("unknown",))]
             if contract.entity_fields:
@@ -53,17 +61,17 @@ class AgentCapabilityTests(unittest.TestCase):
                 invalid.append(replace(contract, time_fields=contract.time_fields + contract.time_fields[:1]))
             for changed in invalid:
                 with self.subTest(capability=name, contract=changed):
-                    with patch.object(capabilities, "CONTRACTS", {**capabilities.CONTRACTS, name: changed}):
+                    with patch_contracts(self.registry, {name: changed}):
                         with self.assertRaises(ValueError):
                             validate_contract_catalogue(self.registry)
 
     def test_scope_variants_and_time_windows_match_every_schema(self):
         checked = 0
-        for name, contract in capabilities.CONTRACTS.items():
+        for name, contract in CONTRACTS.items():
             if contract.scope_variants:
                 changed = replace(contract, scope_variants=contract.scope_variants + contract.scope_variants[:1])
                 with self.subTest(capability=name, kind="scope"):
-                    with patch.object(capabilities, "CONTRACTS", {**capabilities.CONTRACTS, name: changed}):
+                    with patch_contracts(self.registry, {name: changed}):
                         with self.assertRaises(ValueError):
                             validate_contract_catalogue(self.registry)
                 checked += 1
@@ -72,7 +80,7 @@ class AgentCapabilityTests(unittest.TestCase):
                 other_encoding = "unix_seconds" if encoding == "iso_utc" else "iso_utc"
                 changed = replace(contract, time_window=(lower, upper, other_encoding))
                 with self.subTest(capability=name, kind="time"):
-                    with patch.object(capabilities, "CONTRACTS", {**capabilities.CONTRACTS, name: changed}):
+                    with patch_contracts(self.registry, {name: changed}):
                         with self.assertRaises(ValueError):
                             validate_contract_catalogue(self.registry)
                 checked += 1
@@ -80,7 +88,7 @@ class AgentCapabilityTests(unittest.TestCase):
 
     def test_every_source_bearing_result_rejects_unbound_channels(self):
         checked = 0
-        for name, contract in capabilities.CONTRACTS.items():
+        for name, contract in CONTRACTS.items():
             if contract.source_scope not in {
                 "channel_messages", "channel_status", "retained_channel_evidence",
                 "request_attachment", "retained_attachment",
@@ -115,7 +123,7 @@ class AgentCapabilityTests(unittest.TestCase):
 
     def test_selected_channel_results_cannot_swap_to_another_accessible_source(self):
         checked = 0
-        for name, contract in capabilities.CONTRACTS.items():
+        for name, contract in CONTRACTS.items():
             if not contract.result_sources_within_query or not contract.channel_fields:
                 continue
             if not contract.result_channel_fields and not contract.result_channel_lists:

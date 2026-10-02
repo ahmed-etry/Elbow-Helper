@@ -9,6 +9,7 @@ from elbow_helper.features.help.catalog import HELP_ENTRIES
 from elbow_helper.features.help.discovery import discover_commands
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ..engine.capability_contract import CapabilityContract
 from ..access import require_evidence_access
 from ..models import AgentRequestContext, RegisteredAgentTool
 
@@ -31,7 +32,12 @@ def command_tools() -> tuple[RegisteredAgentTool, ...]:
             },
             "required": [], "additionalProperties": False,
         },
-    ), read_bot_command_help),)
+    ), read_bot_command_help,
+        contract=CapabilityContract(
+            entity_fields=(),
+            time_fields=(),
+        ),
+            ),)
 
 
 async def read_bot_command_help(

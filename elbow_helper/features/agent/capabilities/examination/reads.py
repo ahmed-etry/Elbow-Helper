@@ -14,6 +14,7 @@ from elbow_helper.configuration.channels import (
 from elbow_helper.features.examination.queries import CASE_TYPES, WORKFLOW_STATUSES
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import accessible_message_channel, require_evidence_access
 from ...reports.base import ArtifactCapacityError, retain_report
 from .report import ExaminationCaseReport
@@ -22,6 +23,27 @@ from ...models import AgentRequestContext, RegisteredAgentTool
 
 _RESPONSE_STATUSES = {"recorded", "not_recorded"}
 
+
+TOOL_CONTRACTS = {
+    'read_accessible_examination_cases': CapabilityContract(
+        entity_fields=(('ticket_channel_id', 'examination_ticket_channel'),),
+        time_fields=(),
+        source_scope='channel_status',
+        channel_fields=('ticket_channel_id',),
+        result_channel_lists=(('cases', 'ticket_channel_id'),),
+        result_sources_within_query=True,
+    ),
+    'read_examination_case_report': CapabilityContract(
+        entity_fields=(('report_id', 'examination_case_report'), ('ticket_channel_id', 'examination_ticket_channel'), ('applicant_member_id', 'discord_member')),
+        time_fields=(),
+        source_scope='retained_channel_evidence',
+        channel_fields=('ticket_channel_id',),
+        result_channel_lists=(('cases', 'ticket_channel_id'),),
+        result_sources_within_query=True,
+        filter_fields=('case_type', 'workflow_status', 'response_status'),
+        retained_fields=('report_id',),
+    ),
+}
 
 def examination_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
@@ -66,6 +88,7 @@ def examination_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             handler,
+            contract=TOOL_CONTRACTS[name],
         )
         for name, description, properties, required, handler in definitions
     )

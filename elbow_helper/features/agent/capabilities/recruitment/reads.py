@@ -10,6 +10,7 @@ import discord
 from elbow_helper.configuration.channels import RECRUITMENT_TICKET_CATEGORY
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import accessible_message_channel, require_evidence_access
 from ...reports.base import ArtifactCapacityError, retain_report
 from ...models import AgentRequestContext, RegisteredAgentTool
@@ -18,6 +19,27 @@ from .report import RecruitmentTrialReport
 
 _TIMING_STATUSES = {"due", "in_progress"}
 
+
+TOOL_CONTRACTS = {
+    'read_active_recruitment_trials': CapabilityContract(
+        entity_fields=(('ticket_channel_id', 'recruitment_ticket_channel'),),
+        time_fields=(),
+        source_scope='channel_status',
+        channel_fields=('ticket_channel_id',),
+        result_channel_lists=(('trials', 'ticket_channel_id'),),
+        result_sources_within_query=True,
+    ),
+    'read_active_recruitment_trial_report': CapabilityContract(
+        entity_fields=(('report_id', 'recruitment_trial_report'), ('ticket_channel_id', 'recruitment_ticket_channel'), ('applicant_member_id', 'discord_member')),
+        time_fields=(),
+        source_scope='retained_channel_evidence',
+        channel_fields=('ticket_channel_id',),
+        result_channel_lists=(('trials', 'ticket_channel_id'),),
+        result_sources_within_query=True,
+        filter_fields=('timing_status',),
+        retained_fields=('report_id',),
+    ),
+}
 
 def recruitment_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
@@ -59,6 +81,7 @@ def recruitment_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             handler,
+            contract=TOOL_CONTRACTS[name],
         )
         for name, description, properties, required, handler in definitions
     )

@@ -7,6 +7,7 @@ from typing import Any, Mapping
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ..engine.capability_contract import CapabilityContract
 from ..access import require_evidence_access
 from .workbooks import render_workbook_bytes
 from .report_tables import materialize_report_table
@@ -89,7 +90,12 @@ def spreadsheet_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         prepare_spreadsheet,
         AgentCapabilityEffect.ARTIFACT,
-    ), RegisteredAgentTool(
+        contract=CapabilityContract(
+            entity_fields=(),
+            time_fields=(),
+            source_scope="request_context",
+        ),
+            ), RegisteredAgentTool(
         AgentToolDefinition(
             name="prepare_report_spreadsheet",
             description=(
@@ -116,7 +122,12 @@ def spreadsheet_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         prepare_report_spreadsheet,
         AgentCapabilityEffect.ARTIFACT,
-    ))
+        contract=CapabilityContract(
+            entity_fields=(),
+            time_fields=(),
+            source_scope="request_context",
+        ),
+       ))
 
 
 async def prepare_spreadsheet(

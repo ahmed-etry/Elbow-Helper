@@ -6,11 +6,41 @@ from uuid import uuid4
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import accessible_message_channel, require_evidence_access
 from ...reports.base import ArtifactCapacityError, retain_report
 from ...models import AgentRequestContext, RegisteredAgentTool
 from .report import RosterReport, compare_roster_reports as compare_reports, roster_summary
 
+
+TOOL_CONTRACTS = {
+    'find_rosters': CapabilityContract(
+        entity_fields=(),
+        time_fields=(),
+    ),
+    'list_roster_cycles': CapabilityContract(
+        entity_fields=(('roster_id', 'roster'),),
+        time_fields=('before_id',),
+        latest_fields=('before_id',),
+        period_results=(('cycles', 0, 'id'),),
+    ),
+    'read_roster': CapabilityContract(
+        entity_fields=(('roster_id', 'roster'),),
+        time_fields=('cycle_id',),
+        result_entity_keys=(('accounts[].player_tag', 'clash_account'), ('accounts[].discord_user_id', 'discord_member'), ('roster_id', 'roster'), ('cycle_id', 'roster_cycle')),
+    ),
+    'read_roster_report': CapabilityContract(
+        entity_fields=(('report_id', 'roster_report'),),
+        time_fields=(),
+        result_entity_keys=(('accounts[].player_tag', 'clash_account'), ('accounts[].discord_user_id', 'discord_member'), ('roster_id', 'roster'), ('cycle_id', 'roster_cycle')),
+        retained_fields=('report_id',),
+    ),
+    'compare_roster_reports': CapabilityContract(
+        entity_fields=(('before_report_id', 'roster_report'), ('after_report_id', 'roster_report')),
+        time_fields=(),
+        retained_fields=('before_report_id', 'after_report_id'),
+    ),
+}
 
 def roster_tools() -> tuple[RegisteredAgentTool, ...]:
     positive_id = {"type": "integer", "minimum": 1}
@@ -32,7 +62,9 @@ def roster_tools() -> tuple[RegisteredAgentTool, ...]:
     return tuple(RegisteredAgentTool(AgentToolDefinition(
         name=name, description=description,
         parameters={"type": "object", "properties": properties, "required": list(required), "additionalProperties": False},
-    ), handler) for name, description, properties, required, handler in definitions)
+    ), handler,
+        contract=TOOL_CONTRACTS[name],
+    ) for name, description, properties, required, handler in definitions)
 
 
 async def find_rosters(context: AgentRequestContext, arguments: Mapping[str, Any]) -> Mapping[str, Any]:

@@ -7,6 +7,7 @@ from typing import Any
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import CommandOutcome
@@ -26,7 +27,13 @@ def role_connection_scan_tools() -> tuple[RegisteredAgentTool, ...]:
         parameters={"type": "object", "properties": {},
                     "required": [], "additionalProperties": False},
     ), prepare_role_connection_scan, AgentCapabilityEffect.COMMAND,
-        ActionClass.CHANGE, True),)
+        ActionClass.CHANGE, True,
+        contract=CapabilityContract(
+            entity_fields=(),
+            time_fields=(),
+            source_scope="request_context",
+        ),
+            ),)
 
 
 async def prepare_role_connection_scan(context: AgentRequestContext,

@@ -7,6 +7,7 @@ from typing import Any
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ..engine.capability_contract import CapabilityContract
 from ..access import require_evidence_access
 from ..actions.contracts import ActionClass, ChangePreview, PreparedAction, audit_reason
 from ..actions.outcomes import CommandOutcome
@@ -33,12 +34,24 @@ def discord_role_tools() -> tuple[RegisteredAgentTool, ...]:
             name="add_discord_roles",
             description="Add one safe Discord role to the selected members after confirmation.",
             parameters=schema,
-        ), prepare_add_roles, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True),
+        ), prepare_add_roles, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+            contract=CapabilityContract(
+                entity_fields=(("role_id", "discord_role"), ("member_ids", "discord_member_set")),
+                time_fields=(),
+                source_scope="request_context",
+            ),
+        ),
         RegisteredAgentTool(AgentToolDefinition(
             name="remove_discord_roles",
             description="Remove one safe Discord role from the selected members after confirmation.",
             parameters=schema,
-        ), prepare_remove_roles, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True),
+        ), prepare_remove_roles, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+            contract=CapabilityContract(
+                entity_fields=(("role_id", "discord_role"), ("member_ids", "discord_member_set")),
+                time_fields=(),
+                source_scope="request_context",
+            ),
+        ),
     )
 
 

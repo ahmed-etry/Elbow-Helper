@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 from elbow_helper.features.agent.engine.registry import build_agent_tool_groups, build_agent_tools
 from elbow_helper.features.agent.reports import tools as saved_reports
 from elbow_helper.features.agent.models import RegisteredAgentTool
+from elbow_helper.features.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 
@@ -48,7 +49,10 @@ class SavedReportRoutingTests(unittest.IsolatedAsyncioTestCase):
                 "report_id": {"type": "string"},
                 "offset": {"type": "integer", "minimum": 0},
             }, "required": ["report_id"], "additionalProperties": False},
-        ), handler)
+        ), handler, contract=CapabilityContract(
+            entity_fields=(("report_id", "synthetic_report"),),
+            time_fields=(), retained_fields=("report_id",),
+        ))
         surface = saved_reports._tool(saved_reports.READ_NAME, {"synthetic": original})
         state = SimpleNamespace(reports={"one": SimpleNamespace(
             manifest=lambda: {"kind": "synthetic"},
@@ -78,7 +82,10 @@ class SavedReportRoutingTests(unittest.IsolatedAsyncioTestCase):
                 parameters={"type": "object", "properties": {
                     "report_id": {"type": "string"},
                 }, "required": ["report_id"], "additionalProperties": False},
-            ), handler)
+            ), handler, contract=CapabilityContract(
+                entity_fields=(("report_id", "synthetic_report"),),
+                time_fields=(), retained_fields=("report_id",),
+            ))
             return saved_reports._tool(saved_reports.READ_NAME, {"synthetic": tool})
         context = SimpleNamespace(state=SimpleNamespace(reports={"one": SimpleNamespace(
             manifest=lambda: {"kind": "synthetic"},

@@ -9,6 +9,7 @@ import discord
 from elbow_helper.configuration.channels import TICKETS_LOG
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import CommandOutcome
@@ -36,13 +37,27 @@ def reactivation_ticket_tools() -> tuple[RegisteredAgentTool, ...]:
             description="Restore the owner's messaging access to a closed reactivation ticket after confirmation.",
             parameters=schema,
         ), prepare_reactivation_reopen, AgentCapabilityEffect.COMMAND,
-            ActionClass.CHANGE, True),
+            ActionClass.CHANGE, True,
+            contract=CapabilityContract(
+                entity_fields=(("channel_id", "support_ticket_channel"),),
+                time_fields=(),
+                source_scope="request_context",
+                channel_fields=("channel_id",),
+            ),
+        ),
         RegisteredAgentTool(AgentToolDefinition(
             name="close_reactivation_ticket",
             description="Close a reactivation ticket and save its transcript after confirmation.",
             parameters=schema,
         ), prepare_reactivation_close, AgentCapabilityEffect.COMMAND,
-            ActionClass.CHANGE, True),
+            ActionClass.CHANGE, True,
+            contract=CapabilityContract(
+                entity_fields=(("channel_id", "support_ticket_channel"),),
+                time_fields=(),
+                source_scope="request_context",
+                channel_fields=("channel_id",),
+            ),
+        ),
     )
 
 

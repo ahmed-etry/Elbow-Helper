@@ -8,6 +8,7 @@ from typing import Any
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool
 
 
@@ -55,6 +56,12 @@ def original_tool(registry: Mapping[str, RegisteredAgentTool], name: str,
     if not isinstance(kind, str) or not isinstance(handler, ReportRouter):
         return None
     return handler.specs.get(kind)
+
+
+def saved_report_contracts(registry):
+    return {tool.definition.name: tool.contract
+            for name in (READ_NAME, COMPARE_NAME)
+            for tool in _router(registry, name).specs.values()}
 
 
 def original_arguments(arguments: Mapping[str, Any]) -> dict[str, Any]:
@@ -156,7 +163,30 @@ def _tool(name: str, specs: Mapping[str, RegisteredAgentTool]) -> RegisteredAgen
         name=name, description=description,
         parameters={"type": "object", "properties": properties,
                     "required": ["report_kind", *ids], "additionalProperties": False},
-    ), ReportRouter(name, specs))
+    ), ReportRouter(name, specs), contract=CapabilityContract(
+        entity_fields=tuple((field, "saved_report") for field in ids),
+        time_fields=(),
+        filter_fields=(
+            ()
+            if comparing
+            else tuple(
+                sorted(
+                    {
+                        field
+                        for tool in specs.values()
+                        for field in (
+                            *(key for key, _ in tool.contract.entity_fields),
+                            *tool.contract.time_fields,
+                            *tool.contract.filter_fields,
+                            *tool.contract.channel_fields,
+                        )
+                        if field != "report_id"
+                    }
+                )
+            )
+        ),
+        retained_fields=ids,
+    ))
 
 
 def replace_report_tools(tools: Sequence[RegisteredAgentTool]) -> tuple[RegisteredAgentTool, ...]:

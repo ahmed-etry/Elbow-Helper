@@ -7,6 +7,7 @@ from typing import Any
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ..engine.capability_contract import CapabilityContract
 from ..access import require_evidence_access
 from ..actions.contracts import ActionClass, ChangePreview, PreparedAction, audit_reason
 from ..actions.outcomes import CommandOutcome
@@ -26,7 +27,14 @@ def discord_nickname_tools() -> tuple[RegisteredAgentTool, ...]:
             "member_id": {"type": "integer", "minimum": 1},
             "nickname": {"type": "string", "minLength": 1, "maxLength": 32},
         }, "required": ["member_id"], "additionalProperties": False},
-    ), prepare_nickname, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True),)
+    ), prepare_nickname, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+        contract=CapabilityContract(
+            entity_fields=(("member_id", "discord_member"),),
+            time_fields=(),
+            source_scope="request_context",
+            filter_fields=("nickname",),
+        ),
+            ),)
 
 
 def _nickname_action(context: AgentRequestContext, member_id: int,

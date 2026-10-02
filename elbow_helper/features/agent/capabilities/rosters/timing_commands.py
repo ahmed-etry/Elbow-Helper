@@ -92,8 +92,7 @@ async def prepare_roster_timing(context: Any,
             lines.extend(ACTION_MEMBER_LINE.format(member=f"<@{member_id}>")
                          for member_id in state["member_ids"])
     lines.extend(ACTION_ROSTER_POST_REFRESH.format(
-        channel=f"<#{channel_id}>", message_id=message_id,
-    ) for channel_id, message_id in state["posts"])
+        channel=f"<#{channel_id}>", ) for channel_id, message_id in state["posts"])
 
     async def recheck() -> bool:
         current = await workflow.get_roster(roster_id)
@@ -231,8 +230,7 @@ async def prepare_roster_schedule(context: Any,
             lines.extend(ACTION_MEMBER_LINE.format(member=f"<@{member_id}>")
                          for member_id in state["member_ids"])
     lines.extend(ACTION_ROSTER_POST_REFRESH.format(
-        channel=f"<#{channel_id}>", message_id=message_id,
-    ) for channel_id, message_id in state["posts"])
+        channel=f"<#{channel_id}>", ) for channel_id, message_id in state["posts"])
 
     async def recheck() -> bool:
         current = await workflow.get_roster(roster_id)

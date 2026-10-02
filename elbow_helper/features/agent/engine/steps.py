@@ -17,8 +17,6 @@ from ..access import AgentAccessLost
 from ..access import require_access
 from ..disclosure import require_disclosure_access
 from ..access import require_evidence_access
-from .capability_contract import CONTRACTS
-from .capability_contract import SAVED_REPORT_CONTRACTS
 from ..reports.tools import COMPARE_NAME, READ_NAME, original_tool
 from ..disclosure import can_disclose_provenance
 from ..plan.checker import entity_kind, parse_periods, check_step
@@ -54,9 +52,7 @@ async def disclosure_issue(
 ) -> str:
     selected = original_tool(registry, step["capability"], step["arguments"])
     contract = (
-        SAVED_REPORT_CONTRACTS[selected.definition.name]
-        if selected
-        else CONTRACTS.get(step["capability"])
+        selected.contract if selected else registry[step["capability"]].contract
     )
     if contract is None:
         return ""
@@ -150,11 +146,7 @@ class PlanRunner:
                 )
                 if issue:
                     return issue
-            contract = (
-                SAVED_REPORT_CONTRACTS.get(selected.definition.name)
-                if name in (READ_NAME, COMPARE_NAME)
-                else CONTRACTS.get(name)
-            )
+            contract = selected.contract
             if contract is None:
                 return ""
             retained.extend(
@@ -328,7 +320,7 @@ class PlanRunner:
             for identity in local.state.reports:
                 if identity not in plan_state.original["reports"]:
                     self.ledger.remember(identity, step["capability"], arguments)
-            for identity in resource_ids(payload):
+            for identity in resource_ids(payload, self.registry):
                 self.ledger.remember(identity, step["capability"], arguments)
             self.context.state.evidence.append(
                 evidence_record(

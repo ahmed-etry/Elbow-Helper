@@ -118,17 +118,11 @@ class ModelRounds:
             self.budget.observe(model_step.usage, projected_input=projected)
             outcome = "completed"
             LOGGER.info(
-                (
-                    (
-                        (
-                            'Agent model response: request=%s round=%s '
+                ('Agent model response: request=%s round=%s '
                             'model=%s provider_request_id=%s '
                             'provider_duration_ms=%s prompt_tokens=%s '
                             'completion_tokens=%s cache_hit_tokens=%s '
-                            'cache_miss_tokens=%s'
-                        )
-                    )
-                ),
+                            'cache_miss_tokens=%s'),
                 self.request_id,
                 self.rounds,
                 model_step.model_identity,
@@ -154,14 +148,8 @@ class ModelRounds:
                             call.call_id,
                             json.dumps(
                                 {
-                                    "error": (
-                                        (
-                                            (
-                                                'The prior model output was incomplete. '
-                                                'Submit the full plan again.'
-                                            )
-                                        )
-                                    )
+                                    "error": ('The prior model output was incomplete. '
+                                                'Submit the full plan again.')
                                 }
                             ),
                         )
@@ -172,14 +160,8 @@ class ModelRounds:
                     "Submit the full tool call again; the previous one was incomplete."
                     if incomplete_calls
                     else (
-                        (
-                            (
-                                (
-                                    'Continue the previous answer from where it '
-                                    'stopped. Do not repeat it.'
-                                )
-                            )
-                        )
+                        ('Continue the previous answer from where it '
+                                    'stopped. Do not repeat it.')
                     )
                 )
                 continuation = await self.advance(
@@ -203,15 +185,9 @@ class ModelRounds:
             return model_step
         finally:
             LOGGER.info(
-                (
-                    (
-                        (
-                            'Agent model round: request=%s round=%s '
+                ('Agent model round: request=%s round=%s '
                             'outcome=%s effort=%s output_limit=%s '
-                            'elapsed_ms=%s'
-                        )
-                    )
-                ),
+                            'elapsed_ms=%s'),
                 self.request_id,
                 self.rounds,
                 outcome,

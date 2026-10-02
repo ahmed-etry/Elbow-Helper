@@ -9,13 +9,44 @@ from uuid import uuid4
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import ACCESS_LEAD, require_access_requirements, require_evidence_access
 from .report import CoinTransactionReport, RaffleReport
 from ...reports.base import ArtifactCapacityError, retain_report
 from ...models import AgentRequestContext, RegisteredAgentTool
-from ...engine.capability_contract import CONTRACTS
 from ...engine.capability_contract import bound_time_window
 
+
+TOOL_CONTRACTS = {
+    'read_achievement_economy_rules': CapabilityContract(
+        entity_fields=(),
+        time_fields=(),
+    ),
+    'read_member_inventory': CapabilityContract(
+        entity_fields=(('member_id', 'discord_member'),),
+        time_fields=(),
+    ),
+    'read_member_coin_history': CapabilityContract(
+        entity_fields=(('member_id', 'discord_member'),),
+        time_fields=('after', 'before'),
+        time_window=('after', 'before', 'iso_utc'),
+    ),
+    'read_member_coin_history_report': CapabilityContract(
+        entity_fields=(('report_id', 'coin_transaction_report'),),
+        time_fields=(),
+        retained_fields=('report_id',),
+    ),
+    'read_raffle': CapabilityContract(
+        entity_fields=(),
+        time_fields=('month',),
+        value_patterns=(('month', '20\\d{2}-(0[1-9]|1[0-2])'),),
+    ),
+    'read_raffle_report': CapabilityContract(
+        entity_fields=(('report_id', 'raffle_report'),),
+        time_fields=(),
+        retained_fields=('report_id',),
+    ),
+}
 
 def achievement_economy_tools() -> tuple[RegisteredAgentTool, ...]:
     report_id = {"type": "string", "minLength": 1, "maxLength": 32}
@@ -77,6 +108,7 @@ def achievement_economy_tools() -> tuple[RegisteredAgentTool, ...]:
                 "required": list(required), "additionalProperties": False,
             },
         ), handler,
+        contract=TOOL_CONTRACTS[name],
     ) for name, description, properties, required, handler in definitions)
 
 
@@ -157,7 +189,7 @@ async def read_member_coin_history(
     member_id = arguments["member_id"]
     if context.guild.get_member(member_id) is None:
         return {"error": "That member is not currently in this server."}
-    after, before = bound_time_window(CONTRACTS["read_member_coin_history"], arguments)
+    after, before = bound_time_window(TOOL_CONTRACTS["read_member_coin_history"], arguments)
     try:
         snapshot = await asyncio.to_thread(
             context.achievement_queries.coin_transactions, member_id,

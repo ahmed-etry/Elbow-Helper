@@ -14,6 +14,7 @@ from elbow_helper.features.clan_health.ui.config_panel import (
 )
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import CommandOutcome
@@ -36,7 +37,14 @@ def clan_health_settings_tools() -> tuple[RegisteredAgentTool, ...]:
             "clan_code": {"type": "string", "enum": list(CLAN_ORDER)},
             "block": {"type": "string", "enum": PLAYER_BLOCK_ORDER},
         }, "required": ["clan_code"], "additionalProperties": False},
-    ), read_health_settings),
+    ), read_health_settings,
+        contract=CapabilityContract(
+            entity_fields=(("clan_code", "clan"),),
+            time_fields=(),
+            source_scope="request_context",
+            filter_fields=("block",),
+        ),
+            ),
         RegisteredAgentTool(AgentToolDefinition(
         name="set_clan_health_settings",
         description="Set one section of a clan's member health expectations after confirmation.",
@@ -47,7 +55,14 @@ def clan_health_settings_tools() -> tuple[RegisteredAgentTool, ...]:
                        "minProperties": 1, "additionalProperties": False},
         }, "required": ["clan_code", "block", "values"], "additionalProperties": False},
     ), prepare_health_settings, AgentCapabilityEffect.COMMAND,
-        ActionClass.CHANGE, True),)
+        ActionClass.CHANGE, True,
+        contract=CapabilityContract(
+            entity_fields=(("clan_code", "clan"),),
+            time_fields=(),
+            source_scope="request_context",
+            filter_fields=("block", "values"),
+        ),
+        ),)
 
 
 async def read_health_settings(context: AgentRequestContext,

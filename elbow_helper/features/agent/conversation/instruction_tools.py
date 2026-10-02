@@ -5,6 +5,7 @@ from typing import Any, Mapping
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ..engine.capability_contract import CapabilityContract
 from ..access import require_evidence_access
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 
@@ -19,14 +20,26 @@ def working_state_tools() -> tuple[RegisteredAgentTool, ...]:
                 "quote": {"type": "string", "maxLength": 2000},
                 "replaces_id": {"type": "string", "maxLength": 32},
             }, "required": ["label", "quote"], "additionalProperties": False},
-        ), remember_task_instruction, AgentCapabilityEffect.STATE),
+        ), remember_task_instruction, AgentCapabilityEffect.STATE,
+            contract=CapabilityContract(
+                entity_fields=(("replaces_id", "task_instruction"),),
+                time_fields=(),
+                source_scope="request_context",
+            ),
+        ),
         RegisteredAgentTool(AgentToolDefinition(
             name="retire_task_instruction",
             description="Mark one of the current asker's task instructions inactive when they explicitly say it no longer applies. This does not delete the original Discord message or conversation history, and cannot retire another member's instruction.",
             parameters={"type": "object", "properties": {
                 "instruction_id": {"type": "string", "maxLength": 32},
             }, "required": ["instruction_id"], "additionalProperties": False},
-        ), retire_task_instruction, AgentCapabilityEffect.STATE),
+        ), retire_task_instruction, AgentCapabilityEffect.STATE,
+            contract=CapabilityContract(
+                entity_fields=(("instruction_id", "task_instruction"),),
+                time_fields=(),
+                source_scope="request_context",
+            ),
+        ),
     )
 
 

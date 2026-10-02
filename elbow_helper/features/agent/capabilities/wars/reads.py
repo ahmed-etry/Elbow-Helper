@@ -12,12 +12,47 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.features.account_links.evidence import account_ownership_evidence
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...reports.base import ArtifactCapacityError, retain_report
 from ...models import AgentRequestContext, RegisteredAgentTool
 from .history_report import HistoricalRegularWarReport, HistoricalWarOwnedMember
 from .report import RegularWarReport
 
+
+TOOL_CONTRACTS = {
+    'list_regular_war_status': CapabilityContract(
+        entity_fields=(),
+        time_fields=(),
+    ),
+    'read_regular_war': CapabilityContract(
+        entity_fields=(('clan_code', 'clan'),),
+        time_fields=('selected',),
+        result_entity_keys=(('members[].player_tag', 'clash_account'), ('clan_code', 'clan')),
+        latest_fields=('selected',),
+    ),
+    'read_regular_war_report': CapabilityContract(
+        entity_fields=(('report_id', 'regular_war_report'),),
+        time_fields=(),
+        result_entity_keys=(('members[].player_tag', 'clash_account'), ('clan_code', 'clan')),
+        retained_fields=('report_id',),
+    ),
+    'read_historical_regular_wars': CapabilityContract(
+        entity_fields=(('clan_code', 'clan'),),
+        time_fields=('ended_from_ts', 'ended_before_ts', 'before_war_id', 'history_limit'),
+        result_entity_keys=(('war_rows[].source.player_tag', 'clash_account'), ('war_rows[].linked_member_id', 'current_discord_member_link')),
+        time_window=('ended_from_ts', 'ended_before_ts', 'unix_seconds'),
+        latest_fields=('before_war_id', 'history_limit'),
+        bounded_fields=('before_war_id',),
+    ),
+    'read_historical_regular_war_report': CapabilityContract(
+        entity_fields=(('report_id', 'historical_war_report'), ('player_tag', 'clash_account'), ('member_id', 'discord_member')),
+        time_fields=(),
+        filter_fields=('view',),
+        result_entity_keys=(('war_rows[].source.player_tag', 'clash_account'), ('war_rows[].linked_member_id', 'current_discord_member_link')),
+        retained_fields=('report_id',),
+    ),
+}
 
 def war_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
@@ -60,7 +95,9 @@ def war_tools() -> tuple[RegisteredAgentTool, ...]:
         name=name, description=description,
         parameters={"type": "object", "properties": properties,
                     "required": list(required), "additionalProperties": False},
-    ), handler) for name, description, properties, required, handler in definitions)
+    ), handler,
+        contract=TOOL_CONTRACTS[name],
+    ) for name, description, properties, required, handler in definitions)
 
 
 async def list_regular_war_status(

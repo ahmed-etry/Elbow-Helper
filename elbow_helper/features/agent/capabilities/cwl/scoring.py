@@ -10,12 +10,48 @@ from uuid import uuid4
 from elbow_helper.features.cwl.config import CWL_CLAN_CODES
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...reports.base import ArtifactCapacityError, retain_report
 from .bonus_report import CwlBonusScopeReport
 from .report import CwlAssScopeReport
 from ...models import AgentRequestContext, RegisteredAgentTool
 
+
+TOOL_CONTRACTS = {
+    'list_cwl_ass_seasons': CapabilityContract(
+        entity_fields=(('clan_code', 'clan'),),
+        time_fields=(),
+        result_entity_keys=(('season_coverage[].season', 'cwl_season'), ('clan_code', 'clan')),
+        period_results=(('seasons', 0), ('latest_seven_war_season',)),
+    ),
+    'read_cwl_ass_scope': CapabilityContract(
+        entity_fields=(('clan_code', 'clan'),),
+        time_fields=('season', 'scope_type', 'cwl_round', 'war_id'),
+        scope_field='scope_type',
+        scope_variants=(('season', ()), ('round', ('cwl_round',)), ('war', ('war_id',))),
+        result_entity_keys=(('players[].player_tag', 'clash_account'), ('season', 'cwl_season'), ('clan_code', 'clan')),
+        value_patterns=(('season', '20\\d{2}-(0[1-9]|1[0-2])'),),
+    ),
+    'read_cwl_ass_scope_report': CapabilityContract(
+        entity_fields=(('report_id', 'cwl_ass_report'),),
+        time_fields=(),
+        result_entity_keys=(('players[].player_tag', 'clash_account'), ('season', 'cwl_season'), ('clan_code', 'clan')),
+        retained_fields=('report_id',),
+    ),
+    'read_cwl_bonus_scope': CapabilityContract(
+        entity_fields=(('clan_code', 'clan'),),
+        time_fields=('season', 'scope_type', 'cwl_round', 'war_tag'),
+        scope_field='scope_type',
+        scope_variants=(('season', ()), ('round', ('cwl_round',)), ('war', ('war_tag',))),
+        value_patterns=(('season', '20\\d{2}-(0[1-9]|1[0-2])'),),
+    ),
+    'read_cwl_bonus_scope_report': CapabilityContract(
+        entity_fields=(('report_id', 'cwl_bonus_report'),),
+        time_fields=(),
+        retained_fields=('report_id',),
+    ),
+}
 
 def cwl_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
     offset = {"type": "integer", "minimum": 0}
@@ -122,6 +158,7 @@ def cwl_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
             },
         ),
         handler,
+        contract=TOOL_CONTRACTS[name],
     ) for name, description, properties, required, handler in definitions)
 
 

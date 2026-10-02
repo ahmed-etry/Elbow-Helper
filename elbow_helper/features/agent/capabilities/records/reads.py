@@ -12,6 +12,7 @@ from elbow_helper.features.records.domain.types import (
 )
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import (
     ACCESS_LEAD_PLUS,
     require_access_requirements,
@@ -21,6 +22,21 @@ from ...reports.base import ArtifactCapacityError, retain_report
 from .report import LeadershipRecordReport
 from ...models import AgentRequestContext, RegisteredAgentTool
 
+
+TOOL_CONTRACTS = {
+    'read_active_leadership_records': CapabilityContract(
+        entity_fields=(('member_id', 'discord_member'),),
+        time_fields=(),
+        required_access=frozenset({'lead_plus'}),
+    ),
+    'read_leadership_record_report': CapabilityContract(
+        entity_fields=(('report_id', 'leadership_record_report'), ('member_id', 'discord_member')),
+        time_fields=(),
+        filter_fields=('category_key', 'incident_type_key', 'search'),
+        required_access=frozenset({'lead_plus'}),
+        retained_fields=('report_id',),
+    ),
+}
 
 def record_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
@@ -68,6 +84,7 @@ def record_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             handler,
+            contract=TOOL_CONTRACTS[name],
         )
         for name, description, properties, required, handler in definitions
     )

@@ -8,11 +8,24 @@ from uuid import uuid4
 from elbow_helper.features.clan_transfers.config import CLAN_TRANSFER_QUEUES
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import accessible_message_channel, require_evidence_access
 from ...reports.base import ArtifactCapacityError, retain_report
 from ...models import AgentRequestContext, RegisteredAgentTool
 from .report import TransferQueueReport
 
+
+TOOL_CONTRACTS = {
+    'read_pending_transfer_requests': CapabilityContract(
+        entity_fields=(('clan_code', 'destination_clan'),),
+        time_fields=(),
+    ),
+    'read_pending_transfer_report': CapabilityContract(
+        entity_fields=(('report_id', 'pending_transfer_report'), ('clan_code', 'destination_clan'), ('member_id', 'discord_member')),
+        time_fields=(),
+        retained_fields=('report_id',),
+    ),
+}
 
 def transfer_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
@@ -34,7 +47,9 @@ def transfer_tools() -> tuple[RegisteredAgentTool, ...]:
         name=name, description=description,
         parameters={"type": "object", "properties": properties,
                     "required": list(required), "additionalProperties": False},
-    ), handler) for name, description, properties, required, handler in definitions)
+    ), handler,
+        contract=TOOL_CONTRACTS[name],
+    ) for name, description, properties, required, handler in definitions)
 
 
 async def read_pending_transfer_requests(

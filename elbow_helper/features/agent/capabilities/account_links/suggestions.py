@@ -10,6 +10,7 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.features.account_links.config import REVIEW_CHANNEL_ID
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import CommandOutcome
@@ -42,13 +43,27 @@ def account_suggestion_tools() -> tuple[RegisteredAgentTool, ...]:
                 "offset": {"type": "integer", "minimum": 0},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 25},
             }, "additionalProperties": False},
-        ), read_account_suggestions),
+        ), read_account_suggestions,
+            contract=CapabilityContract(
+                entity_fields=(),
+                time_fields=(),
+                source_scope="channel_status",
+                result_channel_fields=("review_channel_id",),
+                filter_fields=("offset", "limit"),
+            ),
+        ),
         RegisteredAgentTool(AgentToolDefinition(
             name="link_account_suggestion",
             description="Confirm or correct a pending account match after confirmation.",
             parameters=tag_schema,
         ), prepare_suggestion_link, AgentCapabilityEffect.COMMAND,
-            ActionClass.CHANGE, True),
+            ActionClass.CHANGE, True,
+            contract=CapabilityContract(
+                entity_fields=(("player_tag", "clash_account"), ("member_id", "discord_member")),
+                time_fields=(),
+                source_scope="request_context",
+            ),
+        ),
         RegisteredAgentTool(AgentToolDefinition(
             name="ignore_account_suggestion",
             description="Permanently ignore a pending account match after confirmation.",
@@ -56,7 +71,13 @@ def account_suggestion_tools() -> tuple[RegisteredAgentTool, ...]:
                 "player_tag": {"type": "string"},
             }, "required": ["player_tag"], "additionalProperties": False},
         ), prepare_suggestion_ignore, AgentCapabilityEffect.COMMAND,
-            ActionClass.IRREVERSIBLE, True),
+            ActionClass.IRREVERSIBLE, True,
+            contract=CapabilityContract(
+                entity_fields=(("player_tag", "clash_account"),),
+                time_fields=(),
+                source_scope="request_context",
+            ),
+        ),
     )
 
 
@@ -126,7 +147,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         lines.append(ACTION_SUGGESTION_OLD.format(member=f"<@{old['discord_user_id']}>"))
     if suggestion.get("review_message_id"):
         lines.append(ACTION_SUGGESTION_REVIEW.format(
-            message_id=suggestion["review_message_id"], channel=review.mention))
+            channel=review.mention))
     if board is not None:
         lines.append(ACTION_SUGGESTION_BOARD.format(channel=board.mention))
 

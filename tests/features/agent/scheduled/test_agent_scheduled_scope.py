@@ -7,6 +7,7 @@ from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.agent.scheduled.tools import prepare_manage, standing_tools
 from elbow_helper.features.agent.actions.repository import AgentActionRepository
 import json
+from dataclasses import replace
 from types import SimpleNamespace
 
 from elbow_helper.features.agent.actions.contracts import ChangePreview, PreparedAction
@@ -17,6 +18,7 @@ from elbow_helper.features.agent.engine.capability_contract import CapabilityCon
 from elbow_helper.features.agent.models import RegisteredAgentTool, AgentCapabilityEffect
 from elbow_helper.infrastructure.ai.agent import AgentToolDefinition
 from unittest.mock import patch
+
 
 
 async def _unchanged():
@@ -149,9 +151,7 @@ class ScheduledScopeTests(unittest.TestCase):
             CapabilityContract((), (), time_window=("after", "before", "iso_utc")),
         ):
             with patch("elbow_helper.features.agent.engine.registry.build_agent_tools",
-                       return_value={"synthetic": tool}), patch(
-                       "elbow_helper.features.agent.engine.capability_contract.CONTRACTS",
-                       {"synthetic": contract}), self.assertRaises(ValueError):
+                       return_value={"synthetic": replace(tool, contract=contract)}), self.assertRaises(ValueError):
                 _watcher_reads(reads)
 
     def test_watcher_accepts_current_reads_and_rejects_state_changes(self):
@@ -160,9 +160,8 @@ class ScheduledScopeTests(unittest.TestCase):
         reads = [{"capability": "synthetic", "arguments": {}}]
         for effect in (AgentCapabilityEffect.READ, AgentCapabilityEffect.STATE):
             with patch("elbow_helper.features.agent.engine.registry.build_agent_tools",
-                       return_value={"synthetic": RegisteredAgentTool(definition, _run, effect)}), patch(
-                       "elbow_helper.features.agent.engine.capability_contract.CONTRACTS",
-                       {"synthetic": CapabilityContract((), ())}):
+                       return_value={"synthetic": RegisteredAgentTool(
+                           definition, _run, effect, contract=CapabilityContract((), ()))}):
                 if effect is AgentCapabilityEffect.READ:
                     _watcher_reads(reads)
                 else:

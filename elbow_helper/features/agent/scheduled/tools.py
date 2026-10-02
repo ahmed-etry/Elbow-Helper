@@ -12,6 +12,7 @@ import discord
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ..engine.capability_contract import CapabilityContract
 from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ..actions.outcomes import CommandOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
@@ -27,6 +28,27 @@ from ..discord_actions.safety import check_post_access, resolve_channel
 from .scope import has_raw_id, validate_scope
 from .time_rules import next_occurrences, timezone_name
 
+
+TOOL_CONTRACTS = {
+    'save_standing_rule': CapabilityContract(
+        entity_fields=(('destination_channel_id', 'discord_channel'),),
+        time_fields=(),
+        source_scope='request_context',
+        filter_fields=('kind', 'request', 'schedule', 'timezone', 'allowed_actions', 'reads', 'condition', 'repeat', 'replace_id'),
+    ),
+    'list_standing_rules': CapabilityContract(
+        entity_fields=(),
+        time_fields=(),
+        source_scope='request_context',
+        filter_fields=('kind',),
+    ),
+    'manage_standing_rule': CapabilityContract(
+        entity_fields=(),
+        time_fields=(),
+        source_scope='request_context',
+        filter_fields=('kind', 'id', 'operation'),
+    ),
+}
 
 def _repository(context: AgentRequestContext):
     repository = context.action_repository
@@ -76,7 +98,6 @@ def _allowed_capabilities(actions: list[Mapping[str, Any]], context: AgentReques
 
 def _watcher_reads(reads: Any) -> None:
     from ..engine.registry import build_agent_tools
-    from ..engine.capability_contract import CONTRACTS
     from ..plan.checker import valid_arguments
 
     registry = build_agent_tools()
@@ -94,7 +115,7 @@ def _watcher_reads(reads: Any) -> None:
             raise ValueError("Watchers use read lookups only.")
         if not valid_arguments(arguments, tool.definition.parameters):
             raise ValueError("Choose valid values for each watcher lookup.")
-        contract = CONTRACTS.get(name)
+        contract = tool.contract
         if contract is None:
             raise ValueError("That lookup cannot be watched.")
         if contract.retained_fields or contract.source_scope in (
@@ -399,8 +420,14 @@ def standing_tools() -> tuple[RegisteredAgentTool, ...]:
     )
     return (
         RegisteredAgentTool(save, prepare_save, AgentCapabilityEffect.COMMAND,
-                            ActionClass.CHANGE, True),
-        RegisteredAgentTool(listing, list_standing),
+                            ActionClass.CHANGE, True,
+            contract=TOOL_CONTRACTS[save.name],
+        ),
+        RegisteredAgentTool(listing, list_standing,
+            contract=TOOL_CONTRACTS[listing.name],
+        ),
         RegisteredAgentTool(manage, prepare_manage, AgentCapabilityEffect.COMMAND,
-                            ActionClass.CHANGE, True),
+                            ActionClass.CHANGE, True,
+            contract=TOOL_CONTRACTS[manage.name],
+        ),
     )

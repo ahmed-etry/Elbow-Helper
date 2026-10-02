@@ -164,7 +164,7 @@ async def prepare_support_close(context: Any,
     ))
     for message_id, author_id, content, _, attachments, embeds, reactions in history:
         lines.append(ACTION_SUPPORT_CLOSE_MESSAGE.format(
-            message_id=message_id, member=f"<@{author_id}>",
+            member=f"<@{author_id}>",
         ))
         lines.extend(line or ACTION_PREVIEW_BLANK
                      for line in content.splitlines())

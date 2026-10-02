@@ -225,7 +225,7 @@ async def prepare_roster_delete(context: Any,
                 check_member(member, context.guild.me)
 
     check_targets()
-    lines = [ACTION_ROSTER_DELETE_LINE.format(name=roster.name, roster_id=roster.id)]
+    lines = [ACTION_ROSTER_DELETE_LINE.format(name=roster.name)]
     cycle_count = len(state["history"])
     signup_count = sum(len(members) for _, members in state["history"])
     lines.append(ACTION_ROSTER_DELETE_HISTORY.format(
@@ -239,8 +239,7 @@ async def prepare_roster_delete(context: Any,
     lines.extend(ACTION_MEMBER_LINE.format(member=f"<@{member_id}>")
                  for member_id in state["member_ids"])
     lines.extend(ACTION_ROSTER_DELETE_POST.format(
-        channel=f"<#{channel_id}>", message_id=message_id,
-    ) for channel_id, message_id in state["posts"])
+        channel=f"<#{channel_id}>", ) for channel_id, message_id in state["posts"])
 
     async def recheck() -> bool:
         current = await workflow.get_roster(roster_id)
@@ -329,7 +328,7 @@ async def prepare_roster_edit(context: Any,
             return f"<@&{value}>" if value is not None else ACTION_ROSTER_NO_ROLE
         return str(value) if value is not None else ACTION_ROSTER_NO_ROLE
 
-    lines = [ACTION_ROSTER_EDIT_LINE.format(name=roster.name, roster_id=roster.id)]
+    lines = [ACTION_ROSTER_EDIT_LINE.format(name=roster.name)]
     lines.extend(ACTION_FIELD_CHANGE.format(
         field=ACTION_ROSTER_EDIT_FIELDS[key],
         old=display(key, getattr(roster, key)), new=display(key, new),
@@ -338,8 +337,7 @@ async def prepare_roster_edit(context: Any,
         lines.extend(ACTION_ROSTER_EDIT_ROLE_SYNC.format(member=f"<@{member_id}>")
                      for member_id in state["member_ids"])
     lines.extend(ACTION_ROSTER_POST_REFRESH.format(
-        channel=f"<#{channel_id}>", message_id=message_id,
-    ) for channel_id, message_id in state["posts"])
+        channel=f"<#{channel_id}>", ) for channel_id, message_id in state["posts"])
 
     async def recheck() -> bool:
         current = await workflow.get_roster(roster_id)

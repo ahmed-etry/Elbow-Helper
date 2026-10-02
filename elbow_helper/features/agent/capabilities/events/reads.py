@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import (
     ACCESS_LEAD, require_access_requirements, require_evidence_access,
 )
@@ -14,6 +15,22 @@ from ...reports.base import ArtifactCapacityError, retain_report
 from .report import EventScheduleReport
 from ...models import AgentRequestContext, RegisteredAgentTool
 
+
+TOOL_CONTRACTS = {
+    'read_event_schedule': CapabilityContract(
+        entity_fields=(),
+        time_fields=(),
+        filter_fields=('phase', 'event_type'),
+        required_access=frozenset({'lead'}),
+    ),
+    'read_event_schedule_report': CapabilityContract(
+        entity_fields=(('report_id', 'event_schedule_report'),),
+        time_fields=(),
+        filter_fields=('phase', 'event_type'),
+        required_access=frozenset({'lead'}),
+        retained_fields=('report_id',),
+    ),
+}
 
 def event_tools() -> tuple[RegisteredAgentTool, ...]:
     phase = {
@@ -56,6 +73,7 @@ def event_tools() -> tuple[RegisteredAgentTool, ...]:
                 "required": list(required), "additionalProperties": False,
             },
         ), handler,
+        contract=TOOL_CONTRACTS[name],
     ) for name, description, properties, required, handler in definitions)
 
 

@@ -35,6 +35,8 @@ from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentToolDe
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from elbow_helper.infrastructure.ai import TextGenerationError
 
+from features.agent.engine.helpers import patch_contracts
+
 
 def _context():
     actor = SimpleNamespace(id=41, display_name="Test member",
@@ -245,7 +247,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         plans = [_plan([_step("first", {"period": n})], periods=[{"kind": "key", "field": "period", "value": n}])
                  for n in range(6)]
         session = _Session([_model_step(plan) for plan in plans], self.events)
-        with patch.dict("elbow_helper.features.agent.engine.capability_contract.CONTRACTS", {
+        with patch_contracts(self.registry, {
             "read_value": CapabilityContract((), ("period",))
         }):
             answer, _ = await self._answer(session)
@@ -348,7 +350,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         plan["entities"] = [{"kind": "discord_channel", "value": 202}]
         session = _Session([_model_step(plan), _model_step(plan)], self.events)
         with (
-            patch.dict("elbow_helper.features.agent.engine.capability_contract.CONTRACTS",
+            patch_contracts(self.registry,
                        {"read_value": contract}),
             patch("elbow_helper.features.agent.engine.steps.can_disclose_provenance",
                   return_value=False),
@@ -580,7 +582,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         period = {"kind": "resolved", "step": "first", "selector": "latest", "path": ["key"]}
         plan = _plan([_step("first"), _step("second", {"selected_key": {"step": "first", "path": ["key"]}}, ["first"])], periods=[period])
         session = _Session([_model_step(plan), AgentStep("Ready.", (), AgentUsage())], self.events)
-        with patch.dict("elbow_helper.features.agent.engine.capability_contract.CONTRACTS", {"read_value": contract}):
+        with patch_contracts(self.registry, {"read_value": contract}):
             await self._answer(session)
         self.assertEqual(self.events, ["model", {}, {"selected_key": "synthetic-key"}, "model"])
 
@@ -769,7 +771,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             page.reset_mock()
             session = _Session([_model_step(plan), AgentStep("Ready.", (), AgentUsage())], self.events)
             context.state.evidence.clear()
-            with (patch.dict("elbow_helper.features.agent.engine.capability_contract.CONTRACTS", contracts),
+            with (patch_contracts(self.registry, contracts),
                   patch("elbow_helper.features.agent.engine.service.named_sources", return_value={"discord_channel": frozenset({91})})):
                 await self._answer(session, context)
             page.assert_awaited_once()

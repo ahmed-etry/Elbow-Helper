@@ -138,17 +138,11 @@ class AnswerFlow:
                             "results": results,
                             "missing_options": options,
                             "missing_hints": hints,
-                            "instruction": (
-                                (
-                                    (
-                                        'Ask the member for all missing values '
+                            "instruction": ('Ask the member for all missing values '
                                         'together in your own words. Use the option '
                                         'descriptions and choices as data. Suggest '
                                         'only values the data supports. Do not say '
-                                        'the command ran.'
-                                    )
-                                )
-                            ),
+                                        'the command ran.'),
                         },
                         ensure_ascii=False,
                         default=str,
@@ -195,14 +189,8 @@ class AnswerFlow:
                 json.dumps(
                     {
                         "results": results,
-                        "instruction": (
-                            (
-                                (
-                                    'Answer now from these results. Submit '
-                                    'another plan only for a remaining gap.'
-                                )
-                            )
-                        ),
+                        "instruction": ('Answer now from these results. Submit '
+                                    'another plan only for a remaining gap.'),
                     },
                     ensure_ascii=False,
                     default=str,

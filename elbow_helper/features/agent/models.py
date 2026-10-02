@@ -20,6 +20,7 @@ from .conversation.instructions import TaskInstruction, WorkingState
 from .actions.contracts import ActionClass
 
 if TYPE_CHECKING:
+    from .engine.capability_contract import CapabilityContract
     from .research.repository import ResearchJobRepository
     from .actions.repository import AgentActionRepository
     from .actions.runner import AgentActionRunner
@@ -161,3 +162,4 @@ class RegisteredAgentTool:
     effect: AgentCapabilityEffect = AgentCapabilityEffect.READ
     action_class: ActionClass = ActionClass.READ
     prepares_action: bool = False
+    contract: CapabilityContract | None = None

@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ..engine.capability_contract import CapabilityContract
 from ..access import accessible_message_channel, require_evidence_access
 from ..reports.base import ArtifactCapacityError, retain_report
 from .contracts import (
@@ -22,6 +23,55 @@ from .attachments import (
 )
 from ..models import AgentRequestContext, RegisteredAgentTool
 
+
+TOOL_CONTRACTS = {
+    'list_supported_attachments': CapabilityContract(
+        entity_fields=(),
+        time_fields=(),
+        source_scope='request_attachment',
+        result_channel_lists=(('attachments', 'channel_id'),),
+    ),
+    'import_csv_attachment': CapabilityContract(
+        entity_fields=(('attachment_id', 'discord_attachment'),),
+        time_fields=(),
+        source_scope='request_attachment',
+        result_channel_fields=('source_channel_id',),
+        filter_fields=('delimiter',),
+    ),
+    'read_csv_import': CapabilityContract(
+        entity_fields=(('report_id', 'csv_import'),),
+        time_fields=(),
+        source_scope='retained_attachment',
+        result_channel_fields=('source_channel_id',),
+        retained_fields=('report_id',),
+    ),
+    'import_xlsx_attachment': CapabilityContract(
+        entity_fields=(('attachment_id', 'discord_attachment'),),
+        time_fields=(),
+        source_scope='request_attachment',
+        result_channel_fields=('source_channel_id',),
+    ),
+    'read_xlsx_import': CapabilityContract(
+        entity_fields=(('report_id', 'xlsx_import'), ('sheet_name', 'workbook_sheet')),
+        time_fields=(),
+        source_scope='retained_attachment',
+        result_channel_fields=('source_channel_id',),
+        retained_fields=('report_id',),
+    ),
+    'import_text_attachment': CapabilityContract(
+        entity_fields=(('attachment_id', 'discord_attachment'),),
+        time_fields=(),
+        source_scope='request_attachment',
+        result_channel_fields=('source_channel_id',),
+    ),
+    'read_text_import': CapabilityContract(
+        entity_fields=(('report_id', 'text_import'),),
+        time_fields=(),
+        source_scope='retained_attachment',
+        result_channel_fields=('source_channel_id',),
+        retained_fields=('report_id',),
+    ),
+}
 
 def attachment_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
@@ -68,7 +118,9 @@ def attachment_tools() -> tuple[RegisteredAgentTool, ...]:
         name=name, description=description,
         parameters={"type": "object", "properties": properties,
                     "required": list(required), "additionalProperties": False},
-    ), handler) for name, description, properties, required, handler in definitions)
+    ), handler,
+        contract=TOOL_CONTRACTS[name],
+    ) for name, description, properties, required, handler in definitions)
 
 
 async def list_csv_attachments(

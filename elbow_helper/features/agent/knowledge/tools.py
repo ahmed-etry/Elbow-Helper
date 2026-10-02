@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ..engine.capability_contract import CapabilityContract
 from ..access import (
     ACCESS_LEAD, ACCESS_LEAD_PLUS, has_access_requirements,
     require_access_requirements, require_evidence_access,
@@ -17,6 +18,19 @@ from .store import KnowledgeSection
 from .report import KnowledgeReport
 from ..models import AgentRequestContext, RegisteredAgentTool
 
+
+TOOL_CONTRACTS = {
+    'search_approved_knowledge': CapabilityContract(
+        entity_fields=(),
+        time_fields=(),
+        filter_fields=('topics',),
+    ),
+    'read_approved_knowledge_report': CapabilityContract(
+        entity_fields=(('report_id', 'approved_knowledge_report'), ('section_id', 'approved_knowledge_section')),
+        time_fields=(),
+        retained_fields=('report_id',),
+    ),
+}
 
 def knowledge_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
@@ -61,6 +75,7 @@ def knowledge_tools() -> tuple[RegisteredAgentTool, ...]:
                 "required": list(required), "additionalProperties": False,
             },
         ), handler,
+        contract=TOOL_CONTRACTS[name],
     ) for name, description, properties, required, handler in definitions)
 
 

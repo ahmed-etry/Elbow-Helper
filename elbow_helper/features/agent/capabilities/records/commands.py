@@ -158,7 +158,7 @@ def _edit_lines(record: Mapping[str, Any], target: tuple[str, str, str],
         (ACTION_RECORD_EDIT_NOTE_LINE, str),
     )
     return (ACTION_RECORD_EDIT_LINE.format(
-        record_id=record["id"], member=member.mention,
+        member=member.mention,
     ), *(template.format(old=label(previous), new=label(updated))
           for previous, updated, (template, label) in zip(old, target, templates)
           if previous != updated))
@@ -319,7 +319,7 @@ async def prepare_record_remove(context: Any, values: Mapping[str, Any]) -> Chan
         return current is not None and _record_signature(current) == signature
 
     return ChangePreview((
-        ACTION_RECORD_REMOVE_LINE.format(record_id=record_id, member=member.mention),
+        ACTION_RECORD_REMOVE_LINE.format(member=member.mention),
         ACTION_RECORD_DETAILS_LINE.format(note=record["note"]),
     ), recheck, summary=ACTION_RECORD_REMOVE_LABEL,
         before={"record": record})
@@ -348,7 +348,7 @@ async def run_record_remove(context: Any, values: Mapping[str, Any]) -> CommandO
     return CommandOutcome(
         "complete", "private",
         text=ACTION_RECORD_REMOVE_DONE.format(
-            record_id=record_id, member=member.display_name,
+            member=member.display_name,
         ),
         after={"removed": True},
     )
@@ -394,14 +394,14 @@ async def prepare_record_add_undo(context: Any,
             return CommandOutcome.unavailable()
         return CommandOutcome(
             "complete", "private", text=ACTION_RECORD_ADD_UNDO_DONE.format(
-                record_id=record_id, member=member.mention,
+                member=member.mention,
             ), after={"removed": True},
         )
 
     return PreparedAction(
         "undo_record_add", {"record_id": record_id, "member_id": member_id},
         ChangePreview((
-            ACTION_RECORD_ADD_UNDO.format(record_id=record_id, member=member.mention),
+            ACTION_RECORD_ADD_UNDO.format(member=member.mention),
             *((ACTION_UNDO_CHANGED,) if changed else ()),
         ), recheck, summary=ACTION_RECORD_UNDO_LABEL,
             before={"record": record}),

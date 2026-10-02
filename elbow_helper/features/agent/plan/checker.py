@@ -7,10 +7,9 @@ from datetime import date, datetime, time, timezone
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool
 from ..actions.contracts import ActionClass
-from ..engine.capability_contract import CapabilityContract, CONTRACTS
-from ..engine.capability_contract import SAVED_REPORT_CONTRACTS
 from ..engine.capability_contract import CapabilityBindError
 from ..engine.capability_contract import bound_time_window
 from ..engine.capability_contract import compile_capability_call
@@ -249,8 +248,7 @@ def check_step(
         issue = validate_scope(selected or tool)
         if issue:
             return _error(issue, step_id)
-    contract = (SAVED_REPORT_CONTRACTS[selected.definition.name] if selected is not None
-                else CONTRACTS.get(capability))
+    contract = (selected or tool).contract
     if contract is not None:
         if any(kind == "resolved" and owner == step_id for kind, owner, _ in periods) and any(
             field in arguments for field in (*contract.latest_fields, *contract.bounded_fields)
@@ -323,7 +321,7 @@ def check_plan(
         if raw["output"] not in output_forms(registry):
             return _error("Choose an available output form.")
         periods = parse_periods(raw["periods"])
-        key_fields = {field for name in registry if (contract := CONTRACTS.get(name)) is not None
+        key_fields = {field for name in registry if (contract := registry[name].contract) is not None
                       for field in contract.time_fields
                       if field not in (*contract.latest_fields, *contract.bounded_fields,
                                        *(contract.time_window[:2] if contract.time_window else ()))}
@@ -373,7 +371,7 @@ def check_plan(
                 continue
             if step_id not in earlier:
                 return _error("Resolve each period with a planned step.")
-            resolver = CONTRACTS.get(steps_by_id[step_id]["capability"])
+            resolver = registry[steps_by_id[step_id]["capability"]].contract
             if resolver is None or not any(
                 tuple(path) == pattern for pattern in resolver.period_results
             ):

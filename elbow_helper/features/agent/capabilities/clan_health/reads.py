@@ -12,6 +12,7 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.features.account_links.evidence import account_ownership_evidence
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...reports.base import ArtifactCapacityError, retain_report
 from .report import ClanHealthReport, compare_clan_health_reports as compare_reports
@@ -27,6 +28,53 @@ HEALTH_PLAYER_RESULT_LIMIT = 10
 HEALTH_WINDOW_DEFAULT_DAYS = 30
 HEALTH_WINDOW_MAX_DAYS = 365
 
+
+TOOL_CONTRACTS = {
+    'find_clan_health_players': CapabilityContract(
+        entity_fields=(('clan_code', 'clan'),),
+        time_fields=(),
+    ),
+    'get_player_health': CapabilityContract(
+        entity_fields=(('player_tag', 'clash_account'),),
+        time_fields=('days',),
+        latest_fields=('days',),
+    ),
+    'list_clan_health_reports': CapabilityContract(
+        entity_fields=(('clan_code', 'clan'),),
+        time_fields=('before_run_id',),
+        latest_fields=('before_run_id',),
+        period_results=(('reports', 0, 'run_id'),),
+    ),
+    'get_clan_health': CapabilityContract(
+        entity_fields=(('clan_code', 'clan'),),
+        time_fields=(),
+    ),
+    'read_clan_health_period': CapabilityContract(
+        entity_fields=(('clan_code', 'clan'), ('run_id', 'clan_health_run')),
+        time_fields=(),
+    ),
+    'read_clan_health_report': CapabilityContract(
+        entity_fields=(('report_id', 'clan_health_report'),),
+        time_fields=(),
+        retained_fields=('report_id',),
+    ),
+    'compare_clan_health_reports': CapabilityContract(
+        entity_fields=(('before_report_id', 'clan_health_report'), ('after_report_id', 'clan_health_report')),
+        time_fields=(),
+        retained_fields=('before_report_id', 'after_report_id'),
+    ),
+    'read_family_account_movements': CapabilityContract(
+        entity_fields=(),
+        time_fields=('before_run_id', 'interval_limit'),
+        latest_fields=('before_run_id', 'interval_limit'),
+    ),
+    'read_family_account_movement_report': CapabilityContract(
+        entity_fields=(('report_id', 'family_movement_report'), ('player_tag', 'clash_account'), ('member_id', 'discord_member'), ('clan_code', 'clan')),
+        time_fields=(),
+        filter_fields=('view', 'transition'),
+        retained_fields=('report_id',),
+    ),
+}
 
 def clan_health_tools() -> tuple[RegisteredAgentTool, ...]:
     offset = {"type": "integer", "minimum": 0}
@@ -95,7 +143,9 @@ def clan_health_tools() -> tuple[RegisteredAgentTool, ...]:
         name=name, description=description,
         parameters={"type": "object", "properties": properties,
                     "required": list(required), "additionalProperties": False},
-    ), handler) for name, description, properties, required, handler in definitions)
+    ), handler,
+        contract=TOOL_CONTRACTS[name],
+    ) for name, description, properties, required, handler in definitions)
 
 
 async def find_clan_health_players(

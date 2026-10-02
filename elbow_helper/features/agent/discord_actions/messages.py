@@ -12,6 +12,7 @@ import discord
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ..engine.capability_contract import CapabilityContract
 from ..access import require_evidence_access
 from ..actions.contracts import (
     ActionClass, ChangePreview, PreparedAction, earlier_result_label,
@@ -49,7 +50,15 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
                 "offset": {"type": "integer", "minimum": 0},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 25},
             }, "required": [], "additionalProperties": False},
-        ), find_agent_files),
+        ), find_agent_files,
+            contract=CapabilityContract(
+                entity_fields=(),
+                time_fields=(),
+                source_scope="request_context",
+                filter_fields=("offset", "limit"),
+                result_entity_keys=(("files[].message_id", "agent_file_message"),),
+            ),
+        ),
         RegisteredAgentTool(AgentToolDefinition(
             name="post_discord_message",
             description="Post text in a channel visible and writable by both the asker and bot; long text is split. Can attach a file made in this conversation. Pings require explicit preview values. Returns each posted message ID.",
@@ -59,7 +68,18 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
                 "file_name": {"type": "string", "minLength": 1, "maxLength": 255},
                 "file_message_id": {"type": "integer", "minimum": 1},
             }, "required": ["channel_id", "text"], "additionalProperties": False},
-        ), prepare_post, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True),
+        ), prepare_post, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+            contract=CapabilityContract(
+                entity_fields=(
+                    ("channel_id", "discord_channel"),
+                    ("ping_role_ids", "discord_role_set"),
+                    ("file_message_id", "agent_file_message"),
+                ),
+                time_fields=(),
+                source_scope="request_context",
+                filter_fields=("text", "ping_everyone", "file_name"),
+            ),
+        ),
         RegisteredAgentTool(AgentToolDefinition(
             name="edit_agent_message",
             description="Edit text in a message posted by post_discord_message. Pings require explicit preview values.",
@@ -69,7 +89,18 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
                 **_content_options(),
             }, "required": ["channel_id", "message_id", "text"],
                "additionalProperties": False},
-        ), prepare_edit, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True),
+        ), prepare_edit, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+            contract=CapabilityContract(
+                entity_fields=(
+                    ("channel_id", "discord_channel"),
+                    ("message_id", "discord_message"),
+                    ("ping_role_ids", "discord_role_set"),
+                ),
+                time_fields=(),
+                source_scope="request_context",
+                filter_fields=("text", "ping_everyone"),
+            ),
+        ),
         RegisteredAgentTool(AgentToolDefinition(
             name="delete_agent_message",
             description="Delete one message posted by post_discord_message. This cannot be undone.",
@@ -78,7 +109,16 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
                 "message_id": {"type": "integer", "minimum": 1},
             }, "required": ["channel_id", "message_id"],
                "additionalProperties": False},
-        ), prepare_delete, AgentCapabilityEffect.COMMAND, ActionClass.IRREVERSIBLE, True),
+        ), prepare_delete, AgentCapabilityEffect.COMMAND, ActionClass.IRREVERSIBLE, True,
+            contract=CapabilityContract(
+                entity_fields=(
+                    ("channel_id", "discord_channel"),
+                    ("message_id", "discord_message"),
+                ),
+                time_fields=(),
+                source_scope="request_context",
+            ),
+        ),
     )
 
 

@@ -8,11 +8,24 @@ from uuid import uuid4
 from elbow_helper.configuration.channels import CLAN_LEADERSHIP_CHANNELS
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import accessible_message_channel, require_evidence_access
 from ...reports.base import ArtifactCapacityError, retain_report
 from .report import MissingElderReport
 from ...models import AgentRequestContext, RegisteredAgentTool
 
+
+TOOL_CONTRACTS = {
+    'read_missing_elder_accounts': CapabilityContract(
+        entity_fields=(('clan_codes', 'clan_set'), ('clan_code', 'clan'), ('member_id', 'discord_member')),
+        time_fields=(),
+    ),
+    'read_missing_elder_report': CapabilityContract(
+        entity_fields=(('report_id', 'missing_elder_report'), ('clan_code', 'clan'), ('member_id', 'discord_member')),
+        time_fields=(),
+        retained_fields=('report_id',),
+    ),
+}
 
 def clan_reporting_tools() -> tuple[RegisteredAgentTool, ...]:
     clan_code = {
@@ -57,6 +70,7 @@ def clan_reporting_tools() -> tuple[RegisteredAgentTool, ...]:
                 "required": list(required), "additionalProperties": False,
             },
         ), handler,
+        contract=TOOL_CONTRACTS[name],
     ) for name, description, properties, required, handler in definitions)
 
 

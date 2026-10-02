@@ -12,7 +12,6 @@ import discord
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from elbow_helper.infrastructure.ai import TextGenerationError
 
-from ..engine.capability_contract import CONTRACTS
 from ..engine.capability_contract import compile_capability_call
 from ..engine.service import AgentService
 from ..engine.service import AgentUnavailableError
@@ -49,7 +48,7 @@ async def _read_current(context, reads):
         name = read["capability"]
         arguments = read["arguments"]
         tool = registry[name]
-        scope = compile_capability_call(tool, arguments, contract=CONTRACTS[name])
+        scope = compile_capability_call(tool, arguments, contract=tool.contract)
         raw = await AgentService.execute_tool(
             name=name, handler=tool.handler, arguments=arguments,
             capability_scope=scope, context=context,

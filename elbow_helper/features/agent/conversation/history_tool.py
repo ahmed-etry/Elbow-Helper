@@ -7,6 +7,7 @@ from typing import Any, Mapping
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ..engine.capability_contract import CapabilityContract
 from ..access import accessible_message_channel, require_evidence_access
 from .state import ConversationTurn
 from ..models import AgentRequestContext, RegisteredAgentTool
@@ -39,7 +40,11 @@ def history_tools() -> tuple[RegisteredAgentTool, ...]:
             },
         ),
         read_conversation_history,
-    ),)
+        contract=CapabilityContract(
+            entity_fields=(("request_message_id", "discord_message"),),
+            time_fields=(),
+        ),
+            ),)
 
 
 def _document(turn: ConversationTurn, *, stale_knowledge: bool = False) -> str:

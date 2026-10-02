@@ -8,6 +8,7 @@ from typing import Any
 from elbow_helper.features.cwl.config import DASHBOARD_THREADS
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import CommandOutcome
@@ -27,7 +28,13 @@ def cwl_prep_refresh_tools() -> tuple[RegisteredAgentTool, ...]:
             "clan_code": {"type": "string", "enum": list(DASHBOARD_THREADS)},
         }, "required": ["clan_code"], "additionalProperties": False},
     ), prepare_cwl_prep_refresh, AgentCapabilityEffect.COMMAND,
-        ActionClass.CHANGE, True),)
+        ActionClass.CHANGE, True,
+        contract=CapabilityContract(
+            entity_fields=(("clan_code", "clan"),),
+            time_fields=(),
+            source_scope="request_context",
+        ),
+            ),)
 
 
 async def prepare_cwl_prep_refresh(context: AgentRequestContext,

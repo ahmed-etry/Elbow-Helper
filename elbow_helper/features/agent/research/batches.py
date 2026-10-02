@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ..engine.capability_contract import CapabilityContract
 from ..access import AgentAccessLost
 from ..access import accessible_message_channel
 from ..disclosure import require_destination_access
@@ -18,6 +19,30 @@ from .contracts import (
 )
 from .history import HISTORY_PAGE_LIMIT, SEARCH_RESULT_LIMIT
 
+
+TOOL_CONTRACTS = {
+    'start_discord_research_batch': CapabilityContract(
+        entity_fields=(('channel_ids', 'discord_channel_set'), ('author_id', 'discord_member')),
+        time_fields=('after', 'before'),
+        source_scope='channel_messages',
+        channel_fields=('channel_ids',),
+        result_channel_lists=(('jobs', 'source_channel_id'),),
+        result_sources_within_query=True,
+        filter_fields=('kind',),
+        time_window=('after', 'before', 'iso_utc'),
+    ),
+    'read_discord_research_jobs': CapabilityContract(
+        entity_fields=(('job_ids', 'discord_research_job_set'),),
+        time_fields=(),
+        source_scope='retained_channel_evidence',
+        result_channel_lists=(('jobs', 'source_channel_id'),),
+        retained_fields=('job_ids',),
+    ),
+    'list_discord_research_jobs': CapabilityContract(
+        entity_fields=(),
+        time_fields=(),
+    ),
+}
 
 def research_batch_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
@@ -82,6 +107,7 @@ def research_batch_tools() -> tuple[RegisteredAgentTool, ...]:
             handler,
             AgentCapabilityEffect.STATE if name == "start_discord_research_batch"
             else AgentCapabilityEffect.READ,
+            contract=TOOL_CONTRACTS[name],
         )
         for name, description, properties, required, handler in definitions
     )

@@ -8,6 +8,7 @@ from typing import Any, Mapping
 from elbow_helper.features.role_connections.queries import connection_matches
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import (
     ACCESS_LEAD, require_access_requirements, require_evidence_access,
 )
@@ -43,6 +44,11 @@ def role_connection_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             read_role_connections,
+            contract=CapabilityContract(
+                entity_fields=(("member_id", "discord_member"),),
+                time_fields=(),
+                required_access=frozenset({"lead"}),
+            ),
         ),
     )
 

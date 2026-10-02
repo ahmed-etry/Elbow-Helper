@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ..engine.capability_contract import CapabilityContract
 from ..access import require_evidence_access
 from ..models import AgentRequestContext, RegisteredAgentTool
 from ..models import AgentCapabilityEffect
@@ -24,7 +25,12 @@ def action_log_tools() -> tuple[RegisteredAgentTool, ...]:
                 "limit": {"type": "integer", "minimum": 1, "maximum": 25},
             }, "required": [], "additionalProperties": False},
         ), read_agent_action_log,
-    ), RegisteredAgentTool(
+        contract=CapabilityContract(
+            entity_fields=(),
+            time_fields=(),
+            result_entity_keys=(("actions[].log_id", "agent_action_log"),),
+        ),
+            ), RegisteredAgentTool(
         AgentToolDefinition(
             name="undo_agent_action",
             description="Preview an undo of one completed reversible action from this member's log.",
@@ -32,7 +38,11 @@ def action_log_tools() -> tuple[RegisteredAgentTool, ...]:
                 "log_id": {"type": "string", "minLength": 1, "maxLength": 32},
             }, "required": ["log_id"], "additionalProperties": False},
         ), undo_agent_action, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
-    ))
+        contract=CapabilityContract(
+            entity_fields=(("log_id", "agent_action_log"),),
+            time_fields=(),
+        ),
+       ))
 
 
 async def read_agent_action_log(

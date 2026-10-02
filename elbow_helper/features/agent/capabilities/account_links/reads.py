@@ -13,6 +13,7 @@ import discord
 from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...models import AgentRequestContext
 from ...models import RegisteredAgentTool
@@ -45,6 +46,10 @@ def member_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             find_discord_members,
+            contract=CapabilityContract(
+                entity_fields=(),
+                time_fields=(),
+            ),
         ),
         RegisteredAgentTool(
             AgentToolDefinition(
@@ -65,6 +70,14 @@ def member_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             get_linked_accounts,
+            contract=CapabilityContract(
+                entity_fields=(("member_id", "discord_member"),),
+                time_fields=(),
+                result_entity_keys=(
+                    ("member_id", "discord_member"),
+                    ("accounts[].player_tag", "clash_account"),
+                ),
+            ),
         ),
         RegisteredAgentTool(
             AgentToolDefinition(
@@ -85,6 +98,14 @@ def member_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             get_account_link,
+            contract=CapabilityContract(
+                entity_fields=(("player_tag", "clash_account"),),
+                time_fields=(),
+                result_entity_keys=(
+                    ("player_tag", "clash_account"),
+                    ("linked_member_id", "discord_member"),
+                ),
+            ),
         ),
     )
 

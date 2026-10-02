@@ -45,8 +45,7 @@ async def prepare_transfer_reminder(
     for entry in prepared["previous_entries"]:
         lines.append(ACTION_TRANSFER_REMINDER_DELETE.format(
             channel=f"<#{entry['channel_id']}>",
-            message_id=entry["message_id"],
-        ))
+            ))
     for number, chunk in enumerate(prepared["chunks"], start=1):
         lines.append(ACTION_TRANSFER_REMINDER_PAGE.format(number=number))
         lines.extend(line or ACTION_PREVIEW_BLANK for line in chunk.splitlines())

@@ -13,6 +13,7 @@ from elbow_helper.features.rosters.config import (
     ROSTER_DISCORD_COLUMN_MIN_WIDTH, ROSTER_DISCORD_COLUMN_MAX_WIDTH,
 )
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import CommandOutcome
@@ -40,6 +41,14 @@ from ...discord_actions.safety import (
     check_member, check_post_access, check_role, resolve_channel, resolve_member,
 )
 
+
+TOOL_CONTRACTS = {
+    'clear_roster_signups': CapabilityContract(
+        entity_fields=(('roster_id', 'roster'),),
+        time_fields=(),
+        source_scope='request_context',
+    ),
+}
 
 async def _check_posts(context: AgentRequestContext,
                        posts: tuple[tuple[int, int], ...]) -> None:
@@ -91,7 +100,14 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
             "roster_id": {"type": "integer", "minimum": 1},
             "operation": {"type": "string", "enum": ["open", "close", "show", "hide"]},
         }, "required": ["roster_id", "operation"], "additionalProperties": False},
-    ), prepare_state, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True)]
+    ), prepare_state, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+        contract=CapabilityContract(
+            entity_fields=(("roster_id", "roster"),),
+            time_fields=(),
+            source_scope="request_context",
+            filter_fields=("operation",),
+        ),
+             )]
     name, operation, classification, label = _OPERATIONS[4]
     async def prepare_clear(context: AgentRequestContext,
                             values: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -100,12 +116,19 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
         AgentToolDefinition(name=name, description="Clear a roster's signups after confirmation.",
                             parameters=schema),
         prepare_clear, AgentCapabilityEffect.COMMAND, classification, True,
+                            contract=TOOL_CONTRACTS[name],
     ))
     tools.append(RegisteredAgentTool(AgentToolDefinition(
         name="refresh_roster",
         description="Refresh a roster's account details, signup roles and post after confirmation.",
         parameters=schema,
-    ), prepare_roster_refresh, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True))
+    ), prepare_roster_refresh, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+        contract=CapabilityContract(
+            entity_fields=(("roster_id", "roster"),),
+            time_fields=(),
+            source_scope="request_context",
+        ),
+                 ))
     tools.append(RegisteredAgentTool(AgentToolDefinition(
         name="set_roster_layout",
         description="Set roster columns or displayed name lengths after confirmation.",
@@ -119,7 +142,20 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
             "discord_width": {"type": "integer", "minimum": ROSTER_DISCORD_COLUMN_MIN_WIDTH,
                               "maximum": ROSTER_DISCORD_COLUMN_MAX_WIDTH},
         }, "required": ["roster_id"], "additionalProperties": False},
-    ), prepare_roster_layout, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True))
+    ), prepare_roster_layout, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+        contract=CapabilityContract(
+            entity_fields=(("roster_id", "roster"),),
+            time_fields=(),
+            source_scope="request_context",
+            filter_fields=(
+                "show_townhall",
+                "show_discord",
+                "show_clan",
+                "player_width",
+                "discord_width",
+            ),
+        ),
+                 ))
     return tuple(tools)
 
 
@@ -145,8 +181,7 @@ async def prepare_roster_refresh(context: AgentRequestContext,
     lines = [ACTION_ROSTER_REFRESH_LINE.format(name=roster.name)]
     lines.extend(ACTION_ROSTER_REFRESH_MEMBER.format(member=member.mention)
                  for member in members)
-    lines.extend(ACTION_ROSTER_POST_REFRESH.format(message_id=message_id,
-                                                   channel=f"<#{channel_id}>")
+    lines.extend(ACTION_ROSTER_POST_REFRESH.format(channel=f"<#{channel_id}>")
                  for channel_id, message_id in state["posts"])
 
     async def recheck() -> bool:
@@ -200,7 +235,7 @@ async def prepare_roster_layout(context: AgentRequestContext,
         field=field.replace("_", " ").title(), old=before[field], new=value)
         for field, value in changes.items())
     lines.extend(ACTION_ROSTER_POST_REFRESH.format(
-        message_id=message_id, channel=f"<#{channel_id}>")
+        channel=f"<#{channel_id}>")
         for channel_id, message_id in posts)
 
     async def recheck() -> bool:
@@ -304,8 +339,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
             lines.append(ACTION_SIGNUP_ROLE.format(role=role.mention))
         lines.extend(ACTION_ROSTER_CONTROL_MEMBER.format(member=f"<@{member_id}>")
                      for member_id in state["member_ids"])
-    lines.extend(ACTION_ROSTER_POST_REFRESH.format(message_id=message_id,
-                                                   channel=f"<#{channel_id}>")
+    lines.extend(ACTION_ROSTER_POST_REFRESH.format(channel=f"<#{channel_id}>")
                  for channel_id, message_id in state["posts"])
 
     def signature(snapshot: Mapping[str, Any]) -> tuple[Any, ...]:

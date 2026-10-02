@@ -153,7 +153,7 @@ class AgentService:
         )
         usage = RequestUsage()
         request_id = getattr(context.source_message, "id", None)
-        ledger = ScopeLedger(context)
+        ledger = ScopeLedger(context, registry)
         rounder = ModelRounds(
             context=context,
             budget=budget,

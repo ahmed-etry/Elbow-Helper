@@ -11,6 +11,7 @@ from elbow_helper.features.achievements.queries import (
 )
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from .report import (
     AchievementLeaderboardMember, AchievementLeaderboardReport,
@@ -19,6 +20,29 @@ from .report import (
 from ...reports.base import ArtifactCapacityError, retain_report
 from ...models import AgentRequestContext, RegisteredAgentTool
 
+
+TOOL_CONTRACTS = {
+    'read_member_achievements': CapabilityContract(
+        entity_fields=(('member_id', 'discord_member'),),
+        time_fields=(),
+        filter_fields=('status',),
+    ),
+    'read_member_achievement_report': CapabilityContract(
+        entity_fields=(('report_id', 'achievement_progress_report'),),
+        time_fields=(),
+        filter_fields=('status',),
+        retained_fields=('report_id',),
+    ),
+    'read_achievement_leaderboard': CapabilityContract(
+        entity_fields=(),
+        time_fields=(),
+    ),
+    'read_achievement_leaderboard_report': CapabilityContract(
+        entity_fields=(('report_id', 'achievement_leaderboard_report'),),
+        time_fields=(),
+        retained_fields=('report_id',),
+    ),
+}
 
 def achievement_tools() -> tuple[RegisteredAgentTool, ...]:
     report_id = {"type": "string", "minLength": 1, "maxLength": 32}
@@ -76,6 +100,7 @@ def achievement_tools() -> tuple[RegisteredAgentTool, ...]:
                 "required": list(required), "additionalProperties": False,
             },
         ), handler,
+        contract=TOOL_CONTRACTS[name],
     ) for name, description, properties, required, handler in definitions)
 
 

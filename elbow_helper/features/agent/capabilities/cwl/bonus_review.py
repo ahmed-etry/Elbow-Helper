@@ -7,6 +7,7 @@ from typing import Any
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import CommandOutcome, embed_text
@@ -35,7 +36,14 @@ def cwl_bonus_review_tools() -> tuple[RegisteredAgentTool, ...]:
             "source_text": {"type": "string"},
         }, "required": ["clan_code", "decision"], "additionalProperties": False},
     ), prepare_cwl_bonus_review, AgentCapabilityEffect.COMMAND,
-        ActionClass.CHANGE, True),)
+        ActionClass.CHANGE, True,
+        contract=CapabilityContract(
+            entity_fields=(("clan_code", "clan"),),
+            time_fields=(),
+            source_scope="request_context",
+            filter_fields=("mode", "month_key", "decision", "source", "source_text"),
+        ),
+            ),)
 
 
 async def prepare_cwl_bonus_review(context: AgentRequestContext,

@@ -7,7 +7,6 @@ from collections.abc import Mapping
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..models import AgentCapabilityEffect, RegisteredAgentTool
-from ..engine.capability_contract import CONTRACTS
 
 
 PLAN_TOOL_NAME = "submit_request_plan"
@@ -49,7 +48,7 @@ def capability_list(registry: Mapping[str, RegisteredAgentTool]) -> str:
     entries = []
     for name in sorted(registry):
         tool = registry[name]
-        contract = CONTRACTS.get(name)
+        contract = tool.contract
         schema = tool.definition.parameters
         required = set(schema.get("required", ())) | set(schema.get("x-command-required", ()))
         arguments = [

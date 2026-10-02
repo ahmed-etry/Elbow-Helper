@@ -7,6 +7,7 @@ from typing import Any
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import CommandOutcome
@@ -28,7 +29,13 @@ def transfer_management_tools() -> tuple[RegisteredAgentTool, ...]:
             "clan_code": {"type": "string"},
         }, "required": ["clan_code"], "additionalProperties": False},
     ), prepare_clear_transfer_queue, AgentCapabilityEffect.COMMAND,
-        ActionClass.IRREVERSIBLE, True),)
+        ActionClass.IRREVERSIBLE, True,
+        contract=CapabilityContract(
+            entity_fields=(("clan_code", "clan"),),
+            time_fields=(),
+            source_scope="request_context",
+        ),
+            ),)
 
 
 async def prepare_clear_transfer_queue(context: AgentRequestContext,
@@ -46,7 +53,7 @@ async def prepare_clear_transfer_queue(context: AgentRequestContext,
                  for member_id in state["member_ids"])
     if state["ping_message_id"]:
         lines.append(ACTION_TRANSFER_CLEAR_PING.format(
-            message_id=state["ping_message_id"], thread=f"<#{state['thread_id']}>",
+            thread=f"<#{state['thread_id']}>",
         ))
     lines.append(ACTION_TRANSFER_CLEAR_BOARDS.format(
         thread=f"<#{state['thread_id']}>", board=f"<#{state['board_channel_id']}>",

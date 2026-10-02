@@ -7,16 +7,32 @@ from typing import Any
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.outcomes import embed_text
 from ...models import AgentRequestContext, RegisteredAgentTool
 
 
+TOOL_CONTRACTS = {
+    'read_my_cwl_placement': CapabilityContract(
+        entity_fields=(),
+        time_fields=(),
+        source_scope='request_context',
+    ),
+    'read_my_cwl_channels': CapabilityContract(
+        entity_fields=(),
+        time_fields=(),
+        source_scope='request_context',
+    ),
+}
+
 def cwl_member_hub_tools() -> tuple[RegisteredAgentTool, ...]:
     return tuple(RegisteredAgentTool(AgentToolDefinition(
         name=name, description=description,
         parameters={"type": "object", "properties": {}, "additionalProperties": False},
-    ), handler) for name, description, handler in (
+    ), handler,
+        contract=TOOL_CONTRACTS[name],
+    ) for name, description, handler in (
         ("read_my_cwl_placement", "Show where the requester's accounts are placed for the announced CWL rosters.",
          read_my_cwl_placement),
         ("read_my_cwl_channels", "Show the requester's CWL info and war discussion channels.",

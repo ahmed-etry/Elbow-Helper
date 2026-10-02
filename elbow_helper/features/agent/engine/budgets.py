@@ -1,11 +1,5 @@
-((
-    (
-        (
-            'Model-context headroom across one '
-            'tool-assisted request, not a money quota.'
-        )
-    )
-))
+(('Model-context headroom across one '
+            'tool-assisted request, not a money quota.'))
 
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 

@@ -9,12 +9,34 @@ from elbow_helper.configuration.clans import CLAN_ORDER
 from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ...engine.capability_contract import CapabilityContract
 from ...access import accessible_message_channel, require_evidence_access
 from ...reports.base import ArtifactCapacityError, retain_report
 from .report import CwlPerformanceReport
 from ...models import AgentRequestContext, RegisteredAgentTool
 from .scoring import cwl_scoring_tools
 
+
+TOOL_CONTRACTS = {
+    'read_cwl_performance': CapabilityContract(
+        entity_fields=(('clan_code', 'clan'), ('player_tag', 'clash_account')),
+        time_fields=('season', 'history_limit'),
+        result_entity_keys=(('players[].player_tag', 'clash_account'), ('players[].season', 'cwl_season'), ('players[].clan_code', 'clan')),
+        latest_fields=('history_limit',),
+        value_patterns=(('season', '20\\d{2}-(0[1-9]|1[0-2])'),),
+    ),
+    'read_cwl_performance_report': CapabilityContract(
+        entity_fields=(('report_id', 'cwl_performance_report'), ('clan_code', 'clan'), ('player_tag', 'clash_account')),
+        time_fields=('season',),
+        result_entity_keys=(('players[].player_tag', 'clash_account'), ('players[].season', 'cwl_season'), ('players[].clan_code', 'clan')),
+        value_patterns=(('season', '20\\d{2}-(0[1-9]|1[0-2])'),),
+        retained_fields=('report_id',),
+    ),
+    'read_cwl_threads': CapabilityContract(
+        entity_fields=(),
+        time_fields=(),
+    ),
+}
 
 def cwl_tools() -> tuple[RegisteredAgentTool, ...]:
     offset = {"type": "integer", "minimum": 0}
@@ -37,7 +59,9 @@ def cwl_tools() -> tuple[RegisteredAgentTool, ...]:
         name=name, description=description,
         parameters={"type": "object", "properties": properties,
                     "required": list(required), "additionalProperties": False},
-    ), handler) for name, description, properties, required, handler in definitions) + cwl_scoring_tools()
+    ), handler,
+        contract=TOOL_CONTRACTS[name],
+    ) for name, description, properties, required, handler in definitions) + cwl_scoring_tools()
 
 
 async def read_cwl_performance(

@@ -13,13 +13,19 @@ from elbow_helper.features.agent.plan import capability_list, check_plan, plan_d
 from elbow_helper.features.agent.plan.checker import (
     check_step, entity_kind, parse_periods, source_check, time_check,
 )
-from elbow_helper.features.agent.engine.capability_contract import CONTRACTS
-from elbow_helper.features.agent.engine.capability_contract import SAVED_REPORT_CONTRACTS
 from elbow_helper.features.agent.engine.registry import build_agent_tools
 from elbow_helper.features.agent.reports.tools import original_tool
 from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.agent.models import RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentToolDefinition
+
+from elbow_helper.features.agent.engine.capability_contract import contract_catalogue
+from elbow_helper.features.agent.reports.tools import saved_report_contracts
+from features.agent.engine.helpers import patch_contracts
+
+REGISTRY = build_agent_tools()
+CONTRACTS = contract_catalogue(REGISTRY)
+SAVED_REPORT_CONTRACTS = saved_report_contracts(REGISTRY)
 
 
 def _sample(schema):

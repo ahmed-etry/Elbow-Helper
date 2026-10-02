@@ -9,6 +9,7 @@ import discord
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
+from ..engine.capability_contract import CapabilityContract
 from ..access import require_evidence_access
 from ..actions.contracts import ActionClass, ChangePreview, PreparedAction, audit_reason
 from ..actions.outcomes import CommandOutcome
@@ -37,7 +38,17 @@ def discord_message_control_tools() -> tuple[RegisteredAgentTool, ...]:
                 "emoji": {"type": "string", "minLength": 1, "maxLength": 100},
             }, "required": ["channel_id", "message_id", "operation", "emoji"],
                "additionalProperties": False},
-        ), prepare_reaction, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True),
+        ), prepare_reaction, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+            contract=CapabilityContract(
+                entity_fields=(
+                    ("channel_id", "discord_channel"),
+                    ("message_id", "discord_message"),
+                ),
+                time_fields=(),
+                source_scope="request_context",
+                filter_fields=("operation", "emoji"),
+            ),
+        ),
         RegisteredAgentTool(AgentToolDefinition(
             name="change_discord_pin",
             description="Pin or unpin a visible message after confirmation.",
@@ -46,7 +57,17 @@ def discord_message_control_tools() -> tuple[RegisteredAgentTool, ...]:
                 "operation": {"type": "string", "enum": ["pin", "unpin"]},
             }, "required": ["channel_id", "message_id", "operation"],
                "additionalProperties": False},
-        ), prepare_pin, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True),
+        ), prepare_pin, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE, True,
+            contract=CapabilityContract(
+                entity_fields=(
+                    ("channel_id", "discord_channel"),
+                    ("message_id", "discord_message"),
+                ),
+                time_fields=(),
+                source_scope="request_context",
+                filter_fields=("operation",),
+            ),
+        ),
     )
 
 
