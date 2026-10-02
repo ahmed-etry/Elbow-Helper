@@ -76,7 +76,7 @@ def _allowed_capabilities(actions: list[Mapping[str, Any]], context: AgentReques
 
 def _watcher_reads(reads: Any) -> None:
     from ..tools import build_agent_tools
-    from ..capabilities import CONTRACTS
+    from ..engine.capability_contract import CONTRACTS
     from ..plan.checker import _valid_arguments
 
     registry = build_agent_tools()

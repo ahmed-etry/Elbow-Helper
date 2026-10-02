@@ -1,6 +1,6 @@
 import unittest
 
-from elbow_helper.features.agent.usage import RequestUsage
+from elbow_helper.features.agent.engine.usage import RequestUsage
 from elbow_helper.infrastructure.ai import AgentUsage
 from elbow_helper.infrastructure.ai.client import _usage_value
 

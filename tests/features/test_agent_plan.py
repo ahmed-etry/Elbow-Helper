@@ -11,7 +11,8 @@ from datetime import datetime, timezone
 
 from elbow_helper.features.agent.plan import capability_list, check_plan, plan_definition
 from elbow_helper.features.agent.plan.checker import _kind, _source_check, _time_check
-from elbow_helper.features.agent.capabilities import CONTRACTS, SAVED_REPORT_CONTRACTS
+from elbow_helper.features.agent.engine.capability_contract import CONTRACTS
+from elbow_helper.features.agent.engine.capability_contract import SAVED_REPORT_CONTRACTS
 from elbow_helper.features.agent.tools import build_agent_tools
 from elbow_helper.features.agent.tools.saved_reports import original_tool
 from elbow_helper.features.agent.actions.contracts import ActionClass

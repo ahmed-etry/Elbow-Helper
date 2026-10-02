@@ -5,7 +5,7 @@ from typing import Sequence
 
 from elbow_helper.infrastructure.ai import AgentToolResult, AgentUsage
 
-from .conversation.context import estimate_tokens
+from ..conversation.context import estimate_tokens
 
 
 @dataclass(slots=True)

@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..models import AgentRequestContext
-from ..capabilities import CONTRACTS
+from ..engine.capability_contract import CONTRACTS
 from .checker import _source_check, _time_check
 
 

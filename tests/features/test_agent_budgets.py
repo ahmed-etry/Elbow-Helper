@@ -1,6 +1,6 @@
 import unittest
 
-from elbow_helper.features.agent.budgets import ContextBudget
+from elbow_helper.features.agent.engine.budgets import ContextBudget
 from elbow_helper.infrastructure.ai import AgentToolResult, AgentUsage
 
 

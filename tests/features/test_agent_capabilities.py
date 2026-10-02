@@ -6,12 +6,12 @@ import unittest
 from dataclasses import replace
 from unittest.mock import patch
 
-from elbow_helper.features.agent import capabilities
-from elbow_helper.features.agent.capabilities import (
-    CapabilityBindError, require_source_provenance, validate_contract_catalogue,
-)
+from elbow_helper.features.agent.engine import capability_contract as capabilities
+from elbow_helper.features.agent.engine.capability_contract import CapabilityBindError
+from elbow_helper.features.agent.engine.capability_contract import require_source_provenance
+from elbow_helper.features.agent.engine.capability_contract import validate_contract_catalogue
 from elbow_helper.features.agent.tools import build_agent_tool_groups, build_agent_tools
-from elbow_helper.features.agent.capabilities import SAVED_REPORT_CONTRACTS
+from elbow_helper.features.agent.engine.capability_contract import SAVED_REPORT_CONTRACTS
 
 
 class AgentCapabilityTests(unittest.TestCase):

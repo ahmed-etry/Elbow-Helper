@@ -9,7 +9,12 @@ from typing import Any
 
 from ..models import RegisteredAgentTool
 from ..actions.contracts import ActionClass
-from ..capabilities import CONTRACTS, SAVED_REPORT_CONTRACTS, CapabilityBindError, bound_time_window, compile_capability_call, entity_kind
+from ..engine.capability_contract import CONTRACTS
+from ..engine.capability_contract import SAVED_REPORT_CONTRACTS
+from ..engine.capability_contract import CapabilityBindError
+from ..engine.capability_contract import bound_time_window
+from ..engine.capability_contract import compile_capability_call
+from ..engine.capability_contract import entity_kind
 from ..tools.saved_reports import (COMPARE_NAME, READ_NAME, original_arguments,
                                    original_tool, unsupported_fields,
                                    unsupported_field_error)

@@ -13,7 +13,7 @@ from elbow_helper.features.agent.actions.contracts import ChangePreview, Prepare
 from elbow_helper.features.agent.scheduled.scope import validate_scope, within_scope
 from elbow_helper.features.agent.scheduled.tools import _field_label, _fixed_display
 from elbow_helper.features.agent.scheduled.tools import _watcher_reads
-from elbow_helper.features.agent.capabilities import CapabilityContract
+from elbow_helper.features.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.features.agent.models import RegisteredAgentTool, AgentCapabilityEffect
 from elbow_helper.infrastructure.ai.agent import AgentToolDefinition
 from unittest.mock import patch
@@ -150,7 +150,7 @@ class ScheduledScopeTests(unittest.TestCase):
         ):
             with patch("elbow_helper.features.agent.tools.build_agent_tools",
                        return_value={"synthetic": tool}), patch(
-                       "elbow_helper.features.agent.capabilities.CONTRACTS",
+                       "elbow_helper.features.agent.engine.capability_contract.CONTRACTS",
                        {"synthetic": contract}), self.assertRaises(ValueError):
                 _watcher_reads(reads)
 
@@ -161,7 +161,7 @@ class ScheduledScopeTests(unittest.TestCase):
         for effect in (AgentCapabilityEffect.READ, AgentCapabilityEffect.STATE):
             with patch("elbow_helper.features.agent.tools.build_agent_tools",
                        return_value={"synthetic": RegisteredAgentTool(definition, _run, effect)}), patch(
-                       "elbow_helper.features.agent.capabilities.CONTRACTS",
+                       "elbow_helper.features.agent.engine.capability_contract.CONTRACTS",
                        {"synthetic": CapabilityContract((), ())}):
                 if effect is AgentCapabilityEffect.READ:
                     _watcher_reads(reads)

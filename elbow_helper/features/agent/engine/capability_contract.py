@@ -9,8 +9,8 @@ from typing import Any, Mapping
 
 from elbow_helper.domain.player_tags import normalize_player_tag
 
-from .access import ACCESS_LEAD, ACCESS_LEAD_PLUS, KNOWN_ACCESS_REQUIREMENTS
-from .models import RegisteredAgentTool
+from ..access import ACCESS_LEAD, ACCESS_LEAD_PLUS, KNOWN_ACCESS_REQUIREMENTS
+from ..models import RegisteredAgentTool
 
 
 class CapabilityBindError(ValueError):

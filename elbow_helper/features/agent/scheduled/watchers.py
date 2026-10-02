@@ -12,7 +12,8 @@ import discord
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from elbow_helper.infrastructure.ai import TextGenerationError
 
-from ..capabilities import CONTRACTS, compile_capability_call
+from ..engine.capability_contract import CONTRACTS
+from ..engine.capability_contract import compile_capability_call
 from ..service import AgentService, AgentUnavailableError
 from ..tools import build_agent_tools
 

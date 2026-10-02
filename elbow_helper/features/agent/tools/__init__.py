@@ -61,7 +61,7 @@ from ..scheduled.tools import standing_tools
 from ..models import RegisteredAgentTool
 from ..actions.contracts import ActionClass
 from ..models import AgentCapabilityEffect
-from ..capabilities import validate_contract_catalogue
+from ..engine.capability_contract import validate_contract_catalogue
 from ..plan.results import result_handler
 
 

@@ -6,7 +6,8 @@ import unittest
 from unittest.mock import patch
 
 from elbow_helper.features.agent.plan.scope import ScopeLedger, resource_ids
-from elbow_helper.features.agent.capabilities import CapabilityContract, CONTRACTS
+from elbow_helper.features.agent.engine.capability_contract import CapabilityContract
+from elbow_helper.features.agent.engine.capability_contract import CONTRACTS
 
 
 class ScopeLedgerTests(unittest.TestCase):

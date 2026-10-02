@@ -13,7 +13,8 @@ from ..access import ACCESS_LEAD, require_access_requirements, require_evidence_
 from ..reports.achievement import CoinTransactionReport, RaffleReport
 from ..reports.base import ArtifactCapacityError, retain_report
 from ..models import AgentRequestContext, RegisteredAgentTool
-from ..capabilities import CONTRACTS, bound_time_window
+from ..engine.capability_contract import CONTRACTS
+from ..engine.capability_contract import bound_time_window
 
 
 def achievement_economy_tools() -> tuple[RegisteredAgentTool, ...]:
