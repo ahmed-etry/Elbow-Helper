@@ -35,7 +35,7 @@ def _repository(context: AgentRequestContext):
     return repository
 
 
-def _kind(value: str) -> str:
+def entity_kind(value: str) -> str:
     if value not in ("request", "watcher"):
         raise ValueError("Choose a saved request or watcher.")
     return value
@@ -77,7 +77,7 @@ def _allowed_capabilities(actions: list[Mapping[str, Any]], context: AgentReques
 def _watcher_reads(reads: Any) -> None:
     from ..engine.registry import build_agent_tools
     from ..engine.capability_contract import CONTRACTS
-    from ..plan.checker import _valid_arguments
+    from ..plan.checker import valid_arguments
 
     registry = build_agent_tools()
     if not isinstance(reads, list) or not 1 <= len(reads) <= 8:
@@ -92,7 +92,7 @@ def _watcher_reads(reads: Any) -> None:
                 or tool.effect is not AgentCapabilityEffect.READ
                 or not isinstance(arguments, Mapping)):
             raise ValueError("Watchers use read lookups only.")
-        if not _valid_arguments(arguments, tool.definition.parameters):
+        if not valid_arguments(arguments, tool.definition.parameters):
             raise ValueError("Choose valid values for each watcher lookup.")
         contract = CONTRACTS.get(name)
         if contract is None:
@@ -221,7 +221,7 @@ def _preview_lines(values: Mapping[str, Any], *, kind: str, request: str,
 async def prepare_save(context: AgentRequestContext,
                        values: Mapping[str, Any]) -> Mapping[str, Any]:
     repository = _repository(context)
-    kind = _kind(values["kind"])
+    kind = entity_kind(values["kind"])
     request = str(values["request"]).strip()
     if not request or len(request) > 4000:
         raise ValueError("Describe the request in fewer than 4,000 characters.")
@@ -311,7 +311,7 @@ async def list_standing(context: AgentRequestContext,
 async def prepare_manage(context: AgentRequestContext,
                          values: Mapping[str, Any]) -> Mapping[str, Any]:
     repository = _repository(context)
-    kind = _kind(values["kind"])
+    kind = entity_kind(values["kind"])
     operation = values["operation"]
     if operation not in ("pause", "resume", "cancel"):
         raise ValueError("Choose pause, resume or cancel.")

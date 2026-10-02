@@ -31,7 +31,7 @@ from ...actions.outcomes import CommandOutcome
 from ...commands.registry import CommandAdapter
 
 
-def _workflow(context: Any):
+def achievement_workflow(context: Any):
     workflow = context.bot.get_cog("Achievements")
     if workflow is None:
         raise ValueError("The raffle is unavailable")
@@ -68,7 +68,7 @@ def _coin_line(action: str, count: int) -> str:
 
 async def prepare_achievement_award(context: Any,
                                     values: Mapping[str, Any]) -> ChangePreview:
-    workflow = _workflow(context)
+    workflow = achievement_workflow(context)
     member = await _member(context, values["user"])
     if member is None:
         raise ValueError('That member is unavailable.')
@@ -100,7 +100,7 @@ async def prepare_achievement_award(context: Any,
 
 async def run_achievement_award(context: Any,
                                 values: Mapping[str, Any]) -> CommandOutcome:
-    workflow = _workflow(context)
+    workflow = achievement_workflow(context)
     member = await _member(context, values["user"])
     if member is None:
         return CommandOutcome.unavailable()
@@ -120,7 +120,7 @@ async def run_achievement_award(context: Any,
 
 async def prepare_achievement_remove(context: Any,
                                      values: Mapping[str, Any]) -> ChangePreview:
-    workflow = _workflow(context)
+    workflow = achievement_workflow(context)
     member = await _member(context, values["user"])
     if member is None:
         raise ValueError('That member is unavailable.')
@@ -144,7 +144,7 @@ async def prepare_achievement_remove(context: Any,
 
 async def run_achievement_remove(context: Any,
                                  values: Mapping[str, Any]) -> CommandOutcome:
-    workflow = _workflow(context)
+    workflow = achievement_workflow(context)
     member = await _member(context, values["user"])
     if member is None:
         return CommandOutcome.unavailable()
@@ -163,7 +163,7 @@ async def run_achievement_remove(context: Any,
 
 async def prepare_grant_coins(context: Any,
                               values: Mapping[str, Any]) -> ChangePreview:
-    workflow = _workflow(context)
+    workflow = achievement_workflow(context)
     member = await _member(context, values["user"])
     if member is None:
         raise ValueError('That member is unavailable.')
@@ -198,7 +198,7 @@ async def prepare_grant_coins(context: Any,
 
 async def run_grant_coins(context: Any,
                           values: Mapping[str, Any]) -> CommandOutcome:
-    workflow = _workflow(context)
+    workflow = achievement_workflow(context)
     member = await _member(context, values["user"])
     if member is None:
         return CommandOutcome.unavailable()
@@ -223,7 +223,7 @@ async def run_grant_coins(context: Any,
 
 async def prepare_grant_ticket(context: Any,
                                values: Mapping[str, Any]) -> ChangePreview:
-    workflow = _workflow(context)
+    workflow = achievement_workflow(context)
     member = await _member(context, values["user"])
     if member is None:
         raise ValueError('That member is unavailable.')
@@ -246,7 +246,7 @@ async def prepare_grant_ticket(context: Any,
 
 async def run_grant_ticket(context: Any,
                            values: Mapping[str, Any]) -> CommandOutcome:
-    workflow = _workflow(context)
+    workflow = achievement_workflow(context)
     member = await _member(context, values["user"])
     if member is None:
         return CommandOutcome.unavailable()
@@ -262,7 +262,7 @@ async def run_grant_ticket(context: Any,
 
 async def prepare_raffle_remove(context: Any,
                                 values: Mapping[str, Any]) -> ChangePreview:
-    workflow = _workflow(context)
+    workflow = achievement_workflow(context)
     member = await _member(context, values["user"])
     if member is None:
         raise ValueError('That member is unavailable.')
@@ -283,7 +283,7 @@ async def prepare_raffle_remove(context: Any,
 
 async def run_raffle_remove(context: Any,
                             values: Mapping[str, Any]) -> CommandOutcome:
-    workflow = _workflow(context)
+    workflow = achievement_workflow(context)
     member = await _member(context, values["user"])
     if member is None:
         return CommandOutcome.unavailable()

@@ -8,7 +8,7 @@ from typing import Any
 
 from ..models import AgentRequestContext
 from ..engine.capability_contract import CONTRACTS
-from .checker import _source_check, _time_check
+from .checker import source_check, time_check
 
 
 def resource_ids(payload: Any) -> set[str]:
@@ -63,10 +63,10 @@ class ScopeLedger:
             contract = CONTRACTS.get(name)
             if contract is None:
                 return "The retained scope is unavailable."
-            issue, _ = _source_check(contract, arguments, named, entities, {})
+            issue, _ = source_check(contract, arguments, named, entities, {})
             if issue:
                 return issue
-            issue = _time_check(contract, arguments, periods, set())
+            issue = time_check(contract, arguments, periods, set())
             if issue:
                 return issue
         return ""

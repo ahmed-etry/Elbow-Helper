@@ -21,7 +21,7 @@ from elbow_helper.configuration.roles import CORE, LEAD, LEAD_PLUS
 from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.features.agent.engine.capability_contract import compile_capability_call
 from elbow_helper.features.agent.engine.registry import build_agent_tools
-from elbow_helper.features.agent.plan.checker import _valid_arguments
+from elbow_helper.features.agent.plan.checker import valid_arguments
 from elbow_helper.features.agent.engine.tool_call import bound_tool_result as _bound_tool_result
 from elbow_helper.features.agent.engine.tool_call import evidence_record as _evidence_record
 from elbow_helper.features.agent.access import ACCESS_LEAD_PLUS, AgentAccessLost
@@ -315,8 +315,8 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
         for arguments in ({"roles": []}, {"roles": [True]}, {"roles": [1, 1]}, {"roles": [1, 2, 3]},
                           {"roles": [-1]}, {"refresh": "false"}, {"selection": "delete"}):
             with self.subTest(arguments=arguments):
-                self.assertFalse(_valid_arguments(arguments, schema))
-        self.assertTrue(_valid_arguments({"roles": [1, 2], "refresh": False, "selection": "all"}, schema))
+                self.assertFalse(valid_arguments(arguments, schema))
+        self.assertTrue(valid_arguments({"roles": [1, 2], "refresh": False, "selection": "all"}, schema))
 
     def test_nested_object_arrays_are_validated_recursively(self):
         schema = {"properties": {"targets": {
@@ -330,7 +330,7 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
                 "required": ["clan_code", "slots"],
             },
         }}, "required": ["targets"]}
-        self.assertTrue(_valid_arguments({
+        self.assertTrue(valid_arguments({
             "targets": [{"clan_code": "BEH", "slots": 30}],
         }, schema))
         for arguments in (
@@ -341,14 +341,14 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
             {"targets": ["BEH"]},
         ):
             with self.subTest(arguments=arguments):
-                self.assertFalse(_valid_arguments(arguments, schema))
+                self.assertFalse(valid_arguments(arguments, schema))
 
     def test_schema_rejects_missing_unknown_and_wrongly_typed_arguments(self):
         schema = {"properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 10}}, "required": ["limit"]}
         for arguments in ({}, {"limit": True}, {"limit": "3"}, {"limit": 11}, {"limit": 3, "sql": "anything"}):
             with self.subTest(arguments=arguments):
-                self.assertFalse(_valid_arguments(arguments, schema))
-        self.assertTrue(_valid_arguments({"limit": 3}, schema))
+                self.assertFalse(valid_arguments(arguments, schema))
+        self.assertTrue(valid_arguments({"limit": 3}, schema))
 
     def test_escaped_evidence_stays_within_encoded_budget(self):
         content = json.dumps({"data": ('"\\\n' * 1000)})

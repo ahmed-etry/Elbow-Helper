@@ -45,8 +45,8 @@ SUPPORTED_TEXT_CONTENT_TYPES = frozenset({
 TEXT_EXTENSIONS = {
     ".txt": "text", ".md": "markdown", ".markdown": "markdown",
 }
-_REQUIRED_XLSX_PARTS = frozenset({"[content_types].xml", "xl/workbook.xml"})
-_UNSUPPORTED_XLSX_PATH_PARTS = (
+REQUIRED_XLSX_PARTS = frozenset({"[content_types].xml", "xl/workbook.xml"})
+UNSUPPORTED_XLSX_PATH_PARTS = (
     "xl/externallinks/", "xl/embeddings/", "xl/activex/", "customui/",
     "xl/querytables/", "xl/connections.xml", "xl/drawings/", "xl/media/",
     "xl/comments", "xl/threadedcomments/", "xl/persons/",
@@ -84,7 +84,7 @@ class TextImportArtifact:
         if (
             any(type(value) is not int or value <= 0 for value in identities)
             or not isinstance(self.report_id, str) or not self.report_id
-            or len(self.report_id) > 32 or not _safe_filename(self.filename)
+            or len(self.report_id) > 32 or not safe_filename(self.filename)
             or suffix not in TEXT_EXTENSIONS
             or self.document_format != TEXT_EXTENSIONS[suffix]
             or not isinstance(self.imported_at, str) or not self.imported_at
@@ -104,7 +104,7 @@ class TextImportArtifact:
                 len(line) > MAX_TEXT_LINE_CHARACTERS
                 for line in self.text.splitlines()
             )
-            or _unsupported_text_control(self.text)
+            or unsupported_text_control(self.text)
         ):
             raise ValueError("Invalid text import artifact")
         object.__setattr__(
@@ -182,7 +182,7 @@ class CsvImportArtifact:
         identities = (self.guild_id, self.channel_id, self.message_id, self.attachment_id)
         if any(type(value) is not int or value <= 0 for value in identities):
             raise ValueError("Invalid CSV import source identity")
-        if not isinstance(self.report_id, str) or not self.report_id or len(self.report_id) > 32 or not _safe_filename(self.filename):
+        if not isinstance(self.report_id, str) or not self.report_id or len(self.report_id) > 32 or not safe_filename(self.filename):
             raise ValueError("Invalid CSV import identity")
         if not isinstance(self.imported_at, str) or not self.imported_at:
             raise ValueError("Invalid CSV import timestamp")
@@ -200,7 +200,7 @@ class CsvImportArtifact:
                 not isinstance(issue, str) or not issue or len(issue) > 200
                 for issue in self.issues)):
             raise ValueError("Invalid CSV import issues")
-        _validate_shape(self.columns, self.rows)
+        validate_shape(self.columns, self.rows)
         payload = self._payload()
         object.__setattr__(self, "retained_bytes", len(json.dumps(
             payload, ensure_ascii=False,
@@ -262,7 +262,7 @@ class XlsxSheet:
             max_columns=MAX_XLSX_COLUMNS, max_cells=MAX_XLSX_CELLS,
             max_cell_characters=MAX_XLSX_CELL_CHARACTERS,
         )
-        if self.issues != _table_issues(self.columns, self.rows):
+        if self.issues != table_issues(self.columns, self.rows):
             raise ValueError("XLSX sheet issues do not match its cells")
 
 
@@ -287,7 +287,7 @@ class XlsxImportArtifact:
         identities = (self.guild_id, self.channel_id, self.message_id, self.attachment_id)
         if any(type(value) is not int or value <= 0 for value in identities):
             raise ValueError("Invalid XLSX import source identity")
-        if not isinstance(self.report_id, str) or not self.report_id or len(self.report_id) > 32 or not _safe_filename(self.filename):
+        if not isinstance(self.report_id, str) or not self.report_id or len(self.report_id) > 32 or not safe_filename(self.filename):
             raise ValueError("Invalid XLSX import identity")
         if not self.filename.casefold().endswith(".xlsx"):
             raise ValueError("Invalid XLSX import filename")
@@ -365,7 +365,7 @@ class XlsxImportArtifact:
         }
 
 
-def _validate_shape(columns: tuple[str, ...], rows: tuple[tuple[str, ...], ...]) -> None:
+def validate_shape(columns: tuple[str, ...], rows: tuple[tuple[str, ...], ...]) -> None:
     _validate_table_shape(
         columns, rows, kind="CSV", max_rows=MAX_CSV_ROWS,
         max_columns=MAX_CSV_COLUMNS, max_cells=MAX_CSV_CELLS,
@@ -391,7 +391,7 @@ def _validate_table_shape(
         raise AttachmentValidationError(f"{kind} contains an oversized heading or cell")
 
 
-def _table_issues(
+def table_issues(
     columns: tuple[str, ...], rows: tuple[tuple[str, ...], ...],
 ) -> tuple[str, ...]:
     issues = []
@@ -407,7 +407,7 @@ def _table_issues(
     return tuple(issues)
 
 
-def _unsupported_text_control(value: str) -> bool:
+def unsupported_text_control(value: str) -> bool:
     return any(
         character not in "\t\n\r"
         and unicodedata.category(character) in {"Cc", "Cf", "Cs"}
@@ -415,7 +415,7 @@ def _unsupported_text_control(value: str) -> bool:
     )
 
 
-def _safe_filename(filename: str) -> bool:
+def safe_filename(filename: str) -> bool:
     return bool(
         filename and len(filename) <= MAX_ATTACHMENT_FILENAME_CHARACTERS
         and filename not in {".", ".."} and "/" not in filename and "\\" not in filename

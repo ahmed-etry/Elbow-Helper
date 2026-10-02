@@ -17,20 +17,11 @@ from ..access import AgentAccessLost
 from ..access import require_access
 from ..disclosure import require_disclosure_access
 from ..access import require_evidence_access
-from .capability_contract import CapabilityBindError
-from .capability_contract import compile_capability_call
 from .capability_contract import CONTRACTS
 from .capability_contract import SAVED_REPORT_CONTRACTS
-from ..reports.tools import COMPARE_NAME, READ_NAME, original_arguments, original_tool
+from ..reports.tools import COMPARE_NAME, READ_NAME, original_tool
 from ..disclosure import can_disclose_provenance
-from ..plan.checker import (
-    _has_reference,
-    _kind,
-    _periods,
-    _source_check,
-    _time_check,
-    _valid_arguments,
-)
+from ..plan.checker import entity_kind, parse_periods, check_step
 from ..plan.executor import execute_plan, resolve_arguments
 from ..plan.results import model_result
 from ..plan.scope import resource_ids
@@ -143,84 +134,52 @@ class PlanRunner:
 
     async def _check_step(self, step, arguments, earlier_results, plan_state: PlanExecutionState):
         name = step["capability"]
-        tool = self.registry[name]
-        selected = (
-            original_tool(self.registry, name, arguments)
-            if name in (READ_NAME, COMPARE_NAME)
-            else None
-        )
-        contract = (
-            SAVED_REPORT_CONTRACTS[selected.definition.name] if selected else CONTRACTS.get(name)
-        )
-        dependencies = set(step["depends_on"])
-        if not _valid_arguments(arguments, tool.definition.parameters, dependencies):
-            return {"error": "Arguments must match the capability schema."}
-        if name in (READ_NAME, COMPARE_NAME) and (
-            selected is None
-            or not _valid_arguments(
-                original_arguments(arguments),
-                selected.definition.parameters,
-                dependencies,
-            )
-        ):
-            return {"error": "Use the fields supported by this report kind."}
-        if tool.effect is AgentCapabilityEffect.COMMAND:
-            issue = check_command_plan(
-                {**plan_state.plan, "steps": [{**step, "arguments": arguments}]},
-                self.command_capabilities,
-                self.sources,
-            )
-            if issue:
-                return {"error": issue}
         try:
             bound_periods = self._bound_periods(step, earlier_results, plan_state)
         except (KeyError, IndexError, TypeError):
             return {"error": "The declared period could not be resolved."}
+        resolved_entities = self._resolved_entities(earlier_results, plan_state)
         retained = []
-        if contract is not None:
-            resolved_entities = self._resolved_entities(earlier_results, plan_state)
-            retained = [
+
+        def validate_scope(selected: RegisteredAgentTool) -> str:
+            if self.registry[name].effect is AgentCapabilityEffect.COMMAND:
+                issue = check_command_plan(
+                    {**plan_state.plan, "steps": [{**step, "arguments": arguments}]},
+                    self.command_capabilities,
+                    self.sources,
+                )
+                if issue:
+                    return issue
+            contract = (
+                SAVED_REPORT_CONTRACTS.get(selected.definition.name)
+                if name in (READ_NAME, COMPARE_NAME)
+                else CONTRACTS.get(name)
+            )
+            if contract is None:
+                return ""
+            retained.extend(
                 identity
                 for field in contract.retained_fields
                 if field in arguments
                 for identity in (
                     arguments[field] if isinstance(arguments[field], list) else [arguments[field]]
                 )
-            ]
-            issue = self.ledger.check(retained, bound_periods, plan_state.named, resolved_entities)
-            if issue:
-                return {"error": issue}
-            bound = (
-                (
-                    frozenset(plan_state.named)
-                    | frozenset(
-                        _kind(kind)
-                        for field, kind in contract.entity_fields
-                        if field in contract.retained_fields
-                    )
-                )
-                if retained
-                else frozenset()
             )
-            references = {
-                field: value for field, value in arguments.items() if _has_reference(value)
-            }
-            issue, offered = _source_check(
-                contract, arguments, plan_state.named, resolved_entities, references, bound
-            )
-            if issue:
-                return {"error": issue, "offered": offered}
-            issue = _time_check(contract, arguments, bound_periods, dependencies)
-            if issue:
-                return {"error": issue}
-        try:
-            scope = compile_capability_call(
-                selected or tool,
-                original_arguments(arguments) if selected else arguments,
-                contract=contract,
-            )
-        except CapabilityBindError as error:
-            return {"error": str(error)}
+            return self.ledger.check(retained, bound_periods, plan_state.named, resolved_entities)
+
+        checked = check_step(
+            {**step, "arguments": arguments},
+            self.registry,
+            bound_periods,
+            resolved_entities,
+            plan_state.named,
+            set(step["depends_on"]),
+            resolved=True,
+            validate_scope=validate_scope,
+        )
+        if not checked.ok:
+            return {"error": checked.error, "offered": checked.offered}
+        scope = dict(checked.scope)
         if retained:
             scope["bound_source_channels"] = sorted(self.ledger.channels(retained))
         issue = await disclosure_issue(
@@ -228,7 +187,7 @@ class PlanRunner:
         )
         if issue:
             return {"error": issue}
-        return {"name": name, "tool": tool, "contract": contract, "scope": scope}
+        return {"name": name, "tool": checked.tool, "contract": checked.contract, "scope": scope}
 
     def _bound_periods(self, step, earlier_results, plan_state: PlanExecutionState):
         bound = []
@@ -254,7 +213,7 @@ class PlanRunner:
                     value = resolve_arguments({"value": entity["value"]}, earlier_results)["value"]
                 except (KeyError, IndexError, TypeError):
                     continue
-                resolved.setdefault(_kind(entity["kind"]), set()).add(str(value))
+                resolved.setdefault(entity_kind(entity["kind"]), set()).add(str(value))
         return resolved
 
     async def _reserve_tool(self, step, arguments, tool, plan_state: PlanExecutionState):
@@ -392,16 +351,16 @@ class PlanRunner:
         entities: dict[str, set[str]] = {}
         for entity in plan["entities"]:
             if not isinstance(entity["value"], dict):
-                entities.setdefault(_kind(entity["kind"]), set()).add(str(entity["value"]))
+                entities.setdefault(entity_kind(entity["kind"]), set()).add(str(entity["value"]))
         plan_state = PlanExecutionState(
             plan=plan,
             original=tool_state_snapshot(self.context),
             original_scope=dict(self.ledger.reports),
             emitted=[],
-            periods=_periods(plan["periods"]),
+            periods=parse_periods(plan["periods"]),
             entities=entities,
             named={
-                _kind(kind): {str(value) for value in values}
+                entity_kind(kind): {str(value) for value in values}
                 for kind, values in self.sources.items()
                 if values
             },

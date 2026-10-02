@@ -11,7 +11,7 @@ from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.conversation.state import ConversationRecord, ConversationTurn
 from elbow_helper.features.agent.models import AgentRequestContext
 from elbow_helper.features.agent.engine.service import AgentService
-from elbow_helper.features.agent.plan.checker import _valid_arguments
+from elbow_helper.features.agent.plan.checker import valid_arguments
 from elbow_helper.features.agent.engine.registry import build_agent_tools
 from elbow_helper.features.agent.conversation.history_tool import _document, read_conversation_history
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
@@ -120,7 +120,7 @@ class AgentHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["results"], [])
         schema = build_agent_tools()["read_conversation_history"].definition.parameters
         for arguments in ({"conversation_id": 2}, {"limit": 6}, {"offset": -1}, {"content_offset": -1}):
-            self.assertFalse(_valid_arguments(arguments, schema))
+            self.assertFalse(valid_arguments(arguments, schema))
 
     async def test_excerpt_only_record_is_marked_incomplete(self):
         context, _ = _context(ConversationTurn("retained excerpt", frozenset({100}), retention_limited=True))

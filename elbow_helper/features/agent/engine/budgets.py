@@ -1,7 +1,9 @@
 ((
     (
-        'Model-context headroom across one '
-        'tool-assisted request, not a money quota.'
+        (
+            'Model-context headroom across one '
+            'tool-assisted request, not a money quota.'
+        )
     )
 ))
 

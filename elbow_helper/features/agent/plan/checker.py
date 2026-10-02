@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, time, timezone
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from ..models import RegisteredAgentTool
 from ..actions.contracts import ActionClass
-from ..engine.capability_contract import CONTRACTS
+from ..engine.capability_contract import CapabilityContract, CONTRACTS
 from ..engine.capability_contract import SAVED_REPORT_CONTRACTS
 from ..engine.capability_contract import CapabilityBindError
 from ..engine.capability_contract import bound_time_window
@@ -44,7 +44,7 @@ def _utc(value: Any) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
-def _periods(raw: Any) -> tuple[tuple[str, Any, Any], ...]:
+def parse_periods(raw: Any) -> tuple[tuple[str, Any, Any], ...]:
     if not isinstance(raw, list) or len(raw) > 12:
         raise ValueError("List at most 12 periods.")
     result = []
@@ -95,11 +95,11 @@ def _valid_value(value: Any, schema: Mapping[str, Any], dependencies: set[str] |
                 and all(_valid_value(item, schema["items"], dependencies) for item in value)
                 and (not schema.get("uniqueItems") or len({str(item) for item in value}) == len(value)))
     if kind == "object":
-        return _valid_arguments(value, schema, dependencies)
+        return valid_arguments(value, schema, dependencies)
     return False
 
 
-def _valid_arguments(arguments: Any, schema: Mapping[str, Any], dependencies: set[str] | None = None) -> bool:
+def valid_arguments(arguments: Any, schema: Mapping[str, Any], dependencies: set[str] | None = None) -> bool:
     if not isinstance(arguments, dict):
         return False
     properties = schema.get("properties", {})
@@ -110,10 +110,10 @@ def _valid_arguments(arguments: Any, schema: Mapping[str, Any], dependencies: se
     return all(_valid_value(value, properties[field], dependencies) for field, value in arguments.items())
 
 
-def _has_reference(value: Any) -> bool:
+def has_reference(value: Any) -> bool:
     if isinstance(value, dict):
-        return set(value) == {"step", "path"} or any(_has_reference(item) for item in value.values())
-    return isinstance(value, list) and any(_has_reference(item) for item in value)
+        return set(value) == {"step", "path"} or any(has_reference(item) for item in value.values())
+    return isinstance(value, list) and any(has_reference(item) for item in value)
 
 
 def _reference(value: Any, earlier: set[str]) -> bool:
@@ -124,15 +124,11 @@ def _reference(value: Any, earlier: set[str]) -> bool:
                     for part in value["path"]))
 
 
-def _kind(kind: str) -> str:
-    return entity_kind(kind)
-
-
 def _values(value: Any) -> set[str]:
     return {str(item) for item in value} if isinstance(value, list) else {str(value)}
 
 
-def _source_check(
+def source_check(
     contract: Any, arguments: Mapping[str, Any],
     named: Mapping[str, set[str]], entities: Mapping[str, set[str]],
     references: Mapping[str, Any],
@@ -140,7 +136,7 @@ def _source_check(
 ) -> tuple[str, tuple[str, ...]]:
     fields_by_kind: dict[str, list[str]] = {}
     for field, kind in contract.entity_fields:
-        base = _kind(kind)
+        base = entity_kind(kind)
         fields_by_kind.setdefault(base, []).append(field)
         value = arguments.get(field)
         if value is None or field in references:
@@ -155,13 +151,13 @@ def _source_check(
         if base in named and base not in bound_kinds and not any(field in arguments for field in fields):
             return "Filter this read to the named sources.", ()
     for _, result_kind in contract.result_entity_keys:
-        base = _kind(result_kind)
+        base = entity_kind(result_kind)
         if base in named and base not in bound_kinds and base not in fields_by_kind:
             return "Use a capability that filters to the named sources.", ()
     return "", ()
 
 
-def _time_check(
+def time_check(
     contract: Any, arguments: Mapping[str, Any], periods: tuple[tuple[str, Any, Any], ...],
     earlier: set[str],
 ) -> str:
@@ -213,6 +209,78 @@ def _time_check(
     return ""
 
 
+@dataclass(frozen=True, slots=True)
+class StepCheck(PlanCheck):
+    tool: RegisteredAgentTool | None = None
+    contract: CapabilityContract | None = None
+    scope: Mapping[str, Any] | None = None
+
+
+def check_step(
+    step: Mapping[str, Any], registry: Mapping[str, RegisteredAgentTool],
+    periods: tuple, entities: Mapping[str, set[str]], named: Mapping[str, set[str]],
+    earlier: set[str], *, resolved: bool = False,
+    validate_scope: Callable[[RegisteredAgentTool], str] | None = None,
+) -> PlanCheck:
+    """Check step arguments and evidence scope before binding a capability call."""
+    capability = step["capability"]
+    step_id = step["id"]
+    dependencies = step["depends_on"]
+    scope = None
+    tool = registry[capability]
+    arguments = step["arguments"]
+    if not isinstance(arguments, dict):
+        return _error("Use an argument object.", step_id)
+    references = {field: value for field, value in arguments.items()
+                  if has_reference(value)}
+    schema = tool.definition.parameters
+    selected = original_tool(registry, capability, arguments) if capability in (READ_NAME, COMPARE_NAME) else None
+    if selected is not None and unsupported_fields(selected, arguments):
+        return _error(unsupported_field_error(selected, arguments), step_id)
+    if not valid_arguments(arguments, schema, set(dependencies)):
+        return _error("Arguments must match the capability schema.", step_id)
+    if capability in (READ_NAME, COMPARE_NAME):
+        if selected is None or not valid_arguments(
+            original_arguments(arguments), selected.definition.parameters,
+            set(dependencies),
+        ):
+            return _error("Use the fields supported by this report kind.", step_id)
+    if validate_scope is not None:
+        issue = validate_scope(selected or tool)
+        if issue:
+            return _error(issue, step_id)
+    contract = (SAVED_REPORT_CONTRACTS[selected.definition.name] if selected is not None
+                else CONTRACTS.get(capability))
+    if contract is not None:
+        if any(kind == "resolved" and owner == step_id for kind, owner, _ in periods) and any(
+            field in arguments for field in (*contract.latest_fields, *contract.bounded_fields)
+        ):
+            return _error("Resolve the latest or current key without a page selector.", step_id)
+        retained = any(field in arguments for field in contract.retained_fields)
+        bound = frozenset(named) | frozenset(
+            entity_kind(kind) for field, kind in contract.entity_fields if field in contract.retained_fields
+        ) if retained else frozenset()
+        issue, offered = source_check(contract, arguments, named, entities, references,
+                                      bound)
+        if issue:
+            return _error(issue, step_id, offered)
+        step_periods = tuple(period for period in periods
+                             if not (period[0] == "resolved" and period[1] == step_id))
+        issue = time_check(contract, arguments, step_periods, earlier)
+        if issue:
+            return _error(issue, step_id)
+    if resolved or (not references and contract is not None):
+        try:
+            scope = compile_capability_call(
+                selected or tool,
+                original_arguments(arguments) if selected else arguments,
+                contract=contract,
+            )
+        except CapabilityBindError as error:
+            return _error(str(error), step_id)
+    return StepCheck(True, tool=tool, contract=contract, scope=scope)
+
+
 def _check_steps(raw, registry, periods, entities, named):
     earlier: set[str] = set()
     for step in raw["steps"]:
@@ -231,53 +299,9 @@ def _check_steps(raw, registry, periods, entities, named):
             return _error("Depend only on earlier steps.", step_id)
         if not isinstance(step["reason"], str) or not 1 <= len(step["reason"].strip()) <= 240:
             return _error("Give the step a short reason.", step_id)
-        tool = registry[capability]
-        arguments = step["arguments"]
-        if not isinstance(arguments, dict):
-            return _error("Use an argument object.", step_id)
-        references = {field: value for field, value in arguments.items()
-                      if _has_reference(value)}
-        schema = tool.definition.parameters
-        selected = original_tool(registry, capability, arguments) if capability in (READ_NAME, COMPARE_NAME) else None
-        if selected is not None and unsupported_fields(selected, arguments):
-            return _error(unsupported_field_error(selected, arguments), step_id)
-        if not _valid_arguments(arguments, schema, set(dependencies)):
-            return _error("Arguments must match the capability schema.", step_id)
-        if capability in (READ_NAME, COMPARE_NAME):
-            if selected is None or not _valid_arguments(
-                original_arguments(arguments), selected.definition.parameters,
-                set(dependencies),
-            ):
-                return _error("Use the fields supported by this report kind.", step_id)
-        contract = (SAVED_REPORT_CONTRACTS[selected.definition.name] if selected is not None
-                    else CONTRACTS.get(capability))
-        if contract is not None:
-            if any(kind == "resolved" and owner == step_id for kind, owner, _ in periods) and any(
-                field in arguments for field in (*contract.latest_fields, *contract.bounded_fields)
-            ):
-                return _error("Resolve the latest or current key without a page selector.", step_id)
-            retained = any(field in arguments for field in contract.retained_fields)
-            bound = frozenset(named) | frozenset(
-                _kind(kind) for field, kind in contract.entity_fields if field in contract.retained_fields
-            ) if retained else frozenset()
-            issue, offered = _source_check(contract, arguments, named, entities, references,
-                                          bound)
-            if issue:
-                return _error(issue, step_id, offered)
-            step_periods = tuple(period for period in periods
-                                 if not (period[0] == "resolved" and period[1] == step_id))
-            issue = _time_check(contract, arguments, step_periods, earlier)
-            if issue:
-                return _error(issue, step_id)
-            if not references:
-                try:
-                    compile_capability_call(
-                        selected or tool,
-                        original_arguments(arguments) if selected else arguments,
-                        contract=contract,
-                    )
-                except CapabilityBindError as error:
-                    return _error(str(error), step_id)
+        checked = check_step(step, registry, periods, entities, named, earlier)
+        if not checked.ok:
+            return checked
         earlier.add(step_id)
     return earlier
 
@@ -298,7 +322,7 @@ def check_plan(
             return _error("Choose low, high or max effort.")
         if raw["output"] not in output_forms(registry):
             return _error("Choose an available output form.")
-        periods = _periods(raw["periods"])
+        periods = parse_periods(raw["periods"])
         key_fields = {field for name in registry if (contract := CONTRACTS.get(name)) is not None
                       for field in contract.time_fields
                       if field not in (*contract.latest_fields, *contract.bounded_fields,
@@ -315,10 +339,10 @@ def check_plan(
             if not isinstance(kind, str) or not kind or (type(value) not in (str, int)
                     and not (isinstance(value, dict) and set(value) == {"step", "path"})):
                 return _error("Each entity needs a kind and an ID or name.")
-            entities.setdefault(_kind(kind), set()).add(str(value))
+            entities.setdefault(entity_kind(kind), set()).add(str(value))
         if not isinstance(raw["steps"], list) or not 1 <= len(raw["steps"]) <= 48:
             return _error("List between 1 and 48 steps.")
-        named = {_kind(kind): {str(item) for item in values}
+        named = {entity_kind(kind): {str(item) for item in values}
                  for kind, values in (named_sources or {}).items() if values}
         for kind, values in named.items():
             if not values <= entities.get(kind, set()):

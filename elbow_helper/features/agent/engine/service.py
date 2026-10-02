@@ -63,13 +63,15 @@ class AgentService:
     ) -> None:
         LOGGER.info(
             (
-                'Agent usage: request=%s status=%s '
-                'elapsed_ms=%s invoker=%s channel=%s '
-                'rounds=%s tools=%s evidence_chars=%s '
-                'prompt_tokens=%s completion_tokens=%s '
-                'cache_hit_tokens=%s cache_miss_tokens=%s '
-                'attempted_rounds=%s unknown_token_rounds=%s '
-                'unknown_cache_rounds=%s'
+                (
+                    'Agent usage: request=%s status=%s '
+                    'elapsed_ms=%s invoker=%s channel=%s '
+                    'rounds=%s tools=%s evidence_chars=%s '
+                    'prompt_tokens=%s completion_tokens=%s '
+                    'cache_hit_tokens=%s cache_miss_tokens=%s '
+                    'attempted_rounds=%s unknown_token_rounds=%s '
+                    'unknown_cache_rounds=%s'
+                )
             ),
             getattr(context.source_message, "id", None),
             status,

@@ -140,11 +140,13 @@ class AnswerFlow:
                             "missing_hints": hints,
                             "instruction": (
                                 (
-                                    'Ask the member for all missing values '
-                                    'together in your own words. Use the option '
-                                    'descriptions and choices as data. Suggest '
-                                    'only values the data supports. Do not say '
-                                    'the command ran.'
+                                    (
+                                        'Ask the member for all missing values '
+                                        'together in your own words. Use the option '
+                                        'descriptions and choices as data. Suggest '
+                                        'only values the data supports. Do not say '
+                                        'the command ran.'
+                                    )
                                 )
                             ),
                         },
@@ -195,8 +197,10 @@ class AnswerFlow:
                         "results": results,
                         "instruction": (
                             (
-                                'Answer now from these results. Submit '
-                                'another plan only for a remaining gap.'
+                                (
+                                    'Answer now from these results. Submit '
+                                    'another plan only for a remaining gap.'
+                                )
                             )
                         ),
                     },

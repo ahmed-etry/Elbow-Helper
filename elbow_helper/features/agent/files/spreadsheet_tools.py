@@ -12,7 +12,7 @@ from .workbooks import render_workbook_bytes
 from .report_tables import materialize_report_table
 from ..models import AgentAttachment, AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from .spreadsheets import (
-    AgentSpreadsheet, AgentSpreadsheetSheet, _valid_sheet_name, _valid_text,
+    AgentSpreadsheet, AgentSpreadsheetSheet, valid_sheet_name, valid_text,
     parse_agent_spreadsheet,
 )
 
@@ -139,7 +139,7 @@ async def prepare_report_spreadsheet(
     raw_written = arguments.get("written_sheets", [])
     title = arguments.get("title")
     if (
-        not _valid_text(title, maximum=80)
+        not valid_text(title, maximum=80)
         or not isinstance(raw_report_sheets, list)
         or not 1 <= len(raw_report_sheets) <= MAX_DATA_BACKED_SHEETS
         or not isinstance(raw_written, list)
@@ -161,16 +161,16 @@ async def prepare_report_spreadsheet(
             source_sheet = specification.get("sheet_name")
             columns = specification.get("columns")
             if (
-                not _valid_sheet_name(name)
+                not valid_sheet_name(name)
                 or not isinstance(report_id, str)
                 or not isinstance(collection, str)
-                or source_sheet is not None and not _valid_sheet_name(source_sheet)
+                or source_sheet is not None and not valid_sheet_name(source_sheet)
                 or not isinstance(columns, list)
                 or not 1 <= len(columns) <= 20
                 or any(
                     not isinstance(column, dict)
-                    or not _valid_text(column.get("field"), maximum=100)
-                    or not _valid_text(column.get("heading"))
+                    or not valid_text(column.get("field"), maximum=100)
+                    or not valid_text(column.get("heading"))
                     for column in columns
                 )
                 or len({column["heading"].casefold() for column in columns})

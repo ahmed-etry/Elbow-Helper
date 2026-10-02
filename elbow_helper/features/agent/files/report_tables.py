@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Mapping, Sequence
 
-from .spreadsheets import AgentSpreadsheetSheet, _valid_text
+from .spreadsheets import AgentSpreadsheetSheet, valid_text
 
 
 REPORT_PAGE_SIZE = 25
@@ -90,6 +90,6 @@ def _cell(value: Any) -> str:
         rendered = json.dumps(value, ensure_ascii=False, default=str)
     else:
         rendered = str(value)
-    if not _valid_text(rendered, allow_empty=True):
+    if not valid_text(rendered, allow_empty=True):
         raise ValueError("A report value cannot fit in a spreadsheet cell")
     return rendered

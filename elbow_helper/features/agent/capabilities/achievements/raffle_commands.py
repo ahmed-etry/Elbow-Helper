@@ -40,12 +40,12 @@ from ...wording import (
 )
 from ...actions.outcomes import CommandOutcome
 from ...commands.registry import CommandAdapter
-from .commands import _workflow
+from .commands import achievement_workflow
 
 
 async def prepare_raffle_clear(context: Any,
                                values: Mapping[str, Any]) -> ChangePreview:
-    workflow = _workflow(context)
+    workflow = achievement_workflow(context)
     state = await workflow.raffle_clear_state()
     clear_tickets = bool(values.get("clear_tickets", False))
     lines = [ACTION_RAFFLE_CLEAR_TICKETS_LINE if clear_tickets
@@ -70,7 +70,7 @@ async def prepare_raffle_clear(context: Any,
 
 async def run_raffle_clear(context: Any,
                            values: Mapping[str, Any]) -> CommandOutcome:
-    workflow = _workflow(context)
+    workflow = achievement_workflow(context)
     clear_tickets = bool(values.get("clear_tickets", False))
     message = await workflow.clear_raffle(clear_tickets)
     after = await workflow.raffle_clear_state()
@@ -81,7 +81,7 @@ async def run_raffle_clear(context: Any,
 
 
 async def _draw_target(context: Any, values: Mapping[str, Any]):
-    workflow = _workflow(context)
+    workflow = achievement_workflow(context)
     channel_id = values.get("channel") or context.source_message.channel.id
     channel = await resolve_channel(context, channel_id)
     check_post_access(channel, context.member, context.guild.me)
@@ -215,7 +215,7 @@ async def prepare_raffle_prize(context: Any,
     winners = int(values.get("winners", 1))
     if winners < 1:
         raise ValueError("Choose at least one winner")
-    workflow = _workflow(context)
+    workflow = achievement_workflow(context)
     before = await workflow.raffle_prize_state()
 
     async def recheck() -> bool:
@@ -230,7 +230,7 @@ async def prepare_raffle_prize(context: Any,
 
 async def run_raffle_prize(context: Any,
                            values: Mapping[str, Any]) -> CommandOutcome:
-    workflow = _workflow(context)
+    workflow = achievement_workflow(context)
     prize = values["prize"].strip()
     winners = int(values.get("winners", 1))
     message = await workflow.apply_raffle_prize(prize, winners)
@@ -250,7 +250,7 @@ async def prepare_raffle_prize_undo(context: Any,
     after = log.get("after")
     if before is None or after is None:
         raise ValueError("That raffle prize change is unavailable")
-    workflow = _workflow(context)
+    workflow = achievement_workflow(context)
     current = await workflow.raffle_prize_state()
     expected = (after["month_key"], after["prize"], after["winners"])
 

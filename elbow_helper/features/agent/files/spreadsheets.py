@@ -66,7 +66,7 @@ def parse_agent_spreadsheet(arguments: Mapping[str, Any]) -> AgentSpreadsheet:
     """Validate untrusted model-authored tabular output before packaging it."""
     title = arguments.get("title")
     raw_sheets = arguments.get("sheets")
-    if not _valid_text(title, maximum=80) or not isinstance(raw_sheets, list):
+    if not valid_text(title, maximum=80) or not isinstance(raw_sheets, list):
         raise ValueError("The spreadsheet title or sheets are invalid")
     if not 1 <= len(raw_sheets) <= MAX_SPREADSHEET_SHEETS:
         raise ValueError("The spreadsheet must contain between one and four sheets")
@@ -83,10 +83,10 @@ def parse_agent_spreadsheet(arguments: Mapping[str, Any]) -> AgentSpreadsheet:
         columns = raw_sheet["columns"]
         rows = raw_sheet["rows"]
         if (
-            not _valid_sheet_name(name)
+            not valid_sheet_name(name)
             or not isinstance(columns, list)
             or not 1 <= len(columns) <= MAX_SPREADSHEET_COLUMNS
-            or any(not _valid_text(value) for value in columns)
+            or any(not valid_text(value) for value in columns)
             or len({value.casefold() for value in columns}) != len(columns)
             or not isinstance(rows, list)
             or len(rows) > MAX_SPREADSHEET_ROWS_PER_SHEET
@@ -96,7 +96,7 @@ def parse_agent_spreadsheet(arguments: Mapping[str, Any]) -> AgentSpreadsheet:
         for row in rows:
             if (
                 not isinstance(row, list) or len(row) != len(columns)
-                or any(not _valid_text(value, allow_empty=True) for value in row)
+                or any(not valid_text(value, allow_empty=True) for value in row)
             ):
                 raise ValueError("A spreadsheet row does not match its columns")
             parsed_rows.append(tuple(row))
@@ -117,15 +117,15 @@ def parse_agent_spreadsheet(arguments: Mapping[str, Any]) -> AgentSpreadsheet:
     return AgentSpreadsheet(title, tuple(sheets))
 
 
-def _valid_sheet_name(value: Any) -> bool:
+def valid_sheet_name(value: Any) -> bool:
     return (
-        _valid_text(value, maximum=31)
+        valid_text(value, maximum=31)
         and not any(character in value for character in "[]*:/\\?")
         and value[0] != "'" and value[-1] != "'"
     )
 
 
-def _valid_text(
+def valid_text(
     value: Any, *, maximum: int = MAX_SPREADSHEET_CELL_CHARACTERS,
     allow_empty: bool = False,
 ) -> bool:

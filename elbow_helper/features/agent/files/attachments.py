@@ -39,17 +39,17 @@ from .contracts import (
     SUPPORTED_XLSX_CONTENT_TYPES,
     SUPPORTED_TEXT_CONTENT_TYPES,
     TEXT_EXTENSIONS,
-    _REQUIRED_XLSX_PARTS,
-    _UNSUPPORTED_XLSX_PATH_PARTS,
+    REQUIRED_XLSX_PARTS,
+    UNSUPPORTED_XLSX_PATH_PARTS,
     AttachmentValidationError,
     TextImportArtifact,
     CsvImportArtifact,
     XlsxSheet,
     XlsxImportArtifact,
-    _validate_shape,
-    _table_issues,
-    _unsupported_text_control,
-    _safe_filename,
+    validate_shape,
+    table_issues,
+    unsupported_text_control,
+    safe_filename,
 )
 
 
@@ -81,7 +81,7 @@ async def acquire_csv_attachment(
     if attachment is None:
         raise AttachmentValidationError("That attachment is not available on the authorized message")
     filename = str(getattr(attachment, "filename", ""))
-    if not _safe_filename(filename) or not filename.casefold().endswith(".csv"):
+    if not safe_filename(filename) or not filename.casefold().endswith(".csv"):
         raise AttachmentValidationError("The attachment must have a safe .csv filename")
     content_type = getattr(attachment, "content_type", None)
     if content_type:
@@ -123,7 +123,7 @@ async def acquire_xlsx_attachment(
     if attachment is None:
         raise AttachmentValidationError("That attachment is not available on the authorized message")
     filename = str(getattr(attachment, "filename", ""))
-    if not _safe_filename(filename) or not filename.casefold().endswith(".xlsx"):
+    if not safe_filename(filename) or not filename.casefold().endswith(".xlsx"):
         raise AttachmentValidationError("The attachment must have a safe .xlsx filename")
     content_type = getattr(attachment, "content_type", None)
     if content_type:
@@ -168,7 +168,7 @@ async def acquire_text_attachment(
         )
     filename = str(getattr(attachment, "filename", ""))
     suffix = PurePosixPath(filename.casefold()).suffix
-    if not _safe_filename(filename) or suffix not in TEXT_EXTENSIONS:
+    if not safe_filename(filename) or suffix not in TEXT_EXTENSIONS:
         raise AttachmentValidationError(
             "The attachment must have a safe .txt, .md, or .markdown filename"
         )
@@ -229,7 +229,7 @@ def parse_text(data: bytes) -> tuple[str, int]:
         raise AttachmentValidationError(
             "Text is empty or exceeds the character limit"
         )
-    if _unsupported_text_control(text):
+    if unsupported_text_control(text):
         raise AttachmentValidationError("Text contains unsupported control characters")
     lines = text.splitlines()
     if not 1 <= len(lines) <= MAX_TEXT_LINES:
@@ -285,7 +285,7 @@ def parse_csv(
     )
     if formula_like:
         issues.append(f"formula_like_cells:{formula_like}")
-    _validate_shape(columns, result)
+    validate_shape(columns, result)
     return columns, result, delimiter, tuple(issues)
 
 
@@ -319,10 +319,10 @@ def parse_xlsx(data: bytes) -> tuple[tuple[XlsxSheet, ...], int]:
                         or uncompressed_size > MAX_XLSX_UNCOMPRESSED_BYTES):
                     raise AttachmentValidationError("XLSX exceeds the uncompressed byte limit")
                 if lowered.endswith("vbaproject.bin") or any(
-                    lowered.startswith(prefix) for prefix in _UNSUPPORTED_XLSX_PATH_PARTS
+                    lowered.startswith(prefix) for prefix in UNSUPPORTED_XLSX_PATH_PARTS
                 ):
                     raise AttachmentValidationError("XLSX contains unsupported executable, external, or embedded content")
-            if not _REQUIRED_XLSX_PARTS <= lowered_names:
+            if not REQUIRED_XLSX_PARTS <= lowered_names:
                 raise AttachmentValidationError("The attachment is not a valid XLSX workbook")
             for member in members:
                 if not member.filename.casefold().endswith((".xml", ".rels")):
@@ -395,7 +395,7 @@ def parse_xlsx(data: bytes) -> tuple[tuple[XlsxSheet, ...], int]:
                     f"XLSX sheet {worksheet.title!r} has an empty heading"
                 )
             parsed.append(XlsxSheet(
-                worksheet.title, columns, rows, _table_issues(columns, rows),
+                worksheet.title, columns, rows, table_issues(columns, rows),
             ))
         return tuple(parsed), uncompressed_size
     except AttachmentValidationError:

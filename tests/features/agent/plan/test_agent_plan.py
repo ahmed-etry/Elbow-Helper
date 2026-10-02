@@ -10,7 +10,9 @@ from re import _parser, _constants
 from datetime import datetime, timezone
 
 from elbow_helper.features.agent.plan import capability_list, check_plan, plan_definition
-from elbow_helper.features.agent.plan.checker import _kind, _source_check, _time_check
+from elbow_helper.features.agent.plan.checker import (
+    check_step, entity_kind, parse_periods, source_check, time_check,
+)
 from elbow_helper.features.agent.engine.capability_contract import CONTRACTS
 from elbow_helper.features.agent.engine.capability_contract import SAVED_REPORT_CONTRACTS
 from elbow_helper.features.agent.engine.registry import build_agent_tools
@@ -95,7 +97,7 @@ def _plan_for(name, tool, contract, selected_field=None):
         if field in arguments and field not in contract.latest_fields and field not in contract.bounded_fields:
             if not contract.time_window or field not in contract.time_window[:2]:
                 periods.append({"kind": "key", "field": field, "value": arguments[field]})
-    entities = [{"kind": _kind(kind), "value": item}
+    entities = [{"kind": entity_kind(kind), "value": item}
                 for field, kind in contract.entity_fields if field in arguments
                 for item in (arguments[field] if isinstance(arguments[field], list) else [arguments[field]])]
     return {"goal": "Read synthetic values", "effort": "low", "output": "text",
@@ -171,11 +173,11 @@ class PlanContractTests(unittest.TestCase):
                         if encoding == "unix_seconds":
                             period = {"kind": "utc_range", "start": "1970-01-01T00:01:00Z",
                                       "end": "1970-01-01T00:05:00Z"}
-                        from elbow_helper.features.agent.plan.checker import _periods
-                        periods = _periods([period])
-                        self.assertEqual(_time_check(contract, arguments, periods, set()), "")
+                        from elbow_helper.features.agent.plan.checker import parse_periods
+                        periods = parse_periods([period])
+                        self.assertEqual(time_check(contract, arguments, periods, set()), "")
                         arguments.update(zip((lower, upper), outside))
-                        self.assertTrue(_time_check(contract, arguments, periods, set()))
+                        self.assertTrue(time_check(contract, arguments, periods, set()))
                     elif field in contract.bounded_fields:
                         lower, upper, encoding = contract.time_window
                         arguments = {field: "cursor", lower: 100 if encoding == "unix_seconds"
@@ -184,22 +186,22 @@ class PlanContractTests(unittest.TestCase):
                                      else "2026-01-03T00:00:00Z"}
                         period = (("utc_range", _period_start(encoding),
                                    _period_end(encoding)),)
-                        self.assertEqual(_time_check(contract, arguments, period, set()), "")
-                        self.assertTrue(_time_check(contract, {field: "cursor"}, period, set()))
+                        self.assertEqual(time_check(contract, arguments, period, set()), "")
+                        self.assertTrue(time_check(contract, {field: "cursor"}, period, set()))
                     elif field in contract.latest_fields:
                         value = schema.get("enum", ["synthetic-key"])[0]
                         if schema.get("type") == "integer":
                             value = 7
-                        self.assertEqual(_time_check(contract, {field: value}, (), set()), "")
-                        self.assertTrue(_time_check(contract, {field: value},
+                        self.assertEqual(time_check(contract, {field: value}, (), set()), "")
+                        self.assertTrue(time_check(contract, {field: value},
                                         (("key", value, field),), set()))
                     else:
                         value = schema.get("enum", ["synthetic-key"])[0]
                         if schema.get("type") == "integer":
                             value = 7
-                        self.assertEqual(_time_check(contract, {field: value},
+                        self.assertEqual(time_check(contract, {field: value},
                                          (("key", value, field),), set()), "")
-                        self.assertTrue(_time_check(contract, {field: value},
+                        self.assertTrue(time_check(contract, {field: value},
                                         (("key", "different-key", field),), set()))
                     checked += 1
         self.assertGreater(checked, 0)
@@ -214,13 +216,13 @@ class PlanContractTests(unittest.TestCase):
                     selected = [101] if schema.get("type") == "array" else 101
                     if schema.get("type") == "string":
                         selected = "101"
-                    named = {_kind(kind): {"101"}}
-                    self.assertEqual(_source_check(contract, {field: selected}, named,
+                    named = {entity_kind(kind): {"101"}}
+                    self.assertEqual(source_check(contract, {field: selected}, named,
                                      named, {})[0], "")
                     other = [202] if isinstance(selected, list) else (
                         "202" if isinstance(selected, str) else 202
                     )
-                    issue, offered = _source_check(contract, {field: other}, named, {}, {})
+                    issue, offered = source_check(contract, {field: other}, named, {}, {})
                     self.assertTrue(issue)
                     self.assertEqual(offered, ("202",))
                     checked += 1
@@ -266,8 +268,8 @@ class PlanContractTests(unittest.TestCase):
                     if isinstance(value, list) and not value:
                         value = [_sample(tool.definition.parameters["properties"][field]["items"])]
                         plan["steps"][0]["arguments"][field] = value
-                        plan["entities"].extend({"kind": _kind(kind), "value": item} for item in value)
-                    named = {_kind(kind): frozenset(value if isinstance(value, list) else [value])}
+                        plan["entities"].extend({"kind": entity_kind(kind), "value": item} for item in value)
+                    named = {entity_kind(kind): frozenset(value if isinstance(value, list) else [value])}
                     self.assertTrue(check_plan(plan, self.registry, named).ok)
                     other = copy.deepcopy(plan)
                     outside = 98765 if type(value) is int else "#P2"
@@ -284,19 +286,43 @@ class PlanContractTests(unittest.TestCase):
                     self.assertFalse(check.ok)
                     self.assertTrue(check.offered)
 
+    def test_initial_and_runtime_checks_agree_for_registered_source_arguments(self):
+        for name, tool in self.registry.items():
+            if name in {"read_saved_report", "compare_saved_reports"}:
+                continue
+            contract = CONTRACTS[name]
+            for field, _ in contract.entity_fields:
+                plan = _plan_for(name, tool, contract, field)
+                entities = {}
+                for entity in plan["entities"]:
+                    entities.setdefault(entity_kind(entity["kind"]), set()).add(str(entity["value"]))
+                for invalid in (False, True):
+                    candidate = copy.deepcopy(plan)
+                    if invalid:
+                        candidate["steps"][0]["arguments"][field] = None
+                    with self.subTest(capability=name, field=field, invalid=invalid):
+                        initial = check_plan(candidate, self.registry)
+                        runtime = check_step(
+                            candidate["steps"][0], self.registry,
+                            parse_periods(candidate["periods"]), entities, {}, set(),
+                            resolved=True,
+                        )
+                        self.assertEqual((initial.ok, initial.error, initial.offered),
+                                         (runtime.ok, runtime.error, runtime.offered))
+
     def test_every_saved_report_kind_checks_its_source_fields(self):
         for name in ("read_saved_report", "compare_saved_reports"):
             kinds = self.registry[name].definition.parameters["properties"]["report_kind"]["enum"]
             for kind in kinds:
                 selected = original_tool(self.registry, name, {"report_kind": kind})
                 contract = SAVED_REPORT_CONTRACTS[selected.definition.name]
-                for field, entity_kind in contract.entity_fields:
+                for field, kind_name in contract.entity_fields:
                     with self.subTest(capability=name, kind=kind, field=field):
                         plan = _plan_for(selected.definition.name, selected, contract, field)
                         plan["steps"][0]["capability"] = name
                         plan["steps"][0]["arguments"]["report_kind"] = kind
                         value = plan["steps"][0]["arguments"][field]
-                        named = {_kind(entity_kind): frozenset([value])}
+                        named = {entity_kind(kind_name): frozenset([value])}
                         self.assertTrue(check_plan(plan, self.registry, named).ok)
                         other = copy.deepcopy(plan)
                         choices = selected.definition.parameters["properties"][field].get("enum", ())
@@ -346,8 +372,8 @@ class PlanContractTests(unittest.TestCase):
         for name, contract in CONTRACTS.items():
             if contract.time_window and not contract.latest_fields:
                 with self.subTest(capability=name):
-                    self.assertTrue(_time_check(contract, {}, (), set()))
-                    self.assertTrue(_time_check(contract, {}, (("key", "synthetic-key", "selected"),), set()))
+                    self.assertTrue(time_check(contract, {}, (), set()))
+                    self.assertTrue(time_check(contract, {}, (("key", "synthetic-key", "selected"),), set()))
 
     def test_words_never_become_utc_boundaries(self):
         from elbow_helper.features.agent.plan.checker import _utc

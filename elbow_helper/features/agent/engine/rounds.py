@@ -120,11 +120,13 @@ class ModelRounds:
             LOGGER.info(
                 (
                     (
-                        'Agent model response: request=%s round=%s '
-                        'model=%s provider_request_id=%s '
-                        'provider_duration_ms=%s prompt_tokens=%s '
-                        'completion_tokens=%s cache_hit_tokens=%s '
-                        'cache_miss_tokens=%s'
+                        (
+                            'Agent model response: request=%s round=%s '
+                            'model=%s provider_request_id=%s '
+                            'provider_duration_ms=%s prompt_tokens=%s '
+                            'completion_tokens=%s cache_hit_tokens=%s '
+                            'cache_miss_tokens=%s'
+                        )
                     )
                 ),
                 self.request_id,
@@ -154,8 +156,10 @@ class ModelRounds:
                                 {
                                     "error": (
                                         (
-                                            'The prior model output was incomplete. '
-                                            'Submit the full plan again.'
+                                            (
+                                                'The prior model output was incomplete. '
+                                                'Submit the full plan again.'
+                                            )
                                         )
                                     )
                                 }
@@ -170,8 +174,10 @@ class ModelRounds:
                     else (
                         (
                             (
-                                'Continue the previous answer from where it '
-                                'stopped. Do not repeat it.'
+                                (
+                                    'Continue the previous answer from where it '
+                                    'stopped. Do not repeat it.'
+                                )
                             )
                         )
                     )
@@ -199,9 +205,11 @@ class ModelRounds:
             LOGGER.info(
                 (
                     (
-                        'Agent model round: request=%s round=%s '
-                        'outcome=%s effort=%s output_limit=%s '
-                        'elapsed_ms=%s'
+                        (
+                            'Agent model round: request=%s round=%s '
+                            'outcome=%s effort=%s output_limit=%s '
+                            'elapsed_ms=%s'
+                        )
                     )
                 ),
                 self.request_id,
