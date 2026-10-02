@@ -299,3 +299,9 @@ def raffle_adapters() -> tuple[CommandAdapter, ...]:
         CommandAdapter("/raffle prize", "confirm", run_raffle_prize,
                        prepare=prepare_raffle_prize),
     )
+
+
+UNDO_HANDLERS = {
+    '/raffle prize': prepare_raffle_prize_undo,
+    'undo_raffle_prize': prepare_raffle_prize_undo,
+}

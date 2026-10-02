@@ -122,3 +122,9 @@ async def prepare_cc_status_undo(context: AgentRequestContext,
         ChangePreview(lines, recheck, summary=ACTION_CC_STATUS_LABEL,
                       before=log["after"]), run,
     )
+
+
+UNDO_HANDLERS = {
+    'set_cwl_cc_status': prepare_cc_status_undo,
+    'undo_cwl_cc_status': prepare_cc_status_undo,
+}

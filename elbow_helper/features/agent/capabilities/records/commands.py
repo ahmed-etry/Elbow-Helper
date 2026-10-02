@@ -437,3 +437,11 @@ def record_adapters() -> tuple[CommandAdapter, ...]:
                        action_class=ActionClass.IRREVERSIBLE,
                        option_types=(("record", "integer"),)),
     )
+
+
+UNDO_HANDLERS = {
+    '/record add': prepare_record_add_undo,
+    'undo_record_add': prepare_record_add_undo,
+    '/record edit': prepare_record_edit_undo,
+    'undo_record_edit': prepare_record_edit_undo,
+}

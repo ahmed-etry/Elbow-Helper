@@ -517,3 +517,9 @@ async def prepare_delete(context: AgentRequestContext,
         permission="Manage Messages",
     ))
     return {"status": "confirmation_required"}
+
+
+UNDO_HANDLERS = {
+    'edit_agent_message': prepare_edit_undo,
+    'undo_agent_message_edit': prepare_edit_undo,
+}

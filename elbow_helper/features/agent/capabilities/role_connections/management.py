@@ -226,3 +226,9 @@ async def prepare_role_connection_undo(context: AgentRequestContext,
             before={"connection": expected}),
         run,
     )
+
+
+UNDO_HANDLERS = {
+    'manage_role_connection': prepare_role_connection_undo,
+    'undo_role_connection': prepare_role_connection_undo,
+}

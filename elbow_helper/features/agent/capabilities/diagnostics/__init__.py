@@ -2,6 +2,7 @@
 
 from .commands import diagnostic_adapters
 
+
 TOOLS = ()
 
 COMMAND_ADAPTERS = (

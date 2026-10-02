@@ -16,22 +16,8 @@ from .research.runner import ResearchJobRunner
 from .actions.repository import AgentActionRepository
 from .actions.runner import AgentActionRunner
 from .scheduled.runner import ScheduledRunner
-from .discord_actions.roles import prepare_role_undo
-from .discord_actions.messages import prepare_edit_undo
-from .discord_actions.threads import prepare_thread_member_undo, prepare_thread_update_undo
-from .discord_actions.message_controls import prepare_control_undo
-from .discord_actions.nicknames import prepare_nickname_undo
-from .capabilities.records.commands import prepare_record_add_undo, prepare_record_edit_undo
-from .capabilities.achievements.raffle_commands import prepare_raffle_prize_undo
-from .capabilities.account_links.commands import prepare_account_add_undo
-from .capabilities.rosters.management import prepare_roster_layout_undo
-from .capabilities.role_connections.management import prepare_role_connection_undo
-from .capabilities.role_connections.scan import prepare_role_connection_scan_undo
-from .capabilities.cwl.bonus_scoring import prepare_cwl_bonus_scoring_undo
-from .capabilities.clan_health.settings import prepare_health_settings_undo
-from .capabilities.examination.examiner_profile import prepare_examiner_profile_undo
-from .capabilities.cwl.cc_status import prepare_cc_status_undo
 from .knowledge.store import KnowledgeStore
+from .engine.registry import build_undo_handlers
 
 
 async def setup(bot) -> None:
@@ -98,46 +84,8 @@ async def setup(bot) -> None:
     action_runner = AgentActionRunner(
         bot=bot, repository=action_repository, guild_id=GUILD_ID,
         enabled=getattr(bot, "agent_actions_enabled", True),
+        undo_handlers=build_undo_handlers(),
     )
-    action_runner.undo_handlers.update({
-        "add_discord_roles": prepare_role_undo,
-        "remove_discord_roles": prepare_role_undo,
-        "undo_discord_role": prepare_role_undo,
-        "edit_agent_message": prepare_edit_undo,
-        "undo_agent_message_edit": prepare_edit_undo,
-        "update_discord_thread": prepare_thread_update_undo,
-        "undo_discord_thread_update": prepare_thread_update_undo,
-        "change_discord_thread_members": prepare_thread_member_undo,
-        "undo_discord_thread_member": prepare_thread_member_undo,
-        "change_bot_reaction": prepare_control_undo,
-        "undo_bot_reaction": prepare_control_undo,
-        "change_discord_pin": prepare_control_undo,
-        "undo_discord_pin": prepare_control_undo,
-        "change_discord_nickname": prepare_nickname_undo,
-        "undo_discord_nickname": prepare_nickname_undo,
-        "/record add": prepare_record_add_undo,
-        "undo_record_add": prepare_record_add_undo,
-        "/record edit": prepare_record_edit_undo,
-        "undo_record_edit": prepare_record_edit_undo,
-        "/raffle prize": prepare_raffle_prize_undo,
-        "undo_raffle_prize": prepare_raffle_prize_undo,
-        "/account add": prepare_account_add_undo,
-        "undo_account_add": prepare_account_add_undo,
-        "set_roster_layout": prepare_roster_layout_undo,
-        "undo_roster_layout": prepare_roster_layout_undo,
-        "manage_role_connection": prepare_role_connection_undo,
-        "undo_role_connection": prepare_role_connection_undo,
-        "apply_role_connections": prepare_role_connection_scan_undo,
-        "undo_role_connection_scan": prepare_role_connection_scan_undo,
-        "set_cwl_bonus_scoring": prepare_cwl_bonus_scoring_undo,
-        "undo_cwl_bonus_scoring": prepare_cwl_bonus_scoring_undo,
-        "set_clan_health_settings": prepare_health_settings_undo,
-        "undo_clan_health_settings": prepare_health_settings_undo,
-        "set_examiner_profile": prepare_examiner_profile_undo,
-        "undo_examiner_profile": prepare_examiner_profile_undo,
-        "set_cwl_cc_status": prepare_cc_status_undo,
-        "undo_cwl_cc_status": prepare_cc_status_undo,
-    })
     knowledge_store = KnowledgeStore(
         bot.paths.data_root / "agent" / "knowledge",
     )

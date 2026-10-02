@@ -2,6 +2,7 @@
 
 from .commands import attack_plan_adapters
 
+
 TOOLS = ()
 
 COMMAND_ADAPTERS = (

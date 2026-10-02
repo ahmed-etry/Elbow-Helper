@@ -192,3 +192,11 @@ async def prepare_control_undo(context: AgentRequestContext,
         emoji=values.get("emoji", ""), undo=True, changed=active != expected,
         label_message=message.jump_url,
     )
+
+
+UNDO_HANDLERS = {
+    'change_bot_reaction': prepare_control_undo,
+    'undo_bot_reaction': prepare_control_undo,
+    'change_discord_pin': prepare_control_undo,
+    'undo_discord_pin': prepare_control_undo,
+}

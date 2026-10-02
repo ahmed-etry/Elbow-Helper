@@ -102,3 +102,9 @@ async def prepare_nickname_undo(context: AgentRequestContext,
         context, member_id, before=expected, after=log["before"]["nickname"],
         label=member.mention, undo=True, changed=member.nick != expected,
     )
+
+
+UNDO_HANDLERS = {
+    'change_discord_nickname': prepare_nickname_undo,
+    'undo_discord_nickname': prepare_nickname_undo,
+}

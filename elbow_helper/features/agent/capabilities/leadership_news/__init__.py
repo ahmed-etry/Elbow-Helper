@@ -2,6 +2,7 @@
 
 from .actions import leadership_news_tools
 
+
 TOOLS = (
     *leadership_news_tools(),
 )

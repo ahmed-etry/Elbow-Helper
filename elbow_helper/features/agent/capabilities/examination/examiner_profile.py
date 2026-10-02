@@ -237,3 +237,9 @@ async def prepare_examiner_profile_undo(context: AgentRequestContext,
         ChangePreview(tuple(lines), recheck, summary=ACTION_EXAMINER_PROFILE_LABEL,
                       before=expected), run,
     )
+
+
+UNDO_HANDLERS = {
+    'set_examiner_profile': prepare_examiner_profile_undo,
+    'undo_examiner_profile': prepare_examiner_profile_undo,
+}

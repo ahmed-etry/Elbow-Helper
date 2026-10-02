@@ -375,3 +375,9 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         run, action_class=classification,
     ))
     return {"status": "confirmation_required"}
+
+
+UNDO_HANDLERS = {
+    'set_roster_layout': prepare_roster_layout_undo,
+    'undo_roster_layout': prepare_roster_layout_undo,
+}

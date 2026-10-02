@@ -12,6 +12,10 @@ from .thread_registration import cwl_register_adapters
 from .roster_export import cwl_roster_adapters
 from .announcement import cwl_announcement_adapters
 from .transfer_reminder import cwl_transfer_reminder_adapters
+from ...actions.undo import merge_undo_handlers
+from .bonus_scoring import UNDO_HANDLERS as BONUS_SCORING_UNDO_HANDLERS
+from .cc_status import UNDO_HANDLERS as CC_STATUS_UNDO_HANDLERS
+
 
 TOOLS = (
     *cwl_tools(),
@@ -31,6 +35,10 @@ COMMAND_ADAPTERS = (
     *cwl_transfer_reminder_adapters(),
 )
 
-UNDO_HANDLERS = {}
+
+UNDO_HANDLERS = merge_undo_handlers(
+    BONUS_SCORING_UNDO_HANDLERS,
+    CC_STATUS_UNDO_HANDLERS,
+)
 
 __all__ = ["TOOLS", "COMMAND_ADAPTERS", "UNDO_HANDLERS"]

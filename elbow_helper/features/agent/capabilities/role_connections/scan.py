@@ -113,3 +113,9 @@ async def prepare_role_connection_scan_undo(context: AgentRequestContext,
         member_label=member.mention, role_label=role.mention,
         signature=workflow.connections_board_signature(), undo=True,
     )
+
+
+UNDO_HANDLERS = {
+    'apply_role_connections': prepare_role_connection_scan_undo,
+    'undo_role_connection_scan': prepare_role_connection_scan_undo,
+}

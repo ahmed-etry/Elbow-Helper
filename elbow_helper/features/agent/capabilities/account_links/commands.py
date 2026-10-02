@@ -223,3 +223,9 @@ def account_link_adapters() -> tuple[CommandAdapter, ...]:
                        prepare=prepare_account_remove,
                        action_class=ActionClass.CHANGE),
     )
+
+
+UNDO_HANDLERS = {
+    '/account add': prepare_account_add_undo,
+    'undo_account_add': prepare_account_add_undo,
+}

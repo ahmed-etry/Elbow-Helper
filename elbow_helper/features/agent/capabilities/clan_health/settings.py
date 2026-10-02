@@ -155,3 +155,9 @@ async def prepare_health_settings_undo(context: AgentRequestContext,
         ChangePreview(lines, recheck, summary=ACTION_HEALTH_SETTINGS_LABEL,
                       before={"payload": expected}), run,
     )
+
+
+UNDO_HANDLERS = {
+    'set_clan_health_settings': prepare_health_settings_undo,
+    'undo_clan_health_settings': prepare_health_settings_undo,
+}

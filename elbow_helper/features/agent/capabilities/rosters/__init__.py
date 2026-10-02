@@ -6,6 +6,9 @@ from .signups import roster_account_management_tools
 from .setup_commands import roster_adapters
 from .timing_commands import timing_adapters
 from .post_commands import post_adapters
+from ...actions.undo import merge_undo_handlers
+from .management import UNDO_HANDLERS as MANAGEMENT_UNDO_HANDLERS
+
 
 TOOLS = (
     *roster_tools(),
@@ -19,6 +22,9 @@ COMMAND_ADAPTERS = (
     *post_adapters(),
 )
 
-UNDO_HANDLERS = {}
+
+UNDO_HANDLERS = merge_undo_handlers(
+    MANAGEMENT_UNDO_HANDLERS,
+)
 
 __all__ = ["TOOLS", "COMMAND_ADAPTERS", "UNDO_HANDLERS"]

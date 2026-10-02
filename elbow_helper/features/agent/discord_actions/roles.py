@@ -161,3 +161,10 @@ async def prepare_role_undo(context: AgentRequestContext,
         label_role=role.mention, label_member=member.mention,
         undo=True, changed=(role in member.roles) != expected,
     )
+
+
+UNDO_HANDLERS = {
+    'add_discord_roles': prepare_role_undo,
+    'remove_discord_roles': prepare_role_undo,
+    'undo_discord_role': prepare_role_undo,
+}

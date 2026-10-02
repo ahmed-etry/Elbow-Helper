@@ -191,3 +191,9 @@ async def prepare_cwl_bonus_scoring_undo(context: AgentRequestContext,
         ChangePreview(tuple(lines), recheck, summary=ACTION_BONUS_SCORING_LABEL,
                       before={"payload": expected}), run,
     )
+
+
+UNDO_HANDLERS = {
+    'set_cwl_bonus_scoring': prepare_cwl_bonus_scoring_undo,
+    'undo_cwl_bonus_scoring': prepare_cwl_bonus_scoring_undo,
+}

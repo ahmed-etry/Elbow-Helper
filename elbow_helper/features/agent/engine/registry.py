@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import replace
 
 from ..capabilities import FEATURES
+from ..discord_actions import UNDO_HANDLERS as DISCORD_UNDO_HANDLERS
+from ..actions.undo import merge_undo_handlers, UndoHandler
 
 from ..files.attachment_tools import attachment_tools
 from ..actions.log_tools import action_log_tools
@@ -71,4 +73,11 @@ def build_agent_tools() -> dict[str, RegisteredAgentTool]:
             for name, tool in registry.items()}
 
 
-__all__ = ["build_agent_tool_groups", "build_agent_tools"]
+def build_undo_handlers() -> dict[str, UndoHandler]:
+    return merge_undo_handlers(
+        DISCORD_UNDO_HANDLERS,
+        *(feature.UNDO_HANDLERS for feature in FEATURES.values()),
+    )
+
+
+__all__ = ["build_agent_tool_groups", "build_agent_tools", "build_undo_handlers"]

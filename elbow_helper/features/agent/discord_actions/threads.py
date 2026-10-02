@@ -441,3 +441,11 @@ async def prepare_thread_member_undo(context: AgentRequestContext,
         add=log["before"]["has_member"], before=expected,
         undo=True, changed=present != expected,
     )
+
+
+UNDO_HANDLERS = {
+    'update_discord_thread': prepare_thread_update_undo,
+    'undo_discord_thread_update': prepare_thread_update_undo,
+    'change_discord_thread_members': prepare_thread_member_undo,
+    'undo_discord_thread_member': prepare_thread_member_undo,
+}
