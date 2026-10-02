@@ -3,7 +3,7 @@
 from __future__ import annotations
 from dataclasses import replace
 
-from .attachments import attachment_tools
+from ..files.attachment_tools import attachment_tools
 from ..actions.log_tools import action_log_tools
 from .account_suggestions import account_suggestion_tools
 from .achievements import achievement_tools
@@ -48,7 +48,7 @@ from .rosters import roster_tools
 from .roster_management import roster_management_tools
 from .roster_account_management import roster_account_management_tools
 from .saved_reports import replace_report_tools
-from .spreadsheets import spreadsheet_tools
+from ..files.spreadsheet_tools import spreadsheet_tools
 from .support import support_tools
 from ..research.threads import thread_tools
 from .ticket_reopen import ticket_reopen_tools

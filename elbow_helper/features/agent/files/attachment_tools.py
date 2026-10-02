@@ -7,14 +7,14 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..access import accessible_message_channel, require_evidence_access
 from ..reports.base import ArtifactCapacityError, retain_report
-from ..files.contracts import (
+from .contracts import (
     AttachmentValidationError,
     CsvImportArtifact,
     TextImportArtifact,
     XlsxImportArtifact,
     MAX_TEXT_PAGE_CHARACTERS,
 )
-from ..files.attachments import (
+from .attachments import (
     acquire_csv_attachment,
     acquire_text_attachment,
     acquire_xlsx_attachment,

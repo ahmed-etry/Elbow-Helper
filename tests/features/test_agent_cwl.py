@@ -14,7 +14,7 @@ from elbow_helper.features.agent.tools.cwl_scoring import (
     list_cwl_ass_seasons, read_cwl_ass_scope, read_cwl_ass_scope_report,
     read_cwl_bonus_scope, read_cwl_bonus_scope_report,
 )
-from elbow_helper.features.agent.tools.spreadsheets import prepare_spreadsheet
+from elbow_helper.features.agent.files.spreadsheet_tools import prepare_spreadsheet
 from elbow_helper.features.account_links.evidence import (
     AccountTagEvidence, AccountTagEvidenceSnapshot,
 )
@@ -219,7 +219,7 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
         self.context.guild.filesize_limit = 8 * 1024 * 1024
         player = result["players"][0]
         with patch(
-            "elbow_helper.features.agent.tools.spreadsheets.render_workbook_bytes",
+            "elbow_helper.features.agent.files.spreadsheet_tools.render_workbook_bytes",
             AsyncMock(return_value=b"xlsx"),
         ):
             spreadsheet = await prepare_spreadsheet(self.context, {

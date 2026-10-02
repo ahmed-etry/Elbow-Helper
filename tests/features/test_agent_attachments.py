@@ -25,7 +25,7 @@ from elbow_helper.features.agent.files.attachments import (
     parse_xlsx,
 )
 from elbow_helper.features.agent.models import AgentRequestContext
-from elbow_helper.features.agent.tools.attachments import (
+from elbow_helper.features.agent.files.attachment_tools import (
     import_csv_attachment, import_text_attachment, import_xlsx_attachment,
     list_csv_attachments,
     list_supported_attachments, read_csv_import, read_text_import,

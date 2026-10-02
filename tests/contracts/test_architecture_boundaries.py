@@ -87,7 +87,7 @@ class DependencyBoundaryTests(unittest.TestCase):
     def test_agent_large_module_responsibilities_remain_separated(self) -> None:
         agent_root = FEATURE_ROOT / "agent"
         attachment_tools = (
-            agent_root / "tools" / "attachments.py"
+            agent_root / "files" / "attachment_tools.py"
         ).read_text(encoding="utf-8")
         storage_codec = (agent_root / "conversation" / "codec.py").read_text(
             encoding="utf-8"
@@ -107,9 +107,9 @@ class DependencyBoundaryTests(unittest.TestCase):
         )
         self.assertNotIn(".research.tools", research_runner)
         spreadsheet_tools = (
-            agent_root / "tools" / "spreadsheets.py"
+            agent_root / "files" / "spreadsheet_tools.py"
         ).read_text(encoding="utf-8")
-        export_delivery = (agent_root / "files" / "delivery.py").read_text(
+        export_delivery = (agent_root / "files" / "workbooks.py").read_text(
             encoding="utf-8"
         )
         self.assertNotIn("WorkbookWriter", spreadsheet_tools)

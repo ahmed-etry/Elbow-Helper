@@ -12,7 +12,7 @@ from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentAttachment, AgentRequestContext
 from elbow_helper.features.agent.files.spreadsheets import parse_agent_spreadsheet
 from elbow_helper.features.agent.tools import build_agent_tools
-from elbow_helper.features.agent.tools.spreadsheets import prepare_report_spreadsheet, prepare_spreadsheet
+from elbow_helper.features.agent.files.spreadsheet_tools import prepare_report_spreadsheet, prepare_spreadsheet
 from elbow_helper.infrastructure.exports import LocalExportStore, WorkbookWriter
 
 
@@ -220,7 +220,7 @@ class AgentSpreadsheetToolTests(unittest.IsolatedAsyncioTestCase):
         with TemporaryDirectory() as directory:
             context = _context(directory)
             with patch(
-                "elbow_helper.features.agent.tools.spreadsheets.require_evidence_access",
+                "elbow_helper.features.agent.files.spreadsheet_tools.require_evidence_access",
                 new=AsyncMock(side_effect=[None, AgentAccessLost("lost")]),
             ):
                 with self.assertRaises(AgentAccessLost):

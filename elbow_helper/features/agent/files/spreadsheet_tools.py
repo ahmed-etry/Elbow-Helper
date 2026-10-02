@@ -8,10 +8,10 @@ from typing import Any, Mapping
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..access import require_evidence_access
-from ..files.delivery import render_workbook_bytes
-from ..files.report_tables import materialize_report_table
+from .workbooks import render_workbook_bytes
+from .report_tables import materialize_report_table
 from ..models import AgentAttachment, AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from ..files.spreadsheets import (
+from .spreadsheets import (
     AgentSpreadsheet, AgentSpreadsheetSheet, _valid_sheet_name, _valid_text,
     parse_agent_spreadsheet,
 )
