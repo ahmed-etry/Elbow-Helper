@@ -1,13 +1,8 @@
-"""Recruitment message previews use the text posted by the feature."""
-
 from __future__ import annotations
-
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock
-
 import discord
-
 from elbow_helper.features.agent.capabilities.recruitment.commands import (
     prepare_recstatement, run_recstatement,
 )

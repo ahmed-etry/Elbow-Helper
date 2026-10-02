@@ -61,7 +61,7 @@ class AgentRegistryCoverageTests(unittest.TestCase):
                     self.assertIs(tools[name].action_class, ActionClass.READ)
 
     def test_agent_does_not_use_other_objects_private_attributes(self):
-        root = Path(__file__).resolve().parents[2] / "elbow_helper" / "features" / "agent"
+        root = Path(__file__).resolve().parents[4] / "elbow_helper" / "features" / "agent"
         violations = []
         for path in root.rglob("*.py"):
             source = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))

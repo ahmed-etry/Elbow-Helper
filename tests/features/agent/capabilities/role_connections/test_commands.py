@@ -1,11 +1,7 @@
-"""The role connections board needs a preview and keeps its feature UI."""
-
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
-
 import discord
-
 from elbow_helper.configuration.roles import LEAD
 from elbow_helper.features.agent.capabilities.role_connections.commands import (
     prepare_connections, run_connections,

@@ -1,11 +1,7 @@
-"""War statements preview the feature's exact message before posting."""
-
 from __future__ import annotations
-
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
-
 from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.agent.capabilities.wars.statements import (
     war_statement_adapters,
