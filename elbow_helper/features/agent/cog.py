@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import AsyncExitStack
-from dataclasses import replace
 from datetime import datetime, timezone
 import json
 import logging
@@ -20,7 +19,6 @@ from elbow_helper.configuration.guild import GUILD_ID
 
 from .conversation.preparation import ConversationContextMixin
 from .delivery import AgentDeliveryMixin, AgentDeliveryUnknown
-from .actions.outcomes import command_reply
 from .access import AgentAccessLost
 from .access import has_agent_entry_access
 from .access import require_access
@@ -34,7 +32,6 @@ from .models import AgentDelivery, AgentRequestContext, AgentTurnState
 from .knowledge.report import KnowledgeReport
 from .engine.service import AgentUnavailableError
 from .engine.service import AgentService
-from .scheduled.scope import within_scope
 from .conversation.transcripts import TranscriptArchive, archive_write
 from .conversation.persistence import ConversationPersistence
 
@@ -401,51 +398,6 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
             deadline_monotonic=deadline_monotonic,
         )
         return context, root_id
-
-    def scheduled_context(self, message, member):
-        context, _ = self._request_context(
-            message, member, None, None,
-            time.monotonic() + AGENT_REQUEST_TIMEOUT_SECONDS,
-        )
-        return context
-
-    async def run_saved_request(self, context, rule):
-        message = context.source_message
-        allowed = rule.get("allowed_actions", [])
-        local_context = "Confirmed standing scope: " + json.dumps(
-            allowed, ensure_ascii=False, default=str,
-        )
-        response = await self.service.answer(
-            question=rule["request"], local_context=local_context,
-            context=context,
-        )
-        proposals = tuple(context.state.command_proposals)
-        if proposals and within_scope(proposals, allowed):
-            run_id = await self.action_runner.submit(
-                context, proposals, confirmer_id=context.member.id,
-            )
-            run = await self.action_runner.wait_run(run_id)
-            if context.state.command_outcomes or context.state.attachments:
-                output_context = replace(
-                    context,
-                    state=replace(context.state, command_proposals=[]),
-                )
-                await self._send_response(
-                    message,
-                    command_reply(context.state.command_outcomes)
-                    if context.state.command_outcomes else "",
-                    None, context.state.attachments, context=output_context,
-                )
-            return run
-        await self._send_response(
-            message, response, None, context.state.attachments, context=context,
-        )
-        return None
-
-    async def check_watcher(self, context, rule):
-        from .scheduled.watchers import check_watcher
-        return await check_watcher(context, rule)
-
     async def _record_turn(self, message, member, question, response,
                            local_context, context, delivery, conversation):
         if delivery.attempted_nonces:
@@ -536,7 +488,7 @@ class AgentCog(ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
             await self._check_sources(context)
             delivery = AgentDelivery()
             try:
-                await self._send_response(
+                await self.send_response(
                     message, response, referenced, context.state.attachments, conversation,
                     delivery=delivery, context=context,
                 )

@@ -587,7 +587,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         message = make_message(member, 1, "<@999> explain")
         conversation = self.cog._conversations.create(GUILD_ID, 100, 1)
 
-        await self.cog._send_response(message, "x" * 2100, None, conversation=conversation)
+        await self.cog.send_response(message, "x" * 2100, None, conversation=conversation)
 
         self.assertIs(self.cog._conversations.find(GUILD_ID, 100, 1001), conversation)
         self.assertIs(self.cog._conversations.find(GUILD_ID, 100, 9000), conversation)
@@ -1322,7 +1322,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
     async def test_long_reply_preserves_complete_answer_as_attachment(self):
         message = SimpleNamespace(id=1, mentions=[], reply=AsyncMock())
         response = "answer " * 3000
-        await self.cog._send_response(message, response, None)
+        await self.cog.send_response(message, response, None)
         attached = message.reply.await_args.kwargs["files"][0]
         self.assertEqual(attached.fp.read().decode("utf-8"), response)
         attached.close()
@@ -1330,7 +1330,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
     async def test_short_code_block_stays_in_channel(self):
         message = SimpleNamespace(id=1, mentions=[], reply=AsyncMock())
         response = "```text\nhello\n```"
-        await self.cog._send_response(message, response, None)
+        await self.cog.send_response(message, response, None)
         self.assertEqual(message.reply.await_args.args[0], response)
         self.assertEqual(message.reply.await_args.kwargs.get("files"), None)
 

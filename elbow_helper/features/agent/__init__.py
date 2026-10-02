@@ -7,7 +7,7 @@ from elbow_helper.discord.message_search import DiscordMessageSearch
 from elbow_helper.discord.thread_discovery import DiscordThreadDiscovery
 from elbow_helper.configuration.guild import GUILD_ID
 
-from .cog import AgentCog
+from .cog import AgentCog, AGENT_REQUEST_TIMEOUT_SECONDS
 from .conversation.transcripts import TranscriptArchive
 from .conversation.repository import ConversationRepository
 from .conversation.persistence import ConversationPersistence
@@ -16,6 +16,7 @@ from .research.runner import ResearchJobRunner
 from .actions.repository import AgentActionRepository
 from .actions.runner import AgentActionRunner
 from .scheduled.runner import ScheduledRunner
+from .scheduled.requests import ScheduledContextFactory
 from .knowledge.store import KnowledgeStore
 from .engine.registry import build_undo_handlers
 
@@ -51,22 +52,36 @@ async def setup(bot) -> None:
     member_lifecycle_queries = getattr(member_lifecycle, "queries", None)
     clan_reporting_queries = getattr(clan_reporting, "queries", None)
     role_connection_queries = getattr(role_connections, "queries", None)
-    if (account_links is None or clan_health_queries is None or rosters is None
-            or cwl_queries is None or war_queries is None or transfer_queries is None
-            or hibernation_queries is None or support_queries is None
-            or recruitment_queries is None or examination_queries is None
-            or record_queries is None or achievement_queries is None
-            or event_queries is None or member_lifecycle_queries is None
-            or clan_reporting_queries is None
-            or role_connection_queries is None):
+    if (
+        account_links is None
+        or clan_health_queries is None
+        or rosters is None
+        or cwl_queries is None
+        or war_queries is None
+        or transfer_queries is None
+        or hibernation_queries is None
+        or support_queries is None
+        or recruitment_queries is None
+        or examination_queries is None
+        or record_queries is None
+        or achievement_queries is None
+        or event_queries is None
+        or member_lifecycle_queries is None
+        or clan_reporting_queries is None
+        or role_connection_queries is None
+    ):
         raise RuntimeError(
             "Agent requires AccountLinks, ClanHealth, Wars, Rosters, CWL, "
             "ClanTransfers, Hibernation, SupportActions, Recruitment, Examination, "
             "Records, Achievements, EventStats, MemberLifecycle, ClanReporting "
             "and RoleConnections"
         )
-    archive = await asyncio.to_thread(TranscriptArchive, bot.paths.data_root / "agent" / "transcripts.sqlite3")
-    repository = await asyncio.to_thread(ConversationRepository, bot.paths.data_root / "agent" / "agent.sqlite3")
+    archive = await asyncio.to_thread(
+        TranscriptArchive, bot.paths.data_root / "agent" / "transcripts.sqlite3"
+    )
+    repository = await asyncio.to_thread(
+        ConversationRepository, bot.paths.data_root / "agent" / "agent.sqlite3"
+    )
     research_jobs = await asyncio.to_thread(
         ResearchJobRepository,
         bot.paths.data_root / "agent" / "research_jobs.sqlite3",
@@ -78,47 +93,64 @@ async def setup(bot) -> None:
     message_search = DiscordMessageSearch(bot.http)
     thread_discovery = DiscordThreadDiscovery()
     research_runner = ResearchJobRunner(
-        bot=bot, repository=research_jobs, message_search=message_search,
+        bot=bot,
+        repository=research_jobs,
+        message_search=message_search,
         guild_id=GUILD_ID,
     )
     action_runner = AgentActionRunner(
-        bot=bot, repository=action_repository, guild_id=GUILD_ID,
+        bot=bot,
+        repository=action_repository,
+        guild_id=GUILD_ID,
         enabled=getattr(bot, "agent_actions_enabled", True),
         undo_handlers=build_undo_handlers(),
     )
     knowledge_store = KnowledgeStore(
         bot.paths.data_root / "agent" / "knowledge",
     )
+    collaborators = {
+        "account_links": account_links,
+        "clan_health": clan_health_queries,
+        "message_search": message_search,
+        "thread_discovery": thread_discovery,
+        "roster_queries": rosters.queries,
+        "cwl_queries": cwl_queries,
+        "war_queries": war_queries,
+        "transfer_queries": transfer_queries,
+        "hibernation_queries": hibernation_queries,
+        "support_queries": support_queries,
+        "recruitment_queries": recruitment_queries,
+        "examination_queries": examination_queries,
+        "record_queries": record_queries,
+        "achievement_queries": achievement_queries,
+        "event_queries": event_queries,
+        "member_lifecycle_queries": member_lifecycle_queries,
+        "clan_reporting_queries": clan_reporting_queries,
+        "role_connection_queries": role_connection_queries,
+        "knowledge_store": knowledge_store,
+        "research_jobs": research_jobs,
+        "action_runner": action_runner,
+        "action_repository": action_repository,
+    }
     cog = AgentCog(
         bot,
-        account_links=account_links,
-        clan_health=clan_health_queries,
-        message_search=message_search,
-        thread_discovery=thread_discovery,
-        roster_queries=rosters.queries,
-        cwl_queries=cwl_queries,
-        war_queries=war_queries,
-        transfer_queries=transfer_queries,
-        hibernation_queries=hibernation_queries,
-        support_queries=support_queries,
-        recruitment_queries=recruitment_queries,
-        examination_queries=examination_queries,
-        record_queries=record_queries,
-        achievement_queries=achievement_queries,
-        event_queries=event_queries,
-        member_lifecycle_queries=member_lifecycle_queries,
-        clan_reporting_queries=clan_reporting_queries,
-        role_connection_queries=role_connection_queries,
-        knowledge_store=knowledge_store,
-        research_jobs=research_jobs,
+        **collaborators,
         research_runner=research_runner,
-        action_runner=action_runner,
-        action_repository=action_repository,
         transcript_archive=archive,
         persistence=ConversationPersistence(repository),
     )
     cog.scheduled_runner = ScheduledRunner(
-        bot=bot, repository=action_repository, guild_id=GUILD_ID,
-        agent=cog, enabled=getattr(bot, "agent_actions_enabled", True),
+        bot=bot,
+        repository=action_repository,
+        guild_id=GUILD_ID,
+        service=cog.service,
+        delivery=cog.send_response,
+        action_runner=action_runner,
+        context_factory=ScheduledContextFactory(
+            bot=bot,
+            collaborators=collaborators,
+            timeout_seconds=AGENT_REQUEST_TIMEOUT_SECONDS,
+        ),
+        enabled=getattr(bot, "agent_actions_enabled", True),
     )
     await bot.add_cog(cog)

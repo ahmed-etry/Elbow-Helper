@@ -32,7 +32,7 @@ class AgentDeliveryUnknown(RuntimeError):
 class AgentDeliveryMixin:
     """Agent delivery; owns no conversation or provider lifecycle."""
 
-    async def _send_response(
+    async def send_response(
         self,
         message: discord.Message,
         response: str,

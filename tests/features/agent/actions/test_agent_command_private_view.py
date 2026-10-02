@@ -78,7 +78,7 @@ class PrivateCommandViewTests(unittest.IsolatedAsyncioTestCase):
         from unittest.mock import patch
         with patch("elbow_helper.features.agent.delivery.require_disclosure_access",
                    new_callable=AsyncMock):
-            await delivery_surface._send_response(
+            await delivery_surface.send_response(
                 message, "Result is ready.", None,
                 delivery=AgentDelivery(), context=context,
             )
