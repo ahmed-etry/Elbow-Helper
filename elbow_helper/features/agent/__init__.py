@@ -22,7 +22,7 @@ from .discord_actions.threads import prepare_thread_member_undo, prepare_thread_
 from .discord_actions.message_controls import prepare_control_undo
 from .discord_actions.nicknames import prepare_nickname_undo
 from .capabilities.records.commands import prepare_record_add_undo, prepare_record_edit_undo
-from .capabilities.achievements.commands import prepare_raffle_prize_undo
+from .capabilities.achievements.raffle_commands import prepare_raffle_prize_undo
 from .capabilities.account_links.commands import prepare_account_add_undo
 from .capabilities.rosters.management import prepare_roster_layout_undo
 from .capabilities.role_connections.management import prepare_role_connection_undo

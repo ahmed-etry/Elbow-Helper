@@ -4,9 +4,9 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
-from elbow_helper.features.agent.capabilities.achievements.commands import (
-    prepare_raffle_prize, prepare_raffle_prize_undo, run_raffle_prize,
-)
+from elbow_helper.features.agent.capabilities.achievements.raffle_commands import prepare_raffle_prize
+from elbow_helper.features.agent.capabilities.achievements.raffle_commands import prepare_raffle_prize_undo
+from elbow_helper.features.agent.capabilities.achievements.raffle_commands import run_raffle_prize
 
 
 class RafflePrizeCommandTests(unittest.IsolatedAsyncioTestCase):

@@ -8,15 +8,15 @@ from unittest.mock import AsyncMock, patch
 
 import discord
 
-from elbow_helper.features.agent.capabilities.rosters.setup_commands import (
-    prepare_roster_clone, prepare_roster_create, prepare_roster_delete,
-    prepare_roster_edit,
-    prepare_roster_timing,
-    prepare_roster_schedule,
-    prepare_roster_post,
-    prepare_roster_export,
-    roster_adapters,
-)
+from elbow_helper.features.agent.capabilities.rosters.setup_commands import prepare_roster_clone
+from elbow_helper.features.agent.capabilities.rosters.setup_commands import prepare_roster_create
+from elbow_helper.features.agent.capabilities.rosters.setup_commands import prepare_roster_delete
+from elbow_helper.features.agent.capabilities.rosters.setup_commands import prepare_roster_edit
+from elbow_helper.features.agent.capabilities.rosters.timing_commands import prepare_roster_timing
+from elbow_helper.features.agent.capabilities.rosters.timing_commands import prepare_roster_schedule
+from elbow_helper.features.agent.capabilities.rosters.post_commands import prepare_roster_post
+from elbow_helper.features.agent.capabilities.rosters.post_commands import prepare_roster_export
+from elbow_helper.features.agent.capabilities.rosters.setup_commands import roster_adapters
 from elbow_helper.features.rosters.cog import Rosters
 
 
@@ -286,7 +286,7 @@ class RosterCommandTests(unittest.IsolatedAsyncioTestCase):
             guild=guild, member=member,
             source_message=SimpleNamespace(channel=channel),
         )
-        with patch("elbow_helper.features.agent.capabilities.rosters.setup_commands.discord.TextChannel",
+        with patch("elbow_helper.features.agent.capabilities.rosters.post_commands.discord.TextChannel",
                    new=SimpleNamespace):
             prepared = await prepare_roster_post(context, {"roster": "4"})
             self.assertTrue(await prepared.preview.recheck())
