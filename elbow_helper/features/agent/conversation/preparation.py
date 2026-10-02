@@ -6,7 +6,9 @@ import asyncio
 from dataclasses import replace
 import logging
 
-from ..access import accessible_message_channel, can_disclose_provenance, has_access_requirements
+from ..access import accessible_message_channel
+from ..disclosure import can_disclose_provenance
+from ..access import has_access_requirements
 from ..models import AgentRequestContext, AgentTurnState
 from ..reports.base import retain_report
 from ..knowledge.report import KnowledgeReport

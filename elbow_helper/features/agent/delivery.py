@@ -11,7 +11,7 @@ import sqlite3
 
 import discord
 
-from .access import require_disclosure_access
+from .disclosure import require_disclosure_access
 from .wording import COMMAND_PREVIEW_HEADER, FAILURE_MESSAGE, LONG_REPLY_FILENAME
 from .conversation.state import Conversation
 from .conversation.transcripts import archive_write

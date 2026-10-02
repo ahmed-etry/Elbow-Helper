@@ -8,10 +8,10 @@ from typing import Any, Mapping
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
-from ..access import (
-    AgentAccessLost, accessible_message_channel, require_destination_access,
-    require_evidence_access,
-)
+from ..access import AgentAccessLost
+from ..access import accessible_message_channel
+from ..disclosure import require_destination_access
+from ..access import require_evidence_access
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from .contracts import (
     DiscordResearchJob, MAX_RESEARCH_BATCH_JOBS, ResearchJobDefinition,

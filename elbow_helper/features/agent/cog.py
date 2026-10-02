@@ -21,7 +21,10 @@ from elbow_helper.configuration.guild import GUILD_ID
 from .conversation.preparation import ConversationContextMixin
 from .delivery import AgentDeliveryMixin, AgentDeliveryUnknown
 from .actions.outcomes import command_reply
-from .access import AgentAccessLost, has_agent_entry_access, require_access, require_disclosure_access
+from .access import AgentAccessLost
+from .access import has_agent_entry_access
+from .access import require_access
+from .disclosure import require_disclosure_access
 from .conversation.state import (
     Conversation, ConversationRecord, ConversationStore, ConversationTurn,
 )

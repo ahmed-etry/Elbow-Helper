@@ -12,7 +12,8 @@ from uuid import uuid4
 
 import discord
 
-from ..access import require_access, require_disclosure_access
+from ..access import require_access
+from ..disclosure import require_disclosure_access
 from .outcomes import CommandOutcome
 from .private_view import PrivateCommandView
 from ..text import chunk_response

@@ -10,9 +10,8 @@ from unittest.mock import AsyncMock, patch
 import discord
 
 from elbow_helper.configuration.roles import CORE, LEAD
-from elbow_helper.features.agent.access import (
-    ACCESS_LEAD, can_disclose_provenance,
-)
+from elbow_helper.features.agent.access import ACCESS_LEAD
+from elbow_helper.features.agent.disclosure import can_disclose_provenance
 from elbow_helper.features.agent.models import AgentRequestContext, RegisteredAgentTool
 from elbow_helper.features.agent.service import AgentService
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentToolDefinition, AgentUsage

@@ -16,7 +16,8 @@ from elbow_helper.discord.message_search import (
     DiscordHistoryPage, DiscordSearchMessage, DiscordSearchPage,
 )
 import elbow_helper.features.agent.research.repository as research_job_storage
-from elbow_helper.features.agent.access import AgentAccessLost, AgentDisclosureDenied
+from elbow_helper.features.agent.access import AgentAccessLost
+from elbow_helper.features.agent.disclosure import AgentDisclosureDenied
 from elbow_helper.features.agent.research.repository import (
     ResearchJobBusy, ResearchJobConflict, ResearchJobRepository,
     ResearchJobScope,

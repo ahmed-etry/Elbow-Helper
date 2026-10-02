@@ -9,10 +9,10 @@ from uuid import uuid4
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
-from ..access import (
-    AgentAccessLost, accessible_message_channel, require_destination_access,
-    require_evidence_access,
-)
+from ..access import AgentAccessLost
+from ..access import accessible_message_channel
+from ..disclosure import require_destination_access
+from ..access import require_evidence_access
 from ..reports.base import ArtifactCapacityError, retain_report
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from .execution import advance_discord_research_job

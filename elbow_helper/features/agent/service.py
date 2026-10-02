@@ -21,12 +21,13 @@ from elbow_helper.infrastructure.ai import TextGenerationError
 
 from .models import AgentCapabilityEffect, AgentRequestContext
 from .actions.contracts import ActionClass, PreparedAction
-from .access import (
-    AgentAccessLost, AgentDisclosureDenied, require_access,
-    require_access_requirements,
-    require_destination_access, require_disclosure_access,
-    require_evidence_access,
-)
+from .access import AgentAccessLost
+from .disclosure import AgentDisclosureDenied
+from .access import require_access
+from .access import require_access_requirements
+from .disclosure import require_destination_access
+from .disclosure import require_disclosure_access
+from .access import require_evidence_access
 from .prompts import SYSTEM_PROMPT
 from .conversation.context import compile_context, estimate_tokens
 from .engine.registry import build_agent_tools
@@ -38,7 +39,7 @@ from .engine.capability_contract import require_source_provenance
 from .engine.capability_contract import CONTRACTS
 from .engine.capability_contract import SAVED_REPORT_CONTRACTS
 from .reports.tools import COMPARE_NAME, READ_NAME, filter_fields, original_arguments, original_tool
-from .access import can_disclose_provenance
+from .disclosure import can_disclose_provenance
 from .plan.checker import _has_reference, _kind, _periods, _source_check, _time_check, _valid_arguments, check_plan
 from .plan.executor import execute_plan, resolve_arguments
 from .plan.format import PLAN_TOOL_NAME, plan_definition, system_instructions
