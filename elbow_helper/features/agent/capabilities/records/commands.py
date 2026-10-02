@@ -78,8 +78,10 @@ async def prepare_record_add(context: Any, values: Mapping[str, Any]) -> ChangeP
         ACTION_RECORD_ADD_LINE.format(
             category=category_label(category), incident=incident_type_label(incident),
             member=member.mention,
-        ), ACTION_RECORD_DETAILS_LINE.format(note=note),
-    ), recheck, summary=ACTION_RECORD_ADD_LABEL, before={"record": None})
+        ),
+    ), recheck, summary=ACTION_RECORD_ADD_LABEL, before={"record": None},
+        details=(ACTION_RECORD_DETAILS_LINE.format(note=note),),
+        detail_access=frozenset({ACCESS_LEAD_PLUS}))
 
 
 async def run_record_add(context: Any, values: Mapping[str, Any]) -> ActionOutcome:
@@ -196,9 +198,11 @@ async def prepare_record_edit(context: Any, values: Mapping[str, Any]) -> Change
         return current is not None and _record_signature(current) == signature
 
     return ChangePreview(
-        _edit_lines(record, target, member), recheck,
+        _edit_lines(record, target, member)[:1], recheck,
+        details=_edit_lines(record, target, member)[1:],
         summary=ACTION_RECORD_EDIT_LABEL, before={"record": record},
-    )
+
+        detail_access=frozenset({ACCESS_LEAD_PLUS}))
 
 
 async def run_record_edit(context: Any, values: Mapping[str, Any]) -> ActionOutcome:
@@ -285,10 +289,12 @@ async def prepare_record_edit_undo(context: Any,
     return PreparedAction(
         "undo_record_edit", {"member_id": member_id, "record_id": record_id},
         ChangePreview((
-            *_edit_lines(current, target, member),
+            *_edit_lines(current, target, member)[:1],
             *((ACTION_UNDO_CHANGED,) if changed else ()),
         ), recheck, summary=ACTION_RECORD_EDIT_UNDO_LABEL,
-            before={"record": current}),
+            details=_edit_lines(current, target, member)[1:],
+            before={"record": current},
+        detail_access=frozenset({ACCESS_LEAD_PLUS})),
         run,
     )
 
@@ -320,9 +326,10 @@ async def prepare_record_remove(context: Any, values: Mapping[str, Any]) -> Chan
 
     return ChangePreview((
         ACTION_RECORD_REMOVE_LINE.format(member=member.mention),
-        ACTION_RECORD_DETAILS_LINE.format(note=record["note"]),
     ), recheck, summary=ACTION_RECORD_REMOVE_LABEL,
-        before={"record": record})
+        details=(ACTION_RECORD_DETAILS_LINE.format(note=record["note"]),),
+        before={"record": record},
+        detail_access=frozenset({ACCESS_LEAD_PLUS}))
 
 
 async def run_record_remove(context: Any, values: Mapping[str, Any]) -> ActionOutcome:
@@ -404,7 +411,8 @@ async def prepare_record_add_undo(context: Any,
             ACTION_RECORD_ADD_UNDO.format(member=member.mention),
             *((ACTION_UNDO_CHANGED,) if changed else ()),
         ), recheck, summary=ACTION_RECORD_UNDO_LABEL,
-            before={"record": record}),
+            before={"record": record},
+        detail_access=frozenset({ACCESS_LEAD_PLUS})),
         run,
     )
 

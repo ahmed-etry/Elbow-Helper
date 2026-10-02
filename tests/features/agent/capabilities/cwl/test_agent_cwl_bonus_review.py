@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.agent.models import AgentTurnState
+from elbow_helper.features.cwl.config import CWL_HQ_CHANNEL_ID
 from elbow_helper.features.agent.capabilities.cwl.bonus_review import prepare_cwl_bonus_review
 
 
@@ -27,6 +28,10 @@ class CwlBonusReviewActionTests(unittest.IsolatedAsyncioTestCase):
                 context, {"clan_code": "BEH", "decision": "hold"})
         self.assertEqual(result["status"], "confirmation_required")
         action = context.state.proposed_changes[0]
+        self.assertEqual(action.preview.detail_sources, frozenset({CWL_HQ_CHANNEL_ID}))
+        self.assertFalse(any("needs_review" in line for line in action.preview.lines))
+        self.assertTrue(any("needs_review" in line for line in action.preview.details))
+        self.assertNotIn("needs_review", str(result))
         self.assertTrue(await action.preview.recheck())
         workflow.set_bonus_review_status.assert_not_awaited()
         outcome = await action.run()

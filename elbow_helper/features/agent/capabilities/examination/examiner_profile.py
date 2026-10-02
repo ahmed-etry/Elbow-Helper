@@ -146,7 +146,7 @@ async def prepare_examiner_profile(context: AgentRequestContext,
         return {"status": "no_change"}
     lines = [ACTION_EXAMINER_PROFILE_LINE.format(member=context.member.mention,
                                                  channel=channel.mention)]
-    lines.extend(ACTION_FIELD_CHANGE.format(
+    details = tuple(ACTION_FIELD_CHANGE.format(
         field=key.replace("_", " ").title(), old=before.get(key) or "Not set",
         new=after.get(key) or "Not set") for key in changed)
 
@@ -167,6 +167,7 @@ async def prepare_examiner_profile(context: AgentRequestContext,
     context.state.proposed_changes.append(PreparedAction(
         "set_examiner_profile", {"member_id": context.member.id},
         ChangePreview(tuple(lines), recheck, summary=ACTION_EXAMINER_PROFILE_LABEL,
+                      details=details, detail_sources=frozenset({channel.id}),
                       before={"profile": {key: before[key] for key in PROFILE_FIELDS},
                               "existed": existed}), run,
     ))
@@ -197,7 +198,8 @@ async def prepare_examiner_leave(context: AgentRequestContext,
 
     context.state.proposed_changes.append(PreparedAction(
         "leave_examiner_roster", {"member_id": context.member.id},
-        ChangePreview(lines, recheck, summary=ACTION_EXAMINER_PROFILE_LEAVE_LABEL),
+        ChangePreview(lines, recheck, summary=ACTION_EXAMINER_PROFILE_LEAVE_LABEL,
+                      detail_sources=frozenset({channel.id})),
         run, action_class=ActionClass.IRREVERSIBLE,
     ))
     return {"status": "confirmation_required"}
@@ -213,7 +215,7 @@ async def prepare_examiner_profile_undo(context: AgentRequestContext,
         raise ValueError("That examiner profile isn't available.")
     lines = [ACTION_EXAMINER_PROFILE_LINE.format(member=context.member.mention,
                                                  channel=channel.mention)]
-    lines.extend(ACTION_FIELD_CHANGE.format(
+    details = tuple(ACTION_FIELD_CHANGE.format(
         field=key.replace("_", " ").title(), old=current[key] or "Not set",
         new=prior["profile"][key] or "Not set")
         for key in PROFILE_FIELDS if current[key] != prior["profile"][key])
@@ -235,6 +237,7 @@ async def prepare_examiner_profile_undo(context: AgentRequestContext,
     return PreparedAction(
         "undo_examiner_profile", {"member_id": context.member.id},
         ChangePreview(tuple(lines), recheck, summary=ACTION_EXAMINER_PROFILE_LABEL,
+                      details=details, detail_sources=frozenset({channel.id}),
                       before=expected), run,
     )
 

@@ -19,6 +19,8 @@ from .models import AgentAttachment, AgentDelivery, AgentRequestContext
 from .engine.service import AgentUnavailableError
 from .actions.private_view import PrivateResultView
 from .actions.preview import ConfirmationView
+from .actions.preview import preview_text
+from .actions.details import prepare_preview
 from .text import chunk_response as _chunk_response
 
 LOGGER = logging.getLogger(__name__)
@@ -43,6 +45,11 @@ class AgentDeliveryMixin:
         delivery: AgentDelivery | None = None,
         context: AgentRequestContext | None = None,
     ) -> None:
+        if context is not None and context.state.proposed_changes:
+            previous_preview = preview_text(context.state.proposed_changes)
+            await prepare_preview(context)
+            if response.startswith(previous_preview):
+                response = preview_text(context.state.proposed_changes) + response[len(previous_preview):]
         allowed_users: dict[int, discord.abc.User] = {
             member.id: member
             for member in message.mentions

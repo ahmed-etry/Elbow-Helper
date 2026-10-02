@@ -9,7 +9,7 @@ import discord
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
-from ...access import require_evidence_access
+from ...access import ACCESS_LEAD, require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
@@ -51,6 +51,7 @@ def role_connection_management_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
             time_fields=(),
             source_scope="request_context",
+            required_access=frozenset({ACCESS_LEAD}),
             filter_fields=("operation", "all", "any"),
         ),
              )
@@ -70,6 +71,7 @@ def role_connection_management_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
             time_fields=(),
             source_scope="request_context",
+            required_access=frozenset({ACCESS_LEAD}),
         ),
              )
     return manage, remove
@@ -128,6 +130,7 @@ async def prepare_role_connection_change(context: AgentRequestContext,
         previous = context.guild.get_role(before["target_role_id"])
         lines.append(ACTION_CONNECTION_MANAGE_TARGET.format(
             old=previous.mention if previous else before["target_role_id"], new=role.mention))
+    details = []
     for list_name in ("all", "any"):
         old_rules = before.get(list_name, []) if before is not None else []
         new_rules = after.get(list_name, []) if after is not None else []
@@ -136,13 +139,13 @@ async def prepare_role_connection_change(context: AgentRequestContext,
         for rule in old_rules:
             kind, role_id = next(iter(rule.items()))
             condition_role = context.guild.get_role(role_id)
-            lines.append(ACTION_CONNECTION_MANAGE_OLD_RULE.format(
+            details.append(ACTION_CONNECTION_MANAGE_OLD_RULE.format(
                 group=list_name, kind=kind,
                 role=condition_role.mention if condition_role else f"<@&{role_id}>"))
         for rule in new_rules:
             kind, role_id = next(iter(rule.items()))
             condition_role = context.guild.get_role(role_id)
-            lines.append(ACTION_CONNECTION_MANAGE_NEW_RULE.format(
+            details.append(ACTION_CONNECTION_MANAGE_NEW_RULE.format(
                 group=list_name, kind=kind,
                 role=condition_role.mention if condition_role else f"<@&{role_id}>"))
     lines.append(ACTION_CONNECTION_MANAGE_BOARD.format(channel=channel.mention))
@@ -177,6 +180,7 @@ async def prepare_role_connection_change(context: AgentRequestContext,
         "manage_role_connection", {"connection_id": connection_id,
                                    "channel_id": channel.id},
         ChangePreview(tuple(lines), recheck, summary=ACTION_CONNECTION_MANAGE_LABEL,
+                      details=tuple(details), detail_access=frozenset({ACCESS_LEAD}),
                       before={"connection": before}),
         run, action_class=ActionClass.IRREVERSIBLE if operation == "remove" else ActionClass.CHANGE,
     ))
@@ -223,7 +227,7 @@ async def prepare_role_connection_undo(context: AgentRequestContext,
             operation="Restore" if prior is not None else "Remove",
             role=role.mention), ACTION_CONNECTION_MANAGE_BOARD.format(channel=channel.mention)),
             recheck, summary=ACTION_CONNECTION_MANAGE_LABEL,
-            before={"connection": expected}),
+            detail_access=frozenset({ACCESS_LEAD}), before={"connection": expected}),
         run,
     )
 

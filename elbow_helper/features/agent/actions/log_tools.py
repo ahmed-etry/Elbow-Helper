@@ -13,6 +13,7 @@ from ..access import require_evidence_access
 from ..models import AgentRequestContext, RegisteredAgentTool
 from ..models import AgentCapabilityEffect
 from .contracts import ActionClass
+from .targets import target_links
 
 
 def action_log_tools() -> tuple[RegisteredAgentTool, ...]:
@@ -64,7 +65,7 @@ async def read_agent_action_log(
             "action_name": row["action_name"],
             "action_label": row["action_label"],
             "action_class": row["action_class"],
-            "targets": json.loads(row["targets_json"]),
+            "target_links": target_links(context.guild.id, json.loads(row["targets_json"])),
             "outcome": row["outcome"],
             "executed_at": row["executed_at"],
         } for row in rows[:limit]],

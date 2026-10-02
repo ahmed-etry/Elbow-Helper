@@ -26,7 +26,7 @@ from ..wording import (
     ACTION_EDIT_LABEL, ACTION_EDIT_LINE,
     ACTION_PINGS_LINE, ACTION_POST_FUTURE_LINE,
     ACTION_POST_LABEL, ACTION_POST_LINE,
-    ACTION_UNDO_CHANGED,
+    ACTION_UNDO_CHANGED, ACTION_PREVIEW_BLANK,
 )
 from .safety import (DiscordActionRefused, check_post_access,
                              check_view_access, resolve_channel)
@@ -209,14 +209,14 @@ def _deferred_post_part(context: AgentRequestContext, reference: Mapping[str, An
             attachment=attachment, ping_line=ping_line,
         )
 
-    lines = (ACTION_POST_FUTURE_LINE.format(target=target_label),
-             *text.splitlines(), *ping_line)
+    lines = (ACTION_POST_FUTURE_LINE.format(target=target_label), *ping_line)
+    details = tuple(text.splitlines())
     if attachment is not None:
-        lines += (ACTION_ATTACH_LINE.format(filename=attachment.filename),)
+        details += (ACTION_ATTACH_LINE.format(filename=attachment.filename),)
     return PreparedAction(
         "post_discord_message", {"channel_id": dict(reference), "text": text},
         ChangePreview(lines, recheck, summary=ACTION_POST_LABEL,
-                      result_label=target_label),
+                      details=details, result_label=target_label),
         unavailable, permission="Send Messages", bind=bind,
     )
 
@@ -280,13 +280,14 @@ def _post_part(context: AgentRequestContext, channel_id: int, text: str,
 
     channel = context.guild.get_channel_or_thread(channel_id)
     label = channel.mention if channel is not None else f"channel {channel_id}"
-    lines = (ACTION_POST_LINE.format(channel=label), *text.splitlines(), *ping_line)
+    lines = (ACTION_POST_LINE.format(channel=label), *ping_line)
+    details = tuple(text.splitlines())
     if attachment is not None:
-        lines += (ACTION_ATTACH_LINE.format(filename=attachment.filename),)
+        details += (ACTION_ATTACH_LINE.format(filename=attachment.filename),)
     return PreparedAction(
         "post_discord_message", {"channel_id": channel_id, "text": text, "nonce": nonce},
         ChangePreview(lines, recheck, summary=ACTION_POST_LABEL,
-                      result_label=label),
+                      details=details, result_label=label),
         run, verify=verify, permission="Send Messages",
     )
 
@@ -360,14 +361,15 @@ def _edit_action(context: AgentRequestContext, channel_id: int, message_id: int,
 
     channel = context.guild.get_channel_or_thread(channel_id)
     label = channel.mention if channel is not None else f"channel {channel_id}"
-    lines = (ACTION_EDIT_LINE.format(channel=label), *new_text.splitlines(),
+    lines = (ACTION_EDIT_LINE.format(channel=label),
              *_ping_line(context, mention_values),
              *((ACTION_UNDO_CHANGED,) if changed else ()))
     return PreparedAction(
         "undo_agent_message_edit" if undo else "edit_agent_message",
         {"channel_id": channel_id, "message_id": message_id, "text": new_text},
         ChangePreview(lines, recheck, summary=ACTION_EDIT_LABEL,
-                      before={"content": old_text}),
+                      details=tuple(new_text.splitlines()),
+                      detail_sources=frozenset({channel_id}), before={"content": old_text}),
         run, verify=verify, permission="Send Messages",
     )
 
@@ -425,12 +427,12 @@ async def prepare_delete(context: AgentRequestContext,
             return True
         return False
 
-    lines = (ACTION_DELETE_LINE.format(channel=channel.mention),
-             *(before.splitlines() or ("-",)))
+    lines = (ACTION_DELETE_LINE.format(channel=channel.mention),)
     context.state.proposed_changes.append(PreparedAction(
         "delete_agent_message", dict(arguments),
         ChangePreview(lines, recheck, summary=ACTION_DELETE_LABEL,
-                      before={"content": before}),
+                      details=tuple(before.splitlines() or (ACTION_PREVIEW_BLANK,)),
+                      detail_sources=frozenset({channel.id}), before={"content": before}),
         run, ActionClass.IRREVERSIBLE, verify=verify,
         permission="Manage Messages",
     ))

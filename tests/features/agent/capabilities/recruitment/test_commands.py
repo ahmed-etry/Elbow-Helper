@@ -37,7 +37,8 @@ class RecruitmentStatementCommandTests(unittest.IsolatedAsyncioTestCase):
                           "additional_notes": "Please reply here."}
                 preview = await prepare_recstatement(context, values)
                 self.assertTrue(await preview.recheck())
-                self.assertIn("(blank line)", preview.lines)
+                self.assertIn("(blank line)", preview.details)
+                self.assertNotIn("(blank line)", preview.lines)
                 count = channel.send.await_count
                 outcome = await run_recstatement(context, values)
                 self.assertEqual(outcome.visibility, "private")

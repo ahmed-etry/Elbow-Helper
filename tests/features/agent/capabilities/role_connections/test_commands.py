@@ -37,7 +37,7 @@ class RoleConnectionCommandTests(unittest.IsolatedAsyncioTestCase):
         with patch("elbow_helper.features.agent.capabilities.role_connections.commands.discord.TextChannel",
                    SimpleNamespace):
             preview = await prepare_connections(context, {})
-            self.assertIn("Synthetic rule", preview.lines)
+            self.assertIn("Synthetic rule", preview.details)
             self.assertTrue(await preview.recheck())
             workflow.post_connections_message.assert_not_awaited()
             outcome = await run_connections(context, {})

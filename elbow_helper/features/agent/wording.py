@@ -34,6 +34,8 @@ ACTION_RESULT_EXPIRED = "That result has expired. Run the request again."
 ACTION_RESULT_OWNER = "Only the member who asked can open this result."
 
 ACTION_PREVIEW_HEADER = "Confirm these changes:"
+ACTION_PREVIEW_DETAILS_HIDDEN = "Details are hidden in this channel."
+ACTION_PREVIEW_DETAILS_BUTTON = "Show details"
 ACTION_CONFIRM_BUTTON = "Confirm"
 ACTION_CANCEL_BUTTON = "Cancel"
 ACTION_CANCELLED = "Cancelled."

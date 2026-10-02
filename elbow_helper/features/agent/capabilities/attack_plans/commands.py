@@ -55,10 +55,11 @@ async def prepare_attack_plan(context: Any,
         ACTION_PLAN_STRATEGY.format(url=strategy_image.url),
         ACTION_PLAN_BASE.format(url=base_image.url),
     ))
+    details = []
     for index, page in enumerate(prepared["embeds"].pages, start=1):
-        lines.append(ACTION_PLAN_PAGE.format(number=index))
+        details.append(ACTION_PLAN_PAGE.format(number=index))
         for embed in prepared["embeds"].embeds_for_page(index - 1):
-            lines.extend(line or ACTION_PREVIEW_BLANK
+            details.extend(line or ACTION_PREVIEW_BLANK
                          for line in embed_text(embed).splitlines())
 
     async def recheck() -> bool:
@@ -87,7 +88,8 @@ async def prepare_attack_plan(context: Any,
         }, after={"channel_id": channel.id, "message_id": message.id})
 
     return PreparedCommandChange(
-        ChangePreview(tuple(lines), recheck, summary=ACTION_PLAN_LABEL), run,
+        ChangePreview(tuple(lines), recheck, summary=ACTION_PLAN_LABEL,
+                      details=tuple(details), detail_sources=frozenset({channel.id})), run,
     )
 
 

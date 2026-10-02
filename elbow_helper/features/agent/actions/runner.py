@@ -6,14 +6,15 @@ import asyncio
 import logging
 import json
 from itertools import groupby
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 from uuid import uuid4
 
 import discord
 
-from ..access import require_access
+from ..access import require_access, require_access_requirements, accessible_message_channel, AgentAccessLost
+from ..disclosure import can_disclose_provenance
 from ..disclosure import require_disclosure_access
 from .outcomes import ActionOutcome
 from .private_view import PrivateResultView
@@ -208,6 +209,7 @@ class AgentActionRunner:
         try:
             require_access(context.guild, context.member.id, channel)
             await require_disclosure_access(context)
+            details_hidden = await self._detail_visibility(context, action)
             if action.bind is not None:
                 current_action = await action.bind(output.results)
                 if (current_action.action_class is not action.action_class
@@ -229,6 +231,8 @@ class AgentActionRunner:
                 raise ValueError("Action did not complete")
             if current_action.verify is not None and await current_action.verify() is False:
                 raise ValueError("Action could not be verified")
+            if details_hidden:
+                result = replace(result, visibility="private")
             if result.visibility == "private":
                 output.private_parts.extend((result.text,) if result.text else ())
                 output.private_parts.extend(result.private_parts)
@@ -261,6 +265,21 @@ class AgentActionRunner:
             return await self._failed_step(
                 run_id, index, owner, current_action, error,
             )
+
+    async def _detail_visibility(self, context, action) -> bool:
+        if action.preview.detail_access:
+            require_access_requirements(
+                context.guild, context.member.id, action.preview.detail_access,
+            )
+        for identifier in action.preview.detail_sources:
+            if await accessible_message_channel(context, identifier) is None:
+                raise AgentAccessLost("Action detail source is no longer readable")
+        details_hidden = action.details_hidden
+        if action.preview.detail_sources or action.preview.detail_access:
+            details_hidden |= not await can_disclose_provenance(
+                context, action.preview.detail_sources, action.preview.detail_access,
+            )
+        return details_hidden
 
     async def _failed_step(self, run_id, index, owner, current_action, error) -> str:
         status = "uncertain" if _uncertain(error) else "failed"
@@ -327,10 +346,8 @@ class AgentActionRunner:
             group = list(items)
             summaries.append(f"{group[0]['action_label']} ({len(group)})")
         finished = ", ".join(summaries) or ACTION_NO_CHANGES
-        remaining = [line.strip() or "-" for step in run["steps"]
-                     if step["status"] != "completed"
-                     for item in json.loads(step["preview_json"])
-                     for line in item.split("\n")]
+        remaining = [step["action_label"] for step in run["steps"]
+                     if step["status"] != "completed"]
         if not remaining:
             return ACTION_RUN_DONE.format(finished=finished)
         return ACTION_CONFIRM_FAILED.format(

@@ -25,11 +25,14 @@ class ChangePreview:
     count: int = 1
     before: Any = None
     result_label: str = ""
+    details: tuple[str, ...] = ()
+    detail_sources: frozenset[int] = frozenset()
+    detail_access: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
-        if not self.lines or not callable(self.recheck) or self.count < 1:
-            raise ValueError("A change needs preview lines and a precondition")
-        for name in ("lines",):
+        if not (self.lines or self.summary) or not callable(self.recheck) or self.count < 1:
+            raise ValueError("A change needs a preview and a precondition")
+        for name in ("lines", "details"):
             object.__setattr__(self, name, tuple(
                 line if line.strip() else ACTION_PREVIEW_BLANK
                 for line in getattr(self, name)
@@ -48,6 +51,7 @@ class PreparedAction:
     permission: str = ""
     step_id: str = ""
     bind: Callable[[Mapping[str, Mapping[str, Any]]], Awaitable["PreparedAction"]] | None = None
+    details_hidden: bool = False
 
     def __post_init__(self) -> None:
         if self.action_class not in (ActionClass.CHANGE, ActionClass.IRREVERSIBLE):
@@ -80,5 +84,7 @@ def earlier_result_label(actions: Sequence[PreparedAction],
     """Describe a referenced action using its preview, never its plan step ID."""
     for action in reversed(actions):
         if action.step_id == reference.get("step"):
-            return action.preview.result_label or action.preview.lines[0].strip()
+            return (action.preview.result_label
+                    or (action.preview.lines[0].strip() if action.preview.lines
+                        else action.preview.summary))
     raise ValueError("The earlier action has no preview label")

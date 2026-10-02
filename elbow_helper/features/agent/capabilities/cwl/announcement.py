@@ -69,7 +69,7 @@ async def prepare_roster_announcement(
     lines.extend(ACTION_CWL_ANNOUNCEMENT_CYCLE.format(
         name=name,
     ) for name in names)
-    lines.extend(line or ACTION_PREVIEW_BLANK for line in content.splitlines())
+    details = tuple(line or ACTION_PREVIEW_BLANK for line in content.splitlines())
 
     async def recheck() -> bool:
         live_channel = await workflow.resolve_roster_announcement_channel()
@@ -107,7 +107,7 @@ async def prepare_roster_announcement(
 
     return PreparedCommandChange(
         ChangePreview(tuple(lines), recheck,
-                      summary=ACTION_CWL_ANNOUNCEMENT_LABEL,
+                      summary=ACTION_CWL_ANNOUNCEMENT_LABEL, details=details,
                       before={"released_cycles": prior_release}),
         run,
     )

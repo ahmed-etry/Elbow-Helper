@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from typing import Any
 import discord
 from elbow_helper.features.agent.discord_actions.safety import check_member, check_role
+from ...access import ACCESS_LEAD_PLUS
 from ...actions.contracts import ActionClass, ChangePreview
 from ...wording import (
     ACTION_ROSTER_NO_ROLE,
@@ -140,7 +141,9 @@ async def prepare_roster_timing(context: Any,
                                      "one_off_close_ts": actual.one_off_close_ts})
 
     return PreparedCommandChange(
-        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_TIMING_LABEL,
+        ChangePreview(tuple(lines), recheck,
+                      summary=ACTION_ROSTER_TIMING_LABEL,
+                      detail_access=frozenset({ACCESS_LEAD_PLUS}),
                       before={"roster_id": roster.id,
                               "one_off_open_ts": roster.one_off_open_ts,
                               "one_off_close_ts": roster.one_off_close_ts}),
@@ -197,12 +200,13 @@ async def prepare_roster_schedule(context: Any,
         (ACTION_ROSTER_SCHEDULE_ENABLE if plan["enabled"]
          else ACTION_ROSTER_SCHEDULE_DISABLE).format(name=roster.name),
     ]
+    details = []
     for key, new in plan["changes"].items():
         old = getattr(roster, key)
         if key in ("schedule_enabled", "reset_on_open"):
             old = ACTION_VALUE_YES if old else ACTION_VALUE_NO
             new = ACTION_VALUE_YES if new else ACTION_VALUE_NO
-        lines.append(ACTION_FIELD_CHANGE.format(
+        details.append(ACTION_FIELD_CHANGE.format(
             field=ACTION_ROSTER_SCHEDULE_FIELDS[key],
             old=old if old is not None else ACTION_ROSTER_NO_ROLE,
             new=new if new is not None else ACTION_ROSTER_NO_ROLE,
@@ -267,7 +271,9 @@ async def prepare_roster_schedule(context: Any,
         )
 
     return PreparedCommandChange(
-        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_SCHEDULE_LABEL,
+        ChangePreview(tuple(lines), recheck,
+                      summary=ACTION_ROSTER_SCHEDULE_LABEL, details=tuple(details),
+                      detail_access=frozenset({ACCESS_LEAD_PLUS}),
                       before={"roster_id": roster.id,
                               "schedule_enabled": roster.schedule_enabled}),
         run,

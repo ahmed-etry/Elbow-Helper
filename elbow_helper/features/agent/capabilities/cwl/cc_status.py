@@ -80,7 +80,8 @@ async def prepare_cc_status(context: AgentRequestContext,
 
     context.state.proposed_changes.append(PreparedAction(
         "set_cwl_cc_status", {"clan_code": values["clan_code"]},
-        ChangePreview(lines, recheck, summary=ACTION_CC_STATUS_LABEL,
+        ChangePreview((lines[0], lines[2]), recheck, summary=ACTION_CC_STATUS_LABEL,
+                      details=(lines[1],), detail_sources=frozenset({thread.id}),
                       before={"status": snapshot["status"] or "empty",
                               "war_tag": snapshot["war_tag"]}), run,
     ))
@@ -119,7 +120,8 @@ async def prepare_cc_status_undo(context: AgentRequestContext,
 
     return PreparedAction(
         "undo_cwl_cc_status", {"clan_code": clan},
-        ChangePreview(lines, recheck, summary=ACTION_CC_STATUS_LABEL,
+        ChangePreview((lines[0], lines[2]), recheck, summary=ACTION_CC_STATUS_LABEL,
+                      details=(lines[1],), detail_sources=frozenset({thread.id}),
                       before=log["after"]), run,
     )
 

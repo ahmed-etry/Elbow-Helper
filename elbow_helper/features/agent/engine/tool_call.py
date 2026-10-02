@@ -15,6 +15,7 @@ from typing import Any
 import discord
 from elbow_helper.infrastructure.ai import AgentToolResult
 from ..models import AgentRequestContext
+from ..actions.contracts import ActionClass, PreparedAction
 from ..access import AgentAccessLost
 from ..disclosure import AgentDisclosureDenied
 from ..access import require_access_requirements
@@ -36,6 +37,7 @@ async def execute_tool(
     capability_scope: Mapping[str, Any] | None = None,
     context: AgentRequestContext,
     timeout_seconds: float = limits.TOOL_TIMEOUT_SECONDS,
+    action_class: ActionClass = ActionClass.READ,
 ) -> str:
     snapshot = tool_state_snapshot(context)
     started_at = time.monotonic()
@@ -63,6 +65,8 @@ async def execute_tool(
                 payload,
             )
         record_report_provenance(context, snapshot["reports"])
+        if action_class in (ActionClass.CHANGE, ActionClass.IRREVERSIBLE):
+            capture_detail_provenance(context, snapshot, capability_scope or {})
         sources = await require_evidence_access(context)
         await require_destination_access(context, sources)
         outcome = "completed"
@@ -129,6 +133,27 @@ async def execute_tool(
             getattr(context.source_message, "id", None),
             result_characters,
         )
+
+
+def capture_detail_provenance(context, snapshot, scope) -> None:
+    """Keep preparation reads with the change rather than the public answer."""
+    sources = frozenset(context.state.source_channels - snapshot["source_channels"])
+    sources |= frozenset(scope.get("bound_source_channels", ()))
+    access = frozenset(context.state.required_access - snapshot["required_access"])
+    access |= frozenset(scope.get("required_access", ()))
+    for index in range(len(snapshot["proposed_changes"]), len(context.state.proposed_changes)):
+        proposal = context.state.proposed_changes[index]
+        if isinstance(proposal, PreparedAction):
+            context.state.proposed_changes[index] = replace(
+                proposal,
+                preview=replace(
+                    proposal.preview,
+                    detail_sources=proposal.preview.detail_sources | sources,
+                    detail_access=proposal.preview.detail_access | access,
+                ),
+            )
+    context.state.source_channels = set(snapshot["source_channels"])
+    context.state.required_access = set(snapshot["required_access"])
 
 
 def evidence_record(

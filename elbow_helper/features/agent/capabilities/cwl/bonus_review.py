@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
+from elbow_helper.features.cwl.config import CWL_HQ_CHANNEL_ID
 
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
@@ -69,8 +70,8 @@ async def prepare_cwl_bonus_review(context: AgentRequestContext,
             raise ValueError(issue or 'That CWL bonus review is unavailable.')
     lines = [ACTION_CWL_BONUS_REVIEW_LINE.format(
         decision=decision, clan=clan_code, month=state["month_label"], mode=mode)]
-    lines.append(ACTION_CWL_BONUS_REVIEW_STATUS.format(
-        old=state["clan"].get("status", "not started"), new=decision))
+    details = [ACTION_CWL_BONUS_REVIEW_STATUS.format(
+        old=state["clan"].get("status", "not started"), new=decision)]
     if candidate is not None:
         lines.extend(ACTION_CWL_BONUS_REVIEW_MEMBER.format(member=f"<@{member_id}>")
                      for member_id in candidate.recipient_ids)
@@ -79,9 +80,9 @@ async def prepare_cwl_bonus_review(context: AgentRequestContext,
         preview = workflow.bonus_review_preview(candidate)
         for field in preview.fields:
             if field.name == "Rewards":
-                lines.extend(line for line in str(field.value).splitlines() if line.strip())
-        lines.append(ACTION_CWL_BONUS_REVIEW_POST)
-        lines.extend(line if line.strip() else ACTION_PREVIEW_BLANK
+                details.extend(line for line in str(field.value).splitlines() if line.strip())
+        details.append(ACTION_CWL_BONUS_REVIEW_POST)
+        details.extend(line if line.strip() else ACTION_PREVIEW_BLANK
                      for line in candidate.source_text.splitlines())
 
     async def recheck() -> bool:
@@ -110,7 +111,10 @@ async def prepare_cwl_bonus_review(context: AgentRequestContext,
     context.state.proposed_changes.append(PreparedAction(
         "review_cwl_bonus", {"clan_code": clan_code, "mode": mode,
                               "month_key": month_key, "decision": decision},
-        ChangePreview(tuple(lines), recheck, summary=ACTION_CWL_BONUS_REVIEW_LABEL),
+        ChangePreview(tuple(lines), recheck, summary=ACTION_CWL_BONUS_REVIEW_LABEL,
+                      details=tuple(details), detail_sources=frozenset({CWL_HQ_CHANNEL_ID})
+                      | frozenset({candidate.source_channel_id} if candidate is not None
+                                  and candidate.source_channel_id is not None else ())),
         run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}

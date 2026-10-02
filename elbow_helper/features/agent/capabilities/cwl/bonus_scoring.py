@@ -9,7 +9,7 @@ from typing import Any
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
-from ...access import require_evidence_access
+from ...access import ACCESS_LEAD, require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
@@ -50,6 +50,7 @@ def cwl_bonus_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
             entity_fields=(("clan_code", "clan"), ("source_clan", "clan")),
             time_fields=(),
             source_scope="request_context",
+            required_access=frozenset({ACCESS_LEAD}),
             filter_fields=(
                 "operation",
                 "attacker_th",
@@ -152,7 +153,8 @@ async def prepare_cwl_bonus_scoring(context: AgentRequestContext,
 
     context.state.proposed_changes.append(PreparedAction(
         "set_cwl_bonus_scoring", {"clan_code": clan},
-        ChangePreview(tuple(lines), recheck, summary=ACTION_BONUS_SCORING_LABEL,
+        ChangePreview(tuple(lines[:1]), recheck, summary=ACTION_BONUS_SCORING_LABEL,
+                      details=tuple(lines[1:]), detail_access=frozenset({ACCESS_LEAD}),
                       before={"payload": before}), run,
     ))
     return {"status": "confirmation_required"}
@@ -188,7 +190,8 @@ async def prepare_cwl_bonus_scoring_undo(context: AgentRequestContext,
 
     return PreparedAction(
         "undo_cwl_bonus_scoring", {"clan_code": clan},
-        ChangePreview(tuple(lines), recheck, summary=ACTION_BONUS_SCORING_LABEL,
+        ChangePreview(tuple(lines[:1]), recheck, summary=ACTION_BONUS_SCORING_LABEL,
+                      details=tuple(lines[1:]), detail_access=frozenset({ACCESS_LEAD}),
                       before={"payload": expected}), run,
     )
 

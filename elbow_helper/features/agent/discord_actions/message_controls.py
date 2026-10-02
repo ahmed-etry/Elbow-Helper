@@ -139,7 +139,7 @@ def _control_action(context: AgentRequestContext, *, channel_id: int,
          **({"emoji": emoji} if reaction else {})},
         ChangePreview((line, *((ACTION_UNDO_CHANGED,) if changed else ())),
                       recheck, summary=(ACTION_REACTION_LABEL if reaction else ACTION_PIN_LABEL),
-                      before={"active": before}),
+                      before={"active": before}, detail_sources=frozenset({channel_id})),
         run, verify=verify,
         permission=("Add Reactions" if add else "Read Message History") if reaction
                    else "Manage Messages",

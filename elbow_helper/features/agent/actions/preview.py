@@ -9,6 +9,9 @@ from typing import Any
 import discord
 
 from .contracts import ActionClass, PreparedAction, check_bundle
+from .details import detail_lines
+from ..access import AgentAccessLost, accessible_message_channel, require_access, require_access_requirements
+from ..text import chunk_response
 from ..wording import (
     ACTION_CANNOT_UNDO, ACTION_PREVIEW_SUMMARY, ACTION_PREVIEW_BLANK,
     ACTION_PREVIEW_UNIT_MANY, ACTION_PREVIEW_UNIT_ONE,
@@ -16,6 +19,8 @@ from ..wording import (
     ACTION_PREVIEW_EXPIRED,
     ACTION_PREVIEW_HEADER, ACTION_PREVIEW_OWNER,
     ACTION_PREVIEW_USED, ACTION_UNAVAILABLE,
+    ACTION_PREVIEW_DETAILS_HIDDEN, ACTION_PREVIEW_DETAILS_BUTTON,
+    ACTION_RESULT_OWNER, ACTION_RESULT_EXPIRED,
 )
 from .private_view import PrivateResultView
 
@@ -44,8 +49,17 @@ def preview_text(proposals: list[PreparedAction]) -> str:
             count=count,
             unit=ACTION_PREVIEW_UNIT_ONE if count == 1 else ACTION_PREVIEW_UNIT_MANY,
         ))
-        lines.extend(part.strip() or ACTION_PREVIEW_BLANK for item in group
-                     for line in item.preview.lines for part in line.split("\n"))
+        for item in group:
+            preview = item.preview
+            hidden_fallback = item.details_hidden and not preview.details
+            if not hidden_fallback:
+                lines.extend(part.strip() or ACTION_PREVIEW_BLANK for line in preview.lines
+                             for part in line.split("\n"))
+            if item.details_hidden:
+                lines.append(ACTION_PREVIEW_DETAILS_HIDDEN)
+            else:
+                lines.extend(part.strip() or ACTION_PREVIEW_BLANK for line in preview.details
+                             for part in line.split("\n"))
         if proposal.action_class is ActionClass.IRREVERSIBLE:
             lines.append(ACTION_CANNOT_UNDO)
     return ACTION_PREVIEW_HEADER + "\n" + "\n".join(lines)
@@ -63,6 +77,7 @@ class ConfirmationView(discord.ui.View):
         self.message = None
         self.preview = preview_text(proposals)
         self.expired = False
+        self.details_expired = False
         self.used = False
         self._lock = asyncio.Lock()
         confirm = discord.ui.Button(label=ACTION_CONFIRM_BUTTON, style=discord.ButtonStyle.success)
@@ -71,6 +86,12 @@ class ConfirmationView(discord.ui.View):
         cancel.callback = self.cancel
         self.add_item(confirm)
         self.add_item(cancel)
+        if any(proposal.details_hidden for proposal in proposals):
+            details_button = discord.ui.Button(
+                label=ACTION_PREVIEW_DETAILS_BUTTON, style=discord.ButtonStyle.secondary,
+            )
+            details_button.callback = self.show_details
+            self.add_item(details_button)
         if private_result is not None:
             private_button = discord.ui.Button(
                 label=private_result.children[0].label,
@@ -82,6 +103,36 @@ class ConfirmationView(discord.ui.View):
     def _disable(self) -> None:
         for item in self.children[:2]:
             item.disabled = True
+
+    async def show_details(self, interaction: discord.Interaction) -> None:
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message(ACTION_RESULT_OWNER, ephemeral=True)
+            return
+        if self.expired or self.details_expired:
+            await interaction.response.send_message(ACTION_RESULT_EXPIRED, ephemeral=True)
+            return
+        try:
+            require_access(self.context.guild, self.owner_id, self.context.source_message.channel)
+            for action in self.proposals:
+                if not action.details_hidden:
+                    continue
+                require_access_requirements(
+                    self.context.guild, self.owner_id, action.preview.detail_access,
+                )
+                for identifier in action.preview.detail_sources:
+                    if await accessible_message_channel(self.context, identifier) is None:
+                        raise AgentAccessLost("Preview source is no longer readable")
+        except AgentAccessLost:
+            self.details_expired = True
+            await interaction.response.send_message(ACTION_RESULT_EXPIRED, ephemeral=True)
+            return
+        parts = chunk_response("\n".join(
+            line for action in self.proposals if action.details_hidden
+            for line in detail_lines(action)
+        ))
+        for index, part in enumerate(parts):
+            sender = interaction.followup.send if index else interaction.response.send_message
+            await sender(part, ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
     def _replacement(self, notice: str) -> str:
         content = getattr(self.message, "content", "")

@@ -46,10 +46,11 @@ async def prepare_transfer_reminder(
         lines.append(ACTION_TRANSFER_REMINDER_DELETE.format(
             channel=f"<#{entry['channel_id']}>",
             ))
+    details = []
     for number, chunk in enumerate(prepared["chunks"], start=1):
-        lines.append(ACTION_TRANSFER_REMINDER_PAGE.format(number=number))
-        lines.extend(line or ACTION_PREVIEW_BLANK for line in chunk.splitlines())
-    lines.extend(line or ACTION_PREVIEW_BLANK
+        details.append(ACTION_TRANSFER_REMINDER_PAGE.format(number=number))
+        details.extend(line or ACTION_PREVIEW_BLANK for line in chunk.splitlines())
+    details.extend(line or ACTION_PREVIEW_BLANK
                  for warning in prepared["result_lines"]
                  for line in warning.splitlines())
 
@@ -98,7 +99,7 @@ async def prepare_transfer_reminder(
 
     return PreparedCommandChange(
         ChangePreview(tuple(lines), recheck,
-                      summary=ACTION_TRANSFER_REMINDER_LABEL,
+                      summary=ACTION_TRANSFER_REMINDER_LABEL, details=tuple(details),
                       before={"previous_entries": prepared["previous_entries"]}),
         run,
     )

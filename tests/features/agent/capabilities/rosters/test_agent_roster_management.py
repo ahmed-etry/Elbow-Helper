@@ -45,7 +45,7 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
                    new_callable=AsyncMock):
             await tool.handler(context, {"roster_id": 17, "show_clan": False})
         action = context.state.proposed_changes[0]
-        self.assertTrue(any("Show Clan: True to False" in line for line in action.preview.lines))
+        self.assertTrue(any("Show Clan: True to False" in line for line in action.preview.details))
         self.assertTrue(await action.preview.recheck())
         workflow.set_roster_layout.assert_not_awaited()
         result = await action.run()

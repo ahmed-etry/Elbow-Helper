@@ -63,7 +63,7 @@ class CwlAnnouncementCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await change.preview.recheck())
         self.assertIn("**CWL signup**", change.preview.lines)
         self.assertTrue(any("link created on Confirm" in line
-                            for line in change.preview.lines))
+                            for line in change.preview.details))
         workflow.post_roster_announcement.assert_not_awaited()
         result = await change.run()
         self.assertEqual(result.result["message_ids"], [99])
@@ -90,7 +90,7 @@ class CwlBriefCommandTests(unittest.IsolatedAsyncioTestCase):
         }
         preview = await prepare_cwl_brief(context, values)
         self.assertIn("#cwl-info", preview.lines[0])
-        self.assertGreater(len(preview.lines), 1)
+        self.assertTrue(preview.details)
         self.assertTrue(await preview.recheck())
         workflow._send_chunked.assert_not_awaited()
         outcome = await run_cwl_brief(context, values)
@@ -129,7 +129,7 @@ class CwlRegistrationCommandTests(unittest.IsolatedAsyncioTestCase):
         values = {"clan": clan, "thread_id": "20"}
         preview = await prepare_cwl_register(context, values)
         self.assertIn("Replace prior thread <#10>.", preview.lines)
-        self.assertTrue(any("CWL Thread Ready" in line for line in preview.lines))
+        self.assertTrue(any("CWL Thread Ready" in line for line in preview.details))
         self.assertTrue(await preview.recheck())
         thread.send.assert_not_awaited()
         result = await run_cwl_register(context, values)

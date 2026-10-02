@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from elbow_helper.configuration.roles import LEAD_PLUS
+from elbow_helper.features.agent.access import ACCESS_LEAD_PLUS
 from elbow_helper.features.agent.actions.contracts import ActionClass, check_bundle
 from elbow_helper.features.agent.capabilities.records.commands import (
     prepare_record_add, prepare_record_add_undo, prepare_record_edit,
@@ -86,6 +87,9 @@ class RecordCommandPatternTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_add_previews_then_calls_the_public_create_operation(self):
         preview = await prepare_record_add(self.context, self.add_values)
+        self.assertEqual(preview.detail_access, frozenset({ACCESS_LEAD_PLUS}))
+        self.assertNotIn("Synthetic details", "\n".join(preview.lines))
+        self.assertIn("Synthetic details", "\n".join(preview.details))
         self.assertEqual(preview.lines[0],
                          "Add a record for @member: CWL, Missed Attack.")
         self.assertTrue(await preview.recheck())
@@ -142,7 +146,7 @@ class RecordCommandPatternTests(unittest.IsolatedAsyncioTestCase):
     async def test_edit_previews_old_and_new_values_and_can_be_undone(self):
         values = {"user": 4, "record": 7, "note": "Revised details"}
         preview = await prepare_record_edit(self.context, values)
-        self.assertIn("Details: Synthetic details to Revised details", preview.lines)
+        self.assertIn("Details: Synthetic details to Revised details", preview.details)
         self.assertTrue(await preview.recheck())
         edited = {**self.record, "note": "Revised details", "updated_ts": 101}
         self.service.edit.return_value = edited
@@ -156,7 +160,7 @@ class RecordCommandPatternTests(unittest.IsolatedAsyncioTestCase):
             "before": preview.before, "after": outcome.after,
         })
         self.assertTrue(await undo.preview.recheck())
-        self.assertIn("Details: Revised details to Synthetic details", undo.preview.lines)
+        self.assertIn("Details: Revised details to Synthetic details", undo.preview.details)
         self.service.edit.return_value = dict(self.record)
         self.service.active_record.return_value = dict(self.record)
         restored = await undo.run()

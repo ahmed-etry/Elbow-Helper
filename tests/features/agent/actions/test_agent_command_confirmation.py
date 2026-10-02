@@ -95,6 +95,19 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("\n\n", text)
         self.assertIn(f"Details: first\n{ACTION_PREVIEW_BLANK}\nlast", text)
 
+    async def test_blank_summary_and_detail_lines_share_one_placeholder(self):
+        proposal, _, _ = self.proposal(1)
+        for blank in ("", " ", "\t"):
+            with self.subTest(blank=repr(blank)):
+                preview = ChangePreview(
+                    ("Change target", blank), proposal.preview.recheck,
+                    details=("First", blank, "Last"),
+                )
+                action = PreparedAction(proposal.path, proposal.values, preview, proposal.run)
+                self.assertEqual(preview.lines[-1], ACTION_PREVIEW_BLANK)
+                self.assertEqual(preview.details[1], ACTION_PREVIEW_BLANK)
+                self.assertEqual(preview_text([action]).count(ACTION_PREVIEW_BLANK), 2)
+
     async def test_other_member_cannot_confirm_or_cancel(self):
         proposal, check, run = self.proposal(1)
         view = self.view((proposal,))

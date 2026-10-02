@@ -39,8 +39,8 @@ async def prepare_cwl_brief(context: Any, values: Mapping[str, Any]) -> ChangePr
 
     return ChangePreview((
         ACTION_CWL_BRIEF_LINE.format(channel=brief.channel.mention),
-        *brief.content.splitlines(),
-    ), recheck, summary=ACTION_CWL_BRIEF_LABEL)
+    ), recheck, summary=ACTION_CWL_BRIEF_LABEL,
+       details=tuple(brief.content.splitlines()))
 
 
 async def run_cwl_brief(context: Any, values: Mapping[str, Any]) -> ActionOutcome:

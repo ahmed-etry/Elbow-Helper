@@ -270,6 +270,12 @@ async def prepare_save(
     rule = dict(values)
     rule["timezone"] = zone
     rule["allowed_actions"] = actions
+    detail_sources = frozenset(context.state.source_channels) | {
+        context.source_message.channel.id,
+    }
+    detail_access = frozenset(context.state.required_access)
+    rule["detail_sources"] = sorted(detail_sources)
+    rule["detail_access"] = sorted(detail_access)
     identifier = values.get("replace_id")
     version = None
     if identifier:
@@ -313,7 +319,9 @@ async def prepare_save(
 
     context.state.proposed_changes.append(PreparedAction(
         "save_standing_rule", rule,
-        ChangePreview(lines, recheck, summary="Save standing rule"),
+        ChangePreview(lines[1:4], recheck, summary="Save standing rule",
+                      details=(lines[0], *lines[4:]),
+                      detail_sources=detail_sources, detail_access=detail_access),
         run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}
@@ -323,6 +331,9 @@ async def list_standing(context: AgentRequestContext,
                         values: Mapping[str, Any]) -> Mapping[str, Any]:
     records = _repository(context).list_standing(requester_id=context.member.id,
                                                   kind=values.get("kind"))
+    for record in records:
+        context.state.source_channels.update(record["rule"].get("detail_sources", ()))
+        context.state.required_access.update(record["rule"].get("detail_access", ()))
     return {"rules": [{
         "id": item.get("request_id") or item.get("watcher_id"),
         "kind": item["kind"], "request": item["rule"]["request"],
@@ -366,7 +377,9 @@ async def prepare_manage(context: AgentRequestContext,
 
     context.state.proposed_changes.append(PreparedAction(
         "manage_standing_rule", dict(values),
-        ChangePreview((line,), recheck, summary="Manage standing rule"),
+        ChangePreview((), recheck, summary="Manage standing rule", details=(line,),
+                      detail_sources=frozenset(current["rule"].get("detail_sources", ())),
+                      detail_access=frozenset(current["rule"].get("detail_access", ()))),
         run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}

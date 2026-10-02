@@ -90,7 +90,8 @@ async def prepare_news_dismiss(context: AgentRequestContext,
 
     context.state.proposed_changes.append(PreparedAction(
         "dismiss_lead_news_prompt", {"prompt_message_id": prompt.id},
-        ChangePreview(lines, recheck, summary=ACTION_NEWS_DISMISS_LABEL),
+        ChangePreview(lines, recheck, summary=ACTION_NEWS_DISMISS_LABEL,
+                      detail_sources=frozenset({source.id})),
         run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}
@@ -112,13 +113,13 @@ async def prepare_lead_news(context: AgentRequestContext,
         raise ValueError('That lead update is unavailable.')
     lines = [ACTION_NEWS_PUBLISH_LINE.format(
         target=target.mention)]
-    lines.append(ACTION_NEWS_PUBLISH_CONTENT)
-    lines.extend(line if line.strip() else ACTION_PREVIEW_BLANK
+    details = [ACTION_NEWS_PUBLISH_CONTENT]
+    details.extend(line if line.strip() else ACTION_PREVIEW_BLANK
                  for line in str(prepared["content"]).splitlines())
-    lines.extend(ACTION_NEWS_PUBLISH_FILE.format(name=file.filename)
+    details.extend(ACTION_NEWS_PUBLISH_FILE.format(name=file.filename)
                  for file in prepared["attachments"])
     prompts = await workflow.find_public_news_prompts(message)
-    lines.extend(ACTION_NEWS_PUBLISH_PROMPT.format(
+    details.extend(ACTION_NEWS_PUBLISH_PROMPT.format(
         channel=source.mention) for prompt in prompts)
     fingerprint = (prepared["content"], tuple(
         (file.id, file.filename, file.size) for file in prepared["attachments"]))
@@ -149,7 +150,8 @@ async def prepare_lead_news(context: AgentRequestContext,
     context.state.proposed_changes.append(PreparedAction(
         "publish_lead_news", {"source_channel_id": source.id,
                               "message_id": message.id, "target_channel_id": target.id},
-        ChangePreview(tuple(lines), recheck, summary=ACTION_NEWS_PUBLISH_LABEL),
+        ChangePreview(tuple(lines), recheck, summary=ACTION_NEWS_PUBLISH_LABEL,
+                      details=tuple(details), detail_sources=frozenset({source.id})),
         run, action_class=ActionClass.IRREVERSIBLE,
     ))
     return {"status": "confirmation_required"}

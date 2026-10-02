@@ -80,9 +80,6 @@ async def prepare_support_open(context: Any,
     category = prepared["category"]
     lines = [
         ACTION_SUPPORT_OPEN_LINE.format(name=prepared["name"], member=member.mention),
-        ACTION_SUPPORT_OPEN_TOPIC.format(
-            topic=prepared["topic"] or ACTION_SUPPORT_OPEN_DEFAULT_TOPIC,
-        ),
         ACTION_SUPPORT_OPEN_CATEGORY.format(
             category=category.mention if category else ACTION_NO_CATEGORY,
         ),
@@ -90,11 +87,11 @@ async def prepare_support_open(context: Any,
         *(ACTION_TICKET_SUPPORT_ROLE.format(role=f"<@&{role_id}>")
           for role_id in prepared["visible_roles"]),
         ACTION_SUPPORT_OPEN_POST,
-        member.mention,
-        prepared["welcome"],
-        *embed_text(prepared["embed"]).splitlines(),
         ACTION_TICKET_CONTROLS,
     ]
+    details = (ACTION_SUPPORT_OPEN_TOPIC.format(
+        topic=prepared["topic"] or ACTION_SUPPORT_OPEN_DEFAULT_TOPIC),
+        member.mention, prepared["welcome"], *embed_text(prepared["embed"]).splitlines())
     signature = _target_signature(prepared)
 
     async def recheck() -> bool:
@@ -118,7 +115,7 @@ async def prepare_support_open(context: Any,
         )
 
     return PreparedCommandChange(
-        ChangePreview(tuple(lines), recheck, summary=ACTION_SUPPORT_OPEN_LABEL),
+        ChangePreview(tuple(lines), recheck, summary=ACTION_SUPPORT_OPEN_LABEL, details=details),
         run,
     )
 
@@ -160,21 +157,21 @@ async def prepare_support_close(context: Any,
             filename=prepared["transcript_filename"],
             limit=context.guild.filesize_limit,
         ),
-        ACTION_SUPPORT_CLOSE_HISTORY.format(count=len(history)),
     ))
+    details = [ACTION_SUPPORT_CLOSE_HISTORY.format(count=len(history))]
     for message_id, author_id, content, _, attachments, embeds, reactions in history:
-        lines.append(ACTION_SUPPORT_CLOSE_MESSAGE.format(
+        details.append(ACTION_SUPPORT_CLOSE_MESSAGE.format(
             member=f"<@{author_id}>",
         ))
-        lines.extend(line or ACTION_PREVIEW_BLANK
+        details.extend(line or ACTION_PREVIEW_BLANK
                      for line in content.splitlines())
         for _, filename, url in attachments:
-            lines.append(ACTION_SUPPORT_CLOSE_ATTACHMENT.format(
+            details.append(ACTION_SUPPORT_CLOSE_ATTACHMENT.format(
                 filename=filename, url=url,
             ))
-        lines.extend(ACTION_SUPPORT_CLOSE_EMBED.format(content=str(embed))
+        details.extend(ACTION_SUPPORT_CLOSE_EMBED.format(content=str(embed))
                      for embed in embeds)
-        lines.extend(ACTION_SUPPORT_CLOSE_REACTION.format(
+        details.extend(ACTION_SUPPORT_CLOSE_REACTION.format(
             emoji=emoji, count=count,
         ) for emoji, count in reactions)
     lines.append(ACTION_SUPPORT_CLOSE_CONTROLS)
@@ -232,6 +229,7 @@ async def prepare_support_close(context: Any,
 
     return PreparedCommandChange(
         ChangePreview(tuple(lines), recheck, summary=ACTION_SUPPORT_CLOSE_LABEL,
+                      details=tuple(details), detail_sources=frozenset({channel.id}),
                       before={"channel_id": channel.id,
                               "owner_id": owner.id if owner else None,
                               "history_message_ids": tuple(row[0] for row in history)}),

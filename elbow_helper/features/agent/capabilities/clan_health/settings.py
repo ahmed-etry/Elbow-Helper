@@ -15,7 +15,7 @@ from elbow_helper.features.clan_health.ui.config_panel import (
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
-from ...access import require_evidence_access
+from ...access import ACCESS_LEAD_PLUS, require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
@@ -42,6 +42,7 @@ def clan_health_settings_tools() -> tuple[RegisteredAgentTool, ...]:
             entity_fields=(("clan_code", "clan"),),
             time_fields=(),
             source_scope="request_context",
+            required_access=frozenset({ACCESS_LEAD_PLUS}),
             filter_fields=("block",),
         ),
             ),
@@ -60,6 +61,7 @@ def clan_health_settings_tools() -> tuple[RegisteredAgentTool, ...]:
             entity_fields=(("clan_code", "clan"),),
             time_fields=(),
             source_scope="request_context",
+            required_access=frozenset({ACCESS_LEAD_PLUS}),
             filter_fields=("block", "values"),
         ),
         ),)
@@ -122,7 +124,8 @@ async def prepare_health_settings(context: AgentRequestContext,
 
     context.state.proposed_changes.append(PreparedAction(
         "set_clan_health_settings", {"clan_code": clan, "block": block},
-        ChangePreview(lines, recheck, summary=ACTION_HEALTH_SETTINGS_LABEL,
+        ChangePreview(lines[:1], recheck, summary=ACTION_HEALTH_SETTINGS_LABEL,
+                      details=lines[1:], detail_access=frozenset({ACCESS_LEAD_PLUS}),
                       before={"payload": before[block]}), run,
     ))
     return {"status": "confirmation_required"}
@@ -152,7 +155,8 @@ async def prepare_health_settings_undo(context: AgentRequestContext,
 
     return PreparedAction(
         "undo_clan_health_settings", {"clan_code": clan, "block": block},
-        ChangePreview(lines, recheck, summary=ACTION_HEALTH_SETTINGS_LABEL,
+        ChangePreview(lines[:1], recheck, summary=ACTION_HEALTH_SETTINGS_LABEL,
+                      details=lines[1:], detail_access=frozenset({ACCESS_LEAD_PLUS}),
                       before={"payload": expected}), run,
     )
 

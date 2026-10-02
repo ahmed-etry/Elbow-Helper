@@ -90,7 +90,7 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(run["status"], "failed")
         self.assertEqual([step["status"] for step in run["steps"]],
                          ["failed", "queued"])
-        self.assertEqual("Done: none.\nNot done:\nChange first\nChange second",
+        self.assertEqual("Done: none.\nNot done:\nfirst\nsecond",
                          self.progress.edit.await_args.kwargs["content"])
 
     async def test_adjacent_actions_share_one_report_group(self):
@@ -108,7 +108,7 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_long_remaining_lines_split_after_replacing_progress(self):
         action, _, _ = self.action("long", allowed=False)
         action = replace(action, preview=replace(
-            action.preview, lines=("Not done: " + "x" * 2500,),
+            action.preview, summary="Not done: " + "x" * 2500,
         ))
         await self.run_actions(action)
         self.assertLessEqual(len(self.progress.edit.await_args.kwargs["content"]), 2000)

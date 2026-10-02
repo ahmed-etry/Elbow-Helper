@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from typing import Any
 from elbow_helper.features.agent.discord_actions.safety import check_member, check_role
 from elbow_helper.features.rosters.config import DEFAULT_MAX_MEMBERS, MAX_ROSTER_MEMBERS
+from ...access import ACCESS_LEAD_PLUS
 from ...actions.contracts import ActionClass, ChangePreview
 from ...wording import (
     ACTION_ROSTER_CREATE_CLAN,
@@ -93,7 +94,9 @@ async def prepare_roster_create(context: Any,
         )
 
     return PreparedCommandChange(
-        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_CREATE_LABEL),
+        ChangePreview(tuple(lines), recheck,
+                      summary=ACTION_ROSTER_CREATE_LABEL,
+                      detail_access=frozenset({ACCESS_LEAD_PLUS})),
         run,
     )
 
@@ -192,7 +195,9 @@ async def prepare_roster_clone(context: Any,
         )
 
     return PreparedCommandChange(
-        ChangePreview(lines, recheck, summary=ACTION_ROSTER_CLONE_LABEL), run,
+        ChangePreview(lines[:1], recheck,
+                      summary=ACTION_ROSTER_CLONE_LABEL, details=lines[1:],
+                      detail_access=frozenset({ACCESS_LEAD_PLUS})), run,
     )
 
 
@@ -261,7 +266,9 @@ async def prepare_roster_delete(context: Any,
         )
 
     return PreparedCommandChange(
-        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_DELETE_LABEL,
+        ChangePreview(tuple(lines), recheck,
+                      summary=ACTION_ROSTER_DELETE_LABEL,
+                      detail_access=frozenset({ACCESS_LEAD_PLUS}),
                       before={"roster_id": roster.id}),
         run,
     )
@@ -329,7 +336,7 @@ async def prepare_roster_edit(context: Any,
         return str(value) if value is not None else ACTION_ROSTER_NO_ROLE
 
     lines = [ACTION_ROSTER_EDIT_LINE.format(name=roster.name)]
-    lines.extend(ACTION_FIELD_CHANGE.format(
+    details = tuple(ACTION_FIELD_CHANGE.format(
         field=ACTION_ROSTER_EDIT_FIELDS[key],
         old=display(key, getattr(roster, key)), new=display(key, new),
     ) for key, new in changes.items())
@@ -367,7 +374,9 @@ async def prepare_roster_edit(context: Any,
         )
 
     return PreparedCommandChange(
-        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_EDIT_LABEL,
+        ChangePreview(tuple(lines), recheck,
+                      summary=ACTION_ROSTER_EDIT_LABEL, details=details,
+                      detail_access=frozenset({ACCESS_LEAD_PLUS}),
                       before={"roster_id": roster.id,
                               "values": {key: getattr(roster, key) for key in changes}}),
         run,

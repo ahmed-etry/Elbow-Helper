@@ -63,8 +63,9 @@ async def prepare_event_update(context: Any, values: Mapping[str, Any]) -> Chang
 
     return ChangePreview((
         ACTION_EVENT_UPDATE_LINE,
-        *(ACTION_EVENT_UPDATE_TARGET.format(name=name) for _, name in targets),
-    ), recheck, summary=ACTION_EVENT_UPDATE_LABEL)
+    ), recheck, summary=ACTION_EVENT_UPDATE_LABEL,
+        details=tuple(ACTION_EVENT_UPDATE_TARGET.format(name=name) for _, name in targets),
+        detail_access=frozenset({ACCESS_LEAD}))
 
 
 async def run_event_update(context: Any, values: Mapping[str, Any]) -> ActionOutcome:

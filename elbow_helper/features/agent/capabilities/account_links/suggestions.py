@@ -175,7 +175,8 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
     context.state.proposed_changes.append(PreparedAction(
         "ignore_account_suggestion" if ignore else "link_account_suggestion",
         {"player_tag": tag, **({"member_id": member.id} if member else {})},
-        ChangePreview(tuple(lines), recheck, summary=label),
+        ChangePreview(tuple(lines), recheck, summary=label,
+                      detail_sources=frozenset({review.id})),
         run, action_class=(ActionClass.IRREVERSIBLE if ignore else ActionClass.CHANGE),
     ))
     return {"status": "confirmation_required"}

@@ -77,7 +77,7 @@ async def prepare_hibernate(context: Any,
     lines.append(ACTION_HIBERNATE_FALLBACK.format(
         channel=f"<#{plan['fallback_channel_id']}>",
     ))
-    lines.extend(line or ACTION_PREVIEW_BLANK for line in notice.splitlines())
+    details = tuple(line or ACTION_PREVIEW_BLANK for line in notice.splitlines())
     signature = (
         tuple(plan["stored_role_ids"]), tuple(plan["snapshot_role_ids"]),
         tuple(role.id for role in plan["to_remove"]),
@@ -113,7 +113,7 @@ async def prepare_hibernate(context: Any,
         )
 
     return PreparedCommandChange(
-        ChangePreview(tuple(lines), recheck, summary=ACTION_HIBERNATE_LABEL,
+        ChangePreview(tuple(lines), recheck, summary=ACTION_HIBERNATE_LABEL, details=details,
                       before={"member_id": member.id,
                               "role_ids": tuple(role.id for role in member.roles)}),
         run,
@@ -169,10 +169,10 @@ async def prepare_reactivate(context: Any,
     ))
     lines.extend(ACTION_TICKET_SUPPORT_ROLE.format(role=f"<@&{role_id}>")
                  for role_id in ticket["visible_role_ids"])
-    lines.extend(line or ACTION_PREVIEW_BLANK
-                 for line in ticket["welcome"].splitlines())
-    lines.extend(line or ACTION_PREVIEW_BLANK
-                 for line in embed_text(ticket["embed"]).splitlines())
+    details = [line or ACTION_PREVIEW_BLANK
+               for line in ticket["welcome"].splitlines()]
+    details.extend(line or ACTION_PREVIEW_BLANK
+                   for line in embed_text(ticket["embed"]).splitlines())
     lines.append(ACTION_TICKET_CONTROLS)
     if plan["fallback_thread_id"]:
         lines.append(ACTION_REACTIVATE_FALLBACK.format(
@@ -223,7 +223,8 @@ async def prepare_reactivate(context: Any,
         )
 
     return PreparedCommandChange(
-        ChangePreview(tuple(lines), recheck, summary=ACTION_REACTIVATE_LABEL,
+        ChangePreview(tuple(lines), recheck,
+                      summary=ACTION_REACTIVATE_LABEL, details=tuple(details),
                       before={"member_id": target.id, "state": plan["info"],
                               "role_ids": tuple(role.id for role in target.roles)}),
         run,

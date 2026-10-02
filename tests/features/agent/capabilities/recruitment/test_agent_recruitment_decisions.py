@@ -72,7 +72,8 @@ class RecruitmentDecisionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await change.preview.recheck())
         self.assertIn("Nickname: Old to New", change.preview.lines)
         self.assertIn("Link #P0Y: not linked to <@3>", change.preview.lines)
-        self.assertIn("Welcome <@3>!", change.preview.lines)
+        self.assertIn("Welcome <@3>!", change.preview.details)
+        self.assertNotIn("Welcome <@3>!", change.preview.lines)
         workflow.perform_accept.assert_not_awaited()
         result = await change.run()
         self.assertEqual(result.result["member_id"], 3)
@@ -179,7 +180,7 @@ class RecruitmentDecisionTests(unittest.IsolatedAsyncioTestCase):
             })
             self.assertTrue(await change.preview.recheck())
             self.assertTrue(any("Reason given." in line
-                                for line in change.preview.lines))
+                                for line in change.preview.details))
             self.assertIs(next(adapter for adapter in recruitment_adapters()
                                if adapter.path == "/decline").classification,
                           ActionClass.IRREVERSIBLE)

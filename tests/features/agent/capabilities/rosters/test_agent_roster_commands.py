@@ -74,9 +74,9 @@ class RosterCommandTests(unittest.IsolatedAsyncioTestCase):
         values = {"roster": "4", "name": "New Roster", "min_townhall": 0}
         prepared = await prepare_roster_clone(context, values)
         self.assertTrue(await prepared.preview.recheck())
-        self.assertIn("Minimum Town Hall: None", prepared.preview.lines)
+        self.assertIn("Minimum Town Hall: None", prepared.preview.details)
         self.assertIn("The new roster starts closed with no signups.",
-                      prepared.preview.lines)
+                      prepared.preview.details)
         self.assertEqual((await prepared.run()).result["roster_id"], 8)
         workflow.clone_roster.assert_awaited_once_with(
             source, name="New Roster", clan_code=None, role_id=None,
@@ -149,8 +149,8 @@ class RosterCommandTests(unittest.IsolatedAsyncioTestCase):
             "roster": "4", "max_members": 50, "min_townhall": 0,
         })
         self.assertTrue(await prepared.preview.recheck())
-        self.assertIn("Maximum accounts: 40 to 50", prepared.preview.lines)
-        self.assertIn("Minimum Town Hall: 15 to None", prepared.preview.lines)
+        self.assertIn("Maximum accounts: 40 to 50", prepared.preview.details)
+        self.assertIn("Minimum Town Hall: 15 to None", prepared.preview.details)
         self.assertIn("Refresh the roster post in <#9>.", prepared.preview.lines)
         workflow.update_roster_settings.assert_not_awaited()
         result = await prepared.run()
@@ -237,7 +237,7 @@ class RosterCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await prepared.preview.recheck())
         self.assertIn("Disable monthly scheduling for **Signup**.",
                       prepared.preview.lines)
-        self.assertIn("Automatic scheduling: Yes to No", prepared.preview.lines)
+        self.assertIn("Automatic scheduling: Yes to No", prepared.preview.details)
         self.assertEqual((await prepared.run()).after["schedule_enabled"], False)
         self.assertFalse(await prepared.preview.recheck())
 
@@ -291,8 +291,8 @@ class RosterCommandTests(unittest.IsolatedAsyncioTestCase):
             prepared = await prepare_roster_post(context, {"roster": "4"})
             self.assertTrue(await prepared.preview.recheck())
             self.assertIn("Post **Signup** in <#9>.", prepared.preview.lines)
-            self.assertIn("Roster page 1:", prepared.preview.lines)
-            self.assertIn("Signup", prepared.preview.lines)
+            self.assertIn("Roster page 1:", prepared.preview.details)
+            self.assertIn("Signup", prepared.preview.details)
             workflow.post_roster.assert_not_awaited()
             result = await prepared.run()
         self.assertEqual(result.result["message_id"], 99)

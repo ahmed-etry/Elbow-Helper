@@ -49,8 +49,8 @@ async def prepare_connections(context: Any, values: Mapping[str, Any]) -> Change
 
     return ChangePreview((
         ACTION_CONNECTIONS_BOARD_LINE.format(channel=channel.mention),
-        *board.splitlines(),
-    ), recheck, summary=ACTION_CONNECTIONS_BOARD_LABEL)
+    ), recheck, summary=ACTION_CONNECTIONS_BOARD_LABEL,
+        details=tuple(board.splitlines()), detail_access=frozenset({ACCESS_LEAD}))
 
 
 async def run_connections(context: Any, values: Mapping[str, Any]) -> ActionOutcome:

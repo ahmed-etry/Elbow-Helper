@@ -71,11 +71,11 @@ async def prepare_cwl_register(context: Any,
                  for thread_id in sorted(old_ids))
     welcome = workflow.cwl_registration_welcome_embed(prepared["clan"])
     lines.append(ACTION_CWL_REGISTER_WELCOME.format(thread=thread.mention))
-    lines.extend(embed_text(welcome).splitlines())
+    details = list(embed_text(welcome).splitlines())
     status = prepared["status_preview"]
     if status["kind"] == "board":
         lines.append(ACTION_CWL_REGISTER_BOARD.format(thread=thread.mention))
-        lines.extend(embed_text(status["embed"]).splitlines())
+        details.extend(embed_text(status["embed"]).splitlines())
     signature = _signature(prepared)
 
     async def recheck() -> bool:
@@ -86,7 +86,7 @@ async def prepare_cwl_register(context: Any,
         return current is workflow and _signature(live) == signature
 
     return ChangePreview(tuple(lines), recheck,
-                         summary=ACTION_CWL_REGISTER_LABEL,
+                         summary=ACTION_CWL_REGISTER_LABEL, details=tuple(details),
                          before={"clan": prepared["clan"],
                                  "prior_threads": prepared["prior_data"],
                                  "clan_thread_id": prepared["clan_thread_id"]})

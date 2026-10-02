@@ -9,7 +9,7 @@ import discord
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
-from ...access import require_evidence_access
+from ...access import ACCESS_LEAD, require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome, embed_text
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
@@ -38,39 +38,46 @@ TOOL_CONTRACTS = {
         entity_fields=(('event', 'event_tracker'),),
         time_fields=(),
         source_scope='request_context',
+        required_access=frozenset({ACCESS_LEAD}),
         filter_fields=('enabled',),
     ),
     'set_event_category': CapabilityContract(
         entity_fields=(('event', 'event_tracker'), ('category_id', 'discord_channel')),
         time_fields=(),
         source_scope='request_context',
+        required_access=frozenset({ACCESS_LEAD}),
     ),
     'move_event': CapabilityContract(
         entity_fields=(('event', 'event_tracker'),),
         time_fields=(),
         source_scope='request_context',
+        required_access=frozenset({ACCESS_LEAD}),
         filter_fields=('position', 'edge'),
     ),
     'restore_event_defaults': CapabilityContract(
         entity_fields=(('event', 'event_tracker'),),
         time_fields=(),
         source_scope='request_context',
+        required_access=frozenset({ACCESS_LEAD}),
     ),
     'delete_event': CapabilityContract(
         entity_fields=(('event', 'event_tracker'),),
         time_fields=(),
         source_scope='request_context',
+        required_access=frozenset({ACCESS_LEAD}),
     ),
     'create_event_tracker': CapabilityContract(
         entity_fields=(),
         time_fields=(),
         source_scope='request_context',
+        required_access=frozenset({ACCESS_LEAD}),
         filter_fields=('name', 'start', 'end', 'timezone', 'grace_hours'),
     ),
     'edit_event_tracker': CapabilityContract(
         entity_fields=(('event', 'event_tracker'),),
         time_fields=(),
         source_scope='request_context',
+        required_access=frozenset({ACCESS_LEAD}),
         filter_fields=('name', 'start', 'end', 'timezone', 'grace_hours'),
     ),
 }
@@ -137,6 +144,7 @@ def event_management_tools() -> tuple[RegisteredAgentTool, ...]:
             entity_fields=(("event", "event_tracker"),),
             time_fields=(),
             source_scope="request_context",
+            required_access=frozenset({ACCESS_LEAD}),
             filter_fields=("name", "grace_hours"),
         ),
                  ))
@@ -149,6 +157,7 @@ def event_management_tools() -> tuple[RegisteredAgentTool, ...]:
             entity_fields=(),
             time_fields=(),
             source_scope="request_context",
+            required_access=frozenset({ACCESS_LEAD}),
         ),
                  ))
     return tuple(tools)
@@ -180,7 +189,8 @@ async def prepare_event_refresh(context: AgentRequestContext,
 
     context.state.proposed_changes.append(PreparedAction(
         "refresh_event_trackers", {},
-        ChangePreview(tuple(lines), recheck, summary=ACTION_EVENT_REFRESH_LABEL),
+        ChangePreview(tuple(lines[:1]), recheck, summary=ACTION_EVENT_REFRESH_LABEL,
+                      details=tuple(lines[1:]), detail_access=frozenset({ACCESS_LEAD})),
         run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}
@@ -204,11 +214,12 @@ async def _prepare_form(context: AgentRequestContext, values: Mapping[str, Any],
         raise ValueError(issue)
     lines = [ACTION_EVENT_FORM_CREATE.format(name=prepared["name"]) if current is None
              else ACTION_EVENT_FORM_EDIT.format(name=current["event"]["name"])]
+    details = []
     before = current["event"] if current else {}
     for field, value in prepared.items():
         old = before.get("grace_period_hours" if field == "grace_hours" else field)
         if old != value:
-            lines.append(ACTION_FIELD_CHANGE.format(
+            details.append(ACTION_FIELD_CHANGE.format(
                 field=field.replace("_", " ").title(), old=old if old is not None else "None",
                 new=value))
     if current is None or not before.get("channel_id"):
@@ -235,7 +246,8 @@ async def _prepare_form(context: AgentRequestContext, values: Mapping[str, Any],
     context.state.proposed_changes.append(PreparedAction(
         "create_event_tracker" if current is None else "edit_event_tracker",
         {"event": before.get("key"), "name": prepared["name"]},
-        ChangePreview(tuple(lines), recheck, summary=ACTION_EVENT_FORM_LABEL),
+        ChangePreview(tuple(lines), recheck, summary=ACTION_EVENT_FORM_LABEL,
+                      details=tuple(details), detail_access=frozenset({ACCESS_LEAD})),
         run, action_class=classification,
     ))
     return {"status": "confirmation_required"}
@@ -258,10 +270,11 @@ async def _prepare_preset(context: AgentRequestContext,
     if name == event["name"] and (grace is None or grace == event.get("grace_period_hours")):
         return {"status": "no_change"}
     lines = [ACTION_EVENT_FORM_EDIT.format(name=event["name"])]
+    details = []
     if name != event["name"]:
-        lines.append(ACTION_FIELD_CHANGE.format(field="Name", old=event["name"], new=name))
+        details.append(ACTION_FIELD_CHANGE.format(field="Name", old=event["name"], new=name))
     if grace is not None and grace != event.get("grace_period_hours"):
-        lines.append(ACTION_FIELD_CHANGE.format(
+        details.append(ACTION_FIELD_CHANGE.format(
             field="Grace hours", old=event.get("grace_period_hours"), new=grace))
 
     async def recheck() -> bool:
@@ -276,7 +289,8 @@ async def _prepare_preset(context: AgentRequestContext,
 
     context.state.proposed_changes.append(PreparedAction(
         "edit_preset_event", {"event": event["key"]},
-        ChangePreview(tuple(lines), recheck, summary=ACTION_EVENT_FORM_LABEL),
+        ChangePreview(tuple(lines), recheck, summary=ACTION_EVENT_FORM_LABEL,
+                      details=tuple(details), detail_access=frozenset({ACCESS_LEAD})),
         run,
     ))
     return {"status": "confirmation_required"}
@@ -362,7 +376,14 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
 
     context.state.proposed_changes.append(PreparedAction(
         operation, {"event": key},
-        ChangePreview(tuple(lines), recheck, summary=ACTION_EVENT_MANAGE_LABEL),
+        ChangePreview(
+            ((ACTION_EVENT_FORM_EDIT.format(name=event["name"]),)
+             if operation in ("set_event_enabled", "set_event_category", "move_event")
+             else tuple(lines)), recheck, summary=ACTION_EVENT_MANAGE_LABEL,
+            details=(tuple(lines) if operation in (
+                "set_event_enabled", "set_event_category", "move_event") else ()),
+            detail_access=frozenset({ACCESS_LEAD}),
+        ),
         run, action_class=classification,
     ))
     return {"status": "confirmation_required"}

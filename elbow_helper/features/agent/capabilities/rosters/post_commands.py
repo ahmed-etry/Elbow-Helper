@@ -6,6 +6,7 @@ from typing import Any
 import discord
 from elbow_helper.features.agent.discord_actions.safety import check_post_access, resolve_channel
 from elbow_helper.features.help.discovery import ParameterInfo
+from ...access import ACCESS_LEAD_PLUS
 from ...actions.contracts import ActionClass, ChangePreview
 from ...models import AgentAttachment
 from ...wording import (
@@ -66,14 +67,15 @@ async def prepare_roster_post(context: Any,
         lines.append(ACTION_ROSTER_POST_RESET)
     lines.extend(ACTION_ROSTER_POST_REFRESH.format(
         channel=f"<#{channel_id}>", ) for channel_id, message_id in state["posts"])
+    details = []
     for page_number, embeds in enumerate(render["pages"], start=1):
-        lines.append(ACTION_ROSTER_POST_PAGE.format(number=page_number))
+        details.append(ACTION_ROSTER_POST_PAGE.format(number=page_number))
         for embed in embeds:
-            lines.extend(line or ACTION_PREVIEW_BLANK
+            details.extend(line or ACTION_PREVIEW_BLANK
                          for line in embed_text(embed).splitlines())
             for visual in (embed.image, embed.thumbnail):
                 if visual.url:
-                    lines.append(ACTION_ROSTER_POST_IMAGE.format(url=visual.url))
+                    details.append(ACTION_ROSTER_POST_IMAGE.format(url=visual.url))
 
     async def recheck() -> bool:
         current = await workflow.get_roster(roster_id)
@@ -108,7 +110,9 @@ async def prepare_roster_post(context: Any,
         )
 
     return PreparedCommandChange(
-        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_POST_LABEL,
+        ChangePreview(tuple(lines), recheck,
+                      summary=ACTION_ROSTER_POST_LABEL,
+                      detail_access=frozenset({ACCESS_LEAD_PLUS}), details=tuple(details),
                       before={"roster_id": roster.id, "status": roster.status}),
         run,
     )
@@ -176,7 +180,9 @@ async def prepare_roster_export(context: Any,
         )
 
     return PreparedCommandChange(
-        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_EXPORT_LABEL,
+        ChangePreview(tuple(lines), recheck,
+                      summary=ACTION_ROSTER_EXPORT_LABEL,
+                      detail_access=frozenset({ACCESS_LEAD_PLUS}),
                       before={"roster_id": roster.id,
                               "accounts": plan["accounts"]}),
         run,

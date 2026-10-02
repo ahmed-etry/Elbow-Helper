@@ -14,7 +14,7 @@ from elbow_helper.features.rosters.config import (
 )
 
 from ...engine.capability_contract import CapabilityContract
-from ...access import require_evidence_access
+from ...access import ACCESS_LEAD_PLUS, require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
@@ -47,6 +47,7 @@ TOOL_CONTRACTS = {
         entity_fields=(('roster_id', 'roster'),),
         time_fields=(),
         source_scope='request_context',
+        required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),
 }
 
@@ -105,6 +106,7 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
             entity_fields=(("roster_id", "roster"),),
             time_fields=(),
             source_scope="request_context",
+            required_access=frozenset({ACCESS_LEAD_PLUS}),
             filter_fields=("operation",),
         ),
              )]
@@ -127,6 +129,7 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
             entity_fields=(("roster_id", "roster"),),
             time_fields=(),
             source_scope="request_context",
+            required_access=frozenset({ACCESS_LEAD_PLUS}),
         ),
                  ))
     tools.append(RegisteredAgentTool(AgentToolDefinition(
@@ -147,6 +150,7 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
             entity_fields=(("roster_id", "roster"),),
             time_fields=(),
             source_scope="request_context",
+            required_access=frozenset({ACCESS_LEAD_PLUS}),
             filter_fields=(
                 "show_townhall",
                 "show_discord",
@@ -206,7 +210,8 @@ async def prepare_roster_refresh(context: AgentRequestContext,
 
     context.state.proposed_changes.append(PreparedAction(
         "refresh_roster", dict(values),
-        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_REFRESH_LABEL),
+        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_REFRESH_LABEL,
+                      detail_access=frozenset({ACCESS_LEAD_PLUS})),
         run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}
@@ -231,7 +236,7 @@ async def prepare_roster_layout(context: AgentRequestContext,
     posts = (await workflow.roster_edit_state(roster))["posts"]
     await _check_posts(context, posts)
     lines = [ACTION_ROSTER_LAYOUT_LINE.format(name=roster.name)]
-    lines.extend(ACTION_FIELD_CHANGE.format(
+    details = tuple(ACTION_FIELD_CHANGE.format(
         field=field.replace("_", " ").title(), old=before[field], new=value)
         for field, value in changes.items())
     lines.extend(ACTION_ROSTER_POST_REFRESH.format(
@@ -258,7 +263,8 @@ async def prepare_roster_layout(context: AgentRequestContext,
 
     context.state.proposed_changes.append(PreparedAction(
         "set_roster_layout", {"roster_id": roster_id},
-        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_LAYOUT_LABEL,
+        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_LAYOUT_LABEL, details=details,
+                      detail_access=frozenset({ACCESS_LEAD_PLUS}),
                       before={"layout": before}), run,
     ))
     return {"status": "confirmation_required"}
@@ -279,7 +285,7 @@ async def prepare_roster_layout_undo(context: AgentRequestContext,
     posts = (await workflow.roster_edit_state(roster))["posts"]
     await _check_posts(context, posts)
     lines = [ACTION_ROSTER_LAYOUT_LINE.format(name=roster.name)]
-    lines.extend(ACTION_FIELD_CHANGE.format(
+    details = tuple(ACTION_FIELD_CHANGE.format(
         field=field.replace("_", " ").title(), old=getattr(layout, field), new=value)
         for field, value in prior.items() if getattr(layout, field) != value)
 
@@ -303,7 +309,8 @@ async def prepare_roster_layout_undo(context: AgentRequestContext,
 
     return PreparedAction(
         "undo_roster_layout", {"roster_id": roster_id},
-        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_LAYOUT_LABEL,
+        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_LAYOUT_LABEL, details=details,
+                      detail_access=frozenset({ACCESS_LEAD_PLUS}),
                       before={"layout": expected}), run,
     )
 
@@ -371,7 +378,8 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         "clear_roster_signups" if operation == "clear" else "set_roster_state",
         {"roster_id": roster_id, **({"operation": values["operation"]}
                                   if operation != "clear" else {})},
-        ChangePreview(tuple(lines), recheck, summary=label),
+        ChangePreview(tuple(lines), recheck,
+                      summary=label, detail_access=frozenset({ACCESS_LEAD_PLUS})),
         run, action_class=classification,
     ))
     return {"status": "confirmation_required"}

@@ -59,7 +59,12 @@ class AttackPlanCommandTests(unittest.IsolatedAsyncioTestCase):
                       prepared.preview.lines)
         self.assertIn("Base screenshot: https://example.com/base.png",
                       prepared.preview.lines)
-        self.assertTrue(any("Page 3:" in line for line in prepared.preview.lines))
+        self.assertTrue(any("Page 3:" in line for line in prepared.preview.details))
+        self.assertEqual(prepared.preview.detail_sources, frozenset({9}))
+        self.assertTrue(any("Enter from the right." in line
+                            for line in prepared.preview.details))
+        self.assertFalse(any("Enter from the right." in line
+                             for line in prepared.preview.lines))
         self.assertIs(attack_plan_adapters()[0].classification,
                       ActionClass.CHANGE)
         channel.send.assert_not_awaited()

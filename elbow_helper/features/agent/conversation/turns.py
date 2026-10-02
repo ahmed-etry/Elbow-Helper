@@ -10,6 +10,7 @@ from .state import ConversationRecord, ConversationTurn
 from .instructions import WorkingState
 from ..models import AgentRequestContext, AgentTurnState
 from ..knowledge.report import KnowledgeReport
+from ..actions.targets import target_links
 
 LOGGER = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ class AgentTurnMixin:
                         "name": step["action_name"],
                         "label": step["action_label"],
                         "status": step["status"],
-                        "targets": json.loads(step["values_json"]),
+                        "target_links": target_links(context.guild.id, json.loads(step["values_json"])),
                     } for step in run["steps"]],
                 }, ensure_ascii=False),
                 source_channels=frozenset(context.state.source_channels),
@@ -90,6 +91,8 @@ class AgentTurnMixin:
             self._commit_reports(conversation, context.state)
             conversation.working = context.state.working
             delivered_answer = response if delivery.complete else "\n".join(delivery.text_parts)
+            visible_previews = tuple(action.preview for action in context.state.proposed_changes
+                                     if not action.details_hidden)
             conversation.append(ConversationTurn(
                 text=json.dumps({
                     "asker": member.display_name, "member_id": member.id,
@@ -99,8 +102,10 @@ class AgentTurnMixin:
                     "lookup_excerpts": [item[:5_000] for item in context.state.evidence[-4:]],
                     "report_ids": list(context.state.reports),
                 }, ensure_ascii=False),
-                source_channels=frozenset(context.state.source_channels),
-                required_access=frozenset(context.state.required_access),
+                source_channels=frozenset(context.state.source_channels).union(
+                    *(preview.detail_sources for preview in visible_previews)),
+                required_access=frozenset(context.state.required_access).union(
+                    *(preview.detail_access for preview in visible_previews)),
                 knowledge_refs=tuple(sorted(
                     (section.section_id, section.content_sha256)
                     for report in context.state.reports.values()

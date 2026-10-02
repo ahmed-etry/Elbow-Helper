@@ -175,12 +175,12 @@ async def prepare_create_thread(context: AgentRequestContext,
         return thread.name == name
 
     lines = (ACTION_THREAD_CREATE_LINE.format(name=name, channel=parent.mention),)
-    if initial:
-        lines += tuple(initial.splitlines())
+    details = tuple(initial.splitlines()) if initial else ()
     context.state.proposed_changes.append(PreparedAction(
         "create_discord_thread", dict(arguments),
         ChangePreview(lines, recheck, summary=ACTION_THREAD_CREATE_LABEL,
-                      result_label=f"thread {name}"),
+                      result_label=f"thread {name}", details=details,
+                      detail_sources=frozenset({parent.id})),
         run, verify=verify, permission="Manage Threads",
     ))
     return {"status": "confirmation_required"}
@@ -232,7 +232,8 @@ def _thread_update_action(context: AgentRequestContext, thread_id: int,
         {"thread_id": thread_id, "operation": operation,
          **({"name": after} if field == "name" else {})},
         ChangePreview(lines, recheck, summary=ACTION_THREAD_UPDATE_LABEL,
-                      before={field: before}, result_label=label),
+                      before={field: before}, result_label=label,
+                      detail_sources=frozenset({thread_id})),
         run, verify=verify, permission="Manage Threads",
     )
 
@@ -358,7 +359,8 @@ def _thread_member_action(context: AgentRequestContext, thread_id: int,
         {"thread_id": thread_id, "member_id": member_id,
          "operation": "add" if add else "remove"},
         ChangePreview(lines, recheck, summary=ACTION_THREAD_MEMBER_LABEL,
-                      before={"has_member": before}, result_label=label_thread),
+                      before={"has_member": before}, result_label=label_thread,
+                      detail_sources=frozenset({thread_id})),
         run, verify=verify, permission="Manage Threads",
     )
 

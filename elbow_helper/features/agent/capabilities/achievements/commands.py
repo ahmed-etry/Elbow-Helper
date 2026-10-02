@@ -189,11 +189,11 @@ async def prepare_grant_coins(context: Any,
                        else ACTION_ACHIEVEMENT_COIN_PLURAL),
             member=member.mention, category=category,
         ),
-        ACTION_REASON_LINE.format(reason=values["reason"]),
         ACTION_COIN_GRANT_BALANCE.format(
             old=state["balance"], new=state["balance"] + amount,
         ),
-    ), recheck, summary=ACTION_COIN_GRANT_LABEL, before={"coin_state": state})
+    ), recheck, summary=ACTION_COIN_GRANT_LABEL, before={"coin_state": state},
+        details=(ACTION_REASON_LINE.format(reason=values["reason"]),))
 
 
 async def run_grant_coins(context: Any,
@@ -238,10 +238,10 @@ async def prepare_grant_ticket(context: Any,
 
     return ChangePreview((
         ACTION_TICKET_GRANT_LINE.format(member=member.mention),
-        ACTION_REASON_LINE.format(reason=values["reason"]),
         ACTION_RAFFLE_HUB_UPDATE,
     ), recheck, summary=ACTION_TICKET_GRANT_LABEL,
-        before={"ticket_state": state})
+        before={"ticket_state": state},
+        details=(ACTION_REASON_LINE.format(reason=values["reason"]),))
 
 
 async def run_grant_ticket(context: Any,

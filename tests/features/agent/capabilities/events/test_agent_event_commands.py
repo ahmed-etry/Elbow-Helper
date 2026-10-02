@@ -25,7 +25,7 @@ class EventCommandTests(unittest.IsolatedAsyncioTestCase):
             bot=SimpleNamespace(get_cog=lambda _: workflow),
         )
         preview = await prepare_event_update(context, {})
-        self.assertIn("Tracker: Synthetic event", preview.lines)
+        self.assertIn("Tracker: Synthetic event", preview.details)
         self.assertTrue(await preview.recheck())
         workflow.force_refresh.assert_not_awaited()
         result = await run_event_update(context, {})

@@ -119,7 +119,7 @@ class HibernationCommandTests(unittest.IsolatedAsyncioTestCase):
         change = await prepare_hibernate(context, {"user": 3})
         self.assertTrue(await change.preview.recheck())
         self.assertIn("Remove <@&20> from <@3>.", change.preview.lines)
-        self.assertIn("Reactivate when ready.", change.preview.lines)
+        self.assertIn("Reactivate when ready.", change.preview.details)
         workflow.hibernate_member.assert_not_awaited()
         result = await change.run()
         self.assertEqual(result.after["state"]["roles"], [20])

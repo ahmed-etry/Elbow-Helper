@@ -46,7 +46,8 @@ class WarStatementCommandTests(unittest.IsolatedAsyncioTestCase):
                 preview = await adapter.prepare(context, values)
                 self.assertTrue(await preview.recheck())
                 self.assertIs(adapter.classification, ActionClass.CHANGE)
-                self.assertIn("(blank line)", preview.lines)
+                self.assertIn("(blank line)", preview.details)
+                self.assertNotIn("(blank line)", preview.lines)
                 prior_count = post_channel.send.await_count
                 outcome = await adapter.run(context, values)
                 self.assertEqual(outcome.visibility, "private")

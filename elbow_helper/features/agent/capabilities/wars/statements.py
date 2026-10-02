@@ -77,8 +77,9 @@ def _adapter(path: str, kind: str) -> CommandAdapter:
 
         return ChangePreview((
             ACTION_WAR_STATEMENT_LINE.format(channel=post_channel.mention),
-            *(line or ACTION_PREVIEW_BLANK for line in message.splitlines()),
-        ), recheck, summary=ACTION_WAR_STATEMENT_LABEL)
+        ), recheck, summary=ACTION_WAR_STATEMENT_LABEL,
+           details=tuple(line or ACTION_PREVIEW_BLANK for line in message.splitlines()),
+           detail_sources=frozenset({statement["clan_war_channel"].id}))
 
     async def run(context: Any, values: Mapping[str, Any]) -> ActionOutcome:
         workflow, statement = await _statement(context, values, kind)

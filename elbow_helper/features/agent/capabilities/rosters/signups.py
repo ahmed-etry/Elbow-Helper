@@ -10,7 +10,7 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
-from ...access import require_evidence_access
+from ...access import ACCESS_LEAD_PLUS, require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
@@ -84,6 +84,7 @@ def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
                 entity_fields=(("roster_id", "roster"), ("player_tags", "clash_account_set")),
                 time_fields=(),
                 source_scope="request_context",
+                required_access=frozenset({ACCESS_LEAD_PLUS}),
             ),
         ),
         RegisteredAgentTool(AgentToolDefinition(
@@ -100,6 +101,7 @@ def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
                 entity_fields=(("roster_id", "roster"), ("accounts", "clash_account_set")),
                 time_fields=(),
                 source_scope="request_context",
+                required_access=frozenset({ACCESS_LEAD_PLUS}),
             ),
         ),
     )
@@ -182,7 +184,8 @@ async def prepare_roster_row_removal(context: AgentRequestContext,
     context.state.proposed_changes.append(PreparedAction(
         "remove_roster_signup_rows", {"roster_id": roster.id,
                                       "accounts": [row.player_tag for row in selected]},
-        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_REMOVE_LABEL),
+        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_REMOVE_LABEL,
+                      detail_access=frozenset({ACCESS_LEAD_PLUS})),
         run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}
@@ -247,7 +250,8 @@ async def prepare_bulk_roster_add(context: AgentRequestContext,
 
     context.state.proposed_changes.append(PreparedAction(
         "bulk_add_roster_accounts", {"roster_id": roster.id},
-        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_BULK_LABEL),
+        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_BULK_LABEL,
+                      detail_access=frozenset({ACCESS_LEAD_PLUS})),
         run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}
@@ -340,7 +344,9 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
     context.state.proposed_changes.append(PreparedAction(
         "signup_roster_accounts" if mode == "signup" else "remove_roster_accounts",
         {"roster_id": roster_id, "member_id": member_id, "accounts": selected},
-        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_ACCOUNT_LABEL),
+        ChangePreview(tuple(lines), recheck, summary=ACTION_ROSTER_ACCOUNT_LABEL,
+                      detail_access=(frozenset({ACCESS_LEAD_PLUS})
+                                     if member_id != context.member.id else frozenset())),
         run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}

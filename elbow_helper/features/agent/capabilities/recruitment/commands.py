@@ -96,9 +96,9 @@ async def prepare_recstatement(context: Any,
 
     return ChangePreview((
         ACTION_RECSTATEMENT_LINE.format(channel=prepared["channel"].mention),
-        *(line or ACTION_PREVIEW_BLANK
-          for line in prepared["message"].splitlines()),
-    ), recheck, summary=ACTION_RECSTATEMENT_LABEL)
+    ), recheck, summary=ACTION_RECSTATEMENT_LABEL,
+       details=tuple(line or ACTION_PREVIEW_BLANK
+                     for line in prepared["message"].splitlines()))
 
 
 async def run_recstatement(context: Any,
@@ -150,9 +150,9 @@ async def prepare_checkup(context: Any,
 
     return PreparedCommandChange(ChangePreview((
         ACTION_CHECKUP_LINE.format(channel=channel.mention),
-        *(line or ACTION_PREVIEW_BLANK
-          for line in str(prepared["message"]).splitlines()),
-    ), recheck, summary=ACTION_CHECKUP_LABEL), run)
+    ), recheck, summary=ACTION_CHECKUP_LABEL,
+       details=tuple(line or ACTION_PREVIEW_BLANK
+                     for line in str(prepared["message"]).splitlines())), run)
 
 
 async def run_checkup(context: Any,
@@ -184,8 +184,8 @@ async def prepare_decline(context: Any,
                       else ACTION_DECLINE_RENAME_SKIP).format(
             old=channel.name, new=candidate,
         ))
-    lines.extend(line or ACTION_PREVIEW_BLANK
-                 for line in prepared["message"].splitlines())
+    details = tuple(line or ACTION_PREVIEW_BLANK
+                    for line in prepared["message"].splitlines())
 
     async def recheck() -> bool:
         try:
@@ -209,7 +209,7 @@ async def prepare_decline(context: Any,
                                      "channel_name": channel.name})
 
     return PreparedCommandChange(
-        ChangePreview(tuple(lines), recheck, summary=ACTION_DECLINE_LABEL), run,
+        ChangePreview(tuple(lines), recheck, summary=ACTION_DECLINE_LABEL, details=details), run,
     )
 
 
@@ -252,8 +252,8 @@ async def prepare_finalize(context: Any,
     lines.extend(ACTION_ROLE_ADD_LINE.format(
         role=role.mention, member=member.mention,
     ) for role in prepared["add_roles"])
-    lines.extend(line or ACTION_PREVIEW_BLANK
-                 for line in prepared["message"].splitlines())
+    details = tuple(line or ACTION_PREVIEW_BLANK
+                    for line in prepared["message"].splitlines())
     signature = (
         prepared["old_name"], prepared["new_name"], prepared["message"],
         tuple(role.id for role in prepared["remove_roles"]),
@@ -291,7 +291,7 @@ async def prepare_finalize(context: Any,
         )
 
     return PreparedCommandChange(
-        ChangePreview(tuple(lines), recheck, summary=ACTION_FINALIZE_LABEL), run,
+        ChangePreview(tuple(lines), recheck, summary=ACTION_FINALIZE_LABEL, details=details), run,
     )
 
 
@@ -358,8 +358,8 @@ async def prepare_accept(context: Any,
     lines.extend((ACTION_ACCEPT_BOARD, ACTION_ACCEPT_TRACK.format(
         channel=channel.mention, days=prepared["days"],
     ), ACTION_ACCEPT_ACHIEVEMENT.format(member=member.mention)))
-    lines.extend(line or ACTION_PREVIEW_BLANK
-                 for line in prepared["welcome"].splitlines())
+    details = tuple(line or ACTION_PREVIEW_BLANK
+                    for line in prepared["welcome"].splitlines())
 
     def signature(item, effect):
         return (
@@ -409,7 +409,7 @@ async def prepare_accept(context: Any,
         )
 
     return PreparedCommandChange(
-        ChangePreview(tuple(lines), recheck, summary=ACTION_ACCEPT_LABEL,
+        ChangePreview(tuple(lines), recheck, summary=ACTION_ACCEPT_LABEL, details=details,
                       before={
                           "member_id": member.id,
                           "nickname": effects["nickname_before"],

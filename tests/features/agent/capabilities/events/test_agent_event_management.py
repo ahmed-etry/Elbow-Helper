@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from elbow_helper.features.agent.access import ACCESS_LEAD
 from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.agent.capabilities.events.management import event_management_tools
@@ -35,8 +36,12 @@ class EventManagementActionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "confirmation_required")
         action = context.state.proposed_changes[0]
         self.assertIs(action.action_class, ActionClass.CHANGE)
-        self.assertTrue(any("parsed start" in line for line in action.preview.lines))
+        self.assertTrue(any("parsed start" in line for line in action.preview.details))
         self.assertTrue(any("voice channel" in line for line in action.preview.lines))
+        self.assertFalse(any("parsed start" in line for line in action.preview.lines))
+        self.assertEqual(action.preview.detail_access, frozenset({ACCESS_LEAD}))
+        self.assertEqual(tool.contract.required_access, frozenset({ACCESS_LEAD}))
+        self.assertNotIn("parsed start", str(result))
         workflow.create_one_time_event.assert_not_called()
         await action.run()
         workflow.create_one_time_event.assert_called_once_with(**prepared)
@@ -63,7 +68,9 @@ class EventManagementActionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "confirmation_required")
         action = context.state.proposed_changes[0]
         self.assertIs(action.action_class, ActionClass.CHANGE)
-        self.assertIn("position 4 to 1", action.preview.lines[0])
+        self.assertIn("position 4 to 1", action.preview.details[0])
+        self.assertFalse(any("position 4 to 1" in line for line in action.preview.lines))
+        self.assertIn("Alpha", action.preview.lines[0])
         workflow.move_event_to_position.assert_not_called()
         self.assertTrue(await action.preview.recheck())
         await action.run()

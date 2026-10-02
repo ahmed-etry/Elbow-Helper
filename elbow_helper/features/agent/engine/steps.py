@@ -12,7 +12,7 @@ import time
 from typing import Any
 from elbow_helper.infrastructure.ai import AgentToolResult
 from ..models import AgentCapabilityEffect, AgentRequestContext
-from ..actions.contracts import PreparedAction
+from ..actions.contracts import ActionClass, PreparedAction
 from ..access import AgentAccessLost
 from ..access import require_access
 from ..disclosure import require_disclosure_access
@@ -51,6 +51,10 @@ async def disclosure_issue(
     context: AgentRequestContext, registry: Mapping[str, Any], step: Mapping[str, Any]
 ) -> str:
     selected = original_tool(registry, step["capability"], step["arguments"])
+    if (selected or registry[step["capability"]]).action_class in (
+        ActionClass.CHANGE, ActionClass.IRREVERSIBLE,
+    ):
+        return ""
     contract = (
         selected.contract if selected else registry[step["capability"]].contract
     )
@@ -260,6 +264,7 @@ class PlanRunner:
             arguments=arguments,
             capability_scope=checked["scope"],
             context=local,
+            action_class=tool.action_class,
             timeout_seconds=(
                 limits.COMMAND_TIMEOUT_SECONDS
                 if tool.effect is AgentCapabilityEffect.COMMAND

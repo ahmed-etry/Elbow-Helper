@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from elbow_helper.features.agent.access import ACCESS_LEAD
 from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.agent.capabilities.cwl.bonus_scoring import (
     prepare_cwl_bonus_scoring, prepare_cwl_bonus_scoring_undo,
@@ -47,7 +48,10 @@ class CwlBonusScoringActionTests(unittest.IsolatedAsyncioTestCase):
             })
         self.assertEqual(result["status"], "confirmation_required")
         action = context.state.proposed_changes[0]
-        self.assertTrue(any("2.0 to 2.5" in line for line in action.preview.lines))
+        self.assertTrue(any("2.0 to 2.5" in line for line in action.preview.details))
+        self.assertFalse(any("2.0 to 2.5" in line for line in action.preview.lines))
+        self.assertEqual(action.preview.detail_access, frozenset({ACCESS_LEAD}))
+        self.assertNotIn("2.0", str(result))
         self.assertTrue(await action.preview.recheck())
         outcome = await action.run()
         self.assertEqual(current["matchup_expected"]["1:1"], 2.5)
@@ -55,6 +59,8 @@ class CwlBonusScoringActionTests(unittest.IsolatedAsyncioTestCase):
             "targets": action.values, "before": action.preview.before,
             "after": outcome.after,
         })
+        self.assertEqual(undo.preview.detail_access, frozenset({ACCESS_LEAD}))
+        self.assertTrue(undo.preview.details)
         self.assertTrue(await undo.preview.recheck())
         await undo.run()
         self.assertEqual(current, payload)

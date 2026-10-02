@@ -64,7 +64,9 @@ class SupportCloseCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await change.preview.recheck())
         self.assertIn("Stop <@3> from sending in the ticket.",
                       change.preview.lines)
-        self.assertIn("I need help.", change.preview.lines)
+        self.assertIn("I need help.", change.preview.details)
+        self.assertNotIn("I need help.", change.preview.lines)
+        self.assertEqual(change.preview.detail_sources, frozenset({channel.id}))
         self.assertIn("Post the ticket log in <#9>.", change.preview.lines)
         workflow.close_support_ticket.assert_not_awaited()
         result = await change.run()
@@ -127,7 +129,7 @@ class SupportOpenCommandTests(unittest.IsolatedAsyncioTestCase):
                 context, {"user": 7, "topic": "War discussion"},
             )
             self.assertTrue(await prepared.preview.recheck())
-            self.assertIn("Welcome to this ticket.", prepared.preview.lines)
+            self.assertIn("Welcome to this ticket.", prepared.preview.details)
             guild.create_text_channel.assert_not_awaited()
             self.assertIs(support_ticket_adapters()[0].classification,
                           ActionClass.CHANGE)

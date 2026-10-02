@@ -8,7 +8,7 @@ from typing import Any
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
-from ...access import require_evidence_access
+from ...access import ACCESS_LEAD, require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
@@ -32,6 +32,7 @@ def role_connection_scan_tools() -> tuple[RegisteredAgentTool, ...]:
             entity_fields=(),
             time_fields=(),
             source_scope="request_context",
+            required_access=frozenset({ACCESS_LEAD}),
         ),
             ),)
 
@@ -92,6 +93,7 @@ def _scan_action(context: AgentRequestContext, workflow: Any,
         "undo_role_connection_scan" if undo else "apply_role_connections",
         {"member_id": member_id, "role_id": role_id, "add": add},
         ChangePreview((line,), recheck, summary=ACTION_ROLE_SCAN_LABEL,
+                      detail_access=frozenset({ACCESS_LEAD}),
                       before={"has_role": not add}),
         run,
     )

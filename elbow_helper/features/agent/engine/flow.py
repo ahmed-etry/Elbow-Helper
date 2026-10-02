@@ -20,6 +20,7 @@ from ..plan.planning import read_request
 from ..plan.results import plan_feedback
 from ..actions.outcomes import command_reply
 from ..actions.preview import preview_text
+from ..actions.details import prepare_preview
 from ..wording import (
     AGENT_ANSWER_UNFINISHED,
     AGENT_PLAN_UNFINISHED,
@@ -172,6 +173,7 @@ class AnswerFlow:
             state.proposed_changes.clear()
             return ACTION_UNAVAILABLE
         if state.proposed_changes:
+            await prepare_preview(self.context)
             response = preview_text(state.proposed_changes)
             if state.outcomes:
                 response += "\n\n" + command_reply(state.outcomes)

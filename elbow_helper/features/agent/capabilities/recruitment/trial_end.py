@@ -87,7 +87,7 @@ async def prepare_trial_end(context: AgentRequestContext,
         lines.append(ACTION_TRIAL_END_TRACKING.format(
             channel=f"<#{trial['tracking_channel_id']}>"))
     lines.append(ACTION_TRIAL_END_FOLLOWUP)
-    lines.append(workflow.trial_end_followup_text(applicant_id))
+    details = (workflow.trial_end_followup_text(applicant_id),)
     if reminder and reminder.get("message_id") and reminder.get("channel_id"):
         lines.append(ACTION_TRIAL_END_REMINDER.format(
             channel=f"<#{reminder['channel_id']}>"))
@@ -114,7 +114,7 @@ async def prepare_trial_end(context: AgentRequestContext,
     context.state.proposed_changes.append(PreparedAction(
         "end_recruitment_trial", {"ticket_channel_id": ticket.id,
                                   "applicant_id": applicant_id},
-        ChangePreview(tuple(lines), recheck, summary=ACTION_TRIAL_END_LABEL),
+        ChangePreview(tuple(lines), recheck, summary=ACTION_TRIAL_END_LABEL, details=details),
         run, action_class=ActionClass.IRREVERSIBLE,
     ))
     return {"status": "confirmation_required"}

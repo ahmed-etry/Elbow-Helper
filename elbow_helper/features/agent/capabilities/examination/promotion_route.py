@@ -115,10 +115,10 @@ async def prepare_promotion_route(context: AgentRequestContext,
     if case.get("from_clan") == from_clan and case.get("to_clan") == to_clan:
         return {"status": "no_change"}
     lines = [ACTION_PROMOTION_ROUTE_LINE.format(channel=ticket.mention)]
-    lines.append(ACTION_FIELD_CHANGE.format(
-        field="Current clan", old=case.get("from_clan") or "Not set", new=from_clan))
-    lines.append(ACTION_FIELD_CHANGE.format(
-        field="Promotion target", old=case.get("to_clan") or "Not set", new=to_clan))
+    details = (ACTION_FIELD_CHANGE.format(
+        field="Current clan", old=case.get("from_clan") or "Not set", new=from_clan),
+        ACTION_FIELD_CHANGE.format(
+            field="Promotion target", old=case.get("to_clan") or "Not set", new=to_clan))
     lines.append(ACTION_PROMOTION_ROUTE_REVIEW.format(channel=review.mention))
     if case.get("availability_prompt_id"):
         lines.append(ACTION_PROMOTION_ROUTE_PROMPT.format(
@@ -143,7 +143,8 @@ async def prepare_promotion_route(context: AgentRequestContext,
 
     context.state.proposed_changes.append(PreparedAction(
         "change_promotion_route", {"ticket_channel_id": ticket.id},
-        ChangePreview(tuple(lines), recheck, summary=ACTION_PROMOTION_ROUTE_LABEL),
+        ChangePreview(tuple(lines), recheck, summary=ACTION_PROMOTION_ROUTE_LABEL,
+                      details=details, detail_sources=frozenset({ticket.id, review.id})),
         run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}
