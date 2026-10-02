@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.features.agent.actions.repository import AgentActionRepository
+from elbow_helper.features.agent.actions.store import AgentActionRepository
 from elbow_helper.features.agent.actions.contracts import ChangePreview, PreparedAction
 from elbow_helper.features.agent.actions.outcomes import CommandOutcome
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin

@@ -13,7 +13,7 @@ from .conversation.repository import ConversationRepository
 from .conversation.persistence import ConversationPersistence
 from .research.repository import ResearchJobRepository
 from .research.runner import ResearchJobRunner
-from .actions.repository import AgentActionRepository
+from .actions.store import AgentActionRepository
 from .actions.runner import AgentActionRunner
 from .scheduled.runner import ScheduledRunner
 from .scheduled.requests import ScheduledContextFactory

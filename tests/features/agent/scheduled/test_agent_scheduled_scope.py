@@ -5,7 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.agent.scheduled.tools import prepare_manage, standing_tools
-from elbow_helper.features.agent.actions.repository import AgentActionRepository
+from elbow_helper.features.agent.actions.store import AgentActionRepository
 import json
 from dataclasses import replace
 from types import SimpleNamespace

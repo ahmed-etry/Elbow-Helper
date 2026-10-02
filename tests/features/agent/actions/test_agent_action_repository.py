@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from elbow_helper.features.agent.actions.repository import (
+from elbow_helper.features.agent.actions.store import (
     ACTION_LOG_RETENTION_SECONDS, AgentActionRepository,
 )
 
@@ -23,6 +23,28 @@ class ActionRepositoryTests(unittest.TestCase):
                     "values": {"target": 5}, "preview": ["Change target 5"],
                     "before": {"value": 1}},), now=1000,
         )
+
+    def test_initial_schema_is_complete_and_reopens_without_a_transition(self):
+        with self.repository.connect() as connection:
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 1)
+            tables = {row[0] for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )}
+            self.assertEqual(tables, {
+                "action_runs", "action_steps", "action_log", "agent_messages",
+                "saved_requests", "watchers", "member_timezones",
+            })
+            for table in tables:
+                with self.subTest(table=table):
+                    columns = {row[1]: row for row in connection.execute(
+                        f"PRAGMA table_info({table})"
+                    )}
+                    self.assertNotIn("lease_expires_at", columns)
+                    if "guild_id" in columns:
+                        self.assertEqual(columns["guild_id"][3], 1)
+        run_id = self.create()
+        reopened = AgentActionRepository(self.repository.path)
+        self.assertEqual(reopened.run(run_id)["requester_id"], 4)
 
     def test_claim_and_step_are_single_use_with_a_durable_log(self):
         run_id = self.create()

@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from elbow_helper.features.agent.actions.repository import AgentActionRepository
+from elbow_helper.features.agent.actions.store import AgentActionRepository
 
 
 class StandingRepositoryTests(unittest.TestCase):

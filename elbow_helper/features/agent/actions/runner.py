@@ -24,7 +24,7 @@ from ..wording import (
     ACTION_RUN_DONE, COMMAND_NO_CHANGES,
 )
 from .contracts import ActionClass, PreparedAction, check_bundle
-from .repository import AgentActionRepository
+from .store import AgentActionRepository
 
 
 LOGGER = logging.getLogger(__name__)

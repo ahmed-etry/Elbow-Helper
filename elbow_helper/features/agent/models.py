@@ -22,7 +22,7 @@ from .actions.contracts import ActionClass
 if TYPE_CHECKING:
     from .engine.capability_contract import CapabilityContract
     from .research.repository import ResearchJobRepository
-    from .actions.repository import AgentActionRepository
+    from .actions.store import AgentActionRepository
     from .actions.runner import AgentActionRunner
     from .knowledge.store import KnowledgeStore
     from elbow_helper.features.clan_health.queries import ClanHealthQueries

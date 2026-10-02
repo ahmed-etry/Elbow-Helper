@@ -32,7 +32,7 @@ from .requests import (
 )
 from ..engine.service import AgentService
 from ..actions.runner import AgentActionRunner
-from ..actions.repository import AgentActionRepository
+from ..actions.store import AgentActionRepository
 from discord.ext import commands
 
 LOGGER = logging.getLogger(__name__)

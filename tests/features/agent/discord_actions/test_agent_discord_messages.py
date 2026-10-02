@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.features.agent.actions.contracts import (
     ActionClass, ChangePreview, PreparedAction,
 )
-from elbow_helper.features.agent.actions.repository import AgentActionRepository
+from elbow_helper.features.agent.actions.store import AgentActionRepository
 from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.agent.discord_actions.messages import (
     find_agent_files, prepare_delete, prepare_edit, prepare_post,
