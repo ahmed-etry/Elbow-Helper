@@ -41,7 +41,7 @@ from ..files.contracts import (
     TextImportArtifact,
     XlsxImportArtifact,
 )
-from ..reports.research import DiscordResearchReport
+from ..research.report import DiscordResearchReport
 from ..reports.codec import decode_report
 from .repository import MAX_SNAPSHOT_BYTES, StoredConversation
 from .instructions import WorkingState, TaskInstruction, MAX_ACTIVE_INSTRUCTIONS, MAX_INSTRUCTION_REVISIONS, MAX_INSTRUCTION_BYTES

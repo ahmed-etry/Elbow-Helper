@@ -13,11 +13,11 @@ from elbow_helper.discord.message_search import (
 )
 from elbow_helper.discord.thread_discovery import DiscordArchivedThreadPage
 from elbow_helper.features.agent.models import AgentTurnState
-from elbow_helper.features.agent.tools.discord import (
+from elbow_helper.features.agent.research.history import (
     find_discord_channels, read_discord_channel_history,
     search_discord_messages,
 )
-from elbow_helper.features.agent.tools.threads import find_discord_threads
+from elbow_helper.features.agent.research.threads import find_discord_threads
 
 
 def _context():
@@ -103,7 +103,7 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
         return results, rows
 
     async def test_larger_history_page_reads_same_evidence_with_fewer_tool_calls(self):
-        from elbow_helper.features.agent.tools.discord import discord_tools
+        from elbow_helper.features.agent.research.history import discord_tools
         from elbow_helper.features.agent.service import _valid_arguments
 
         tool = next(tool for tool in discord_tools() if tool.definition.name == "read_discord_channel_history")
@@ -133,7 +133,7 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(_bound_tool_result(encoded, MAX_TOOL_RESULT_CHARACTERS), encoded)
 
     async def test_twenty_results_are_valid_and_reach_discord(self):
-        from elbow_helper.features.agent.tools.discord import discord_tools
+        from elbow_helper.features.agent.research.history import discord_tools
         from elbow_helper.features.agent.service import _valid_arguments
 
         context = _context()
@@ -359,7 +359,7 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
             return channel is parent
 
         with patch(
-            "elbow_helper.features.agent.tools.threads.can_access_message_channel",
+            "elbow_helper.features.agent.research.threads.can_access_message_channel",
             side_effect=access,
         ):
             result = await find_discord_threads(context, {
@@ -404,7 +404,7 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
             return channel is parent or channel is allowed
 
         with patch(
-            "elbow_helper.features.agent.tools.threads.can_access_message_channel",
+            "elbow_helper.features.agent.research.threads.can_access_message_channel",
             side_effect=access,
         ):
             result = await find_discord_threads(context, {

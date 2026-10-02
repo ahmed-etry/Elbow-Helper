@@ -92,7 +92,7 @@ class DependencyBoundaryTests(unittest.TestCase):
         storage_codec = (agent_root / "conversation" / "codec.py").read_text(
             encoding="utf-8"
         )
-        research_reports = (agent_root / "reports" / "research.py").read_text(
+        research_reports = (agent_root / "research" / "report.py").read_text(
             encoding="utf-8"
         )
 
@@ -105,7 +105,7 @@ class DependencyBoundaryTests(unittest.TestCase):
         research_runner = (agent_root / "research" / "runner.py").read_text(
             encoding="utf-8"
         )
-        self.assertNotIn(".tools.research", research_runner)
+        self.assertNotIn(".research.tools", research_runner)
         spreadsheet_tools = (
             agent_root / "tools" / "spreadsheets.py"
         ).read_text(encoding="utf-8")
@@ -280,7 +280,7 @@ class DependencyBoundaryTests(unittest.TestCase):
 
     def test_thread_discovery_transport_stays_out_of_agent_tools(self) -> None:
         source = (
-            FEATURE_ROOT / "agent" / "tools" / "threads.py"
+            FEATURE_ROOT / "agent" / "research" / "threads.py"
         ).read_text(encoding="utf-8-sig")
         self.assertNotIn("guild.active_threads(", source)
         self.assertNotIn("parent.archived_threads(", source)

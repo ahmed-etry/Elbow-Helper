@@ -24,8 +24,8 @@ from elbow_helper.features.agent.research.repository import (
 from elbow_helper.features.agent.research.contracts import ResearchJobDefinition
 from elbow_helper.features.agent.research.runner import ResearchJobRunner
 from elbow_helper.features.agent.models import AgentRequestContext, AgentTurnState
-from elbow_helper.features.agent.reports.research import DiscordResearchReport
-from elbow_helper.features.agent.tools.research import (
+from elbow_helper.features.agent.research.report import DiscordResearchReport
+from elbow_helper.features.agent.research.tools import (
     cancel_discord_research_job,
     continue_discord_research_job,
     read_discord_research_job,
@@ -34,7 +34,7 @@ from elbow_helper.features.agent.tools.research import (
     start_discord_history_job,
     start_discord_research_job,
 )
-from elbow_helper.features.agent.tools.research_batches import (
+from elbow_helper.features.agent.research.batches import (
     list_discord_research_jobs, read_discord_research_jobs,
     start_discord_research_batch,
 )
@@ -864,7 +864,7 @@ class ResearchJobToolTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_multi_channel_batch_cancels_all_on_post_create_access_loss(self):
         with patch(
-            "elbow_helper.features.agent.tools.research_batches.accessible_message_channel",
+            "elbow_helper.features.agent.research.batches.accessible_message_channel",
             AsyncMock(side_effect=(
                 self.channels[100], self.channels[200],
                 self.channels[100], None,
@@ -1025,7 +1025,7 @@ class ResearchJobToolTests(unittest.IsolatedAsyncioTestCase):
     async def test_role_loss_during_creation_cancels_the_job(self):
         access = AsyncMock(side_effect=({100: self.channel}, AgentAccessLost("role removed")))
         with patch(
-            "elbow_helper.features.agent.tools.research.require_evidence_access",
+            "elbow_helper.features.agent.research.tools.require_evidence_access",
             access,
         ):
             with self.assertRaises(AgentAccessLost):

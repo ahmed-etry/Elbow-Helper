@@ -80,7 +80,7 @@ from .leadership_record import LeadershipRecordReport
 from .movement import FamilyMovementReport, OwnedFamilyAccountMovement
 from .recruitment import RecruitmentTrialReport
 from .roles import RoleAccountReport
-from .research import DiscordResearchReport
+from ..research.report import DiscordResearchReport
 from .roster import RosterReport
 from .support import SupportTicketReport
 from .transfer import TransferQueueReport

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from typing import Any
-from ..research.contracts import (
+from .contracts import (
     DiscordResearchJob, MAX_JOB_MESSAGES,
     validate_research_coverage, validate_research_message,
 )

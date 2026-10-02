@@ -13,10 +13,10 @@ from ..access import (
     require_evidence_access,
 )
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from ..research.contracts import (
+from .contracts import (
     DiscordResearchJob, MAX_RESEARCH_BATCH_JOBS, ResearchJobDefinition,
 )
-from .discord import HISTORY_PAGE_LIMIT, SEARCH_RESULT_LIMIT
+from .history import HISTORY_PAGE_LIMIT, SEARCH_RESULT_LIMIT
 
 
 def research_batch_tools() -> tuple[RegisteredAgentTool, ...]:

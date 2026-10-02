@@ -19,7 +19,7 @@ from .cwl_bonus_scoring import cwl_bonus_scoring_tools
 from .cwl_cc_status import cwl_cc_status_tools
 from .cwl_prep_refresh import cwl_prep_refresh_tools
 from .cwl_member_hub import cwl_member_hub_tools
-from .discord import discord_tools
+from ..research.history import discord_tools
 from ..discord_actions.roles import discord_role_tools
 from ..discord_actions.messages import discord_message_tools
 from ..discord_actions.threads import discord_thread_tools
@@ -36,7 +36,7 @@ from .leadership_news import leadership_news_tools
 from .member_lifecycle import member_lifecycle_tools
 from .members import member_tools
 from .missing_elder_board import missing_elder_board_tools
-from .research import research_tools
+from ..research.tools import research_tools
 from .records import record_tools
 from .promotion_route import promotion_route_tools
 from .recruitment import recruitment_tools
@@ -50,7 +50,7 @@ from .roster_account_management import roster_account_management_tools
 from .saved_reports import replace_report_tools
 from .spreadsheets import spreadsheet_tools
 from .support import support_tools
-from .threads import thread_tools
+from ..research.threads import thread_tools
 from .ticket_reopen import ticket_reopen_tools
 from .transfers import transfer_tools
 from .trial_end import trial_end_tools

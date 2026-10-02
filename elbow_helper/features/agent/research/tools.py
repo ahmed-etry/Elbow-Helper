@@ -15,12 +15,12 @@ from ..access import (
 )
 from ..reports.base import ArtifactCapacityError, retain_report
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
-from ..research.execution import advance_discord_research_job
-from ..reports.research import DiscordResearchReport
-from .discord import (
+from .execution import advance_discord_research_job
+from .report import DiscordResearchReport
+from .history import (
     HISTORY_PAGE_LIMIT, SEARCH_RESULT_LIMIT,
 )
-from .research_batches import research_batch_tools
+from .batches import research_batch_tools
 
 
 def research_tools() -> tuple[RegisteredAgentTool, ...]:
