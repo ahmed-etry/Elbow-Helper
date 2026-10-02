@@ -21,6 +21,12 @@ from .budgets import ContextBudget
 from .usage import RequestUsage
 from ..plan.scope import ScopeLedger
 from elbow_helper.infrastructure.ai.agent import AgentSession
+from ..prompts import (
+    REPEAT_TOOL_CALL_INSTRUCTION,
+    CONTINUE_ANSWER_INSTRUCTION,
+    AUTHORIZED_CONTEXT_INSTRUCTION,
+    INCOMPLETE_PLAN_INSTRUCTION,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -76,7 +82,7 @@ class ModelRounds:
                         json.dumps(
                             {
                                 "flags": {"status": "failed", "limits": ["access_lost"]},
-                                "instruction": "Answer using the remaining authorized context.",
+                                "instruction": AUTHORIZED_CONTEXT_INSTRUCTION,
                             }
                         ),
                     )
@@ -118,11 +124,11 @@ class ModelRounds:
             self.budget.observe(model_step.usage, projected_input=projected)
             outcome = "completed"
             LOGGER.info(
-                ('Agent model response: request=%s round=%s '
-                            'model=%s provider_request_id=%s '
-                            'provider_duration_ms=%s prompt_tokens=%s '
-                            'completion_tokens=%s cache_hit_tokens=%s '
-                            'cache_miss_tokens=%s'),
+                ("Agent model response: request=%s round=%s "
+                            "model=%s provider_request_id=%s "
+                            "provider_duration_ms=%s prompt_tokens=%s "
+                            "completion_tokens=%s cache_hit_tokens=%s "
+                            "cache_miss_tokens=%s"),
                 self.request_id,
                 self.rounds,
                 model_step.model_identity,
@@ -146,23 +152,15 @@ class ModelRounds:
                     (
                         AgentToolResult(
                             call.call_id,
-                            json.dumps(
-                                {
-                                    "error": ('The prior model output was incomplete. '
-                                                'Submit the full plan again.')
-                                }
-                            ),
+                            json.dumps({"error": INCOMPLETE_PLAN_INSTRUCTION}),
                         )
                         for call in model_step.tool_calls
                     )
                 )
                 instruction = (
-                    "Submit the full tool call again; the previous one was incomplete."
+                    REPEAT_TOOL_CALL_INSTRUCTION
                     if incomplete_calls
-                    else (
-                        ('Continue the previous answer from where it '
-                                    'stopped. Do not repeat it.')
-                    )
+                    else CONTINUE_ANSWER_INSTRUCTION
                 )
                 continuation = await self.advance(
                     incomplete_calls,
@@ -185,9 +183,9 @@ class ModelRounds:
             return model_step
         finally:
             LOGGER.info(
-                ('Agent model round: request=%s round=%s '
-                            'outcome=%s effort=%s output_limit=%s '
-                            'elapsed_ms=%s'),
+                ("Agent model round: request=%s round=%s "
+                            "outcome=%s effort=%s output_limit=%s "
+                            "elapsed_ms=%s"),
                 self.request_id,
                 self.rounds,
                 outcome,

@@ -33,6 +33,10 @@ from collections.abc import Callable
 from ..models import AgentRequestContext, RegisteredAgentTool
 from .budgets import ContextBudget
 from elbow_helper.infrastructure.ai.agent import AgentSession
+from ..prompts import (
+    RESULT_ANSWER_INSTRUCTION,
+    MISSING_VALUES_INSTRUCTION,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -138,11 +142,7 @@ class AnswerFlow:
                             "results": results,
                             "missing_options": options,
                             "missing_hints": hints,
-                            "instruction": ('Ask the member for all missing values '
-                                        'together in your own words. Use the option '
-                                        'descriptions and choices as data. Suggest '
-                                        'only values the data supports. Do not say '
-                                        'the command ran.'),
+                            "instruction": MISSING_VALUES_INSTRUCTION,
                         },
                         ensure_ascii=False,
                         default=str,
@@ -189,8 +189,7 @@ class AnswerFlow:
                 json.dumps(
                     {
                         "results": results,
-                        "instruction": ('Answer now from these results. Submit '
-                                    'another plan only for a remaining gap.'),
+                        "instruction": RESULT_ANSWER_INSTRUCTION,
                     },
                     ensure_ascii=False,
                     default=str,

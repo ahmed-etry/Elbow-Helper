@@ -5,6 +5,9 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from typing import Any
+from ..prompts import (
+    PLAN_CORRECTION_INSTRUCTION,
+)
 
 
 LIMIT_FIELDS = frozenset({
@@ -100,4 +103,4 @@ def plan_feedback(error: str, *, step_id: str = "", offered=()) -> dict[str, Any
     return {"flags": {"status": "refused",
                       "rule": re.sub(r"[^a-z0-9]+", "_", error.casefold()).strip("_")},
             "step_id": step_id, "offered": list(offered),
-            "instruction": "Correct the plan once or offer the refused sources without reading them."}
+            "instruction": PLAN_CORRECTION_INSTRUCTION}

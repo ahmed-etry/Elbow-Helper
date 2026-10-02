@@ -15,6 +15,9 @@ from ..models import RegisteredAgentTool
 from .checker import check_plan
 from .format import PLAN_TOOL_NAME
 from .results import plan_feedback
+from ..prompts import (
+    ONE_PLAN_INSTRUCTION,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -51,7 +54,7 @@ async def read_request(
                 return ReadDecision(step.content, None, tuple(rounds))
             raise PlanNotSettled("A corrected plan is required.")
         if len(step.tool_calls) != 1 or step.tool_calls[0].name != PLAN_TOOL_NAME:
-            issue = "Submit one request plan."
+            issue = ONE_PLAN_INSTRUCTION
             step_id, offered = "", ()
         else:
             try:

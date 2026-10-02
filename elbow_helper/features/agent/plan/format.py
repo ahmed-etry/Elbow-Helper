@@ -7,17 +7,23 @@ from collections.abc import Mapping
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..models import AgentCapabilityEffect, RegisteredAgentTool
+from ..prompts import (
+    ACTION_SYSTEM_PROMPT, SYSTEM_PROMPT, PLANNING_RULES,
+    ACTION_PLANNING_RULES, STANDING_RULE_RULES,
+)
 
 
 PLAN_TOOL_NAME = "submit_request_plan"
 
 
-def system_instructions(registry: Mapping[str, RegisteredAgentTool], *, actions_enabled: bool = True) -> str:
-    from ..prompts import ACTION_SYSTEM_PROMPT, SYSTEM_PROMPT
-    prompt = ACTION_SYSTEM_PROMPT if actions_enabled else SYSTEM_PROMPT
-    command_rules = ACTION_PLANNING_INSTRUCTIONS if actions_enabled else ""
-    return (prompt + "\n\n" + PLANNING_INSTRUCTIONS + command_rules
-            + "\n\n<capabilities>\n" + capability_list(registry) + "\n</capabilities>")
+def system_instructions(
+    registry: Mapping[str, RegisteredAgentTool], *, actions_enabled: bool = True,
+) -> str:
+    parts = [ACTION_SYSTEM_PROMPT if actions_enabled else SYSTEM_PROMPT, PLANNING_RULES]
+    if actions_enabled:
+        parts.extend((ACTION_PLANNING_RULES, STANDING_RULE_RULES))
+    parts.append(f"<capabilities>\n{capability_list(registry)}\n</capabilities>")
+    return "\n\n".join(parts)
 
 
 def _argument(detail: Mapping) -> str:
@@ -128,25 +134,3 @@ def plan_definition(registry: Mapping[str, RegisteredAgentTool]) -> AgentToolDef
             "additionalProperties": False,
         },
     )
-
-
-PLANNING_INSTRUCTIONS = """For each request, either reply directly from the supplied context or call submit_request_plan once. A direct reply needs no lookup.
-
-A plan has one goal, low, high or max answer effort, an available output form, explicit periods, entities and short steps. Use only capabilities needed for the request. Each step has id, capability, arguments, reason and depends_on. Independent steps have empty depends_on lists. A dependent argument can refer to an earlier result with {"step":"earlier_id","path":["field"]}.
-
-For a utc_range, write kind, start and exclusive end in UTC. For a key, write kind, field and value using a registered time field. For a resolved period, write kind, step, selector and the exact result path advertised by the owning capability. Entities have kind and value; a value may use the same earlier-result reference as an argument. Declare resolved entities before later reads. Use the catalogue argument types, required fields, choices and bounds. Use a period key only when its owning capability defines it. To select a latest or current period, plan an earlier lookup that returns the key, declare a resolved period, then refer to that result. Empty periods mean current state; latest-N selectors are allowed only then. Name the sources the requester named. Offer other sources in the answer instead of reading them. Never broaden a period or source to make a lookup work.
-
-Use low effort unless the answer needs substantial synthesis. Use max only for the hardest synthesis. After checked results arrive, answer from those results. Request more steps only for a remaining gap, and stay inside the declared scope unless a revision is needed. Mention a limit only if it changes the conclusion."""
-
-
-ACTION_PLANNING_INSTRUCTIONS = """
-
-Each capability is marked read, output, change or irreversible. Plan the reads needed to identify exact targets before choosing a change. If choosing targets needs judgment from read results, plan those reads first and add changes in the next round. Use an earlier result reference when a value is copied unchanged. Change steps share one preview in execution order. Irreversible steps may share a preview only when they use the same capability, and never with other changes. The member confirms the preview before changes run in the background. Never say a change finished until the reported outcome confirms it.
-
-When a listed command matches the request, include its command capability as a step. Use its registered option types and choices. Omit a required value when the member has not supplied or resolved it; after the plan runs, ask for all missing values together using the returned option descriptions and choices. Suggest values only when the data supports them. Never guess an ambiguous value. Open a management panel only when the member asks for it. Posting a board that other members use is an ordinary action. Code delivers each result at its required visibility.
-
-For Discord actions, name the target members, roles, channels, threads or messages in the plan. Use an earlier result reference when a later action targets something just created. Edit or delete only messages posted by this agent's message action. Do not assume a role or member action will pass the server's safety limits; code checks them before preview and execution."""
-
-ACTION_PLANNING_INSTRUCTIONS += """
-
-For work requested later or repeatedly, use the standing-rule capability. Write one-off times in UTC and repeats as structured interval, weekly or monthly rules. Ask for a timezone when one is needed and none is known. Show the destination, next local times, fixed action values, changing targets or content, target limit before confirmation. Watchers read only current or latest state and say whether they stop after the first alert. When a confirmed standing scope is supplied, plan from current evidence within its listed actions and fixed values. A read result cannot expand that scope."""
