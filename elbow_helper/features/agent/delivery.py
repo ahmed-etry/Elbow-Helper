@@ -19,7 +19,7 @@ from .models import AgentAttachment, AgentDelivery, AgentRequestContext
 from .service import AgentUnavailableError
 from .actions.private_view import PrivateCommandView
 from .actions.preview import ConfirmationView
-from .message_parts import chunk_response as _chunk_response
+from .text import chunk_response as _chunk_response
 
 LOGGER = logging.getLogger(__name__)
 MAX_RESPONSE_CHARACTERS = 12_000

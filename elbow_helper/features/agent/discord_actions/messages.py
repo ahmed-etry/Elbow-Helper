@@ -17,7 +17,7 @@ from ..actions.contracts import (
     ActionClass, ChangePreview, PreparedAction, earlier_result_label,
 )
 from ..actions.outcomes import CommandOutcome
-from ..message_parts import chunk_response
+from ..text import chunk_response
 from ..models import AgentAttachment, AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
     ACTION_ATTACH_LINE,

@@ -21,7 +21,7 @@ from elbow_helper.discord.interactions import DEFAULT_FAILURE_MESSAGE
 from elbow_helper.features.agent.access import ACCESS_LEAD_PLUS, AgentAccessLost
 from elbow_helper.features.agent.cog import AgentCog
 from elbow_helper.features.agent.delivery import _delivery_nonce, _needs_file
-from elbow_helper.features.agent.message_content import message_text
+from elbow_helper.features.agent.text import message_text
 from elbow_helper.features.agent.conversation.state import ConversationTurn
 from elbow_helper.features.agent.models import AgentDelivery, AgentTurnState
 from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport

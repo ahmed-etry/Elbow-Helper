@@ -26,7 +26,7 @@ from .conversation.state import (
     Conversation, ConversationRecord, ConversationStore, ConversationTurn,
 )
 from .conversation.instructions import WorkingState
-from .message_content import message_text
+from .text import message_text
 from .models import AgentDelivery, AgentRequestContext, AgentTurnState
 from .knowledge.report import KnowledgeReport
 from .service import AgentUnavailableError, AgentService

@@ -14,7 +14,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..access import accessible_message_channel
 from ..models import AgentRequestContext
-from ..message_content import message_text
+from ..text import message_text
 from ..models import RegisteredAgentTool
 from ..capabilities.validation import bounded_int
 from ..capabilities.validation import bounded_text
