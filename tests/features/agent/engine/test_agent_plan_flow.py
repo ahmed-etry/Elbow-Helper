@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from features.agent.engine.helpers import patch_engine
+
 import json
 import asyncio
 from dataclasses import replace
@@ -15,7 +17,8 @@ import discord
 
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.models import AgentRequestContext, RegisteredAgentTool, AgentCapabilityEffect
-from elbow_helper.features.agent.service import AgentService, AgentUnavailableError
+from elbow_helper.features.agent.engine.service import AgentService
+from elbow_helper.features.agent.engine.service import AgentUnavailableError
 from elbow_helper.features.agent.commands.bridge import build_command_tools
 from elbow_helper.features.agent.actions.outcomes import CommandOutcome
 from elbow_helper.features.agent.actions.preview import ChangePreview
@@ -116,7 +119,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
 
     async def _answer(self, session, context=None, conversation_history=""):
         model = _Model(session)
-        with patch("elbow_helper.features.agent.service.build_agent_tools",
+        with patch("elbow_helper.features.agent.engine.service.build_agent_tools",
                    return_value=self.registry):
             answer = await AgentService(model).answer(
                 question="Use the supplied values", local_context="",
@@ -256,7 +259,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             _model_step(plan), AgentStep("", (extra,), AgentUsage()),
             AgentStep("Seven.", (), AgentUsage()),
         ], self.events)
-        with patch("elbow_helper.features.agent.service.MAX_MODEL_ROUNDS", 2):
+        with patch("elbow_helper.features.agent.engine.budgets.MAX_MODEL_ROUNDS", 2):
             answer, _ = await self._answer(session)
         self.assertEqual(answer, "Seven.")
         self.assertEqual(len(session.calls), 3)
@@ -347,7 +350,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.dict("elbow_helper.features.agent.engine.capability_contract.CONTRACTS",
                        {"read_value": contract}),
-            patch("elbow_helper.features.agent.service.can_disclose_provenance",
+            patch("elbow_helper.features.agent.engine.steps.can_disclose_provenance",
                   return_value=False),
         ):
             answer, _ = await self._answer(session)
@@ -358,7 +361,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_unexpected_value_error_is_not_reported_as_an_unsettled_plan(self):
         session = _Session([], self.events)
         with (
-            patch("elbow_helper.features.agent.service.read_request",
+            patch("elbow_helper.features.agent.engine.flow.read_request",
                   AsyncMock(side_effect=ValueError("broken lookup"))),
             self.assertRaisesRegex(ValueError, "broken lookup"),
         ):
@@ -378,7 +381,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             raise TextGenerationError("synthetic_failure")
 
         session.advance = fail
-        with self.assertLogs("elbow_helper.features.agent.service", level="INFO") as logs:
+        with self.assertLogs("elbow_helper.features.agent.engine", level="INFO") as logs:
             with self.assertRaises(AgentUnavailableError):
                 await self._answer(session)
         self.assertTrue(any("attempted_rounds=1" in line and "unknown_token_rounds=1" in line
@@ -386,7 +389,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_success_without_usage_is_not_recorded_as_known_free(self):
         session = _Session([AgentStep("Ready.", (), AgentUsage())], self.events)
-        with self.assertLogs("elbow_helper.features.agent.service", level="INFO") as logs:
+        with self.assertLogs("elbow_helper.features.agent.engine", level="INFO") as logs:
             await self._answer(session)
         self.assertTrue(any("unknown_token_rounds=1" in line and "unknown_cache_rounds=1" in line
                             for line in logs.output))
@@ -395,7 +398,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         reply = AgentStep("Ready.", (), AgentUsage(100, 50, 80, 20),
                           "provider-id", "synthetic-model", 7)
         session = _Session([_model_step(_plan([_step("first")])), reply], self.events)
-        with self.assertLogs("elbow_helper.features.agent.service", level="INFO") as logs:
+        with self.assertLogs("elbow_helper.features.agent.engine", level="INFO") as logs:
             await self._answer(session)
         self.assertTrue(any("provider_request_id=provider-id" in line and "provider_duration_ms=7" in line
                             and "model=synthetic-model" in line for line in logs.output))
@@ -430,7 +433,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_tool_budget_forces_next_round_to_answer(self):
         session = _Session([_model_step(_plan([_step("first")])),
                             AgentStep("Ready.", (), AgentUsage())], self.events)
-        with patch("elbow_helper.features.agent.service.MAX_TOOL_CALLS", 1):
+        with patch("elbow_helper.features.agent.engine.budgets.MAX_TOOL_CALLS", 1):
             await self._answer(session)
         self.assertFalse(session.calls[1][1])
         self.assertEqual(self.events, ["model", "read", "model"])
@@ -438,7 +441,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_final_answer_recovery_does_not_loop(self):
         plan = _plan([_step("first")])
         session = _Session([_model_step(plan)] * 3, self.events)
-        with patch("elbow_helper.features.agent.service.MAX_MODEL_ROUNDS", 2):
+        with patch("elbow_helper.features.agent.engine.budgets.MAX_MODEL_ROUNDS", 2):
             answer, _ = await self._answer(session)
         self.assertIn("couldn't finish checking", answer)
         self.assertEqual(len(session.calls), 3)
@@ -515,7 +518,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             return {"value": "unsent_evidence"}
         self.registry["read_value"] = replace(self.registry["read_value"], handler=read)
         session = _Session([_model_step(_plan([_step("first")])), AgentStep("Ready.", (), AgentUsage())], self.events)
-        with patch("elbow_helper.features.agent.service.require_disclosure_access", side_effect=disclosure):
+        with patch_engine("require_disclosure_access", side_effect=disclosure):
             await self._answer(session, context)
         self.assertNotIn("unsent_evidence", str(session.calls[1]))
         self.assertEqual(context.state.source_channels, {91})
@@ -546,7 +549,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             calls.append(kwargs)
             return await advance(*args, **kwargs)
         session.advance = observe
-        with patch("elbow_helper.features.agent.service.ContextBudget.can_continue_tools", return_value=False):
+        with patch("elbow_helper.features.agent.engine.service.ContextBudget.can_continue_tools", return_value=False):
             await self._answer(session)
         self.assertFalse(calls[1]["allow_tools"])
         self.assertEqual(calls[1]["max_output_tokens"], 16_000)
@@ -559,7 +562,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                 first = _plan([_step("first")])
                 second = _plan([_step("second", {"value": 8})])
                 session = _Session([_model_step(first), _model_step(second), AgentStep("Ready.", (), AgentUsage())], self.events)
-                with patch("elbow_helper.features.agent.service." + budget, value):
+                with patch("elbow_helper.features.agent.engine.budgets." + budget, value):
                     await self._answer(session)
                 self.assertFalse(session.calls[1][1])
                 self.assertFalse(session.calls[2][1])
@@ -599,7 +602,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         session = _Session([_model_step(_plan([_step("first", {"value": 1})])),
                             _model_step(_plan([_step("second", {"value": 2})])),
                             AgentStep("Ready.", (), AgentUsage())], self.events)
-        with patch("elbow_helper.features.agent.service.require_disclosure_access", side_effect=disclosure):
+        with patch_engine("require_disclosure_access", side_effect=disclosure):
             await self._answer(session, context)
         self.assertNotIn("discarded_evidence", str(session.calls[1]))
         self.assertIn("remaining_evidence", str(session.calls[2]))
@@ -637,8 +640,8 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         create = AsyncMock(side_effect=responses)
         transport = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
         with (patch("elbow_helper.infrastructure.ai.client.AsyncOpenAI", return_value=transport),
-              patch("elbow_helper.features.agent.service.build_agent_tools", return_value=self.registry),
-              patch("elbow_helper.features.agent.service.MAX_TOOL_CALLS", 1)):
+              patch("elbow_helper.features.agent.engine.service.build_agent_tools", return_value=self.registry),
+              patch("elbow_helper.features.agent.engine.budgets.MAX_TOOL_CALLS", 1)):
             answer = await AgentService(DeepSeekTextClient("synthetic-key")).answer(
                 question="synthetic request", local_context="", context=_context())
         self.assertEqual(answer, "Ready.")
@@ -659,7 +662,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         for plan, selected in zip(plans, values):
             plan["entities"] = [{"kind": "synthetic_source", "value": value} for value in selected]
         session = _Session([*map(_model_step, plans), AgentStep("Ready.", (), AgentUsage())], self.events)
-        with patch("elbow_helper.features.agent.service.MAX_SCOPE_REVISIONS", 0):
+        with patch("elbow_helper.features.agent.engine.budgets.MAX_SCOPE_REVISIONS", 0):
             await self._answer(session)
         self.assertEqual(self.events.count("read"), 5)
 
@@ -673,7 +676,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         plan = _plan([_step("first"), output])
         plan["output"] = "write_value"
         session = _Session([_model_step(plan), AgentStep("Ready.", (), AgentUsage())], self.events)
-        with patch("elbow_helper.features.agent.service.MAX_TOOL_CALLS", 2):
+        with patch("elbow_helper.features.agent.engine.budgets.MAX_TOOL_CALLS", 2):
             await self._answer(session)
         artifact.assert_awaited_once()
         self.assertEqual(artifact.await_args.args[1], {"value": 7})
@@ -731,7 +734,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         session = _Session([_model_step(_plan([_step("first")])), AgentStep("Ready.", (), AgentUsage())], self.events)
         advance = session.advance
         clock = SimpleNamespace(value=now)
-        with patch("elbow_helper.features.agent.service.time", SimpleNamespace(monotonic=lambda: clock.value)):
+        with patch_engine("time", SimpleNamespace(monotonic=lambda: clock.value)):
             async def advance_clock(*args, **kwargs):
                 result = await advance(*args, **kwargs)
                 clock.value = now + 150
@@ -767,7 +770,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             session = _Session([_model_step(plan), AgentStep("Ready.", (), AgentUsage())], self.events)
             context.state.evidence.clear()
             with (patch.dict("elbow_helper.features.agent.engine.capability_contract.CONTRACTS", contracts),
-                  patch("elbow_helper.features.agent.service.named_sources", return_value={"discord_channel": frozenset({91})})):
+                  patch("elbow_helper.features.agent.engine.service.named_sources", return_value={"discord_channel": frozenset({91})})):
                 await self._answer(session, context)
             page.assert_awaited_once()
             result = json.loads(session.calls[1][0][0].content)["results"]["page"]
@@ -778,7 +781,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_disabled_commands_keep_the_read_only_catalogue(self):
         session = _Session([AgentStep("Ready.", (), AgentUsage())], self.events)
-        with patch("elbow_helper.features.agent.service.build_command_tools") as commands:
+        with patch("elbow_helper.features.agent.engine.service.build_command_tools") as commands:
             _, model = await self._answer(session)
         commands.assert_not_called()
         self.assertNotIn("run_command_", model.request["system_prompt"])
@@ -800,8 +803,8 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             ], self.events)
             model = _Model(session)
             context = _context()
-            with (patch("elbow_helper.features.agent.service.build_agent_tools", return_value=self.registry),
-                  patch("elbow_helper.features.agent.service.build_command_tools",
+            with (patch("elbow_helper.features.agent.engine.service.build_agent_tools", return_value=self.registry),
+                  patch("elbow_helper.features.agent.engine.service.build_command_tools",
                         return_value=(tools, capabilities))):
                 context = replace(context, bot=SimpleNamespace(tree=object()))
                 response = await AgentService(model, actions_enabled=True).answer(
@@ -838,8 +841,8 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         plan = _plan([{**_step("command"), "capability": next(iter(tools))}])
         session = _Session([_model_step(plan)], self.events)
         context = _context()
-        with (patch("elbow_helper.features.agent.service.build_agent_tools", return_value=self.registry),
-              patch("elbow_helper.features.agent.service.build_command_tools",
+        with (patch("elbow_helper.features.agent.engine.service.build_agent_tools", return_value=self.registry),
+              patch("elbow_helper.features.agent.engine.service.build_command_tools",
                     return_value=(tools, capabilities))):
             context = replace(context, bot=SimpleNamespace(tree=object()))
             answer = await AgentService(_Model(session), actions_enabled=True).answer(
@@ -869,10 +872,10 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         plan = _plan([_step("first", {"value": 202}), command_step])
         plan["entities"] = [{"kind": "synthetic_source", "value": 101}]
         session = _Session([_model_step(plan), AgentStep("Refused.", (), AgentUsage())], self.events)
-        with (patch("elbow_helper.features.agent.service.build_agent_tools", return_value=self.registry),
-              patch("elbow_helper.features.agent.service.build_command_tools",
+        with (patch("elbow_helper.features.agent.engine.service.build_agent_tools", return_value=self.registry),
+              patch("elbow_helper.features.agent.engine.service.build_command_tools",
                     return_value=(tools, capabilities)),
-              patch("elbow_helper.features.agent.service.named_sources",
+              patch("elbow_helper.features.agent.engine.service.named_sources",
                     return_value={"synthetic_source": frozenset({101})})):
             context = replace(_context(), bot=SimpleNamespace(tree=object()))
             await AgentService(_Model(session), actions_enabled=True).answer(
@@ -902,8 +905,8 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                       for value in (101, 202)])
         session = _Session([_model_step(plan)], self.events)
         context = _context()
-        with (patch("elbow_helper.features.agent.service.build_agent_tools", return_value=self.registry),
-              patch("elbow_helper.features.agent.service.build_command_tools",
+        with (patch("elbow_helper.features.agent.engine.service.build_agent_tools", return_value=self.registry),
+              patch("elbow_helper.features.agent.engine.service.build_command_tools",
                     return_value=(tools, capabilities))):
             context = replace(context, bot=SimpleNamespace(tree=object()))
             answer = await AgentService(_Model(session), actions_enabled=True).answer(
@@ -935,9 +938,9 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                        "capability": "synthetic_change"}])
         session = _Session([_model_step(plan)], self.events)
         context = replace(_context(), bot=SimpleNamespace(tree=object()))
-        with (patch("elbow_helper.features.agent.service.build_agent_tools",
+        with (patch("elbow_helper.features.agent.engine.service.build_agent_tools",
                     return_value={**self.registry, "synthetic_change": tool}),
-              patch("elbow_helper.features.agent.service.build_command_tools",
+              patch("elbow_helper.features.agent.engine.service.build_command_tools",
                     return_value=({}, {}))):
             answer = await AgentService(_Model(session), actions_enabled=True).answer(
                 question="synthetic request", local_context="", context=context,
@@ -991,9 +994,9 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         ])
         session = _Session([_model_step(plan)], self.events)
         context = replace(_context(), bot=SimpleNamespace(tree=object()))
-        with (patch("elbow_helper.features.agent.service.build_agent_tools",
+        with (patch("elbow_helper.features.agent.engine.service.build_agent_tools",
                     return_value={**self.registry, **tools}),
-              patch("elbow_helper.features.agent.service.build_command_tools",
+              patch("elbow_helper.features.agent.engine.service.build_command_tools",
                     return_value=({}, {}))):
             answer = await AgentService(_Model(session), actions_enabled=True).answer(
                 question="synthetic request", local_context="", context=context,
@@ -1025,8 +1028,8 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                       for value in (101, 202)])
         session = _Session([_model_step(plan)], self.events)
         context = _context()
-        with (patch("elbow_helper.features.agent.service.build_agent_tools", return_value=self.registry),
-              patch("elbow_helper.features.agent.service.build_command_tools",
+        with (patch("elbow_helper.features.agent.engine.service.build_agent_tools", return_value=self.registry),
+              patch("elbow_helper.features.agent.engine.service.build_command_tools",
                     return_value=(tools, capabilities))):
             context = replace(context, bot=SimpleNamespace(tree=object()))
             answer = await AgentService(_Model(session), actions_enabled=True).answer(

@@ -32,7 +32,8 @@ from .conversation.instructions import WorkingState
 from .text import message_text
 from .models import AgentDelivery, AgentRequestContext, AgentTurnState
 from .knowledge.report import KnowledgeReport
-from .service import AgentUnavailableError, AgentService
+from .engine.service import AgentUnavailableError
+from .engine.service import AgentService
 from .scheduled.scope import within_scope
 from .conversation.transcripts import TranscriptArchive, archive_write
 from .conversation.persistence import ConversationPersistence

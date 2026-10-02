@@ -13,7 +13,7 @@ from uuid import uuid4
 import discord
 
 from ..access import AgentAccessLost, require_access
-from ..service import AgentUnavailableError
+from ..engine.service import AgentUnavailableError
 from ..discord_actions.safety import check_post_access
 from ..wording import (
     ACTION_STANDING_ACCESS_PAUSED,

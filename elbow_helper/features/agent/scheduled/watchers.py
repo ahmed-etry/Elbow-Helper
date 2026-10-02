@@ -14,7 +14,8 @@ from elbow_helper.infrastructure.ai import TextGenerationError
 
 from ..engine.capability_contract import CONTRACTS
 from ..engine.capability_contract import compile_capability_call
-from ..service import AgentService, AgentUnavailableError
+from ..engine.service import AgentService
+from ..engine.service import AgentUnavailableError
 from ..engine.registry import build_agent_tools
 
 

@@ -33,6 +33,8 @@ class DiscordActionSafetyTests(unittest.TestCase):
 
 
 
+
+
     def test_missing_targets_keep_unavailable_errors(self):
         bot = SimpleNamespace(id=1, top_role=SimpleNamespace(position=30))
         with self.assertRaisesRegex(DiscordActionRefused, "That role is unavailable"):

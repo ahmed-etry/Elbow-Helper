@@ -104,7 +104,7 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_larger_history_page_reads_same_evidence_with_fewer_tool_calls(self):
         from elbow_helper.features.agent.research.history import discord_tools
-        from elbow_helper.features.agent.service import _valid_arguments
+        from elbow_helper.features.agent.plan.checker import _valid_arguments
 
         tool = next(tool for tool in discord_tools() if tool.definition.name == "read_discord_channel_history")
         self.assertTrue(_valid_arguments({"channel_id": 100, "after": "2026-09-01", "limit": 100}, tool.definition.parameters))
@@ -116,7 +116,8 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([item["message_id"] for item in large[0]["messages"]], [row.message_id for row in rows])
 
     async def test_long_history_pages_keep_every_matching_message_and_continuation(self):
-        from elbow_helper.features.agent.service import MAX_TOOL_RESULT_CHARACTERS, _bound_tool_result
+        from elbow_helper.features.agent.engine.budgets import MAX_TOOL_RESULT_CHARACTERS
+        from elbow_helper.features.agent.engine.tool_call import bound_tool_result as _bound_tool_result
 
         for author_id in (None, 1):
             with self.subTest(author_id=author_id):
@@ -134,7 +135,7 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_twenty_results_are_valid_and_reach_discord(self):
         from elbow_helper.features.agent.research.history import discord_tools
-        from elbow_helper.features.agent.service import _valid_arguments
+        from elbow_helper.features.agent.plan.checker import _valid_arguments
 
         context = _context()
         tool = next(tool for tool in discord_tools() if tool.definition.name == "search_discord_messages")

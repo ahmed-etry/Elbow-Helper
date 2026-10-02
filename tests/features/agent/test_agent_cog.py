@@ -31,7 +31,7 @@ from elbow_helper.features.agent.conversation.repository import ConversationRepo
 from elbow_helper.features.agent.conversation.codec import decode_conversation
 from elbow_helper.features.agent.conversation.persistence import ConversationPersistence
 from elbow_helper.features.agent.conversation.context import build_history_checkpoint
-from elbow_helper.features.agent.service import AgentService
+from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.infrastructure.ai.client import DeepSeekTextClient
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from elbow_helper.features.agent.models import RegisteredAgentTool
@@ -212,9 +212,9 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 with (
                     patch("elbow_helper.infrastructure.ai.client.AsyncOpenAI", return_value=transport),
                     patch("elbow_helper.features.agent.cog.discord.Member", _Member),
-                    patch("elbow_helper.features.agent.service.build_agent_tools", return_value=registry),
+                    patch("elbow_helper.features.agent.engine.service.build_agent_tools", return_value=registry),
                     patch.dict("elbow_helper.features.agent.engine.capability_contract.CONTRACTS", {"read_value": contract}),
-                    patch("elbow_helper.features.agent.service.MAX_MODEL_ROUNDS", 2),
+                    patch("elbow_helper.features.agent.engine.budgets.MAX_MODEL_ROUNDS", 2),
                 ):
                     self.cog.service = AgentService(DeepSeekTextClient("test-key"))
                     await self.cog.on_message(message)

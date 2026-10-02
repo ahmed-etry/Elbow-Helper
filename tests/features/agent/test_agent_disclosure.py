@@ -13,7 +13,7 @@ from elbow_helper.configuration.roles import CORE, LEAD
 from elbow_helper.features.agent.access import ACCESS_LEAD
 from elbow_helper.features.agent.disclosure import can_disclose_provenance
 from elbow_helper.features.agent.models import AgentRequestContext, RegisteredAgentTool
-from elbow_helper.features.agent.service import AgentService
+from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentToolDefinition, AgentUsage
 from tests.features.agent_plan_helpers import plan_call
 
@@ -179,7 +179,7 @@ class AgentDisclosureTests(unittest.IsolatedAsyncioTestCase):
             AgentStep("The source cannot be used here.", (), AgentUsage()),
         ]))
         model = SimpleNamespace(create_agent_session=lambda **kwargs: session)
-        with patch("elbow_helper.features.agent.service.build_agent_tools", return_value={"lookup": tool}):
+        with patch("elbow_helper.features.agent.engine.service.build_agent_tools", return_value={"lookup": tool}):
             answer = await AgentService(model).answer(
                 question="Check the record", local_context="", context=context,
             )

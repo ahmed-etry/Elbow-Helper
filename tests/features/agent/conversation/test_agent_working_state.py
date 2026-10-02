@@ -8,7 +8,7 @@ from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.conversation.context import compile_context
 from elbow_helper.features.agent.conversation.state import ConversationTurn
 from elbow_helper.features.agent.models import AgentRequestContext
-from elbow_helper.features.agent.service import AgentService
+from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.features.agent.conversation.instructions import WorkingState
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
 from tests.features.agent_plan_helpers import plan_call

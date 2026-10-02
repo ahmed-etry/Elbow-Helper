@@ -16,7 +16,7 @@ from .wording import COMMAND_PREVIEW_HEADER, FAILURE_MESSAGE, LONG_REPLY_FILENAM
 from .conversation.state import Conversation
 from .conversation.transcripts import archive_write
 from .models import AgentAttachment, AgentDelivery, AgentRequestContext
-from .service import AgentUnavailableError
+from .engine.service import AgentUnavailableError
 from .actions.private_view import PrivateCommandView
 from .actions.preview import ConfirmationView
 from .text import chunk_response as _chunk_response

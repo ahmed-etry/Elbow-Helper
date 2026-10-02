@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
-from elbow_helper.features.agent.service import AgentService
+from elbow_helper.features.agent.engine.service import AgentService
 from tests.features.agent_plan_helpers import plan_call
 from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
 from elbow_helper.features.agent.capabilities.rosters.reads import compare_roster_reports, find_rosters, list_roster_cycles, read_roster, read_roster_report

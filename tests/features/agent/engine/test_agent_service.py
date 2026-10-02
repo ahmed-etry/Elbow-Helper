@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from features.agent.engine.helpers import patch_engine
+
 import asyncio
 from dataclasses import replace
 from datetime import datetime
@@ -16,10 +18,12 @@ from unittest.mock import patch
 from elbow_helper.features.agent.models import AgentAttachment, AgentCapabilityEffect, RegisteredAgentTool
 from elbow_helper.features.agent.models import AgentRequestContext
 from elbow_helper.configuration.roles import CORE, LEAD, LEAD_PLUS
-from elbow_helper.features.agent.service import AgentService
+from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.features.agent.engine.capability_contract import compile_capability_call
 from elbow_helper.features.agent.engine.registry import build_agent_tools
-from elbow_helper.features.agent.service import _valid_arguments, _bound_tool_result, _evidence_record
+from elbow_helper.features.agent.plan.checker import _valid_arguments
+from elbow_helper.features.agent.engine.tool_call import bound_tool_result as _bound_tool_result
+from elbow_helper.features.agent.engine.tool_call import evidence_record as _evidence_record
 from elbow_helper.features.agent.access import ACCESS_LEAD_PLUS, AgentAccessLost
 from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
 from elbow_helper.infrastructure.ai import AgentStep
@@ -28,7 +32,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from elbow_helper.infrastructure.ai import AgentUsage
 from elbow_helper.infrastructure.ai import TextGenerationError
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
-from elbow_helper.features.agent.service import AgentUnavailableError
+from elbow_helper.features.agent.engine.service import AgentUnavailableError
 from tests.features.agent_plan_helpers import plan_call
 
 
@@ -172,7 +176,7 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
             raise RuntimeError("simulated failure")
 
         with self.assertLogs(
-            "elbow_helper.features.agent.service", level="ERROR",
+            "elbow_helper.features.agent.engine.tool_call", level="ERROR",
         ):
             result = await AgentService._execute_tool(
                 name="failing", handler=failing_handler, arguments={},
@@ -209,7 +213,7 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
             return {"report_id": replacement.report_id}
 
         with patch(
-            "elbow_helper.features.agent.service.require_evidence_access",
+            "elbow_helper.features.agent.engine.tool_call.require_evidence_access",
             new=AsyncMock(side_effect=AgentAccessLost("lost")),
         ):
             with self.assertRaises(AgentAccessLost):
@@ -274,10 +278,10 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
             AgentStep("done", (), AgentUsage()),
         ])
         with (
-            patch("elbow_helper.features.agent.service.build_agent_tools", return_value={"lookup": tool}),
+            patch("elbow_helper.features.agent.engine.service.build_agent_tools", return_value={"lookup": tool}),
             patch("elbow_helper.features.agent.access.accessible_message_channel", return_value=object()),
-            patch("elbow_helper.features.agent.service.require_disclosure_access"),
-            patch("elbow_helper.features.agent.service.require_destination_access"),
+            patch_engine("require_disclosure_access"),
+            patch("elbow_helper.features.agent.engine.tool_call.require_destination_access"),
         ):
             await AgentService(_AgentModel(session)).answer(
                 question="test", local_context="", context=context,
