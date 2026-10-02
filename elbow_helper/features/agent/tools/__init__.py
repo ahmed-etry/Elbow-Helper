@@ -51,7 +51,8 @@ from ..reports.tools import replace_report_tools
 from ..files.spreadsheet_tools import spreadsheet_tools
 from ..capabilities.support_tickets.reads import support_tools
 from ..research.threads import thread_tools
-from .ticket_reopen import ticket_reopen_tools
+from ..capabilities.hibernation.tickets import reactivation_ticket_tools
+from ..capabilities.support_tickets.reopen import support_reopen_tools
 from ..capabilities.clan_transfers.reads import transfer_tools
 from ..capabilities.recruitment.trial_end import trial_end_tools
 from ..capabilities.clan_transfers.queue import transfer_management_tools
@@ -97,7 +98,7 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
         "member_cases": (
             *member_lifecycle_tools(), *hibernation_tools(), *support_tools(),
             *recruitment_tools(), *examination_tools(), *examiner_profile_tools(),
-            *promotion_route_tools(), *ticket_reopen_tools(), *trial_end_tools(),
+            *promotion_route_tools(), *support_reopen_tools(), *reactivation_ticket_tools(), *trial_end_tools(),
             *record_tools(),
         ),
         "files": attachment_tools(),
