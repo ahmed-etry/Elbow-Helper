@@ -67,7 +67,7 @@ from .achievement import (
 from .event import EventScheduleReport
 from .member_lifecycle import MemberLifecycleReport
 from .clan_reporting import MissingElderReport
-from .knowledge import KnowledgeReport
+from ..knowledge.report import KnowledgeReport
 from .clan_health import ClanHealthReport
 from .cwl import CwlAssScopeReport, CwlPerformanceReport
 from .cwl_bonus import CwlBonusScopeReport

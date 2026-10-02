@@ -16,7 +16,7 @@ from elbow_helper.features.agent.reports.achievement import (
 from elbow_helper.features.agent.reports.event import EventScheduleReport
 from elbow_helper.features.agent.reports.member_lifecycle import MemberLifecycleReport
 from elbow_helper.features.agent.reports.clan_reporting import MissingElderReport
-from elbow_helper.features.agent.reports.knowledge import KnowledgeReport
+from elbow_helper.features.agent.knowledge.report import KnowledgeReport
 from elbow_helper.features.agent.knowledge.store import KnowledgeStore
 from elbow_helper.features.agent.reports.cwl import (
     CwlAssScopeReport, CwlPerformanceReport,

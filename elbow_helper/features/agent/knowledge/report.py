@@ -8,7 +8,7 @@ from datetime import datetime
 import json
 from typing import Any
 
-from ..knowledge.store import KnowledgeSection, VISIBILITIES
+from .store import KnowledgeSection, VISIBILITIES
 
 
 MAX_KNOWLEDGE_PAGE_SECTIONS = 3

@@ -9,7 +9,7 @@ import logging
 from ..access import accessible_message_channel, can_disclose_provenance, has_access_requirements
 from ..models import AgentRequestContext, AgentTurnState
 from ..reports.base import retain_report
-from ..reports.knowledge import KnowledgeReport
+from ..knowledge.report import KnowledgeReport
 from .state import Conversation
 from .context import CHECKPOINT_MIN_GROWTH, CHECKPOINT_MIN_OMITTED_TURNS, build_history_checkpoint
 

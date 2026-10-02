@@ -22,7 +22,7 @@ from ..reports.achievement import (
 from ..reports.event import EventScheduleReport
 from ..reports.member_lifecycle import MemberLifecycleReport
 from ..reports.clan_reporting import MissingElderReport
-from ..reports.knowledge import KnowledgeReport
+from ..knowledge.report import KnowledgeReport
 from ..reports.roster import RosterReport
 from ..reports.cwl import CwlAssScopeReport, CwlPerformanceReport
 from ..reports.cwl_bonus import CwlBonusScopeReport

@@ -31,7 +31,7 @@ from .events import event_tools
 from .event_management import event_management_tools
 from .hibernation import hibernation_tools
 from ..conversation.history_tool import history_tools
-from .knowledge import knowledge_tools
+from ..knowledge.tools import knowledge_tools
 from .leadership_news import leadership_news_tools
 from .member_lifecycle import member_lifecycle_tools
 from .members import member_tools

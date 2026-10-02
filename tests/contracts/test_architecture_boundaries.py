@@ -155,7 +155,7 @@ class DependencyBoundaryTests(unittest.TestCase):
             "def clan_reporting_tools", 1,
         )[0])
         knowledge_tools = (
-            agent_root / "tools" / "knowledge.py"
+            agent_root / "knowledge" / "tools.py"
         ).read_text(encoding="utf-8")
         self.assertNotIn(".actions", knowledge_tools)
         self.assertNotIn(".action_storage", knowledge_tools)

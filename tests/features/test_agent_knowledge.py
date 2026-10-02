@@ -9,7 +9,7 @@ from elbow_helper.configuration.roles import CORE, LEAD
 from elbow_helper.features.agent.access import ACCESS_LEAD, AgentAccessLost
 from elbow_helper.features.agent.knowledge.store import KnowledgeStore
 from elbow_helper.features.agent.models import AgentRequestContext
-from elbow_helper.features.agent.tools.knowledge import (
+from elbow_helper.features.agent.knowledge.tools import (
     read_approved_knowledge_report, search_approved_knowledge,
 )
 

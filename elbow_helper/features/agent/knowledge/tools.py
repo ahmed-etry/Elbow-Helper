@@ -13,8 +13,8 @@ from ..access import (
     require_access_requirements, require_evidence_access,
 )
 from ..reports.base import ArtifactCapacityError, retain_report
-from ..knowledge.store import KnowledgeSection
-from ..reports.knowledge import KnowledgeReport
+from .store import KnowledgeSection
+from .report import KnowledgeReport
 from ..models import AgentRequestContext, RegisteredAgentTool
 
 

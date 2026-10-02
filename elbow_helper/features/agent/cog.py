@@ -28,7 +28,7 @@ from .conversation.state import (
 from .conversation.instructions import WorkingState
 from .message_content import message_text
 from .models import AgentDelivery, AgentRequestContext, AgentTurnState
-from .reports.knowledge import KnowledgeReport
+from .knowledge.report import KnowledgeReport
 from .service import AgentUnavailableError, AgentService
 from .scheduled.scope import within_scope
 from .conversation.transcripts import TranscriptArchive, archive_write
