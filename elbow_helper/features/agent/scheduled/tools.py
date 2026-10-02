@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from functools import partial
 from datetime import datetime, timezone
 import json
 import re
@@ -25,6 +26,10 @@ from ..wording import (
     ACTION_VALUE_YES, ACTION_VALUE_NO,
 )
 from ..discord_actions.safety import check_post_access, resolve_channel
+from ..capabilities import enabled_adapters
+from ..commands.bridge import build_command_tools
+from ..plan.checker import valid_arguments
+
 from .scope import has_raw_id, validate_scope
 from .time_rules import next_occurrences, timezone_name
 
@@ -73,12 +78,11 @@ def _schedule(values: Mapping[str, Any], *, watcher: bool, zone: str) -> tuple[d
     return times
 
 
-def _allowed_capabilities(actions: list[Mapping[str, Any]], context: AgentRequestContext) -> None:
-    from ..engine.registry import build_agent_tools
-    from ..capabilities import enabled_adapters
-    from ..commands.bridge import build_command_tools
+def _allowed_capabilities(
+    actions: list[Mapping[str, Any]], context: AgentRequestContext, registry_factory,
+) -> None:
 
-    registry = build_agent_tools()
+    registry = registry_factory()
     command_tools, command_capabilities = build_command_tools(context.bot, enabled_adapters())
     registry.update(command_tools)
     for entry in actions:
@@ -96,11 +100,8 @@ def _allowed_capabilities(actions: list[Mapping[str, Any]], context: AgentReques
             entry["action_path"] = command_capabilities[name].adapter.path
 
 
-def _watcher_reads(reads: Any) -> None:
-    from ..engine.registry import build_agent_tools
-    from ..plan.checker import valid_arguments
+def watcher_reads(reads: Any, registry: Mapping[str, RegisteredAgentTool]) -> None:
 
-    registry = build_agent_tools()
     if not isinstance(reads, list) or not 1 <= len(reads) <= 8:
         raise ValueError("Choose at least one current or latest lookup.")
     for read in reads:
@@ -129,10 +130,10 @@ def _watcher_reads(reads: Any) -> None:
             raise ValueError("Watchers use current or latest results only.")
 
 
-def _validate_watcher(values: Mapping[str, Any], actions) -> None:
+def _validate_watcher(values: Mapping[str, Any], actions, registry_factory) -> None:
     if actions:
         raise ValueError("Watchers send alerts only.")
-    _watcher_reads(values.get("reads"))
+    watcher_reads(values.get("reads"), registry_factory())
     condition = values.get("condition")
     if not isinstance(condition, str) or not condition.strip():
         raise ValueError("Describe when the watcher should alert.")
@@ -239,8 +240,9 @@ def _preview_lines(values: Mapping[str, Any], *, kind: str, request: str,
     return tuple(lines)
 
 
-async def prepare_save(context: AgentRequestContext,
-                       values: Mapping[str, Any]) -> Mapping[str, Any]:
+async def prepare_save(
+    context: AgentRequestContext, values: Mapping[str, Any], *, registry_factory,
+) -> Mapping[str, Any]:
     repository = _repository(context)
     kind = entity_kind(values["kind"])
     request = str(values["request"]).strip()
@@ -259,9 +261,9 @@ async def prepare_save(context: AgentRequestContext,
     actions = [dict(item) if isinstance(item, Mapping) else item for item in actions]
     validate_scope(actions)
     if actions:
-        _allowed_capabilities(actions, context)
+        _allowed_capabilities(actions, context, registry_factory)
     if kind == "watcher":
-        _validate_watcher(values, actions)
+        _validate_watcher(values, actions, registry_factory)
     lines = _preview_lines(values, kind=kind, request=request, zone=zone,
                            times=times, channel=channel, actions=actions,
                            context=context)
@@ -370,7 +372,9 @@ async def prepare_manage(context: AgentRequestContext,
     return {"status": "confirmation_required"}
 
 
-def standing_tools() -> tuple[RegisteredAgentTool, ...]:
+def standing_tools(
+    registry_factory: Callable[[], dict[str, RegisteredAgentTool]],
+) -> tuple[RegisteredAgentTool, ...]:
     save = AgentToolDefinition(
         "save_standing_rule",
         "Save or change a scheduled request or watcher after confirmation. Give exact UTC once/interval times or weekly/monthly local times, destination, fixed action values, changing target/content fields and target limits. Name every fixed value in scope_text. Watchers need current/latest reads, condition and repeat choice.",
@@ -419,7 +423,7 @@ def standing_tools() -> tuple[RegisteredAgentTool, ...]:
         }, "required": ["kind", "id", "operation"]},
     )
     return (
-        RegisteredAgentTool(save, prepare_save, AgentCapabilityEffect.COMMAND,
+        RegisteredAgentTool(save, partial(prepare_save, registry_factory=registry_factory), AgentCapabilityEffect.COMMAND,
                             ActionClass.CHANGE,
             contract=TOOL_CONTRACTS[save.name],
         ),

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from functools import wraps
 from collections.abc import Mapping
 from typing import Any
 from ..prompts import (
@@ -91,7 +92,6 @@ def model_result(
 
 def result_handler(handler):
     """Normalize every registered lookup at the model boundary."""
-    from functools import wraps
     @wraps(handler)
     async def wrapped(context, arguments):
         return model_result(await handler(context, arguments))

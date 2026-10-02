@@ -6,6 +6,7 @@ import asyncio
 import logging
 import json
 from itertools import groupby
+from dataclasses import dataclass, field
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 from uuid import uuid4
@@ -58,6 +59,13 @@ class StopActionRunView(discord.ui.View):
     def disable(self) -> None:
         for child in self.children:
             child.disabled = True
+
+
+@dataclass(slots=True)
+class ActionRunOutput:
+    private_parts: list[str] = field(default_factory=list)
+    private_files: list[Any] = field(default_factory=list)
+    results: dict[str, Mapping[str, Any]] = field(default_factory=dict)
 
 
 class AgentActionRunner:
@@ -151,9 +159,7 @@ class AgentActionRunner:
         channel = context.source_message.channel
         view = StopActionRunView(self.repository, run_id, context.member.id)
         progress = None
-        private_parts: list[str] = []
-        private_files = []
-        action_results: dict[str, Mapping[str, Any]] = {}
+        output = ActionRunOutput()
         outcome_status = "completed"
         try:
             progress = await channel.send(
@@ -173,76 +179,13 @@ class AgentActionRunner:
                 ):
                     outcome_status = "stopped"
                     break
-                current_action = action
-                try:
-                    require_access(context.guild, context.member.id, channel)
-                    await require_disclosure_access(context)
-                    if action.bind is not None:
-                        current_action = await action.bind(action_results)
-                        if (current_action.action_class is not action.action_class
-                                or current_action.bind is not None):
-                            raise TypeError("Action binding returned an invalid change")
-                        recorded_values = await asyncio.to_thread(
-                            self.repository.set_step_values, run_id, index,
-                            owner=owner, values=current_action.values,
-                        )
-                        if not recorded_values:
-                            raise RuntimeError("Action targets could not be recorded")
-                    if not await current_action.preview.recheck():
-                        raise ActionPreconditionChanged("Action precondition changed")
-                    async with asyncio.timeout(ACTION_TIMEOUT_SECONDS):
-                        result = await current_action.run()
-                    if not isinstance(result, ActionOutcome):
-                        raise TypeError("Action returned an invalid result")
-                    if result.status != "complete":
-                        raise ValueError("Action did not complete")
-                    if current_action.verify is not None and await current_action.verify() is False:
-                        raise ValueError("Action could not be verified")
-                    if result.visibility == "private":
-                        private_parts.extend((result.text,) if result.text else ())
-                        private_parts.extend(result.private_parts)
-                        private_files.extend(result.attachments)
-                    elif result.text:
-                        await self._send_parts(channel, result.text)
-                    recorded = await asyncio.to_thread(
-                        self.repository.finish_step, run_id, index,
-                        owner=owner, status="completed",
-                        outcome={"status": result.status, "visibility": result.visibility,
-                                 "result": result.result},
-                        after=result.after,
-                    )
-                    if not recorded:
-                        raise RuntimeError("Action result could not be recorded")
-                    if action.step_id and result.result is not None:
-                        action_results[action.step_id] = dict(result.result)
-                    if progress is not None and index + 1 < len(actions):
-                        try:
-                            await progress.edit(
-                                content=ACTION_PROGRESS.format(done=index + 1, total=len(actions)),
-                                view=view,
-                            )
-                        except discord.DiscordException:
-                            LOGGER.warning("Agent action progress could not be posted: run=%s", run_id)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as error:
-                    status = "uncertain" if _uncertain(error) else "failed"
-                    if status == "uncertain" and current_action.verify is not None:
-                        try:
-                            if await current_action.verify() is True:
-                                status = "completed"
-                        except Exception:
-                            LOGGER.exception("Agent action verification failed: run=%s step=%s", run_id, index)
-                    if status != "completed":
-                        outcome_status = "failed"
-                    await asyncio.to_thread(
-                        self.repository.finish_step, run_id, index,
-                        owner=owner, status=status,
-                        outcome={"error_class": type(error).__name__},
-                    )
-                    LOGGER.exception("Agent action failed: run=%s step=%s", run_id, index)
-                    if status != "completed":
-                        break
+                step_status = await self._run_step(
+                    run_id, index, owner, context, action, channel, progress, view, output,
+                    total=len(actions),
+                )
+                if step_status != "completed":
+                    outcome_status = "failed"
+                    break
             await asyncio.to_thread(
                 self.repository.finish_run, run_id, owner=owner, status=outcome_status,
             )
@@ -255,40 +198,124 @@ class AgentActionRunner:
             )
         finally:
             view.disable()
-            run = await asyncio.to_thread(self.repository.run, run_id)
-            report = self._report(run)
-            chunks = chunk_response(report) or [report]
-            private_view = (PrivateResultView(context.member.id,
-                                               tuple(private_parts), tuple(private_files))
-                            if private_parts or private_files else None)
-            reported = None
-            try:
-                if progress is not None:
-                    await progress.edit(content=chunks[0],
-                                        view=private_view if len(chunks) == 1 else None)
-                    reported = progress
-                    for index, chunk in enumerate(chunks[1:], start=1):
-                        reported = await channel.send(
-                            chunk,
-                            view=private_view if index == len(chunks) - 1 else None,
-                            allowed_mentions=discord.AllowedMentions.none(),
-                        )
-                else:
-                    for index, chunk in enumerate(chunks):
-                        reported = await channel.send(
-                            chunk,
-                            view=private_view if index == len(chunks) - 1 else None,
-                            allowed_mentions=discord.AllowedMentions.none(),
-                        )
-                if private_view is not None:
-                    private_view.message = reported
-            except discord.DiscordException:
-                LOGGER.exception("Agent action result could not be posted: run=%s", run_id)
-            if self.on_finish is not None:
+            await self._post_report(run_id, context, channel, progress, output)
+
+    async def _run_step(
+        self, run_id, index, owner, context, action, channel, progress, view,
+        output: ActionRunOutput, *, total: int,
+    ) -> str:
+        current_action = action
+        try:
+            require_access(context.guild, context.member.id, channel)
+            await require_disclosure_access(context)
+            if action.bind is not None:
+                current_action = await action.bind(output.results)
+                if (current_action.action_class is not action.action_class
+                        or current_action.bind is not None):
+                    raise TypeError("Action binding returned an invalid change")
+                recorded_values = await asyncio.to_thread(
+                    self.repository.set_step_values, run_id, index,
+                    owner=owner, values=current_action.values,
+                )
+                if not recorded_values:
+                    raise RuntimeError("Action targets could not be recorded")
+            if not await current_action.preview.recheck():
+                raise ActionPreconditionChanged("Action precondition changed")
+            async with asyncio.timeout(ACTION_TIMEOUT_SECONDS):
+                result = await current_action.run()
+            if not isinstance(result, ActionOutcome):
+                raise TypeError("Action returned an invalid result")
+            if result.status != "complete":
+                raise ValueError("Action did not complete")
+            if current_action.verify is not None and await current_action.verify() is False:
+                raise ValueError("Action could not be verified")
+            if result.visibility == "private":
+                output.private_parts.extend((result.text,) if result.text else ())
+                output.private_parts.extend(result.private_parts)
+                output.private_files.extend(result.attachments)
+            elif result.text:
+                await self._send_parts(channel, result.text)
+            recorded = await asyncio.to_thread(
+                self.repository.finish_step, run_id, index,
+                owner=owner, status="completed",
+                outcome={"status": result.status, "visibility": result.visibility,
+                         "result": result.result},
+                after=result.after,
+            )
+            if not recorded:
+                raise RuntimeError("Action result could not be recorded")
+            if action.step_id and result.result is not None:
+                output.results[action.step_id] = dict(result.result)
+            if progress is not None and index + 1 < total:
                 try:
-                    await self.on_finish(context, run, reported)
-                except Exception:
-                    LOGGER.exception("Agent action outcome could not be retained: run=%s", run_id)
+                    await progress.edit(
+                        content=ACTION_PROGRESS.format(done=index + 1, total=total),
+                        view=view,
+                    )
+                except discord.DiscordException:
+                    LOGGER.warning("Agent action progress could not be posted: run=%s", run_id)
+            return "completed"
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            return await self._failed_step(
+                run_id, index, owner, current_action, error,
+            )
+
+    async def _failed_step(self, run_id, index, owner, current_action, error) -> str:
+        status = "uncertain" if _uncertain(error) else "failed"
+        if status == "uncertain" and current_action.verify is not None:
+            try:
+                if await current_action.verify() is True:
+                    status = "completed"
+            except Exception:
+                LOGGER.exception("Agent action verification failed: run=%s step=%s", run_id, index)
+        await asyncio.to_thread(
+            self.repository.finish_step, run_id, index,
+            owner=owner, status=status,
+            outcome={"error_class": type(error).__name__},
+        )
+        LOGGER.exception("Agent action failed: run=%s step=%s", run_id, index)
+        return status
+
+    async def _post_report(
+        self, run_id, context, channel, progress, output: ActionRunOutput,
+    ) -> None:
+        run = await asyncio.to_thread(self.repository.run, run_id)
+        report = self._report(run)
+        chunks = chunk_response(report) or [report]
+        private_view = (PrivateResultView(context.member.id,
+                                           tuple(output.private_parts), tuple(output.private_files))
+                        if output.private_parts or output.private_files else None)
+        reported = None
+        try:
+            if progress is not None:
+                await progress.edit(content=chunks[0],
+                                    view=private_view if len(chunks) == 1 else None)
+                reported = progress
+                for index, chunk in enumerate(chunks[1:], start=1):
+                    reported = await channel.send(
+                        chunk,
+                        view=private_view if index == len(chunks) - 1 else None,
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+            else:
+                for index, chunk in enumerate(chunks):
+                    reported = await channel.send(
+                        chunk,
+                        view=private_view if index == len(chunks) - 1 else None,
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+            if private_view is not None:
+                private_view.message = reported
+        except discord.DiscordException:
+            LOGGER.exception("Agent action result could not be posted: run=%s", run_id)
+        if self.on_finish is not None:
+            try:
+                await self.on_finish(context, run, reported)
+            except Exception:
+                LOGGER.exception("Agent action outcome could not be retained: run=%s", run_id)
+
 
     @staticmethod
     def _report(run: dict[str, Any]) -> str:

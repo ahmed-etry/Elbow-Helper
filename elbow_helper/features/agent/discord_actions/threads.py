@@ -7,9 +7,11 @@ from typing import Any
 
 import discord
 
+from ..engine.capability_contract import CapabilityContract
+from ..plan.executor import resolve_arguments
+
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
-from ..engine.capability_contract import CapabilityContract
 from ..access import require_evidence_access
 from ..actions.contracts import (
     ActionClass, ChangePreview, PreparedAction, audit_reason, earlier_result_label,
@@ -252,7 +254,6 @@ async def prepare_update_thread(context: AgentRequestContext,
         except ValueError as error:
             return {"error": str(error), "prepared_count": 0}
         async def bind(results: Mapping[str, Mapping[str, Any]]) -> PreparedAction:
-            from ..plan.executor import resolve_arguments
             thread_id = resolve_arguments({"thread_id": reference}, results)["thread_id"]
             if type(thread_id) is not int:
                 raise DiscordActionRefused("The earlier action did not return a thread.")
@@ -383,7 +384,6 @@ async def prepare_thread_members(context: AgentRequestContext,
         for member in selected:
             async def bind(results: Mapping[str, Mapping[str, Any]],
                            member_id: int = member.id) -> PreparedAction:
-                from ..plan.executor import resolve_arguments
                 thread_id = resolve_arguments({"thread_id": reference}, results)["thread_id"]
                 if type(thread_id) is not int:
                     raise DiscordActionRefused("The earlier action did not return a thread.")

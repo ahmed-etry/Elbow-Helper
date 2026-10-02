@@ -13,9 +13,8 @@ from elbow_helper.discord.message_search import DiscordMessageSearchError
 from ..access import AgentAccessLost, accessible_message_channel, require_evidence_access
 from .repository import ResearchJobBusy, ResearchJobConflict
 from ..models import AgentRequestContext
-from .history import (
-    read_discord_channel_history, search_discord_messages,
-)
+from .history import read_discord_channel_history
+from .search import search_discord_messages
 
 
 async def advance_discord_research_job(

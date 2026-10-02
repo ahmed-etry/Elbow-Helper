@@ -6,6 +6,8 @@ from tempfile import TemporaryDirectory
 from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.agent.scheduled.tools import prepare_manage, standing_tools
 from elbow_helper.features.agent.actions.store import AgentActionRepository
+
+from elbow_helper.features.agent.engine import registry
 import json
 from dataclasses import replace
 from types import SimpleNamespace
@@ -13,7 +15,7 @@ from types import SimpleNamespace
 from elbow_helper.features.agent.actions.contracts import ChangePreview, PreparedAction
 from elbow_helper.features.agent.scheduled.scope import validate_scope, within_scope
 from elbow_helper.features.agent.scheduled.tools import _field_label, _fixed_display
-from elbow_helper.features.agent.scheduled.tools import _watcher_reads
+from elbow_helper.features.agent.scheduled.tools import watcher_reads
 from elbow_helper.features.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.features.agent.models import RegisteredAgentTool, AgentCapabilityEffect
 from elbow_helper.infrastructure.ai.agent import AgentToolDefinition
@@ -152,7 +154,7 @@ class ScheduledScopeTests(unittest.TestCase):
         ):
             with patch("elbow_helper.features.agent.engine.registry.build_agent_tools",
                        return_value={"synthetic": replace(tool, contract=contract)}), self.assertRaises(ValueError):
-                _watcher_reads(reads)
+                watcher_reads(reads, registry.build_agent_tools())
 
     def test_watcher_accepts_current_reads_and_rejects_state_changes(self):
         definition = AgentToolDefinition(
@@ -163,10 +165,10 @@ class ScheduledScopeTests(unittest.TestCase):
                        return_value={"synthetic": RegisteredAgentTool(
                            definition, _run, effect, contract=CapabilityContract((), ()))}):
                 if effect is AgentCapabilityEffect.READ:
-                    _watcher_reads(reads)
+                    watcher_reads(reads, registry.build_agent_tools())
                 else:
                     with self.assertRaises(ValueError):
-                        _watcher_reads(reads)
+                        watcher_reads(reads, registry.build_agent_tools())
 
     def test_target_strings_cannot_bypass_the_target_limit(self):
         allowed = [{**self.allowed[0], "variable_fields": ["players"]}]

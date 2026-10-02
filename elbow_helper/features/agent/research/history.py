@@ -10,13 +10,10 @@ import json
 
 import discord
 
-from elbow_helper.infrastructure.ai import AgentToolDefinition
 
-from ..engine.capability_contract import CapabilityContract
 from ..access import accessible_message_channel
 from ..models import AgentRequestContext
 from ..text import message_text
-from ..models import RegisteredAgentTool
 from ..capabilities.validation import bounded_int
 from ..capabilities.validation import bounded_text
 from ..capabilities.validation import positive_int
@@ -27,184 +24,6 @@ CONTEXT_MESSAGE_LIMIT = 50
 HISTORY_PAGE_LIMIT = 25
 INTERACTIVE_HISTORY_PAGE_LIMIT = 100
 HISTORY_MESSAGE_CHARACTER_BUDGET = 44_000
-
-
-def discord_tools() -> tuple[RegisteredAgentTool, ...]:
-    return (
-        RegisteredAgentTool(
-            AgentToolDefinition(
-                name="find_discord_channels",
-                description="Find accessible Discord channels by name or ID. Use the result to identify the channel requested by the asker.",
-                parameters={
-                    "type": "object", "properties": {"query": {"type": "string", "maxLength": 100}},
-                    "required": ["query"], "additionalProperties": False,
-                },
-            ),
-            find_discord_channels,
-            contract=CapabilityContract(
-                entity_fields=(),
-                time_fields=(),
-                source_scope="channel_locator",
-            ),
-        ),
-        RegisteredAgentTool(
-            AgentToolDefinition(
-                name="search_discord_messages",
-                description=(
-                    "Search accessible Discord history by words or phrases, optionally restricted "
-                    "to one or more channels, an author, or a date range. Honour the scope requested by the asker. "
-                    "For one explicit channel, continue with the returned cursor when broader coverage "
-                    "is needed. Results are not proof of absence; read surrounding messages when needed."
-                ),
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "Narrow words or phrase to search for.",
-                            "minLength": 1,
-                            "maxLength": 1024,
-                        },
-                        "limit": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": SEARCH_RESULT_LIMIT,
-                            "default": 5,
-                        },
-                        "channel_id": {"type": "integer", "minimum": 1},
-                        "channel_ids": {
-                            "type": "array", "minItems": 1, "maxItems": 20,
-                            "uniqueItems": True,
-                            "items": {"type": "integer", "minimum": 1},
-                            "description": "Explicit accessible channels to search together.",
-                        },
-                        "cursor": {
-                            "type": "string", "maxLength": 64,
-                            "description": "Continuation cursor returned by the same channel search and filters.",
-                        },
-                        "author_id": {"type": "integer", "minimum": 1},
-                        "after": {"type": "string", "maxLength": 40, "description": "Inclusive ISO 8601 date or timestamp. Use UTC when no offset is supplied."},
-                        "before": {"type": "string", "maxLength": 40, "description": "Exclusive ISO 8601 date or timestamp. Use UTC when no offset is supplied."},
-                    },
-                    "additionalProperties": False,
-                },
-            ),
-            search_discord_messages,
-            contract=CapabilityContract(
-                entity_fields=(
-                    ("channel_id", "discord_channel"),
-                    ("channel_ids", "discord_channel_set"),
-                    ("author_id", "discord_member"),
-                ),
-                time_fields=("after", "before", "cursor"),
-                source_scope="channel_messages",
-                channel_fields=("channel_id", "channel_ids"),
-                result_channel_lists=(("matches", "channel_id"),),
-                result_sources_within_query=True,
-                time_window=("after", "before", "iso_utc"),
-                bounded_fields=("cursor",),
-            ),
-        ),
-        RegisteredAgentTool(
-            AgentToolDefinition(
-                name="read_discord_channel_history",
-                description=(
-                    "Read one bounded page of every currently available message "
-                    "in one accessible Discord channel or thread from an inclusive "
-                    "start through an exclusive end (or the current request). This "
-                    "does not depend on keyword search indexing; continue with the "
-                    "returned cursor for broader coverage. Up to 100 messages fit "
-                    "in a call; long pages stop earlier with a continuation cursor. "
-                    "Use this for a period review, then search for specific gaps."
-                ),
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "channel_id": {"type": "integer", "minimum": 1},
-                        "after": {
-                            "type": "string", "maxLength": 40,
-                            "description": (
-                                "Inclusive ISO 8601 start date or timestamp. "
-                                "Use UTC when no offset is supplied."
-                            ),
-                        },
-                        "before": {
-                            "type": "string", "maxLength": 40,
-                            "description": (
-                                "Exclusive ISO 8601 end date or timestamp. "
-                                "Omit to stop at the current request."
-                            ),
-                        },
-                        "author_id": {"type": "integer", "minimum": 1},
-                        "cursor": {
-                            "type": "string", "maxLength": 64,
-                            "description": (
-                                "Continuation cursor returned for this same "
-                                "channel, period and author filter."
-                            ),
-                        },
-                        "limit": {
-                            "type": "integer", "minimum": 1,
-                            "maximum": INTERACTIVE_HISTORY_PAGE_LIMIT,
-                            "default": HISTORY_PAGE_LIMIT,
-                        },
-                    },
-                    "required": ["channel_id", "after"],
-                    "additionalProperties": False,
-                },
-            ),
-            read_discord_channel_history,
-            contract=CapabilityContract(
-                entity_fields=(("channel_id", "discord_channel"), ("author_id", "discord_member")),
-                time_fields=("after", "before", "cursor"),
-                source_scope="channel_messages",
-                channel_fields=("channel_id",),
-                result_channel_lists=(("messages", "channel_id"),),
-                result_sources_within_query=True,
-                time_window=("after", "before", "iso_utc"),
-                bounded_fields=("cursor",),
-            ),
-        ),
-        RegisteredAgentTool(
-            AgentToolDefinition(
-                name="read_message_context",
-                description=(
-                    "Read messages surrounding an accessible Discord message identified by a search "
-                    "result or message link, so its meaning can be assessed in context."
-                ),
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "channel_id": {"type": "integer", "minimum": 1},
-                        "message_id": {"type": "integer", "minimum": 1},
-                        "after": {"type": "string", "maxLength": 40},
-                        "before": {"type": "string", "maxLength": 40},
-                        "limit": {
-                            "type": "integer",
-                            "minimum": 3,
-                            "maximum": CONTEXT_MESSAGE_LIMIT,
-                            "default": 15,
-                        },
-                    },
-                    "required": ["channel_id", "message_id"],
-                    "additionalProperties": False,
-                },
-            ),
-            read_message_context,
-            contract=CapabilityContract(
-                entity_fields=(
-                    ("channel_id", "discord_channel"),
-                    ("message_id", "discord_message"),
-                ),
-                time_fields=("after", "before"),
-                source_scope="channel_messages",
-                channel_fields=("channel_id",),
-                result_channel_fields=("channel_id",),
-                result_sources_within_query=True,
-                time_window=("after", "before", "iso_utc"),
-            ),
-        ),
-    )
 
 
 async def read_discord_channel_history(
@@ -221,8 +40,8 @@ async def read_discord_channel_history(
     if channel is None:
         return {"error": "The asker cannot access that conversation."}
     try:
-        after = _search_date(arguments.get("after"))
-        before = _search_date(arguments.get("before"))
+        after = search_date(arguments.get("after"))
+        before = search_date(arguments.get("before"))
         if after is None:
             raise ValueError("Missing history start")
         effective_before = before or _request_time(context)
@@ -248,9 +67,9 @@ async def read_discord_channel_history(
         "requested_before_id": requested_before_id,
     }
     try:
-        page_before_id, cursor_scope = _history_cursor_state(
+        page_before_id, cursor_scope = _historycursor_state(
             arguments.get("cursor"), base_scope,
-            requested_before_id or _request_message_boundary(context),
+            requested_before_id or request_message_boundary(context),
         )
     except ValueError:
         return {
@@ -338,186 +157,7 @@ async def read_discord_channel_history(
     }
 
 
-async def search_discord_messages(
-    context: AgentRequestContext,
-    arguments: Mapping[str, Any],
-) -> Mapping[str, Any]:
-    scope = await _search_scope(context, arguments)
-    if "error" in scope:
-        return scope
-    if not scope["channel_ids"]:
-        return {"query": scope["query"], "matches": [], "search_is_exhaustive": False}
-    found = await _search_raw(context, arguments, scope)
-    if isinstance(found, dict):
-        return found
-    page, raw_results = found
-    matches = await _search_matches(context, arguments, scope, raw_results)
-    result = {
-        "query": scope["query"], "matches": matches,
-        "search_is_exhaustive": False,
-        "filters": {key: value for key, value in arguments.items()
-                    if key not in {"limit", "cursor"}},
-    }
-    if page is not None:
-        result["coverage"] = _search_coverage(page, matches, scope)
-    return result
-
-
-async def _search_scope(context, arguments):
-    query = str(arguments.get("query") or "").strip()
-    if not query and not any(arguments.get(key) for key in (
-        "channel_id", "channel_ids", "author_id", "after", "before",
-    )):
-        return {"error": "Supply search words, a channel, an author, or a date range."}
-    limit = bounded_int(arguments.get("limit"), default=5, minimum=1,
-                        maximum=SEARCH_RESULT_LIMIT)
-    requested_channel = arguments.get("channel_id")
-    requested_channels = arguments.get("channel_ids")
-    if requested_channel is not None and requested_channels is not None:
-        return {"error": "Use channel_id or channel_ids, not both."}
-    explicit_ids = ((requested_channel,) if requested_channel is not None
-                    else tuple(requested_channels or ()))
-    if explicit_ids:
-        if (len(explicit_ids) > 20 or len(set(explicit_ids)) != len(explicit_ids)
-                or any(type(value) is not int or value <= 0 for value in explicit_ids)):
-            return {"error": "Supply between one and twenty distinct channel IDs."}
-        channels = []
-        for channel_id in explicit_ids:
-            channel = await accessible_message_channel(context, channel_id)
-            if channel is None:
-                return {"error": "The asker cannot access every requested conversation."}
-            channels.append(channel)
-        channel_ids = explicit_ids
-    else:
-        if arguments.get("cursor") is not None:
-            return {"error": (
-                "A continuation cursor requires one explicit channel so "
-                "the source scope stays stable."
-            )}
-        channel_ids = searchable_channel_ids(context)
-    paged_channel = channel_ids[0] if len(explicit_ids) == 1 else None
-    if paged_channel is not None and channels[0] is None:
-        return {"error": "The asker cannot access that conversation."}
-    try:
-        after = _search_date(arguments.get("after"))
-        before = _search_date(arguments.get("before"))
-    except ValueError:
-        return {"error": "Use ISO 8601 dates or timestamps for the search period."}
-    if after is not None and before is not None and after >= before:
-        return {"error": "The search start must be earlier than its end."}
-    min_id = discord.utils.time_snowflake(after) - 1 if after is not None else None
-    requested_max_id = discord.utils.time_snowflake(before) if before is not None else None
-    base_scope = {
-        "guild_id": context.guild.id, "query": query, "channel_id": paged_channel,
-        "author_id": arguments.get("author_id"), "min_id": min_id,
-        "requested_max_id": requested_max_id,
-    }
-    offset, max_id, cursor_scope = 0, requested_max_id, None
-    if paged_channel is not None:
-        try:
-            offset, max_id, cursor_scope = _cursor_state(
-                arguments.get("cursor"), base_scope,
-                requested_max_id or _request_message_boundary(context),
-            )
-        except ValueError:
-            return {"error": (
-                "That continuation cursor does not match this channel search "
-                "and its filters."
-            )}
-    return {"query": query, "limit": limit, "channel_ids": channel_ids,
-            "explicit_ids": explicit_ids, "paged_channel": paged_channel,
-            "min_id": min_id, "max_id": max_id, "offset": offset,
-            "cursor_scope": cursor_scope}
-
-
-async def _search_raw(context, arguments, scope):
-    channel_ids = scope["channel_ids"]
-    paged = scope["paged_channel"]
-    if paged is not None:
-        page = await context.message_search.search_page(
-            guild_id=context.guild.id, content=scope["query"],
-            limit=scope["limit"], offset=scope["offset"],
-            channel_ids=channel_ids, author_id=arguments.get("author_id"),
-            min_id=scope["min_id"], max_id=scope["max_id"],
-        )
-        if await accessible_message_channel(context, paged) is None:
-            return {"error": "The asker cannot access that conversation."}
-        if any(
-            result.channel_id != paged
-            or (arguments.get("author_id") is not None
-                and result.author_id != arguments["author_id"])
-            or (scope["min_id"] is not None and result.message_id <= scope["min_id"])
-            or (scope["max_id"] is not None and result.message_id >= scope["max_id"])
-            for result in page.messages
-        ):
-            return {"error": "Discord returned results outside the requested search scope."}
-        context.state.source_channels.add(paged)
-        return page, page.messages
-    raw = await context.message_search.search(
-        guild_id=context.guild.id, content=scope["query"], limit=scope["limit"],
-        channel_ids=channel_ids, author_id=arguments.get("author_id"),
-        min_id=scope["min_id"], max_id=scope["max_id"],
-    )
-    if scope["explicit_ids"]:
-        for channel_id in scope["explicit_ids"]:
-            if await accessible_message_channel(context, channel_id) is None:
-                return {"error": "The asker cannot access every requested conversation."}
-        if any(result.channel_id not in scope["explicit_ids"] for result in raw):
-            return {"error": "Discord returned results outside the requested search scope."}
-        context.state.source_channels.update(scope["explicit_ids"])
-    return None, raw
-
-
-async def _search_matches(context, arguments, scope, raw_results):
-    matches: list[dict[str, Any]] = []
-    for result in raw_results:
-        if result.channel_id not in scope["channel_ids"]:
-            continue
-        if arguments.get("author_id") is not None and result.author_id != arguments["author_id"]:
-            continue
-        if scope["min_id"] is not None and result.message_id <= scope["min_id"]:
-            continue
-        if scope["max_id"] is not None and result.message_id >= scope["max_id"]:
-            continue
-        channel = await accessible_message_channel(context, result.channel_id)
-        if channel is None:
-            continue
-        context.state.source_channels.add(result.channel_id)
-        matches.append({
-            "message_id": result.message_id, "channel_id": result.channel_id,
-            "channel": getattr(channel, "name", str(result.channel_id)),
-            "author_id": result.author_id, "author": result.author_name,
-            "timestamp": result.timestamp,
-            "content": bounded_text(result.content, 1_600),
-            "source": jump_url(context.guild.id, result.channel_id, result.message_id),
-        })
-        if len(matches) >= scope["limit"]:
-            break
-    return matches
-
-
-def _search_coverage(page, matches, scope):
-    assert scope["cursor_scope"] is not None
-    return {
-        "offset": page.offset, "requested_page_size": page.limit,
-        "returned_indexed_matches": len(page.messages),
-        "returned_accessible_matches": len(matches),
-        "total_results_estimate": page.total_results,
-        "next_offset": page.next_offset,
-        "next_cursor": (_search_cursor(page.next_offset, scope["cursor_scope"])
-                        if page.next_offset is not None else None),
-        "snapshot_before_message_id": scope["max_id"],
-        "deep_historical_indexing": page.deep_historical_indexing,
-        "offset_limit_reached": page.offset_limit_reached,
-        "reached_current_indexed_end": (
-            page.next_offset is None and not page.deep_historical_indexing
-            and not page.offset_limit_reached
-        ),
-        "total_may_change_while_messages_are_created_or_deleted": True,
-    }
-
-
-def _cursor_state(
+def cursor_state(
     value: Any,
     base_scope: Mapping[str, Any],
     default_max_id: int,
@@ -547,13 +187,13 @@ def _cursor_state(
     return offset, max_id, scope
 
 
-def _search_cursor(offset: int, scope: Mapping[str, Any]) -> str:
+def search_cursor(offset: int, scope: Mapping[str, Any]) -> str:
     return (
         f"v1.{offset}.{scope['effective_max_id']}.{_scope_digest(scope)}"
     )
 
 
-def _history_cursor_state(
+def _historycursor_state(
     value: Any,
     base_scope: Mapping[str, Any],
     default_before_id: int,
@@ -596,7 +236,7 @@ def _scope_digest(scope: Mapping[str, Any]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
-def _request_message_boundary(context: AgentRequestContext) -> int:
+def request_message_boundary(context: AgentRequestContext) -> int:
     message_id = getattr(context.source_message, "id", None)
     if type(message_id) is int and message_id > 0:
         return message_id
@@ -617,7 +257,7 @@ def _request_time(context: AgentRequestContext) -> datetime:
     return created_at.astimezone(timezone.utc)
 
 
-def _search_date(value: Any) -> datetime | None:
+def search_date(value: Any) -> datetime | None:
     if value is None:
         return None
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -664,8 +304,8 @@ async def read_message_context(
         maximum=CONTEXT_MESSAGE_LIMIT,
     )
     try:
-        after = _search_date(arguments.get("after"))
-        before = _search_date(arguments.get("before"))
+        after = search_date(arguments.get("after"))
+        before = search_date(arguments.get("before"))
     except ValueError:
         return {"error": "invalid_period"}
     if after is not None or before is not None:

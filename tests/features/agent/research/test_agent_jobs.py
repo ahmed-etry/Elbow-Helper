@@ -16,6 +16,7 @@ from elbow_helper.discord.message_search import (
     DiscordHistoryPage, DiscordSearchMessage, DiscordSearchPage,
 )
 import elbow_helper.features.agent.research.repository as research_job_storage
+import elbow_helper.features.agent.research.transitions as research_job_transitions
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.disclosure import AgentDisclosureDenied
 from elbow_helper.features.agent.research.repository import (
@@ -308,7 +309,7 @@ class ResearchJobRepositoryTests(unittest.TestCase):
             created.job_id, guild_id=1, conversation_root_id=2,
             lease_owner="worker", now=1001,
         )
-        with patch("elbow_helper.features.agent.research.repository.MAX_JOB_PAGES", 1):
+        with patch("elbow_helper.features.agent.research.transitions.MAX_JOB_PAGES", 1):
             result = self.repository.checkpoint_page(
                 claimed, lease_owner="worker", page_messages=(_message(),),
                 coverage={
@@ -329,7 +330,7 @@ class ResearchJobRepositoryTests(unittest.TestCase):
             created.job_id, guild_id=1, conversation_root_id=2,
             lease_owner="worker", now=1001,
         )
-        with patch("elbow_helper.features.agent.research.repository.MAX_JOB_PAGES", 1):
+        with patch("elbow_helper.features.agent.research.transitions.MAX_JOB_PAGES", 1):
             result = self.repository.checkpoint_page(
                 claimed, lease_owner="worker", page_messages=(),
                 coverage={
@@ -348,7 +349,7 @@ class ResearchJobRepositoryTests(unittest.TestCase):
             created.job_id, guild_id=1, conversation_root_id=2,
             lease_owner="worker", now=1001,
         )
-        with patch("elbow_helper.features.agent.research.repository.MAX_JOB_MESSAGES_BYTES", 100):
+        with patch("elbow_helper.features.agent.research.transitions.MAX_JOB_MESSAGES_BYTES", 100):
             result = self.repository.checkpoint_page(
                 claimed, lease_owner="worker", page_messages=(_message(),),
                 coverage={
@@ -370,7 +371,7 @@ class ResearchJobRepositoryTests(unittest.TestCase):
             created.job_id, guild_id=1, conversation_root_id=2,
             lease_owner="worker", now=1001,
         )
-        with patch("elbow_helper.features.agent.research.repository.MAX_JOB_MESSAGES", 1):
+        with patch("elbow_helper.features.agent.research.transitions.MAX_JOB_MESSAGES", 1):
             result = self.repository.checkpoint_page(
                 claimed, lease_owner="worker",
                 page_messages=(_message(), _message(11)),
@@ -960,7 +961,7 @@ class ResearchJobToolTests(unittest.IsolatedAsyncioTestCase):
             ),),
             0, 10, 11, 10, False, False,
         )
-        with patch.object(research_job_storage, "MAX_JOB_PAGES", 1):
+        with patch.object(research_job_transitions, "MAX_JOB_PAGES", 1):
             partial = await continue_discord_research_job(
                 self.context, {"job_id": started["job_id"]},
             )

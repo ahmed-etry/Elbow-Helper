@@ -10,9 +10,9 @@ from ..actions.undo import merge_undo_handlers, UndoHandler
 from ..files.attachment_tools import attachment_tools
 from ..actions.log_tools import action_log_tools
 from ..commands.help_tool import command_tools
-from ..research.history import discord_tools
+from ..research.catalogue import discord_tools
 from ..discord_actions.roles import discord_role_tools
-from ..discord_actions.messages import discord_message_tools
+from ..discord_actions.message_tools import discord_message_tools
 from ..discord_actions.threads import discord_thread_tools
 from ..discord_actions.message_controls import discord_message_control_tools
 from ..discord_actions.nicknames import discord_nickname_tools
@@ -43,7 +43,7 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
         "files": attachment_tools(),
         "knowledge_history": (*history_tools(), *knowledge_tools(), *action_log_tools()),
         "planning_output": (*working_state_tools(), *spreadsheet_tools()),
-        "standing_rules": standing_tools(),
+        "standing_rules": standing_tools(build_agent_tools),
         **{name: feature.TOOLS for name, feature in FEATURES.items()},
     }
 

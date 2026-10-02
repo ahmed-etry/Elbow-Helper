@@ -70,81 +70,68 @@ class AgentDeliveryMixin:
             if context is not None:
                 await require_disclosure_access(context)
             options = {"files": files} if files else {}
-            private_parts = tuple(
-                part for outcome in (context.state.outcomes if context else ())
-                if outcome.visibility == "private" for part in outcome.private_parts
+            private_view, confirm_view = build_reply_views(
+                message, context, getattr(self, "action_runner", None),
             )
-            private_files = tuple(
-                item for outcome in (context.state.outcomes if context else ())
-                if outcome.visibility == "private" for item in outcome.attachments
+            await self._send_response_parts(
+                message, response, chunks, options, private_view, confirm_view,
+                allowed_mentions, active_delivery, delivery, context, conversation,
             )
-            private_panels = tuple(
-                outcome.private_panel for outcome in (context.state.outcomes if context else ())
-                if outcome.private_panel is not None
-            )
-            panel_labels = tuple(
-                outcome.command_name for outcome in (context.state.outcomes if context else ())
-                if outcome.private_panel is not None
-            )
-            private_view = (PrivateResultView(
-                message.author.id, private_parts, private_files,
-                panels=private_panels, panel_labels=panel_labels,
-            ) if private_parts or private_files or private_panels else None)
-            confirm_view = (ConfirmationView(message.author.id,
-                                             tuple(context.state.proposed_changes), context,
-                                             private_view,
-                                             runner=getattr(self, "action_runner", None))
-                            if context and context.state.proposed_changes else None)
-            if private_view is not None and confirm_view is None:
-                options["view"] = private_view
-            if confirm_view is not None and len(chunks) <= 1:
-                options["view"] = confirm_view
-            nonce = _delivery_nonce(message.id, 0)
-            sent = await self._send_delivery_part(
-                message.reply, getattr(message, "channel", None), nonce,
-                active_delivery,
-                chunks[0] if chunks else None,
-                mention_author=False, allowed_mentions=allowed_mentions,
-                **options,
-            )
-            if private_view is not None:
-                private_view.message = sent
-            if confirm_view is not None and len(chunks) <= 1:
-                confirm_view.message = sent
-            if confirm_view is not None and hasattr(self, "_previews"):
-                self._previews[sent.id] = confirm_view
-            if delivery is not None:
-                delivery.record(sent.id, response if chunks == [None] else (chunks[0] if chunks else ""))
-            if conversation is not None:
-                self._conversations.register_reply(conversation, sent.id)
-            if getattr(message, "archive_reply", True):
-                await self._archive_reply(message.id, sent.id, response if chunks == [None] else (chunks[0] if chunks else ""))
-            for index, chunk in enumerate(chunks[1:], start=1):
-                if context is not None:
-                    await require_disclosure_access(context)
-                nonce = _delivery_nonce(message.id, index)
-                sent = await self._send_delivery_part(
-                    message.channel.send, message.channel, nonce,
-                    active_delivery, chunk, allowed_mentions=allowed_mentions,
-                    **({"view": confirm_view} if confirm_view is not None and index == len(chunks) - 1 else {}),
-                )
-                if confirm_view is not None:
-                    if hasattr(self, "_previews"):
-                        self._previews[sent.id] = confirm_view
-                    if index == len(chunks) - 1:
-                        confirm_view.message = sent
-                        confirm_view.preview = chunk
-                if delivery is not None:
-                    delivery.record(sent.id, chunk)
-                if conversation is not None:
-                    self._conversations.register_reply(conversation, sent.id)
-                if getattr(message, "archive_reply", True):
-                    await self._archive_reply(message.id, sent.id, chunk)
-            if delivery is not None:
-                delivery.complete = True
         finally:
             for file in files:
                 file.close()
+
+    async def _send_response_parts(
+        self, message, response, chunks, options, private_view, confirm_view,
+        allowed_mentions, active_delivery, delivery, context, conversation,
+    ) -> None:
+        if private_view is not None and confirm_view is None:
+            options["view"] = private_view
+        if confirm_view is not None and len(chunks) <= 1:
+            options["view"] = confirm_view
+        nonce = _delivery_nonce(message.id, 0)
+        sent = await self._send_delivery_part(
+            message.reply, getattr(message, "channel", None), nonce,
+            active_delivery,
+            chunks[0] if chunks else None,
+            mention_author=False, allowed_mentions=allowed_mentions,
+            **options,
+        )
+        if private_view is not None:
+            private_view.message = sent
+        if confirm_view is not None and len(chunks) <= 1:
+            confirm_view.message = sent
+        if confirm_view is not None and hasattr(self, "_previews"):
+            self._previews[sent.id] = confirm_view
+        if delivery is not None:
+            delivery.record(sent.id, response if chunks == [None] else (chunks[0] if chunks else ""))
+        if conversation is not None:
+            self._conversations.register_reply(conversation, sent.id)
+        if getattr(message, "archive_reply", True):
+            await self._archive_reply(message.id, sent.id, response if chunks == [None] else (chunks[0] if chunks else ""))
+        for index, chunk in enumerate(chunks[1:], start=1):
+            if context is not None:
+                await require_disclosure_access(context)
+            nonce = _delivery_nonce(message.id, index)
+            sent = await self._send_delivery_part(
+                message.channel.send, message.channel, nonce,
+                active_delivery, chunk, allowed_mentions=allowed_mentions,
+                **({"view": confirm_view} if confirm_view is not None and index == len(chunks) - 1 else {}),
+            )
+            if confirm_view is not None:
+                if hasattr(self, "_previews"):
+                    self._previews[sent.id] = confirm_view
+                if index == len(chunks) - 1:
+                    confirm_view.message = sent
+                    confirm_view.preview = chunk
+            if delivery is not None:
+                delivery.record(sent.id, chunk)
+            if conversation is not None:
+                self._conversations.register_reply(conversation, sent.id)
+            if getattr(message, "archive_reply", True):
+                await self._archive_reply(message.id, sent.id, chunk)
+        if delivery is not None:
+            delivery.complete = True
 
     async def _send_delivery_part(
         self, sender, channel, nonce: int, delivery: AgentDelivery,
@@ -301,3 +288,32 @@ def _uncertain_delivery_error(error: BaseException) -> bool:
         isinstance(error, discord.HTTPException)
         and type(status) is int and status >= 500
     )
+
+
+def build_reply_views(message, context, runner):
+    private_parts = tuple(
+        part for outcome in (context.state.outcomes if context else ())
+        if outcome.visibility == "private" for part in outcome.private_parts
+    )
+    private_files = tuple(
+        item for outcome in (context.state.outcomes if context else ())
+        if outcome.visibility == "private" for item in outcome.attachments
+    )
+    private_panels = tuple(
+        outcome.private_panel for outcome in (context.state.outcomes if context else ())
+        if outcome.private_panel is not None
+    )
+    panel_labels = tuple(
+        outcome.command_name for outcome in (context.state.outcomes if context else ())
+        if outcome.private_panel is not None
+    )
+    private_view = (PrivateResultView(
+        message.author.id, private_parts, private_files,
+        panels=private_panels, panel_labels=panel_labels,
+    ) if private_parts or private_files or private_panels else None)
+    confirm_view = (ConfirmationView(message.author.id,
+                                     tuple(context.state.proposed_changes), context,
+                                     private_view,
+                                     runner=runner)
+                    if context and context.state.proposed_changes else None)
+    return private_view, confirm_view

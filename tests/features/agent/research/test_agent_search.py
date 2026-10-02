@@ -13,10 +13,9 @@ from elbow_helper.discord.message_search import (
 )
 from elbow_helper.discord.thread_discovery import DiscordArchivedThreadPage
 from elbow_helper.features.agent.models import AgentTurnState
-from elbow_helper.features.agent.research.history import (
-    find_discord_channels, read_discord_channel_history,
-    search_discord_messages,
-)
+from elbow_helper.features.agent.research.history import find_discord_channels
+from elbow_helper.features.agent.research.history import read_discord_channel_history
+from elbow_helper.features.agent.research.search import search_discord_messages
 from elbow_helper.features.agent.research.threads import find_discord_threads
 
 
@@ -103,7 +102,7 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
         return results, rows
 
     async def test_larger_history_page_reads_same_evidence_with_fewer_tool_calls(self):
-        from elbow_helper.features.agent.research.history import discord_tools
+        from elbow_helper.features.agent.research.catalogue import discord_tools
         from elbow_helper.features.agent.plan.checker import valid_arguments
 
         tool = next(tool for tool in discord_tools() if tool.definition.name == "read_discord_channel_history")
@@ -134,7 +133,7 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(_bound_tool_result(encoded, MAX_TOOL_RESULT_CHARACTERS), encoded)
 
     async def test_twenty_results_are_valid_and_reach_discord(self):
-        from elbow_helper.features.agent.research.history import discord_tools
+        from elbow_helper.features.agent.research.catalogue import discord_tools
         from elbow_helper.features.agent.plan.checker import valid_arguments
 
         context = _context()

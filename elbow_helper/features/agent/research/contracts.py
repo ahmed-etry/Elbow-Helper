@@ -421,3 +421,11 @@ __all__ = [
     "decode_research_job", "finite_time", "positive_int",
     "validate_research_coverage", "validate_research_message",
 ]
+
+
+class ResearchJobBusy(RuntimeError):
+    """A live worker currently owns this job."""
+
+
+class ResearchJobConflict(RuntimeError):
+    """A job changed after the caller claimed it."""

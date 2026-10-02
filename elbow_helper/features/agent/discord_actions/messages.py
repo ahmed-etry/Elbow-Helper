@@ -10,16 +10,16 @@ from uuid import uuid4
 
 import discord
 
-from elbow_helper.infrastructure.ai import AgentToolDefinition
+from ..plan.executor import resolve_arguments
 
-from ..engine.capability_contract import CapabilityContract
+
 from ..access import require_evidence_access
 from ..actions.contracts import (
     ActionClass, ChangePreview, PreparedAction, earlier_result_label,
 )
 from ..actions.outcomes import ActionOutcome
 from ..text import chunk_response
-from ..models import AgentAttachment, AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
+from ..models import AgentAttachment, AgentRequestContext
 from ..wording import (
     ACTION_ATTACH_LINE,
     ACTION_DELETE_LABEL, ACTION_DELETE_LINE,
@@ -32,94 +32,13 @@ from .safety import (DiscordActionRefused, check_post_access,
                              check_view_access, resolve_channel)
 
 
-def _content_options() -> dict[str, Any]:
+def content_options() -> dict[str, Any]:
     return {
         "text": {"type": "string", "minLength": 1, "maxLength": 50_000},
         "ping_everyone": {"type": "boolean"},
         "ping_role_ids": {"type": "array", "items": {"type": "integer", "minimum": 1},
                           "maxItems": 10, "uniqueItems": True},
     }
-
-
-def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
-    return (
-        RegisteredAgentTool(AgentToolDefinition(
-            name="find_agent_files",
-            description="List files the agent delivered earlier in this conversation. Returns their filename and reply message ID for posting a selected file.",
-            parameters={"type": "object", "properties": {
-                "offset": {"type": "integer", "minimum": 0},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 25},
-            }, "required": [], "additionalProperties": False},
-        ), find_agent_files,
-            contract=CapabilityContract(
-                entity_fields=(),
-                time_fields=(),
-                source_scope="request_context",
-                filter_fields=("offset", "limit"),
-                result_entity_keys=(("files[].message_id", "agent_file_message"),),
-            ),
-        ),
-        RegisteredAgentTool(AgentToolDefinition(
-            name="post_discord_message",
-            description="Post text in a channel visible and writable by both the asker and bot; long text is split. Can attach a file made in this conversation. Pings require explicit preview values. Returns each posted message ID.",
-            parameters={"type": "object", "properties": {
-                "channel_id": {"type": "integer", "minimum": 1},
-                **_content_options(),
-                "file_name": {"type": "string", "minLength": 1, "maxLength": 255},
-                "file_message_id": {"type": "integer", "minimum": 1},
-            }, "required": ["channel_id", "text"], "additionalProperties": False},
-        ), prepare_post, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
-            contract=CapabilityContract(
-                entity_fields=(
-                    ("channel_id", "discord_channel"),
-                    ("ping_role_ids", "discord_role_set"),
-                    ("file_message_id", "agent_file_message"),
-                ),
-                time_fields=(),
-                source_scope="request_context",
-                filter_fields=("text", "ping_everyone", "file_name"),
-            ),
-        ),
-        RegisteredAgentTool(AgentToolDefinition(
-            name="edit_agent_message",
-            description="Edit text in a message posted by post_discord_message. Pings require explicit preview values.",
-            parameters={"type": "object", "properties": {
-                "channel_id": {"type": "integer", "minimum": 1},
-                "message_id": {"type": "integer", "minimum": 1},
-                **_content_options(),
-            }, "required": ["channel_id", "message_id", "text"],
-               "additionalProperties": False},
-        ), prepare_edit, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
-            contract=CapabilityContract(
-                entity_fields=(
-                    ("channel_id", "discord_channel"),
-                    ("message_id", "discord_message"),
-                    ("ping_role_ids", "discord_role_set"),
-                ),
-                time_fields=(),
-                source_scope="request_context",
-                filter_fields=("text", "ping_everyone"),
-            ),
-        ),
-        RegisteredAgentTool(AgentToolDefinition(
-            name="delete_agent_message",
-            description="Delete one message posted by post_discord_message. This cannot be undone.",
-            parameters={"type": "object", "properties": {
-                "channel_id": {"type": "integer", "minimum": 1},
-                "message_id": {"type": "integer", "minimum": 1},
-            }, "required": ["channel_id", "message_id"],
-               "additionalProperties": False},
-        ), prepare_delete, AgentCapabilityEffect.COMMAND, ActionClass.IRREVERSIBLE,
-            contract=CapabilityContract(
-                entity_fields=(
-                    ("channel_id", "discord_channel"),
-                    ("message_id", "discord_message"),
-                ),
-                time_fields=(),
-                source_scope="request_context",
-            ),
-        ),
-    )
 
 
 def _conversation_reply_ids(context: AgentRequestContext) -> tuple[int, ...]:
@@ -281,7 +200,6 @@ def _deferred_post_part(context: AgentRequestContext, reference: Mapping[str, An
         raise RuntimeError("The earlier action result was not bound")
 
     async def bind(results: Mapping[str, Mapping[str, Any]]) -> PreparedAction:
-        from ..plan.executor import resolve_arguments
         channel_id = resolve_arguments({"channel_id": reference}, results)["channel_id"]
         if type(channel_id) is not int:
             raise DiscordActionRefused("The earlier action did not return a channel.")
