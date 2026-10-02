@@ -37,7 +37,7 @@ from .engine.capability_contract import compile_capability_call
 from .engine.capability_contract import require_source_provenance
 from .engine.capability_contract import CONTRACTS
 from .engine.capability_contract import SAVED_REPORT_CONTRACTS
-from .tools.saved_reports import COMPARE_NAME, READ_NAME, filter_fields, original_arguments, original_tool
+from .reports.tools import COMPARE_NAME, READ_NAME, filter_fields, original_arguments, original_tool
 from .access import can_disclose_provenance
 from .plan.checker import _has_reference, _kind, _periods, _source_check, _time_check, _valid_arguments, check_plan
 from .plan.executor import execute_plan, resolve_arguments

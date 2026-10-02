@@ -15,7 +15,7 @@ from ..engine.capability_contract import CapabilityBindError
 from ..engine.capability_contract import bound_time_window
 from ..engine.capability_contract import compile_capability_call
 from ..engine.capability_contract import entity_kind
-from ..tools.saved_reports import (COMPARE_NAME, READ_NAME, original_arguments,
+from ..reports.tools import (COMPARE_NAME, READ_NAME, original_arguments,
                                    original_tool, unsupported_fields,
                                    unsupported_field_error)
 from .format import output_forms

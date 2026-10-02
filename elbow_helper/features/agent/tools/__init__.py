@@ -12,7 +12,7 @@ from .achievement_economy import achievement_economy_tools
 from .clan_health import clan_health_tools
 from .clan_health_settings import clan_health_settings_tools
 from .clan_reporting import clan_reporting_tools
-from .commands import command_tools
+from ..commands.help_tool import command_tools
 from .cwl import cwl_tools
 from .cwl_bonus_review import cwl_bonus_review_tools
 from .cwl_bonus_scoring import cwl_bonus_scoring_tools
@@ -47,7 +47,7 @@ from .role_connection_scan import role_connection_scan_tools
 from .rosters import roster_tools
 from .roster_management import roster_management_tools
 from .roster_account_management import roster_account_management_tools
-from .saved_reports import replace_report_tools
+from ..reports.tools import replace_report_tools
 from ..files.spreadsheet_tools import spreadsheet_tools
 from .support import support_tools
 from ..research.threads import thread_tools

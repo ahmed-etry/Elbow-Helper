@@ -98,7 +98,7 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
         }
         handler = build_agent_tools()["read_bot_command_help"].handler
         with patch(
-            "elbow_helper.features.agent.tools.commands.discover_commands",
+            "elbow_helper.features.agent.commands.help_tool.discover_commands",
             return_value=discovered,
         ):
             public = await handler(context, {"query": "ping"})
@@ -294,7 +294,7 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
     def test_cwl_bonus_tool_preserves_metric_and_side_effect_boundaries(self) -> None:
         tools = build_agent_tools()
         description = tools["read_cwl_bonus_scope"].definition.description
-        from elbow_helper.features.agent.tools.saved_reports import original_tool
+        from elbow_helper.features.agent.reports.tools import original_tool
         retained = original_tool(tools, "read_saved_report", {
             "report_kind": "cwl_bonus_scope",
         }).definition.description
@@ -324,7 +324,7 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
     def test_event_tools_preserve_role_and_read_only_boundaries(self) -> None:
         tools = build_agent_tools()
         current = tools["read_event_schedule"].definition.description
-        from elbow_helper.features.agent.tools.saved_reports import original_tool
+        from elbow_helper.features.agent.reports.tools import original_tool
         retained = original_tool(tools, "read_saved_report", {
             "report_kind": "event_schedule",
         }).definition.description

@@ -14,7 +14,7 @@ from elbow_helper.features.agent.plan.checker import _kind, _source_check, _time
 from elbow_helper.features.agent.engine.capability_contract import CONTRACTS
 from elbow_helper.features.agent.engine.capability_contract import SAVED_REPORT_CONTRACTS
 from elbow_helper.features.agent.tools import build_agent_tools
-from elbow_helper.features.agent.tools.saved_reports import original_tool
+from elbow_helper.features.agent.reports.tools import original_tool
 from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.agent.models import RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentToolDefinition
