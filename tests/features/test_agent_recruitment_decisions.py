@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.agent.actions.contracts import ActionClass
-from elbow_helper.features.agent.commands.adapters.recruitment import (
+from elbow_helper.features.agent.capabilities.recruitment.commands import (
     prepare_accept, prepare_decline, prepare_finalize, recruitment_adapters,
 )
 from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin

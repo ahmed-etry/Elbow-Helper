@@ -21,16 +21,16 @@ from .discord_actions.messages import prepare_edit_undo
 from .discord_actions.threads import prepare_thread_member_undo, prepare_thread_update_undo
 from .discord_actions.message_controls import prepare_control_undo
 from .discord_actions.nicknames import prepare_nickname_undo
-from .commands.adapters.records import prepare_record_add_undo, prepare_record_edit_undo
-from .commands.adapters.achievements import prepare_raffle_prize_undo
-from .commands.adapters.account_links import prepare_account_add_undo
-from .tools.roster_management import prepare_roster_layout_undo
-from .tools.role_connection_management import prepare_role_connection_undo
-from .tools.role_connection_scan import prepare_role_connection_scan_undo
-from .tools.cwl_bonus_scoring import prepare_cwl_bonus_scoring_undo
-from .tools.clan_health_settings import prepare_health_settings_undo
-from .tools.examiner_profile import prepare_examiner_profile_undo
-from .tools.cwl_cc_status import prepare_cc_status_undo
+from .capabilities.records.commands import prepare_record_add_undo, prepare_record_edit_undo
+from .capabilities.achievements.commands import prepare_raffle_prize_undo
+from .capabilities.account_links.commands import prepare_account_add_undo
+from .capabilities.rosters.management import prepare_roster_layout_undo
+from .capabilities.role_connections.management import prepare_role_connection_undo
+from .capabilities.role_connections.scan import prepare_role_connection_scan_undo
+from .capabilities.cwl.bonus_scoring import prepare_cwl_bonus_scoring_undo
+from .capabilities.clan_health.settings import prepare_health_settings_undo
+from .capabilities.examination.examiner_profile import prepare_examiner_profile_undo
+from .capabilities.cwl.cc_status import prepare_cc_status_undo
 from .knowledge.store import KnowledgeStore
 
 

@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 
 from elbow_helper.features.achievements.raffle import AchievementRaffleMixin
 from elbow_helper.features.agent.actions.contracts import ActionClass
-from elbow_helper.features.agent.commands.adapters.achievements import (
+from elbow_helper.features.agent.capabilities.achievements.commands import (
     achievement_adapters, prepare_raffle_draw, prepare_raffle_reroll,
     run_raffle_draw, run_raffle_reroll,
 )

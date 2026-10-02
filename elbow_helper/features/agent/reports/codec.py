@@ -60,31 +60,31 @@ from ..files.contracts import (
     XlsxImportArtifact,
     XlsxSheet,
 )
-from .achievement import (
+from ..capabilities.achievements.report import (
     AchievementLeaderboardMember, AchievementLeaderboardReport,
     AchievementProgressReport, CoinTransactionReport, RaffleReport,
 )
-from .event import EventScheduleReport
-from .member_lifecycle import MemberLifecycleReport
-from .clan_reporting import MissingElderReport
+from ..capabilities.events.report import EventScheduleReport
+from ..capabilities.member_lifecycle.report import MemberLifecycleReport
+from ..capabilities.clan_reporting.report import MissingElderReport
 from ..knowledge.report import KnowledgeReport
-from .clan_health import ClanHealthReport
-from .cwl import CwlAssScopeReport, CwlPerformanceReport
-from .cwl_bonus import CwlBonusScopeReport
-from .examination import ExaminationCaseReport
-from .hibernation import HibernationReport
-from .historical_war import (
+from ..capabilities.clan_health.report import ClanHealthReport
+from ..capabilities.cwl.report import CwlAssScopeReport, CwlPerformanceReport
+from ..capabilities.cwl.bonus_report import CwlBonusScopeReport
+from ..capabilities.examination.report import ExaminationCaseReport
+from ..capabilities.hibernation.report import HibernationReport
+from ..capabilities.wars.history_report import (
     HistoricalRegularWarReport, HistoricalWarOwnedMember,
 )
-from .leadership_record import LeadershipRecordReport
-from .movement import FamilyMovementReport, OwnedFamilyAccountMovement
-from .recruitment import RecruitmentTrialReport
-from .roles import RoleAccountReport
+from ..capabilities.records.report import LeadershipRecordReport
+from ..capabilities.clan_health.movement_report import FamilyMovementReport, OwnedFamilyAccountMovement
+from ..capabilities.recruitment.report import RecruitmentTrialReport
+from ..capabilities.account_links.role_report import RoleAccountReport
 from ..research.report import DiscordResearchReport
-from .roster import RosterReport
-from .support import SupportTicketReport
-from .transfer import TransferQueueReport
-from .war import RegularWarReport
+from ..capabilities.rosters.report import RosterReport
+from ..capabilities.support_tickets.report import SupportTicketReport
+from ..capabilities.clan_transfers.report import TransferQueueReport
+from ..capabilities.wars.report import RegularWarReport
 
 
 def decode_report(row: dict[str, Any], *, guild_id: int) -> Any:

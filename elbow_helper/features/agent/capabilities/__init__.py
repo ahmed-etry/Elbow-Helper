@@ -1,0 +1,1 @@
+"""Feature-owned agent capabilities."""

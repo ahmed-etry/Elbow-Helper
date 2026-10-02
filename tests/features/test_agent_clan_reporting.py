@@ -8,7 +8,7 @@ from elbow_helper.configuration.channels import CLAN_LEADERSHIP_CHANNELS
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
-from elbow_helper.features.agent.tools.clan_reporting import (
+from elbow_helper.features.agent.capabilities.clan_reporting.reads import (
     read_missing_elder_accounts, read_missing_elder_report,
 )
 from elbow_helper.features.clan_reporting.queries import ClanReportingQueries

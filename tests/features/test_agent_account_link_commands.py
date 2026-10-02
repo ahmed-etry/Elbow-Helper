@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.account_links.cog import AccountLinks
 from elbow_helper.features.account_links.database import AccountLinksDbMixin
-from elbow_helper.features.agent.commands.adapters.account_links import (
+from elbow_helper.features.agent.capabilities.account_links.commands import (
     prepare_account_add, prepare_account_add_undo,
     prepare_account_remove, run_account_add, run_account_remove,
 )

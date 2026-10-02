@@ -5,12 +5,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from elbow_helper.configuration.roles import CORE, LEAD_PLUS
 from elbow_helper.features.agent.access import ACCESS_LEAD_PLUS, AgentAccessLost
-from elbow_helper.features.agent.reports.leadership_record import (
+from elbow_helper.features.agent.capabilities.records.report import (
     LeadershipRecordReport,
 )
 from elbow_helper.features.agent.models import AgentRequestContext
-from elbow_helper.features.agent.reports.roles import RoleAccountReport
-from elbow_helper.features.agent.tools.records import (
+from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
+from elbow_helper.features.agent.capabilities.records.reads import (
     read_active_leadership_records,
     read_leadership_record_report,
 )

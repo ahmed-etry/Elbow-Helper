@@ -1,0 +1,1 @@
+"""Recruitment agent capabilities."""

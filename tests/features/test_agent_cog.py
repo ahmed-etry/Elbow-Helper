@@ -24,7 +24,7 @@ from elbow_helper.features.agent.delivery import _delivery_nonce, _needs_file
 from elbow_helper.features.agent.message_content import message_text
 from elbow_helper.features.agent.conversation.state import ConversationTurn
 from elbow_helper.features.agent.models import AgentDelivery, AgentTurnState
-from elbow_helper.features.agent.reports.roles import RoleAccountReport
+from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
 from elbow_helper.features.agent.conversation.instructions import WorkingState
 from elbow_helper.features.agent.conversation.transcripts import TranscriptArchive
 from elbow_helper.features.agent.conversation.repository import ConversationRepository

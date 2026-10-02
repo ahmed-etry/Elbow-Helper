@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock
 from elbow_helper.features.achievements.achievements import AchievementServiceMixin
 from elbow_helper.features.achievements.economy import AchievementEconomyMixin
 from elbow_helper.features.agent.actions.contracts import ActionClass
-from elbow_helper.features.agent.commands.adapters.achievements import (
+from elbow_helper.features.agent.capabilities.achievements.commands import (
     achievement_adapters, prepare_achievement_award, prepare_achievement_remove,
     prepare_grant_coins, prepare_grant_ticket, run_achievement_award,
     prepare_raffle_clear, prepare_raffle_remove, run_achievement_remove,

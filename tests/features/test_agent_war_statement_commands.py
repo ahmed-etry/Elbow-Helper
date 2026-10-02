@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import AsyncMock
 
 from elbow_helper.features.agent.actions.contracts import ActionClass
-from elbow_helper.features.agent.commands.adapters.war_statements import (
+from elbow_helper.features.agent.capabilities.wars.statements import (
     war_statement_adapters,
 )
 from elbow_helper.features.wars.commands import WarStatements

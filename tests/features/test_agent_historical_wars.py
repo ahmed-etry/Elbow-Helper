@@ -5,10 +5,10 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.access import AgentAccessLost
-from elbow_helper.features.agent.reports.historical_war import HistoricalRegularWarReport
+from elbow_helper.features.agent.capabilities.wars.history_report import HistoricalRegularWarReport
 from elbow_helper.features.agent.models import AgentRequestContext
-from elbow_helper.features.agent.reports.roles import RoleAccountReport
-from elbow_helper.features.agent.tools.wars import (
+from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
+from elbow_helper.features.agent.capabilities.wars.reads import (
     read_historical_regular_war_report,
     read_historical_regular_wars,
 )

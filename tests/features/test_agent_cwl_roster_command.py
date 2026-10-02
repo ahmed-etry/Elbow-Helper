@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock
 
-from elbow_helper.features.agent.commands.adapters.cwl_roster import run_cwl_roster
+from elbow_helper.features.agent.capabilities.cwl.roster_export import run_cwl_roster
 from elbow_helper.features.cwl.roster.commands import CwlRosterMixin
 from elbow_helper.features.cwl.roster.export import CwlRosterExportMixin
 

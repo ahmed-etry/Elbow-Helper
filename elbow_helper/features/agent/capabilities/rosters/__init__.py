@@ -1,0 +1,1 @@
+"""Rosters agent capabilities."""

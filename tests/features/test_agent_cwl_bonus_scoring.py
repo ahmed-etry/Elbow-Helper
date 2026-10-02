@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.agent.models import AgentTurnState
-from elbow_helper.features.agent.tools.cwl_bonus_scoring import (
+from elbow_helper.features.agent.capabilities.cwl.bonus_scoring import (
     prepare_cwl_bonus_scoring, prepare_cwl_bonus_scoring_undo,
 )
 
@@ -39,7 +39,7 @@ class CwlBonusScoringActionTests(unittest.IsolatedAsyncioTestCase):
             bot=SimpleNamespace(get_cog=lambda name: workflow),
             member=SimpleNamespace(id=5), state=AgentTurnState(),
         )
-        with patch("elbow_helper.features.agent.tools.cwl_bonus_scoring.require_evidence_access",
+        with patch("elbow_helper.features.agent.capabilities.cwl.bonus_scoring.require_evidence_access",
                    new_callable=AsyncMock):
             result = await prepare_cwl_bonus_scoring(context, {
                 "clan_code": "X", "operation": "score",

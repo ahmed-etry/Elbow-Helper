@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.agent.models import AgentTurnState
-from elbow_helper.features.agent.tools.leadership_news import prepare_lead_news
+from elbow_helper.features.agent.capabilities.leadership_news.actions import prepare_lead_news
 
 
 class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
@@ -26,12 +26,12 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
             bot=SimpleNamespace(get_cog=lambda name: workflow),
             guild=SimpleNamespace(me=object()), member=object(), state=AgentTurnState(),
         )
-        with (patch("elbow_helper.features.agent.tools.leadership_news.require_evidence_access",
+        with (patch("elbow_helper.features.agent.capabilities.leadership_news.actions.require_evidence_access",
                     new_callable=AsyncMock),
-              patch("elbow_helper.features.agent.tools.leadership_news.resolve_channel",
+              patch("elbow_helper.features.agent.capabilities.leadership_news.actions.resolve_channel",
                     new_callable=AsyncMock, side_effect=(source, target)),
-              patch("elbow_helper.features.agent.tools.leadership_news.check_view_access"),
-              patch("elbow_helper.features.agent.tools.leadership_news.check_post_access")):
+              patch("elbow_helper.features.agent.capabilities.leadership_news.actions.check_view_access"),
+              patch("elbow_helper.features.agent.capabilities.leadership_news.actions.check_post_access")):
             result = await prepare_lead_news(context, {"message_id": 7})
         self.assertEqual(result["status"], "confirmation_required")
         action = context.state.command_proposals[0]
@@ -39,8 +39,8 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("photo.png" in line for line in action.preview.lines))
         self.assertTrue(any("publication prompt in" in line for line in action.preview.lines))
         workflow.publish_public_news.assert_not_awaited()
-        with (patch("elbow_helper.features.agent.tools.leadership_news.check_view_access"),
-              patch("elbow_helper.features.agent.tools.leadership_news.check_post_access")):
+        with (patch("elbow_helper.features.agent.capabilities.leadership_news.actions.check_view_access"),
+              patch("elbow_helper.features.agent.capabilities.leadership_news.actions.check_post_access")):
             self.assertTrue(await action.preview.recheck())
         outcome = await action.run()
         self.assertIn("posted-url", outcome.text)

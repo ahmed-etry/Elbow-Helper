@@ -9,9 +9,9 @@ from elbow_helper.configuration.channels import SUPPORT_TICKET_CATEGORY
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
-from elbow_helper.features.agent.reports.roles import RoleAccountReport
-from elbow_helper.features.agent.reports.support import SupportTicketReport
-from elbow_helper.features.agent.tools.support import (
+from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
+from elbow_helper.features.agent.capabilities.support_tickets.report import SupportTicketReport
+from elbow_helper.features.agent.capabilities.support_tickets.reads import (
     read_accessible_support_tickets,
     read_support_ticket_report,
 )

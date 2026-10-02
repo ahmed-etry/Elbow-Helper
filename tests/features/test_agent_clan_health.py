@@ -8,10 +8,10 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.access import AgentAccessLost
-from elbow_helper.features.agent.reports.clan_health import ClanHealthReport
+from elbow_helper.features.agent.capabilities.clan_health.report import ClanHealthReport
 from elbow_helper.features.agent.models import AgentRequestContext
-from elbow_helper.features.agent.reports.roles import RoleAccountReport
-from elbow_helper.features.agent.tools.clan_health import (
+from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
+from elbow_helper.features.agent.capabilities.clan_health.reads import (
     compare_clan_health_reports, get_clan_health, list_clan_health_reports,
     read_clan_health_period, read_clan_health_report,
 )

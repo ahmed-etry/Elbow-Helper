@@ -7,7 +7,7 @@ from elbow_helper.configuration.roles import CORE, LEAD
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
 from elbow_helper.features.agent.tools import build_agent_tools
-from elbow_helper.features.agent.tools.role_connections import read_role_connections
+from elbow_helper.features.agent.capabilities.role_connections.reads import read_role_connections
 from elbow_helper.features.role_connections.queries import RoleConnectionQueries
 
 

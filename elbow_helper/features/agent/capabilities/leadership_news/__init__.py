@@ -1,0 +1,1 @@
+"""Leadership news agent capabilities."""

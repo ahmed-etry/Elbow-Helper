@@ -14,28 +14,28 @@ from .state import (
     Conversation, ConversationCheckpoint, ConversationRecord, ConversationTurn,
     checkpoint_input_hash,
 )
-from ..reports.roles import RoleAccountReport
-from ..reports.achievement import (
+from ..capabilities.account_links.role_report import RoleAccountReport
+from ..capabilities.achievements.report import (
     AchievementLeaderboardReport, AchievementProgressReport,
     CoinTransactionReport, RaffleReport,
 )
-from ..reports.event import EventScheduleReport
-from ..reports.member_lifecycle import MemberLifecycleReport
-from ..reports.clan_reporting import MissingElderReport
+from ..capabilities.events.report import EventScheduleReport
+from ..capabilities.member_lifecycle.report import MemberLifecycleReport
+from ..capabilities.clan_reporting.report import MissingElderReport
 from ..knowledge.report import KnowledgeReport
-from ..reports.roster import RosterReport
-from ..reports.cwl import CwlAssScopeReport, CwlPerformanceReport
-from ..reports.cwl_bonus import CwlBonusScopeReport
-from ..reports.clan_health import ClanHealthReport
-from ..reports.war import RegularWarReport
-from ..reports.historical_war import HistoricalRegularWarReport
-from ..reports.movement import FamilyMovementReport
-from ..reports.transfer import TransferQueueReport
-from ..reports.hibernation import HibernationReport
-from ..reports.support import SupportTicketReport
-from ..reports.recruitment import RecruitmentTrialReport
-from ..reports.examination import ExaminationCaseReport
-from ..reports.leadership_record import LeadershipRecordReport
+from ..capabilities.rosters.report import RosterReport
+from ..capabilities.cwl.report import CwlAssScopeReport, CwlPerformanceReport
+from ..capabilities.cwl.bonus_report import CwlBonusScopeReport
+from ..capabilities.clan_health.report import ClanHealthReport
+from ..capabilities.wars.report import RegularWarReport
+from ..capabilities.wars.history_report import HistoricalRegularWarReport
+from ..capabilities.clan_health.movement_report import FamilyMovementReport
+from ..capabilities.clan_transfers.report import TransferQueueReport
+from ..capabilities.hibernation.report import HibernationReport
+from ..capabilities.support_tickets.report import SupportTicketReport
+from ..capabilities.recruitment.report import RecruitmentTrialReport
+from ..capabilities.examination.report import ExaminationCaseReport
+from ..capabilities.records.report import LeadershipRecordReport
 from ..files.contracts import (
     CsvImportArtifact,
     TextImportArtifact,

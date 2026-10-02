@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import AsyncMock
 
 from elbow_helper.features.agent.actions.contracts import ActionClass
-from elbow_helper.features.agent.commands.adapters.cwl_announcement import (
+from elbow_helper.features.agent.capabilities.cwl.announcement import (
     cwl_announcement_adapters, prepare_roster_announcement,
 )
 from elbow_helper.features.cwl.announcements import PENDING_ROSTER_HUB_LINK

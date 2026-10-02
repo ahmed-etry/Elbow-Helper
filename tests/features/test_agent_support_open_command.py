@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from elbow_helper.configuration.channels import SUPPORT_TICKET_CATEGORY
 from elbow_helper.features.agent.actions.contracts import ActionClass
-from elbow_helper.features.agent.commands.adapters.support_tickets import (
+from elbow_helper.features.agent.capabilities.support_tickets.commands import (
     prepare_support_open, support_ticket_adapters,
 )
 from elbow_helper.features.support_tickets.commands import SupportCommandMixin

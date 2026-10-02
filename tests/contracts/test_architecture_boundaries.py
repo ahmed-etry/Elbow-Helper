@@ -116,38 +116,38 @@ class DependencyBoundaryTests(unittest.TestCase):
         self.assertNotIn("LocalExportStore", spreadsheet_tools)
         self.assertNotIn("features.cwl", export_delivery)
         self.assertNotIn("RoleAccountReport", export_delivery)
-        cwl_tools = (agent_root / "tools" / "cwl.py").read_text(
+        cwl_tools = (agent_root / "capabilities" / "cwl" / "reads.py").read_text(
             encoding="utf-8"
         )
         self.assertNotIn("roster.analysis", cwl_tools)
         self.assertNotIn("clan_health.database", cwl_tools)
         self.assertNotIn("BonusAnalysisService", cwl_tools)
         cwl_scoring_tools = (
-            agent_root / "tools" / "cwl_scoring.py"
+            agent_root / "capabilities" / "cwl" / "scoring.py"
         ).read_text(encoding="utf-8")
         self.assertNotIn("roster.analysis", cwl_scoring_tools)
         self.assertNotIn("clan_health.database", cwl_scoring_tools)
         self.assertNotIn("BonusAnalysisService", cwl_scoring_tools)
         achievement_tools = (
-            agent_root / "tools" / "achievements.py"
+            agent_root / "capabilities" / "achievements" / "reads.py"
         ).read_text(encoding="utf-8")
         self.assertNotIn("sqlite3", achievement_tools)
         self.assertNotIn("features.achievements.database", achievement_tools)
         self.assertNotIn("features.achievements.cog", achievement_tools)
         event_tools = (
-            agent_root / "tools" / "events.py"
+            agent_root / "capabilities" / "events" / "reads.py"
         ).read_text(encoding="utf-8")
         self.assertNotIn("features.event_stats.cog", event_tools)
         self.assertNotIn("features.event_stats.state", event_tools)
         self.assertNotIn("save_state", event_tools)
         lifecycle_tools = (
-            agent_root / "tools" / "member_lifecycle.py"
+            agent_root / "capabilities" / "member_lifecycle" / "reads.py"
         ).read_text(encoding="utf-8")
         self.assertNotIn("features.member_lifecycle.cog", lifecycle_tools)
         self.assertNotIn("features.member_lifecycle.state", lifecycle_tools)
         self.assertNotIn("save_state", lifecycle_tools)
         clan_reporting_tools = (
-            agent_root / "tools" / "clan_reporting.py"
+            agent_root / "capabilities" / "clan_reporting" / "reads.py"
         ).read_text(encoding="utf-8")
         self.assertNotIn("features.clan_reporting.cog", clan_reporting_tools)
         self.assertNotIn("features.account_links", clan_reporting_tools)
@@ -271,7 +271,7 @@ class DependencyBoundaryTests(unittest.TestCase):
 
     def test_role_agent_tool_uses_feature_owned_account_refresh(self) -> None:
         source = (
-            FEATURE_ROOT / "agent" / "tools" / "roles.py"
+            FEATURE_ROOT / "agent" / "capabilities" / "account_links" / "role_audit.py"
         ).read_text(encoding="utf-8-sig")
         self.assertIn("refresh_account_locations", source)
         self.assertNotIn("clash_client", source)

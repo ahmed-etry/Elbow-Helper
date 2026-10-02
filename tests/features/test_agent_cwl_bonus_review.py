@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.agent.models import AgentTurnState
-from elbow_helper.features.agent.tools.cwl_bonus_review import prepare_cwl_bonus_review
+from elbow_helper.features.agent.capabilities.cwl.bonus_review import prepare_cwl_bonus_review
 
 
 class CwlBonusReviewActionTests(unittest.IsolatedAsyncioTestCase):
@@ -21,7 +21,7 @@ class CwlBonusReviewActionTests(unittest.IsolatedAsyncioTestCase):
             bot=SimpleNamespace(get_cog=lambda name: workflow),
             member=SimpleNamespace(id=5), state=AgentTurnState(),
         )
-        with patch("elbow_helper.features.agent.tools.cwl_bonus_review.require_evidence_access",
+        with patch("elbow_helper.features.agent.capabilities.cwl.bonus_review.require_evidence_access",
                    new_callable=AsyncMock):
             result = await prepare_cwl_bonus_review(
                 context, {"clan_code": "BEH", "decision": "hold"})

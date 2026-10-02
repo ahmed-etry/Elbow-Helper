@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import discord
 
-from elbow_helper.features.agent.commands.adapters.rosters import (
+from elbow_helper.features.agent.capabilities.rosters.setup_commands import (
     prepare_roster_clone, prepare_roster_create, prepare_roster_delete,
     prepare_roster_edit,
     prepare_roster_timing,
@@ -286,7 +286,7 @@ class RosterCommandTests(unittest.IsolatedAsyncioTestCase):
             guild=guild, member=member,
             source_message=SimpleNamespace(channel=channel),
         )
-        with patch("elbow_helper.features.agent.commands.adapters.rosters.discord.TextChannel",
+        with patch("elbow_helper.features.agent.capabilities.rosters.setup_commands.discord.TextChannel",
                    new=SimpleNamespace):
             prepared = await prepare_roster_post(context, {"roster": "4"})
             self.assertTrue(await prepared.preview.recheck())

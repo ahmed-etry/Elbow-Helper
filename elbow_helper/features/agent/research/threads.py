@@ -13,7 +13,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..access import accessible_message_channel, can_access_message_channel
 from ..models import AgentRequestContext, RegisteredAgentTool
-from ..tools.shared import bounded_int, positive_int
+from ..capabilities.validation import bounded_int, positive_int
 
 
 THREAD_RESULT_LIMIT = 10

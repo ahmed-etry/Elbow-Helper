@@ -12,10 +12,10 @@ from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
 from elbow_helper.features.agent.service import AgentService
 from tests.features.agent_plan_helpers import plan_call
-from elbow_helper.features.agent.reports.roles import RoleAccountReport
-from elbow_helper.features.agent.tools.rosters import compare_roster_reports, find_rosters, list_roster_cycles, read_roster, read_roster_report
-from elbow_helper.features.agent.reports.roster import RosterReport, compare_roster_reports as compare_reports
-from elbow_helper.features.agent.tools.roles import read_role_account_report
+from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
+from elbow_helper.features.agent.capabilities.rosters.reads import compare_roster_reports, find_rosters, list_roster_cycles, read_roster, read_roster_report
+from elbow_helper.features.agent.capabilities.rosters.report import RosterReport, compare_roster_reports as compare_reports
+from elbow_helper.features.agent.capabilities.account_links.role_audit import read_role_account_report
 from elbow_helper.features.rosters.repository import RosterRepository
 from elbow_helper.features.rosters.services.queries import RosterQueries
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage

@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.configuration.roles import LEAD_PLUS
 from elbow_helper.features.agent.commands.adapters import run_health_player, run_opinion
-from elbow_helper.features.agent.commands.adapters.clan_health import (
+from elbow_helper.features.agent.capabilities.clan_health.commands import (
     run_health_clan, run_health_settings,
 )
 from elbow_helper.features.agent.models import AgentTurnState
@@ -194,7 +194,7 @@ class CommandAdapterTests(unittest.IsolatedAsyncioTestCase):
         result = await run_health_settings(context, {"clan": "BEH"})
         self.assertIsNotNone(result.private_panel)
         interaction = SimpleNamespace(user=member)
-        with patch("elbow_helper.features.agent.commands.adapters.clan_health.ClanConfigHomeView.open",
+        with patch("elbow_helper.features.agent.capabilities.clan_health.commands.ClanConfigHomeView.open",
                    new_callable=AsyncMock) as open_panel:
             await result.private_panel(interaction)
         open_panel.assert_awaited_once_with(interaction, "BEH")

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
-from elbow_helper.features.agent.commands.adapters.cwl_brief import (
+from elbow_helper.features.agent.capabilities.cwl.brief import (
     prepare_cwl_brief, run_cwl_brief,
 )
 from elbow_helper.features.agent.models import AgentTurnState

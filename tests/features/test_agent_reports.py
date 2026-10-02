@@ -14,13 +14,13 @@ from elbow_helper.features.account_links.evidence import (
 )
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentTurnState
-from elbow_helper.features.agent.reports.roles import RoleAccountReport
-from elbow_helper.features.agent.tools.roles import (
+from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
+from elbow_helper.features.agent.capabilities.account_links.role_audit import (
     audit_role_accounts, compare_role_account_reports,
     find_discord_roles, read_role_account_report,
     refresh_role_account_report,
 )
-from elbow_helper.features.agent.reports.role_comparisons import (
+from elbow_helper.features.agent.capabilities.account_links.role_comparisons import (
     compare_role_account_reports as compare_reports,
 )
 from elbow_helper.infrastructure.clash.client import ClashResponse

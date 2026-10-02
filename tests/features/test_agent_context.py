@@ -10,7 +10,7 @@ from elbow_helper.features.agent.conversation.state import (
     ConversationRecord, ConversationTurn,
 )
 from elbow_helper.features.agent.models import AgentTurnState
-from elbow_helper.features.agent.reports.roles import RoleAccountReport
+from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 import discord
 
 from elbow_helper.configuration.roles import LEAD
-from elbow_helper.features.agent.commands.adapters.role_connections import (
+from elbow_helper.features.agent.capabilities.role_connections.commands import (
     prepare_connections, run_connections,
 )
 from elbow_helper.features.agent.models import AgentTurnState
@@ -38,7 +38,7 @@ class RoleConnectionCommandTests(unittest.IsolatedAsyncioTestCase):
             source_message=SimpleNamespace(channel=channel),
             bot=SimpleNamespace(get_cog=lambda _: workflow),
         )
-        with patch("elbow_helper.features.agent.commands.adapters.role_connections.discord.TextChannel",
+        with patch("elbow_helper.features.agent.capabilities.role_connections.commands.discord.TextChannel",
                    SimpleNamespace):
             preview = await prepare_connections(context, {})
             self.assertIn("Synthetic rule", preview.lines)

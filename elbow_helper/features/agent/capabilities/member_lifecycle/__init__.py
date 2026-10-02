@@ -1,0 +1,1 @@
+"""Member lifecycle agent capabilities."""

@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 
-from elbow_helper.features.agent.commands.adapters.cwl_register import (
+from elbow_helper.features.agent.capabilities.cwl.thread_registration import (
     prepare_cwl_register, run_cwl_register,
 )
 from elbow_helper.features.cwl.config import CLAN_NAME_TO_CODE

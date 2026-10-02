@@ -5,7 +5,7 @@ from unittest.mock import patch
 from elbow_helper.features.agent.reports.base import (
     ArtifactCapacityError, retain_report, retain_reports,
 )
-from elbow_helper.features.agent.reports.roles import RoleAccountReport
+from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
 
 
 class ArtifactTests(unittest.TestCase):

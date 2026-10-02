@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
-from elbow_helper.features.agent.commands.adapters.achievements import (
+from elbow_helper.features.agent.capabilities.achievements.commands import (
     prepare_raffle_prize, prepare_raffle_prize_undo, run_raffle_prize,
 )
 

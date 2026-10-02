@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.roles import LEAD
-from elbow_helper.features.agent.commands.adapters.event_stats import (
+from elbow_helper.features.agent.capabilities.events.commands import (
     prepare_event_update, run_event_panel, run_event_update,
 )
 from elbow_helper.features.agent.models import AgentTurnState
@@ -47,7 +47,7 @@ class EventCommandTests(unittest.IsolatedAsyncioTestCase):
         interaction = SimpleNamespace(
             response=SimpleNamespace(send_message=AsyncMock()),
         )
-        with patch("elbow_helper.features.agent.commands.adapters.event_stats.open_event_panel",
+        with patch("elbow_helper.features.agent.capabilities.events.commands.open_event_panel",
                    new_callable=AsyncMock) as open_panel:
             await outcome.private_panel(interaction)
             open_panel.assert_awaited_once_with(interaction, workflow, guild)

@@ -12,11 +12,11 @@ from elbow_helper.configuration.channels import (
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.actions.preview import preview_text
-from elbow_helper.features.agent.tools.examiner_profile import prepare_examiner_leave
-from elbow_helper.features.agent.reports.examination import ExaminationCaseReport
+from elbow_helper.features.agent.capabilities.examination.examiner_profile import prepare_examiner_leave
+from elbow_helper.features.agent.capabilities.examination.report import ExaminationCaseReport
 from elbow_helper.features.agent.models import AgentRequestContext, AgentTurnState
-from elbow_helper.features.agent.reports.roles import RoleAccountReport
-from elbow_helper.features.agent.tools.examination import (
+from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
+from elbow_helper.features.agent.capabilities.examination.reads import (
     read_accessible_examination_cases,
     read_examination_case_report,
 )
@@ -70,7 +70,7 @@ class AgentExaminationToolTests(unittest.IsolatedAsyncioTestCase):
             leave_examiner_roster=AsyncMock(),
         )
         context = SimpleNamespace(member=member, state=AgentTurnState())
-        with patch("elbow_helper.features.agent.tools.examiner_profile._workflow",
+        with patch("elbow_helper.features.agent.capabilities.examination.examiner_profile._workflow",
                    return_value=(workflow, channel)):
             result = await prepare_examiner_leave(context, {})
         self.assertEqual(result["status"], "confirmation_required")

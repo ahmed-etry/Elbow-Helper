@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.agent.models import AgentTurnState
-from elbow_helper.features.agent.tools.raffle_purchase import prepare_raffle_purchase
+from elbow_helper.features.agent.capabilities.achievements.raffle_purchase import prepare_raffle_purchase
 
 
 class RafflePurchaseActionTests(unittest.IsolatedAsyncioTestCase):
@@ -22,7 +22,7 @@ class RafflePurchaseActionTests(unittest.IsolatedAsyncioTestCase):
             member=SimpleNamespace(id=4, mention="<@4>"),
             state=AgentTurnState(),
         )
-        with patch("elbow_helper.features.agent.tools.raffle_purchase.require_evidence_access",
+        with patch("elbow_helper.features.agent.capabilities.achievements.raffle_purchase.require_evidence_access",
                    new_callable=AsyncMock):
             result = await prepare_raffle_purchase(context, {})
         self.assertEqual(result["status"], "confirmation_required")

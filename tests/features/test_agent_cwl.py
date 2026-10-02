@@ -5,12 +5,12 @@ from unittest.mock import AsyncMock
 from unittest.mock import patch
 
 from elbow_helper.configuration.roles import CORE
-from elbow_helper.features.agent.reports.cwl import CwlPerformanceReport
+from elbow_helper.features.agent.capabilities.cwl.report import CwlPerformanceReport
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
-from elbow_helper.features.agent.reports.roles import RoleAccountReport
-from elbow_helper.features.agent.tools.cwl import read_cwl_performance, read_cwl_performance_report, read_cwl_threads
-from elbow_helper.features.agent.tools.cwl_scoring import (
+from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
+from elbow_helper.features.agent.capabilities.cwl.reads import read_cwl_performance, read_cwl_performance_report, read_cwl_threads
+from elbow_helper.features.agent.capabilities.cwl.scoring import (
     list_cwl_ass_seasons, read_cwl_ass_scope, read_cwl_ass_scope_report,
     read_cwl_bonus_scope, read_cwl_bonus_scope_report,
 )
@@ -257,7 +257,7 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_bonus_scope_access_loss_before_retention_fails_closed(self):
         with patch(
-            "elbow_helper.features.agent.tools.cwl_scoring.require_evidence_access",
+            "elbow_helper.features.agent.capabilities.cwl.scoring.require_evidence_access",
             AsyncMock(side_effect=[None, AgentAccessLost("revoked")]),
         ):
             with self.assertRaises(AgentAccessLost):

@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.configuration.roles import CO_APPLICANT_ROLE_ID, CORE, LEAD
 from elbow_helper.features.agent.access import ACCESS_LEAD, AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
-from elbow_helper.features.agent.tools.events import (
+from elbow_helper.features.agent.capabilities.events.reads import (
     read_event_schedule, read_event_schedule_report,
 )
 from elbow_helper.features.event_stats.queries import (
@@ -92,7 +92,7 @@ class AgentEventTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_lead_loss_during_read_retains_nothing(self):
         with patch(
-            "elbow_helper.features.agent.tools.events.require_access_requirements",
+            "elbow_helper.features.agent.capabilities.events.reads.require_access_requirements",
             side_effect=[None, AgentAccessLost("revoked")],
         ):
             with self.assertRaises(AgentAccessLost):

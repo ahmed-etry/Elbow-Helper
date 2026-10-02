@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from elbow_helper.configuration.roles import LEAD_PLUS
 from elbow_helper.features.agent.actions.contracts import ActionClass, check_bundle
-from elbow_helper.features.agent.commands.adapters.records import (
+from elbow_helper.features.agent.capabilities.records.commands import (
     prepare_record_add, prepare_record_add_undo, prepare_record_edit,
     prepare_record_edit_undo, prepare_record_remove,
     record_adapters, run_record_add, run_record_edit, run_record_export,

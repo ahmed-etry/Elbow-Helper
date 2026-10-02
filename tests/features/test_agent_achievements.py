@@ -13,11 +13,11 @@ from elbow_helper.features.achievements.queries import (
 )
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
-from elbow_helper.features.agent.tools.achievements import (
+from elbow_helper.features.agent.capabilities.achievements.reads import (
     read_achievement_leaderboard, read_achievement_leaderboard_report,
     read_member_achievement_report, read_member_achievements,
 )
-from elbow_helper.features.agent.tools.achievement_economy import (
+from elbow_helper.features.agent.capabilities.achievements.economy import (
     read_achievement_economy_rules, read_member_coin_history,
     read_member_coin_history_report, read_member_inventory, read_raffle,
     read_raffle_report,
@@ -179,7 +179,7 @@ class AgentAchievementTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_access_loss_during_query_does_not_retain_result(self):
         with patch(
-            "elbow_helper.features.agent.tools.achievements.require_evidence_access",
+            "elbow_helper.features.agent.capabilities.achievements.reads.require_evidence_access",
             AsyncMock(side_effect=[None, AgentAccessLost("revoked")]),
         ):
             with self.assertRaises(AgentAccessLost):

@@ -1,0 +1,1 @@
+"""Wars agent capabilities."""

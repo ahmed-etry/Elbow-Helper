@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
-from elbow_helper.features.agent.reports.movement import FamilyMovementReport
-from elbow_helper.features.agent.reports.roles import RoleAccountReport
-from elbow_helper.features.agent.tools.clan_health import (
+from elbow_helper.features.agent.capabilities.clan_health.movement_report import FamilyMovementReport
+from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
+from elbow_helper.features.agent.capabilities.clan_health.reads import (
     read_family_account_movement_report,
     read_family_account_movements,
 )

@@ -16,9 +16,9 @@ from ..access import accessible_message_channel
 from ..models import AgentRequestContext
 from ..message_content import message_text
 from ..models import RegisteredAgentTool
-from ..tools.shared import bounded_int
-from ..tools.shared import bounded_text
-from ..tools.shared import positive_int
+from ..capabilities.validation import bounded_int
+from ..capabilities.validation import bounded_text
+from ..capabilities.validation import positive_int
 
 
 SEARCH_RESULT_LIMIT = 25

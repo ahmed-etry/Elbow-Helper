@@ -6,12 +6,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
-from elbow_helper.features.agent.reports.roles import RoleAccountReport
-from elbow_helper.features.agent.tools.transfers import (
+from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
+from elbow_helper.features.agent.capabilities.clan_transfers.reads import (
     read_pending_transfer_report,
     read_pending_transfer_requests,
 )
-from elbow_helper.features.agent.reports.transfer import TransferQueueReport
+from elbow_helper.features.agent.capabilities.clan_transfers.report import TransferQueueReport
 from elbow_helper.features.clan_transfers.config import CLAN_TRANSFER_QUEUES
 from elbow_helper.features.clan_transfers.queries import (
     PendingTransferRequest,

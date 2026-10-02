@@ -21,7 +21,7 @@ from elbow_helper.features.agent.engine.capability_contract import compile_capab
 from elbow_helper.features.agent.tools import build_agent_tools
 from elbow_helper.features.agent.service import _valid_arguments, _bound_tool_result, _evidence_record
 from elbow_helper.features.agent.access import ACCESS_LEAD_PLUS, AgentAccessLost
-from elbow_helper.features.agent.reports.roles import RoleAccountReport
+from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
 from elbow_helper.infrastructure.ai import AgentStep
 from elbow_helper.infrastructure.ai import AgentToolCall
 from elbow_helper.infrastructure.ai import AgentToolDefinition

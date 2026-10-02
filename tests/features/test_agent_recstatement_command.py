@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 
-from elbow_helper.features.agent.commands.adapters.recruitment import (
+from elbow_helper.features.agent.capabilities.recruitment.commands import (
     prepare_recstatement, run_recstatement,
 )
 from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin

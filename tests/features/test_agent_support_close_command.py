@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import AsyncMock
 
 from elbow_helper.features.agent.actions.contracts import ActionClass
-from elbow_helper.features.agent.commands.adapters.support_tickets import (
+from elbow_helper.features.agent.capabilities.support_tickets.commands import (
     prepare_support_close, support_ticket_adapters,
 )
 

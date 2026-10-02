@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from elbow_helper.features.agent.tools.examiner_profile import prepare_examiner_profile
+from elbow_helper.features.agent.capabilities.examination.examiner_profile import prepare_examiner_profile
 
 
 class ExaminerValidationTests(unittest.IsolatedAsyncioTestCase):
@@ -23,7 +23,7 @@ class ExaminerValidationTests(unittest.IsolatedAsyncioTestCase):
                     has_examiner_profile=lambda _: False,
                     prepare_examiner_profile_change=lambda *_: (_ for _ in ()).throw(ValueError(message)),
                 )
-                with patch("elbow_helper.features.agent.tools.examiner_profile._workflow",
+                with patch("elbow_helper.features.agent.capabilities.examination.examiner_profile._workflow",
                            return_value=(workflow, channel)):
                     result = await prepare_examiner_profile(context, values)
                 self.assertEqual(result["status"], "needs_input")

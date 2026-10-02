@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.agent.models import AgentTurnState
-from elbow_helper.features.agent.tools.role_connection_scan import (
+from elbow_helper.features.agent.capabilities.role_connections.scan import (
     prepare_role_connection_scan, prepare_role_connection_scan_undo,
 )
 
@@ -35,14 +35,14 @@ class RoleConnectionScanTests(unittest.IsolatedAsyncioTestCase):
             guild=SimpleNamespace(id=1, me=bot_member, get_role=lambda role_id: role),
             state=AgentTurnState(),
         )
-        with patch("elbow_helper.features.agent.tools.role_connection_scan.require_evidence_access",
+        with patch("elbow_helper.features.agent.capabilities.role_connections.scan.require_evidence_access",
                    new_callable=AsyncMock):
             result = await prepare_role_connection_scan(context, {})
         self.assertEqual(result["prepared_count"], 1)
         action = context.state.command_proposals[0]
         self.assertIn("<@4>", action.preview.lines[0])
         workflow.apply_role_connection_change.assert_not_awaited()
-        with patch("elbow_helper.features.agent.tools.role_connection_scan.resolve_member",
+        with patch("elbow_helper.features.agent.capabilities.role_connections.scan.resolve_member",
                    new_callable=AsyncMock, return_value=member):
             self.assertTrue(await action.preview.recheck())
             outcome = await action.run()
@@ -70,7 +70,7 @@ class RoleConnectionScanTests(unittest.IsolatedAsyncioTestCase):
                 id=99, top_role=SimpleNamespace(position=10))),
             state=AgentTurnState(),
         )
-        with patch("elbow_helper.features.agent.tools.role_connection_scan.require_evidence_access",
+        with patch("elbow_helper.features.agent.capabilities.role_connections.scan.require_evidence_access",
                    new_callable=AsyncMock):
             result = await prepare_role_connection_scan(context, {})
             self.assertEqual(result["status"], "confirmation_required")

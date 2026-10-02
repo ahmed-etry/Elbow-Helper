@@ -8,34 +8,34 @@ import unittest
 from unittest.mock import patch
 
 from elbow_helper.features.agent.conversation.state import Conversation, ConversationRecord, ConversationTurn
-from elbow_helper.features.agent.reports.roles import RoleAccountReport
-from elbow_helper.features.agent.reports.achievement import (
+from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
+from elbow_helper.features.agent.capabilities.achievements.report import (
     AchievementLeaderboardMember, AchievementLeaderboardReport,
     AchievementProgressReport, CoinTransactionReport, RaffleReport,
 )
-from elbow_helper.features.agent.reports.event import EventScheduleReport
-from elbow_helper.features.agent.reports.member_lifecycle import MemberLifecycleReport
-from elbow_helper.features.agent.reports.clan_reporting import MissingElderReport
+from elbow_helper.features.agent.capabilities.events.report import EventScheduleReport
+from elbow_helper.features.agent.capabilities.member_lifecycle.report import MemberLifecycleReport
+from elbow_helper.features.agent.capabilities.clan_reporting.report import MissingElderReport
 from elbow_helper.features.agent.knowledge.report import KnowledgeReport
 from elbow_helper.features.agent.knowledge.store import KnowledgeStore
-from elbow_helper.features.agent.reports.cwl import (
+from elbow_helper.features.agent.capabilities.cwl.report import (
     CwlAssScopeReport, CwlPerformanceReport,
 )
-from elbow_helper.features.agent.reports.cwl_bonus import CwlBonusScopeReport
-from elbow_helper.features.agent.reports.clan_health import ClanHealthReport
-from elbow_helper.features.agent.reports.war import RegularWarReport
-from elbow_helper.features.agent.reports.historical_war import (
+from elbow_helper.features.agent.capabilities.cwl.bonus_report import CwlBonusScopeReport
+from elbow_helper.features.agent.capabilities.clan_health.report import ClanHealthReport
+from elbow_helper.features.agent.capabilities.wars.report import RegularWarReport
+from elbow_helper.features.agent.capabilities.wars.history_report import (
     HistoricalRegularWarReport, HistoricalWarOwnedMember,
 )
-from elbow_helper.features.agent.reports.movement import (
+from elbow_helper.features.agent.capabilities.clan_health.movement_report import (
     FamilyMovementReport, OwnedFamilyAccountMovement,
 )
-from elbow_helper.features.agent.reports.transfer import TransferQueueReport
-from elbow_helper.features.agent.reports.hibernation import HibernationReport
-from elbow_helper.features.agent.reports.support import SupportTicketReport
-from elbow_helper.features.agent.reports.recruitment import RecruitmentTrialReport
-from elbow_helper.features.agent.reports.examination import ExaminationCaseReport
-from elbow_helper.features.agent.reports.leadership_record import LeadershipRecordReport
+from elbow_helper.features.agent.capabilities.clan_transfers.report import TransferQueueReport
+from elbow_helper.features.agent.capabilities.hibernation.report import HibernationReport
+from elbow_helper.features.agent.capabilities.support_tickets.report import SupportTicketReport
+from elbow_helper.features.agent.capabilities.recruitment.report import RecruitmentTrialReport
+from elbow_helper.features.agent.capabilities.examination.report import ExaminationCaseReport
+from elbow_helper.features.agent.capabilities.records.report import LeadershipRecordReport
 from elbow_helper.features.records.queries import (
     LeadershipRecordRow, LeadershipRecordSnapshot,
 )

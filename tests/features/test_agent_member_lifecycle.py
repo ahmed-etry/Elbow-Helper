@@ -7,7 +7,7 @@ from elbow_helper.configuration.channels import OVERSEEING_TERRACE
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
-from elbow_helper.features.agent.tools.member_lifecycle import (
+from elbow_helper.features.agent.capabilities.member_lifecycle.reads import (
     read_member_lifecycle, read_member_lifecycle_report,
 )
 from elbow_helper.features.member_lifecycle.queries import MemberLifecycleQueries
