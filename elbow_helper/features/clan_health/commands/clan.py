@@ -73,7 +73,12 @@ class ClanHealthClanCommandMixin:
         if result.status == "unavailable":
             await interaction.followup.send(result.issue)
             return
-        assert result.export is not None
+        if result.export is None:
+            LOGGER.error("Clan health export completed without a workbook: clan=%s", clan.value)
+            await interaction.followup.send(
+                "Could not generate the spreadsheet right now. Try again in a moment.",
+            )
+            return
         await self.send_prepared_health_export(interaction, result.export)
         LOGGER.debug(
             "Command done /health clan user=%s clan=%s window=%s elapsed=%.2fs",
