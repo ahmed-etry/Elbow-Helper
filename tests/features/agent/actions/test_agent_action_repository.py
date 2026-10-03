@@ -10,6 +10,45 @@ from elbow_helper.features.agent.actions.store import (
 
 
 class ActionRepositoryTests(unittest.TestCase):
+    def test_retention_removes_old_runs_steps_and_message_records(self):
+        now = ACTION_LOG_RETENTION_SECONDS + 2000
+        identifiers = []
+        for timestamp in (1999, 2000, 2001):
+            run_id = self.repository.create_run(
+                guild_id=1, channel_id=2, request_message_id=timestamp,
+                requester_id=4, confirmer_id=4,
+                steps=({"name": "synthetic", "class": "change", "values": {},
+                        "preview": ["Synthetic"]},), now=timestamp,
+            )
+            self.repository.claim(run_id, owner="worker", now=timestamp)
+            self.repository.start_step(run_id, 0, owner="worker", now=timestamp)
+            self.repository.finish_step(run_id, 0, owner="worker", status="completed",
+                                        outcome={}, now=timestamp)
+            self.repository.finish_run(run_id, owner="worker", status="completed", now=timestamp)
+            self.repository.record_message(message_id=timestamp, guild_id=1, channel_id=2,
+                                           requester_id=4, now=timestamp)
+            identifiers.append(run_id)
+        self.assertEqual(self.repository.prune_log(now=now), 1)
+        self.assertIsNone(self.repository.run(identifiers[0]))
+        self.assertIsNone(self.repository.agent_message(message_id=1999, guild_id=1, channel_id=2))
+        with self.repository.connect() as connection:
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM action_steps WHERE run_id=?", (identifiers[0],)
+            ).fetchone()[0], 0)
+            self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
+        for timestamp, identifier in zip((2000, 2001), identifiers[1:]):
+            self.assertIsNotNone(self.repository.run(identifier))
+            self.assertIsNotNone(self.repository.agent_message(
+                message_id=timestamp, guild_id=1, channel_id=2))
+
+    def test_retention_keeps_recently_updated_runs(self):
+        run_id = self.create()
+        self.repository.claim(run_id, owner="worker", now=2000)
+        self.repository.start_step(run_id, 0, owner="worker", now=2001)
+        self.repository.prune_log(now=ACTION_LOG_RETENTION_SECONDS + 2000)
+        self.assertIsNotNone(self.repository.run(run_id))
+        self.assertEqual(len(self.repository.run(run_id)["steps"]), 1)
+
     def setUp(self):
         self.directory = TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)

@@ -448,4 +448,11 @@ class AgentActionRepository(ScheduledStore):
                 "DELETE FROM action_log WHERE executed_at < ?",
                 (cutoff,),
             )
+            connection.execute(
+                "DELETE FROM action_steps WHERE run_id IN "
+                "(SELECT run_id FROM action_runs WHERE updated_at < ?)",
+                (cutoff,),
+            )
+            connection.execute("DELETE FROM action_runs WHERE updated_at < ?", (cutoff,))
+            connection.execute("DELETE FROM agent_messages WHERE created_at < ?", (cutoff,))
             return changed.rowcount
