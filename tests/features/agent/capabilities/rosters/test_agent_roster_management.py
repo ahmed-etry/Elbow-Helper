@@ -47,7 +47,7 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
                    new_callable=AsyncMock):
             await tool.handler(context, {"roster_id": 17, "show_clan": False})
         action = context.state.proposed_changes[0]
-        self.assertTrue(any("Show Clan: True to False" in line for line in action.preview.details))
+        self.assertIn("Clan: Visible to Hidden", action.preview.details)
         self.assertTrue(await action.preview.recheck())
         workflow.set_roster_layout.assert_not_awaited()
         result = await action.run()
@@ -57,6 +57,7 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
             "after": result.after,
         })
         self.assertTrue(await undo.preview.recheck())
+        self.assertIn("Clan: Hidden to Visible", undo.preview.details)
         await undo.run()
         self.assertTrue(current.show_clan)
 

@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from elbow_helper.configuration.channels import EXAMINATION_PANEL_THREAD
+from elbow_helper.domain.timezones import format_timezone_display
 from elbow_helper.features.examination.config import TIMEZONE_SELECT_OPTIONS
 from elbow_helper.features.examination.panel import ExaminerProfileInputError
 from elbow_helper.infrastructure.ai import AgentToolDefinition
@@ -14,6 +15,7 @@ from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
 from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
+from ...actions.values import display_value
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
     ACTION_EXAMINER_PROFILE_LINE,
@@ -21,11 +23,18 @@ from ...wording import (
     ACTION_EXAMINER_PROFILE_LABEL,
     ACTION_EXAMINER_PROFILE_LEAVE,
     ACTION_EXAMINER_PROFILE_LEAVE_LABEL,
+    ACTION_EXAMINER_PROFILE_FIELDS,
 )
 from ...discord_actions.safety import check_post_access, check_view_access, resolve_channel
 
 
 PROFILE_FIELDS = ("th_levels", "status", "timezone", "availability")
+
+
+def _profile_value(field: str, value: Any) -> str:
+    if field == "timezone" and value:
+        return format_timezone_display(value)
+    return display_value(value)
 
 
 def examiner_profile_tools() -> tuple[RegisteredAgentTool, ...]:
@@ -143,8 +152,8 @@ async def prepare_examiner_profile(context: AgentRequestContext,
     lines = [ACTION_EXAMINER_PROFILE_LINE.format(member=context.member.mention,
                                                  channel=channel.mention)]
     details = tuple(ACTION_FIELD_CHANGE.format(
-        field=key.replace("_", " ").title(), old=before.get(key) or "Not set",
-        new=after.get(key) or "Not set") for key in changed)
+        field=ACTION_EXAMINER_PROFILE_FIELDS[key], old=_profile_value(key, before.get(key)),
+        new=_profile_value(key, after.get(key))) for key in changed)
 
     async def recheck() -> bool:
         try:
@@ -212,8 +221,8 @@ async def prepare_examiner_profile_undo(context: AgentRequestContext,
     lines = [ACTION_EXAMINER_PROFILE_LINE.format(member=context.member.mention,
                                                  channel=channel.mention)]
     details = tuple(ACTION_FIELD_CHANGE.format(
-        field=key.replace("_", " ").title(), old=current[key] or "Not set",
-        new=prior["profile"][key] or "Not set")
+        field=ACTION_EXAMINER_PROFILE_FIELDS[key], old=_profile_value(key, current[key]),
+        new=_profile_value(key, prior["profile"][key]))
         for key in PROFILE_FIELDS if current[key] != prior["profile"][key])
 
     async def recheck() -> bool:

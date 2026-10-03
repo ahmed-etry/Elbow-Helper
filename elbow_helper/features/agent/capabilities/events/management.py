@@ -12,6 +12,7 @@ from ...engine.capability_contract import CapabilityContract
 from ...access import ACCESS_LEAD, require_evidence_access
 from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome, embed_text
+from ...actions.values import display_value
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
     ACTION_EVENT_MANAGE_CATEGORY,
@@ -31,6 +32,7 @@ from ...wording import (
     ACTION_EVENT_REFRESH_LINE,
     ACTION_EVENT_REFRESH_ITEM,
     ACTION_EVENT_REFRESH_LABEL,
+    ACTION_EVENT_FORM_FIELDS, ACTION_EVENT_PRESET_FIELDS,
 )
 
 
@@ -221,8 +223,8 @@ async def _prepare_form(context: AgentRequestContext, values: Mapping[str, Any],
         old = before.get("grace_period_hours" if field == "grace_hours" else field)
         if old != value:
             details.append(ACTION_FIELD_CHANGE.format(
-                field=field.replace("_", " ").title(), old=old if old is not None else "None",
-                new=value))
+                field=ACTION_EVENT_FORM_FIELDS[field], old=display_value(old),
+                new=display_value(value)))
     if current is None or not before.get("channel_id"):
         lines.append(ACTION_EVENT_FORM_CHANNEL)
     elif before.get("channel_id"):
@@ -273,10 +275,13 @@ async def _prepare_preset(context: AgentRequestContext,
     lines = [ACTION_EVENT_FORM_EDIT.format(name=event["name"])]
     details = []
     if name != event["name"]:
-        details.append(ACTION_FIELD_CHANGE.format(field="Name", old=event["name"], new=name))
+        details.append(ACTION_FIELD_CHANGE.format(
+            field=ACTION_EVENT_PRESET_FIELDS["name"], old=display_value(event["name"]),
+            new=display_value(name)))
     if grace is not None and grace != event.get("grace_period_hours"):
         details.append(ACTION_FIELD_CHANGE.format(
-            field="Grace hours", old=event.get("grace_period_hours"), new=grace))
+            field=ACTION_EVENT_PRESET_FIELDS["grace_hours"],
+            old=display_value(event.get("grace_period_hours")), new=display_value(grace)))
 
     async def recheck() -> bool:
         return workflow.event_management_state(event["key"]) == current

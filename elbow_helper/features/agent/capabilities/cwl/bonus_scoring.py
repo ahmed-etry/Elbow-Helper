@@ -7,11 +7,13 @@ from collections.abc import Mapping
 from typing import Any
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
+from elbow_helper.features.cwl.bonus.settings import ADJUSTMENT_FIELDS
 
 from ...engine.capability_contract import CapabilityContract
 from ...access import ACCESS_LEAD, require_evidence_access
 from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
+from ...actions.values import display_value
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
     ACTION_BONUS_SCORING_LINE,
@@ -74,12 +76,12 @@ def _changed_lines(before: Mapping[str, Any], after: Mapping[str, Any]) -> list[
         if old_scores.get(key) != new_scores.get(key):
             lines.append(ACTION_FIELD_CHANGE.format(
                 field=f"TH {key.replace(':', ' vs ')} Expected Score",
-                old=old_scores.get(key), new=new_scores.get(key)))
-    for field in _ADJUSTMENTS:
+                old=display_value(old_scores.get(key)), new=display_value(new_scores.get(key))))
+    for field, label in ADJUSTMENT_FIELDS:
         if before.get(field) != after.get(field):
             lines.append(ACTION_FIELD_CHANGE.format(
-                field=field.replace("_", " ").title(),
-                old=before.get(field), new=after.get(field)))
+                field=label,
+                old=display_value(before.get(field)), new=display_value(after.get(field))))
     return lines
 
 

@@ -17,6 +17,7 @@ from ...engine.capability_contract import CapabilityContract
 from ...access import ACCESS_LEAD_PLUS, require_evidence_access
 from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
+from ...actions.values import display_value
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
     ACTION_ROSTER_CONTROL_LINE,
@@ -36,6 +37,7 @@ from ...wording import (
     ACTION_ROSTER_REFRESH_LINE,
     ACTION_ROSTER_REFRESH_MEMBER,
     ACTION_ROSTER_REFRESH_LABEL,
+    ACTION_ROSTER_LAYOUT_FIELDS,
 )
 from ...discord_actions.safety import (
     check_member, check_post_access, check_role, resolve_channel, resolve_member,
@@ -50,6 +52,18 @@ TOOL_CONTRACTS = {
         required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),
 }
+
+
+def _layout_field(field: str) -> str:
+    limits = {
+        "player_width": (ROSTER_PLAYER_COLUMN_MIN_WIDTH, ROSTER_PLAYER_COLUMN_MAX_WIDTH),
+        "discord_width": (ROSTER_DISCORD_COLUMN_MIN_WIDTH, ROSTER_DISCORD_COLUMN_MAX_WIDTH),
+    }
+    label = ACTION_ROSTER_LAYOUT_FIELDS[field]
+    if field in limits:
+        minimum, maximum = limits[field]
+        return label.format(minimum=minimum, maximum=maximum)
+    return label
 
 async def _check_posts(context: AgentRequestContext,
                        posts: tuple[tuple[int, int], ...]) -> None:
@@ -238,7 +252,8 @@ async def prepare_roster_layout(context: AgentRequestContext,
     await _check_posts(context, posts)
     lines = [ACTION_ROSTER_LAYOUT_LINE.format(name=roster.name)]
     details = tuple(ACTION_FIELD_CHANGE.format(
-        field=field.replace("_", " ").title(), old=before[field], new=value)
+        field=_layout_field(field), old=display_value(before[field], visibility=True),
+        new=display_value(value, visibility=True))
         for field, value in changes.items())
     lines.extend(ACTION_ROSTER_POST_REFRESH.format(
         channel=f"<#{channel_id}>")
@@ -287,7 +302,8 @@ async def prepare_roster_layout_undo(context: AgentRequestContext,
     await _check_posts(context, posts)
     lines = [ACTION_ROSTER_LAYOUT_LINE.format(name=roster.name)]
     details = tuple(ACTION_FIELD_CHANGE.format(
-        field=field.replace("_", " ").title(), old=getattr(layout, field), new=value)
+        field=_layout_field(field), old=display_value(getattr(layout, field), visibility=True),
+        new=display_value(value, visibility=True))
         for field, value in prior.items() if getattr(layout, field) != value)
 
     async def recheck() -> bool:

@@ -248,6 +248,21 @@ ACTION_VALUE_NO = "No"
 ACTION_VALUE_HIDDEN = "Hidden"
 ACTION_VALUE_VISIBLE = "Visible"
 ACTION_VALUE_OFF = "Off"
+ACTION_VALUE_NOT_SET = "Not set"
+ACTION_EVENT_FORM_FIELDS = {
+    "name": "Event Name", "start": "Start", "end": "End",
+    "timezone": "Timezone", "grace_hours": "Grace Period (Hours)",
+}
+ACTION_EVENT_PRESET_FIELDS = {"name": "Display Name", "grace_hours": "Grace Period (Hours)"}
+ACTION_EXAMINER_PROFILE_FIELDS = {
+    "th_levels": "Town Hall Coverage", "status": "Status",
+    "timezone": "Timezone", "availability": "Availability",
+}
+ACTION_ROSTER_LAYOUT_FIELDS = {
+    "show_townhall": "Town Hall", "show_discord": "Discord username", "show_clan": "Clan",
+    "player_width": "Player names ({minimum}–{maximum} characters)",
+    "discord_width": "Discord usernames ({minimum}–{maximum} characters)",
+}
 ACTION_ROSTER_DELETE_LINE = "Delete roster **{name}** and all signup history."
 ACTION_ROSTER_DELETE_ROLE = "Remove signup role {role} from these members:"
 ACTION_MEMBER_LINE = "{member}"

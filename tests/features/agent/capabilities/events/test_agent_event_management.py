@@ -1,6 +1,7 @@
 """Event panel changes run only after the agent's confirmation."""
 
 from types import SimpleNamespace
+from datetime import datetime, timezone
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -13,7 +14,9 @@ from elbow_helper.features.agent.capabilities.events.management import event_man
 class EventManagementActionTests(unittest.IsolatedAsyncioTestCase):
     async def test_create_form_uses_feature_validation_and_waits_for_confirm(self):
         values = {"name": "Event", "start": "start", "end": "end", "timezone": "UTC"}
-        prepared = {"name": "Event", "start": "parsed start", "end": "parsed end",
+        start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        end = datetime(2026, 1, 2, tzinfo=timezone.utc)
+        prepared = {"name": "Event", "start": start, "end": end,
                     "timezone": "UTC", "grace_hours": 24}
         workflow = SimpleNamespace(
             prepare_one_time_event_values=MagicMock(return_value=(prepared, None)),
@@ -36,12 +39,15 @@ class EventManagementActionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "confirmation_required")
         action = context.state.proposed_changes[0]
         self.assertIs(action.action_class, ActionClass.CHANGE)
-        self.assertTrue(any("parsed start" in line for line in action.preview.details))
+        self.assertIn(f"Start: Not set to <t:{int(start.timestamp())}:f>", action.preview.details)
+        self.assertIn(f"End: Not set to <t:{int(end.timestamp())}:f>", action.preview.details)
+        self.assertIn("Event Name: Not set to Event", action.preview.details)
+        self.assertIn("Grace Period (Hours): Not set to 24", action.preview.details)
         self.assertTrue(any("voice channel" in line for line in action.preview.lines))
-        self.assertFalse(any("parsed start" in line for line in action.preview.lines))
+        self.assertFalse(any(str(int(start.timestamp())) in line for line in action.preview.lines))
         self.assertEqual(action.preview.detail_access, frozenset({ACCESS_LEAD}))
         self.assertEqual(tool.contract.required_access, frozenset({ACCESS_LEAD}))
-        self.assertNotIn("parsed start", str(result))
+        self.assertNotIn(str(int(start.timestamp())), str(result))
         workflow.create_one_time_event.assert_not_called()
         await action.run()
         workflow.create_one_time_event.assert_called_once_with(**prepared)
