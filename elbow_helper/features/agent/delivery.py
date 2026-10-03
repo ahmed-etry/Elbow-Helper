@@ -90,12 +90,14 @@ class AgentDeliveryMixin:
             await prepare_preview(context)
             if response.startswith(previous_preview):
                 response = preview_text(context.state.proposed_changes) + response[len(previous_preview):]
-        allowed_users: dict[int, discord.abc.User] = {
+        has_preview = bool(context and context.state.proposed_changes)
+        # A preview must not ping the people it names before the change is confirmed.
+        allowed_users: dict[int, discord.abc.User] = {} if has_preview else {
             member.id: member
             for member in message.mentions
             if self.bot.user is None or member.id != self.bot.user.id
         }
-        if referenced is not None and not referenced.author.bot:
+        if referenced is not None and not referenced.author.bot and not has_preview:
             allowed_users[referenced.author.id] = referenced.author
         if mention_requester:
             allowed_users[message.author.id] = message.author
@@ -107,7 +109,6 @@ class AgentDeliveryMixin:
             replied_user=False,
         )
         files = [discord.File(io.BytesIO(item.data), filename=item.filename) for item in attachments]
-        has_preview = bool(context and context.state.proposed_changes)
         if not has_preview and _needs_file(response):
             files.append(discord.File(io.BytesIO(response.encode("utf-8")), filename=LONG_REPLY_FILENAME))
             chunks = [None]

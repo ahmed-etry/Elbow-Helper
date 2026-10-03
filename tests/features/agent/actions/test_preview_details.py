@@ -48,6 +48,20 @@ class PreviewDetailTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent.kwargs["view"].timeout, 3600.0)
         self.assertNotIn(SECRET, sent.args[0])
 
+    async def test_preview_pings_no_one_the_request_mentioned(self):
+        delivery = AgentDeliveryMixin()
+        delivery.bot = self.context.bot
+        delivery.action_runner = object()
+        mentioned = Member(5, ())
+        self.message.mentions = (mentioned,)
+        referenced = SimpleNamespace(author=self.other)
+        await delivery.send_response(self.message, "Synthetic answer", referenced)
+        self.assertEqual(self.message.reply.await_args.kwargs["allowed_mentions"].users,
+                         [mentioned, self.other])
+        await delivery.send_response(self.message, preview_text([self.action]), referenced,
+                                     context=self.context)
+        self.assertEqual(self.message.reply.await_args.kwargs["allowed_mentions"].users, [])
+
     async def test_watcher_save_checks_the_destination_audience(self):
         tool = RegisteredAgentTool(AgentToolDefinition("synthetic_read", "Synthetic", {
             "type": "object", "properties": {"channel_id": {"type": "integer"}},
