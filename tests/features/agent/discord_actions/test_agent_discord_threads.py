@@ -6,6 +6,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from features.agent.result_path_helpers import assert_result_paths
+
 from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.agent.discord_actions.threads import (
     prepare_create_thread, prepare_thread_members, prepare_update_thread,
@@ -101,6 +103,7 @@ class DiscordThreadActionTests(unittest.IsolatedAsyncioTestCase):
         action = self.context.state.proposed_changes.pop()
         self.assertTrue(await action.preview.recheck())
         outcome = await action.run()
+        assert_result_paths(self, "create_discord_thread", outcome.result)
         self.assertEqual(outcome.result["thread_id"], self.thread.id)
         self.assertTrue(await action.verify())
         self.parent.create_thread.assert_awaited_once()
@@ -112,7 +115,8 @@ class DiscordThreadActionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "confirmation_required")
         action = self.context.state.proposed_changes.pop()
         self.assertTrue(await action.preview.recheck())
-        await action.run()
+        outcome = await action.run()
+        assert_result_paths(self, "update_discord_thread", outcome.result)
         self.assertEqual(self.thread.name, "After")
         self.assertTrue(await action.verify())
 
@@ -123,7 +127,8 @@ class DiscordThreadActionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "confirmation_required")
         action = self.context.state.proposed_changes.pop()
         self.assertTrue(await action.preview.recheck())
-        await action.run()
+        outcome = await action.run()
+        assert_result_paths(self, "change_discord_thread_members", outcome.result)
         self.assertIn(4, self.thread.members)
 
     async def test_new_thread_can_be_updated_and_joined_in_the_same_run(self):

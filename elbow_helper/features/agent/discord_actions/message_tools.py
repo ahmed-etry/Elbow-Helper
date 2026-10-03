@@ -18,6 +18,7 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
             }, "required": [], "additionalProperties": False},
         ), find_agent_files,
             contract=CapabilityContract(
+                result_paths=(('files', 'N', 'file_name'), ('next_offset',)),
                 entity_fields=(),
                 time_fields=(),
                 source_scope="request_context",
@@ -36,6 +37,7 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
             }, "required": ["channel_id", "text"], "additionalProperties": False},
         ), prepare_post, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
+                result_paths=(('message_id',), ('channel_id',)),
                 entity_fields=(
                     ("channel_id", "discord_channel"),
                     ("ping_role_ids", "discord_role_set"),
@@ -57,6 +59,7 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
                "additionalProperties": False},
         ), prepare_edit, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
+                result_paths=(('message_id',), ('channel_id',)),
                 entity_fields=(
                     ("channel_id", "discord_channel"),
                     ("message_id", "discord_message"),

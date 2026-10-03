@@ -2,6 +2,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock
 
+from features.agent.result_path_helpers import assert_result_paths
+
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.agent.engine.registry import build_agent_tools
@@ -61,6 +63,7 @@ class AgentAccountLinkTests(unittest.IsolatedAsyncioTestCase):
 
         account_links.get_link_by_tag.assert_called_once_with("#P0")
         account_links.get_player_locations_snapshot.assert_called_once_with(("#P0",))
+        assert_result_paths(self, "get_account_link", linked)
         self.assertEqual(linked["linked_member_id"], 42)
         self.assertEqual(linked["linked_member_display_name"], "Owner")
         self.assertTrue(linked["primary"])
@@ -123,6 +126,7 @@ class AgentAccountLinkTests(unittest.IsolatedAsyncioTestCase):
             context, {"member_id": 10},
         )
 
+        assert_result_paths(self, "get_linked_accounts", result)
         self.assertEqual(result["total_linked_accounts"], 26)
         self.assertTrue(result["accounts_truncated"])
         self.assertEqual(len(result["accounts"]), 25)
@@ -130,3 +134,11 @@ class AgentAccountLinkTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["accounts"][0]["last_seen_clan_code"], "BEH")
         self.assertIsNone(result["accounts"][1]["observed_clan_code"])
         self.assertEqual(result["accounts"][1]["location_status"], "location_unknown")
+
+    async def test_member_discovery_exposes_declared_identity(self):
+        member = SimpleNamespace(id=101, display_name="Synthetic member", name="synthetic",
+                                 global_name=None, mention="<@101>", roles=[])
+        context = SimpleNamespace(guild=SimpleNamespace(members=[member]))
+        result = await build_agent_tools()["find_discord_members"].handler(context, {"query": "synthetic"})
+        assert_result_paths(self, "find_discord_members", result)
+        self.assertEqual(result["members"][0]["member_id"], 101)

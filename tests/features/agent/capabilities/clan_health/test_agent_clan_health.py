@@ -6,6 +6,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from features.agent.result_path_helpers import assert_result_paths
+
 from elbow_helper.configuration.roles import CORE, CO_APPLICANT_ROLE_ID
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.capabilities.clan_health.report import ClanHealthReport
@@ -68,6 +70,7 @@ class AgentClanHealthTests(unittest.IsolatedAsyncioTestCase):
         listed = await list_clan_health_reports(
             self.context, {"clan_code": "beh", "limit": 1},
         )
+        assert_result_paths(self, "list_clan_health_reports", listed)
         self.assertEqual([row["run_id"] for row in listed["reports"]], ["after"])
         previous = await list_clan_health_reports(self.context, {
             "clan_code": "BEH", "limit": 1,

@@ -126,6 +126,35 @@ def _reference(value: Any, earlier: set[str]) -> bool:
                     for part in value["path"]))
 
 
+def _check_result_references(
+    value: Any, steps: Mapping[str, Mapping[str, Any]],
+    registry: Mapping[str, RegisteredAgentTool], consumer: str = "",
+) -> PlanCheck:
+    if isinstance(value, dict) and set(value) == {"step", "path"}:
+        if not _reference(value, set(steps)):
+            return _error("Resolve each reference with an earlier step and result path.", consumer)
+        owner = steps[value["step"]]
+        tool = registry[owner["capability"]]
+        if owner["capability"] in (READ_NAME, COMPARE_NAME):
+            tool = original_tool(registry, owner["capability"], owner["arguments"]) or tool
+        paths = tool.contract.referenceable_result_paths if tool.contract else ()
+        if not any(len(value["path"]) == len(pattern) and all(
+            type(part) is int and part >= 0 if key == "N" else type(part) is str and part == key
+            for part, key in zip(value["path"], pattern)
+        ) for pattern in paths):
+            valid = ", ".join("/".join(path) for path in paths) or "none"
+            return _error(
+                f"Step {value['step']} does not expose result path {value['path']!r}. Valid paths: {valid}.",
+                consumer or value["step"],
+            )
+    elif isinstance(value, (dict, list)):
+        for item in (value.values() if isinstance(value, dict) else value):
+            checked = _check_result_references(item, steps, registry, consumer)
+            if not checked.ok:
+                return checked
+    return PlanCheck(True)
+
+
 def _values(value: Any) -> set[str]:
     return {str(item) for item in value} if isinstance(value, list) else {str(value)}
 
@@ -285,6 +314,7 @@ def check_step(
 def _check_steps(raw, registry, periods, entities, named):
     earlier: set[str] = set()
     after_change: set[str] = set()
+    steps_by_id = {}
     for step in raw["steps"]:
         if not isinstance(step, dict) or set(step) != {
             "id", "capability", "arguments", "reason", "depends_on",
@@ -312,7 +342,11 @@ def _check_steps(raw, registry, periods, entities, named):
         checked = check_step(step, registry, periods, entities, named, earlier)
         if not checked.ok:
             return checked
+        checked = _check_result_references(step["arguments"], steps_by_id, registry, step_id)
+        if not checked.ok:
+            return checked
         earlier.add(step_id)
+        steps_by_id[step_id] = step
     return earlier
 
 
@@ -376,6 +410,10 @@ def check_plan(
         for entity in raw["entities"]:
             if isinstance(entity["value"], dict) and not _reference(entity["value"], earlier):
                 return _error("Resolve each entity with a planned step and result path.")
+        checked = _check_result_references(raw["entities"],
+                                           {step["id"]: step for step in raw["steps"]}, registry)
+        if not checked.ok:
+            return checked
         if _mixes_irreversible_changes(raw["steps"], registry):
             return _error("Only irreversible changes of the same kind may share a preview.")
         steps_by_id = {step["id"]: step for step in raw["steps"]}
@@ -384,6 +422,9 @@ def check_plan(
                 continue
             if step_id not in earlier:
                 return _error("Resolve each period with a planned step.")
+            checked = _check_result_references({"step": step_id, "path": path}, steps_by_id, registry)
+            if not checked.ok:
+                return checked
             resolver = registry[steps_by_id[step_id]["capability"]].contract
             if resolver is None or not any(
                 tuple(path) == pattern for pattern in resolver.period_results

@@ -76,6 +76,7 @@ def capability_list(registry: Mapping[str, RegisteredAgentTool]) -> str:
         time_fields = ",".join(contract.time_fields) if contract else ""
         latest_fields = ",".join(contract.latest_fields) if contract else ""
         period_results = ",".join("/".join(map(str, path)) for path in contract.period_results) if contract else ""
+        result_paths = ",".join("/".join(path) for path in contract.referenceable_result_paths) if contract else ""
         entity_fields = ",".join(
             f"{field}:{kind}" for field, kind in contract.entity_fields
         ) if contract else ""
@@ -84,6 +85,7 @@ def capability_list(registry: Mapping[str, RegisteredAgentTool]) -> str:
         for label, value in (
             ("args", ",".join(arguments)), ("time", time_fields),
             ("latest", latest_fields), ("periods", period_results),
+            ("results", result_paths),
             ("entity", entity_fields), ("formats", patterns),
         ):
             if value:

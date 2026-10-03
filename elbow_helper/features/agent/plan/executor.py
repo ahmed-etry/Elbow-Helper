@@ -3,8 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
+
+
+LOGGER = logging.getLogger(__name__)
+
+
+class UnresolvedReferenceError(KeyError):
+    """Keep the failed reference identity without retaining result values."""
+
+    def __init__(self, step_id, path):
+        super().__init__("Unresolved earlier result reference")
+        self.step_id = step_id
+        self.path = path
 
 
 def resolve_arguments(
@@ -12,12 +25,15 @@ def resolve_arguments(
 ) -> dict[str, Any]:
     def resolve(value):
         if isinstance(value, dict) and set(value) == {"step", "path"}:
-            source = results[value["step"]]
-            if source.get("status") == "confirmation_required":
-                return value
-            for part in value["path"]:
-                source = source[part]
-            return source
+            try:
+                source = results[value["step"]]
+                if source.get("status") == "confirmation_required":
+                    return value
+                for part in value["path"]:
+                    source = source[part]
+                return source
+            except (KeyError, IndexError, TypeError):
+                raise UnresolvedReferenceError(value["step"], value["path"]) from None
         if isinstance(value, dict):
             return {field: resolve(item) for field, item in value.items()}
         if isinstance(value, list):
@@ -43,7 +59,9 @@ async def execute_plan(
     async def run_step(step: Mapping[str, Any]) -> tuple[str, Mapping[str, Any]]:
         try:
             arguments = resolve_arguments(step["arguments"], results)
-        except (KeyError, IndexError, TypeError):
+        except UnresolvedReferenceError as error:
+            LOGGER.warning("Agent step %s has unresolved reference to step %s path %s",
+                           step["id"], error.step_id, error.path)
             return step["id"], {"error": "A required earlier result is unavailable."}
         async with semaphore:
             return step["id"], await run(step, arguments, results)

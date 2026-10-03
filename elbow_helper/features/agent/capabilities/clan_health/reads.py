@@ -46,6 +46,7 @@ TOOL_CONTRACTS = {
         entity_fields=(('clan_code', 'clan'),),
         time_fields=('before_run_id',),
         latest_fields=('before_run_id',),
+        result_paths=(('reports', 'N', 'run_id'),),
         period_results=(('reports', 0, 'run_id'),),
         required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),

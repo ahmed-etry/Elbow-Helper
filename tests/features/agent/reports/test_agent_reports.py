@@ -7,6 +7,8 @@ import unittest
 from unittest.mock import AsyncMock, patch
 from urllib.parse import unquote
 
+from features.agent.result_path_helpers import assert_result_paths
+
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.account_links.evidence import (
@@ -72,6 +74,7 @@ class AgentReportTests(unittest.IsolatedAsyncioTestCase):
         first = await audit_role_accounts(context, {
             "role_ids": [role.id], "refresh_locations": False,
         })
+        assert_result_paths(self, "audit_role_accounts", first)
         before = context.state.reports[first["report_id"]]
         members = deepcopy(before.members)
         transferred = members[0]["accounts"].pop(0)
@@ -256,6 +259,7 @@ class AgentReportTests(unittest.IsolatedAsyncioTestCase):
         result = await refresh_role_account_report(context, {
             "report_id": source.report_id, "player_tags": ["2pp"],
         })
+        assert_result_paths(self, "refresh_role_account_report", result)
         refreshed = context.state.reports[result["report_id"]]
         after = refreshed.members[0]["accounts"][0]
 
@@ -346,6 +350,7 @@ class AgentReportTests(unittest.IsolatedAsyncioTestCase):
                 "offset": page["next_offset"],
                 "limit": 25,
             })
+            assert_result_paths(self, "read_role_account_report", page)
             member_ids.extend(member["member_id"] for member in page["members"])
 
         self.assertEqual(first["total_members"], 67)
@@ -448,5 +453,13 @@ class AgentReportTests(unittest.IsolatedAsyncioTestCase):
         context, role = _context()
         role.name = "Brown Elbow Cat"
         result = await find_discord_roles(context, {"query": "BEC"})
+        assert_result_paths(self, "find_discord_roles", result)
         self.assertEqual(result["roles"][0]["member_count"], 12)
         self.assertIn({"clan_code": "BEC", "purpose": "member"}, result["roles"][0]["clan_purposes"])
+
+    async def test_member_and_account_result_paths_match_a_populated_report(self):
+        context, role = _context(count=1)
+        first = await audit_role_accounts(context, {"role_ids": [role.id], "refresh_locations": False})
+        result = await read_role_account_report(context, {"report_id": first["report_id"]})
+        self.assertTrue(result["members"][0]["accounts"])
+        assert_result_paths(self, "read_role_account_report", result)

@@ -213,7 +213,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             AgentToolDefinition("read_value", "Read a value.", {
                 "type": "object", "properties": {"value": {"type": "integer"}},
                 "required": [],
-            }), read,
+            }), read, contract=CapabilityContract((), (), result_paths=(("value",),)),
         )}
 
     async def _answer(self, session, context=None, conversation_history=""):
@@ -265,6 +265,21 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         answer, _ = await self._answer(session)
         self.assertEqual(answer, AGENT_ANSWER_UNFINISHED)
         self.assertNotIn("First part", answer)
+
+    async def test_undeclared_result_path_is_replanned_before_any_lookup(self):
+        bad = _plan([_step("first"), _step("second", {
+            "value": {"step": "first", "path": ["id"]},
+        }, ["first"])])
+        good = _plan([_step("first"), _step("second", {
+            "value": {"step": "first", "path": ["value"]},
+        }, ["first"])])
+        session = _Session([_model_step(bad), _model_step(good),
+                            AgentStep("Seven.", (), AgentUsage())], self.events)
+        answer, _ = await self._answer(session)
+        self.assertEqual(answer, "Seven.")
+        self.assertEqual(self.events, ["model", "model", "read", "read", "model"])
+        self.assertIn("first", session.calls[1][0][0].content)
+        self.assertIn("valid_paths", session.calls[1][0][0].content)
 
     async def test_one_step_plan_uses_two_model_calls(self):
         plan = _plan([_step("first")], effort="high")
@@ -673,7 +688,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("answer_only", session.calls[2][0][0].content)
 
     async def test_dependent_period_is_bound_to_the_owner_result(self):
-        contract = CapabilityContract((), ("selected_key",), period_results=(("key",),))
+        contract = CapabilityContract((), ("selected_key",), period_results=(("key",),), result_paths=(("key",),))
         async def read(_, arguments):
             self.events.append(arguments)
             return {"key": "synthetic-key", "value": 7}
@@ -861,7 +876,8 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                 "type": "object", "properties": {"resource_id": {"type": "string"}}, "required": ["resource_id"]}), page)}
         contracts = {
             "read_value": CapabilityContract((("channel_id", "discord_channel"),), (), channel_fields=("channel_id",),
-                result_channel_fields=("channel_id",), source_scope="channel_messages", result_sources_within_query=True),
+                result_channel_fields=("channel_id",), source_scope="channel_messages", result_sources_within_query=True,
+                result_paths=(("resource_id",),)),
             "read_page": CapabilityContract((("resource_id", "synthetic_report"),), (), retained_fields=("resource_id",),
                 result_channel_fields=("channel_id",), source_scope="retained_channel_evidence")}
         output = {**_step("page", {"resource_id": {"step": "first", "path": ["resource_id"]}}, ["first"]), "capability": "read_page"}
@@ -1082,7 +1098,8 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                 name="synthetic_create", description="Create a target.",
                 parameters={"type": "object", "properties": {}, "required": [],
                             "additionalProperties": False},
-            ), create, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE),
+            ), create, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
+                contract=CapabilityContract((), (), result_paths=(("target_id",),))),
             "synthetic_use": RegisteredAgentTool(AgentToolDefinition(
                 name="synthetic_use", description="Use a target.",
                 parameters={"type": "object", "properties": {

@@ -15,6 +15,7 @@ from .report import RosterReport, compare_roster_reports as compare_reports, ros
 
 TOOL_CONTRACTS = {
     'find_rosters': CapabilityContract(
+        result_paths=(('rosters', 'N', 'roster_id'), ('rosters', 'N', 'active_cycle_id')),
         entity_fields=(),
         time_fields=(),
     ),
@@ -22,14 +23,27 @@ TOOL_CONTRACTS = {
         entity_fields=(('roster_id', 'roster'),),
         time_fields=('before_id',),
         latest_fields=('before_id',),
+        result_paths=(('cycles', 'N', 'id'),),
         period_results=(('cycles', 0, 'id'),),
     ),
     'read_roster': CapabilityContract(
+        result_paths=(
+            ('report_id',),
+            ('next_offset',),
+            ('accessible_posts', 'N', 'channel_id'),
+            ('accessible_posts', 'N', 'message_id'),
+        ),
         entity_fields=(('roster_id', 'roster'),),
         time_fields=('cycle_id',),
         result_entity_keys=(('accounts[].player_tag', 'clash_account'), ('accounts[].discord_user_id', 'discord_member'), ('roster_id', 'roster'), ('cycle_id', 'roster_cycle')),
     ),
     'read_roster_report': CapabilityContract(
+        result_paths=(
+            ('report_id',),
+            ('next_offset',),
+            ('accessible_posts', 'N', 'channel_id'),
+            ('accessible_posts', 'N', 'message_id'),
+        ),
         entity_fields=(('report_id', 'roster_report'),),
         time_fields=(),
         result_entity_keys=(('accounts[].player_tag', 'clash_account'), ('accounts[].discord_user_id', 'discord_member'), ('roster_id', 'roster'), ('cycle_id', 'roster_cycle')),

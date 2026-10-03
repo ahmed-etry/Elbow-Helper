@@ -14,7 +14,7 @@ from elbow_helper.features.agent.plan import capability_list, check_plan, plan_d
 from elbow_helper.features.agent.plan.checker import (
     check_step, entity_kind, parse_periods, source_check, time_check,
 )
-from elbow_helper.features.agent.engine.registry import build_agent_tools
+from elbow_helper.features.agent.engine.registry import build_agent_tools, build_agent_tool_groups
 from elbow_helper.features.agent.reports.tools import original_tool
 from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.agent.models import RegisteredAgentTool
@@ -476,3 +476,45 @@ class PlanContractTests(unittest.TestCase):
                         paged = copy.deepcopy(plan)
                         paged["steps"][0]["arguments"][field] = _sample(self.registry[name].definition.parameters["properties"][field])
                         self.assertFalse(check_plan(paged, self.registry).ok)
+
+    def test_every_returned_entity_path_is_referenceable(self):
+        registry = {tool.definition.name: tool for group in build_agent_tool_groups().values()
+                    for tool in group}
+        registry["consume_synthetic_result"] = RegisteredAgentTool(AgentToolDefinition(
+            "consume_synthetic_result", "Consume a synthetic result.", {
+                "type": "object", "properties": {"value": {"type": "string"}},
+                "required": ["value"],
+            },
+        ), None)
+        checked_paths = 0
+        for name, tool in tuple(registry.items()):
+            if tool.contract is None:
+                continue
+            for field, _ in tool.contract.result_entity_keys:
+                for index in (0, 3):
+                    path = [part for key in field.split(".")
+                            for part in ((key[:-2], index) if key.endswith("[]") else (key,))]
+                    with self.subTest(capability=name, field=field, index=index):
+                        plan = _plan_for(name, tool, tool.contract)
+                        plan["steps"].append({
+                            "id": "consumer", "capability": "consume_synthetic_result",
+                            "arguments": {"value": {"step": "step", "path": path}},
+                            "reason": "Use the returned identity", "depends_on": ["step"],
+                        })
+                        checked = check_plan(plan, registry)
+                        self.assertTrue(checked.ok, checked.error)
+                    checked_paths += 1
+        self.assertGreater(checked_paths, 0)
+
+    def test_action_log_can_supply_the_undo_target(self):
+        reference = {"step": "history", "path": ["actions", 0, "log_id"]}
+        plan = {"goal": "Undo a synthetic action", "effort": "low", "output": "text",
+                "periods": [], "entities": [{"kind": "agent_action_log", "value": reference}],
+                "steps": [
+                    {"id": "history", "capability": "read_agent_action_log", "arguments": {},
+                     "reason": "Find the earlier action", "depends_on": []},
+                    {"id": "undo", "capability": "undo_agent_action", "arguments": {"log_id": reference},
+                     "reason": "Undo the selected action", "depends_on": ["history"]},
+                ]}
+        checked = check_plan(plan, self.registry)
+        self.assertTrue(checked.ok, checked.error)

@@ -59,8 +59,19 @@ class CapabilityContract:
     latest_fields: tuple[str, ...] = ()
     bounded_fields: tuple[str, ...] = ()
     period_results: tuple[tuple[str | int, ...], ...] = ()
+    # N denotes a non-negative integer list index; other parts are exact keys.
+    result_paths: tuple[tuple[str, ...], ...] = ()
     value_patterns: tuple[tuple[str, str], ...] = ()
     retained_fields: tuple[str, ...] = ()
+
+    @property
+    def referenceable_result_paths(self) -> tuple[tuple[str, ...], ...]:
+        """Expose entity identities alongside explicitly declared result paths."""
+        entity_paths = tuple(
+            tuple(field.replace("[]", ".N").split("."))
+            for field, _ in self.result_entity_keys
+        )
+        return tuple(dict.fromkeys((*self.result_paths, *entity_paths)))
 
     def catalogue_entry(self) -> dict[str, Any]:
         return {
@@ -79,6 +90,7 @@ class CapabilityContract:
             "latest_fields": self.latest_fields,
             "bounded_fields": self.bounded_fields,
             "period_results": self.period_results,
+            "result_paths": self.referenceable_result_paths,
         }
 
 
@@ -157,6 +169,13 @@ def validate_contract_catalogue(registry: Mapping[str, CapabilityTool]) -> None:
         if any(not path or any(not (isinstance(part, str) and part or type(part) is int and part >= 0) for part in path)
                for path in contract.period_results):
             raise ValueError(f"Invalid period result path: {name}")
+        if any(not isinstance(path, tuple) or not 1 <= len(path) <= 8
+               or any(not isinstance(part, str) or not part for part in path)
+               for path in contract.result_paths) or len(set(contract.result_paths)) != len(contract.result_paths):
+            raise ValueError(f"Invalid result path: {name}")
+        if any(not 1 <= len(path) <= 8 or any(not part for part in path)
+               for path in contract.referenceable_result_paths):
+            raise ValueError(f"Invalid merged result path: {name}")
         if not set(contract.bounded_fields) <= set(contract.time_fields) or contract.bounded_fields and contract.time_window is None:
             raise ValueError(f"Bounded selectors differ from time fields: {name}")
         if not fields <= described | MECHANICAL_FIELDS:

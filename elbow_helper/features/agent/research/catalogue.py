@@ -23,6 +23,7 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
             find_discord_channels,
             contract=CapabilityContract(
+                result_paths=(('channels', 'N', 'channel_id'),),
                 entity_fields=(),
                 time_fields=(),
                 source_scope="channel_locator",
@@ -72,6 +73,12 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
             search_discord_messages,
             contract=CapabilityContract(
+                result_paths=(
+                    ('matches', 'N', 'channel_id'),
+                    ('matches', 'N', 'message_id'),
+                    ('matches', 'N', 'author_id'),
+                    ('coverage', 'next_cursor'),
+                ),
                 entity_fields=(
                     ("channel_id", "discord_channel"),
                     ("channel_ids", "discord_channel_set"),
@@ -136,6 +143,12 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
             read_discord_channel_history,
             contract=CapabilityContract(
+                result_paths=(
+                    ('messages', 'N', 'channel_id'),
+                    ('messages', 'N', 'message_id'),
+                    ('messages', 'N', 'author_id'),
+                    ('coverage', 'next_cursor'),
+                ),
                 entity_fields=(("channel_id", "discord_channel"), ("author_id", "discord_member")),
                 time_fields=("after", "before", "cursor"),
                 source_scope="channel_messages",
@@ -173,6 +186,7 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
             read_message_context,
             contract=CapabilityContract(
+                result_paths=(('channel_id',), ('messages', 'N', 'message_id'), ('messages', 'N', 'author_id')),
                 entity_fields=(
                     ("channel_id", "discord_channel"),
                     ("message_id", "discord_message"),

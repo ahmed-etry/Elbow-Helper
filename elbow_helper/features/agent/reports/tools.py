@@ -186,6 +186,8 @@ def _tool(name: str, specs: Mapping[str, RegisteredAgentTool]) -> RegisteredAgen
             )
         ),
         retained_fields=ids,
+        result_paths=tuple(sorted({path for tool in specs.values()
+                                   for path in tool.contract.referenceable_result_paths})),
     ))
 
 

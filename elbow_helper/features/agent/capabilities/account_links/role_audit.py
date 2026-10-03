@@ -55,6 +55,7 @@ def role_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
             find_discord_roles,
             contract=CapabilityContract(
+                result_paths=(('roles', 'N', 'role_id'), ('next_offset',)),
                 entity_fields=(),
                 time_fields=(),
             ),
@@ -86,6 +87,7 @@ def role_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
             audit_role_accounts,
             contract=CapabilityContract(
+                result_paths=(('report_id',),),
                 entity_fields=(("role_ids", "discord_role_set"),),
                 time_fields=(),
                 filter_fields=("refresh_locations",),
@@ -121,6 +123,7 @@ def role_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
             refresh_role_account_report,
             contract=CapabilityContract(
+                result_paths=(('report_id',),),
                 entity_fields=(
                     ("report_id", "role_account_report"),
                     ("player_tags", "clash_account_set"),
@@ -158,6 +161,12 @@ def role_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
             read_role_account_report,
             contract=CapabilityContract(
+                result_paths=(
+                    ('report_id',),
+                    ('members', 'N', 'member_id'),
+                    ('members', 'N', 'accounts', 'N', 'player_tag'),
+                    ('next_offset',),
+                ),
                 entity_fields=(
                     ("report_id", "role_account_report"),
                     ("clan_code", "clan"),

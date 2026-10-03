@@ -48,6 +48,7 @@ def member_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
             find_discord_members,
             contract=CapabilityContract(
+                result_paths=(('members', 'N', 'member_id'),),
                 entity_fields=(),
                 time_fields=(),
             ),
