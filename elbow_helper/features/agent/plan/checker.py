@@ -281,6 +281,7 @@ def check_step(
 
 def _check_steps(raw, registry, periods, entities, named):
     earlier: set[str] = set()
+    after_change: set[str] = set()
     for step in raw["steps"]:
         if not isinstance(step, dict) or set(step) != {
             "id", "capability", "arguments", "reason", "depends_on",
@@ -295,6 +296,14 @@ def _check_steps(raw, registry, periods, entities, named):
         dependencies = step["depends_on"]
         if not isinstance(dependencies, list) or any(dep not in earlier for dep in dependencies):
             return _error("Depend only on earlier steps.", step_id)
+        classification = registry[capability].action_class
+        depends_on_change = bool(after_change.intersection(dependencies))
+        if classification is ActionClass.READ and depends_on_change:
+            return _error(
+                "Plan reads before changes; a read can't use a change's result.", step_id,
+            )
+        if depends_on_change or classification in (ActionClass.CHANGE, ActionClass.IRREVERSIBLE):
+            after_change.add(step_id)
         if not isinstance(step["reason"], str) or not 1 <= len(step["reason"].strip()) <= 240:
             return _error("Give the step a short reason.", step_id)
         checked = check_step(step, registry, periods, entities, named, earlier)

@@ -124,6 +124,39 @@ def _period_end(encoding):
 
 
 class PlanContractTests(unittest.TestCase):
+    def test_reads_cannot_depend_on_unrun_changes(self):
+        async def handler(context, values):
+            return {}
+        registry = {
+            name: RegisteredAgentTool(AgentToolDefinition(name, "Synthetic", {
+                "type": "object", "properties": {}, "required": [],
+            }), handler, action_class=classification)
+            for name, classification in (
+                ("read", ActionClass.READ), ("change", ActionClass.CHANGE),
+                ("irreversible", ActionClass.IRREVERSIBLE), ("output", ActionClass.OUTPUT),
+            )
+        }
+        for change in ("change", "irreversible"):
+            for indirect in (False, True):
+                steps = [{"id": "changed", "capability": change, "arguments": {},
+                          "reason": "Synthetic", "depends_on": []}]
+                if indirect:
+                    steps.append({"id": "output", "capability": "output", "arguments": {},
+                                  "reason": "Synthetic", "depends_on": ["changed"]})
+                steps.append({"id": "read", "capability": "read", "arguments": {},
+                              "reason": "Synthetic",
+                              "depends_on": ["output" if indirect else "changed"]})
+                plan = {"goal": "Synthetic", "effort": "low", "output": "text",
+                        "periods": [], "entities": [], "steps": steps}
+                with self.subTest(change=change, indirect=indirect):
+                    checked = check_plan(plan, registry)
+                    self.assertFalse(checked.ok)
+                    self.assertEqual(checked.step_id, "read")
+                    self.assertEqual(checked.error,
+                        "Plan reads before changes; a read can't use a change's result.")
+                    steps[-1]["depends_on"] = []
+                    self.assertTrue(check_plan(plan, registry).ok)
+
     def test_only_same_kind_irreversible_steps_share_a_preview(self):
         schema = {"type": "object", "properties": {}, "required": [],
                   "additionalProperties": False}
