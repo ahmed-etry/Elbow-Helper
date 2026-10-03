@@ -41,9 +41,8 @@ class AgentUnavailableError(RuntimeError):
 class AgentService:
     """Plan checked reads and answer from their results."""
 
-    def __init__(self, model: AgentModel, *, actions_enabled: bool = True) -> None:
+    def __init__(self, model: AgentModel) -> None:
         self._model = model
-        self._actions_enabled = actions_enabled
 
     execute_tool = staticmethod(execute_tool)
 
@@ -98,7 +97,7 @@ class AgentService:
     ):
         registry = build_agent_tools()
         command_capabilities = {}
-        actions_available = self._actions_enabled and getattr(context.bot, "tree", None) is not None
+        actions_available = getattr(context.bot, "tree", None) is not None
         if not actions_available:
             registry = {
                 name: tool

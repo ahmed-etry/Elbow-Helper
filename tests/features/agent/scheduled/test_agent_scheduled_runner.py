@@ -182,7 +182,6 @@ class ScheduledRunnerTests(unittest.IsolatedAsyncioTestCase):
             delivery=AsyncMock(),
             action_runner=SimpleNamespace(),
             context_factory=context_factory,
-            enabled=True,
         )
         self.runner._destination = AsyncMock(return_value=self.channel)
         self.access = patch(
@@ -291,51 +290,6 @@ class ScheduledRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.run_request.assert_not_awaited()
         self.channel.send.assert_awaited_once()
 
-    async def test_emergency_switch_leaves_due_rules_untouched(self):
-        self.runner.enabled = False
-        request_id = self.repository.create_standing(
-            kind="request",
-            guild_id=1,
-            requester_id=2,
-            destination_channel_id=3,
-            rule={
-                "request": "Change a role",
-                "allowed_actions": [{"capability": "role"}],
-                "schedule": {"kind": "once", "at_utc": "2026-01-01T00:00:00Z"},
-            },
-            next_at=1,
-        )
-        watcher_id = self.repository.create_standing(
-            kind="watcher",
-            guild_id=1,
-            requester_id=2,
-            destination_channel_id=3,
-            rule={
-                "request": "Watch status",
-                "schedule": {"kind": "once", "at_utc": "2026-01-01T00:00:00Z"},
-            },
-            next_at=1,
-        )
-        request = self.repository.standing(kind="request", identifier=request_id)
-        watcher = self.repository.standing(kind="watcher", identifier=watcher_id)
-        self.runner.start()
-        await self._tick()
-        self.run_request.assert_not_awaited()
-        self.watch_request.assert_not_awaited()
-        self.runner._destination.assert_not_awaited()
-        self.channel.send.assert_not_awaited()
-        self.assertFalse(self.runner._tasks)
-        self.assertEqual(
-            self.repository.standing(kind="request", identifier=request_id), request
-        )
-        self.assertEqual(
-            self.repository.standing(kind="watcher", identifier=watcher_id), watcher
-        )
-        self.assertEqual(request["status"], "active")
-        self.assertEqual(watcher["status"], "active")
-
-
-class WatcherDecisionTests(unittest.IsolatedAsyncioTestCase):
     async def test_changed_decision_uses_low_effort(self):
         session = SimpleNamespace(
             advance=AsyncMock(

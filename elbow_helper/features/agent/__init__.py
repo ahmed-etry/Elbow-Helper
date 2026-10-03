@@ -102,7 +102,6 @@ async def setup(bot) -> None:
         bot=bot,
         repository=action_repository,
         guild_id=GUILD_ID,
-        enabled=getattr(bot, "agent_actions_enabled", True),
         undo_handlers=build_undo_handlers(),
     )
     knowledge_store = KnowledgeStore(
@@ -151,6 +150,5 @@ async def setup(bot) -> None:
             collaborators=collaborators,
             timeout_seconds=AGENT_REQUEST_TIMEOUT_SECONDS,
         ),
-        enabled=getattr(bot, "agent_actions_enabled", True),
     )
     await bot.add_cog(cog)

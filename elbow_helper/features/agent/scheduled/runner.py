@@ -52,7 +52,6 @@ class ScheduledRunner:
         delivery: DeliveryFunction,
         action_runner: AgentActionRunner,
         context_factory: ContextFactory,
-        enabled: bool,
     ) -> None:
         self.bot = bot
         self.repository = repository
@@ -61,13 +60,10 @@ class ScheduledRunner:
         self.delivery = delivery
         self.action_runner = action_runner
         self.context_factory = context_factory
-        self.enabled = enabled
         self._tasks: set[asyncio.Task] = set()
         self._member_locks: dict[int, asyncio.Lock] = {}
 
     def start(self) -> None:
-        if not self.enabled:
-            return
         task = asyncio.create_task(self._main())
         self._track(task)
 
@@ -112,8 +108,6 @@ class ScheduledRunner:
             await asyncio.sleep(POLL_SECONDS)
 
     async def tick(self) -> None:
-        if not self.enabled:
-            return
         for kind in ("request", "watcher"):
             due = await asyncio.to_thread(
                 self.repository.due_standing,

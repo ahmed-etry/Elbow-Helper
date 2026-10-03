@@ -72,13 +72,12 @@ class AgentActionRunner:
     """Own live callbacks while SQLite owns run and audit state."""
 
     def __init__(self, *, bot: Any, repository: AgentActionRepository,
-                 guild_id: int, enabled: bool = True,
+                 guild_id: int,
                  undo_handlers: Mapping[str, Callable[[Any, Mapping[str, Any]], Awaitable[PreparedAction]]] | None = None,
                  on_finish: Callable[[Any, Mapping[str, Any], Any], Awaitable[None]] | None = None):
         self.bot = bot
         self.repository = repository
         self.guild_id = guild_id
-        self.enabled = enabled
         self.undo_handlers = dict(undo_handlers or {})
         self.on_finish = on_finish
         self._tasks: set[asyncio.Task] = set()
@@ -96,8 +95,6 @@ class AgentActionRunner:
 
     async def submit(self, context: Any, actions: tuple[PreparedAction, ...],
                      *, confirmer_id: int) -> str:
-        if not self.enabled:
-            raise RuntimeError("Agent actions are disabled")
         if confirmer_id != context.member.id:
             raise ValueError("Only the requester may confirm")
         await self._ready.wait()
@@ -131,9 +128,7 @@ class AgentActionRunner:
         return await asyncio.to_thread(self.repository.run, run_id)
 
     async def prepare_undo(self, context: Any, log_id: str) -> PreparedAction:
-        if not self.enabled:
-            raise RuntimeError("Agent actions are disabled")
-        entry = await asyncio.to_thread(
+        entry =await asyncio.to_thread(
             self.repository.log_entry, log_id, requester_id=context.member.id,
         )
         if entry is None or entry["action_class"] != "change" or entry["outcome"] != "completed":
@@ -371,9 +366,7 @@ class AgentActionRunner:
                 await wait_ready()
             await asyncio.to_thread(self.repository.interrupt_incomplete,
                                     guild_id=self.guild_id)
-            if not self.enabled:
-                return
-            runs = await asyncio.to_thread(self.repository.unreported_interruptions,
+            runs =await asyncio.to_thread(self.repository.unreported_interruptions,
                                            guild_id=self.guild_id)
             for run in runs:
                 guild = self.bot.get_guild(run["guild_id"])

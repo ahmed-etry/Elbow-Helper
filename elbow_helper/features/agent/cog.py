@@ -103,9 +103,7 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
         self.transcript_archive = transcript_archive
         self.persistence = persistence
         self._cleanup_task: asyncio.Task | None = None
-        self.service = AgentService(
-            bot.agent_model, actions_enabled=getattr(bot, "agent_actions_enabled", True),
-        )
+        self.service = AgentService(bot.agent_model)
         self._conversations = ConversationStore()
         self._member_locks: WeakValueDictionary[int, asyncio.Lock] = WeakValueDictionary()
         self._previews: WeakValueDictionary[int, object] = WeakValueDictionary()

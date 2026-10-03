@@ -173,7 +173,6 @@ class ApplicationAssemblyTests(unittest.TestCase):
         self.assertIs(bot.clash_client, clash_client)
         self.assertIs(bot.text_generator, ai_client)
         self.assertIs(bot.agent_model, ai_client)
-        self.assertTrue(bot.agent_actions_enabled)
         self.assertEqual(
             bot.local_exports.directory,
             paths.data_root / ".exports",

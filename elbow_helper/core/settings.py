@@ -20,10 +20,6 @@ def _optional_text(value: str | None) -> str | None:
     return cleaned or None
 
 
-def _enabled(value: str | None) -> bool:
-    return value is None or str(value).strip().casefold() in {"", "1", "true", "yes", "on"}
-
-
 @dataclass(frozen=True, slots=True)
 class RuntimeSettings:
     """Environment-backed settings needed by the application bootstrap."""
@@ -35,7 +31,6 @@ class RuntimeSettings:
     google_oauth_client_secret: str | None
     google_oauth_refresh_token: str | None
     google_drive_folder_id: str | None
-    agent_actions_enabled: bool = True
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, str]) -> "RuntimeSettings":
@@ -55,7 +50,6 @@ class RuntimeSettings:
             google_drive_folder_id=_optional_text(
                 values.get("GOOGLE_DRIVE_FOLDER_ID")
             ),
-            agent_actions_enabled=_enabled(values.get("AGENT_ACTIONS_ENABLED")),
         )
 
     def require_discord_token(self) -> str:

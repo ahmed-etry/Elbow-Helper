@@ -73,7 +73,7 @@ class ActionRefusalTests(unittest.IsolatedAsyncioTestCase):
                             return_value={"synthetic_change": tool}),
                       patch("elbow_helper.features.agent.engine.service.build_command_tools",
                             return_value=({}, {}))):
-                    answer = await AgentService(_Model(session), actions_enabled=True).answer(
+                    answer = await AgentService(_Model(session)).answer(
                         question="Change both targets", local_context="", context=context,
                     )
                 self.assertEqual(answer, "Explain changes.")
