@@ -33,6 +33,8 @@ from elbow_helper.infrastructure.exports import WorkbookWriter
 from elbow_helper.infrastructure.time import fixed_utc_offset_name
 
 from .services.accounts import RosterAccountDirectory
+from .settings import clean_roster_name, validate_roster_setup, roster_setup_confirmation
+from .settings import ROSTER_NAME_CONFLICT
 from .services.automation import RosterAutomationService
 from .config import DEFAULT_MAX_MEMBERS
 from .config import FAMILY_CLAN_CODE
@@ -308,8 +310,7 @@ class Rosters(commands.Cog):
 
     @staticmethod
     def _clean_roster_name(value: str) -> str | None:
-        cleaned = " ".join(value.split())
-        return cleaned if 1 <= len(cleaned) <= 100 else None
+        return clean_roster_name(value)
 
     @staticmethod
     def validate_roster_name(value: str) -> str | None:
@@ -458,12 +459,14 @@ class Rosters(commands.Cog):
                             remove_signup_role: bool) -> tuple[dict[str, object], str | None]:
         if role_id is not None and remove_signup_role:
             return {}, "Choose a signup role or remove it, not both."
+        try:
+            values = validate_roster_setup(name=name, max_members=max_members,
+                                           min_townhall=min_townhall)
+        except ValueError as error:
+            return {}, str(error)
         changes: dict[str, object] = {}
         if name is not None:
-            clean_name = self.validate_roster_name(name)
-            if clean_name is None:
-                return {}, "Enter a roster name between 1 and 100 characters."
-            changes["name"] = clean_name
+            changes["name"] = values["name"]
         if clan_code is not None:
             changes["clan_code"] = clan_code
         if role_id is not None:
@@ -471,9 +474,9 @@ class Rosters(commands.Cog):
         elif remove_signup_role:
             changes["role_id"] = None
         if max_members is not None:
-            changes["max_members"] = int(max_members)
+            changes["max_members"] = values["max_members"]
         if min_townhall is not None and min_townhall > 0:
-            changes["min_townhall"] = int(min_townhall)
+            changes["min_townhall"] = values["min_townhall"]
         elif min_townhall == 0:
             changes["min_townhall"] = None
         if not changes:
@@ -1301,13 +1304,13 @@ class Rosters(commands.Cog):
             )
         except sqlite3.IntegrityError as error:
             if _is_roster_name_conflict(error):
-                await warn(interaction, "A roster with that name already exists.")
+                await warn(interaction, ROSTER_NAME_CONFLICT)
             else:
                 LOGGER.exception("Roster creation failed guild_id=%s", interaction.guild_id)
                 await warn(interaction, "The roster couldn't be created.")
             return
         await interaction.response.send_message(
-            f"Created **{roster.name}**.",
+            roster_setup_confirmation("create", roster),
             ephemeral=True,
         )
 
@@ -1354,12 +1357,12 @@ class Rosters(commands.Cog):
             return
         except sqlite3.IntegrityError as error:
             if _is_roster_name_conflict(error):
-                await warn(interaction, "A roster with that name already exists.")
+                await warn(interaction, ROSTER_NAME_CONFLICT)
             else:
                 LOGGER.exception("Roster update failed roster_id=%s", target.id)
                 await warn(interaction, "The roster couldn't be updated.")
             return
-        await interaction.response.send_message(f"Updated **{target.name}**.", ephemeral=True)
+        await interaction.response.send_message(roster_setup_confirmation("edit", target), ephemeral=True)
 
     @app_commands.autocomplete(roster=roster_autocomplete, timezone=timezone_autocomplete)
     @app_commands.describe(
@@ -1583,13 +1586,13 @@ class Rosters(commands.Cog):
             )
         except sqlite3.IntegrityError as error:
             if _is_roster_name_conflict(error):
-                await warn(interaction, "A roster with that name already exists.")
+                await warn(interaction, ROSTER_NAME_CONFLICT)
             else:
                 LOGGER.exception("Roster clone failed source_roster_id=%s", source.id)
                 await warn(interaction, "The roster couldn't be created.")
             return
         await interaction.response.send_message(
-            f"Created **{clone.name}** from **{source.name}**.",
+            roster_setup_confirmation("clone", clone, source=source),
             ephemeral=True,
         )
 
@@ -1635,6 +1638,6 @@ class Rosters(commands.Cog):
                 )
                 return
         await interaction.edit_original_response(
-            content=f"Deleted **{roster.name}**.",
+            content=roster_setup_confirmation("delete", roster),
             view=None,
         )

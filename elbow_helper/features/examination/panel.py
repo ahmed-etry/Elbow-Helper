@@ -38,6 +38,15 @@ if TYPE_CHECKING:
 
 
 
+class ExaminerProfileInputError(ValueError):
+    """A profile choice error with the field and available panel choices."""
+
+    def __init__(self, message: str, *, field: str, choices: tuple[str, ...]):
+        super().__init__(message)
+        self.field = field
+        self.choices = choices
+
+
 class ExaminationPanelMixin:
     def can_edit_examiner_profile(self, member: discord.Member) -> bool:
         return self._has_panel_permissions(member)
@@ -70,12 +79,21 @@ class ExaminationPanelMixin:
             if (not isinstance(levels, list) or len(levels) > 8
                     or any(not isinstance(value, int) or value not in valid_levels
                            for value in levels)):
-                raise ValueError("Choose Town Hall coverage from the panel list.")
+                choices = tuple(option.label for option in TH_COVERAGE_OPTIONS)
+                raise ExaminerProfileInputError(
+                    "Town Hall coverage is invalid. Choose up to eight from: "
+                    + ", ".join(choices) + ".", field="th_levels", choices=choices,
+                )
         if "status" in changes and changes["status"] not in {"Active", "Away"}:
-            raise ValueError("Choose Active or Away.")
+            raise ExaminerProfileInputError("Choose Active or Away.", field="status",
+                                            choices=("Active", "Away"))
         if "timezone" in changes and changes["timezone"] not in {
                 option.value for option in TIMEZONE_SELECT_OPTIONS}:
-            raise ValueError("Choose a timezone from the panel list.")
+            choices = tuple(option.value for option in TIMEZONE_SELECT_OPTIONS)
+            raise ExaminerProfileInputError(
+                "Timezone is invalid. Choose one of: " + ", ".join(choices) + ".",
+                field="timezone", choices=choices,
+            )
         profile = self.examiner_profile_snapshot(member)
         if "availability" in changes:
             raw_availability = str(changes["availability"]).strip()

@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from elbow_helper.configuration.clans import CLANS, CLAN_ORDER
-from elbow_helper.domain.player_tags import normalize_player_tag
+from elbow_helper.domain.player_tags import find_player_tags
 
 
 def requested_channels(question: str, channels: Sequence[Any]) -> frozenset[int]:
@@ -18,16 +18,8 @@ def requested_channels(question: str, channels: Sequence[Any]) -> frozenset[int]
 
 
 def requested_player_tags(question: str) -> frozenset[str]:
-    candidates = re.findall(
-        r"(?<![\w#])#[PYLQGRJCUV0289]{2,15}(?!\w)",
-        question, flags=re.IGNORECASE,
-    )
     clan_tags = {clan.tag for clan in CLANS.values()}
-    return frozenset(
-        tag for candidate in candidates
-        if (tag := normalize_player_tag(candidate)) is not None
-        and tag not in clan_tags
-    )
+    return find_player_tags(question) - clan_tags
 
 
 def requested_member_ids(question: str) -> frozenset[int]:
@@ -42,12 +34,7 @@ def requested_clans(question: str) -> frozenset[str]:
     codes = set(re.findall(
         rf"(?<![\w#])(?:{code_pattern})(?!\w)", question,
     ))
-    normalized_tags = {
-        tag for candidate in re.findall(
-            r"(?<![\w#])#[PYLQGRJCUV0289]{2,15}(?!\w)",
-            question, flags=re.IGNORECASE,
-        ) if (tag := normalize_player_tag(candidate)) is not None
-    }
+    normalized_tags = find_player_tags(question)
     codes.update(clan.code for clan in CLANS.values() if clan.tag in normalized_tags)
     return frozenset(codes)
 
