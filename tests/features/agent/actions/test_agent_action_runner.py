@@ -18,9 +18,18 @@ from elbow_helper.features.agent.actions.runner import AgentActionRunner, StopAc
 from elbow_helper.features.agent.actions.outcomes import ActionOutcome
 from elbow_helper.features.agent.actions.preview import preview_text
 from elbow_helper.features.agent.actions.private_view import PrivateResultView
+from elbow_helper.features.agent.text import chunk_response
 
 
 class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_public_parts_follow_the_shared_text_boundaries(self):
+        content = "Synthetic line. " * 300 + "\n" + "x" * 2500
+        await self.runner._send_parts(self.channel, content)
+        self.assertEqual([call.args[0] for call in self.channel.send.await_args_list],
+                         chunk_response(content))
+        self.assertTrue(all(not call.kwargs["allowed_mentions"].users
+                            for call in self.channel.send.await_args_list))
+
     async def test_permission_failure_names_the_required_permission(self):
         action, _, run = self.action("roles")
         run.side_effect = discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"),

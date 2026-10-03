@@ -15,6 +15,24 @@ from elbow_helper.features.agent.wording import (
 
 
 class PrivateCommandViewTests(unittest.IsolatedAsyncioTestCase):
+    async def test_long_private_results_are_chunked_with_files_only_once(self):
+        for with_panel in (False, True):
+            with self.subTest(panel=with_panel):
+                interaction = self.interaction(101)
+                panel = AsyncMock() if with_panel else None
+                content = "Synthetic private result. " * 200
+                view = PrivateResultView(101, (content,),
+                    (AgentAttachment("synthetic.txt", b"secret"),), panel=panel)
+                await view.open_result(interaction)
+                calls = (interaction.followup.send.await_args_list if with_panel else
+                         [interaction.response.send_message.await_args,
+                          *interaction.followup.send.await_args_list])
+                self.assertGreater(len(calls), 1)
+                self.assertTrue(all(len(call.args[0]) <= 2000 for call in calls))
+                self.assertTrue(all(call.kwargs["ephemeral"] for call in calls))
+                self.assertEqual(len(calls[0].kwargs["files"]), 1)
+                self.assertTrue(all("files" not in call.kwargs for call in calls[1:]))
+
     def interaction(self, member_id):
         return SimpleNamespace(
             user=SimpleNamespace(id=member_id),

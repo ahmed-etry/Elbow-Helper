@@ -14,6 +14,7 @@ from ..wording import (
     ACTION_RESULT_OWNER,
 )
 from ..models import AgentAttachment
+from ..text import chunk_response
 
 
 LOGGER = logging.getLogger(__name__)
@@ -54,7 +55,7 @@ class PrivateResultView(discord.ui.View):
                  panel_labels: tuple[str, ...] = ()):
         super().__init__(timeout=PRIVATE_RESULT_TIMEOUT)
         self.owner_id = owner_id
-        self.parts = parts
+        self.parts = tuple(chunk for part in parts for chunk in chunk_response(part))
         self.attachments = attachments
         self.panels = panels or ((panel,) if panel is not None else ())
         self.panel_labels = panel_labels

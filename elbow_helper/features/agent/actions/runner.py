@@ -361,15 +361,8 @@ class AgentActionRunner:
 
     @staticmethod
     async def _send_parts(channel: Any, value: str) -> None:
-        remaining = value
-        while remaining:
-            part = remaining[:1900]
-            if len(remaining) > 1900:
-                split_at = part.rfind("\n")
-                if split_at > 0:
-                    part = part[:split_at]
+        for part in chunk_response(value):
             await channel.send(part, allowed_mentions=discord.AllowedMentions.none())
-            remaining = remaining[len(part):].lstrip("\n")
 
     async def recover(self) -> None:
         try:
