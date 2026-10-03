@@ -37,6 +37,7 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
             }, "required": ["channel_id", "text"], "additionalProperties": False},
         ), prepare_post, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
+                result_path_kinds=((('message_id',), 'discord_message'), (('channel_id',), 'discord_channel')),
                 result_paths=(('message_id',), ('channel_id',)),
                 entity_fields=(
                     ("channel_id", "discord_channel"),
@@ -59,6 +60,7 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
                "additionalProperties": False},
         ), prepare_edit, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
+                result_path_kinds=((('message_id',), 'discord_message'), (('channel_id',), 'discord_channel')),
                 result_paths=(('message_id',), ('channel_id',)),
                 entity_fields=(
                     ("channel_id", "discord_channel"),

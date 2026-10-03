@@ -47,6 +47,7 @@ TOOL_CONTRACTS = {
         time_fields=('before_run_id',),
         latest_fields=('before_run_id',),
         result_paths=(('reports', 'N', 'run_id'),),
+        result_path_kinds=((('reports', 'N', 'run_id'), 'clan_health_run'),),
         period_results=(('reports', 0, 'run_id'),),
         required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),

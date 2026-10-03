@@ -77,13 +77,13 @@ class CommandRegistryTests(unittest.TestCase):
         self.assertEqual(len(commands), len(adapters))
         registry.update(commands)
         prompt = system_instructions(registry, actions_enabled=True)
-        # Preserve the existing catalogue budget; account separately for its new result contract.
+        # Keep the total prompt budget while allowing typed result contracts.
         without_results = "\n".join(
             " | ".join(field for field in line.split(" | ") if not field.startswith("results "))
             for line in prompt.splitlines()
         )
         self.assertLess(estimate_tokens(without_results), 30_000)
-        self.assertLess(estimate_tokens(prompt) - estimate_tokens(without_results), 1_000)
+        self.assertLess(estimate_tokens(prompt) - estimate_tokens(without_results), 2_000)
         self.assertLess(estimate_tokens(prompt), 31_000)
         self.assertEqual(len(capability_list(registry).splitlines()), len(registry))
         self.assertTrue(all(" | class " in line for line in capability_list(registry).splitlines()))

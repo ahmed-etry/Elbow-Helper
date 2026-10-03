@@ -5,7 +5,7 @@ import unittest
 
 from elbow_helper.features.agent.engine.capability_contract import CapabilityContract, validate_contract_catalogue
 from elbow_helper.features.agent.models import RegisteredAgentTool
-from elbow_helper.features.agent.plan.checker import check_plan
+from elbow_helper.features.agent.plan.checker import check_plan, source_check
 from elbow_helper.features.agent.plan.executor import execute_plan
 from elbow_helper.features.agent.plan.format import capability_list
 from elbow_helper.infrastructure.ai import AgentToolDefinition
@@ -73,14 +73,63 @@ class ResultPathTests(unittest.TestCase):
         plan["entities"] = [{"kind": "discord_role", "value": {
             "step": "source", "path": ["roles", 0, "id"],
         }}]
-        self.assertFalse(check_plan(plan, self.registry).ok)
+        checked = check_plan(plan, self.registry)
+        self.assertFalse(checked.ok)
+        self.assertIn("Entity 1", checked.error)
         plan["entities"][0]["value"]["path"][-1] = "role_id"
         self.assertTrue(check_plan(plan, self.registry).ok)
 
     def test_catalogue_advertises_generic_indexes_and_nested_paths(self):
         catalogue = capability_list(self.registry)
-        self.assertIn("results roles/N/role_id,groups/N/members/N/member_id", catalogue)
+        self.assertIn("results roles/N/role_id:discord_role,groups/N/members/N/member_id", catalogue)
         self.assertNotIn("roles/0/role_id", catalogue)
+
+    def test_explicit_path_kinds_normalize_and_appear_in_the_catalogue(self):
+        path = ("groups", "N", "members", "N", "member_id")
+        contract = replace(self.contract, result_path_kinds=((path, "discord_member_set"),))
+        self.registry["lookup"] = replace(self.registry["lookup"], contract=contract)
+        validate_contract_catalogue({"lookup": self.registry["lookup"]})
+        self.assertEqual(contract.result_path_kind(["groups", 1, "members", 2, "member_id"]), "discord_member")
+        self.assertIsNone(contract.result_path_kind(["groups", "1", "members", 2, "member_id"]))
+        self.assertIn("groups/N/members/N/member_id:discord_member", capability_list(self.registry))
+        self.assertIn("roles/N/role_id:discord_role", capability_list(self.registry))
+
+    def test_invalid_and_conflicting_result_path_kinds_are_refused(self):
+        role = ("roles", "N", "role_id")
+        for annotations in (((role, ""),), ((("unknown",), "discord_role"),),
+                            ((role, "discord_role"), (role, "discord_role")),
+                            ((role, "discord_member"),)):
+            with self.subTest(annotations=annotations):
+                tool = replace(self.registry["lookup"], contract=replace(self.contract, result_path_kinds=annotations))
+                with self.assertRaisesRegex(ValueError, "result path kind"):
+                    validate_contract_catalogue({"lookup": tool})
+
+    def test_typed_reference_declarations_apply_only_to_the_bound_field(self):
+        contract = CapabilityContract((("role_id", "discord_role"), ("other_id", "discord_role")), ())
+        issue, _ = source_check(contract, {"role_id": 101, "other_id": 101}, {}, {}, {},
+                                declared_references={"role_id": {"101"}})
+        self.assertEqual(issue, "Declare this entity in the plan.")
+        issue, _ = source_check(contract, {"role_id": 101}, {}, {}, {},
+                                declared_references={"role_id": {"101"}})
+        self.assertEqual(issue, "")
+
+    def test_entity_validation_identifies_the_entity_and_allowed_values(self):
+        for entity, expected in (
+            ({"kind": "discord_role"}, "Entity 1 must be an object"),
+            ({"kind": "", "value": 101}, "Entity 1 kind must be a non-empty string"),
+            ({"kind": "discord_role", "value": [101]}, "use discord_role_set"),
+            ({"kind": "discord_role_set", "value": []}, "needs a non-empty list"),
+            ({"kind": "discord_role_set", "value": [101, True]}, "Entity 1 value 2 must be an ID"),
+            ({"kind": "discord_role", "value": ""}, "Entity 1 value 1 must be an ID"),
+            ({"kind": "discord_role_set", "value": [{"step": "source", "path": []}]},
+             "reference with step and path"),
+        ):
+            with self.subTest(entity=entity):
+                plan = self.plan(["roles", 0, "role_id"])
+                plan["entities"] = [entity]
+                checked = check_plan(plan, self.registry)
+                self.assertFalse(checked.ok)
+                self.assertIn(expected, checked.error)
 
     def test_entity_paths_merge_with_explicit_paths_without_duplicates(self):
         contract = replace(self.contract, result_entity_keys=(

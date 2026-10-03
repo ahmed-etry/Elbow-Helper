@@ -25,6 +25,7 @@ TOOL_CONTRACTS = {
         time_fields=(),
         result_entity_keys=(('season_coverage[].season', 'cwl_season'), ('clan_code', 'clan')),
         result_paths=(('seasons', 'N'), ('latest_seven_war_season',)),
+        result_path_kinds=((('seasons', 'N'), 'cwl_season'), (('latest_seven_war_season',), 'cwl_season')),
         period_results=(('seasons', 0), ('latest_seven_war_season',)),
         required_access=frozenset({ACCESS_LEAD_PLUS_OR_CWL_HELPER}),
     ),

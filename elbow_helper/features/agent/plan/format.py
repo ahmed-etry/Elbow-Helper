@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..models import AgentCapabilityEffect, RegisteredAgentTool
+from ..reports.tools import routed_result_kinds
 from ..prompts import (
     ACTION_SYSTEM_PROMPT, SYSTEM_PROMPT, PLANNING_RULES,
     ACTION_PLANNING_RULES, STANDING_RULE_RULES,
@@ -76,7 +77,12 @@ def capability_list(registry: Mapping[str, RegisteredAgentTool]) -> str:
         time_fields = ",".join(contract.time_fields) if contract else ""
         latest_fields = ",".join(contract.latest_fields) if contract else ""
         period_results = ",".join("/".join(map(str, path)) for path in contract.period_results) if contract else ""
-        result_paths = ",".join("/".join(path) for path in contract.referenceable_result_paths) if contract else ""
+        result_kinds = {**(contract.referenceable_result_kinds if contract else {}),
+                        **routed_result_kinds(registry, name)}
+        result_paths = ",".join(
+            "/".join(path) + (":" + result_kinds[path] if path in result_kinds else "")
+            for path in contract.referenceable_result_paths
+        ) if contract else ""
         entity_fields = ",".join(
             f"{field}:{kind}" for field, kind in contract.entity_fields
         ) if contract else ""
@@ -120,7 +126,8 @@ def plan_definition(registry: Mapping[str, RegisteredAgentTool]) -> AgentToolDef
                 "entities": {"type": "array", "maxItems": 32, "items": {
                     "type": "object", "properties": {
                         "kind": {"type": "string"},
-                        "value": {"type": ["string", "integer", "object"]},
+                        "value": {"type": ["string", "integer", "object", "array"],
+                                  "items": {"type": ["string", "integer", "object"]}},
                     }, "required": ["kind", "value"],
                 }},
                 "steps": {"type": "array", "minItems": 1, "maxItems": 48,

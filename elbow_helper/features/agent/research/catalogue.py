@@ -24,6 +24,7 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
             find_discord_channels,
             contract=CapabilityContract(
                 result_paths=(('channels', 'N', 'channel_id'),),
+                result_path_kinds=((('channels', 'N', 'channel_id'), 'discord_channel'),),
                 entity_fields=(),
                 time_fields=(),
                 source_scope="channel_locator",
@@ -73,6 +74,11 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
             search_discord_messages,
             contract=CapabilityContract(
+                result_path_kinds=(
+                    (('matches', 'N', 'channel_id'), 'discord_channel'),
+                    (('matches', 'N', 'message_id'), 'discord_message'),
+                    (('matches', 'N', 'author_id'), 'discord_member'),
+                ),
                 result_paths=(
                     ('matches', 'N', 'channel_id'),
                     ('matches', 'N', 'message_id'),
@@ -143,6 +149,11 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
             read_discord_channel_history,
             contract=CapabilityContract(
+                result_path_kinds=(
+                    (('messages', 'N', 'channel_id'), 'discord_channel'),
+                    (('messages', 'N', 'message_id'), 'discord_message'),
+                    (('messages', 'N', 'author_id'), 'discord_member'),
+                ),
                 result_paths=(
                     ('messages', 'N', 'channel_id'),
                     ('messages', 'N', 'message_id'),
@@ -187,6 +198,11 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
             read_message_context,
             contract=CapabilityContract(
                 result_paths=(('channel_id',), ('messages', 'N', 'message_id'), ('messages', 'N', 'author_id')),
+                result_path_kinds=(
+                    (('channel_id',), 'discord_channel'),
+                    (('messages', 'N', 'message_id'), 'discord_message'),
+                    (('messages', 'N', 'author_id'), 'discord_member'),
+                ),
                 entity_fields=(
                     ("channel_id", "discord_channel"),
                     ("message_id", "discord_message"),

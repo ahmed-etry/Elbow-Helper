@@ -51,6 +51,18 @@ class ScopeLedgerTests(unittest.TestCase):
         self.assertTrue(ledger.check(["synthetic-id"], (("key", "selected", "period_key"),), {}, {}))
         self.assertTrue(ledger.check(["synthetic-id"], (), {"synthetic_source": {"101"}}, {}))
 
+    def test_typed_reference_provenance_preserves_named_and_period_limits(self):
+        origin = CapabilityContract((("source_id", "synthetic_source"),), ("period_key",))
+        with patch_contracts(REGISTRY, {"read_source": origin}):
+            ledger = ScopeLedger(self.context(), registry=REGISTRY)
+            ledger.remember("synthetic-id", "read_source", {"source_id": 101, "period_key": "selected"},
+                            {"source_id": {"101"}})
+            periods = (("key", "selected", "period_key"),)
+            self.assertEqual(ledger.check(["synthetic-id"], periods, {}, {}), "")
+            self.assertEqual(ledger.check(["synthetic-id"], periods, {"synthetic_source": {"101"}}, {}), "")
+            self.assertTrue(ledger.check(["synthetic-id"], periods, {"synthetic_source": {"202"}}, {}))
+            self.assertTrue(ledger.check(["synthetic-id"], (("key", "other", "period_key"),), {}, {}))
+
     def test_malformed_saved_evidence_is_ignored(self):
         ledger = ScopeLedger(self.context(("not-json", "null", "[]", json.dumps({"result": "null"}))), registry=REGISTRY)
         self.assertEqual(ledger.reports, {})

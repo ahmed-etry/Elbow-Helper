@@ -15,6 +15,7 @@ from ..engine.capability_contract import CapabilityBindError
 from ..engine.capability_contract import bound_time_window
 from ..engine.capability_contract import compile_capability_call
 from ..engine.capability_contract import entity_kind
+from ..engine.capability_contract import result_path_matches
 from ..reports.tools import (COMPARE_NAME, READ_NAME, original_arguments,
                                    original_tool, unsupported_fields,
                                    unsupported_field_error, saved_report_contracts)
@@ -118,16 +119,16 @@ def has_reference(value: Any) -> bool:
     return isinstance(value, list) and any(has_reference(item) for item in value)
 
 
-def _references(value: Any):
+def result_references(value: Any):
     if isinstance(value, dict):
         if set(value) == {"step", "path"}:
             yield value
         else:
             for item in value.values():
-                yield from _references(item)
+                yield from result_references(item)
     elif isinstance(value, list):
         for item in value:
-            yield from _references(item)
+            yield from result_references(item)
 
 
 def _reference(value: Any, earlier: set[str]) -> bool:
@@ -138,6 +139,32 @@ def _reference(value: Any, earlier: set[str]) -> bool:
                     for part in value["path"]))
 
 
+def reference_contract(reference, steps, registry):
+    owner = steps[reference["step"]]
+    tool = registry[owner["capability"]]
+    if owner["capability"] in (READ_NAME, COMPARE_NAME):
+        tool = original_tool(registry, owner["capability"], owner["arguments"]) or tool
+    return tool.contract
+
+
+def check_entity_references(contract, arguments, steps, registry, step_id="") -> PlanCheck:
+    for field, kind in contract.entity_fields:
+        expected = entity_kind(kind)
+        for reference in result_references(arguments.get(field)):
+            owner = reference_contract(reference, steps, registry)
+            actual = owner.result_path_kind(reference["path"]) if owner else None
+            if actual != expected:
+                return _error(
+                    f"Argument {field} expects {expected}; reference to step {reference['step']} "
+                    f"path {reference['path']!r} has kind {actual or 'untyped'}.", step_id,
+                )
+    return PlanCheck(True)
+
+
+def entity_values(value):
+    return value if isinstance(value, list) else [value]
+
+
 def _check_result_references(
     value: Any, steps: Mapping[str, Mapping[str, Any]],
     registry: Mapping[str, RegisteredAgentTool], consumer: str = "",
@@ -145,15 +172,9 @@ def _check_result_references(
     if isinstance(value, dict) and set(value) == {"step", "path"}:
         if not _reference(value, set(steps)):
             return _error("Resolve each reference with an earlier step and result path.", consumer)
-        owner = steps[value["step"]]
-        tool = registry[owner["capability"]]
-        if owner["capability"] in (READ_NAME, COMPARE_NAME):
-            tool = original_tool(registry, owner["capability"], owner["arguments"]) or tool
-        paths = tool.contract.referenceable_result_paths if tool.contract else ()
-        if not any(len(value["path"]) == len(pattern) and all(
-            type(part) is int and part >= 0 if key == "N" else type(part) is str and part == key
-            for part, key in zip(value["path"], pattern)
-        ) for pattern in paths):
+        contract = reference_contract(value, steps, registry)
+        paths = contract.referenceable_result_paths if contract else ()
+        if not any(result_path_matches(value["path"], pattern) for pattern in paths):
             valid = ", ".join("/".join(path) for path in paths) or "none"
             return _error(
                 f"Step {value['step']} does not expose result path {value['path']!r}. Valid paths: {valid}.",
@@ -176,19 +197,21 @@ def source_check(
     named: Mapping[str, set[str]], entities: Mapping[str, set[str]],
     references: Mapping[str, Any],
     bound_kinds: frozenset[str] = frozenset(),
+    declared_references: Mapping[str, set[str]] | None = None,
 ) -> tuple[str, tuple[str, ...]]:
     fields_by_kind: dict[str, list[str]] = {}
     for field, kind in contract.entity_fields:
         base = entity_kind(kind)
         fields_by_kind.setdefault(base, []).append(field)
         value = arguments.get(field)
-        if value is None or field in references:
+        if value is None:
             continue
-        selected = _values(value)
+        selected = {str(item) for item in entity_values(value) if not has_reference(item)}
         if base in named and not selected <= named[base]:
             return ("The request named other sources of this kind. Offer these instead of reading them.",
                     tuple(sorted(selected - named[base])))
-        if base not in bound_kinds and not selected <= entities.get(base, set()):
+        declared = entities.get(base, set()) | (declared_references or {}).get(field, set())
+        if base not in bound_kinds and not selected <= declared:
             return "Declare this entity in the plan.", ()
     for base, fields in fields_by_kind.items():
         if base in named and base not in bound_kinds and not any(field in arguments for field in fields):
@@ -264,6 +287,7 @@ def check_step(
     periods: tuple, entities: Mapping[str, set[str]], named: Mapping[str, set[str]],
     earlier: set[str], *, resolved: bool = False,
     validate_scope: Callable[[RegisteredAgentTool], str] | None = None,
+    declared_references: Mapping[str, set[str]] | None = None,
 ) -> PlanCheck:
     """Check step arguments and evidence scope before binding a capability call."""
     capability = step["capability"]
@@ -303,7 +327,7 @@ def check_step(
             entity_kind(kind) for field, kind in contract.entity_fields if field in contract.retained_fields
         ) if retained else frozenset()
         issue, offered = source_check(contract, arguments, named, entities, references,
-                                      bound)
+                                      bound, declared_references)
         if issue:
             return _error(issue, step_id, offered)
         step_periods = tuple(period for period in periods
@@ -358,15 +382,11 @@ def _check_steps(raw, registry, periods, entities, named):
         if not references_checked.ok:
             return references_checked
         if checked.contract is not None:
-            for field, kind in checked.contract.entity_fields:
-                base = entity_kind(kind)
-                for reference in _references(step["arguments"].get(field)):
-                    if not any(entity_kind(entity["kind"]) == base
-                               and entity["value"] == reference for entity in raw["entities"]):
-                        return _error(
-                            f"Argument {field} requires a declared {base} entity "
-                            f"with reference {reference!r}.", step_id,
-                        )
+            references_checked = check_entity_references(
+                checked.contract, step["arguments"], steps_by_id, registry, step_id,
+            )
+            if not references_checked.ok:
+                return references_checked
         earlier.add(step_id)
         steps_by_id[step_id] = step
     return earlier
@@ -413,19 +433,33 @@ def check_plan(
         contracts = [tool.contract for tool in registry.values()]
         contracts.extend(saved_report_contracts(registry).values())
         valid_kinds = {entity_kind(kind) for contract in contracts if contract
-                       for _, kind in (*contract.entity_fields, *contract.result_entity_keys)}
-        for entity in raw["entities"]:
+                       for _, kind in (*contract.entity_fields, *contract.result_entity_keys,
+                                       *contract.result_path_kinds)}
+        for index, entity in enumerate(raw["entities"], 1):
             if not isinstance(entity, dict) or set(entity) != {"kind", "value"}:
-                return _error("Each entity needs a kind and an ID or name.")
+                return _error(f"Entity {index} must be an object with exactly kind and value.")
             kind, value = entity["kind"], entity["value"]
-            if not isinstance(kind, str) or not kind or (type(value) not in (str, int)
-                    and not (isinstance(value, dict) and set(value) == {"step", "path"})):
-                return _error("Each entity needs a kind and an ID or name.")
+            if not isinstance(kind, str) or not kind.strip():
+                return _error(f"Entity {index} kind must be a non-empty string.")
             if entity_kind(kind) not in valid_kinds:
                 return _error(
-                    f"Unknown entity kind {kind!r}. Valid kinds: {', '.join(sorted(valid_kinds)) or 'none'}."
+                    f"Entity {index} has unknown kind {kind!r}. Valid kinds: {', '.join(sorted(valid_kinds)) or 'none'}."
                 )
-            entities.setdefault(entity_kind(kind), set()).add(str(value))
+            if isinstance(value, list) and not kind.endswith("_set"):
+                return _error(f"Entity {index} of kind {kind} cannot use a list; use {kind}_set for IDs or references.")
+            if isinstance(value, list) and not value:
+                return _error(f"Entity {index} of kind {kind} needs a non-empty list of IDs or references.")
+            for item_index, item in enumerate(entity_values(value), 1):
+                if type(item) is int or isinstance(item, str) and item.strip():
+                    entities.setdefault(entity_kind(kind), set()).add(str(item))
+                elif (isinstance(item, dict) and isinstance(item.get("step"), str)
+                      and item["step"] and _reference(item, {item["step"]})):
+                    continue
+                else:
+                    return _error(
+                        f"Entity {index} value {item_index} must be an ID, a non-empty name, "
+                        "or a reference with step and path. Lists require a *_set kind.",
+                    )
         if not isinstance(raw["steps"], list) or not 1 <= len(raw["steps"]) <= 48:
             return _error("List between 1 and 48 steps.")
         named = {entity_kind(kind): {str(item) for item in values}
@@ -437,16 +471,16 @@ def check_plan(
         if isinstance(checked, PlanCheck):
             return checked
         earlier = checked
-        for entity in raw["entities"]:
-            if isinstance(entity["value"], dict) and not _reference(entity["value"], earlier):
-                return _error("Resolve each entity with a planned step and result path.")
-        checked = _check_result_references(raw["entities"],
-                                           {step["id"]: step for step in raw["steps"]}, registry)
-        if not checked.ok:
-            return checked
+        steps_by_id = {step["id"]: step for step in raw["steps"]}
+        for index, entity in enumerate(raw["entities"], 1):
+            for reference in result_references(entity["value"]):
+                if not _reference(reference, earlier):
+                    return _error(f"Entity {index} must reference a planned step and result path.")
+                checked = _check_result_references(reference, steps_by_id, registry)
+                if not checked.ok:
+                    return _error(f"Entity {index}: {checked.error}", checked.step_id)
         if _mixes_irreversible_changes(raw["steps"], registry):
             return _error("Only irreversible changes of the same kind may share a preview.")
-        steps_by_id = {step["id"]: step for step in raw["steps"]}
         for kind, step_id, path in periods:
             if kind != "resolved":
                 continue

@@ -65,6 +65,16 @@ def saved_report_contracts(registry):
             for tool in router.specs.values()}
 
 
+def routed_result_kinds(registry, name):
+    router = _router(registry, name)
+    kinds = {}
+    if isinstance(router, ReportRouter):
+        for tool in router.specs.values():
+            for path, kind in tool.contract.referenceable_result_kinds.items():
+                kinds.setdefault(path, set()).add(kind)
+    return {path: "/".join(sorted(values)) for path, values in kinds.items()}
+
+
 def original_arguments(arguments: Mapping[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in arguments.items() if key != "report_kind"}
 

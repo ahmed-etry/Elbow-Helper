@@ -32,6 +32,7 @@ class ScopeLedger:
     def __init__(self, context: AgentRequestContext, registry: Mapping[str, RegisteredAgentTool]) -> None:
         self.registry = registry
         self.reports: dict[str, tuple[str, Mapping[str, Any]]] = {}
+        self.declared_references: dict[str, Mapping[str, set[str]]] = {}
         for turn in context.state.authorized_history or context.history:
             if turn.record is None:
                 continue
@@ -44,11 +45,15 @@ class ScopeLedger:
                 except (AttributeError, KeyError, TypeError, ValueError, RecursionError):
                     continue
 
-    def remember(self, identity: str, capability: str, arguments: Mapping[str, Any]) -> None:
+    def remember(self, identity: str, capability: str, arguments: Mapping[str, Any],
+                 declared_references: Mapping[str, set[str]] | None = None) -> None:
         contract = getattr(self.registry.get(capability), "contract", None)
         if contract is not None and any(field in arguments for field in contract.retained_fields):
             return
-        self.reports.setdefault(identity, (capability, dict(arguments)))
+        if identity not in self.reports:
+            self.reports[identity] = (capability, dict(arguments))
+            self.declared_references[identity] = {field: set(values)
+                                                for field, values in (declared_references or {}).items()}
 
     def check(
         self, identities: list[str], periods: tuple, named: Mapping[str, set[str]],
@@ -64,7 +69,8 @@ class ScopeLedger:
             contract = getattr(self.registry.get(name), "contract", None)
             if contract is None:
                 return "The retained scope is unavailable."
-            issue, _ = source_check(contract, arguments, named, entities, {})
+            issue, _ = source_check(contract, arguments, named, entities, {},
+                                    declared_references=self.declared_references.get(identity))
             if issue:
                 return issue
             issue = time_check(contract, arguments, periods, set())

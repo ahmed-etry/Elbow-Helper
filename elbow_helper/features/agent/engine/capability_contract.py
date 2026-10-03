@@ -63,6 +63,8 @@ class CapabilityContract:
     result_paths: tuple[tuple[str, ...], ...] = ()
     value_patterns: tuple[tuple[str, str], ...] = ()
     retained_fields: tuple[str, ...] = ()
+    # Entity kinds for explicit paths; derived paths inherit result_entity_keys.
+    result_path_kinds: tuple[tuple[tuple[str, ...], str], ...] = ()
 
     @property
     def referenceable_result_paths(self) -> tuple[tuple[str, ...], ...]:
@@ -72,6 +74,18 @@ class CapabilityContract:
             for field, _ in self.result_entity_keys
         )
         return tuple(dict.fromkeys((*self.result_paths, *entity_paths)))
+
+    @property
+    def referenceable_result_kinds(self) -> dict[tuple[str, ...], str]:
+        return {**{tuple(field.replace("[]", ".N").split(".")): entity_kind(kind)
+                   for field, kind in self.result_entity_keys},
+                **{path: entity_kind(kind) for path, kind in self.result_path_kinds}}
+
+    def result_path_kind(self, path: list[str | int]) -> str | None:
+        for pattern, kind in self.referenceable_result_kinds.items():
+            if result_path_matches(path, pattern):
+                return kind
+        return None
 
     def catalogue_entry(self) -> dict[str, Any]:
         return {
@@ -91,7 +105,15 @@ class CapabilityContract:
             "bounded_fields": self.bounded_fields,
             "period_results": self.period_results,
             "result_paths": self.referenceable_result_paths,
+            "result_path_kinds": {"/".join(path): kind for path, kind in self.referenceable_result_kinds.items()},
         }
+
+
+def result_path_matches(path, pattern) -> bool:
+    return len(path) == len(pattern) and all(
+        type(part) is int and part >= 0 if key == "N" else type(part) is str and part == key
+        for part, key in zip(path, pattern)
+    )
 
 
 def contract_catalogue(registry: Mapping[str, CapabilityTool]) -> dict[str, CapabilityContract]:
@@ -176,6 +198,17 @@ def validate_contract_catalogue(registry: Mapping[str, CapabilityTool]) -> None:
         if any(not 1 <= len(path) <= 8 or any(not part for part in path)
                for path in contract.referenceable_result_paths):
             raise ValueError(f"Invalid merged result path: {name}")
+        annotated = [path for path, _ in contract.result_path_kinds]
+        if (any(not isinstance(path, tuple) for path in annotated)
+                or len(set(annotated)) != len(annotated)
+                or any(path not in contract.result_paths or not isinstance(kind, str) or not kind.strip()
+                       for path, kind in contract.result_path_kinds)):
+            raise ValueError(f"Invalid result path kind: {name}")
+        derived = {tuple(field.replace("[]", ".N").split(".")): entity_kind(kind)
+                   for field, kind in contract.result_entity_keys}
+        if any(path in derived and derived[path] != entity_kind(kind)
+               for path, kind in contract.result_path_kinds):
+            raise ValueError(f"Conflicting result path kind: {name}")
         if not set(contract.bounded_fields) <= set(contract.time_fields) or contract.bounded_fields and contract.time_window is None:
             raise ValueError(f"Bounded selectors differ from time fields: {name}")
         if not fields <= described | MECHANICAL_FIELDS:

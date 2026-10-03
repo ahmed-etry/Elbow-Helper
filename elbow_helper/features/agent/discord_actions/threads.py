@@ -47,6 +47,7 @@ def discord_thread_tools() -> tuple[RegisteredAgentTool, ...]:
             }, "required": ["parent_channel_id", "name"], "additionalProperties": False},
         ), prepare_create_thread, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
+                result_path_kinds=((('thread_id',), 'discord_channel'),),
                 result_paths=(('thread_id',),),
                 entity_fields=(("parent_channel_id", "parent_discord_channel"),),
                 time_fields=(),
@@ -64,6 +65,7 @@ def discord_thread_tools() -> tuple[RegisteredAgentTool, ...]:
             }, "required": ["thread_id", "operation"], "additionalProperties": False},
         ), prepare_update_thread, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
+                result_path_kinds=((('thread_id',), 'discord_channel'),),
                 result_paths=(('thread_id',),),
                 entity_fields=(("thread_id", "discord_channel"),),
                 time_fields=(),
@@ -83,6 +85,7 @@ def discord_thread_tools() -> tuple[RegisteredAgentTool, ...]:
                "additionalProperties": False},
         ), prepare_thread_members, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
+                result_path_kinds=((('thread_id',), 'discord_channel'),),
                 result_paths=(('thread_id',),),
                 entity_fields=(
                     ("thread_id", "discord_channel"),
