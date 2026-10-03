@@ -66,6 +66,7 @@ class ActionRunOutput:
     private_files: list[Any] = field(default_factory=list)
     results: dict[str, Mapping[str, Any]] = field(default_factory=dict)
     step_outcomes: dict[int, tuple[str, Mapping[str, Any]]] = field(default_factory=dict)
+    posted_here: int = 0
 
 
 class AgentActionRunner:
@@ -94,7 +95,7 @@ class AgentActionRunner:
             task.cancel()
 
     async def submit(self, context: Any, actions: tuple[PreparedAction, ...],
-                     *, confirmer_id: int) -> str:
+                     *, confirmer_id: int, progress_message: Any = None) -> str:
         if confirmer_id != context.member.id:
             raise ValueError("Only the requester may confirm")
         await self._ready.wait()
@@ -114,7 +115,7 @@ class AgentActionRunner:
                 "before": action.preview.before,
             } for action in actions),
         )
-        task = asyncio.create_task(self._execute(run_id, context, actions))
+        task = asyncio.create_task(self._execute(run_id, context, actions, progress_message))
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
         self._runs[run_id] = task
@@ -128,7 +129,7 @@ class AgentActionRunner:
         return await asyncio.to_thread(self.repository.run, run_id)
 
     async def prepare_undo(self, context: Any, log_id: str) -> PreparedAction:
-        entry =await asyncio.to_thread(
+        entry = await asyncio.to_thread(
             self.repository.log_entry, log_id, requester_id=context.member.id,
         )
         if entry is None or entry["action_class"] != "change" or entry["outcome"] != "completed":
@@ -147,7 +148,8 @@ class AgentActionRunner:
         return action
 
     async def _execute(self, run_id: str, context: Any,
-                       actions: tuple[PreparedAction, ...]) -> None:
+                       actions: tuple[PreparedAction, ...],
+                       progress_message: Any = None) -> None:
         owner = uuid4().hex
         if not await asyncio.to_thread(self.repository.claim, run_id, owner=owner):
             return
@@ -157,13 +159,7 @@ class AgentActionRunner:
         output = ActionRunOutput()
         outcome_status = "completed"
         try:
-            progress = await channel.send(
-                ACTION_RUNNING.format(
-                    count=len(actions),
-                    unit=ACTION_PREVIEW_UNIT_ONE if len(actions) == 1 else ACTION_PREVIEW_UNIT_MANY,
-                ), view=view,
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
+            progress = await self._show_progress(channel, progress_message, view, len(actions))
             for index, action in enumerate(actions):
                 run = await asyncio.to_thread(self.repository.run, run_id)
                 if run["stop_requested"]:
@@ -194,6 +190,21 @@ class AgentActionRunner:
         finally:
             view.disable()
             await self._post_report(run_id, context, channel, progress, output)
+
+    @staticmethod
+    async def _show_progress(channel: Any, progress_message: Any, view: discord.ui.View,
+                             count: int):
+        running = ACTION_RUNNING.format(
+            count=count, unit=ACTION_PREVIEW_UNIT_ONE if count == 1 else ACTION_PREVIEW_UNIT_MANY,
+        )
+        if progress_message is not None:
+            try:
+                await progress_message.edit(content=running, view=view)
+                return progress_message
+            except discord.DiscordException:
+                LOGGER.warning("Agent preview could not show run progress")
+        return await channel.send(running, view=view,
+                                  allowed_mentions=discord.AllowedMentions.none())
 
     async def _run_step(
         self, run_id, index, owner, context, action, channel, progress, view,
@@ -235,6 +246,8 @@ class AgentActionRunner:
                 await self._send_parts(channel, result.text)
             if not await self._record_completed(run_id, index, owner, result, output):
                 return "uncertain"
+            if result.posted_in == channel.id:
+                output.posted_here += 1
             if action.step_id and result.result is not None:
                 output.results[action.step_id] = dict(result.result)
             if progress is not None and index + 1 < total:
@@ -317,6 +330,14 @@ class AgentActionRunner:
         for index, (status, outcome) in output.step_outcomes.items():
             run["steps"][index] = {**run["steps"][index], "status": status,
                                    "outcome_json": json.dumps(outcome)}
+        if progress is not None and self._only_posted_here(run, output):
+            try:
+                await progress.delete()
+            except discord.DiscordException:
+                LOGGER.warning("Agent action progress could not be removed: run=%s", run_id)
+            else:
+                await self._call_on_finish(context, run, None, run_id)
+                return
         report = self._report(run)
         chunks = chunk_response(report) or [report]
         private_view = (PrivateResultView(context.member.id,
@@ -345,6 +366,16 @@ class AgentActionRunner:
                 private_view.message = reported
         except discord.DiscordException:
             LOGGER.exception("Agent action result could not be posted: run=%s", run_id)
+        await self._call_on_finish(context, run, reported, run_id)
+
+    @staticmethod
+    def _only_posted_here(run, output: ActionRunOutput) -> bool:
+        """Posts in the run's own channel already show that every step finished."""
+        return (not output.private_parts and not output.private_files
+                and output.posted_here == len(run["steps"])
+                and all(step["status"] == "completed" for step in run["steps"]))
+
+    async def _call_on_finish(self, context, run, reported, run_id) -> None:
         if self.on_finish is not None:
             try:
                 await self.on_finish(context, run, reported)
@@ -366,7 +397,7 @@ class AgentActionRunner:
                 await wait_ready()
             await asyncio.to_thread(self.repository.interrupt_incomplete,
                                     guild_id=self.guild_id)
-            runs =await asyncio.to_thread(self.repository.unreported_interruptions,
+            runs = await asyncio.to_thread(self.repository.unreported_interruptions,
                                            guild_id=self.guild_id)
             for run in runs:
                 guild = self.bot.get_guild(run["guild_id"])

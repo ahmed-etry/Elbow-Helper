@@ -67,6 +67,7 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
         for action in self.context.state.proposed_changes:
             self.assertTrue(await action.preview.recheck())
             outcome = await action.run()
+            self.assertEqual(outcome.posted_in, 2)
             self.assertTrue(await action.verify())
             self.assertIsNotNone(self.repository.agent_message(
                 message_id=outcome.after["message_id"], guild_id=3, channel_id=2,

@@ -265,6 +265,7 @@ def _post_part(context: AgentRequestContext, channel_id: int, text: str,
             "complete",
             after={"message_id": sent_id},
             result={"message_id": sent_id, "channel_id": channel_id},
+            posted_in=channel_id,
         )
 
     async def verify() -> bool:

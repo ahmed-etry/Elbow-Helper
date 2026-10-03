@@ -75,6 +75,7 @@ class ConfirmationView(discord.ui.View):
         self.proposals = proposals
         self.context = context
         self.runner = runner
+        self.private_result = private_result
         self.message = None
         self.preview = preview_text(proposals)
         self.expired = False
@@ -168,11 +169,18 @@ class ConfirmationView(discord.ui.View):
             if not await self._claim(interaction):
                 return
             await interaction.response.defer()
+            if self.message is not None:
+                try:
+                    await self.message.edit(view=self)
+                except discord.DiscordException:
+                    LOGGER.warning("Agent preview could not be disabled")
+            progress_message = self._progress_message()
             try:
                 if self.runner is None:
                     raise RuntimeError("Action runner is unavailable")
                 await self.runner.submit(
                     self.context, self.proposals, confirmer_id=interaction.user.id,
+                    progress_message=progress_message,
                 )
                 LOGGER.info("Agent preview confirmed: requester=%s", self.owner_id)
             except Exception:
@@ -180,12 +188,17 @@ class ConfirmationView(discord.ui.View):
                 await self.context.source_message.channel.send(
                     ACTION_UNAVAILABLE, allowed_mentions=discord.AllowedMentions.none(),
                 )
-            finally:
-                if self.message is not None:
-                    try:
-                        await self.message.edit(view=self)
-                    except discord.DiscordException:
-                        LOGGER.warning("Agent preview could not be disabled")
+            else:
+                if progress_message is not None:
+                    # The run owns the message now; a later timeout must not edit it.
+                    self.stop()
+
+    def _progress_message(self):
+        """Return the message for the run to report in when it holds only this preview."""
+        if (self.private_result is None
+                and getattr(self.message, "content", None) == preview_text(self.proposals)):
+            return self.message
+        return None
 
     async def invalidate(self) -> None:
         async with self._lock:

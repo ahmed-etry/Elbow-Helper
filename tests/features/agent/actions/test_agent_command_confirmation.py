@@ -9,6 +9,7 @@ from elbow_helper.features.agent.actions.preview import ConfirmationView, previe
 from elbow_helper.features.agent.actions.contracts import ChangePreview, PreparedAction
 from elbow_helper.features.agent.actions.outcomes import ActionOutcome
 from elbow_helper.features.agent.actions.contracts import ActionClass
+from elbow_helper.features.agent.actions.private_view import PrivateResultView
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin
 from elbow_helper.features.agent.models import AgentDelivery, AgentTurnState
 from elbow_helper.features.agent.wording import (
@@ -22,12 +23,38 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
     async def test_confirm_then_timeout_keeps_confirmed_preview_text(self):
         proposal, _, _ = self.proposal(1)
         view = self.view((proposal,))
-        view.message.content = view.preview
+        view.message.content = view.preview + "\n\nSynthetic read result"
         await view.confirm(self.interaction(101))
         view.message.edit.reset_mock()
         await view.on_timeout()
         view.message.edit.assert_awaited_once_with(view=view)
         self.assertTrue(all(item.disabled for item in view.children))
+
+    async def test_confirm_hands_a_preview_only_message_to_the_run(self):
+        proposal, _, _ = self.proposal(1)
+        view = self.view((proposal,))
+        view.message.content = view.preview
+        order = []
+        view.message.edit.side_effect = lambda **_: order.append("disabled")
+        view.runner.submit.side_effect = lambda *_, **__: order.append("queued")
+        await view.confirm(self.interaction(101))
+        view.runner.submit.assert_awaited_once_with(
+            view.context, view.proposals, confirmer_id=101, progress_message=view.message,
+        )
+        self.assertEqual(order, ["disabled", "queued"])
+        self.assertTrue(view.is_finished())
+
+    async def test_preview_with_a_private_result_keeps_its_message(self):
+        proposal, _, _ = self.proposal(1)
+        view = ConfirmationView(
+            101, (proposal,), SimpleNamespace(guild=object()),
+            PrivateResultView(101, ("Synthetic private result",)),
+            runner=SimpleNamespace(submit=AsyncMock(return_value="run")),
+        )
+        view.message = SimpleNamespace(edit=AsyncMock(), content=view.preview)
+        await view.confirm(self.interaction(101))
+        self.assertIsNone(view.runner.submit.await_args.kwargs["progress_message"])
+        self.assertFalse(view.is_finished())
 
     async def test_cancel_then_timeout_keeps_cancelled_text(self):
         proposal, _, _ = self.proposal(1)
@@ -146,7 +173,7 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         first_run.assert_not_awaited()
         second_run.assert_not_awaited()
         view.runner.submit.assert_awaited_once_with(
-            view.context, view.proposals, confirmer_id=101,
+            view.context, view.proposals, confirmer_id=101, progress_message=None,
         )
         member.followup.send.assert_not_awaited()
         self.assertTrue(view.used)
@@ -354,7 +381,6 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_multiple_private_panels_can_each_be_opened(self):
         first, second = AsyncMock(), AsyncMock()
-        from elbow_helper.features.agent.actions.private_view import PrivateResultView
         view = PrivateResultView(
             202, (), panels=(first, second),
             panel_labels=("/synthetic first", "/synthetic second"),

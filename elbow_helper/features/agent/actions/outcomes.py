@@ -25,6 +25,7 @@ class ActionOutcome:
     result: Mapping[str, Any] | None = None
     private_panel: Callable[[discord.Interaction], Awaitable[None]] | None = None
     command_name: str = ""
+    posted_in: int | None = None
 
     @classmethod
     def needs_input(cls, descriptions: tuple[str, ...], *,

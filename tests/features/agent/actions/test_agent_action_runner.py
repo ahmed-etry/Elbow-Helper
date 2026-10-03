@@ -123,12 +123,13 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
         )
         await self.runner.recover()
 
-    async def run_actions(self, *actions):
+    async def run_actions(self, *actions, progress_message=None):
         with (patch("elbow_helper.features.agent.actions.runner.require_access"),
               patch("elbow_helper.features.agent.actions.runner.require_evidence_access",
                     new_callable=AsyncMock)):
             run_id = await self.runner.submit(
                 self.context, tuple(actions), confirmer_id=self.context.member.id,
+                progress_message=progress_message,
             )
             await asyncio.gather(*tuple(self.runner._tasks))
         return self.repository.run(run_id)
@@ -190,6 +191,71 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("Done: Add role (3).",
                          self.progress.edit.await_args.kwargs["content"])
         self.channel.send.assert_awaited_once()
+
+    async def test_confirmed_preview_shows_progress_and_the_report(self):
+        first, _, _ = self.action("first", outcome=ActionOutcome("complete"))
+        second, _, _ = self.action("second", outcome=ActionOutcome("complete"))
+        preview = SimpleNamespace(edit=AsyncMock())
+        await self.run_actions(first, second, progress_message=preview)
+        self.assertEqual([call.kwargs["content"] for call in preview.edit.await_args_list],
+                         ["Running 2 changes...", "1 of 2 done...", "Done: first, second."])
+        self.channel.send.assert_not_awaited()
+
+    async def test_progress_gets_its_own_message_when_the_preview_cannot_change(self):
+        action, _, _ = self.action("first", outcome=ActionOutcome("complete"))
+        preview = SimpleNamespace(edit=AsyncMock(side_effect=discord.HTTPException(
+            SimpleNamespace(status=503, reason="Unavailable"), "Synthetic",
+        )))
+        with self.assertLogs("elbow_helper.features.agent.actions.runner", level="WARNING"):
+            await self.run_actions(action, progress_message=preview)
+        self.assertEqual(self.channel.send.await_args.args[0], "Running 1 change...")
+        self.assertEqual(self.progress.edit.await_args.kwargs["content"], "Done: first.")
+
+    async def test_posts_in_the_run_channel_leave_no_report(self):
+        actions = [self.action(name, outcome=ActionOutcome(
+            "complete", posted_in=self.channel.id,
+        ))[0] for name in ("first", "second")]
+        preview = SimpleNamespace(edit=AsyncMock(), delete=AsyncMock())
+        self.runner.on_finish = AsyncMock()
+        await self.run_actions(*actions, progress_message=preview)
+        preview.delete.assert_awaited_once()
+        self.assertEqual([call.kwargs["content"] for call in preview.edit.await_args_list],
+                         ["Running 2 changes...", "1 of 2 done..."])
+        self.channel.send.assert_not_awaited()
+        self.assertIsNone(self.runner.on_finish.await_args.args[2])
+
+    async def test_other_runs_keep_their_report(self):
+        def post(channel_id, *, allowed=True, **options):
+            return self.action("post", outcome=ActionOutcome(
+                "complete", posted_in=channel_id, **options,
+            ), allowed=allowed)[0]
+        role, _, _ = self.action("role", outcome=ActionOutcome("complete"))
+        cases = (
+            ("Done: post.", (post(9),)),
+            ("Done: post, role.", (post(self.channel.id), role)),
+            ("Nothing changed. Not done: post.", (post(self.channel.id, allowed=False),)),
+            ("Done: post.", (post(self.channel.id, visibility="private",
+                                  private_parts=("Synthetic private result",)),)),
+        )
+        for report, actions in cases:
+            with self.subTest(report=report, steps=len(actions)):
+                preview = SimpleNamespace(edit=AsyncMock(), delete=AsyncMock())
+                await self.run_actions(*actions, progress_message=preview)
+                preview.delete.assert_not_awaited()
+                self.assertEqual(preview.edit.await_args.kwargs["content"], report)
+
+    async def test_report_stays_when_the_progress_cannot_be_removed(self):
+        action, _, _ = self.action("post", outcome=ActionOutcome(
+            "complete", posted_in=self.channel.id,
+        ))
+        preview = SimpleNamespace(edit=AsyncMock(), delete=AsyncMock(
+            side_effect=discord.HTTPException(
+                SimpleNamespace(status=503, reason="Unavailable"), "Synthetic",
+            ),
+        ))
+        with self.assertLogs("elbow_helper.features.agent.actions.runner", level="WARNING"):
+            await self.run_actions(action, progress_message=preview)
+        self.assertEqual(preview.edit.await_args.kwargs["content"], "Done: post.")
 
     async def test_long_remaining_lines_split_after_replacing_progress(self):
         action, _, _ = self.action("long", allowed=False)
