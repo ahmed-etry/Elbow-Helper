@@ -14,8 +14,8 @@ from typing import Any
 from elbow_helper.infrastructure.ai import AgentToolResult
 from ..models import AgentCapabilityEffect, AgentRequestContext
 from ..actions.contracts import ActionClass, PreparedAction
-from ..access import AgentAccessLost
 from ..wording import ACTION_UNAVAILABLE
+from ..access import AgentAccessLost
 from ..access import require_access, accessible_message_channel, has_access_requirements
 from ..access import require_evidence_access
 from ..reports.tools import COMPARE_NAME, READ_NAME, original_tool
@@ -42,6 +42,7 @@ from .tool_call import (
     bound_tool_result,
     evidence_record,
     discard_unpublished_results,
+    restore_tool_state,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -275,6 +276,15 @@ class PlanRunner:
         for index in range(len(previous["proposed_changes"]), len(local.state.proposed_changes)):
             proposal = local.state.proposed_changes[index]
             if isinstance(proposal, PreparedAction):
+                if proposal.action_class is not tool.action_class:
+                    LOGGER.error(
+                        "Agent action class mismatch: capability=%s step=%s "
+                        "registered=%s prepared=%s",
+                        step["capability"], step["id"], tool.action_class, proposal.action_class,
+                    )
+                    restore_tool_state(local, previous)
+                    raw = json.dumps({"error": ACTION_UNAVAILABLE})
+                    break
                 local.state.proposed_changes[index] = replace(
                     proposal,
                     step_id=step["id"],

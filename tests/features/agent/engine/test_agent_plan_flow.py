@@ -5,6 +5,7 @@ from __future__ import annotations
 from features.agent.engine.helpers import patch_engine
 
 import json
+from contextlib import nullcontext
 import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -109,6 +110,44 @@ class _Model:
 
 
 class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_prepared_actions_must_match_the_registered_class(self):
+        for registered in ActionClass:
+            for prepared in (ActionClass.CHANGE, ActionClass.IRREVERSIBLE):
+                with self.subTest(registered=registered, prepared=prepared):
+                    async def prepare(context, arguments):
+                        context.state.proposed_changes.append(PreparedAction(
+                            "synthetic_change", {}, ChangePreview(
+                                ("Synthetic preview",), AsyncMock(return_value=True)),
+                            AsyncMock(), action_class=prepared,
+                        ))
+                        return {"status": "confirmation_required"}
+                    tool = RegisteredAgentTool(AgentToolDefinition("synthetic_change", "Synthetic", {
+                        "type": "object", "properties": {}, "required": [],
+                    }), prepare, AgentCapabilityEffect.COMMAND, registered)
+                    plan = _plan([{**_step("changed"), "capability": "synthetic_change"}])
+                    session = _Session([_model_step(plan), AgentStep("Synthetic refusal", (), AgentUsage())],
+                                       self.events)
+                    context = replace(_context(), bot=SimpleNamespace(tree=object()))
+                    mismatch = registered is not prepared
+                    logs = (self.assertLogs("elbow_helper.features.agent.engine.steps", level="ERROR")
+                            if mismatch else nullcontext())
+                    with (patch("elbow_helper.features.agent.engine.service.build_agent_tools",
+                                return_value={"synthetic_change": tool}),
+                          patch("elbow_helper.features.agent.engine.service.build_command_tools",
+                                return_value=({}, {})), logs):
+                        answer = await AgentService(_Model(session)).answer(
+                            question="Synthetic", local_context="", context=context,
+                        )
+                    self.assertEqual(bool(context.state.proposed_changes), not mismatch)
+                    if mismatch:
+                        self.assertEqual(answer, "Synthetic refusal")
+                        if registered in (ActionClass.CHANGE, ActionClass.IRREVERSIBLE):
+                            self.assertFalse(session.calls[-1][1])
+                        result = json.loads(session.calls[-1][0][0].content)["results"]["changed"]
+                        self.assertEqual(result["flags"]["status"], "failed")
+                    else:
+                        self.assertIn("Synthetic preview", answer)
+
     async def test_results_receive_a_final_answer_at_scope_and_output_limits(self):
         instruction = "Answer now from these results. Say briefly what you couldn't finish."
         first = _plan([_step("first")])

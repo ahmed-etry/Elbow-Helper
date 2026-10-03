@@ -92,7 +92,7 @@ async def prepare_news_dismiss(context: AgentRequestContext,
         "dismiss_lead_news_prompt", {"prompt_message_id": prompt.id},
         ChangePreview(lines, recheck, summary=ACTION_NEWS_DISMISS_LABEL,
                       detail_sources=frozenset({source.id})),
-        run, action_class=ActionClass.CHANGE,
+        run, action_class=ActionClass.IRREVERSIBLE,
     ))
     return {"status": "confirmation_required"}
 
@@ -152,6 +152,6 @@ async def prepare_lead_news(context: AgentRequestContext,
                               "message_id": message.id, "target_channel_id": target.id},
         ChangePreview(tuple(lines), recheck, summary=ACTION_NEWS_PUBLISH_LABEL,
                       details=tuple(details), detail_sources=frozenset({source.id})),
-        run, action_class=ActionClass.IRREVERSIBLE,
+        run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}
