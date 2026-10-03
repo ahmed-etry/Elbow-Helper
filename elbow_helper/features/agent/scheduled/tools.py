@@ -24,6 +24,11 @@ from ..wording import (
     ACTION_STANDING_SAVE, ACTION_STANDING_SAVED, ACTION_STANDING_SCOPE,
     ACTION_STANDING_NO_CHANGES, ACTION_STANDING_FIXED, ACTION_STANDING_ACTION,
     ACTION_STANDING_TIME, ACTION_STANDING_WATCHER,
+    ACTION_STANDING_REQUEST_NAME, ACTION_STANDING_WATCHER_NAME,
+    ACTION_STANDING_REQUEST_NOUN, ACTION_STANDING_WATCHER_NOUN,
+    ACTION_STANDING_SAVE_LABELS, ACTION_STANDING_MANAGE_LABELS,
+    ACTION_STANDING_OPERATIONS, ACTION_STANDING_RESULTS,
+    ACTION_STANDING_TARGET_ONE, ACTION_STANDING_TARGET_MANY,
     ACTION_VALUE_YES, ACTION_VALUE_NO,
 )
 from ..discord_actions.safety import check_post_access, resolve_channel
@@ -234,7 +239,9 @@ def _preview_lines(values: Mapping[str, Any], *, kind: str, request: str,
                    actions: list[Mapping[str, Any]], context: AgentRequestContext) -> tuple[str, ...]:
     formatted = ", ".join(f"<t:{int(item.timestamp())}:f>" for item in times)
     lines = [
-        ACTION_STANDING_SAVE.format(kind=kind, request=request),
+        ACTION_STANDING_SAVE.format(
+            kind=ACTION_STANDING_REQUEST_NAME if kind == "request" else ACTION_STANDING_WATCHER_NAME,
+            request=request),
         ACTION_STANDING_TIME.format(times=formatted),
         ACTION_STANDING_DESTINATION.format(channel=channel.mention),
         ACTION_STANDING_SCOPE if actions else ACTION_STANDING_NO_CHANGES,
@@ -242,7 +249,8 @@ def _preview_lines(values: Mapping[str, Any], *, kind: str, request: str,
     for action in actions:
         lines.append(ACTION_STANDING_ACTION.format(
             action=action["scope_text"].rstrip(". "), targets=action["max_targets"],
-            target_word="target" if action["max_targets"] == 1 else "targets",
+            target_word=ACTION_STANDING_TARGET_ONE if action["max_targets"] == 1
+                        else ACTION_STANDING_TARGET_MANY,
         ))
         fixed = action["fixed_values"]
         if fixed:
@@ -349,7 +357,7 @@ async def prepare_save(
 
     context.state.proposed_changes.append(PreparedAction(
         "save_standing_rule", rule,
-        ChangePreview(lines[1:4], recheck, summary="Save standing rule",
+        ChangePreview(lines[1:4], recheck, summary=ACTION_STANDING_SAVE_LABELS[kind],
                       details=(lines[0], *lines[4:]),
                       detail_sources=detail_sources, detail_access=detail_access),
         run, action_class=ActionClass.CHANGE,
@@ -385,8 +393,10 @@ async def prepare_manage(context: AgentRequestContext,
     if current is None or current["status"] not in ("active", "paused"):
         raise ActionRefused("That saved rule is unavailable.")
     target = "active" if operation == "resume" else ("paused" if operation == "pause" else "cancelled")
-    line = ACTION_STANDING_MANAGE.format(operation=operation.capitalize(), kind=kind,
-                                         request=current["rule"]["request"])
+    line = ACTION_STANDING_MANAGE.format(
+        operation=ACTION_STANDING_OPERATIONS[operation],
+        kind=ACTION_STANDING_REQUEST_NOUN if kind == "request" else ACTION_STANDING_WATCHER_NOUN,
+        request=current["rule"]["request"])
 
     async def recheck() -> bool:
         refreshed = repository.standing(kind=kind, identifier=identifier,
@@ -402,12 +412,13 @@ async def prepare_manage(context: AgentRequestContext,
             raise ActionRefused("That saved rule changed.")
         return ActionOutcome("complete", "public",
                               text=ACTION_STANDING_MANAGED.format(
-                                  kind=kind, result={"resume": "resumed", "pause": "paused",
-                                                     "cancel": "cancelled"}[operation]))
+                                  kind=ACTION_STANDING_REQUEST_NAME if kind == "request"
+                                       else ACTION_STANDING_WATCHER_NAME,
+                                  result=ACTION_STANDING_RESULTS[operation]))
 
     context.state.proposed_changes.append(PreparedAction(
         "manage_standing_rule", dict(values),
-        ChangePreview((), recheck, summary="Manage standing rule", details=(line,),
+        ChangePreview((), recheck, summary=ACTION_STANDING_MANAGE_LABELS[kind], details=(line,),
                       detail_sources=frozenset(current["rule"].get("detail_sources", ())),
                       detail_access=frozenset(current["rule"].get("detail_access", ()))),
         run, action_class=ActionClass.CHANGE,

@@ -146,6 +146,7 @@ class RecordCommandPatternTests(unittest.IsolatedAsyncioTestCase):
     async def test_edit_previews_old_and_new_values_and_can_be_undone(self):
         values = {"user": 4, "record": 7, "note": "Revised details"}
         preview = await prepare_record_edit(self.context, values)
+        self.assertIn("Edit record #7 for @member.", preview.lines)
         self.assertIn("Details: Synthetic details to Revised details", preview.details)
         self.assertTrue(await preview.recheck())
         edited = {**self.record, "note": "Revised details", "updated_ts": 101}

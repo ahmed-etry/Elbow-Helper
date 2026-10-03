@@ -56,6 +56,8 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "confirmation_required")
         action = context.state.proposed_changes[0]
         self.assertIs(action.action_class, ActionClass.CHANGE)
+        self.assertEqual(action.preview.lines, ("Publish this update in <#2>:",))
+        self.assertNotIn("Post:", action.preview.details)
         self.assertIs(next(tool for tool in leadership_news_tools()
                            if tool.definition.name == "publish_lead_news").action_class,
                       ActionClass.CHANGE)

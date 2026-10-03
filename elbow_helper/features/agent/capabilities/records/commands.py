@@ -166,7 +166,7 @@ def _edit_lines(record: Mapping[str, Any], target: tuple[str, str, str],
         (ACTION_RECORD_EDIT_NOTE_LINE, str),
     )
     return (ACTION_RECORD_EDIT_LINE.format(
-        member=member.mention,
+        record=record["id"], member=member.mention,
     ), *(template.format(old=label(previous), new=label(updated))
           for previous, updated, (template, label) in zip(old, target, templates)
           if previous != updated))
@@ -331,7 +331,7 @@ async def prepare_record_remove(context: Any, values: Mapping[str, Any]) -> Chan
         return current is not None and _record_signature(current) == signature
 
     return ChangePreview((
-        ACTION_RECORD_REMOVE_LINE.format(member=member.mention),
+        ACTION_RECORD_REMOVE_LINE.format(record=record_id, member=member.mention),
     ), recheck, summary=ACTION_RECORD_REMOVE_LABEL,
         details=(ACTION_RECORD_DETAILS_LINE.format(note=record["note"]),),
         before={"record": record},
@@ -361,7 +361,7 @@ async def run_record_remove(context: Any, values: Mapping[str, Any]) -> ActionOu
     return ActionOutcome(
         "complete", "private",
         text=ACTION_RECORD_REMOVE_DONE.format(
-            member=member.display_name,
+            record=record_id, member=member.display_name,
         ),
         after={"removed": True},
     )

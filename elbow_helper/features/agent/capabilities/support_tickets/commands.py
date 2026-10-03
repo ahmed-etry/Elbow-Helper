@@ -32,13 +32,8 @@ from ...wording import (
     ACTION_SUPPORT_CLOSE_LOG,
     ACTION_SUPPORT_CLOSE_TRANSCRIPT,
     ACTION_SUPPORT_CLOSE_HISTORY,
-    ACTION_SUPPORT_CLOSE_MESSAGE,
-    ACTION_SUPPORT_CLOSE_ATTACHMENT,
     ACTION_SUPPORT_CLOSE_CONTROLS,
     ACTION_SUPPORT_CLOSE_DONE,
-    ACTION_SUPPORT_CLOSE_EMBED,
-    ACTION_SUPPORT_CLOSE_REACTION,
-    ACTION_PREVIEW_BLANK,
 )
 from ...actions.outcomes import ActionOutcome, embed_text
 from ...commands.registry import CommandAdapter, PreparedCommandChange
@@ -154,26 +149,10 @@ async def prepare_support_close(context: Any,
     lines.extend((
         ACTION_SUPPORT_CLOSE_LOG.format(channel=log_channel.mention),
         ACTION_SUPPORT_CLOSE_TRANSCRIPT.format(
-            filename=prepared["transcript_filename"],
-            limit=context.guild.filesize_limit,
+            limit=context.guild.filesize_limit // 1_048_576,
         ),
     ))
     details = [ACTION_SUPPORT_CLOSE_HISTORY.format(count=len(history))]
-    for message_id, author_id, content, _, attachments, embeds, reactions in history:
-        details.append(ACTION_SUPPORT_CLOSE_MESSAGE.format(
-            member=f"<@{author_id}>",
-        ))
-        details.extend(line or ACTION_PREVIEW_BLANK
-                     for line in content.splitlines())
-        for _, filename, url in attachments:
-            details.append(ACTION_SUPPORT_CLOSE_ATTACHMENT.format(
-                filename=filename, url=url,
-            ))
-        details.extend(ACTION_SUPPORT_CLOSE_EMBED.format(content=str(embed))
-                     for embed in embeds)
-        details.extend(ACTION_SUPPORT_CLOSE_REACTION.format(
-            emoji=emoji, count=count,
-        ) for emoji, count in reactions)
     lines.append(ACTION_SUPPORT_CLOSE_CONTROLS)
     signature = (
         prepared["ticket_info"], prepared["source"],

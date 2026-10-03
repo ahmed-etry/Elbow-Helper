@@ -17,12 +17,12 @@ from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgen
 from ...wording import (
     ACTION_NEWS_PUBLISH_LINE,
     ACTION_NEWS_PUBLISH_FILE,
-    ACTION_NEWS_PUBLISH_CONTENT,
     ACTION_NEWS_PUBLISH_DONE,
     ACTION_NEWS_PUBLISH_LABEL,
     ACTION_PREVIEW_BLANK,
     ACTION_NEWS_DISMISS_LINE,
     ACTION_NEWS_DISMISS_LABEL,
+    ACTION_NEWS_DISMISS_DONE,
     ACTION_NEWS_PUBLISH_PROMPT,
 )
 from ...discord_actions.safety import check_post_access, check_view_access, resolve_channel
@@ -86,7 +86,7 @@ async def prepare_news_dismiss(context: AgentRequestContext,
         current = await source.fetch_message(prompt.id)
         if not await workflow.dismiss_public_news_prompt(current):
             raise ActionRefused('That lead update is unavailable.')
-        return ActionOutcome("complete", "private", text=ACTION_NEWS_DISMISS_LABEL)
+        return ActionOutcome("complete", "private", text=ACTION_NEWS_DISMISS_DONE)
 
     context.state.proposed_changes.append(PreparedAction(
         "dismiss_lead_news_prompt", {"prompt_message_id": prompt.id},
@@ -113,7 +113,7 @@ async def prepare_lead_news(context: AgentRequestContext,
         raise ActionRefused('That lead update is unavailable.')
     lines = [ACTION_NEWS_PUBLISH_LINE.format(
         target=target.mention)]
-    details = [ACTION_NEWS_PUBLISH_CONTENT]
+    details = []
     details.extend(line if line.strip() else ACTION_PREVIEW_BLANK
                  for line in str(prepared["content"]).splitlines())
     details.extend(ACTION_NEWS_PUBLISH_FILE.format(name=file.filename)

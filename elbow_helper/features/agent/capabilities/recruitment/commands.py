@@ -71,7 +71,7 @@ async def _recstatement(context: Any, values: Mapping[str, Any]):
     channel_id = values.get("channel") or context.source_message.channel.id
     channel = await resolve_channel(context, channel_id)
     if not isinstance(channel, discord.TextChannel):
-        raise ActionRefused("Run this command in a server text channel.")
+        raise ActionRefused("Recruitment messages can only go in a server text channel.")
     check_post_access(channel, context.member, context.guild.me)
     prepared = workflow.prepare_recstatement(
         values["message"], member, channel, values.get("additional_notes"),

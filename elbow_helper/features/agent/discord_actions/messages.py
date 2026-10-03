@@ -277,7 +277,7 @@ def _post_part(context: AgentRequestContext, channel_id: int, text: str,
         return True
 
     channel = context.guild.get_channel_or_thread(channel_id)
-    label = channel.mention if channel is not None else f"channel {channel_id}"
+    label = channel.mention if channel is not None else f"<#{channel_id}>"
     lines = (ACTION_POST_LINE.format(channel=label), *ping_line)
     details = tuple(text.splitlines())
     if attachment is not None:
@@ -357,7 +357,7 @@ def _edit_action(context: AgentRequestContext, channel_id: int, message_id: int,
         return message.content == new_text
 
     channel = context.guild.get_channel_or_thread(channel_id)
-    label = channel.mention if channel is not None else f"channel {channel_id}"
+    label = channel.mention if channel is not None else f"<#{channel_id}>"
     lines = (ACTION_EDIT_LINE.format(channel=label),
              *_ping_line(context, mention_values),
              *((ACTION_UNDO_CHANGED,) if changed else ()))

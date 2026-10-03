@@ -16,7 +16,8 @@ from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgen
 from ...wording import (
     ACTION_EVENT_MANAGE_CATEGORY,
     ACTION_EVENT_MANAGE_DELETE,
-    ACTION_EVENT_MANAGE_ENABLED,
+    ACTION_EVENT_MANAGE_ON,
+    ACTION_EVENT_MANAGE_OFF,
     ACTION_EVENT_MANAGE_MOVE,
     ACTION_EVENT_MANAGE_RESET,
     ACTION_EVENT_MANAGE_CHANNEL,
@@ -312,8 +313,8 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         enabled = values["enabled"]
         if event["enabled"] == enabled:
             return {"status": "no_change"}
-        lines.append(ACTION_EVENT_MANAGE_ENABLED.format(
-            name=event["name"], old=event["enabled"], new=enabled))
+        lines.append((ACTION_EVENT_MANAGE_ON if enabled else ACTION_EVENT_MANAGE_OFF).format(
+            name=event["name"]))
     elif operation == "set_event_category":
         category_id = values.get("category_id")
         if category_id is not None:

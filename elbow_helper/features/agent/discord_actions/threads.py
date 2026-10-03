@@ -21,6 +21,7 @@ from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgent
 from ..wording import (
     ACTION_THREAD_ACTIONS, ACTION_THREAD_MEMBER_ADD, ACTION_THREAD_MEMBER_REMOVE,
     ACTION_THREAD_CREATE_LABEL, ACTION_THREAD_CREATE_LINE,
+    ACTION_THREAD_NEW_LABEL,
     ACTION_THREAD_MEMBER_LABEL, ACTION_THREAD_MEMBER_LINE,
     ACTION_THREAD_UPDATE_LABEL, ACTION_THREAD_UPDATE_LINE,
     ACTION_UNDO_CHANGED,
@@ -178,7 +179,7 @@ async def prepare_create_thread(context: AgentRequestContext,
     context.state.proposed_changes.append(PreparedAction(
         "create_discord_thread", dict(arguments),
         ChangePreview(lines, recheck, summary=ACTION_THREAD_CREATE_LABEL,
-                      result_label=f"thread {name}", details=details,
+                      result_label=ACTION_THREAD_NEW_LABEL.format(name=name), details=details,
                       detail_sources=frozenset({parent.id})),
         run, verify=verify, permission="Manage Threads",
     ))
@@ -222,7 +223,7 @@ def _thread_update_action(context: AgentRequestContext, thread_id: int,
         return getattr(thread, field) == after
 
     thread = context.guild.get_channel_or_thread(thread_id)
-    label = thread.mention if thread is not None else f"thread {thread_id}"
+    label = thread.mention if thread is not None else f"<#{thread_id}>"
     lines = (ACTION_THREAD_UPDATE_LINE.format(
         action=verb, thread=label, detail=detail,
     ), *((ACTION_UNDO_CHANGED,) if changed else ()))
@@ -347,8 +348,8 @@ def _thread_member_action(context: AgentRequestContext, thread_id: int,
 
     thread = context.guild.get_channel_or_thread(thread_id)
     member = context.guild.get_member(member_id)
-    label_thread = thread.mention if thread is not None else f"thread {thread_id}"
-    label_member = member.mention if member is not None else f"member {member_id}"
+    label_thread = thread.mention if thread is not None else f"<#{thread_id}>"
+    label_member = member.mention if member is not None else f"<@{member_id}>"
     lines = (ACTION_THREAD_MEMBER_LINE.format(
         action=verb, member=label_member,
         relation=relation, thread=label_thread,

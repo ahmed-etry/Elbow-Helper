@@ -19,6 +19,7 @@ from ...wording import (
     ACTION_TRIAL_END_REMINDER,
     ACTION_TRIAL_END_FOLLOWUP,
     ACTION_TRIAL_END_LABEL,
+    ACTION_TRIAL_END_DONE,
 )
 from ...discord_actions.safety import check_member, check_post_access, resolve_channel
 
@@ -109,7 +110,7 @@ async def prepare_trial_end(context: AgentRequestContext,
         if not result.ended:
             raise ActionRefused(result.error or "That trial isn't available.")
         return ActionOutcome("complete", "private", text="\n".join(
-            (ACTION_TRIAL_END_LABEL, *result.notices)))
+            (ACTION_TRIAL_END_DONE, *result.notices)))
 
     context.state.proposed_changes.append(PreparedAction(
         "end_recruitment_trial", {"ticket_channel_id": ticket.id,

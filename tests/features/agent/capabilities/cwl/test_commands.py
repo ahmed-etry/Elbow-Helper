@@ -62,7 +62,7 @@ class CwlAnnouncementCommandTests(unittest.IsolatedAsyncioTestCase):
                       ActionClass.CHANGE)
         self.assertTrue(await change.preview.recheck())
         self.assertIn("**CWL signup**", change.preview.lines)
-        self.assertTrue(any("link created on Confirm" in line
+        self.assertTrue(any("link added when posted" in line
                             for line in change.preview.details))
         workflow.post_roster_announcement.assert_not_awaited()
         result = await change.run()

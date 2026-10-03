@@ -24,7 +24,7 @@ class SupportCloseCommandTests(unittest.IsolatedAsyncioTestCase):
         owner = SimpleNamespace(
             id=3, mention="<@3>", top_role=SimpleNamespace(position=1),
         )
-        guild = SimpleNamespace(id=5, me=bot_member, filesize_limit=1000)
+        guild = SimpleNamespace(id=5, me=bot_member, filesize_limit=25 * 1_048_576 + 123)
 
         def permissions(_):
             return SimpleNamespace(view_channel=True, send_messages=True)
@@ -66,8 +66,10 @@ class SupportCloseCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await change.preview.recheck())
         self.assertIn("Stop <@3> from sending in the ticket.",
                       change.preview.lines)
-        self.assertIn("I need help.", change.preview.details)
+        self.assertEqual(change.preview.details, ("Ticket messages in the transcript: 1",))
+        self.assertNotIn("I need help.", change.preview.details)
         self.assertNotIn("I need help.", change.preview.lines)
+        self.assertIn("Upload the transcript if it's under 25 MB.", change.preview.lines)
         self.assertEqual(change.preview.detail_sources, frozenset({channel.id}))
         self.assertIn("Post the ticket log in <#9>.", change.preview.lines)
         workflow.close_support_ticket.assert_not_awaited()
