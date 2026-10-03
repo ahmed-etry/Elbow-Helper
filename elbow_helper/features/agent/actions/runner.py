@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import json
-from itertools import groupby
 from dataclasses import dataclass, field, replace
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
@@ -21,11 +20,11 @@ from ..text import chunk_response
 from ..wording import (
     ACTION_PREVIEW_UNIT_MANY, ACTION_PREVIEW_UNIT_ONE,
     ACTION_PROGRESS, ACTION_RUNNING,
-    ACTION_STOP_BUTTON, ACTION_STOP_OWNER, ACTION_CONFIRM_FAILED,
-    ACTION_RUN_DONE, ACTION_NO_CHANGES,
+    ACTION_STOP_BUTTON, ACTION_STOP_OWNER,
 )
 from .contracts import ActionClass, PreparedAction, check_bundle
 from .store import AgentActionRepository
+from .report import format_run_report
 
 
 LOGGER = logging.getLogger(__name__)
@@ -66,6 +65,7 @@ class ActionRunOutput:
     private_parts: list[str] = field(default_factory=list)
     private_files: list[Any] = field(default_factory=list)
     results: dict[str, Mapping[str, Any]] = field(default_factory=dict)
+    step_outcomes: dict[int, tuple[str, Mapping[str, Any]]] = field(default_factory=dict)
 
 
 class AgentActionRunner:
@@ -229,7 +229,7 @@ class AgentActionRunner:
             if result.status != "complete":
                 raise ValueError("Action did not complete")
             if current_action.verify is not None and await current_action.verify() is False:
-                raise ValueError("Action could not be verified")
+                raise OSError("Action could not be verified")
             if details_hidden:
                 result = replace(result, visibility="private")
             if result.visibility == "private":
@@ -238,15 +238,8 @@ class AgentActionRunner:
                 output.private_files.extend(result.attachments)
             elif result.text:
                 await self._send_parts(channel, result.text)
-            recorded = await asyncio.to_thread(
-                self.repository.finish_step, run_id, index,
-                owner=owner, status="completed",
-                outcome={"status": result.status, "visibility": result.visibility,
-                         "result": result.result},
-                after=result.after,
-            )
-            if not recorded:
-                raise RuntimeError("Action result could not be recorded")
+            if not await self._record_completed(run_id, index, owner, result, output):
+                return "uncertain"
             if action.step_id and result.result is not None:
                 output.results[action.step_id] = dict(result.result)
             if progress is not None and index + 1 < total:
@@ -262,8 +255,24 @@ class AgentActionRunner:
             raise
         except Exception as error:
             return await self._failed_step(
-                run_id, index, owner, current_action, error,
+                run_id, index, owner, current_action, error, output,
             )
+
+    async def _record_completed(self, run_id, index, owner, result, output) -> bool:
+        try:
+            recorded = await asyncio.to_thread(
+                self.repository.finish_step, run_id, index, owner=owner, status="completed",
+                outcome={"status": result.status, "visibility": result.visibility,
+                         "result": result.result}, after=result.after,
+            )
+        except Exception:
+            LOGGER.exception("Agent action result could not be recorded: run=%s step=%s",
+                             run_id, index)
+            recorded = False
+        if not recorded:
+            output.step_outcomes[index] = ("uncertain", {})
+            LOGGER.error("Agent action completion is unconfirmed: run=%s step=%s", run_id, index)
+        return recorded
 
     async def _detail_visibility(self, context, action) -> bool:
         if action.preview.detail_access:
@@ -280,19 +289,29 @@ class AgentActionRunner:
             )
         return details_hidden
 
-    async def _failed_step(self, run_id, index, owner, current_action, error) -> str:
-        status = "uncertain" if _uncertain(error) else "failed"
+    async def _failed_step(self, run_id, index, owner, current_action, error, output) -> str:
+        status = ("permission" if isinstance(error, discord.Forbidden)
+                  else "uncertain" if _uncertain(error) else "failed")
         if status == "uncertain" and current_action.verify is not None:
             try:
                 if await current_action.verify() is True:
                     status = "completed"
             except Exception:
                 LOGGER.exception("Agent action verification failed: run=%s step=%s", run_id, index)
-        await asyncio.to_thread(
-            self.repository.finish_step, run_id, index,
-            owner=owner, status=status,
-            outcome={"error_class": type(error).__name__},
-        )
+        outcome = {"error_class": type(error).__name__, "permission": current_action.permission}
+        output.step_outcomes[index] = (status, outcome)
+        try:
+            recorded = await asyncio.to_thread(
+                self.repository.finish_step, run_id, index,
+                owner=owner, status=status, outcome=outcome,
+            )
+        except Exception:
+            LOGGER.exception("Agent action outcome could not be recorded: run=%s step=%s",
+                             run_id, index)
+            recorded = False
+        if not recorded:
+            status = "uncertain"
+            output.step_outcomes[index] = (status, outcome)
         LOGGER.exception("Agent action failed: run=%s step=%s", run_id, index)
         return status
 
@@ -300,6 +319,9 @@ class AgentActionRunner:
         self, run_id, context, channel, progress, output: ActionRunOutput,
     ) -> None:
         run = await asyncio.to_thread(self.repository.run, run_id)
+        for index, (status, outcome) in output.step_outcomes.items():
+            run["steps"][index] = {**run["steps"][index], "status": status,
+                                   "outcome_json": json.dumps(outcome)}
         report = self._report(run)
         chunks = chunk_response(report) or [report]
         private_view = (PrivateResultView(context.member.id,
@@ -335,23 +357,7 @@ class AgentActionRunner:
                 LOGGER.exception("Agent action outcome could not be retained: run=%s", run_id)
 
 
-    @staticmethod
-    def _report(run: dict[str, Any]) -> str:
-        completed = [step for step in run["steps"] if step["status"] == "completed"]
-        summaries = []
-        for _, items in groupby(completed, key=lambda step: (
-                step["action_label"], step["action_class"],
-            )):
-            group = list(items)
-            summaries.append(f"{group[0]['action_label']} ({len(group)})")
-        finished = ", ".join(summaries) or ACTION_NO_CHANGES
-        remaining = [step["action_label"] for step in run["steps"]
-                     if step["status"] != "completed"]
-        if not remaining:
-            return ACTION_RUN_DONE.format(finished=finished)
-        return ACTION_CONFIRM_FAILED.format(
-            finished=finished, remaining="\n".join(remaining),
-        )
+    _report = staticmethod(format_run_report)
 
     @staticmethod
     async def _send_parts(channel: Any, value: str) -> None:

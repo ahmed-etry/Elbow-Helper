@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
+import discord
 
 from elbow_helper.features.agent.actions.contracts import (
     ActionClass, ChangePreview, PreparedAction, check_bundle,
@@ -20,6 +21,82 @@ from elbow_helper.features.agent.actions.private_view import PrivateResultView
 
 
 class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_permission_failure_names_the_required_permission(self):
+        action, _, run = self.action("roles")
+        run.side_effect = discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"),
+                                            "Synthetic")
+        action = replace(action, permission="Manage Roles")
+        result = await self.run_actions(action)
+        self.assertEqual(result["steps"][0]["status"], "permission")
+        self.assertEqual(self.progress.edit.await_args.kwargs["content"],
+                         "I'm missing the Manage Roles permission for: roles.")
+
+    async def test_transport_failures_are_unconfirmed(self):
+        for error in (TimeoutError("Synthetic"), discord.HTTPException(
+            SimpleNamespace(status=503, reason="Unavailable"), "Synthetic",
+        )):
+            with self.subTest(error=type(error).__name__):
+                action, _, run = self.action("first")
+                run.side_effect = error
+                result = await self.run_actions(action)
+                self.assertEqual(result["steps"][0]["status"], "uncertain")
+                self.assertEqual(self.progress.edit.await_args.kwargs["content"],
+                    "Couldn't confirm: first. Check before asking me to retry.")
+
+    async def test_unrecorded_success_is_never_written_as_failed(self):
+        action, _, run = self.action("first")
+        with patch.object(self.repository, "finish_step", return_value=False) as finish:
+            result = await self.run_actions(action)
+        run.assert_awaited_once()
+        self.assertEqual(result["steps"][0]["status"], "running")
+        self.assertEqual([call.kwargs["status"] for call in finish.call_args_list], ["completed"])
+        self.assertEqual(self.progress.edit.await_args.kwargs["content"],
+                         "Couldn't confirm: first. Check before asking me to retry.")
+
+    async def test_committed_success_survives_a_recording_exception(self):
+        action, _, _ = self.action("first")
+        finish = self.repository.finish_step
+        def record_then_fail(*args, **kwargs):
+            finish(*args, **kwargs)
+            raise OSError("Synthetic recording failure")
+        with patch.object(self.repository, "finish_step", side_effect=record_then_fail) as recording:
+            result = await self.run_actions(action)
+        self.assertEqual(result["steps"][0]["status"], "completed")
+        self.assertEqual([call.kwargs["status"] for call in recording.call_args_list], ["completed"])
+        self.assertEqual(self.repository.recent_log(requester_id=4)[0]["outcome"], "completed")
+        self.assertEqual(self.progress.edit.await_args.kwargs["content"],
+                         "Couldn't confirm: first. Check before asking me to retry.")
+
+    def test_restart_report_separates_unconfirmed_and_unstarted_steps(self):
+        run = {"status": "interrupted", "steps": [
+            {"action_label": "Done", "action_class": "change", "status": "completed"},
+            {"action_label": "Started", "action_class": "change", "status": "interrupted"},
+            {"action_label": "Waiting", "action_class": "change", "status": "queued"},
+        ]}
+        self.assertEqual(self.runner._report(run),
+            "I restarted before finishing these changes.\nDone: Done.\nNot done: Waiting.\n"
+            "Couldn't confirm: Started. Check before asking me to retry.")
+
+    def test_report_groups_labels_and_each_missing_permission(self):
+        def step(label, status, permission=""):
+            return {"action_label": label, "action_class": "change", "status": status,
+                    "outcome_json": json.dumps({"permission": permission}),
+                    "preview_json": json.dumps(["Synthetic private detail"])}
+        report = self.runner._report({"status": "failed", "steps": [
+            step("Roles", "completed"), step("Posts", "completed"),
+            step("Roles", "completed"), step("Waiting", "queued"),
+            step("Grant", "permission", "Manage Roles"),
+            step("Post", "permission", "Send Messages"),
+            step("Grant", "permission", "Manage Roles"),
+            step("Started", "uncertain"),
+        ]})
+        self.assertEqual(report,
+            "Done: Roles (2), Posts.\nNot done: Waiting.\n"
+            "I'm missing the Manage Roles permission for: Grant (2).\n"
+            "I'm missing the Send Messages permission for: Post.\n"
+            "Couldn't confirm: Started. Check before asking me to retry.")
+        self.assertNotIn("Synthetic private detail", report)
+
     async def asyncSetUp(self):
         self.directory = TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
@@ -68,7 +145,7 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
         second_check.assert_awaited_once()
         first_run.assert_awaited_once()
         second_run.assert_awaited_once()
-        self.assertEqual("Done: first (1), second (1).",
+        self.assertEqual("Done: first, second.",
                          self.progress.edit.await_args.kwargs["content"])
         self.assertEqual(len(self.repository.recent_log(requester_id=4)), 2)
 
@@ -90,7 +167,7 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(run["status"], "failed")
         self.assertEqual([step["status"] for step in run["steps"]],
                          ["failed", "queued"])
-        self.assertEqual("Done: none.\nNot done:\nfirst\nsecond",
+        self.assertEqual("Nothing changed. Not done: first, second.",
                          self.progress.edit.await_args.kwargs["content"])
 
     async def test_adjacent_actions_share_one_report_group(self):

@@ -260,7 +260,7 @@ class AgentActionRepository(ScheduledStore):
         after: Any = None,
         now: float | None = None,
     ) -> bool:
-        if status not in {"completed", "failed", "uncertain"}:
+        if status not in {"completed", "failed", "uncertain", "permission"}:
             raise ValueError("Invalid action outcome")
         current = time.time() if now is None else now
         with self.connect() as connection, sqlite_transaction(connection, immediate=True):
