@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.configuration.roles import CORE
+from elbow_helper.configuration.roles import CORE, CO_APPLICANT_ROLE_ID
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
 from elbow_helper.features.agent.capabilities.clan_health.movement_report import FamilyMovementReport
@@ -60,7 +60,7 @@ class _Links:
 
 class AgentMovementToolTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        member = SimpleNamespace(id=42, roles=[SimpleNamespace(id=next(iter(CORE)))])
+        member = SimpleNamespace(id=42, roles=[SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=CO_APPLICANT_ROLE_ID)])
         guild = SimpleNamespace(id=1, me=member, get_member=lambda _: member)
         channel = SimpleNamespace(
             id=100, guild=guild,
@@ -150,7 +150,7 @@ class AgentMovementToolTests(unittest.IsolatedAsyncioTestCase):
             await read_family_account_movements(self.context, {})
         self.assertEqual(self.context.state.reports, {})
 
-        self.context.member.roles = [SimpleNamespace(id=next(iter(CORE)))]
+        self.context.member.roles = [SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=CO_APPLICANT_ROLE_ID)]
         self.queries.family_movement_history.side_effect = None
         def ownership_then_lose(tags):
             result = _Links().get_links_by_tags(tags)
@@ -163,7 +163,7 @@ class AgentMovementToolTests(unittest.IsolatedAsyncioTestCase):
             await read_family_account_movements(self.context, {})
         self.assertEqual(self.context.state.reports, {})
 
-        self.context.member.roles = [SimpleNamespace(id=next(iter(CORE)))]
+        self.context.member.roles = [SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=CO_APPLICANT_ROLE_ID)]
         with patch("elbow_helper.features.agent.reports.base.MAX_REPORT_PAYLOAD_BYTES", 1):
             result = await read_family_account_movements(self.context, {})
         self.assertIn("error", result)

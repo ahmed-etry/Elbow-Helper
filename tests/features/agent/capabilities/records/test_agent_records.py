@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import unittest
+from elbow_helper.features.agent.access import LookupAccessDenied
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from elbow_helper.configuration.roles import CORE, LEAD_PLUS
@@ -139,7 +140,7 @@ class AgentLeadershipRecordToolTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_lead_plus_fails_before_private_read(self):
         self.requester.roles = [SimpleNamespace(id=next(iter(CORE)))]
-        with self.assertRaises(AgentAccessLost):
+        with self.assertRaises((AgentAccessLost, LookupAccessDenied)):
             await read_active_leadership_records(self.context, {})
         self.queries.active_snapshot.assert_not_called()
         self.assertEqual(self.context.state.required_access, set())
@@ -154,7 +155,7 @@ class AgentLeadershipRecordToolTests(unittest.IsolatedAsyncioTestCase):
             return snapshot
 
         self.queries.active_snapshot.side_effect = revoke_after_read
-        with self.assertRaises(AgentAccessLost):
+        with self.assertRaises((AgentAccessLost, LookupAccessDenied)):
             await read_active_leadership_records(self.context, {})
         self.assertEqual(self.context.state.required_access, set())
         self.assertEqual(self.context.state.reports, {})

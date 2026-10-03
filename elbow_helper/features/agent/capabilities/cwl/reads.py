@@ -10,6 +10,7 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
+from ...access import lookup_level, ACCESS_LEAD_PLUS_OR_CWL_HELPER
 from ...access import accessible_message_channel, require_evidence_access
 from ...reports.base import ArtifactCapacityError, retain_report
 from .report import CwlPerformanceReport
@@ -24,6 +25,7 @@ TOOL_CONTRACTS = {
         result_entity_keys=(('players[].player_tag', 'clash_account'), ('players[].season', 'cwl_season'), ('players[].clan_code', 'clan')),
         latest_fields=('history_limit',),
         value_patterns=(('season', '20\\d{2}-(0[1-9]|1[0-2])'),),
+        required_access=frozenset({ACCESS_LEAD_PLUS_OR_CWL_HELPER}),
     ),
     'read_cwl_performance_report': CapabilityContract(
         entity_fields=(('report_id', 'cwl_performance_report'), ('clan_code', 'clan'), ('player_tag', 'clash_account')),
@@ -31,6 +33,7 @@ TOOL_CONTRACTS = {
         result_entity_keys=(('players[].player_tag', 'clash_account'), ('players[].season', 'cwl_season'), ('players[].clan_code', 'clan')),
         value_patterns=(('season', '20\\d{2}-(0[1-9]|1[0-2])'),),
         retained_fields=('report_id',),
+        required_access=frozenset({ACCESS_LEAD_PLUS_OR_CWL_HELPER}),
     ),
     'read_cwl_threads': CapabilityContract(
         entity_fields=(),
@@ -64,6 +67,7 @@ def cwl_tools() -> tuple[RegisteredAgentTool, ...]:
     ) for name, description, properties, required, handler in definitions) + cwl_scoring_tools()
 
 
+@lookup_level(ACCESS_LEAD_PLUS_OR_CWL_HELPER)
 async def read_cwl_performance(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -85,6 +89,7 @@ async def read_cwl_performance(
     return _report_page(report, arguments)
 
 
+@lookup_level(ACCESS_LEAD_PLUS_OR_CWL_HELPER)
 async def read_cwl_performance_report(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:

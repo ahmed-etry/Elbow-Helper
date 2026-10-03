@@ -15,7 +15,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ...engine.capability_contract import CapabilityContract
 from ...access import (
     ACCESS_LEAD_PLUS,
-    require_access_requirements,
+    require_lookup_access,
     require_evidence_access,
 )
 from ...reports.base import ArtifactCapacityError, retain_report
@@ -97,8 +97,7 @@ async def read_active_leadership_records(
     await require_evidence_access(context)
     if context.record_queries is None:
         return {"error": "Leadership records are not available."}
-    require_access_requirements(
-        context.guild, context.member.id, {ACCESS_LEAD_PLUS},
+    require_lookup_access(context, {ACCESS_LEAD_PLUS},
     )
     member_id = arguments.get("member_id")
     if member_id is not None and (type(member_id) is not int or member_id <= 0):
@@ -111,8 +110,7 @@ async def read_active_leadership_records(
         report = LeadershipRecordReport(uuid4().hex, context.guild.id, snapshot)
     except ValueError:
         return {"error": "Active leadership records could not be read completely."}
-    require_access_requirements(
-        context.guild, context.member.id, {ACCESS_LEAD_PLUS},
+    require_lookup_access(context, {ACCESS_LEAD_PLUS},
     )
     context.state.required_access.add(ACCESS_LEAD_PLUS)
     await require_evidence_access(context)
@@ -134,8 +132,7 @@ async def read_leadership_record_report(
     context: AgentRequestContext,
     arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
-    require_access_requirements(
-        context.guild, context.member.id, {ACCESS_LEAD_PLUS},
+    require_lookup_access(context, {ACCESS_LEAD_PLUS},
     )
     context.state.required_access.add(ACCESS_LEAD_PLUS)
     await require_evidence_access(context)

@@ -3,10 +3,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.roles import CORE, LEAD
-from elbow_helper.features.agent.access import ACCESS_LEAD, AgentAccessLost
+from elbow_helper.features.agent.access import ACCESS_CORE, ACCESS_LEAD, AgentAccessLost
 from elbow_helper.features.agent.knowledge.store import KnowledgeStore
 from elbow_helper.features.agent.models import AgentRequestContext
 from elbow_helper.features.agent.knowledge.tools import (
@@ -149,7 +149,7 @@ class AgentKnowledgeToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["matched_sections"], 1)
         self.assertEqual(result["sections"][0]["section_id"], "cwl_policy@v1")
         self.assertNotIn("Lead-only", str(result))
-        self.assertEqual(self.context.state.required_access, set())
+        self.assertEqual(self.context.state.required_access, {ACCESS_CORE})
 
         hidden = await search_approved_knowledge(self.context, {"query": "Lead policy"})
         self.assertTrue(hidden["unknown_policy"])
@@ -168,6 +168,19 @@ class AgentKnowledgeToolTests(unittest.IsolatedAsyncioTestCase):
             await read_approved_knowledge_report(self.context, {
                 "report_id": first["report_id"],
             })
+
+    async def test_core_visibility_is_retained_and_hidden_from_non_core_members(self):
+        first = await search_approved_knowledge(self.context, {"query": "Core facts"})
+        report = self.context.state.reports[first["report_id"]]
+        self.assertEqual(report.required_access, {ACCESS_CORE})
+        self.assertEqual(self.context.state.required_access, {ACCESS_CORE})
+        self.member.roles = [SimpleNamespace(id=next(iter(LEAD)))]
+        with self.assertRaises(AgentAccessLost):
+            await read_approved_knowledge_report(self.context, {"report_id": first["report_id"]})
+        self.context.state.required_access.clear()
+        with patch("elbow_helper.features.agent.knowledge.tools.require_evidence_access", new=AsyncMock()):
+            hidden = await search_approved_knowledge(self.context, {"query": "Core facts"})
+        self.assertTrue(hidden["unknown_policy"])
 
     async def test_updated_section_makes_retained_result_stale(self):
         first = await search_approved_knowledge(self.context, {"query": "Core facts"})

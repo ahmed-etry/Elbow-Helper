@@ -10,8 +10,8 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
 from ..access import (
-    ACCESS_LEAD, ACCESS_LEAD_PLUS, has_access_requirements,
-    require_access_requirements, require_evidence_access,
+    ACCESS_CORE, ACCESS_LEAD, ACCESS_LEAD_PLUS, has_access_requirements,
+    require_lookup_access, require_evidence_access,
 )
 from ..reports.base import ArtifactCapacityError, retain_report
 from .store import KnowledgeSection
@@ -119,7 +119,7 @@ async def search_approved_knowledge(
         requirement for section in sections
         for requirement in _requirements(section.visibility)
     )
-    require_access_requirements(context.guild, context.member.id, set(requirements))
+    require_lookup_access(context, set(requirements))
     await require_evidence_access(context)
     report = KnowledgeReport(
         uuid4().hex, context.guild.id, catalog.observed_at,
@@ -186,6 +186,8 @@ def _can_read(context: AgentRequestContext, section: KnowledgeSection) -> bool:
 
 
 def _requirements(visibility: str) -> frozenset[str]:
+    if visibility == "core":
+        return frozenset({ACCESS_CORE})
     if visibility == "lead":
         return frozenset({ACCESS_LEAD})
     if visibility == "lead_plus":

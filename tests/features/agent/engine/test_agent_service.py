@@ -101,11 +101,11 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
         handler = AsyncMock(return_value={"rules": ["private"]})
         context = _context()
 
-        with self.assertRaises(AgentAccessLost):
-            await AgentService.execute_tool(
-                name="read_role_connections", handler=handler, arguments={},
-                capability_scope=scope, context=context,
-            )
+        result = await AgentService.execute_tool(
+            name="read_role_connections", handler=handler, arguments={},
+            capability_scope=scope, context=context,
+        )
+        self.assertIn("error", json.loads(result))
         handler.assert_not_awaited()
         self.assertEqual(context.state.required_access, set())
 
@@ -117,8 +117,8 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
             capability_scope=scope, context=context,
         )
         handler.assert_awaited_once()
-        self.assertIn("error", json.loads(result))
-        self.assertEqual(context.state.required_access, set())
+        self.assertNotIn("error", json.loads(result))
+        self.assertEqual(context.state.required_access, {"lead"})
 
     async def test_static_role_contract_marks_retained_report_without_handler_help(self):
         tool = build_agent_tools()["read_role_connections"]

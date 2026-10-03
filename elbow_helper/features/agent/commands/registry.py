@@ -60,6 +60,7 @@ class CommandCapability:
     adapter: CommandAdapter
     required: tuple[str, ...]
     option_info: tuple[ParameterInfo, ...]
+    visible_to: frozenset[int] | None = None
 
 
 _TYPES = {
@@ -127,5 +128,6 @@ def build_command_capabilities(
             adapter=adapter,
             required=tuple(option.name for option in options if option.required),
             option_info=options,
+            visible_to=getattr(help_entry, "visible_to", None),
         )
     return result

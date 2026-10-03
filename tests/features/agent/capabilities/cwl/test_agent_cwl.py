@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import AsyncMock
 from unittest.mock import patch
 
-from elbow_helper.configuration.roles import CORE
+from elbow_helper.configuration.roles import CORE, CO_APPLICANT_ROLE_ID
 from elbow_helper.features.agent.capabilities.cwl.report import CwlPerformanceReport
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
@@ -115,7 +115,7 @@ class _Queries:
 
 class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        member = SimpleNamespace(id=42, display_name="Tester", roles=[SimpleNamespace(id=next(iter(CORE)))])
+        member = SimpleNamespace(id=42, display_name="Tester", roles=[SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=CO_APPLICANT_ROLE_ID)])
         guild = SimpleNamespace(id=1, name="Brown Elbow", me=member, get_member=lambda _: member)
         channel = SimpleNamespace(id=100, guild=guild, permissions_for=lambda _: SimpleNamespace(
             view_channel=True, read_message_history=True,

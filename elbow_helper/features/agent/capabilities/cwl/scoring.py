@@ -11,6 +11,7 @@ from elbow_helper.features.cwl.config import CWL_CLAN_CODES
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
+from ...access import lookup_level, ACCESS_LEAD_PLUS_OR_CWL_HELPER
 from ...access import require_evidence_access
 from ...reports.base import ArtifactCapacityError, retain_report
 from .bonus_report import CwlBonusScopeReport
@@ -24,6 +25,7 @@ TOOL_CONTRACTS = {
         time_fields=(),
         result_entity_keys=(('season_coverage[].season', 'cwl_season'), ('clan_code', 'clan')),
         period_results=(('seasons', 0), ('latest_seven_war_season',)),
+        required_access=frozenset({ACCESS_LEAD_PLUS_OR_CWL_HELPER}),
     ),
     'read_cwl_ass_scope': CapabilityContract(
         entity_fields=(('clan_code', 'clan'),),
@@ -32,12 +34,14 @@ TOOL_CONTRACTS = {
         scope_variants=(('season', ()), ('round', ('cwl_round',)), ('war', ('war_id',))),
         result_entity_keys=(('players[].player_tag', 'clash_account'), ('season', 'cwl_season'), ('clan_code', 'clan')),
         value_patterns=(('season', '20\\d{2}-(0[1-9]|1[0-2])'),),
+        required_access=frozenset({ACCESS_LEAD_PLUS_OR_CWL_HELPER}),
     ),
     'read_cwl_ass_scope_report': CapabilityContract(
         entity_fields=(('report_id', 'cwl_ass_report'),),
         time_fields=(),
         result_entity_keys=(('players[].player_tag', 'clash_account'), ('season', 'cwl_season'), ('clan_code', 'clan')),
         retained_fields=('report_id',),
+        required_access=frozenset({ACCESS_LEAD_PLUS_OR_CWL_HELPER}),
     ),
     'read_cwl_bonus_scope': CapabilityContract(
         entity_fields=(('clan_code', 'clan'),),
@@ -45,11 +49,13 @@ TOOL_CONTRACTS = {
         scope_field='scope_type',
         scope_variants=(('season', ()), ('round', ('cwl_round',)), ('war', ('war_tag',))),
         value_patterns=(('season', '20\\d{2}-(0[1-9]|1[0-2])'),),
+        required_access=frozenset({ACCESS_LEAD_PLUS_OR_CWL_HELPER}),
     ),
     'read_cwl_bonus_scope_report': CapabilityContract(
         entity_fields=(('report_id', 'cwl_bonus_report'),),
         time_fields=(),
         retained_fields=('report_id',),
+        required_access=frozenset({ACCESS_LEAD_PLUS_OR_CWL_HELPER}),
     ),
 }
 
@@ -162,6 +168,7 @@ def cwl_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
     ) for name, description, properties, required, handler in definitions)
 
 
+@lookup_level(ACCESS_LEAD_PLUS_OR_CWL_HELPER)
 async def list_cwl_ass_seasons(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -189,6 +196,7 @@ async def list_cwl_ass_seasons(
     }
 
 
+@lookup_level(ACCESS_LEAD_PLUS_OR_CWL_HELPER)
 async def read_cwl_ass_scope(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -221,6 +229,7 @@ async def read_cwl_ass_scope(
     return report.page(limit=arguments.get("limit", 25))
 
 
+@lookup_level(ACCESS_LEAD_PLUS_OR_CWL_HELPER)
 async def read_cwl_ass_scope_report(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -247,6 +256,7 @@ async def read_cwl_ass_scope_report(
     return result
 
 
+@lookup_level(ACCESS_LEAD_PLUS_OR_CWL_HELPER)
 async def read_cwl_bonus_scope(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -279,6 +289,7 @@ async def read_cwl_bonus_scope(
     return report.page(limit=arguments.get("limit", 25))
 
 
+@lookup_level(ACCESS_LEAD_PLUS_OR_CWL_HELPER)
 async def read_cwl_bonus_scope_report(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:

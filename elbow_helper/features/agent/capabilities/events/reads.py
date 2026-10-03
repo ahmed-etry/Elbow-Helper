@@ -9,7 +9,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
 from ...access import (
-    ACCESS_LEAD, require_access_requirements, require_evidence_access,
+    ACCESS_LEAD, require_lookup_access, require_evidence_access,
 )
 from ...reports.base import ArtifactCapacityError, retain_report
 from .report import EventScheduleReport
@@ -80,8 +80,7 @@ def event_tools() -> tuple[RegisteredAgentTool, ...]:
 async def read_event_schedule(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
-    require_access_requirements(
-        context.guild, context.member.id, {ACCESS_LEAD},
+    require_lookup_access(context, {ACCESS_LEAD},
     )
     await require_evidence_access(context)
     if context.event_queries is None:
@@ -93,8 +92,7 @@ async def read_event_schedule(
         )
     except (RuntimeError, TypeError, ValueError):
         return {"error": "Event schedules could not be read completely."}
-    require_access_requirements(
-        context.guild, context.member.id, {ACCESS_LEAD},
+    require_lookup_access(context, {ACCESS_LEAD},
     )
     context.state.required_access.add(ACCESS_LEAD)
     await require_evidence_access(context)
@@ -117,8 +115,7 @@ async def read_event_schedule(
 async def read_event_schedule_report(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
-    require_access_requirements(
-        context.guild, context.member.id, {ACCESS_LEAD},
+    require_lookup_access(context, {ACCESS_LEAD},
     )
     context.state.required_access.add(ACCESS_LEAD)
     await require_evidence_access(context)
@@ -141,8 +138,7 @@ async def read_event_schedule_report(
         )
     except ValueError as error:
         return {"error": str(error)}
-    require_access_requirements(
-        context.guild, context.member.id, {ACCESS_LEAD},
+    require_lookup_access(context, {ACCESS_LEAD},
     )
     await require_evidence_access(context)
     return result

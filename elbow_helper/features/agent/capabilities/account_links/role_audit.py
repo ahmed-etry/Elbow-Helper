@@ -16,6 +16,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
 from ...reports.base import ArtifactCapacityError, retain_report
+from ...access import lookup_level, ACCESS_RECRUITER_OR_CORE
 from ...access import require_evidence_access
 from ...models import AgentRequestContext, RegisteredAgentTool
 from .role_report import RoleAccountReport, revise_role_account_report
@@ -88,6 +89,7 @@ def role_tools() -> tuple[RegisteredAgentTool, ...]:
                 entity_fields=(("role_ids", "discord_role_set"),),
                 time_fields=(),
                 filter_fields=("refresh_locations",),
+                required_access=frozenset({ACCESS_RECRUITER_OR_CORE}),
             ),
         ),
         RegisteredAgentTool(
@@ -125,6 +127,7 @@ def role_tools() -> tuple[RegisteredAgentTool, ...]:
                 ),
                 time_fields=(),
                 retained_fields=("report_id",),
+                required_access=frozenset({ACCESS_RECRUITER_OR_CORE}),
             ),
         ),
         RegisteredAgentTool(
@@ -163,6 +166,7 @@ def role_tools() -> tuple[RegisteredAgentTool, ...]:
                 time_fields=(),
                 filter_fields=("selection",),
                 retained_fields=("report_id",),
+                required_access=frozenset({ACCESS_RECRUITER_OR_CORE}),
             ),
         ),
         RegisteredAgentTool(
@@ -197,6 +201,7 @@ def role_tools() -> tuple[RegisteredAgentTool, ...]:
                 ),
                 time_fields=(),
                 retained_fields=("before_report_id", "after_report_id"),
+                required_access=frozenset({ACCESS_RECRUITER_OR_CORE}),
             ),
         ),
     )
@@ -249,6 +254,7 @@ async def find_discord_roles(context: AgentRequestContext, arguments: Mapping[st
     return result
 
 
+@lookup_level(ACCESS_RECRUITER_OR_CORE)
 async def audit_role_accounts(context: AgentRequestContext, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
     await require_evidence_access(context)
     role_ids = set(arguments["role_ids"])
@@ -285,6 +291,7 @@ async def audit_role_accounts(context: AgentRequestContext, arguments: Mapping[s
     return report.page()
 
 
+@lookup_level(ACCESS_RECRUITER_OR_CORE)
 async def refresh_role_account_report(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -348,6 +355,7 @@ async def refresh_role_account_report(
     return result
 
 
+@lookup_level(ACCESS_RECRUITER_OR_CORE)
 async def read_role_account_report(context: AgentRequestContext, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
     await require_evidence_access(context)
     report = context.state.reports.get(arguments["report_id"])
@@ -364,6 +372,7 @@ async def read_role_account_report(context: AgentRequestContext, arguments: Mapp
     return result
 
 
+@lookup_level(ACCESS_RECRUITER_OR_CORE)
 async def compare_role_account_reports(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:

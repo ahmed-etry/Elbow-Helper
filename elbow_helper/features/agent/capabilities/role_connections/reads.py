@@ -10,7 +10,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
 from ...access import (
-    ACCESS_LEAD, require_access_requirements, require_evidence_access,
+    ACCESS_LEAD, require_lookup_access, require_evidence_access,
 )
 from ...models import AgentRequestContext, RegisteredAgentTool
 
@@ -57,8 +57,7 @@ async def read_role_connections(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
     await require_evidence_access(context)
-    require_access_requirements(
-        context.guild, context.member.id, {ACCESS_LEAD},
+    require_lookup_access(context, {ACCESS_LEAD},
     )
     context.state.required_access.add(ACCESS_LEAD)
     if context.role_connection_queries is None:

@@ -3,21 +3,48 @@
 from __future__ import annotations
 
 from typing import Any
+from functools import wraps
 
 import discord
 
-from elbow_helper.configuration.roles import CORE, LEAD, LEAD_PLUS
+from elbow_helper.configuration.roles import CORE, CWL_HELPERS, LEAD, LEAD_PLUS, RECRUITERS
 
 from .models import AgentRequestContext
+from .wording import ACTION_UNAVAILABLE
 
 
 class AgentAccessLost(RuntimeError):
     """The requester can no longer use this agent conversation."""
 
 
+class LookupAccessDenied(RuntimeError):
+    """The requester lacks a new lookup's role group."""
+
+    def __init__(self, requirements):
+        super().__init__(ACTION_UNAVAILABLE)
+        self.requirements = frozenset(requirements)
+
+
+def require_lookup_access(context, requirements):
+    if not has_access_requirements(context.guild, context.member.id, requirements):
+        if requirements <= context.state.required_access:
+            raise AgentAccessLost("Retained source role access is no longer available")
+        raise LookupAccessDenied(requirements)
+
+
 ACCESS_LEAD = "lead"
 ACCESS_LEAD_PLUS = "lead_plus"
-KNOWN_ACCESS_REQUIREMENTS = frozenset({ACCESS_LEAD, ACCESS_LEAD_PLUS})
+ACCESS_CORE = "core"
+ACCESS_RECRUITER_OR_CORE = "recruiter_or_core"
+ACCESS_LEAD_PLUS_OR_CWL_HELPER = "lead_plus_or_cwl_helper"
+ACCESS_ROLE_SETS = {
+    ACCESS_LEAD: LEAD,
+    ACCESS_LEAD_PLUS: LEAD_PLUS,
+    ACCESS_CORE: CORE,
+    ACCESS_RECRUITER_OR_CORE: RECRUITERS | CORE,
+    ACCESS_LEAD_PLUS_OR_CWL_HELPER: LEAD_PLUS | CWL_HELPERS,
+}
+KNOWN_ACCESS_REQUIREMENTS = frozenset(ACCESS_ROLE_SETS)
 AGENT_ROLLOUT_ROLE_IDS = CORE
 
 
@@ -41,10 +68,32 @@ def has_access_requirements(
     if member is None:
         return False
     role_ids = {role.id for role in member.roles}
-    return bool(
-        (ACCESS_LEAD not in requirements or role_ids & LEAD)
-        and (ACCESS_LEAD_PLUS not in requirements or role_ids & LEAD_PLUS)
-    )
+    return all(role_ids & ACCESS_ROLE_SETS[level] for level in requirements)
+
+
+def lookup_level(level: str):
+    """Check a new read locally, then retain its access with the evidence."""
+    def decorate(handler):
+        @wraps(handler)
+        async def read(context, arguments):
+            await require_evidence_access(context)
+            if not has_access_requirements(context.guild, context.member.id, {level}):
+                return {"error": ACTION_UNAVAILABLE, "required_access": [level]}
+            previous = dict(context.state.reports)
+            result = await handler(context, arguments)
+            if not has_access_requirements(context.guild, context.member.id, {level}):
+                context.state.reports.clear()
+                context.state.reports.update(previous)
+                return {"error": ACTION_UNAVAILABLE, "required_access": [level]}
+            if "error" not in result:
+                context.state.required_access.add(level)
+                for report_id, report in context.state.reports.items():
+                    if previous.get(report_id) is not report:
+                        context.state.report_sources[report_id] = frozenset(context.state.source_channels)
+                        context.state.report_access_requirements[report_id] = frozenset(context.state.required_access)
+            return result
+        return read
+    return decorate
 
 
 def require_access_requirements(

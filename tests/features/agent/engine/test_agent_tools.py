@@ -9,7 +9,7 @@ from contextlib import closing
 from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.discord.message_search import DiscordSearchMessage
-from elbow_helper.configuration.roles import CORE
+from elbow_helper.configuration.roles import CORE, CO_APPLICANT_ROLE_ID
 from elbow_helper.features.agent.engine.registry import (
     build_agent_tool_groups, build_agent_tools,
 )
@@ -39,7 +39,7 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_clan_health_player_locator_pages_with_exact_clan_scope(self):
         member = SimpleNamespace(
-            id=10, roles=[SimpleNamespace(id=next(iter(CORE)))],
+            id=10, roles=[SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=CO_APPLICANT_ROLE_ID)],
         )
         bot_member = SimpleNamespace(id=20)
         channel = _Channel(100, "chat", {10, 20})
@@ -74,7 +74,7 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_command_help_uses_registered_public_entries_only(self):
         member = SimpleNamespace(
-            id=10, roles=[SimpleNamespace(id=next(iter(CORE)))],
+            id=10, roles=[SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=CO_APPLICANT_ROLE_ID)],
         )
         bot_member = SimpleNamespace(id=20)
         channel = _Channel(100, "chat", {10, 20})
@@ -340,7 +340,7 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
                 Path(temporary_directory) / "clan_health.db"
             )
             repository.initialize()
-            member = SimpleNamespace(id=10, roles=[SimpleNamespace(id=next(iter(CORE)))])
+            member = SimpleNamespace(id=10, roles=[SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=CO_APPLICANT_ROLE_ID)])
             channel = _Channel(100, "core-chat", {10, 20})
             guild = SimpleNamespace(
                 id=1, me=SimpleNamespace(id=20),

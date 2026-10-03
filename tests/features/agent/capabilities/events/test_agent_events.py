@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import unittest
+from elbow_helper.features.agent.access import LookupAccessDenied
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.roles import CO_APPLICANT_ROLE_ID, CORE, LEAD
@@ -85,14 +86,14 @@ class AgentEventTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.context.event_queries.snapshot = unittest.mock.Mock()
 
-        with self.assertRaises(AgentAccessLost):
+        with self.assertRaises((AgentAccessLost, LookupAccessDenied)):
             await read_event_schedule(self.context, {})
 
         self.context.event_queries.snapshot.assert_not_called()
 
     async def test_lead_loss_during_read_retains_nothing(self):
         with patch(
-            "elbow_helper.features.agent.capabilities.events.reads.require_access_requirements",
+            "elbow_helper.features.agent.capabilities.events.reads.require_lookup_access",
             side_effect=[None, AgentAccessLost("revoked")],
         ):
             with self.assertRaises(AgentAccessLost):

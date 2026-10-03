@@ -16,8 +16,9 @@ import discord
 from elbow_helper.infrastructure.ai import AgentToolResult
 from ..models import AgentRequestContext
 from ..actions.contracts import ActionClass, PreparedAction
-from ..access import AgentAccessLost
-from ..access import require_access_requirements
+from ..access import AgentAccessLost, LookupAccessDenied
+from ..wording import ACTION_UNAVAILABLE
+from ..access import has_access_requirements
 from ..access import require_evidence_access
 from .capability_contract import CapabilityBindError
 from .capability_contract import require_source_provenance
@@ -44,11 +45,11 @@ async def execute_tool(
     try:
         required_access = frozenset((capability_scope or {}).get("required_access", ()))
         if required_access:
-            require_access_requirements(
-                context.guild,
-                context.member.id,
-                required_access,
-            )
+            await require_evidence_access(context)
+            if not has_access_requirements(context.guild, context.member.id, required_access):
+                outcome = "refused"
+                return json.dumps({"error": ACTION_UNAVAILABLE,
+                                   "required_access": sorted(required_access)})
         async with asyncio.timeout(timeout_seconds):
             payload = await handler(context, arguments)
         if not isinstance(payload, Mapping):
@@ -70,6 +71,10 @@ async def execute_tool(
         content = json.dumps(payload, ensure_ascii=False, default=str, separators=(",", ":"))
         result_characters = len(content)
         return content
+    except LookupAccessDenied as error:
+        outcome = "refused"
+        restore_tool_state(context, snapshot)
+        return json.dumps({"error": str(error), "required_access": sorted(error.requirements)})
     except CapabilityBindError:
         outcome = "unbound_source"
         restore_tool_state(context, snapshot)

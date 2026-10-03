@@ -14,6 +14,7 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
+from ...access import lookup_level, ACCESS_RECRUITER_OR_CORE
 from ...access import require_evidence_access
 from ...models import AgentRequestContext
 from ...models import RegisteredAgentTool
@@ -77,6 +78,7 @@ def member_tools() -> tuple[RegisteredAgentTool, ...]:
                     ("member_id", "discord_member"),
                     ("accounts[].player_tag", "clash_account"),
                 ),
+                required_access=frozenset({ACCESS_RECRUITER_OR_CORE}),
             ),
         ),
         RegisteredAgentTool(
@@ -105,6 +107,7 @@ def member_tools() -> tuple[RegisteredAgentTool, ...]:
                     ("player_tag", "clash_account"),
                     ("linked_member_id", "discord_member"),
                 ),
+                required_access=frozenset({ACCESS_RECRUITER_OR_CORE}),
             ),
         ),
     )
@@ -155,6 +158,7 @@ async def find_discord_members(
     }
 
 
+@lookup_level(ACCESS_RECRUITER_OR_CORE)
 async def get_linked_accounts(
     context: AgentRequestContext,
     arguments: Mapping[str, Any],
@@ -214,6 +218,7 @@ async def get_linked_accounts(
     }
 
 
+@lookup_level(ACCESS_RECRUITER_OR_CORE)
 async def get_account_link(
     context: AgentRequestContext,
     arguments: Mapping[str, Any],

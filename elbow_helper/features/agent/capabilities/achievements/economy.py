@@ -10,7 +10,8 @@ from uuid import uuid4
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
-from ...access import ACCESS_LEAD, require_access_requirements, require_evidence_access
+from ...access import lookup_level, ACCESS_CORE, ACCESS_LEAD_PLUS
+from ...access import ACCESS_LEAD, require_lookup_access, require_evidence_access
 from .report import CoinTransactionReport, RaffleReport
 from ...reports.base import ArtifactCapacityError, retain_report
 from ...models import AgentRequestContext, RegisteredAgentTool
@@ -30,21 +31,25 @@ TOOL_CONTRACTS = {
         entity_fields=(('member_id', 'discord_member'),),
         time_fields=('after', 'before'),
         time_window=('after', 'before', 'iso_utc'),
+        required_access=frozenset({ACCESS_CORE}),
     ),
     'read_member_coin_history_report': CapabilityContract(
         entity_fields=(('report_id', 'coin_transaction_report'),),
         time_fields=(),
         retained_fields=('report_id',),
+        required_access=frozenset({ACCESS_CORE}),
     ),
     'read_raffle': CapabilityContract(
         entity_fields=(),
         time_fields=('month',),
         value_patterns=(('month', '20\\d{2}-(0[1-9]|1[0-2])'),),
+        required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),
     'read_raffle_report': CapabilityContract(
         entity_fields=(('report_id', 'raffle_report'),),
         time_fields=(),
         retained_fields=('report_id',),
+        required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),
 }
 
@@ -153,7 +158,7 @@ async def read_member_inventory(
     member_id = arguments["member_id"]
     requires_lead = member_id != context.member.id
     if requires_lead:
-        require_access_requirements(context.guild, context.member.id, {ACCESS_LEAD})
+        require_lookup_access(context, {ACCESS_LEAD})
     if context.achievement_queries is None:
         return {"error": "Achievement economy data is not available."}
     if context.guild.get_member(member_id) is None:
@@ -166,7 +171,7 @@ async def read_member_inventory(
         return {"error": "Member inventory could not be read completely."}
     await require_evidence_access(context)
     if requires_lead:
-        require_access_requirements(context.guild, context.member.id, {ACCESS_LEAD})
+        require_lookup_access(context, {ACCESS_LEAD})
     current_member = context.guild.get_member(member_id)
     if current_member is None:
         return {"error": "That member is not currently in this server."}
@@ -180,6 +185,7 @@ async def read_member_inventory(
     }
 
 
+@lookup_level(ACCESS_CORE)
 async def read_member_coin_history(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -215,6 +221,7 @@ async def read_member_coin_history(
     return report.page(limit=arguments.get("limit", 25))
 
 
+@lookup_level(ACCESS_CORE)
 async def read_member_coin_history_report(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -232,6 +239,7 @@ async def read_member_coin_history_report(
     return result
 
 
+@lookup_level(ACCESS_LEAD_PLUS)
 async def read_raffle(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -268,6 +276,7 @@ async def read_raffle(
     return report.page(limit=arguments.get("limit", 25))
 
 
+@lookup_level(ACCESS_LEAD_PLUS)
 async def read_raffle_report(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:

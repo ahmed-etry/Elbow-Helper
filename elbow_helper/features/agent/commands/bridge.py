@@ -11,6 +11,7 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 from ..models import AgentCapabilityEffect, RegisteredAgentTool
 from ..actions.outcomes import ActionOutcome, command_reply
 from ..actions.contracts import ChangePreview, PreparedAction
+from ..wording import ACTION_UNAVAILABLE
 from .registry import (
     CommandAdapter, CommandCapability, PreparedCommandChange,
     build_command_capabilities,
@@ -68,6 +69,10 @@ def build_command_tools(
     tools: dict[str, RegisteredAgentTool] = {}
     for name, capability in capabilities.items():
         async def handle(context, values, selected=capability):
+            if selected.visible_to is not None:
+                member = context.guild.get_member(context.member.id)
+                if member is None or not any(role.id in selected.visible_to for role in member.roles):
+                    return {"error": ACTION_UNAVAILABLE}
             missing_options = tuple(
                 option for option in selected.option_info
                 if option.name in selected.required
@@ -93,7 +98,7 @@ def build_command_tools(
                     raise TypeError("Command preview is invalid")
                 prepared = PreparedAction(
                     selected.adapter.path, dict(values), preview,
-                    prepared_run,
+                    _authorized_run(context, selected, prepared_run),
                     action_class=selected.adapter.classification,
                 )
                 context.state.proposed_changes.append(prepared)
@@ -113,6 +118,16 @@ def build_command_tools(
             capability.adapter.classification,
         )
     return tools, capabilities
+
+
+def _authorized_run(context, selected, run):
+    async def checked():
+        if selected.visible_to is not None:
+            member = context.guild.get_member(context.member.id)
+            if member is None or not any(role.id in selected.visible_to for role in member.roles):
+                return ActionOutcome.unavailable()
+        return await run()
+    return checked
 
 
 def check_command_plan(

@@ -7,10 +7,8 @@ from typing import Any
 
 import discord
 
-from elbow_helper.configuration.roles import LEAD, LEAD_PLUS
-
 from .access import (
-    ACCESS_LEAD, ACCESS_LEAD_PLUS, KNOWN_ACCESS_REQUIREMENTS,
+    ACCESS_ROLE_SETS, KNOWN_ACCESS_REQUIREMENTS,
     accessible_message_channel, has_access_requirements,
 )
 from .models import AgentRequestContext
@@ -103,9 +101,7 @@ def _destination_satisfies_role_requirements(
     signature = _read_audience_signature(destination)
     if roles is None or default_role is None or signature is None:
         return False
-    allowed_ids = set(LEAD if ACCESS_LEAD in requirements else LEAD_PLUS)
-    if ACCESS_LEAD_PLUS in requirements:
-        allowed_ids &= LEAD_PLUS
+    allowed_ids = set.intersection(*(set(ACCESS_ROLE_SETS[level]) for level in requirements))
     known_roles = {getattr(role, "id", None) for role in roles}
     if not known_roles or getattr(default_role, "id", None) not in known_roles:
         return False

@@ -2,9 +2,10 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import unittest
+from elbow_helper.features.agent.access import LookupAccessDenied
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.configuration.roles import CORE, LEAD
+from elbow_helper.configuration.roles import CORE, LEAD, CO_APPLICANT_ROLE_ID
 from elbow_helper.features.achievements.queries import (
     AchievementCountRow, AchievementCountSnapshot, AchievementProgressRow,
     CoinTransactionRow, CoinTransactionSnapshot, EconomyRulesSnapshot,
@@ -97,7 +98,7 @@ class AgentAchievementTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.requester = SimpleNamespace(
             id=1, display_name="Requester",
-            roles=[SimpleNamespace(id=next(iter(CORE)))],
+            roles=[SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=CO_APPLICANT_ROLE_ID)],
         )
         self.target = SimpleNamespace(
             id=42, display_name="Alpha", joined_at=datetime(
@@ -256,7 +257,7 @@ class AgentAchievementTests(unittest.IsolatedAsyncioTestCase):
         self.context = replace(
             self.context, achievement_queries=_RevokingQueries(),
         )
-        with self.assertRaises(AgentAccessLost):
+        with self.assertRaises((AgentAccessLost, LookupAccessDenied)):
             await read_member_inventory(
                 self.context, {"member_id": self.target.id},
             )
@@ -340,7 +341,7 @@ class AgentAchievementTests(unittest.IsolatedAsyncioTestCase):
 async def _capture_access_loss(awaitable):
     try:
         await awaitable
-    except AgentAccessLost:
+    except (AgentAccessLost, LookupAccessDenied):
         return True
     return False
 

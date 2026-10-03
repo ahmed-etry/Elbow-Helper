@@ -60,6 +60,8 @@ class KnowledgeReport:
     @property
     def required_access(self) -> frozenset[str]:
         requirements = set()
+        if any(section.visibility == "core" for section in self.sections):
+            requirements.add("core")
         if any(section.visibility == "lead" for section in self.sections):
             requirements.add("lead")
         if any(section.visibility == "lead_plus" for section in self.sections):

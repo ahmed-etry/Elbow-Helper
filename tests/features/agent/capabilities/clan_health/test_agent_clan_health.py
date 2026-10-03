@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.configuration.roles import CORE
+from elbow_helper.configuration.roles import CORE, CO_APPLICANT_ROLE_ID
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.capabilities.clan_health.report import ClanHealthReport
 from elbow_helper.features.agent.models import AgentRequestContext
@@ -36,7 +36,7 @@ class AgentClanHealthTests(unittest.IsolatedAsyncioTestCase):
         self.repository = ClanHealthRepository(Path(self.temporary.name) / "health.sqlite3")
         self.repository.initialize()
         self.queries = ClanHealthQueries(self.repository)
-        member = SimpleNamespace(id=42, roles=[SimpleNamespace(id=next(iter(CORE)))])
+        member = SimpleNamespace(id=42, roles=[SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=CO_APPLICANT_ROLE_ID)])
         guild = SimpleNamespace(id=1, me=member, get_member=lambda _: member)
         channel = SimpleNamespace(
             id=100, guild=guild,

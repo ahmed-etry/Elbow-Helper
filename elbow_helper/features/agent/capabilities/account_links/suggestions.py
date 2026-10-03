@@ -11,6 +11,7 @@ from elbow_helper.features.account_links.config import REVIEW_CHANNEL_ID
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
+from ...access import lookup_level, ACCESS_RECRUITER_OR_CORE
 from ...access import require_evidence_access
 from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
@@ -50,6 +51,7 @@ def account_suggestion_tools() -> tuple[RegisteredAgentTool, ...]:
                 source_scope="channel_status",
                 result_channel_fields=("review_channel_id",),
                 filter_fields=("offset", "limit"),
+                required_access=frozenset({ACCESS_RECRUITER_OR_CORE}),
             ),
         ),
         RegisteredAgentTool(AgentToolDefinition(
@@ -91,6 +93,7 @@ async def _workflow(context: AgentRequestContext):
     return workflow, review
 
 
+@lookup_level(ACCESS_RECRUITER_OR_CORE)
 async def read_account_suggestions(context: AgentRequestContext,
                                    values: Mapping[str, Any]) -> Mapping[str, Any]:
     workflow, review = await _workflow(context)

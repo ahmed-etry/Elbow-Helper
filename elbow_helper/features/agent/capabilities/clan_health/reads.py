@@ -13,6 +13,7 @@ from elbow_helper.features.account_links.evidence import account_ownership_evide
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
+from ...access import lookup_level, ACCESS_LEAD_PLUS
 from ...access import require_evidence_access
 from ...reports.base import ArtifactCapacityError, retain_report
 from .report import ClanHealthReport, compare_clan_health_reports as compare_reports
@@ -33,46 +34,55 @@ TOOL_CONTRACTS = {
     'find_clan_health_players': CapabilityContract(
         entity_fields=(('clan_code', 'clan'),),
         time_fields=(),
+        required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),
     'get_player_health': CapabilityContract(
         entity_fields=(('player_tag', 'clash_account'),),
         time_fields=('days',),
         latest_fields=('days',),
+        required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),
     'list_clan_health_reports': CapabilityContract(
         entity_fields=(('clan_code', 'clan'),),
         time_fields=('before_run_id',),
         latest_fields=('before_run_id',),
         period_results=(('reports', 0, 'run_id'),),
+        required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),
     'get_clan_health': CapabilityContract(
         entity_fields=(('clan_code', 'clan'),),
         time_fields=(),
+        required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),
     'read_clan_health_period': CapabilityContract(
         entity_fields=(('clan_code', 'clan'), ('run_id', 'clan_health_run')),
         time_fields=(),
+        required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),
     'read_clan_health_report': CapabilityContract(
         entity_fields=(('report_id', 'clan_health_report'),),
         time_fields=(),
         retained_fields=('report_id',),
+        required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),
     'compare_clan_health_reports': CapabilityContract(
         entity_fields=(('before_report_id', 'clan_health_report'), ('after_report_id', 'clan_health_report')),
         time_fields=(),
         retained_fields=('before_report_id', 'after_report_id'),
+        required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),
     'read_family_account_movements': CapabilityContract(
         entity_fields=(),
         time_fields=('before_run_id', 'interval_limit'),
         latest_fields=('before_run_id', 'interval_limit'),
+        required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),
     'read_family_account_movement_report': CapabilityContract(
         entity_fields=(('report_id', 'family_movement_report'), ('player_tag', 'clash_account'), ('member_id', 'discord_member'), ('clan_code', 'clan')),
         time_fields=(),
         filter_fields=('view', 'transition'),
         retained_fields=('report_id',),
+        required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),
 }
 
@@ -148,6 +158,7 @@ def clan_health_tools() -> tuple[RegisteredAgentTool, ...]:
     ) for name, description, properties, required, handler in definitions)
 
 
+@lookup_level(ACCESS_LEAD_PLUS)
 async def find_clan_health_players(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -173,6 +184,7 @@ async def find_clan_health_players(
     }
 
 
+@lookup_level(ACCESS_LEAD_PLUS)
 async def get_player_health(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -189,6 +201,7 @@ async def get_player_health(
     return result
 
 
+@lookup_level(ACCESS_LEAD_PLUS)
 async def list_clan_health_reports(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -210,6 +223,7 @@ async def list_clan_health_reports(
     }
 
 
+@lookup_level(ACCESS_LEAD_PLUS)
 async def get_clan_health(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -224,6 +238,7 @@ async def get_clan_health(
     return _retain_snapshot(context, snapshot)
 
 
+@lookup_level(ACCESS_LEAD_PLUS)
 async def read_clan_health_period(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -238,6 +253,7 @@ async def read_clan_health_period(
     return _retain_snapshot(context, snapshot)
 
 
+@lookup_level(ACCESS_LEAD_PLUS)
 async def read_clan_health_report(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -250,6 +266,7 @@ async def read_clan_health_report(
     return result
 
 
+@lookup_level(ACCESS_LEAD_PLUS)
 async def compare_clan_health_reports(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -272,6 +289,7 @@ async def compare_clan_health_reports(
     return result
 
 
+@lookup_level(ACCESS_LEAD_PLUS)
 async def read_family_account_movements(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -312,6 +330,7 @@ async def read_family_account_movements(
     return report.page()
 
 
+@lookup_level(ACCESS_LEAD_PLUS)
 async def read_family_account_movement_report(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:

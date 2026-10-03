@@ -2,6 +2,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import unittest
+from elbow_helper.features.agent.access import LookupAccessDenied
 
 from elbow_helper.configuration.roles import CORE, LEAD
 from elbow_helper.features.agent.access import AgentAccessLost
@@ -111,7 +112,7 @@ class AgentRoleConnectionTests(unittest.IsolatedAsyncioTestCase):
         self.requester.roles = [
             role for role in self.requester.roles if role.id not in LEAD
         ]
-        with self.assertRaises(AgentAccessLost):
+        with self.assertRaises((AgentAccessLost, LookupAccessDenied)):
             await read_role_connections(self.context, {})
 
         core_only = SimpleNamespace(
@@ -127,7 +128,7 @@ class AgentRoleConnectionTests(unittest.IsolatedAsyncioTestCase):
             account_links=None, clan_health=None, message_search=None,
             role_connection_queries=RoleConnectionQueries(lambda: self.state),
         )
-        with self.assertRaises(AgentAccessLost):
+        with self.assertRaises((AgentAccessLost, LookupAccessDenied)):
             await read_role_connections(context, {})
 
     async def test_lead_loss_during_snapshot_blocks_the_result(self):
