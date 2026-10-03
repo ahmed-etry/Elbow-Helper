@@ -15,6 +15,8 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ..engine.capability_contract import CapabilityContract
 from ..actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ..actions.outcomes import ActionOutcome
+from ..access import accessible_message_channel
+from ..disclosure import can_show
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
     ACTION_STANDING_DESTINATION, ACTION_STANDING_MANAGE,
@@ -136,6 +138,28 @@ def _validate_watcher(values: Mapping[str, Any], actions, registry_factory) -> N
         raise ActionRefused("Describe when the watcher should alert.")
     if has_raw_id(condition):
         raise ActionRefused("Describe the watcher condition with names instead of IDs.")
+
+
+async def _watcher_destination(context, values, destination, registry_factory) -> None:
+    sources = {}
+    levels = set()
+    registry = registry_factory()
+    for read in values["reads"]:
+        contract = registry[read["capability"]].contract
+        levels.update(contract.required_access)
+        for field in contract.channel_fields:
+            selected = read["arguments"].get(field)
+            identifiers = selected if isinstance(selected, list) else [selected]
+            for identifier in identifiers:
+                if identifier is None:
+                    continue
+                source = await accessible_message_channel(context, identifier)
+                if source is None:
+                    raise ActionRefused("That source cannot be shared in this channel.")
+                sources[identifier] = source
+    if not await can_show(destination, sources, levels, context.guild,
+                          thread_members=getattr(context, "disclosure_thread_members", None)):
+        raise ActionRefused("That source cannot be shared in this channel.")
 
 
 def _evidence_label(context: AgentRequestContext, name: str, value: Any) -> str | None:
@@ -266,6 +290,7 @@ async def prepare_save(
         _allowed_capabilities(actions, context, registry_factory)
     if kind == "watcher":
         _validate_watcher(values, actions, registry_factory)
+        await _watcher_destination(context, values, channel, registry_factory)
     lines = _preview_lines(values, kind=kind, request=request, zone=zone,
                            times=times, channel=channel, actions=actions,
                            context=context)
@@ -291,6 +316,8 @@ async def prepare_save(
         try:
             refreshed = await resolve_channel(context, values["destination_channel_id"])
             check_post_access(refreshed, context.member, context.guild.me)
+            if kind == "watcher":
+                await _watcher_destination(context, values, refreshed, registry_factory)
             if not identifier:
                 return True
             updated = repository.standing(

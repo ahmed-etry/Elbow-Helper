@@ -240,6 +240,7 @@ class ScheduledStore:
         status: str = "active",
         last_result: Any = None,
         holding: bool | None = None,
+        notice_sent: bool | None = None,
         now: float | None = None,
     ) -> bool:
         if status not in {"active", "paused", "cancelled", "completed"}:
@@ -249,6 +250,9 @@ class ScheduledStore:
                  "lease_owner=NULL", "version=version+1", "updated_at=?"]
         current = time.time() if now is None else now
         values: list[Any] = [next_at, status, current]
+        if notice_sent is not None:
+            parts.append("notice_sent=?")
+            values.append(int(notice_sent))
         if kind == "watcher":
             parts += ["last_result_json=?", "holding=?"]
             values += [
@@ -260,6 +264,16 @@ class ScheduledStore:
             changed = connection.execute(
                 f"UPDATE {table} SET {', '.join(parts)} WHERE {key}=? AND lease_owner=?",
                 values,
+            )
+            return changed.rowcount == 1
+
+    def release_standing(self, *, kind: str, identifier: str, owner: str) -> bool:
+        table, key, _ = self._standing_columns(kind)
+        with self.connect() as connection, sqlite_transaction(connection, immediate=True):
+            changed = connection.execute(
+                f"UPDATE {table} SET lease_owner=NULL, version=version+1, updated_at=? "
+                f"WHERE {key}=? AND lease_owner=?",
+                (time.time(), identifier, owner),
             )
             return changed.rowcount == 1
 

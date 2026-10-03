@@ -22,6 +22,7 @@ ACTION_STANDING_WATCHER_NAME = "Watcher"
 ACTION_STANDING_ACCESS_PAUSED = "{kind} paused because access changed. Ask me to resume it when access is back."
 ACTION_STANDING_INTERRUPTED = "{kind} paused after an interrupted run. Ask me to resume it."
 ACTION_STANDING_RUN_FAILED = "{kind} paused because this run could not finish. Ask me to resume it."
+ACTION_STANDING_AI_UNAVAILABLE = "{kind} skipped: I couldn't reach the AI service. I'll try again at the next run."
 LONG_REPLY_FILENAME = "Elbow Helper.txt"
 SPREADSHEET_FILENAME_STEM = "spreadsheet"
 

@@ -17,6 +17,9 @@ from ..engine.service import AgentService
 from ..engine.service import AgentUnavailableError
 from ..engine.registry import build_agent_tools
 from ..prompts import WATCHER_SYSTEM_PROMPT
+from ..text import chunk_response
+from ..access import require_evidence_access
+from ..disclosure import can_show
 from ..prompts import (
     WATCHER_CONTINUATION_INSTRUCTION,
 )
@@ -52,6 +55,11 @@ async def read_current(context, reads):
     encoded = json.dumps(results, ensure_ascii=False, sort_keys=True, default=str)
     if len(encoded) > WATCHER_MAX_RESULT_CHARACTERS:
         raise ValueError("Watcher results exceed their size limit")
+    sources = await require_evidence_access(context)
+    if not await can_show(context.source_message.channel, sources,
+                          context.state.required_access, context.guild,
+                          thread_members=context.disclosure_thread_members):
+        raise ValueError("Watcher evidence cannot be shared in this channel")
     return results
 
 
@@ -121,11 +129,9 @@ async def send_alert(context, alert: str):
     if not alert:
         raise ValueError("Watcher alert was empty")
     member = context.member
-    await context.source_message.channel.send(
-        f"{member.mention} {alert}",
-        allowed_mentions=discord.AllowedMentions(
-            everyone=False,
-            roles=False,
-            users=[member],
-        ),
-    )
+    for index, part in enumerate(chunk_response(f"{member.mention} {alert}")):
+        await context.source_message.channel.send(
+            part, allowed_mentions=discord.AllowedMentions(
+                everyone=False, roles=False, users=[member] if index == 0 else [],
+            ),
+        )

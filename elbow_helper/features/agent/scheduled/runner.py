@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 import logging
-import sqlite3
 from typing import Any
 from uuid import uuid4
 
@@ -20,7 +19,7 @@ from ..wording import (
     ACTION_STANDING_REQUEST_NAME,
     ACTION_STANDING_RUN_FAILED,
     ACTION_STANDING_WATCHER_NAME,
-    FAILURE_MESSAGE,
+    ACTION_STANDING_AI_UNAVAILABLE,
 )
 from .time_rules import next_occurrences
 from .requests import (
@@ -108,7 +107,7 @@ class ScheduledRunner:
         while True:
             try:
                 await self.tick()
-            except (OSError, sqlite3.Error, discord.DiscordException):
+            except Exception:
                 LOGGER.exception("Agent standing poll failed")
             await asyncio.sleep(POLL_SECONDS)
 
@@ -155,7 +154,7 @@ class ScheduledRunner:
         if channel is None:
             try:
                 channel = await self.bot.fetch_channel(rule["destination_channel_id"])
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            except (discord.NotFound, discord.Forbidden):
                 return None
         return (
             channel
@@ -163,26 +162,51 @@ class ScheduledRunner:
             else None
         )
 
-    async def _notify(self, channel, member_id: int, text: str) -> None:
+    async def _notify(self, channel, member_id: int, text: str, *, mention: bool = True) -> None:
         guild = self.bot.get_guild(self.guild_id)
         member = guild.get_member(member_id) if guild is not None else None
         try:
             await channel.send(
-                f"<@{member_id}> {text}",
+                f"<@{member_id}> {text}" if mention else text,
                 allowed_mentions=discord.AllowedMentions(
                     everyone=False,
                     roles=False,
-                    users=[member] if member is not None else [],
+                    users=[member] if mention and member is not None else [],
                 ),
             )
-        except discord.DiscordException:
+        except (discord.DiscordException, OSError):
             LOGGER.exception(
                 "Agent standing notice could not be sent: channel=%s", channel.id
             )
 
     async def _execute(self, kind: str, rule: dict[str, Any], owner: str) -> None:
+        try:
+            await self._execute_rule(kind, rule, owner)
+        except Exception:
+            LOGGER.exception("Agent standing run task failed: kind=%s rule=%s",
+                             kind, self._identifier(kind, rule))
+            try:
+                await self._finish(kind, rule, owner, status="paused")
+                channel = await self._destination(rule)
+                if channel is not None:
+                    await self._notify(channel, rule["requester_id"],
+                                       ACTION_STANDING_RUN_FAILED.format(kind=self._name(kind)))
+            finally:
+                await asyncio.to_thread(self.repository.release_standing,
+                    kind=kind, identifier=self._identifier(kind, rule), owner=owner)
+
+    async def _execute_rule(self, kind: str, rule: dict[str, Any], owner: str) -> None:
         identifier = self._identifier(kind, rule)
-        channel = await self._destination(rule)
+        try:
+            channel = await self._destination(rule)
+        except (TimeoutError, discord.HTTPException) as error:
+            if isinstance(error, discord.HTTPException) and error.status < 500:
+                raise
+            LOGGER.warning("Agent standing destination unavailable: kind=%s rule=%s",
+                           kind, identifier)
+            await asyncio.to_thread(self.repository.release_standing,
+                kind=kind, identifier=identifier, owner=owner)
+            return
         if channel is None:
             LOGGER.warning(
                 "Agent standing destination missing: kind=%s rule=%s", kind, identifier
@@ -231,16 +255,12 @@ class ScheduledRunner:
             LOGGER.exception(
                 "Agent standing model unavailable: kind=%s rule=%s", kind, identifier
             )
-            failure = FAILURE_MESSAGE
-        except (
-            AgentAccessLost,
-            ValueError,
-            RuntimeError,
-            TypeError,
-            OSError,
-            sqlite3.Error,
-            discord.DiscordException,
-        ):
+            await self._finish(kind, rule, owner, status="active", notice_sent=True)
+            if not rule.get("notice_sent"):
+                await self._notify(channel, member.id,
+                    ACTION_STANDING_AI_UNAVAILABLE.format(kind=self._name(kind)), mention=False)
+            return
+        except Exception:
             LOGGER.exception(
                 "Agent standing run failed: kind=%s rule=%s", kind, identifier
             )
@@ -256,9 +276,10 @@ class ScheduledRunner:
                 status="completed" if result.completed else None,
                 last_result=result.last_result,
                 holding=result.holding,
+                notice_sent=False,
             )
         else:
-            await self._finish(kind, rule, owner)
+            await self._finish(kind, rule, owner, notice_sent=False)
 
     async def _finish(
         self,
@@ -269,12 +290,15 @@ class ScheduledRunner:
         status: str | None = None,
         last_result=None,
         holding: bool | None = None,
+        notice_sent: bool | None = None,
     ) -> None:
         now = datetime.now(timezone.utc)
         upcoming = next_occurrences(
             rule["rule"]["schedule"], after=now, count=1, watcher=kind == "watcher"
         )
         next_at = upcoming[0].timestamp() if upcoming else None
+        if status == "active" and next_at is None:
+            next_at = rule["next_run_at" if kind == "request" else "next_check_at"]
         if status is None:
             status = "active" if next_at is not None else "completed"
         if kind == "watcher":
@@ -291,4 +315,5 @@ class ScheduledRunner:
             status=status,
             last_result=last_result,
             holding=holding,
+            notice_sent=notice_sent,
         )

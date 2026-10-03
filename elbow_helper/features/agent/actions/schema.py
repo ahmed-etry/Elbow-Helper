@@ -65,6 +65,7 @@ def create_schema(connection: sqlite3.Connection) -> None:
             status TEXT NOT NULL,
             version INTEGER NOT NULL DEFAULT 0,
             lease_owner TEXT,
+            notice_sent INTEGER NOT NULL DEFAULT 0,
             created_at REAL NOT NULL,
             updated_at REAL NOT NULL
         );
@@ -80,6 +81,7 @@ def create_schema(connection: sqlite3.Connection) -> None:
             status TEXT NOT NULL,
             version INTEGER NOT NULL DEFAULT 0,
             lease_owner TEXT,
+            notice_sent INTEGER NOT NULL DEFAULT 0,
             created_at REAL NOT NULL,
             updated_at REAL NOT NULL
         );

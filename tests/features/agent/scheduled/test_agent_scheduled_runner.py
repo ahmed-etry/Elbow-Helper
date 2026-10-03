@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
+import discord
 
 from elbow_helper.features.agent.actions.store import AgentActionRepository
 from elbow_helper.features.agent.actions.contracts import ChangePreview, PreparedAction
@@ -13,13 +14,14 @@ from elbow_helper.features.agent.actions.outcomes import ActionOutcome
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin
 from elbow_helper.features.agent.models import AgentRequestContext, AgentTurnState
 from elbow_helper.features.agent.scheduled.runner import ScheduledRunner
+from elbow_helper.features.agent.engine.service import AgentUnavailableError
 from elbow_helper.features.agent.scheduled.requests import (
     ScheduledMessage,
     ScheduledResult,
     check_watcher,
     run_saved_request,
 )
-from elbow_helper.features.agent.scheduled.watchers import comparison_data, evaluate
+from elbow_helper.features.agent.scheduled.watchers import comparison_data, evaluate, send_alert
 from elbow_helper.infrastructure.ai.agent import (
     AgentStep,
     AgentUsage,
@@ -35,6 +37,112 @@ class ScheduledRunnerTests(unittest.IsolatedAsyncioTestCase):
             context = SimpleNamespace(deadline_monotonic=None,
                 bot=SimpleNamespace(agent_model=SimpleNamespace(create_agent_session=lambda **_: session)))
             self.assertEqual(await evaluate(context, "Has changed", []), (True, "It changed."))
+
+    def _due_once(self, kind="request"):
+        return self.repository.create_standing(
+            kind=kind, guild_id=1, requester_id=2, destination_channel_id=3,
+            rule={"request": "Synthetic", "schedule": {
+                "kind": "once", "at_utc": "2026-01-01T00:00:00Z"}}, next_at=1,
+        )
+
+    async def test_service_outage_keeps_rules_active_and_notifies_once(self):
+        for kind, operation in (("request", self.run_request), ("watcher", self.watch_request)):
+            with self.subTest(kind=kind):
+                self.channel.send.reset_mock()
+                identifier = self._due_once(kind)
+                operation.side_effect = AgentUnavailableError("Synthetic")
+                await self._tick()
+                await self._tick()
+                row = self.repository.standing(kind=kind, identifier=identifier)
+                self.assertEqual(row["status"], "active")
+                self.assertIsNone(row["lease_owner"])
+                self.assertEqual(row["notice_sent"], 1)
+                self.channel.send.assert_awaited_once()
+                notice = self.channel.send.await_args
+                self.assertNotIn("<@", notice.args[0])
+                self.assertFalse(notice.kwargs["allowed_mentions"].users)
+                operation.side_effect = None
+                await self._tick()
+                row = self.repository.standing(kind=kind, identifier=identifier)
+                self.assertEqual(row["status"], "completed")
+                self.assertEqual(row["notice_sent"], 0)
+                table = "saved_requests" if kind == "request" else "watchers"
+                due = "next_run_at" if kind == "request" else "next_check_at"
+                key = "request_id" if kind == "request" else "watcher_id"
+                with self.repository.connect() as connection:
+                    connection.execute(f"UPDATE {table} SET status='active', {due}=1 WHERE {key}=?",
+                                       (identifier,))
+                    connection.commit()
+                operation.side_effect = AgentUnavailableError("Synthetic next outage")
+                await self._tick()
+                await self._tick()
+                self.assertEqual(self.channel.send.await_count, 2)
+                operation.side_effect = None
+                await self._tick()
+
+    async def test_transient_destination_failures_leave_the_run_due(self):
+        self.member.guild.get_channel_or_thread = lambda _: None
+        self.channel.guild = self.member.guild
+        self.bot.fetch_channel = AsyncMock(return_value=self.channel)
+        self.runner._destination = lambda rule: ScheduledRunner._destination(self.runner, rule)
+        for error in (TimeoutError("Synthetic"), discord.HTTPException(
+            SimpleNamespace(status=503, reason="Unavailable"), "Synthetic",
+        )):
+            with self.subTest(error=type(error).__name__):
+                identifier = self._due_once()
+                self.bot.fetch_channel.side_effect = error
+                await self._tick()
+                row = self.repository.standing(kind="request", identifier=identifier)
+                self.assertEqual(row["status"], "active")
+                self.assertEqual(row["next_run_at"], 1)
+                self.assertIsNone(row["lease_owner"])
+                self.bot.fetch_channel.side_effect = None
+                await self._tick()
+                self.assertEqual(self.repository.standing(
+                    kind="request", identifier=identifier)["status"], "completed")
+
+    async def test_missing_or_forbidden_destination_pauses_the_rule(self):
+        self.member.guild.get_channel_or_thread = lambda _: None
+        self.bot.fetch_channel = AsyncMock()
+        self.runner._destination = lambda rule: ScheduledRunner._destination(self.runner, rule)
+        for error_type, status in ((discord.NotFound, 404), (discord.Forbidden, 403)):
+            with self.subTest(status=status):
+                identifier = self._due_once()
+                self.bot.fetch_channel.side_effect = error_type(
+                    SimpleNamespace(status=status, reason="Synthetic"), "Synthetic")
+                await self._tick()
+                row = self.repository.standing(kind="request", identifier=identifier)
+                self.assertEqual(row["status"], "paused")
+                self.assertIsNone(row["lease_owner"])
+        self.run_request.assert_not_awaited()
+
+    async def test_unexpected_task_failure_releases_and_pauses_once(self):
+        identifier = self._due_once()
+        self.runner.context_factory = lambda *_: (_ for _ in ()).throw(LookupError("Synthetic"))
+        await self._tick()
+        await self._tick()
+        row = self.repository.standing(kind="request", identifier=identifier)
+        self.assertEqual(row["status"], "paused")
+        self.assertIsNone(row["lease_owner"])
+        self.channel.send.assert_awaited_once()
+
+    async def test_poll_continues_after_an_unexpected_exception(self):
+        self.runner.tick = AsyncMock(side_effect=[LookupError("Synthetic"), asyncio.CancelledError()])
+        with patch("elbow_helper.features.agent.scheduled.runner.asyncio.sleep", new_callable=AsyncMock):
+            with self.assertRaises(asyncio.CancelledError):
+                await self.runner._main()
+        self.assertEqual(self.runner.tick.await_count, 2)
+
+    async def test_watcher_alert_chunks_and_mentions_only_the_first_part(self):
+        alert = "Synthetic alert. " * 300
+        context = SimpleNamespace(member=self.member, source_message=SimpleNamespace(channel=self.channel))
+        await send_alert(context, alert)
+        calls = self.channel.send.await_args_list
+        self.assertGreater(len(calls), 1)
+        self.assertTrue(calls[0].args[0].startswith("<@2> "))
+        self.assertTrue(all(len(call.args[0]) <= 2000 for call in calls))
+        self.assertTrue(all("<@2>" not in call.args[0] for call in calls[1:]))
+        self.assertTrue(all(not call.kwargs["allowed_mentions"].users for call in calls[1:]))
 
     async def asyncSetUp(self):
         directory = TemporaryDirectory()
@@ -533,3 +641,5 @@ class SavedRequestScopeTests(unittest.IsolatedAsyncioTestCase):
         )
         action_runner.submit.assert_not_awaited()
         agent.send_response.assert_awaited_once()
+        self.assertEqual(agent.send_response.await_args.kwargs["preview_timeout"], 3600.0)
+        self.assertTrue(agent.send_response.await_args.kwargs["mention_requester"])

@@ -67,8 +67,9 @@ def preview_text(proposals: list[PreparedAction]) -> str:
 
 class ConfirmationView(discord.ui.View):
     def __init__(self, owner_id: int, proposals: tuple[PreparedAction, ...], context: Any,
-                 private_result: PrivateResultView | None = None, runner: Any = None):
-        super().__init__(timeout=CONFIRMATION_TIMEOUT)
+                 private_result: PrivateResultView | None = None, runner: Any = None,
+                 *, timeout: float = CONFIRMATION_TIMEOUT):
+        super().__init__(timeout=timeout)
         check_bundle(proposals)
         self.owner_id = owner_id
         self.proposals = proposals

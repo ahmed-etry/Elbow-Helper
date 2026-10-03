@@ -131,6 +131,7 @@ async def run_saved_request(
         None,
         context.state.attachments,
         context=context,
+        **({"preview_timeout": 3600.0, "mention_requester": True} if proposals else {}),
     )
     return ScheduledResult()
 

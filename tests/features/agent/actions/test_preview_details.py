@@ -10,7 +10,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from elbow_helper.configuration.roles import CORE, LEAD
 from elbow_helper.features.agent.access import ACCESS_LEAD
-from elbow_helper.features.agent.actions.contracts import ActionClass, ChangePreview, PreparedAction
+from elbow_helper.features.agent.actions.contracts import (
+    ActionClass, ActionRefused, ChangePreview, PreparedAction,
+)
 from elbow_helper.features.agent.actions.details import prepare_preview
 from elbow_helper.features.agent.actions.outcomes import ActionOutcome
 from elbow_helper.features.agent.actions.preview import ConfirmationView, preview_text
@@ -21,6 +23,9 @@ from elbow_helper.features.agent.delivery import AgentDeliveryMixin
 from elbow_helper.features.agent.conversation.turns import AgentTurnMixin
 from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.features.agent.models import AgentRequestContext
+from elbow_helper.features.agent.models import RegisteredAgentTool
+from elbow_helper.features.agent.engine.capability_contract import CapabilityContract
+from elbow_helper.infrastructure.ai import AgentToolDefinition
 from elbow_helper.features.agent.scheduled.tools import prepare_manage, prepare_save
 from elbow_helper.features.agent.wording import ACTION_PREVIEW_DETAILS_BUTTON, ACTION_PREVIEW_DETAILS_HIDDEN
 from tests.features.agent.test_agent_audiences import Channel, Member, Role
@@ -30,6 +35,49 @@ SECRET = "Synthetic private content"
 
 
 class PreviewDetailTests(unittest.IsolatedAsyncioTestCase):
+    async def test_scheduled_preview_mentions_requester_and_lasts_one_hour(self):
+        delivery = AgentDeliveryMixin()
+        delivery.bot = self.context.bot
+        delivery.action_runner = object()
+        await delivery.send_response(self.message, preview_text([self.action]), None,
+                                     context=self.context, preview_timeout=3600.0,
+                                     mention_requester=True)
+        sent = self.message.reply.await_args
+        self.assertTrue(sent.args[0].startswith("<@2> "))
+        self.assertEqual(sent.kwargs["allowed_mentions"].users, [self.member])
+        self.assertEqual(sent.kwargs["view"].timeout, 3600.0)
+        self.assertNotIn(SECRET, sent.args[0])
+
+    async def test_watcher_save_checks_the_destination_audience(self):
+        tool = RegisteredAgentTool(AgentToolDefinition("synthetic_read", "Synthetic", {
+            "type": "object", "properties": {"channel_id": {"type": "integer"}},
+            "required": ["channel_id"],
+        }), AsyncMock(), contract=CapabilityContract(
+            (("channel_id", "discord_channel"),), (), channel_fields=("channel_id",),
+            required_access=frozenset({ACCESS_LEAD}),
+        ))
+        with TemporaryDirectory() as directory:
+            repository = AgentActionRepository(Path(directory) / "actions.sqlite3")
+            self.context = replace(self.context, action_repository=repository)
+            self.context.state.proposed_changes.clear()
+            values = {"kind": "watcher", "request": "Synthetic", "timezone": "UTC",
+                      "schedule": {"kind": "interval", "minutes": 30},
+                      "destination_channel_id": 10, "condition": "Synthetic condition",
+                      "reads": [{"capability": "synthetic_read", "arguments": {"channel_id": 20}}]}
+            run_at = datetime.now(timezone.utc) + timedelta(hours=1)
+            with (patch("elbow_helper.features.agent.scheduled.tools.resolve_channel",
+                        new=AsyncMock(return_value=self.destination)),
+                  patch("elbow_helper.features.agent.scheduled.tools.check_post_access"),
+                  patch("elbow_helper.features.agent.scheduled.tools._schedule", return_value=(run_at,))):
+                with self.assertRaises(ActionRefused):
+                    await prepare_save(self.context, values, registry_factory=lambda: {"synthetic_read": tool})
+                self.assertEqual(self.context.state.proposed_changes, [])
+                self.destination.viewers.remove(3)
+                await prepare_save(self.context, values, registry_factory=lambda: {"synthetic_read": tool})
+                self.assertEqual(len(self.context.state.proposed_changes), 1)
+                self.destination.viewers.add(3)
+                self.assertFalse(await self.context.state.proposed_changes[0].preview.recheck())
+
     def setUp(self):
         lead, core = Role(next(iter(LEAD))), Role(next(iter(CORE)))
         self.member = Member(2, (lead, core))
