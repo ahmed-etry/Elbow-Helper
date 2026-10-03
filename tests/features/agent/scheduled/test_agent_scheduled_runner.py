@@ -369,6 +369,8 @@ class SavedRequestScopeTests(unittest.IsolatedAsyncioTestCase):
             {"role_id": 12, "member_ids": [21]},
             ChangePreview(("Add role",), recheck),
             run,
+            step_id="roles", capability_name="add_discord_roles",
+            checked_arguments={"role_id": 12, "member_ids": [21]},
         )
         state = AgentTurnState(
             outcomes=[
@@ -435,6 +437,8 @@ class SavedRequestScopeTests(unittest.IsolatedAsyncioTestCase):
             {"role_id": 12, "member_ids": [21]},
             ChangePreview(("Add role",), recheck),
             run,
+            step_id="roles", capability_name="add_discord_roles",
+            checked_arguments={"role_id": 12, "member_ids": [21]},
         )
         state = SimpleNamespace(
             proposed_changes=[], outcomes=[], attachments=[]
@@ -489,6 +493,8 @@ class SavedRequestScopeTests(unittest.IsolatedAsyncioTestCase):
             {"role_id": 13, "member_ids": [21]},
             ChangePreview(("Add role",), recheck),
             run,
+            step_id="roles", capability_name="add_discord_roles",
+            checked_arguments={"role_id": 13, "member_ids": [21]},
         )
         state = SimpleNamespace(
             proposed_changes=[], outcomes=[], attachments=[]

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 import asyncio
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from collections.abc import Mapping
 import json
@@ -257,6 +258,7 @@ class PlanRunner:
         )
         await require_evidence_access(local)
         tool = checked["tool"]
+        checked_arguments = deepcopy(arguments)
         raw = await self.service.execute_tool(
             name=checked["name"],
             handler=tool.handler,
@@ -276,6 +278,8 @@ class PlanRunner:
                 local.state.proposed_changes[index] = replace(
                     proposal,
                     step_id=step["id"],
+                    capability_name=step["capability"],
+                    checked_arguments=deepcopy(checked_arguments),
                 )
         try:
             payload = json.loads(raw)

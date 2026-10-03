@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
@@ -56,6 +56,8 @@ class PreparedAction:
     step_id: str = ""
     bind: Callable[[Mapping[str, Mapping[str, Any]]], Awaitable["PreparedAction"]] | None = None
     details_hidden: bool = False
+    capability_name: str = ""
+    checked_arguments: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.action_class not in (ActionClass.CHANGE, ActionClass.IRREVERSIBLE):

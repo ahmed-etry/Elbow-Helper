@@ -82,7 +82,7 @@ def _allowed_capabilities(
 ) -> None:
 
     registry = registry_factory()
-    command_tools, command_capabilities = build_command_tools(context.bot, enabled_adapters())
+    command_tools, _ = build_command_tools(context.bot, enabled_adapters())
     registry.update(command_tools)
     for entry in actions:
         name = entry["capability"]
@@ -95,8 +95,6 @@ def _allowed_capabilities(
         required = set(selected.definition.parameters.get("required", ()))
         if not named <= set(properties) or not required <= named:
             raise ActionRefused("Set the fixed and changing values for each required action option.")
-        if name in command_capabilities:
-            entry["action_path"] = command_capabilities[name].adapter.path
 
 
 def watcher_reads(reads: Any, registry: Mapping[str, RegisteredAgentTool]) -> None:

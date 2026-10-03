@@ -3,7 +3,6 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.agent.scheduled.tools import prepare_manage, standing_tools
 from elbow_helper.features.agent.actions.store import AgentActionRepository
 
@@ -20,6 +19,11 @@ from elbow_helper.features.agent.engine.capability_contract import CapabilityCon
 from elbow_helper.features.agent.models import RegisteredAgentTool, AgentCapabilityEffect
 from elbow_helper.infrastructure.ai.agent import AgentToolDefinition
 from unittest.mock import patch
+from unittest.mock import AsyncMock
+from elbow_helper.features.agent.commands.bridge import build_command_tools
+from elbow_helper.features.agent.capabilities.achievements.commands import achievement_adapters
+from elbow_helper.features.agent.models import AgentTurnState
+from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 
 
 
@@ -33,10 +37,12 @@ async def _run():
 
 def _action(values):
     return PreparedAction("add_discord_roles", values,
-                          ChangePreview(("Change roles",), _unchanged), _run)
+                          ChangePreview(("Change roles",), _unchanged), _run,
+                          step_id=json.dumps(values, sort_keys=True),
+                          capability_name="add_discord_roles", checked_arguments=values)
 
 
-class ScheduledScopeTests(unittest.TestCase):
+class ScheduledScopeTests(unittest.IsolatedAsyncioTestCase):
     async def test_run_between_manage_preview_and_confirmation_does_not_stale_the_preview(self):
         with TemporaryDirectory() as directory:
             repository = AgentActionRepository(Path(directory) / "actions.sqlite3")
@@ -91,12 +97,34 @@ class ScheduledScopeTests(unittest.TestCase):
             validate_scope([{**self.allowed[0], "variable_fields": ["role_id"],
                              "fixed_values": {}}])
 
-    def test_command_scope_uses_the_shared_feature_path(self):
-        allowed = [{**self.allowed[0], "capability": "run_command_role_grant",
-                    "action_path": "/role grant"}]
-        action = PreparedAction("/role grant", {"role_id": 12, "member_ids": [1]},
-                                ChangePreview(("Grant role",), _unchanged), _run)
+    async def test_command_scope_uses_the_shared_feature_path(self):
+        path = "/grant ticket"
+        command = DiscoveredCommand(path, "Registered", (
+            ParameterInfo("user", "Choose a member.", True, "integer"),
+            ParameterInfo("reason", "Reason", True, "string"),
+        ))
+        entry = SimpleNamespace(path=path, summary="Give a ticket.", details="Give a ticket.")
+        with (patch("elbow_helper.features.agent.commands.registry.discover_commands",
+                    return_value={path: command}),
+              patch("elbow_helper.features.agent.commands.registry.HELP_ENTRIES", (entry,))):
+            tools, _ = build_command_tools(object(), achievement_adapters())
+        name, tool = next(iter(tools.items()))
+        workflow = SimpleNamespace(ticket_grant_state=AsyncMock(return_value={"issue": None}))
+        member = SimpleNamespace(id=4, mention="<@4>")
+        context = SimpleNamespace(state=AgentTurnState(),
+            bot=SimpleNamespace(get_cog=lambda _: workflow),
+            guild=SimpleNamespace(get_member=lambda _: member))
+        arguments = {"user": 4, "reason": "Synthetic reason"}
+        result = await tool.handler(context, arguments)
+        self.assertEqual(result["status"], "confirmation_required")
+        action = replace(context.state.proposed_changes[0], step_id="ticket",
+                         capability_name=name, checked_arguments=arguments)
+        self.assertEqual(action.path, path)
+        allowed = [{"capability": name, "fixed_values": arguments,
+                    "variable_fields": [], "max_targets": 1}]
         self.assertTrue(within_scope((action,), allowed))
+        self.assertFalse(within_scope((replace(action, checked_arguments={
+            **arguments, "reason": "Other reason"}),), allowed))
 
     def test_fixed_discord_values_render_as_mentions(self):
         self.assertEqual(_field_label("role_id"), "role")

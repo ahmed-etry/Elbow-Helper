@@ -1005,6 +1005,13 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Use the target created above", answer)
         self.assertEqual([item.step_id for item in context.state.proposed_changes],
                          ["created", "used"])
+        self.assertEqual([item.capability_name for item in context.state.proposed_changes],
+                         ["synthetic_create", "synthetic_use"])
+        self.assertEqual([item.checked_arguments for item in context.state.proposed_changes],
+                         [{}, {"target_id": reference}])
+        reference["path"].append("changed")
+        self.assertEqual(context.state.proposed_changes[1].checked_arguments,
+                         {"target_id": {"step": "created", "path": ["target_id"]}})
 
     async def test_incomplete_change_preview_cannot_be_confirmed(self):
         path = "/synthetic"
