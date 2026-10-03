@@ -126,9 +126,13 @@ class PlanRunner:
     ) -> Mapping[str, Any]:
         checked = await self._check_step(step, arguments, earlier_results, plan_state)
         if "error" in checked:
+            LOGGER.warning("Agent planned step refused: step=%s capability=%s error=%s",
+                           step["id"], step["capability"], checked["error"])
             return checked
         reserved = await self._reserve_tool(step, arguments, checked["tool"], plan_state)
         if isinstance(reserved, dict):
+            LOGGER.warning("Agent planned step refused: step=%s capability=%s error=%s",
+                           step["id"], step["capability"], reserved["error"])
             return reserved
         local, previous = reserved
         return await self._execute_checked(step, arguments, checked, local, previous, plan_state)
@@ -210,7 +214,8 @@ class PlanRunner:
                     value = resolve_arguments({"value": entity["value"]}, earlier_results)["value"]
                 except (KeyError, IndexError, TypeError):
                     continue
-                resolved.setdefault(entity_kind(entity["kind"]), set()).add(str(value))
+                selected = value if isinstance(value, list) else [value]
+                resolved.setdefault(entity_kind(entity["kind"]), set()).update(str(item) for item in selected)
         return resolved
 
     async def _reserve_tool(self, step, arguments, tool, plan_state: PlanExecutionState):

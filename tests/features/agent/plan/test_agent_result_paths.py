@@ -13,7 +13,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 class ResultPathTests(unittest.TestCase):
     def setUp(self):
-        self.contract = CapabilityContract((), (), result_paths=(
+        self.contract = CapabilityContract((), (), result_entity_keys=(("roles[].role_id", "discord_role"),), result_paths=(
             ("roles", "N", "role_id"), ("groups", "N", "members", "N", "member_id"),
         ))
         self.registry = {

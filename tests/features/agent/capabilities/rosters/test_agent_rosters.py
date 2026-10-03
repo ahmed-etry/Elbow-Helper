@@ -118,7 +118,8 @@ class AgentRosterTests(unittest.IsolatedAsyncioTestCase):
                 "report_id": {"step": "first", "path": ["report_id"]},
                 "offset": {"step": "first", "path": ["next_offset"]},
             })),
-            entities=({"kind": "roster", "value": self.roster.id},),
+            entities=({"kind": "roster", "value": self.roster.id},
+                      {"kind": "roster_report", "value": {"step": "first", "path": ["report_id"]}}),
             dependencies={"second": ("first",)},
         )
 

@@ -31,6 +31,7 @@ from elbow_helper.features.agent.wording import (
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.engine.capability_contract import CapabilityContract
+from elbow_helper.features.agent.plan import check_plan
 from elbow_helper.features.agent.engine.budgets import ContextBudget
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentToolDefinition, AgentUsage
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
@@ -110,6 +111,90 @@ class _Model:
 
 
 class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_referenced_entities_require_matching_kinds_before_change_preview(self):
+        role = {"step": "lookup", "path": ["role_id"]}
+        member = {"step": "lookup", "path": ["member_id"]}
+        role_value = 101
+        async def prepare(context, arguments):
+            self.assertEqual(arguments, {"role_id": role_value, "member_id": 202})
+            context.state.proposed_changes.append(PreparedAction(
+                "synthetic_change", dict(arguments),
+                ChangePreview(("Synthetic preview",), AsyncMock(return_value=True)), AsyncMock(),
+            ))
+            return {"status": "confirmation_required"}
+        lookup = AsyncMock(return_value={"role_id": 101, "member_id": 202})
+        self.registry = {
+            "synthetic_lookup": RegisteredAgentTool(AgentToolDefinition(
+                "synthetic_lookup", "Synthetic", {"type": "object", "properties": {}}),
+                lookup, contract=CapabilityContract((), (), result_entity_keys=(
+                    ("role_id", "discord_role"), ("member_id", "discord_member")),
+                    result_paths=(("role_id",), ("member_id",)))),
+            "synthetic_change": RegisteredAgentTool(AgentToolDefinition(
+                "synthetic_change", "Synthetic", {"type": "object", "properties": {
+                    "role_id": {"type": "integer"}, "member_id": {"type": "integer"}},
+                    "required": ["role_id", "member_id"]}),
+                prepare, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
+                contract=CapabilityContract((("role_id", "discord_role"),
+                                             ("member_id", "discord_member")), ())),
+        }
+        plan = _plan([
+            {**_step("lookup"), "capability": "synthetic_lookup"},
+            {**_step("change", {"role_id": role, "member_id": member}, ["lookup"]),
+             "capability": "synthetic_change"},
+        ])
+        plan["entities"] = [{"kind": "discord_role", "value": role},
+                            {"kind": "discord_member", "value": member}]
+        for value in (None, {"step": "lookup", "path": ["member_id"]}):
+            with self.subTest(declaration=value):
+                plan["entities"][0]["value"] = value if value is not None else 101
+                checked = check_plan(plan, self.registry)
+                self.assertFalse(checked.ok)
+                self.assertIn("Argument role_id requires a declared discord_role entity", checked.error)
+        plan["entities"][0]["value"] = role
+        for index, field, expected, wrong in (
+            (0, "role_id", "discord_role", "discord_member"),
+            (1, "member_id", "discord_member", "discord_role"),
+        ):
+            with self.subTest(field=field):
+                plan["entities"][index]["kind"] = wrong
+                checked = check_plan(plan, self.registry)
+                self.assertFalse(checked.ok)
+                self.assertEqual(checked.step_id, "change")
+                for text in (field, expected, repr(plan["entities"][index]["value"])):
+                    self.assertIn(text, checked.error)
+                plan["entities"][index]["kind"] = expected
+        plan["entities"][0]["kind"] = "role_id"
+        checked = check_plan(plan, self.registry)
+        self.assertFalse(checked.ok)
+        self.assertIn("Valid kinds: discord_member, discord_role", checked.error)
+        plan["entities"][0]["kind"] = "discord_role_set"
+        # Reference equality must not depend on dictionary insertion order.
+        plan["entities"][0]["value"] = {"path": ["role_id"], "step": "lookup"}
+        self.assertTrue(check_plan(plan, self.registry).ok)
+        session = _Session([_model_step(plan)], self.events)
+        context = replace(_context(), bot=SimpleNamespace(tree=object()))
+        with patch("elbow_helper.features.agent.engine.service.build_command_tools", return_value=({}, {})):
+            answer, _ = await self._answer(session, context)
+        self.assertIn("Synthetic preview", answer)
+        self.assertEqual(len(context.state.proposed_changes), 1)
+        lookup.assert_awaited_once()
+        role_value = [101, 303]
+        lookup.return_value = {"role_id": role_value, "member_id": 202}
+        change = self.registry["synthetic_change"]
+        schema = {**change.definition.parameters, "properties": {
+            **change.definition.parameters["properties"],
+            "role_id": {"type": "array", "items": {"type": "integer"}},
+        }}
+        self.registry["synthetic_change"] = replace(
+            change, definition=replace(change.definition, parameters=schema))
+        self.assertTrue(check_plan(plan, self.registry).ok)
+        context = replace(_context(), bot=SimpleNamespace(tree=object()))
+        session = _Session([_model_step(plan)], self.events)
+        with patch("elbow_helper.features.agent.engine.service.build_command_tools", return_value=({}, {})):
+            answer, _ = await self._answer(session, context)
+        self.assertIn("Synthetic preview", answer)
+        self.assertEqual(len(context.state.proposed_changes), 1)
+
     async def test_prepared_actions_must_match_the_registered_class(self):
         for registered in ActionClass:
             for prepared in (ActionClass.CHANGE, ActionClass.IRREVERSIBLE):
@@ -149,6 +234,8 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                         self.assertIn("Synthetic preview", answer)
 
     async def test_results_receive_a_final_answer_at_scope_and_output_limits(self):
+        self.registry["read_value"] = replace(self.registry["read_value"], contract=CapabilityContract(
+            (), (), result_entity_keys=(("value", "synthetic"),)))
         instruction = "Answer now from these results. Say briefly what you couldn't finish."
         first = _plan([_step("first")])
         second = {**_plan([_step("second")]),
@@ -594,7 +681,13 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             "value": {"step": "first", "path": ["value"]},
         }, ["first"])])
         session = _Session([_model_step(plan), AgentStep("Ready.", (), AgentUsage())], self.events)
-        await self._answer(session)
+        with self.assertLogs("elbow_helper.features.agent.engine.steps", level="WARNING") as logs:
+            await self._answer(session)
+        self.assertEqual(logs.records[0].levelname, "WARNING")
+        self.assertEqual(logs.records[0].getMessage(),
+                         "Agent planned step refused: step=second capability=read_value "
+                         "error=Arguments must match the capability schema.")
+        self.assertNotIn("wrong-type", " ".join(logs.output))
         self.assertEqual(self.events.count("read"), 1)
         self.assertEqual(json.loads(session.calls[1][0][0].content)["results"]["second"]["flags"]["status"],
                          "failed")
@@ -775,6 +868,8 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(set(prompts)), 1)
 
     async def test_reordering_and_narrowing_entities_do_not_use_revisions(self):
+        self.registry["read_value"] = replace(self.registry["read_value"], contract=CapabilityContract(
+            (), (), result_entity_keys=(("value", "synthetic_source"),)))
         plans = [_plan([_step(str(index), {"value": index + 1})]) for index in range(5)]
         values = ((101, 202), (202, 101), (101,), (202, 101), (202,))
         for plan, selected in zip(plans, values):
@@ -882,7 +977,8 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                 result_channel_fields=("channel_id",), source_scope="retained_channel_evidence")}
         output = {**_step("page", {"resource_id": {"step": "first", "path": ["resource_id"]}}, ["first"]), "capability": "read_page"}
         plan = _plan([_step("first", {"channel_id": 91}), output])
-        plan["entities"] = [{"kind": "discord_channel", "value": 91}]
+        plan["entities"] = [{"kind": "discord_channel", "value": 91},
+                            {"kind": "synthetic_report", "value": output["arguments"]["resource_id"]}]
         for source in (91, 202):
             page.return_value = {"channel_id": source, "value": 7}
             page.reset_mock()
@@ -973,6 +1069,9 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(session.calls), 1)
 
     async def test_command_reference_cannot_escape_named_sources(self):
+        self.registry["synthetic_source_lookup"] = replace(
+            self.registry["read_value"], contract=CapabilityContract(
+                (("value", "synthetic_source"),), ()))
         run = AsyncMock(return_value=ActionOutcome("complete", text="Unexpected"))
         path = "/synthetic"
         command = DiscoveredCommand(path, "registered", (
@@ -989,7 +1088,8 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         command_step = {**_step("command", {"target": {"step": "first", "path": ["value"]}},
                                 ["first"]), "capability": next(iter(tools))}
         plan = _plan([_step("first", {"value": 202}), command_step])
-        plan["entities"] = [{"kind": "synthetic_source", "value": 101}]
+        plan["entities"] = [{"kind": "synthetic_source", "value": 101},
+                            {"kind": "synthetic_source", "value": command_step["arguments"]["target"]}]
         session = _Session([_model_step(plan), AgentStep("Refused.", (), AgentUsage())], self.events)
         with (patch("elbow_helper.features.agent.engine.service.build_agent_tools", return_value=self.registry),
               patch("elbow_helper.features.agent.engine.service.build_command_tools",

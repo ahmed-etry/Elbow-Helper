@@ -17,7 +17,7 @@ from ..engine.capability_contract import compile_capability_call
 from ..engine.capability_contract import entity_kind
 from ..reports.tools import (COMPARE_NAME, READ_NAME, original_arguments,
                                    original_tool, unsupported_fields,
-                                   unsupported_field_error)
+                                   unsupported_field_error, saved_report_contracts)
 from .format import output_forms
 
 LOGGER = logging.getLogger(__name__)
@@ -116,6 +116,18 @@ def has_reference(value: Any) -> bool:
     if isinstance(value, dict):
         return set(value) == {"step", "path"} or any(has_reference(item) for item in value.values())
     return isinstance(value, list) and any(has_reference(item) for item in value)
+
+
+def _references(value: Any):
+    if isinstance(value, dict):
+        if set(value) == {"step", "path"}:
+            yield value
+        else:
+            for item in value.values():
+                yield from _references(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _references(item)
 
 
 def _reference(value: Any, earlier: set[str]) -> bool:
@@ -342,9 +354,19 @@ def _check_steps(raw, registry, periods, entities, named):
         checked = check_step(step, registry, periods, entities, named, earlier)
         if not checked.ok:
             return checked
-        checked = _check_result_references(step["arguments"], steps_by_id, registry, step_id)
-        if not checked.ok:
-            return checked
+        references_checked = _check_result_references(step["arguments"], steps_by_id, registry, step_id)
+        if not references_checked.ok:
+            return references_checked
+        if checked.contract is not None:
+            for field, kind in checked.contract.entity_fields:
+                base = entity_kind(kind)
+                for reference in _references(step["arguments"].get(field)):
+                    if not any(entity_kind(entity["kind"]) == base
+                               and entity["value"] == reference for entity in raw["entities"]):
+                        return _error(
+                            f"Argument {field} requires a declared {base} entity "
+                            f"with reference {reference!r}.", step_id,
+                        )
         earlier.add(step_id)
         steps_by_id[step_id] = step
     return earlier
@@ -388,6 +410,10 @@ def check_plan(
         if not isinstance(raw["entities"], list) or len(raw["entities"]) > 32:
             return _error("List at most 32 entities.")
         entities: dict[str, set[str]] = {}
+        contracts = [tool.contract for tool in registry.values()]
+        contracts.extend(saved_report_contracts(registry).values())
+        valid_kinds = {entity_kind(kind) for contract in contracts if contract
+                       for _, kind in (*contract.entity_fields, *contract.result_entity_keys)}
         for entity in raw["entities"]:
             if not isinstance(entity, dict) or set(entity) != {"kind", "value"}:
                 return _error("Each entity needs a kind and an ID or name.")
@@ -395,6 +421,10 @@ def check_plan(
             if not isinstance(kind, str) or not kind or (type(value) not in (str, int)
                     and not (isinstance(value, dict) and set(value) == {"step", "path"})):
                 return _error("Each entity needs a kind and an ID or name.")
+            if entity_kind(kind) not in valid_kinds:
+                return _error(
+                    f"Unknown entity kind {kind!r}. Valid kinds: {', '.join(sorted(valid_kinds)) or 'none'}."
+                )
             entities.setdefault(entity_kind(kind), set()).add(str(value))
         if not isinstance(raw["steps"], list) or not 1 <= len(raw["steps"]) <= 48:
             return _error("List between 1 and 48 steps.")
