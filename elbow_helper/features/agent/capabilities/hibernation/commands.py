@@ -45,7 +45,7 @@ async def prepare_hibernate(context: Any,
     if workflow is None:
         raise ActionRefused('Hibernation is unavailable.')
     member = await resolve_member(context.guild, values["user"])
-    check_member(member, context.guild.me)
+    check_member(member, context.guild.me, requester=context.member, guild=context.guild)
     plan = workflow.prepare_hibernation(context.guild, member)
     if plan["issue"]:
         raise ActionRefused(plan["issue"])
@@ -56,7 +56,7 @@ async def prepare_hibernate(context: Any,
 
     def check_roles(current_plan) -> None:
         for role in (*current_plan["to_remove"], *current_plan["to_add"]):
-            check_role(role, context.guild, context.guild.me, {})
+            check_role(role, context.guild, context.guild.me, {}, requester=context.member)
 
     check_roles(plan)
     notice = workflow.hibernation_notice_preview(member)
@@ -87,7 +87,8 @@ async def prepare_hibernate(context: Any,
     async def recheck() -> bool:
         try:
             current_member = await resolve_member(context.guild, member.id, fresh=True)
-            check_member(current_member, context.guild.me)
+            check_member(current_member, context.guild.me,
+                requester=context.member, guild=context.guild)
             current = workflow.prepare_hibernation(context.guild, current_member)
             if current["issue"] or current["missing_role_ids"]:
                 return False
@@ -132,7 +133,7 @@ async def prepare_reactivate(context: Any,
         raise ActionRefused('Hibernation is unavailable.')
     target_id = values.get("user") or context.member.id
     target = await resolve_member(context.guild, target_id)
-    check_member(target, context.guild.me)
+    check_member(target, context.guild.me, requester=context.member, guild=context.guild)
     force = target.id != context.member.id
     plan = workflow.prepare_reactivation(
         guild=context.guild, actor=context.member,
@@ -147,7 +148,7 @@ async def prepare_reactivate(context: Any,
 
     def check_roles(current_plan) -> None:
         for role in (*current_plan["to_remove"], *current_plan["to_add"]):
-            check_role(role, context.guild, context.guild.me, {})
+            check_role(role, context.guild, context.guild.me, {}, requester=context.member)
 
     check_roles(plan)
     ticket = plan["ticket"]
@@ -195,7 +196,8 @@ async def prepare_reactivate(context: Any,
     async def recheck() -> bool:
         try:
             live_target = await resolve_member(context.guild, target.id, fresh=True)
-            check_member(live_target, context.guild.me)
+            check_member(live_target, context.guild.me,
+                requester=context.member, guild=context.guild)
             current = workflow.prepare_reactivation(
                 guild=context.guild, actor=context.member,
                 target=live_target, force_reactivate=force,

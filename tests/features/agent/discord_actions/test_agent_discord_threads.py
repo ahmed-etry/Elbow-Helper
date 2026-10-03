@@ -10,6 +10,7 @@ from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.agent.discord_actions.threads import (
     prepare_create_thread, prepare_thread_members, prepare_update_thread,
 )
+from features.agent.discord_actions.helpers import register_requester
 
 
 class FakeThread:
@@ -75,6 +76,7 @@ class DiscordThreadActionTests(unittest.IsolatedAsyncioTestCase):
             guild=guild, bot=SimpleNamespace(fetch_channel=AsyncMock(return_value=self.thread)),
             member=SimpleNamespace(id=5, display_name="Asker"), state=AgentTurnState(),
         )
+        self.context = register_requester(self.context)
         self.patches = ExitStack()
         self.patches.enter_context(patch(
             "elbow_helper.features.agent.discord_actions.threads.discord.Thread", FakeThread,

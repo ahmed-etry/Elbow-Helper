@@ -62,10 +62,10 @@ async def _check_members(context: AgentRequestContext,
                          roster: Any, member_ids: tuple[int, ...]) -> None:
     role = context.guild.get_role(roster.role_id) if roster.role_id else None
     if role is not None:
-        check_role(role, context.guild, context.guild.me, {})
+        check_role(role, context.guild, context.guild.me, {}, requester=context.member)
     for member_id in member_ids:
         member = await resolve_member(context.guild, member_id)
-        check_member(member, context.guild.me)
+        check_member(member, context.guild.me, requester=context.member, guild=context.guild)
 
 
 _OPERATIONS = (
@@ -177,11 +177,11 @@ async def prepare_roster_refresh(context: AgentRequestContext,
     await _check_posts(context, state["posts"])
     role = context.guild.get_role(roster.role_id) if roster.role_id else None
     if role is not None:
-        check_role(role, context.guild, context.guild.me, {})
+        check_role(role, context.guild, context.guild.me, {}, requester=context.member)
     members = [await resolve_member(context.guild, member_id)
                for member_id in state["member_ids"]]
     for member in members:
-        check_member(member, context.guild.me)
+        check_member(member, context.guild.me, requester=context.member, guild=context.guild)
     lines = [ACTION_ROSTER_REFRESH_LINE.format(name=roster.name)]
     lines.extend(ACTION_ROSTER_REFRESH_MEMBER.format(member=member.mention)
                  for member in members)
@@ -195,9 +195,10 @@ async def prepare_roster_refresh(context: AgentRequestContext,
         try:
             await _check_posts(context, state["posts"])
             if role is not None:
-                check_role(role, context.guild, context.guild.me, {})
+                check_role(role, context.guild, context.guild.me, {}, requester=context.member)
             for member in members:
-                check_member(member, context.guild.me)
+                check_member(member, context.guild.me,
+                    requester=context.member, guild=context.guild)
         except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
             return False
         return True

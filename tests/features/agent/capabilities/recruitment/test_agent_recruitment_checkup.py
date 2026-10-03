@@ -11,6 +11,7 @@ from elbow_helper.features.agent.capabilities.recruitment.commands import (
     prepare_checkup, recruitment_adapters,
 )
 from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin
+from features.agent.discord_actions.helpers import register_requester
 
 
 class CheckupCommandTests(unittest.IsolatedAsyncioTestCase):
@@ -40,6 +41,7 @@ class CheckupCommandTests(unittest.IsolatedAsyncioTestCase):
             guild=guild, member=requester,
             source_message=SimpleNamespace(channel=channel),
         )
+        context = register_requester(context)
         values = {"applicant": 3, "account_linked": False}
         with patch("elbow_helper.features.recruitment.commands.discord.TextChannel",
                    new=SimpleNamespace):

@@ -121,7 +121,7 @@ async def prepare_role_connection_change(context: AgentRequestContext,
         raise ActionRefused('That role connection is unavailable.')
     candidate = after or before
     role = context.guild.get_role(candidate["target_role_id"])
-    check_role(role, context.guild, context.guild.me, {})
+    check_role(role, context.guild, context.guild.me, {}, requester=context.member)
     if after is not None and not workflow.connection_change_is_valid(
         after, replacing_id=connection_id if before is not None else None):
         raise ActionRefused('That role connection is unavailable.')
@@ -155,7 +155,7 @@ async def prepare_role_connection_change(context: AgentRequestContext,
         try:
             check_post_access(channel, context.member, context.guild.me)
             check_role(context.guild.get_role(candidate["target_role_id"]),
-                       context.guild, context.guild.me, {})
+                       context.guild, context.guild.me, {}, requester=context.member)
         except ValueError:
             return False
         return (current == before and (after is None or workflow.connection_change_is_valid(
@@ -204,7 +204,7 @@ async def prepare_role_connection_undo(context: AgentRequestContext,
         raise ActionRefused('That role connection is unavailable.')
     candidate = prior or expected
     role = context.guild.get_role(candidate["target_role_id"])
-    check_role(role, context.guild, context.guild.me, {})
+    check_role(role, context.guild, context.guild.me, {}, requester=context.member)
 
     async def recheck() -> bool:
         return workflow.role_connection_state(connection_id) == expected

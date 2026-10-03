@@ -7,6 +7,7 @@ from elbow_helper.features.agent.capabilities.recruitment.commands import (
     prepare_recstatement, run_recstatement,
 )
 from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin
+from features.agent.discord_actions.helpers import register_requester
 
 
 class RecruitmentStatementCommandTests(unittest.IsolatedAsyncioTestCase):
@@ -31,6 +32,7 @@ class RecruitmentStatementCommandTests(unittest.IsolatedAsyncioTestCase):
             member=SimpleNamespace(id=4),
             source_message=SimpleNamespace(channel=channel),
         )
+        context = register_requester(context)
         for template in ("under16", "hyperactive"):
             with self.subTest(template=template):
                 values = {"message": template, "applicant": 7,

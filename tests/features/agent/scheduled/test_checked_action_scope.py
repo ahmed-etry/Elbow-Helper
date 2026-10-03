@@ -9,6 +9,7 @@ from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.agent.discord_actions.roles import prepare_add_roles
 from elbow_helper.features.agent.discord_actions.messages import prepare_post
 from elbow_helper.features.agent.scheduled.scope import validate_scope, within_scope
+from features.agent.discord_actions.helpers import register_requester
 
 
 class CheckedActionScopeTests(unittest.IsolatedAsyncioTestCase):
@@ -24,6 +25,7 @@ class CheckedActionScopeTests(unittest.IsolatedAsyncioTestCase):
         self.context = SimpleNamespace(guild=guild, member=SimpleNamespace(id=8),
             state=AgentTurnState(), source_message=SimpleNamespace(channel=channel),
             roster_queries=None, role_connection_queries=None, history=())
+        self.context = register_requester(self.context)
 
     async def test_one_role_step_counts_its_targets_once(self):
         arguments = {"role_id": 12, "member_ids": [4, 5]}

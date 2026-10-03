@@ -8,9 +8,49 @@ from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.agent.discord_actions.roles import (
     prepare_add_roles, prepare_remove_roles, prepare_role_undo,
 )
+from features.agent.discord_actions.helpers import register_requester
 
 
 class DiscordRoleActionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_requester_hierarchy_is_rechecked_against_the_cached_member(self):
+        context, role, members = self.context()
+        with (patch("elbow_helper.features.agent.discord_actions.roles.require_evidence_access",
+                    new_callable=AsyncMock),
+              patch("elbow_helper.features.agent.discord_actions.roles.managed_role_commands",
+                    new_callable=AsyncMock, return_value={})):
+            await prepare_add_roles(context, {"role_id": role.id, "member_ids": [4]})
+            action = context.state.proposed_changes[0]
+            current = SimpleNamespace(id=context.member.id, top_role=SimpleNamespace(position=1), guild_permissions=SimpleNamespace(manage_roles=True))
+            context.guild.get_member = lambda identifier: (
+                current if identifier == current.id else members.get(identifier)
+            )
+            self.assertFalse(await action.preview.recheck())
+            with self.assertRaises(ValueError):
+                await action.run()
+        members[4].add_roles.assert_not_awaited()
+
+    async def test_requester_hierarchy_is_checked_before_role_preparation(self):
+        for role_position, member_position, requester_position, owner, refused in (
+            (2, 1, 2, False, True), (1, 2, 2, False, False),
+            (1, 1, 2, False, False), (2, 2, 1, False, True),
+        ):
+            with self.subTest(role=role_position, member=member_position, owner=owner):
+                context, role, members = self.context()
+                role.position = role_position
+                members[4].top_role.position = member_position
+                context.member.top_role = SimpleNamespace(position=requester_position)
+                get_member = context.guild.get_member
+                context.guild.get_member = lambda identifier: (
+                    context.member if identifier == context.member.id else get_member(identifier)
+                )
+                with (patch("elbow_helper.features.agent.discord_actions.roles.require_evidence_access",
+                            new_callable=AsyncMock),
+                      patch("elbow_helper.features.agent.discord_actions.roles.managed_role_commands",
+                            new_callable=AsyncMock, return_value={})):
+                    result = await prepare_add_roles(context, {"role_id": role.id, "member_ids": [4]})
+                self.assertEqual("error" in result, refused)
+                self.assertEqual(bool(context.state.proposed_changes), not refused)
+
     def context(self):
         role = SimpleNamespace(
             id=3, mention="@role", position=1, managed=False,
@@ -40,10 +80,7 @@ class DiscordRoleActionTests(unittest.IsolatedAsyncioTestCase):
             guild=guild, member=SimpleNamespace(id=8, display_name="Asker"),
             state=AgentTurnState(), roster_queries=None, role_connection_queries=None,
         )
-        context.member.top_role = SimpleNamespace(position=5)
-        context.member.guild_permissions = SimpleNamespace(manage_roles=True)
-        original_get_member = guild.get_member
-        guild.get_member = lambda identifier: context.member if identifier == context.member.id else original_get_member(identifier)
+        context = register_requester(context)
         return context, role, members
 
     async def test_bulk_role_change_prepares_only_members_who_need_it(self):

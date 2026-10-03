@@ -9,6 +9,7 @@ from elbow_helper.features.agent.capabilities.role_connections.management import
     prepare_role_connection_change, prepare_remove_role_connection,
     prepare_role_connection_undo,
 )
+from features.agent.discord_actions.helpers import register_requester
 
 
 class _Channel:
@@ -32,6 +33,7 @@ class RoleConnectionManagementTests(unittest.IsolatedAsyncioTestCase):
             member=object(), source_message=SimpleNamespace(channel=SimpleNamespace(id=9)),
             state=AgentTurnState(),
         )
+        context = register_requester(context)
         with (patch("elbow_helper.features.agent.capabilities.role_connections.management.require_evidence_access",
                     new_callable=AsyncMock),
               patch("elbow_helper.features.agent.capabilities.role_connections.management.resolve_channel",
@@ -87,6 +89,7 @@ class RoleConnectionManagementTests(unittest.IsolatedAsyncioTestCase):
             member=object(), source_message=SimpleNamespace(channel=SimpleNamespace(id=9)),
             state=AgentTurnState(),
         )
+        context = register_requester(context)
         with (patch("elbow_helper.features.agent.capabilities.role_connections.management.require_evidence_access",
                     new_callable=AsyncMock),
               patch("elbow_helper.features.agent.capabilities.role_connections.management.resolve_channel",

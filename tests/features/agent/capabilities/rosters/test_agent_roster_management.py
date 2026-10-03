@@ -11,6 +11,7 @@ from elbow_helper.features.agent.capabilities.rosters.management import (
     roster_management_tools, prepare_roster_layout_undo,
 )
 from elbow_helper.features.rosters.models import RosterLayout
+from features.agent.discord_actions.helpers import register_requester
 
 
 class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
@@ -39,6 +40,7 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
             bot=SimpleNamespace(get_cog=lambda name: workflow),
             guild=guild, member=object(), state=AgentTurnState(),
         )
+        context = register_requester(context)
         tool = next(tool for tool in roster_management_tools()
                     if tool.definition.name == "set_roster_layout")
         with patch("elbow_helper.features.agent.capabilities.rosters.management.require_evidence_access",
@@ -82,6 +84,7 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
             bot=SimpleNamespace(get_cog=lambda name: workflow),
             guild=guild, member=object(), state=AgentTurnState(),
         )
+        context = register_requester(context)
         tool = next(tool for tool in roster_management_tools()
                     if tool.definition.name == "clear_roster_signups")
         with patch("elbow_helper.features.agent.capabilities.rosters.management.require_evidence_access",

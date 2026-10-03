@@ -12,6 +12,7 @@ from elbow_helper.features.agent.capabilities.support_tickets.commands import (
     prepare_support_open, support_ticket_adapters,
 )
 from elbow_helper.features.support_tickets.commands import SupportCommandMixin
+from features.agent.discord_actions.helpers import register_requester
 
 
 class SupportCloseCommandTests(unittest.IsolatedAsyncioTestCase):
@@ -60,6 +61,7 @@ class SupportCloseCommandTests(unittest.IsolatedAsyncioTestCase):
             guild=guild, member=requester,
             source_message=SimpleNamespace(channel=channel),
         )
+        context = register_requester(context)
         change = await prepare_support_close(context, {})
         self.assertTrue(await change.preview.recheck())
         self.assertIn("Stop <@3> from sending in the ticket.",
@@ -113,6 +115,7 @@ class SupportOpenCommandTests(unittest.IsolatedAsyncioTestCase):
             bot=SimpleNamespace(get_cog=lambda _: workflow),
             guild=guild, member=actor,
         )
+        context = register_requester(context)
         saved = {}
 
         def save(value):

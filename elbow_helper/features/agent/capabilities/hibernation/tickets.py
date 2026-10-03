@@ -72,7 +72,7 @@ async def prepare_reactivation_reopen(context: AgentRequestContext,
         raise ActionRefused("That ticket couldn't be reopened.")
     check_post_access(channel, context.member, context.guild.me)
     owner = await workflow.reactivation_reopen_state(context.guild, channel)
-    check_member(owner, context.guild.me)
+    check_member(owner, context.guild.me, requester=context.member, guild=context.guild)
     before = channel.overwrites_for(owner).send_messages
     if before is True:
         return {"status": "no_change"}
@@ -86,7 +86,7 @@ async def prepare_reactivation_reopen(context: AgentRequestContext,
     async def recheck() -> bool:
         try:
             check_post_access(channel, context.member, context.guild.me)
-            check_member(owner, context.guild.me)
+            check_member(owner, context.guild.me, requester=context.member, guild=context.guild)
             return ((await workflow.reactivation_reopen_state(context.guild, channel)) == owner
                     and channel.overwrites_for(owner).send_messages == before)
         except ValueError:
@@ -121,7 +121,7 @@ async def prepare_reactivation_close(context: AgentRequestContext,
         check_post_access(target, context.member, context.guild.me)
     owner = await workflow.reactivation_reopen_state(context.guild, channel)
     if owner is not None:
-        check_member(owner, context.guild.me)
+        check_member(owner, context.guild.me, requester=context.member, guild=context.guild)
     before = channel.overwrites_for(owner).send_messages if owner is not None else None
     if before is False:
         return {"status": "no_change"}
@@ -140,7 +140,7 @@ async def prepare_reactivation_close(context: AgentRequestContext,
             if owner != current_owner or channel.last_message_id != message_id:
                 return False
             if owner is not None:
-                check_member(owner, context.guild.me)
+                check_member(owner, context.guild.me, requester=context.member, guild=context.guild)
                 return channel.overwrites_for(owner).send_messages == before
         except ValueError:
             return False

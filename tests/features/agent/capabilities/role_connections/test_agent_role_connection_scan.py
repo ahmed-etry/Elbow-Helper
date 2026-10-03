@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.agent.models import AgentTurnState
+from features.agent.discord_actions.helpers import register_requester
 from elbow_helper.features.agent.capabilities.role_connections.scan import (
     prepare_role_connection_scan, prepare_role_connection_scan_undo,
 )
@@ -33,8 +34,9 @@ class RoleConnectionScanTests(unittest.IsolatedAsyncioTestCase):
         context = SimpleNamespace(
             bot=SimpleNamespace(get_cog=lambda name: workflow),
             guild=SimpleNamespace(id=1, me=bot_member, get_role=lambda role_id: role),
-            state=AgentTurnState(),
+            state=AgentTurnState(), member=SimpleNamespace(id=7),
         )
+        context = register_requester(context)
         with patch("elbow_helper.features.agent.capabilities.role_connections.scan.require_evidence_access",
                    new_callable=AsyncMock):
             result = await prepare_role_connection_scan(context, {})
@@ -69,8 +71,9 @@ class RoleConnectionScanTests(unittest.IsolatedAsyncioTestCase):
             bot=SimpleNamespace(get_cog=lambda name: workflow),
             guild=SimpleNamespace(id=1, me=SimpleNamespace(
                 id=99, top_role=SimpleNamespace(position=10))),
-            state=AgentTurnState(),
+            state=AgentTurnState(), member=SimpleNamespace(id=7),
         )
+        context = register_requester(context)
         with patch("elbow_helper.features.agent.capabilities.role_connections.scan.require_evidence_access",
                    new_callable=AsyncMock):
             result = await prepare_role_connection_scan(context, {})

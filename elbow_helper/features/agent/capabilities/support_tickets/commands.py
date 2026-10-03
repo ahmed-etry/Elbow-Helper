@@ -58,7 +58,7 @@ async def _member(context: Any, member_id: int):
             member = await context.guild.fetch_member(member_id)
         except discord.DiscordException:
             raise ActionRefused('That member is unavailable.') from None
-    check_member(member, context.guild.me)
+    check_member(member, context.guild.me, requester=context.member, guild=context.guild)
     return member
 
 
@@ -143,7 +143,7 @@ async def prepare_support_close(context: Any,
     check_post_access(log_channel, context.member, context.guild.me)
     owner = prepared["owner"]
     if owner is not None:
-        check_member(owner, context.guild.me)
+        check_member(owner, context.guild.me, requester=context.member, guild=context.guild)
     history = await workflow.support_close_history(channel)
     lines = [
         ACTION_SUPPORT_CLOSE_LINE.format(channel=channel.mention),
@@ -192,7 +192,8 @@ async def prepare_support_close(context: Any,
                 return False
             live_owner = live["owner"]
             if live_owner is not None:
-                check_member(live_owner, context.guild.me)
+                check_member(live_owner, context.guild.me,
+                    requester=context.member, guild=context.guild)
         except ValueError:
             return False
         live_signature = (

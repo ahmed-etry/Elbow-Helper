@@ -61,7 +61,7 @@ async def prepare_roster_create(context: Any,
     role_id = values.get("signup_role")
     role = context.guild.get_role(role_id) if role_id else None
     if role_id:
-        check_role(role, context.guild, context.guild.me, {})
+        check_role(role, context.guild, context.guild.me, {}, requester=context.member)
     if not await workflow.roster_name_available(context.guild.id, name):
         raise ActionRefused('A roster with that name already exists.')
     clan_code = values["clan"]
@@ -76,7 +76,7 @@ async def prepare_roster_create(context: Any,
         if role_id:
             live_role = context.guild.get_role(role_id)
             try:
-                check_role(live_role, context.guild, context.guild.me, {})
+                check_role(live_role, context.guild, context.guild.me, {}, requester=context.member)
             except ValueError:
                 return False
         return await workflow.roster_name_available(context.guild.id, name)
@@ -140,7 +140,7 @@ async def prepare_roster_clone(context: Any,
     effective_role_id = settings["role_id"]
     role = context.guild.get_role(effective_role_id) if effective_role_id else None
     if effective_role_id:
-        check_role(role, context.guild, context.guild.me, {})
+        check_role(role, context.guild, context.guild.me, {}, requester=context.member)
     if settings["schedule_enabled"] and not all(
         settings[key] for key in (
             "open_day", "open_time", "close_day", "close_time",
@@ -179,7 +179,7 @@ async def prepare_roster_clone(context: Any,
         if effective_role_id:
             try:
                 check_role(context.guild.get_role(effective_role_id),
-                           context.guild, context.guild.me, {})
+                           context.guild, context.guild.me, {}, requester=context.member)
             except ValueError:
                 return False
         return True
@@ -223,11 +223,12 @@ async def prepare_roster_delete(context: Any,
     def check_targets() -> None:
         role = context.guild.get_role(roster.role_id) if roster.role_id else None
         if role is not None:
-            check_role(role, context.guild, context.guild.me, {})
+            check_role(role, context.guild, context.guild.me, {}, requester=context.member)
         for member_id in state["member_ids"]:
             member = context.guild.get_member(member_id)
             if member is not None:
-                check_member(member, context.guild.me)
+                check_member(member, context.guild.me,
+                    requester=context.member, guild=context.guild)
 
     check_targets()
     lines = [ACTION_ROSTER_DELETE_LINE.format(name=roster.name)]
@@ -322,11 +323,12 @@ async def prepare_roster_edit(context: Any,
         for role_id in (roster.role_id, changes["role_id"]):
             if role_id is not None:
                 check_role(context.guild.get_role(role_id),
-                           context.guild, context.guild.me, {})
+                           context.guild, context.guild.me, {}, requester=context.member)
         for member_id in state["member_ids"]:
             member = context.guild.get_member(member_id)
             if member is not None:
-                check_member(member, context.guild.me)
+                check_member(member, context.guild.me,
+                    requester=context.member, guild=context.guild)
 
     check_targets()
 

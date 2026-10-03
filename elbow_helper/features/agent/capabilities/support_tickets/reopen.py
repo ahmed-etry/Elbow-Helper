@@ -59,7 +59,7 @@ async def prepare_support_reopen(context: AgentRequestContext,
         raise ActionRefused("That ticket couldn't be reopened.")
     check_post_access(channel, context.member, context.guild.me)
     owner = workflow.support_reopen_state(context.guild, channel)
-    check_member(owner, context.guild.me)
+    check_member(owner, context.guild.me, requester=context.member, guild=context.guild)
     before = channel.overwrites_for(owner).send_messages
     if before is True:
         return {"status": "no_change"}
@@ -73,7 +73,7 @@ async def prepare_support_reopen(context: AgentRequestContext,
     async def recheck() -> bool:
         try:
             check_post_access(channel, context.member, context.guild.me)
-            check_member(owner, context.guild.me)
+            check_member(owner, context.guild.me, requester=context.member, guild=context.guild)
             return (workflow.support_reopen_state(context.guild, channel) == owner
                     and channel.overwrites_for(owner).send_messages == before)
         except ValueError:

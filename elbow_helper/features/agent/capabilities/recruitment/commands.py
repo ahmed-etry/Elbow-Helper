@@ -115,7 +115,7 @@ async def prepare_checkup(context: Any,
     if workflow is None:
         raise ActionRefused('Recruitment messages are unavailable.')
     member = await resolve_member(context.guild, values["applicant"])
-    check_member(member, context.guild.me)
+    check_member(member, context.guild.me, requester=context.member, guild=context.guild)
     channel = await resolve_channel(
         context, values.get("channel") or context.source_message.channel.id,
     )
@@ -130,7 +130,8 @@ async def prepare_checkup(context: Any,
     async def recheck() -> bool:
         try:
             current_member = await resolve_member(context.guild, member.id, fresh=True)
-            check_member(current_member, context.guild.me)
+            check_member(current_member, context.guild.me,
+                requester=context.member, guild=context.guild)
             check_post_access(channel, context.member, context.guild.me)
         except (ValueError, discord.DiscordException):
             return False
@@ -166,7 +167,7 @@ async def prepare_decline(context: Any,
     if workflow is None:
         raise ActionRefused('Recruitment messages are unavailable.')
     member = await resolve_member(context.guild, values["applicant"])
-    check_member(member, context.guild.me)
+    check_member(member, context.guild.me, requester=context.member, guild=context.guild)
     channel = await resolve_channel(
         context, values.get("channel") or context.source_message.channel.id,
     )
@@ -190,7 +191,8 @@ async def prepare_decline(context: Any,
     async def recheck() -> bool:
         try:
             live_member = await resolve_member(context.guild, member.id, fresh=True)
-            check_member(live_member, context.guild.me)
+            check_member(live_member, context.guild.me,
+                requester=context.member, guild=context.guild)
             check_post_access(channel, context.member, context.guild.me)
         except (ValueError, discord.DiscordException):
             return False
@@ -224,7 +226,7 @@ async def prepare_finalize(context: Any,
     if workflow is None:
         raise ActionRefused('Recruitment messages are unavailable.')
     member = await resolve_member(context.guild, values["applicant"])
-    check_member(member, context.guild.me)
+    check_member(member, context.guild.me, requester=context.member, guild=context.guild)
     channel = await resolve_channel(
         context, values.get("channel") or context.source_message.channel.id,
     )
@@ -237,7 +239,7 @@ async def prepare_finalize(context: Any,
 
     def check_roles() -> None:
         for role in (*prepared["remove_roles"], *prepared["add_roles"]):
-            check_role(role, context.guild, context.guild.me, {})
+            check_role(role, context.guild, context.guild.me, {}, requester=context.member)
 
     check_roles()
     lines = [ACTION_FINALIZE_LINE.format(member=member.mention,
@@ -263,7 +265,8 @@ async def prepare_finalize(context: Any,
     async def recheck() -> bool:
         try:
             live_member = await resolve_member(context.guild, member.id, fresh=True)
-            check_member(live_member, context.guild.me)
+            check_member(live_member, context.guild.me,
+                requester=context.member, guild=context.guild)
             check_post_access(channel, context.member, context.guild.me)
             check_roles()
         except (ValueError, discord.DiscordException):
@@ -306,7 +309,7 @@ async def prepare_accept(context: Any,
     if workflow is None:
         raise ActionRefused('Recruitment messages are unavailable.')
     member = await resolve_member(context.guild, values["applicant"])
-    check_member(member, context.guild.me)
+    check_member(member, context.guild.me, requester=context.member, guild=context.guild)
     channel = await resolve_channel(
         context, values.get("channel") or context.source_message.channel.id,
     )
@@ -329,7 +332,7 @@ async def prepare_accept(context: Any,
 
     def check_roles() -> None:
         for role in (*effects["remove_roles"], *effects["add_roles"]):
-            check_role(role, context.guild, context.guild.me, {})
+            check_role(role, context.guild, context.guild.me, {}, requester=context.member)
 
     check_roles()
     lines = [ACTION_ACCEPT_LINE.format(
@@ -375,7 +378,8 @@ async def prepare_accept(context: Any,
     async def recheck() -> bool:
         try:
             live_member = await resolve_member(context.guild, member.id, fresh=True)
-            check_member(live_member, context.guild.me)
+            check_member(live_member, context.guild.me,
+                requester=context.member, guild=context.guild)
             check_post_access(channel, context.member, context.guild.me)
             live = await workflow.prepare_accept(user=live_member, **options)
             if live["issue"]:
@@ -384,7 +388,7 @@ async def prepare_accept(context: Any,
             if live_effects["missing_roles"]:
                 return False
             for role in (*live_effects["remove_roles"], *live_effects["add_roles"]):
-                check_role(role, context.guild, context.guild.me, {})
+                check_role(role, context.guild, context.guild.me, {}, requester=context.member)
         except (ValueError, discord.DiscordException, OSError, RuntimeError):
             return False
         return signature(live, live_effects) == initial

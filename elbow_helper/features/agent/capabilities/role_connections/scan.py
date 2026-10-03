@@ -50,8 +50,8 @@ async def prepare_role_connection_scan(context: AgentRequestContext,
     if not changes:
         return {"status": "no_change"}
     for member, role, _ in changes:
-        check_member(member, context.guild.me)
-        check_role(role, context.guild, context.guild.me, {})
+        check_member(member, context.guild.me, requester=context.member, guild=context.guild)
+        check_role(role, context.guild, context.guild.me, {}, requester=context.member)
     await require_evidence_access(context)
     for member, role, add in changes:
         context.state.proposed_changes.append(_scan_action(
@@ -69,8 +69,8 @@ def _scan_action(context: AgentRequestContext, workflow: Any,
     async def targets():
         member = await resolve_member(context.guild, member_id, fresh=True)
         role = context.guild.get_role(role_id)
-        check_member(member, context.guild.me)
-        check_role(role, context.guild, context.guild.me, {})
+        check_member(member, context.guild.me, requester=context.member, guild=context.guild)
+        check_role(role, context.guild, context.guild.me, {}, requester=context.member)
         return member, role
 
     async def recheck() -> bool:
@@ -107,8 +107,8 @@ async def prepare_role_connection_scan_undo(context: AgentRequestContext,
     values = log["targets"]
     member = await resolve_member(context.guild, values["member_id"])
     role = context.guild.get_role(values["role_id"])
-    check_member(member, context.guild.me)
-    check_role(role, context.guild, context.guild.me, {})
+    check_member(member, context.guild.me, requester=context.member, guild=context.guild)
+    check_role(role, context.guild, context.guild.me, {}, requester=context.member)
     return _scan_action(
         context, workflow, member.id, role.id,
         log["before"]["has_role"],

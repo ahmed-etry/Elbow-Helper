@@ -323,7 +323,7 @@ def _thread_member_action(context: AgentRequestContext, thread_id: int,
         try:
             thread = await _thread(context, thread_id, fresh=True)
             member = await resolve_member(context.guild, member_id, fresh=True)
-            check_member(member, context.guild.me)
+            check_member(member, context.guild.me, requester=context.member, guild=context.guild)
         except (DiscordActionRefused, discord.NotFound):
             return False
         return (member_id in await _member_ids(thread)) == before
@@ -331,7 +331,7 @@ def _thread_member_action(context: AgentRequestContext, thread_id: int,
     async def run() -> ActionOutcome:
         thread = await _thread(context, thread_id, fresh=True)
         member = await resolve_member(context.guild, member_id, fresh=True)
-        check_member(member, context.guild.me)
+        check_member(member, context.guild.me, requester=context.member, guild=context.guild)
         if before != add:
             if add:
                 await thread.add_user(member)
@@ -378,7 +378,8 @@ async def prepare_thread_members(context: AgentRequestContext,
         try:
             for member_id in arguments["member_ids"]:
                 member = await resolve_member(context.guild, member_id)
-                check_member(member, context.guild.me)
+                check_member(member, context.guild.me,
+                    requester=context.member, guild=context.guild)
                 selected.append(member)
         except DiscordActionRefused as error:
             return {"error": str(error)}
@@ -417,7 +418,7 @@ async def prepare_thread_members(context: AgentRequestContext,
         selected = []
         for member_id in arguments["member_ids"]:
             member = await resolve_member(context.guild, member_id)
-            check_member(member, context.guild.me)
+            check_member(member, context.guild.me, requester=context.member, guild=context.guild)
             add = arguments["operation"] == "add"
             if (member_id in present) != add:
                 selected.append(member_id)

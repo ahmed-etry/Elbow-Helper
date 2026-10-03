@@ -131,7 +131,7 @@ async def prepare_roster_row_removal(context: AgentRequestContext,
             selected.append(matches[0])
     role = context.guild.get_role(roster.role_id) if roster.role_id else None
     if role is not None:
-        check_role(role, context.guild, context.guild.me, {})
+        check_role(role, context.guild, context.guild.me, {}, requester=context.member)
     owners = {}
     for row in selected:
         owner = context.guild.get_member(row.discord_user_id)
@@ -141,7 +141,7 @@ async def prepare_roster_row_removal(context: AgentRequestContext,
             except discord.NotFound:
                 owner = None
         if owner is not None:
-            check_member(owner, context.guild.me)
+            check_member(owner, context.guild.me, requester=context.member, guild=context.guild)
         owners[row.discord_user_id] = owner
     channels = [await resolve_channel(context, channel_id)
                 for channel_id, _ in state["posts"]]
@@ -163,10 +163,11 @@ async def prepare_roster_row_removal(context: AgentRequestContext,
             return False
         try:
             if role is not None:
-                check_role(role, context.guild, context.guild.me, {})
+                check_role(role, context.guild, context.guild.me, {}, requester=context.member)
             for owner in owners.values():
                 if owner is not None:
-                    check_member(owner, context.guild.me)
+                    check_member(owner, context.guild.me,
+                        requester=context.member, guild=context.guild)
             for channel in channels:
                 check_post_access(channel, context.member, context.guild.me)
         except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
@@ -208,11 +209,11 @@ async def prepare_bulk_roster_add(context: AgentRequestContext,
         return {"status": "no_change"}
     role = context.guild.get_role(roster.role_id) if roster.role_id else None
     if role is not None:
-        check_role(role, context.guild, context.guild.me, {})
+        check_role(role, context.guild, context.guild.me, {}, requester=context.member)
     members = {member_id: await resolve_member(context.guild, member_id)
                for _, _, member_id, _ in state["accounts"]}
     for member in members.values():
-        check_member(member, context.guild.me)
+        check_member(member, context.guild.me, requester=context.member, guild=context.guild)
     channels = [await resolve_channel(context, channel_id)
                 for channel_id, _ in state["posts"]]
     for channel in channels:
@@ -234,9 +235,10 @@ async def prepare_bulk_roster_add(context: AgentRequestContext,
             if current != state:
                 return False
             if role is not None:
-                check_role(role, context.guild, context.guild.me, {})
+                check_role(role, context.guild, context.guild.me, {}, requester=context.member)
             for member in members.values():
-                check_member(member, context.guild.me)
+                check_member(member, context.guild.me,
+                    requester=context.member, guild=context.guild)
             for channel in channels:
                 check_post_access(channel, context.member, context.guild.me)
         except (ValueError, LookupError):
@@ -275,7 +277,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
     roster_id = values["roster_id"]
     member_id = values.get("member_id") or context.member.id
     member = await resolve_member(context.guild, member_id)
-    check_member(member, context.guild.me)
+    check_member(member, context.guild.me, requester=context.member, guild=context.guild)
     state = await workflow.prepare_roster_account_selection(
         roster_id, member_id, mode=mode,
         for_other_member=member_id != context.member.id)
@@ -290,7 +292,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
                                        for account in picker.accounts]}
     role = context.guild.get_role(roster.role_id) if roster.role_id else None
     if role is not None:
-        check_role(role, context.guild, context.guild.me, {})
+        check_role(role, context.guild, context.guild.me, {}, requester=context.member)
     selected_accounts = [account for account in picker.accounts
                          if account.player_tag in selected]
     posts = (await workflow.roster_edit_state(roster))["posts"]
@@ -313,9 +315,9 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
 
     async def recheck() -> bool:
         try:
-            check_member(member, context.guild.me)
+            check_member(member, context.guild.me, requester=context.member, guild=context.guild)
             if role is not None:
-                check_role(role, context.guild, context.guild.me, {})
+                check_role(role, context.guild, context.guild.me, {}, requester=context.member)
             for channel in channels:
                 check_post_access(channel, context.member, context.guild.me)
             current_roster, current = await workflow.prepare_roster_account_selection(

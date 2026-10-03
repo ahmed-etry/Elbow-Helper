@@ -18,6 +18,7 @@ from elbow_helper.features.agent.capabilities.rosters.post_commands import prepa
 from elbow_helper.features.agent.capabilities.rosters.post_commands import prepare_roster_export
 from elbow_helper.features.agent.capabilities.rosters.setup_commands import roster_adapters
 from elbow_helper.features.rosters.cog import Rosters
+from features.agent.discord_actions.helpers import register_requester
 
 
 class RosterCommandTests(unittest.IsolatedAsyncioTestCase):
@@ -286,6 +287,7 @@ class RosterCommandTests(unittest.IsolatedAsyncioTestCase):
             guild=guild, member=member,
             source_message=SimpleNamespace(channel=channel),
         )
+        context = register_requester(context)
         with patch("elbow_helper.features.agent.capabilities.rosters.post_commands.discord.TextChannel",
                    new=SimpleNamespace):
             prepared = await prepare_roster_post(context, {"roster": "4"})

@@ -9,6 +9,7 @@ from elbow_helper.features.agent.capabilities.rosters.signups import (
     prepare_roster_signup, prepare_roster_row_removal,
 )
 from elbow_helper.features.rosters.models import LinkedAccount, RosterMember
+from features.agent.discord_actions.helpers import register_requester
 
 
 class RosterAccountManagementTests(unittest.IsolatedAsyncioTestCase):
@@ -32,6 +33,7 @@ class RosterAccountManagementTests(unittest.IsolatedAsyncioTestCase):
             bot=SimpleNamespace(get_cog=lambda name: workflow), guild=guild,
             member=owner, state=AgentTurnState(),
         )
+        context = register_requester(context)
         with patch("elbow_helper.features.agent.capabilities.rosters.signups.require_evidence_access",
                    new_callable=AsyncMock):
             result = await prepare_roster_row_removal(
@@ -66,6 +68,7 @@ class RosterAccountManagementTests(unittest.IsolatedAsyncioTestCase):
             guild=guild,
             member=member, state=AgentTurnState(),
         )
+        context = register_requester(context)
         with (patch("elbow_helper.features.agent.capabilities.rosters.signups.require_evidence_access",
                     new_callable=AsyncMock),
               patch("elbow_helper.features.agent.capabilities.rosters.signups.resolve_member",

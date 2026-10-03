@@ -24,23 +24,61 @@ class DiscordActionSafetyTests(unittest.TestCase):
                 else:
                     check_raw_nickname(member, bot, guild=self.guild, requester=self.requester)
             setattr(self.requester.guild_permissions, permission, True)
-            check_role(role, self.guild, bot, {3: "/synthetic"})
-            check_member(member, bot)
+            check_role(role, self.guild, bot, {3: "/synthetic"}, requester=self.requester)
+            check_member(member, bot, guild=self.guild, requester=self.requester)
 
     def setUp(self):
         self.requester = SimpleNamespace(id=4, top_role=SimpleNamespace(position=10), guild_permissions=SimpleNamespace(manage_roles=True, manage_nicknames=True))
         self.guild = SimpleNamespace(id=2, owner_id=99, get_member=lambda _: self.requester)
 
+    def test_server_owner_can_change_roles_and_nicknames_above_their_top_role(self):
+        self.guild.owner_id = self.requester.id
+        bot = SimpleNamespace(id=1)
+        role = SimpleNamespace(id=3, position=99, managed=False,
+                               is_default=lambda: False, permissions=SimpleNamespace())
+        member = SimpleNamespace(id=6, top_role=SimpleNamespace(position=99))
+        check_raw_role(role, self.guild, bot, {}, requester=self.requester)
+        check_raw_nickname(member, bot, guild=self.guild, requester=self.requester)
 
+    def test_non_owner_cannot_rename_server_owner_even_with_a_lower_top_role(self):
+        bot = SimpleNamespace(id=1)
+        member = SimpleNamespace(id=self.guild.owner_id, top_role=SimpleNamespace(position=1))
+        with self.assertRaisesRegex(DiscordActionRefused, "That member ranks at or above you"):
+            check_raw_nickname(member, bot, guild=self.guild, requester=self.requester)
 
+    def test_raw_role_and_nickname_require_lower_targets(self):
+        bot = SimpleNamespace(id=1, top_role=SimpleNamespace(position=5))
+        for position, requester_position, owner in product(range(4), range(4), (False,)):
+            self.requester.top_role.position = requester_position
+            role = SimpleNamespace(id=3, position=position, managed=False,
+                                   is_default=lambda: False, permissions=SimpleNamespace())
+            member = SimpleNamespace(id=6, top_role=SimpleNamespace(position=position))
+            allowed = position < requester_position
+            with self.subTest(position=position, requester=requester_position, owner=owner):
+                if allowed:
+                    check_raw_role(role, self.guild, bot, {}, requester=self.requester)
+                    check_raw_nickname(member, bot, guild=self.guild, requester=self.requester)
+                else:
+                    with self.assertRaisesRegex(DiscordActionRefused, "That role is above your top role"):
+                        check_raw_role(role, self.guild, bot, {}, requester=self.requester)
+                    with self.assertRaisesRegex(DiscordActionRefused, "That member ranks at or above you"):
+                        check_raw_nickname(member, bot, guild=self.guild, requester=self.requester)
 
+    def test_non_owner_can_target_self_but_not_equal_or_higher_members(self):
+        bot = SimpleNamespace(id=1, top_role=SimpleNamespace(position=30))
+        check_raw_nickname(self.requester, bot, guild=self.guild, requester=self.requester)
+        for position in (10, 11):
+            with self.subTest(position=position):
+                member = SimpleNamespace(id=6, top_role=SimpleNamespace(position=position))
+                with self.assertRaisesRegex(DiscordActionRefused, "That member ranks at or above you"):
+                    check_raw_nickname(member, bot, guild=self.guild, requester=self.requester)
 
     def test_missing_targets_keep_unavailable_errors(self):
         bot = SimpleNamespace(id=1, top_role=SimpleNamespace(position=30))
         with self.assertRaisesRegex(DiscordActionRefused, "That role is unavailable"):
-            check_role(None, self.guild, bot, {})
+            check_role(None, self.guild, bot, {}, requester=self.requester)
         with self.assertRaisesRegex(DiscordActionRefused, "That member is unavailable"):
-            check_member(None, bot)
+            check_member(None, bot, guild=self.guild, requester=self.requester)
 
     def test_every_unsafe_role_combination_is_refused(self):
         bot = SimpleNamespace(id=1, top_role=SimpleNamespace(position=10))
@@ -58,7 +96,7 @@ class DiscordActionSafetyTests(unittest.TestCase):
                     permissions=permissions,
                 )
                 owners = {role.id: "/synthetic"} if feature_owned else {}
-                if any((default, managed, powerful, feature_owned)):
+                if any((default, managed, above, powerful, feature_owned)):
                     with self.assertRaises(DiscordActionRefused):
                         check_raw_role(role, guild, bot, owners, requester=self.requester)
                 else:
@@ -87,9 +125,9 @@ class DiscordActionSafetyTests(unittest.TestCase):
             )
             if self_target:
                 with self.assertRaises(DiscordActionRefused):
-                    check_member(member, bot)
+                    check_member(member, bot, guild=self.guild, requester=self.requester)
             else:
-                check_member(member, bot)
+                check_member(member, bot, guild=self.guild, requester=self.requester)
 
     def test_both_actors_need_view_and_send_access(self):
         first = SimpleNamespace(id=1)

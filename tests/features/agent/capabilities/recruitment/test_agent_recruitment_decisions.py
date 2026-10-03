@@ -11,6 +11,7 @@ from elbow_helper.features.agent.capabilities.recruitment.commands import (
     prepare_accept, prepare_decline, prepare_finalize, recruitment_adapters,
 )
 from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin
+from features.agent.discord_actions.helpers import register_requester
 
 
 class RecruitmentDecisionTests(unittest.IsolatedAsyncioTestCase):
@@ -66,6 +67,7 @@ class RecruitmentDecisionTests(unittest.IsolatedAsyncioTestCase):
             guild=guild, member=SimpleNamespace(id=2),
             source_message=SimpleNamespace(channel=channel),
         )
+        context = register_requester(context)
         values = {"applicant": 3, "clans": "BEH", "nickname": "New",
                   "player_tags": "#P0Y"}
         change = await prepare_accept(context, values)
@@ -129,6 +131,7 @@ class RecruitmentDecisionTests(unittest.IsolatedAsyncioTestCase):
             guild=guild, member=SimpleNamespace(id=2),
             source_message=SimpleNamespace(channel=channel),
         )
+        context = register_requester(context)
         with patch("elbow_helper.features.recruitment.commands.discord.TextChannel",
                    new=SimpleNamespace):
             change = await prepare_finalize(context, {"applicant": 3})
@@ -173,6 +176,7 @@ class RecruitmentDecisionTests(unittest.IsolatedAsyncioTestCase):
             guild=guild, member=SimpleNamespace(id=2),
             source_message=SimpleNamespace(channel=channel),
         )
+        context = register_requester(context)
         with patch("elbow_helper.features.recruitment.commands.discord.TextChannel",
                    new=SimpleNamespace):
             change = await prepare_decline(context, {

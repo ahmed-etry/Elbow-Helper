@@ -65,13 +65,14 @@ async def prepare_roster_timing(context: Any,
         if plan["clear"] or not roster.role_id:
             return
         check_role(context.guild.get_role(roster.role_id),
-                   context.guild, context.guild.me, {})
+                   context.guild, context.guild.me, {}, requester=context.member)
         if not opens_now:
             return
         for member_id in state["member_ids"]:
             member = context.guild.get_member(member_id)
             if member is not None:
-                check_member(member, context.guild.me)
+                check_member(member, context.guild.me,
+                    requester=context.member, guild=context.guild)
 
     check_targets()
     if plan["clear"]:
@@ -187,13 +188,14 @@ async def prepare_roster_schedule(context: Any,
         if not plan["enabled"] or not roster.role_id:
             return
         check_role(context.guild.get_role(roster.role_id),
-                   context.guild, context.guild.me, {})
+                   context.guild, context.guild.me, {}, requester=context.member)
         if not effect["starts_cycle"]:
             return
         for member_id in state["member_ids"]:
             member = context.guild.get_member(member_id)
             if member is not None:
-                check_member(member, context.guild.me)
+                check_member(member, context.guild.me,
+                    requester=context.member, guild=context.guild)
 
     check_targets()
     lines = [

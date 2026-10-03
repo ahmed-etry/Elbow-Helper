@@ -12,6 +12,7 @@ from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.agent.capabilities.hibernation.commands import (
     hibernation_adapters, prepare_hibernate, prepare_reactivate,
 )
+from features.agent.discord_actions.helpers import register_requester
 
 
 class HibernationCommandTests(unittest.IsolatedAsyncioTestCase):
@@ -25,7 +26,7 @@ class HibernationCommandTests(unittest.IsolatedAsyncioTestCase):
         )
         member = SimpleNamespace(
             id=3, mention="<@3>", roles=[],
-            top_role=SimpleNamespace(position=1),
+            top_role=SimpleNamespace(position=2),
         )
         guild = SimpleNamespace(
             id=5, me=bot_member,
@@ -62,6 +63,7 @@ class HibernationCommandTests(unittest.IsolatedAsyncioTestCase):
             bot=SimpleNamespace(get_cog=lambda _: workflow),
             guild=guild, member=member,
         )
+        context = register_requester(context)
         change = await prepare_reactivate(context, {})
         self.assertTrue(await change.preview.recheck())
         self.assertIn("Add <@&20> to <@3>.", change.preview.lines)
@@ -116,6 +118,7 @@ class HibernationCommandTests(unittest.IsolatedAsyncioTestCase):
             bot=SimpleNamespace(get_cog=lambda _: workflow),
             guild=guild, member=SimpleNamespace(id=2),
         )
+        context = register_requester(context)
         change = await prepare_hibernate(context, {"user": 3})
         self.assertTrue(await change.preview.recheck())
         self.assertIn("Remove <@&20> from <@3>.", change.preview.lines)

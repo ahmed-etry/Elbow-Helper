@@ -136,7 +136,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         if not member_id:
             return {"status": "needs_input", "issue": "Which member owns this Clash account?"}
         member = await resolve_member(context.guild, member_id)
-        check_member(member, context.guild.me)
+        check_member(member, context.guild.me, requester=context.member, guild=context.guild)
     board_id = CLAN_LEADERSHIP_CHANNELS.get(str(suggestion.get("current_clan_code") or ""))
     board = await resolve_channel(context, board_id) if board_id and not ignore else None
     if board is not None:
@@ -158,7 +158,8 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
             if board is not None:
                 check_post_access(board, context.member, context.guild.me)
             if member is not None:
-                check_member(member, context.guild.me)
+                check_member(member, context.guild.me,
+                    requester=context.member, guild=context.guild)
             return (workflow.account_suggestion_snapshot(tag) == suggestion
                     and workflow.get_links_by_tags([tag]).get(tag) == old)
         except ValueError:

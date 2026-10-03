@@ -67,7 +67,7 @@ async def prepare_trial_end(context: AgentRequestContext,
     check_post_access(ticket, context.member, context.guild.me)
     member = context.guild.get_member(applicant_id)
     if member is not None:
-        check_member(member, context.guild.me)
+        check_member(member, context.guild.me, requester=context.member, guild=context.guild)
     channels = [ticket]
     for entry in (trial, reminder):
         if not entry:
@@ -96,7 +96,8 @@ async def prepare_trial_end(context: AgentRequestContext,
             for channel in channels:
                 check_post_access(channel, context.member, context.guild.me)
             if member is not None:
-                check_member(member, context.guild.me)
+                check_member(member, context.guild.me,
+                    requester=context.member, guild=context.guild)
             return await workflow.trial_end_snapshot(ticket.id) == snapshot
         except ValueError:
             return False

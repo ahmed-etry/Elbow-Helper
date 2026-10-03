@@ -1,4 +1,4 @@
-"""Resolve Discord action targets and enforce the bot's role boundaries."""
+"""Resolve feature targets and check permissions for raw Discord changes."""
 
 from __future__ import annotations
 
@@ -44,18 +44,27 @@ async def managed_role_commands(context: Any) -> dict[int, str]:
 
 
 def check_role(role: Any, guild: Any, bot_member: Any,
-               owners: Mapping[int, str]) -> None:
+               owners: Mapping[int, str], *, requester: Any) -> None:
     if role is None:
         raise DiscordActionRefused("That role is unavailable.")
     if role.id == guild.id or role.is_default():
         raise DiscordActionRefused("The everyone role cannot be changed.")
 
 
-def check_member(member: Any, bot_member: Any) -> None:
+def check_member(member: Any, bot_member: Any, *, guild: Any, requester: Any) -> None:
     if member is None:
         raise DiscordActionRefused("That member is unavailable.")
     if bot_member is None or member.id == bot_member.id:
         raise DiscordActionRefused("The bot cannot change its own membership.")
+
+
+def _below_requester(position: int, guild: Any, requester: Any) -> bool:
+    current = guild.get_member(requester.id)
+    if current is None or current.id != requester.id:
+        return False
+    if current.id == getattr(guild, "owner_id", None):
+        return True
+    return position < current.top_role.position
 
 
 async def resolve_member(guild: Any, member_id: int, *, fresh: bool = False) -> Any:
@@ -98,12 +107,14 @@ def check_view_access(channel: Any, member: Any, bot_member: Any) -> None:
 
 def check_raw_role(role: Any, guild: Any, bot_member: Any,
                    owners: Mapping[int, str], *, requester: Any) -> None:
-    check_role(role, guild, bot_member, owners)
+    check_role(role, guild, bot_member, owners, requester=requester)
     if role.managed:
         raise DiscordActionRefused("An integration manages that role.")
     current = guild.get_member(requester.id)
     if current is None or not getattr(current.guild_permissions, "manage_roles", False):
         raise DiscordActionRefused(ACTION_UNAVAILABLE)
+    if not _below_requester(role.position, guild, requester):
+        raise DiscordActionRefused("That role is above your top role.")
     for permission in POWERFUL_PERMISSIONS:
         if getattr(role.permissions, permission, False):
             raise DiscordActionRefused("That role grants server management access.")
@@ -113,7 +124,11 @@ def check_raw_role(role: Any, guild: Any, bot_member: Any,
 
 
 def check_raw_nickname(member: Any, bot_member: Any, *, guild: Any, requester: Any) -> None:
-    check_member(member, bot_member)
+    check_member(member, bot_member, guild=guild, requester=requester)
     current = guild.get_member(requester.id)
     if current is None or not getattr(current.guild_permissions, "manage_nicknames", False):
         raise DiscordActionRefused(ACTION_UNAVAILABLE)
+    if (member.id != requester.id
+            and (member.id == getattr(guild, "owner_id", None)
+                 or not _below_requester(member.top_role.position, guild, requester))):
+        raise DiscordActionRefused("That member ranks at or above you.")

@@ -8,6 +8,7 @@ from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.agent.discord_actions.nicknames import (
     prepare_nickname, prepare_nickname_undo,
 )
+from features.agent.discord_actions.helpers import register_requester
 
 
 class DiscordNicknameTests(unittest.IsolatedAsyncioTestCase):
@@ -27,10 +28,7 @@ class DiscordNicknameTests(unittest.IsolatedAsyncioTestCase):
             guild=guild, member=SimpleNamespace(id=5, display_name="Asker"),
             state=AgentTurnState(),
         )
-        self.context.member.top_role = SimpleNamespace(position=5)
-        self.context.member.guild_permissions = SimpleNamespace(manage_nicknames=True)
-        original_get_member = guild.get_member
-        guild.get_member = lambda identifier: self.context.member if identifier == self.context.member.id else original_get_member(identifier)
+        self.context = register_requester(self.context)
         self.member = member
         self.patch = patch(
             "elbow_helper.features.agent.discord_actions.nicknames.require_evidence_access",
