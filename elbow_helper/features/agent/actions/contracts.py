@@ -5,9 +5,31 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
+import logging
 from typing import Any
+import discord
 
 from ..wording import ACTION_AUDIT_REASON, ACTION_PREVIEW_BLANK
+
+LOGGER = logging.getLogger(__name__)
+
+
+def _guard_recheck(check: Callable[[], Awaitable[bool]]) -> Callable[[], Awaitable[bool]]:
+    if getattr(check, "checks_precondition", False) is True:
+        return check
+
+    async def guarded() -> bool:
+        try:
+            return await check()
+        except (discord.DiscordException, ValueError):
+            return False
+        except Exception:
+            LOGGER.exception("Agent action recheck failed: handler=%s",
+                             getattr(check, "__qualname__", type(check).__name__))
+            return False
+
+    guarded.checks_precondition = True
+    return guarded
 
 
 class ActionClass(StrEnum):
@@ -36,6 +58,7 @@ class ChangePreview:
     def __post_init__(self) -> None:
         if not (self.lines or self.summary) or not callable(self.recheck) or self.count < 1:
             raise ValueError("A change needs a preview and a precondition")
+        object.__setattr__(self, "recheck", _guard_recheck(self.recheck))
         for name in ("lines", "details"):
             object.__setattr__(self, name, tuple(
                 line if line.strip() else ACTION_PREVIEW_BLANK

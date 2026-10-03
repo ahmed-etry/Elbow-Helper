@@ -112,7 +112,7 @@ async def prepare_health_settings(context: AgentRequestContext,
             current, _, current_revision = prepare_player_config_block(
                 clan, block, dict(values["values"]))
             return current == before and current_revision == revision
-        except (RuntimeError, ValueError):
+        except ValueError:
             return False
 
     async def run() -> ActionOutcome:

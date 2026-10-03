@@ -199,7 +199,7 @@ async def prepare_roster_refresh(context: AgentRequestContext,
             for member in members:
                 check_member(member, context.guild.me,
                     requester=context.member, guild=context.guild)
-        except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
+        except (discord.DiscordException, ValueError):
             return False
         return True
 
@@ -250,7 +250,7 @@ async def prepare_roster_layout(context: AgentRequestContext,
             return False
         try:
             await _check_posts(context, posts)
-        except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
+        except (discord.DiscordException, ValueError):
             return False
         return True
 
@@ -296,7 +296,7 @@ async def prepare_roster_layout_undo(context: AgentRequestContext,
             return False
         try:
             await _check_posts(context, posts)
-        except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
+        except (discord.DiscordException, ValueError):
             return False
         return True
 
@@ -363,7 +363,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
             await _check_posts(context, current["posts"])
             if check_members:
                 await _check_members(context, current["roster"], current["member_ids"])
-        except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
+        except (discord.DiscordException, ValueError):
             return False
         return True
 

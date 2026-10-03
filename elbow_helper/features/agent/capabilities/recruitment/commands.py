@@ -389,7 +389,7 @@ async def prepare_accept(context: Any,
                 return False
             for role in (*live_effects["remove_roles"], *live_effects["add_roles"]):
                 check_role(role, context.guild, context.guild.me, {}, requester=context.member)
-        except (ValueError, discord.DiscordException, OSError, RuntimeError):
+        except (ValueError, discord.DiscordException):
             return False
         return signature(live, live_effects) == initial
 

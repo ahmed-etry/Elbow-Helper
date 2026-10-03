@@ -6,6 +6,7 @@ import random
 import unittest
 import copy
 import string
+from unittest.mock import patch
 from re import _parser, _constants
 from datetime import datetime, timezone
 
@@ -124,6 +125,24 @@ def _period_end(encoding):
 
 
 class PlanContractTests(unittest.TestCase):
+    def test_unexpected_checker_errors_are_logged_before_generic_feedback(self):
+        tool = RegisteredAgentTool(AgentToolDefinition("synthetic", "Synthetic", {
+            "type": "object", "properties": {}, "required": [],
+        }), lambda *_: {})
+        plan = {"goal": "Synthetic", "effort": "low", "output": "text",
+                "periods": [], "entities": [], "steps": [{
+                    "id": "read", "capability": "synthetic", "arguments": {},
+                    "reason": "Synthetic", "depends_on": [],
+                }]}
+        for error in (RuntimeError("Synthetic"), KeyError("Synthetic")):
+            with (self.subTest(error=type(error).__name__),
+                  patch("elbow_helper.features.agent.plan.checker.check_step", side_effect=error),
+                  self.assertLogs("elbow_helper.features.agent.plan.checker", level="ERROR") as logs):
+                result = check_plan(plan, {"synthetic": tool})
+            self.assertFalse(result.ok)
+            self.assertEqual(result.error, "Correct the plan fields and values.")
+            self.assertTrue(any("Traceback" in line for line in logs.output))
+
     def test_reads_cannot_depend_on_unrun_changes(self):
         async def handler(context, values):
             return {}

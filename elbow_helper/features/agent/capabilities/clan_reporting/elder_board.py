@@ -59,7 +59,7 @@ async def prepare_missing_elder_board(context: AgentRequestContext,
         try:
             check_post_access(channel, context.member, context.guild.me)
             return workflow.missing_elder_board_location(values["clan_code"]) == location
-        except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
+        except (discord.DiscordException, ValueError):
             return False
 
     async def run() -> ActionOutcome:

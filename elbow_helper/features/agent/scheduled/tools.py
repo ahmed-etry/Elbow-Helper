@@ -324,7 +324,7 @@ async def prepare_save(
                 kind=kind, identifier=identifier, requester_id=context.member.id,
             )
             return updated is not None and updated["version"] == version
-        except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
+        except (discord.DiscordException, ValueError):
             return False
 
     async def run() -> ActionOutcome:

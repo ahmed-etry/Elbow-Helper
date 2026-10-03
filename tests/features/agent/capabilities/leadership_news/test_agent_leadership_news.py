@@ -73,3 +73,8 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("posted-url", outcome.text)
         workflow.publish_public_news.assert_awaited_once()
         self.assertEqual(workflow.publish_public_news.await_args.kwargs["prompts"], (prompt,))
+        source.fetch_message.side_effect = RuntimeError("Synthetic source failure")
+        with (patch("elbow_helper.features.agent.capabilities.leadership_news.actions.check_view_access"),
+              patch("elbow_helper.features.agent.capabilities.leadership_news.actions.check_post_access"),
+              self.assertLogs("elbow_helper.features.agent.actions.contracts", level="ERROR")):
+            self.assertFalse(await action.preview.recheck())

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from datetime import date, datetime, time, timezone
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -18,6 +19,8 @@ from ..reports.tools import (COMPARE_NAME, READ_NAME, original_arguments,
                                    original_tool, unsupported_fields,
                                    unsupported_field_error)
 from .format import output_forms
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -313,6 +316,18 @@ def _check_steps(raw, registry, periods, entities, named):
     return earlier
 
 
+def _mixes_irreversible_changes(steps, registry) -> bool:
+    changes = [step for step in steps if registry[step["capability"]].action_class in (
+        ActionClass.CHANGE, ActionClass.IRREVERSIBLE,
+    )]
+    return len(changes) > 1 and any(
+        registry[step["capability"]].action_class is ActionClass.IRREVERSIBLE for step in changes
+    ) and not all(
+        registry[step["capability"]].action_class is ActionClass.IRREVERSIBLE
+        and step["capability"] == changes[0]["capability"] for step in changes
+    )
+
+
 def check_plan(
     raw: Any, registry: Mapping[str, RegisteredAgentTool],
     named_sources: Mapping[str, frozenset[Any]] | None = None,
@@ -361,18 +376,7 @@ def check_plan(
         for entity in raw["entities"]:
             if isinstance(entity["value"], dict) and not _reference(entity["value"], earlier):
                 return _error("Resolve each entity with a planned step and result path.")
-        changes = [step for step in raw["steps"]
-                   if registry[step["capability"]].action_class in (
-                       ActionClass.CHANGE, ActionClass.IRREVERSIBLE,
-                   )]
-        if len(changes) > 1 and any(
-            registry[step["capability"]].action_class is ActionClass.IRREVERSIBLE
-            for step in changes
-        ) and not all(
-            registry[step["capability"]].action_class is ActionClass.IRREVERSIBLE
-            and step["capability"] == changes[0]["capability"]
-            for step in changes
-        ):
+        if _mixes_irreversible_changes(raw["steps"], registry):
             return _error("Only irreversible changes of the same kind may share a preview.")
         steps_by_id = {step["id"]: step for step in raw["steps"]}
         for kind, step_id, path in periods:
@@ -390,5 +394,8 @@ def check_plan(
         ):
             return _error("Include the selected output capability in the steps.")
         return PlanCheck(True)
-    except (TypeError, ValueError, KeyError, OverflowError, RecursionError):
+    except ValueError:
+        return _error("Correct the plan fields and values.")
+    except Exception:
+        LOGGER.exception("Agent plan check failed unexpectedly")
         return _error("Correct the plan fields and values.")

@@ -170,7 +170,7 @@ async def prepare_roster_row_removal(context: AgentRequestContext,
                         requester=context.member, guild=context.guild)
             for channel in channels:
                 check_post_access(channel, context.member, context.guild.me)
-        except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
+        except (discord.DiscordException, ValueError):
             return False
         return True
 
@@ -241,7 +241,7 @@ async def prepare_bulk_roster_add(context: AgentRequestContext,
                     requester=context.member, guild=context.guild)
             for channel in channels:
                 check_post_access(channel, context.member, context.guild.me)
-        except (ValueError, LookupError):
+        except ValueError:
             return False
         return True
 
@@ -326,7 +326,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
             if current_roster != roster or current is None:
                 return False
             return all(snapshots[tag] in current.accounts for tag in selected)
-        except (discord.DiscordException, ValueError, RuntimeError, KeyError, TypeError, OSError):
+        except (discord.DiscordException, ValueError):
             return False
 
     async def run() -> ActionOutcome:
