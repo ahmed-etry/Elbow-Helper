@@ -12,6 +12,8 @@ from .threads.views import CwlCcStatusView
 from .views import CwlPrepRefreshView
 from .views import CwlTransferHubView
 
+__all__ = ["CwlQueries", "setup"]
+
 
 async def setup(bot: ElbowHelperBot) -> None:
     achievements = bot.get_cog("Achievements")

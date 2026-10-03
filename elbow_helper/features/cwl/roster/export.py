@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 import zipfile
@@ -27,6 +28,7 @@ from ..helpers import format_cwl_season_label
 from .models import AssSeasonMetric
 from .models import MegaAssMetric
 
+LOGGER = logging.getLogger(__name__)
 UTC = dt_timezone.utc
 ROSTER_TAB_COLORS = {
     "Roster Planner": "3B5B92",

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import unittest
 import sqlite3
 from contextlib import closing
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 from elbow_helper.discord.message_search import DiscordSearchMessage
 from elbow_helper.configuration.roles import CORE, CO_APPLICANT_ROLE_ID

@@ -62,10 +62,7 @@ from elbow_helper.features.agent.files.contracts import (
     XlsxImportArtifact,
     XlsxSheet,
 )
-from elbow_helper.features.account_links.evidence import (
-    AccountTagEvidence, AccountTagEvidenceSnapshot,
-)
-from types import SimpleNamespace
+
 from elbow_helper.features.cwl.queries import (
     CwlAssScopeRow, CwlAssScopeSnapshot, CwlBonusAttackScore,
     CwlBonusScopeSnapshot, CwlBonusSettings, CwlClanSeasonSummary,

@@ -471,7 +471,7 @@ class TrialMixin:
                         elif e.code == 50035:
                             rename_notice = "Discord rejected the new channel name, so the channel wasn't renamed."
                         else:
-                            rename_notice = f"Discord couldn't rename the channel."
+                            rename_notice = "Discord couldn't rename the channel."
                         self.logger.warning(
                             "Failed to rename channel %s (%s): %s",
                             ticket_channel.name,
@@ -499,7 +499,7 @@ class TrialMixin:
             except discord.Forbidden:
                 feedback_notice = "The bot couldn't post the trial follow-up because it can't send messages in the ticket."
             except discord.HTTPException as e:
-                feedback_notice = f"The bot couldn't post the trial follow-up in the ticket."
+                feedback_notice = "The bot couldn't post the trial follow-up in the ticket."
                 self.logger.warning(
                     "Failed to send trial end prompt in channel %s (%s): %s",
                     ticket_channel.name,

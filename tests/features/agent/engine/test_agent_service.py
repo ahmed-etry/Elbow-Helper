@@ -3,19 +3,18 @@ from __future__ import annotations
 from features.agent.engine.helpers import patch_engine
 
 import asyncio
-from dataclasses import replace
+
 from datetime import datetime
 from datetime import timezone
 from types import SimpleNamespace
 import unittest
 import json
-import time
-from itertools import chain, repeat
+
 import discord
 from unittest.mock import AsyncMock
 from unittest.mock import patch
 
-from elbow_helper.features.agent.models import AgentAttachment, AgentCapabilityEffect, RegisteredAgentTool
+from elbow_helper.features.agent.models import AgentAttachment, RegisteredAgentTool
 from elbow_helper.features.agent.models import AgentRequestContext
 from elbow_helper.configuration.roles import CORE, LEAD, LEAD_PLUS
 from elbow_helper.features.agent.engine.service import AgentService
@@ -30,9 +29,9 @@ from elbow_helper.infrastructure.ai import AgentStep
 from elbow_helper.infrastructure.ai import AgentToolCall
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from elbow_helper.infrastructure.ai import AgentUsage
-from elbow_helper.infrastructure.ai import TextGenerationError
+
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
-from elbow_helper.features.agent.engine.service import AgentUnavailableError
+
 from tests.features.agent_plan_helpers import plan_call
 
 

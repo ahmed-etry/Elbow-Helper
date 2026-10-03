@@ -1,10 +1,10 @@
 from __future__ import annotations
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
+
 from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.agent.capabilities.support_tickets.commands import (
-    prepare_support_close, support_ticket_adapters,
+    prepare_support_close,
 )
 from unittest.mock import AsyncMock, MagicMock, patch
 from elbow_helper.configuration.channels import SUPPORT_TICKET_CATEGORY

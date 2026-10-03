@@ -5,6 +5,8 @@ from .cog import Recruitment
 from .state import RecruitmentStateStore
 from .queries import RecruitmentQueries
 
+__all__ = ["RecruitmentQueries", "setup"]
+
 
 async def setup(bot) -> None:
     account_links = bot.get_cog("AccountLinks")

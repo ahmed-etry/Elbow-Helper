@@ -194,7 +194,7 @@ class CwlRouterMixin:
         self,
         war: Dict,
         clan_tag: str,
-    ) -> Optional[Tuple[Set[str], Dict[str, str]]]:
+    ) -> Optional[tuple[Set[str], Dict[str, str]]]:
         """Return one complete CWL roster snapshot or reject the payload."""
         clan_block = war.get("clan", {})
         if clan_block.get("tag") != clan_tag:

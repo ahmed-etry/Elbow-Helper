@@ -31,9 +31,7 @@ from elbow_helper.features.agent.files.attachment_tools import (
     list_supported_attachments, read_csv_import, read_text_import,
     read_xlsx_import,
 )
-from elbow_helper.features.account_links.evidence import (
-    AccountTagEvidence, AccountTagEvidenceSnapshot,
-)
+
 
 
 def _attachment(attachment_id, filename, data, content_type="text/csv", *, size=None):

@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import unittest
 from dataclasses import replace
-from unittest.mock import patch
 
-from elbow_helper.features.agent.engine import capability_contract as capabilities
 from elbow_helper.features.agent.engine.capability_contract import CapabilityBindError
 from elbow_helper.features.agent.engine.capability_contract import require_source_provenance
 from elbow_helper.features.agent.engine.capability_contract import validate_contract_catalogue

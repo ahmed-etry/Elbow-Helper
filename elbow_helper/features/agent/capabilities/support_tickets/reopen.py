@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 import discord
-from elbow_helper.configuration.channels import TICKETS_LOG
+
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
@@ -18,14 +18,8 @@ from ...wording import (
     ACTION_TICKET_REOPEN_LINE,
     ACTION_TICKET_REOPEN_ACCESS,
     ACTION_TICKET_REOPEN_LABEL,
-    ACTION_TICKET_CLOSE_LINE,
-    ACTION_TICKET_CLOSE_ACCESS,
-    ACTION_TICKET_CLOSE_LOG,
-    ACTION_TICKET_CLOSE_CONTROLS,
-    ACTION_TICKET_CLOSE_LABEL,
 )
 from ...discord_actions.safety import check_member, check_post_access, resolve_channel
-
 
 def support_reopen_tools() -> tuple[RegisteredAgentTool, ...]:
     schema = {"type": "object", "properties": {

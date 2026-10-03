@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
-from types import SimpleNamespace
+
 import unittest
-from unittest.mock import AsyncMock
 
 from elbow_helper.features.cwl.config import CWL_CLAN_NAMES
 from elbow_helper.features.cwl.bonus.analysis import BonusAnalysisService

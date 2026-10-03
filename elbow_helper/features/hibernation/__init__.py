@@ -10,6 +10,8 @@ from .cog import Hibernate
 from .queries import HibernationQueries
 from .views import CloseTicketConfirmView, CloseTicketView, ReactivateView
 
+__all__ = ["HibernationQueries", "setup"]
+
 
 async def setup(bot: commands.Bot) -> None:
     achievements = bot.get_cog("Achievements")

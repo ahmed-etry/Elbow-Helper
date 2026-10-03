@@ -1,7 +1,7 @@
 from __future__ import annotations
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
+
 from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.agent.capabilities.cwl.announcement import (
     cwl_announcement_adapters, prepare_roster_announcement,

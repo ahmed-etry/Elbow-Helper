@@ -17,7 +17,6 @@ from elbow_helper.features.agent.capabilities.support_tickets.reads import (
 )
 from elbow_helper.features.support_tickets.queries import (
     SupportTicketQueries,
-    SupportTicketSnapshot,
 )
 
 

@@ -15,9 +15,7 @@ from elbow_helper.features.agent.capabilities.cwl.scoring import (
     read_cwl_bonus_scope, read_cwl_bonus_scope_report,
 )
 from elbow_helper.features.agent.files.spreadsheet_tools import prepare_spreadsheet
-from elbow_helper.features.account_links.evidence import (
-    AccountTagEvidence, AccountTagEvidenceSnapshot,
-)
+
 from elbow_helper.features.cwl.queries import (
     CwlAssScopeRow, CwlAssScopeSnapshot, CwlBonusAttackScore,
     CwlBonusScopeSnapshot, CwlBonusSettings, CwlClanSeasonSummary,

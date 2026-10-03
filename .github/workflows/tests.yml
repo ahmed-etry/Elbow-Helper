@@ -40,3 +40,6 @@ jobs:
 
       - name: Run tests
         run: uv run python -m unittest discover -s tests
+
+      - name: Check Python names
+        run: uv run --with pyflakes python -m pyflakes elbow_helper tests

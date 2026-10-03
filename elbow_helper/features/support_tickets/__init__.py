@@ -4,6 +4,8 @@ from .ai import SupportWelcomeService
 from .cog import SupportActions
 from .queries import SupportTicketQueries
 
+__all__ = ["SupportTicketQueries", "setup"]
+
 
 async def setup(bot):
     cog = SupportActions(bot, SupportWelcomeService(bot.text_generator))

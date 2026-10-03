@@ -18,7 +18,7 @@ from ..wording import ACTION_UNAVAILABLE
 from ..access import AgentAccessLost
 from ..access import require_access, accessible_message_channel, has_access_requirements
 from ..access import require_evidence_access
-from ..reports.tools import COMPARE_NAME, READ_NAME, original_tool
+from ..reports.tools import original_tool
 from ..plan.checker import entity_kind, parse_periods, check_step
 from ..plan.executor import execute_plan, resolve_arguments
 from ..plan.results import model_result

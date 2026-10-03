@@ -8,13 +8,16 @@ from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+from unittest.mock import AsyncMock
 from unittest.mock import patch
+from typing import get_type_hints
 
 from elbow_helper.features.clan_health.database import ClanHealthRepository
 from elbow_helper.features.cwl.roster.analysis import build_ass_season_metrics
 from elbow_helper.features.cwl.roster.analysis import build_mega_ass_metrics
 from elbow_helper.features.cwl.roster.analysis import CwlRosterAnalysisMixin
 from elbow_helper.features.cwl.roster.export import CwlRosterExportMixin
+from elbow_helper.features.cwl.router import CwlRouterMixin
 from elbow_helper.features.cwl.roster.models import AssSeasonMetric
 from elbow_helper.features.cwl.roster.models import ASS_PROFILE_HIGH
 from elbow_helper.features.cwl.roster.models import ASS_PROFILE_LOWER
@@ -451,6 +454,20 @@ class AssAnalysisTests(unittest.TestCase):
 
 
 class CandidateTests(unittest.IsolatedAsyncioTestCase):
+    async def test_attachment_cleanup_warning_does_not_discard_the_workbook(self):
+        path = SimpleNamespace(read_bytes=MagicMock(return_value=b"synthetic workbook"))
+        harness = SimpleNamespace(
+            prepare_cwl_roster_workbook=AsyncMock(return_value=("timestamp", "test.xlsx", path)),
+            cwl_exports=SimpleNamespace(delete=MagicMock(return_value="Synthetic cleanup warning")),
+        )
+        with self.assertLogs("elbow_helper.features.cwl.roster.export", level="WARNING") as logs:
+            result = await CwlRosterExportMixin.build_cwl_roster_attachment(harness, ())
+        self.assertEqual(result, ("test.xlsx", b"synthetic workbook"))
+        self.assertTrue(any("Synthetic cleanup warning" in line for line in logs.output))
+
+    def test_complete_roster_annotations_resolve(self):
+        self.assertIn("return", get_type_hints(CwlRouterMixin._extract_complete_roster))
+
     async def test_closed_signup_roster_uses_only_its_selected_accounts(
         self,
     ) -> None:
