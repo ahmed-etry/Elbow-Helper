@@ -11,6 +11,7 @@ import time
 from typing import Any
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from elbow_helper.infrastructure.ai import AgentToolResult
+from elbow_helper.infrastructure.ai import TextGenerationError
 from ..actions.contracts import ActionClass
 from ..access import require_access, require_evidence_access
 from ..plan.checker import check_plan
@@ -26,7 +27,7 @@ from ..wording import (
     AGENT_RESEARCH_UNFINISHED,
 )
 from . import budgets as limits
-from .rounds import AgentGracefulEnd, ModelRounds
+from .rounds import AgentGracefulEnd, AgentLimitReached, ModelRounds
 from .steps import PlanRunner, disclosure_issue
 from collections.abc import Callable
 from ..models import AgentRequestContext, RegisteredAgentTool
@@ -36,6 +37,7 @@ from ..prompts import (
     RESULT_ANSWER_INSTRUCTION,
     MISSING_VALUES_INSTRUCTION,
     CHANGE_REFUSAL_INSTRUCTION,
+    LIMIT_ANSWER_INSTRUCTION,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -74,8 +76,38 @@ class AnswerFlow:
         self.rounder = rounder
         self.runner = runner
         self.request_id = request_id
+        self.completed_results = {}
 
     async def run(self) -> str:
+        try:
+            return await self._run()
+        except AgentLimitReached as error:
+            if not self.completed_results:
+                raise
+            return await self._limit_reply(error)
+
+    async def _limit_reply(self, error: AgentLimitReached) -> str:
+        pending = self.rounder.pending_results or tuple(
+            AgentToolResult(call.call_id, json.dumps({
+                "results": self.completed_results,
+                "flags": {"status": "refused", "reason": "answer_only"},
+            }, ensure_ascii=False, default=str))
+            for call in self.rounder.pending_calls
+        )
+        try:
+            reply = await self.rounder.advance(
+                pending, allow_tools=False, reasoning_effort=AgentReasoningEffort.LOW,
+                max_output_tokens=limits.FINAL_MAX_OUTPUT_TOKENS,
+                continuation_instruction=LIMIT_ANSWER_INSTRUCTION, final=True,
+            )
+        except (AgentGracefulEnd, TextGenerationError, TimeoutError):
+            return str(error)
+        if reply.tool_calls or not reply.content:
+            return str(error)
+        await require_evidence_access(self.context)
+        return reply.content
+
+    async def _run(self) -> str:
         self.context = replace(
             self.context,
             member=require_access(
@@ -105,6 +137,8 @@ class AnswerFlow:
         self._reserve_answer()
         while self.rounder.rounds < limits.MAX_MODEL_ROUNDS:
             results = await self.runner.run(self.plan)
+            self.completed_results = results
+            self.rounder.results_available = bool(results)
             response = await self._result_response(results)
             if response is not None:
                 return response
@@ -114,7 +148,7 @@ class AnswerFlow:
             response = await self._revise(model_step)
             if response is not None:
                 return response
-        raise AgentGracefulEnd(AGENT_RESEARCH_UNFINISHED)
+        raise AgentLimitReached(AGENT_RESEARCH_UNFINISHED)
 
     def _reserve_answer(self) -> None:
         self.budget.final_answer_reserve = limits.ANSWER_OUTPUT_LIMITS[
@@ -199,7 +233,8 @@ class AnswerFlow:
             else min(answer_limit, self.budget.context_window_tokens - projected)
         )
         if available < limits.MIN_FINAL_OUTPUT_TOKENS:
-            raise AgentGracefulEnd(AGENT_RESEARCH_UNFINISHED)
+            self.rounder.pending_results = pending
+            raise AgentLimitReached(AGENT_RESEARCH_UNFINISHED)
         self.budget.output_reserve = available
         allow_more = (
             self.rounder.rounds < limits.MAX_MODEL_ROUNDS - 1
@@ -222,6 +257,7 @@ class AnswerFlow:
             allow_tools=allow_more,
             reasoning_effort=effort,
             max_output_tokens=available,
+            continuation_instruction=LIMIT_ANSWER_INSTRUCTION if not allow_more else None,
         )
         if not step.tool_calls:
             if not step.content:
@@ -241,6 +277,7 @@ class AnswerFlow:
                 allow_tools=False,
                 reasoning_effort=effort,
                 max_output_tokens=available,
+                continuation_instruction=LIMIT_ANSWER_INSTRUCTION,
             )
             if recovery.tool_calls or not recovery.content:
                 raise AgentGracefulEnd(AGENT_RESEARCH_UNFINISHED)
@@ -312,7 +349,7 @@ class AnswerFlow:
                 "Agent scope revision: request=%s revision=%s", self.request_id, self.revisions
             )
             if self.revisions > limits.MAX_SCOPE_REVISIONS:
-                raise AgentGracefulEnd(AGENT_RESEARCH_UNFINISHED)
+                raise AgentLimitReached(AGENT_RESEARCH_UNFINISHED)
         self.scope |= changed
         self.plan = next_plan
         self._reserve_answer()

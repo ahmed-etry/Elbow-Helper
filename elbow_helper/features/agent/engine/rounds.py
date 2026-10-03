@@ -34,6 +34,10 @@ class AgentGracefulEnd(RuntimeError):
     """Return a bounded response when planning or answering cannot continue."""
 
 
+class AgentLimitReached(AgentGracefulEnd):
+    """A request limit stopped further planning or answering."""
+
+
 class ModelRounds:
     """Advance bounded model rounds and retain unpublished result state."""
 
@@ -56,6 +60,10 @@ class ModelRounds:
         self.rounds = 0
         self.unpublished = None
         self.unpublished_scope = None
+        self.pending_results = ()
+        self.pending_calls = ()
+        self.final_attempted = False
+        self.results_available = False
 
     async def advance(
         self,
@@ -66,7 +74,9 @@ class ModelRounds:
         max_output_tokens=limits.INITIAL_MAX_OUTPUT_TOKENS,
         continuation_instruction=None,
         continued=False,
+        final=False,
     ):
+        self.pending_results = tuple(results)
         try:
             await require_evidence_access(self.context)
         except AgentAccessLost:
@@ -89,6 +99,7 @@ class ModelRounds:
                 )
             )
         self.unpublished = self.unpublished_scope = None
+        self.pending_results = tuple(results)
         projected = self.budget.projected_input(results) + estimate_tokens(
             continuation_instruction or ""
         )
@@ -97,16 +108,21 @@ class ModelRounds:
             if self.budget.context_window_tokens is None
             else min(max_output_tokens, self.budget.context_window_tokens - projected)
         )
-        if remaining < limits.MIN_FINAL_OUTPUT_TOKENS:
-            raise AgentGracefulEnd(AGENT_RESEARCH_UNFINISHED)
-        if self.rounds >= limits.MAX_MODEL_ROUNDS + 1:
-            raise AgentGracefulEnd(AGENT_RESEARCH_UNFINISHED)
+        if remaining < (1 if final else limits.MIN_FINAL_OUTPUT_TOKENS):
+            raise AgentLimitReached(AGENT_RESEARCH_UNFINISHED)
+        if final:
+            if self.final_attempted:
+                raise AgentLimitReached(AGENT_RESEARCH_UNFINISHED)
+            self.final_attempted = True
+        elif self.rounds >= limits.MAX_MODEL_ROUNDS + 1:
+            raise AgentLimitReached(AGENT_RESEARCH_UNFINISHED)
         self.budget.output_reserve = remaining
         self.usage.attempted_rounds += 1
         self.rounds += 1
         round_started = time.monotonic()
         outcome = "failed"
         try:
+            self.pending_results = self.pending_calls = ()
             async with asyncio.timeout_at(self.context.deadline_monotonic):
                 model_step = await self.session.advance(
                     results,
@@ -119,6 +135,7 @@ class ModelRounds:
                         else {}
                     ),
                 )
+            self.pending_calls = model_step.tool_calls
             self.usage.observe(model_step.usage)
             self.budget.observe(model_step.usage, projected_input=projected)
             outcome = "completed"
@@ -145,8 +162,8 @@ class ModelRounds:
                     self.rounds,
                     remaining,
                 )
-                if continued:
-                    raise AgentGracefulEnd(AGENT_ANSWER_UNFINISHED)
+                if continued or final or self.results_available:
+                    raise AgentLimitReached(AGENT_ANSWER_UNFINISHED)
                 incomplete_calls = tuple(
                     (
                         AgentToolResult(

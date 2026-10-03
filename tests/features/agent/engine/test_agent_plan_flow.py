@@ -30,6 +30,7 @@ from elbow_helper.features.agent.wording import (
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.engine.capability_contract import CapabilityContract
+from elbow_helper.features.agent.engine.budgets import ContextBudget
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentToolDefinition, AgentUsage
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from elbow_helper.infrastructure.ai import TextGenerationError
@@ -84,12 +85,16 @@ class _Session:
         self.steps = list(steps)
         self.events = events
         self.calls = []
+        self.instructions = []
+        self.output_limits = []
 
     async def advance(self, results=(), *, allow_tools=True,
                       reasoning_effort=None, max_output_tokens=None,
                       continuation_instruction=None):
         self.events.append("model")
         self.calls.append((tuple(results), allow_tools, reasoning_effort))
+        self.instructions.append(continuation_instruction)
+        self.output_limits.append(max_output_tokens)
         return self.steps.pop(0)
 
 
@@ -104,6 +109,60 @@ class _Model:
 
 
 class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_results_receive_a_final_answer_at_scope_and_output_limits(self):
+        instruction = "Answer now from these results. Say briefly what you couldn't finish."
+        first = _plan([_step("first")])
+        second = {**_plan([_step("second")]),
+                  "entities": [{"kind": "synthetic", "value": 8}]}
+        for kind in ("scope", "output"):
+            self.events.clear()
+            intermediate = ([_model_step(second)] if kind == "scope" else [
+                AgentStep("Part one", (), AgentUsage(), output_limit_reached=True),
+            ])
+            session = _Session([_model_step(first), *intermediate,
+                                AgentStep("Checked seven; no more reads.", (), AgentUsage())],
+                               self.events)
+            with self.subTest(kind=kind), patch(
+                "elbow_helper.features.agent.engine.budgets.MAX_SCOPE_REVISIONS", 0,
+            ):
+                answer, _ = await self._answer(session)
+                self.assertEqual(answer, "Checked seven; no more reads.")
+                self.assertFalse(session.calls[-1][1])
+                self.assertEqual(session.instructions[-1], instruction)
+                self.assertEqual(self.events.count("read"), 1)
+
+    async def test_small_remaining_context_still_answers_from_checked_results(self):
+        session = _Session([_model_step(_plan([_step("first")])),
+                            AgentStep("Checked seven.", (), AgentUsage())], self.events)
+        projected = ContextBudget.projected_input
+        def pressure(budget, results):
+            if results:
+                return budget.context_window_tokens - 512
+            return projected(budget, results)
+        with patch.object(ContextBudget, "projected_input", pressure):
+            answer, _ = await self._answer(session)
+        self.assertEqual(answer, "Checked seven.")
+        self.assertFalse(session.calls[-1][1])
+        self.assertEqual(session.instructions[-1],
+                         "Answer now from these results. Say briefly what you couldn't finish.")
+        self.assertLessEqual(session.output_limits[-1], 512)
+
+    async def test_failed_final_answer_uses_the_fixed_unfinished_message(self):
+        session = _Session([_model_step(_plan([_step("first")])),
+                            AgentStep("Part one", (), AgentUsage(), output_limit_reached=True)],
+                           self.events)
+        advance = session.advance
+        async def fail_final(*args, **kwargs):
+            if kwargs.get("continuation_instruction") == (
+                "Answer now from these results. Say briefly what you couldn't finish."
+            ):
+                raise TextGenerationError("synthetic_failure")
+            return await advance(*args, **kwargs)
+        session.advance = fail_final
+        answer, _ = await self._answer(session)
+        self.assertEqual(answer, AGENT_ANSWER_UNFINISHED)
+        self.assertEqual(self.events.count("read"), 1)
+
     async def asyncSetUp(self):
         self.events = []
 
@@ -245,13 +304,15 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                 "period": {"type": "integer", "minimum": 0}}, "required": ["period"]}))
         plans = [_plan([_step("first", {"period": n})], periods=[{"kind": "key", "field": "period", "value": n}])
                  for n in range(6)]
-        session = _Session([_model_step(plan) for plan in plans], self.events)
+        session = _Session([*[_model_step(plan) for plan in plans],
+                            AgentStep("Checked five periods.", (), AgentUsage())], self.events)
         with patch_contracts(self.registry, {
             "read_value": CapabilityContract((), ("period",))
         }):
             answer, _ = await self._answer(session)
-        self.assertIn("couldn't finish checking", answer)
-        self.assertEqual(len(session.calls), 6)
+        self.assertEqual(answer, "Checked five periods.")
+        self.assertEqual(len(session.calls), 7)
+        self.assertFalse(session.calls[-1][1])
 
     async def test_answer_only_round_refuses_extra_calls_once(self):
         plan = _plan([_step("first")])
@@ -567,6 +628,8 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                     await self._answer(session)
                 self.assertFalse(session.calls[1][1])
                 self.assertFalse(session.calls[2][1])
+                self.assertEqual(session.instructions[2],
+                    "Answer now from these results. Say briefly what you couldn't finish.")
                 self.assertEqual(self.events.count("read"), 1)
                 self.assertIn("answer_only", session.calls[2][0][0].content)
 

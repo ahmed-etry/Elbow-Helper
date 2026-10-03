@@ -82,6 +82,10 @@ CHANGE_REFUSAL_INSTRUCTION = (
     "Don't say anything ran."
 )
 
+LIMIT_ANSWER_INSTRUCTION = (
+    "Answer now from these results. Say briefly what you couldn't finish."
+)
+
 RESULT_ANSWER_INSTRUCTION = """Answer now from these results. Submit another plan only for a remaining gap."""
 
 
