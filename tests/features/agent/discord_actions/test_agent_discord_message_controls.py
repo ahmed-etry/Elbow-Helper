@@ -51,7 +51,7 @@ class DiscordMessageControlTests(unittest.IsolatedAsyncioTestCase):
         self.message.reactions.append(SimpleNamespace(emoji="X", me=False))
         arguments = {"channel_id": 2, "message_id": 6,
                      "operation": "remove", "emoji": "X"}
-        self.assertEqual((await prepare_reaction(self.context, arguments))["prepared_count"], 0)
+        self.assertEqual((await prepare_reaction(self.context, arguments))["status"], "no_change")
         arguments["operation"] = "add"
         await prepare_reaction(self.context, arguments)
         action = self.context.state.proposed_changes.pop()

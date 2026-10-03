@@ -9,7 +9,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
-from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
@@ -43,11 +43,11 @@ async def prepare_clear_transfer_queue(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("ClanTransfers")
     if workflow is None:
-        raise ValueError('That transfer queue is unavailable.')
+        raise ActionRefused('That transfer queue is unavailable.')
     clan_code = values["clan_code"]
     state = workflow.transfer_queue_clear_state(clan_code)
     if state is None:
-        raise ValueError('That transfer queue is unavailable.')
+        raise ActionRefused('That transfer queue is unavailable.')
     lines = [ACTION_TRANSFER_CLEAR_LINE.format(clan=clan_code)]
     lines.extend(ACTION_TRANSFER_CLEAR_MEMBER.format(member=f"<@{member_id}>")
                  for member_id in state["member_ids"])

@@ -16,7 +16,7 @@ from elbow_helper.features.records.domain.types import (
     RECORD_CATEGORIES, category_label, incident_type_label,
 )
 
-from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...models import AgentAttachment
 from ...wording import (
     ACTION_RECORD_ADD_LABEL, ACTION_RECORD_ADD_LINE, ACTION_RECORD_ADD_UNDO,
@@ -63,13 +63,16 @@ def _record_signature(record: Mapping[str, Any]) -> tuple[Any, ...]:
 async def prepare_record_add(context: Any, values: Mapping[str, Any]) -> ChangePreview:
     workflow = _workflow(context)
     if workflow is None:
-        raise ValueError("Leadership records are unavailable")
+        raise ActionRefused("Leadership records are unavailable")
     member = await _member(context, values["user"])
     if member is None:
-        raise ValueError("That member is unavailable")
-    category, incident, note = workflow.service.validate_details(
-        values["category"], values["type"], values["note"],
-    )
+        raise ActionRefused("That member is unavailable")
+    try:
+        category, incident, note = workflow.service.validate_details(
+            values["category"], values["type"], values["note"],
+        )
+    except ValueError as error:
+        raise ActionRefused(str(error)) from error
 
     async def recheck() -> bool:
         return _workflow(context) is not None and await _member(context, member.id) is not None
@@ -144,11 +147,14 @@ async def run_record_export(context: Any, values: Mapping[str, Any]) -> ActionOu
 
 def _edit_target(service: Any, record: Mapping[str, Any],
                  values: Mapping[str, Any]) -> tuple[str, str, str]:
-    return service.validate_details(
-        values.get("category", record["category_key"]),
-        values.get("type", record["incident_type_key"]),
-        values.get("note", record["note"]),
-    )
+    try:
+        return service.validate_details(
+            values.get("category", record["category_key"]),
+            values.get("type", record["incident_type_key"]),
+            values.get("note", record["note"]),
+        )
+    except ValueError as error:
+        raise ActionRefused(str(error)) from error
 
 
 def _edit_lines(record: Mapping[str, Any], target: tuple[str, str, str],
@@ -169,15 +175,15 @@ def _edit_lines(record: Mapping[str, Any], target: tuple[str, str, str],
 async def prepare_record_edit(context: Any, values: Mapping[str, Any]) -> ChangePreview | ActionOutcome:
     workflow = _workflow(context)
     if workflow is None:
-        raise ValueError("Leadership records are unavailable")
+        raise ActionRefused("Leadership records are unavailable")
     member = await _member(context, values["user"])
     if member is None:
-        raise ValueError("That member is unavailable")
+        raise ActionRefused("That member is unavailable")
     records = await asyncio.to_thread(workflow.service.edit_options, member_id=member.id)
     record_id = int(values["record"])
     record = next((item for item in records if item["id"] == record_id), None)
     if record is None:
-        raise ValueError("That record is unavailable")
+        raise ActionRefused("That record is unavailable")
     if not any(key in values for key in ("category", "type", "note")):
         return ActionOutcome.needs_input((ACTION_RECORD_EDIT_INPUT,))
     if (values.get("category", record["category_key"]) != record["category_key"]
@@ -246,17 +252,17 @@ async def prepare_record_edit_undo(context: Any,
     before = (log.get("before") or {}).get("record")
     after = (log.get("after") or {}).get("record")
     if workflow is None or before is None or after is None:
-        raise ValueError("That record change is unavailable")
+        raise ActionRefused("That record change is unavailable")
     member_id = int(before["member_id"])
     record_id = int(before["id"])
     member = await _member(context, member_id)
     if member is None:
-        raise ValueError("That member is unavailable")
+        raise ActionRefused("That member is unavailable")
     current = await asyncio.to_thread(
         workflow.service.active_record, member_id=member_id, record_id=record_id,
     )
     if current is None:
-        raise ValueError("That record is unavailable")
+        raise ActionRefused("That record is unavailable")
     target = (before["category_key"], before["incident_type_key"], before["note"])
     signature = _record_signature(after)
     changed = _record_signature(current) != signature
@@ -302,17 +308,17 @@ async def prepare_record_edit_undo(context: Any,
 async def prepare_record_remove(context: Any, values: Mapping[str, Any]) -> ChangePreview:
     workflow = _workflow(context)
     if workflow is None:
-        raise ValueError("Leadership records are unavailable")
+        raise ActionRefused("Leadership records are unavailable")
     member = await _member(context, values["user"])
     if member is None:
-        raise ValueError("That member is unavailable")
+        raise ActionRefused("That member is unavailable")
     record_id = int(values["record"])
     record = await asyncio.to_thread(
         workflow.service.active_record,
         member_id=member.id, record_id=record_id,
     )
     if record is None:
-        raise ValueError("That record is unavailable")
+        raise ActionRefused("That record is unavailable")
     signature = _record_signature(record)
 
     async def recheck() -> bool:
@@ -365,22 +371,25 @@ async def prepare_record_add_undo(context: Any,
                                   log: Mapping[str, Any]) -> PreparedAction:
     workflow = _workflow(context)
     if workflow is None or log["after"] is None:
-        raise ValueError("That record change is unavailable")
+        raise ActionRefused("That record change is unavailable")
     record_id = log["after"]["record_id"]
     member_id = log["after"]["member_id"]
     record = await asyncio.to_thread(
         workflow.service.active_record, member_id=member_id, record_id=record_id,
     )
     if record is None:
-        raise ValueError("That record is unavailable")
+        raise ActionRefused("That record is unavailable")
     member = await _member(context, member_id)
     if member is None:
-        raise ValueError("That member is unavailable")
+        raise ActionRefused("That member is unavailable")
     expected = (record["category_key"], record["incident_type_key"], record["note"])
-    original = workflow.service.validate_details(
-        log["targets"]["category"], log["targets"]["type"],
-        log["targets"]["note"],
-    )
+    try:
+        original = workflow.service.validate_details(
+            log["targets"]["category"], log["targets"]["type"],
+            log["targets"]["note"],
+        )
+    except ValueError as error:
+        raise ActionRefused(str(error)) from error
     changed = expected != original
 
     async def recheck() -> bool:

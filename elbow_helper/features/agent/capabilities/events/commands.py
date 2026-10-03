@@ -8,7 +8,7 @@ from typing import Any
 from elbow_helper.features.agent.access import ACCESS_LEAD, has_access_requirements
 from elbow_helper.features.event_stats.commands import open_event_panel
 
-from ...actions.contracts import ChangePreview
+from ...actions.contracts import ActionRefused, ChangePreview
 from ...wording import ACTION_UNAVAILABLE
 from ...wording import (
     ACTION_EVENT_UPDATE_LABEL, ACTION_EVENT_UPDATE_LINE,
@@ -47,10 +47,10 @@ def event_adapters() -> tuple[CommandAdapter, ...]:
 async def prepare_event_update(context: Any, values: Mapping[str, Any]) -> ChangePreview:
     del values
     if not has_access_requirements(context.guild, context.member.id, {ACCESS_LEAD}):
-        raise ValueError("Event stats are unavailable")
+        raise ActionRefused("Event stats are unavailable")
     workflow = context.bot.get_cog("EventStatsCog")
     if workflow is None:
-        raise ValueError("Event stats are unavailable")
+        raise ActionRefused("Event stats are unavailable")
     context.state.required_access.add(ACCESS_LEAD)
     snapshot = workflow.queries.snapshot(context.guild)
     targets = tuple((row.event_key, row.name) for row in snapshot.rows)

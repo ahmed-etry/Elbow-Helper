@@ -14,7 +14,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
-from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome, embed_text
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
@@ -98,20 +98,20 @@ async def prepare_promotion_route(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Examination")
     if workflow is None or not workflow.can_change_promotion_route(context.member):
-        raise ValueError("That promotion request isn't available.")
+        raise ActionRefused("That promotion request isn't available.")
     case = workflow.promotion_route_snapshot(values["ticket_channel_id"])
     if case is None:
-        raise ValueError("That promotion request isn't available.")
+        raise ActionRefused("That promotion request isn't available.")
     ticket = await resolve_channel(context, values["ticket_channel_id"])
     review = await resolve_channel(context, EXAMINATION_ROOM)
     if not isinstance(ticket, discord.TextChannel):
-        raise ValueError("That promotion request isn't available.")
+        raise ActionRefused("That promotion request isn't available.")
     for channel in (ticket, review):
         check_post_access(channel, context.member, context.guild.me)
     from_clan, to_clan = values["from_clan"], values["to_clan"]
     if not is_valid_route(from_clan, to_clan):
         return {"status": "needs_input", "issue": "That promotion isn't available from the selected clan.",
-                "valid_targets": valid_targets_for_source(from_clan), "prepared_count": 0}
+                "valid_targets": valid_targets_for_source(from_clan)}
     if case.get("from_clan") == from_clan and case.get("to_clan") == to_clan:
         return {"status": "no_change"}
     lines = [ACTION_PROMOTION_ROUTE_LINE.format(channel=ticket.mention)]
@@ -133,12 +133,15 @@ async def prepare_promotion_route(context: AgentRequestContext,
             return False
 
     async def run() -> ActionOutcome:
-        await workflow.change_promotion_route(
-            ticket_channel_id=ticket.id,
-            routing_message_id=int(case.get("routing_message_id") or 0),
-            from_clan=from_clan, to_clan=to_clan,
-            actor=context.member,
-        )
+        try:
+            await workflow.change_promotion_route(
+                ticket_channel_id=ticket.id,
+                routing_message_id=int(case.get("routing_message_id") or 0),
+                from_clan=from_clan, to_clan=to_clan,
+                actor=context.member,
+            )
+        except ValueError as error:
+            raise ActionRefused(str(error)) from error
         return ActionOutcome("complete", "private", text=ACTION_PROMOTION_ROUTE_LABEL)
 
     context.state.proposed_changes.append(PreparedAction(

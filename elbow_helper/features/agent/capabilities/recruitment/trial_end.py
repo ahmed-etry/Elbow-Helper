@@ -9,7 +9,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
-from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
@@ -50,20 +50,19 @@ async def prepare_trial_end(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Recruitment")
     if workflow is None or not workflow.can_end_trial(context.member):
-        raise ValueError("That trial isn't available.")
+        raise ActionRefused("That trial isn't available.")
     snapshot = await workflow.trial_end_snapshot(values["ticket_channel_id"])
     trial, reminder = snapshot["trial"], snapshot["reminder"]
     if not snapshot["channel_name"] or not trial and not reminder:
-        raise ValueError("That trial isn't available.")
+        raise ActionRefused("That trial isn't available.")
     if reminder and reminder.get("resolved_at"):
         return {"status": "no_change"}
     applicant_id = values.get("applicant_id") or (trial or {}).get("applicant_id") or (
         reminder or {}).get("applicant_id")
     if not applicant_id:
-        return {"status": "needs_input", "issue": "Which applicant's trial should end?",
-                "prepared_count": 0}
+        return {"status": "needs_input", "issue": "Which applicant's trial should end?"}
     if trial and trial.get("applicant_id") and int(trial["applicant_id"]) != applicant_id:
-        raise ValueError("That trial isn't available.")
+        raise ActionRefused("That trial isn't available.")
     ticket = await resolve_channel(context, values["ticket_channel_id"])
     check_post_access(ticket, context.member, context.guild.me)
     member = context.guild.get_member(applicant_id)
@@ -107,7 +106,7 @@ async def prepare_trial_end(context: AgentRequestContext,
             ticket.id, applicant_id, context.member,
             allow_missing=trial is None, resolve_reminder=reminder is not None)
         if not result.ended:
-            raise ValueError(result.error or "That trial isn't available.")
+            raise ActionRefused(result.error or "That trial isn't available.")
         return ActionOutcome("complete", "private", text="\n".join(
             (ACTION_TRIAL_END_LABEL, *result.notices)))
 

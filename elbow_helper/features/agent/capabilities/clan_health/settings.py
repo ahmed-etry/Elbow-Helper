@@ -16,7 +16,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
 from ...access import ACCESS_LEAD_PLUS, require_evidence_access
-from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
@@ -100,9 +100,9 @@ async def prepare_health_settings(context: AgentRequestContext,
     try:
         before, after, revision = prepare_player_config_block(clan, block, dict(values["values"]))
     except ConfigValidationError as exc:
-        return {"status": "needs_input", "issue": "\n".join(exc.errors), "prepared_count": 0}
+        return {"status": "needs_input", "issue": "\n".join(exc.errors)}
     except (RuntimeError, ValueError) as exc:
-        return {"status": "needs_input", "issue": str(exc), "prepared_count": 0}
+        return {"status": "needs_input", "issue": str(exc)}
     if before == after:
         return {"status": "no_change"}
     lines = _lines(clan, block, before[block], after[block])
@@ -138,9 +138,9 @@ async def prepare_health_settings_undo(context: AgentRequestContext,
     try:
         current, _, revision = prepare_player_config_block(clan, block, prior)
     except (RuntimeError, ValueError) as exc:
-        raise ValueError('Those Clan Health settings have changed.') from exc
+        raise ActionRefused('Those Clan Health settings have changed.') from exc
     if current[block] != expected:
-        raise ValueError('Those Clan Health settings have changed.')
+        raise ActionRefused('Those Clan Health settings have changed.')
     lines = _lines(clan, block, expected, prior)
 
     async def recheck() -> bool:

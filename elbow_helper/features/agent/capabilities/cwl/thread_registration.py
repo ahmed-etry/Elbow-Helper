@@ -9,7 +9,7 @@ from elbow_helper.features.agent.discord_actions.safety import (
     check_post_access,
 )
 
-from ...actions.contracts import ActionClass, ChangePreview
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview
 from ...wording import (
     ACTION_CWL_REGISTER_LABEL,
     ACTION_CWL_REGISTER_LINE,
@@ -25,24 +25,24 @@ from ...commands.registry import CommandAdapter
 async def _registration(context: Any, values: Mapping[str, Any]):
     workflow = context.bot.get_cog("CwlManagement")
     if workflow is None:
-        raise ValueError('CWL registration is unavailable.')
+        raise ActionRefused('CWL registration is unavailable.')
     prepared = await workflow.prepare_cwl_thread_registration(
         values["clan"], values["thread_id"],
     )
     if prepared["issue"]:
-        raise ValueError(prepared["issue"])
+        raise ActionRefused(prepared["issue"])
     thread = prepared["thread"]
     if thread.guild.id != context.guild.id:
-        raise ValueError('That thread is unavailable here.')
+        raise ActionRefused('That thread is unavailable here.')
     if getattr(thread, "archived", False) or getattr(thread, "locked", False):
-        raise ValueError(ACTION_CWL_REGISTER_CLOSED)
+        raise ActionRefused(ACTION_CWL_REGISTER_CLOSED)
     check_post_access(thread, context.member, context.guild.me)
     if prepared["status"] == "new":
         prepared["status_preview"] = await workflow.cwl_registration_status_preview(
             prepared["clan"],
         )
         if prepared["status_preview"]["kind"] == "unavailable":
-            raise ValueError('CWL status is unavailable right now.')
+            raise ActionRefused('CWL status is unavailable right now.')
     return workflow, prepared
 
 

@@ -17,6 +17,10 @@ class ActionClass(StrEnum):
     IRREVERSIBLE = "irreversible"
 
 
+class ActionRefused(ValueError):
+    """An expected action refusal whose message may be shown to a member."""
+
+
 @dataclass(frozen=True, slots=True)
 class ChangePreview:
     lines: tuple[str, ...]

@@ -11,7 +11,7 @@ from elbow_helper.features.agent.discord_actions.safety import (
     check_member, check_role, resolve_member,
 )
 
-from ...actions.contracts import ActionClass, ChangePreview
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview
 from ...wording import (
     ACTION_HIBERNATE_FALLBACK,
     ACTION_HIBERNATE_LABEL,
@@ -43,14 +43,14 @@ async def prepare_hibernate(context: Any,
                             values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Hibernate")
     if workflow is None:
-        raise ValueError('Hibernation is unavailable.')
+        raise ActionRefused('Hibernation is unavailable.')
     member = await resolve_member(context.guild, values["user"])
     check_member(member, context.guild.me)
     plan = workflow.prepare_hibernation(context.guild, member)
     if plan["issue"]:
-        raise ValueError(plan["issue"])
+        raise ActionRefused(plan["issue"])
     if plan["missing_role_ids"]:
-        raise ValueError(ACTION_HIBERNATE_MISSING_ROLE.format(
+        raise ActionRefused(ACTION_HIBERNATE_MISSING_ROLE.format(
             roles=", ".join(f"<@&{role_id}>" for role_id in plan["missing_role_ids"]),
         ))
 
@@ -129,7 +129,7 @@ async def prepare_reactivate(context: Any,
                              values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Hibernate")
     if workflow is None:
-        raise ValueError('Hibernation is unavailable.')
+        raise ActionRefused('Hibernation is unavailable.')
     target_id = values.get("user") or context.member.id
     target = await resolve_member(context.guild, target_id)
     check_member(target, context.guild.me)
@@ -139,9 +139,9 @@ async def prepare_reactivate(context: Any,
         target=target, force_reactivate=force,
     )
     if plan["issue"]:
-        raise ValueError(plan["issue"])
+        raise ActionRefused(plan["issue"])
     if plan["missing_role_ids"]:
-        raise ValueError(ACTION_HIBERNATE_MISSING_ROLE.format(
+        raise ActionRefused(ACTION_HIBERNATE_MISSING_ROLE.format(
             roles=", ".join(f"<@&{role_id}>" for role_id in plan["missing_role_ids"]),
         ))
 

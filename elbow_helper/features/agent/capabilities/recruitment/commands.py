@@ -11,7 +11,7 @@ from elbow_helper.features.agent.discord_actions.safety import (
     check_member, check_post_access, check_role, resolve_channel, resolve_member,
 )
 
-from ...actions.contracts import ActionClass, ChangePreview
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview
 from ...wording import (
     ACTION_PREVIEW_BLANK,
     ACTION_RECSTATEMENT_LABEL,
@@ -61,23 +61,23 @@ async def run_opinion(context: Any, values: Mapping[str, Any]) -> ActionOutcome:
 async def _recstatement(context: Any, values: Mapping[str, Any]):
     workflow = context.bot.get_cog("Recruitment")
     if workflow is None:
-        raise ValueError('Recruitment messages are unavailable.')
+        raise ActionRefused('Recruitment messages are unavailable.')
     member = context.guild.get_member(values["applicant"])
     if member is None:
         try:
             member = await context.guild.fetch_member(values["applicant"])
         except discord.DiscordException:
-            raise ValueError('That applicant is unavailable.') from None
+            raise ActionRefused('That applicant is unavailable.') from None
     channel_id = values.get("channel") or context.source_message.channel.id
     channel = await resolve_channel(context, channel_id)
     if not isinstance(channel, discord.TextChannel):
-        raise ValueError("Run this command in a server text channel.")
+        raise ActionRefused("Run this command in a server text channel.")
     check_post_access(channel, context.member, context.guild.me)
     prepared = workflow.prepare_recstatement(
         values["message"], member, channel, values.get("additional_notes"),
     )
     if prepared["issue"]:
-        raise ValueError(prepared["issue"])
+        raise ActionRefused(prepared["issue"])
     return workflow, prepared
 
 
@@ -113,7 +113,7 @@ async def prepare_checkup(context: Any,
                           values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Recruitment")
     if workflow is None:
-        raise ValueError('Recruitment messages are unavailable.')
+        raise ActionRefused('Recruitment messages are unavailable.')
     member = await resolve_member(context.guild, values["applicant"])
     check_member(member, context.guild.me)
     channel = await resolve_channel(
@@ -125,7 +125,7 @@ async def prepare_checkup(context: Any,
         values.get("additional_notes"),
     )
     if prepared["issue"]:
-        raise ValueError(prepared["issue"])
+        raise ActionRefused(prepared["issue"])
 
     async def recheck() -> bool:
         try:
@@ -164,7 +164,7 @@ async def prepare_decline(context: Any,
                           values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Recruitment")
     if workflow is None:
-        raise ValueError('Recruitment messages are unavailable.')
+        raise ActionRefused('Recruitment messages are unavailable.')
     member = await resolve_member(context.guild, values["applicant"])
     check_member(member, context.guild.me)
     channel = await resolve_channel(
@@ -175,7 +175,7 @@ async def prepare_decline(context: Any,
         member, channel, values.get("additional_notes"),
     )
     if prepared["issue"]:
-        raise ValueError(prepared["issue"])
+        raise ActionRefused(prepared["issue"])
     candidate = prepared["rename_candidate"]
     lines = [ACTION_DECLINE_LINE.format(member=member.mention,
                                         channel=channel.mention)]
@@ -222,7 +222,7 @@ async def prepare_finalize(context: Any,
                            values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Recruitment")
     if workflow is None:
-        raise ValueError('Recruitment messages are unavailable.')
+        raise ActionRefused('Recruitment messages are unavailable.')
     member = await resolve_member(context.guild, values["applicant"])
     check_member(member, context.guild.me)
     channel = await resolve_channel(
@@ -233,7 +233,7 @@ async def prepare_finalize(context: Any,
         member, channel, context.guild, values.get("additional_notes"),
     )
     if prepared["issue"]:
-        raise ValueError(prepared["issue"])
+        raise ActionRefused(prepared["issue"])
 
     def check_roles() -> None:
         for role in (*prepared["remove_roles"], *prepared["add_roles"]):
@@ -304,7 +304,7 @@ async def prepare_accept(context: Any,
                          values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Recruitment")
     if workflow is None:
-        raise ValueError('Recruitment messages are unavailable.')
+        raise ActionRefused('Recruitment messages are unavailable.')
     member = await resolve_member(context.guild, values["applicant"])
     check_member(member, context.guild.me)
     channel = await resolve_channel(
@@ -320,10 +320,10 @@ async def prepare_accept(context: Any,
     }
     prepared = await workflow.prepare_accept(user=member, **options)
     if prepared["issue"]:
-        raise ValueError(prepared["issue"])
+        raise ActionRefused(prepared["issue"])
     effects = workflow.accept_effects(prepared)
     if effects["missing_roles"]:
-        raise ValueError(ACTION_ACCEPT_ROLE_MISSING.format(
+        raise ActionRefused(ACTION_ACCEPT_ROLE_MISSING.format(
             roles=", ".join(f"<@&{role_id}>" for role_id in effects["missing_roles"]),
         ))
 
@@ -399,7 +399,7 @@ async def prepare_accept(context: Any,
             player_rows=list(prepared["player_rows"]),
         )
         if result["issue"]:
-            raise ValueError(result["issue"])
+            raise ActionRefused(result["issue"])
         return ActionOutcome(
             "complete", "private", text=result["message"] or "",
             result={"member_id": member.id, "channel_id": channel.id,

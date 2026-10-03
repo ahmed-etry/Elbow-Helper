@@ -124,12 +124,11 @@ async def prepare_create_thread(context: AgentRequestContext,
         parent = await _parent(context, arguments["parent_channel_id"],
                                private=bool(arguments.get("private", False)))
     except DiscordActionRefused as error:
-        return {"error": str(error), "prepared_count": 0}
+        return {"error": str(error)}
     if isinstance(parent, discord.ForumChannel) and not arguments.get("initial_message"):
-        return {"error": "A forum thread needs its opening message.", "prepared_count": 0}
+        return {"error": "A forum thread needs its opening message."}
     if isinstance(parent, discord.TextChannel) and arguments.get("initial_message"):
-        return {"error": "Post the opening message after creating the text thread.",
-                "prepared_count": 0}
+        return {"error": "Post the opening message after creating the text thread."}
     name = arguments["name"].strip()
     private = bool(arguments.get("private", False))
     initial = arguments.get("initial_message")
@@ -248,12 +247,12 @@ async def prepare_update_thread(context: AgentRequestContext,
                 arguments["operation"], arguments.get("name"),
             )
         except DiscordActionRefused as error:
-            return {"error": str(error), "prepared_count": 0}
+            return {"error": str(error)}
         verb = ACTION_THREAD_ACTIONS[arguments["operation"]][0]
         try:
             label = earlier_result_label(context.state.proposed_changes, reference)
         except ValueError as error:
-            return {"error": str(error), "prepared_count": 0}
+            return {"error": str(error)}
         async def bind(results: Mapping[str, Mapping[str, Any]]) -> PreparedAction:
             thread_id = resolve_arguments({"thread_id": reference}, results)["thread_id"]
             if type(thread_id) is not int:
@@ -282,10 +281,10 @@ async def prepare_update_thread(context: AgentRequestContext,
             arguments["operation"], arguments.get("name"),
         )
     except DiscordActionRefused as error:
-        return {"error": str(error), "prepared_count": 0}
+        return {"error": str(error)}
     before = getattr(thread, field)
     if before == after:
-        return {"status": "no_change", "prepared_count": 0}
+        return {"status": "no_change"}
     context.state.proposed_changes.append(_thread_update_action(
         context, thread.id, field=field, before=before, after=after,
         operation=arguments["operation"], detail=detail,
@@ -374,7 +373,7 @@ async def prepare_thread_members(context: AgentRequestContext,
         try:
             label = earlier_result_label(context.state.proposed_changes, reference)
         except ValueError as error:
-            return {"error": str(error), "prepared_count": 0}
+            return {"error": str(error)}
         selected = []
         try:
             for member_id in arguments["member_ids"]:
@@ -382,7 +381,7 @@ async def prepare_thread_members(context: AgentRequestContext,
                 check_member(member, context.guild.me)
                 selected.append(member)
         except DiscordActionRefused as error:
-            return {"error": str(error), "prepared_count": 0}
+            return {"error": str(error)}
         for member in selected:
             async def bind(results: Mapping[str, Mapping[str, Any]],
                            member_id: int = member.id) -> PreparedAction:
@@ -411,7 +410,7 @@ async def prepare_thread_members(context: AgentRequestContext,
                 result_label=label),
                 unavailable, permission="Manage Threads", bind=bind,
             ))
-        return {"status": "confirmation_required", "prepared_count": len(selected)}
+        return {"status": "confirmation_required"}
     try:
         thread = await _thread(context, reference)
         present = await _member_ids(thread)
@@ -423,13 +422,12 @@ async def prepare_thread_members(context: AgentRequestContext,
             if (member_id in present) != add:
                 selected.append(member_id)
     except DiscordActionRefused as error:
-        return {"error": str(error), "prepared_count": 0}
+        return {"error": str(error)}
     for member_id in selected:
         context.state.proposed_changes.append(_thread_member_action(
             context, thread.id, member_id, add=add, before=not add,
         ))
-    return {"status": "confirmation_required" if selected else "no_change",
-            "prepared_count": len(selected)}
+    return {"status": "confirmation_required" if selected else "no_change"}
 
 
 async def prepare_thread_member_undo(context: AgentRequestContext,

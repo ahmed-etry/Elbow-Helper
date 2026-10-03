@@ -7,7 +7,7 @@ import discord
 from elbow_helper.features.achievements.raffle import RAFFLE_COLLECTION_CONTACT
 from elbow_helper.features.agent.discord_actions.safety import check_post_access, resolve_channel
 from elbow_helper.features.help.discovery import ParameterInfo
-from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...wording import (
     ACTION_RAFFLE_PRIZE_LABEL,
     ACTION_RAFFLE_PRIZE_LINE,
@@ -95,11 +95,11 @@ async def _draw_state(context: Any, values: Mapping[str, Any], *, reroll: bool):
     else:
         month_key, issue, _invalid_format = workflow.raffle_draw_month(values.get("month"))
         if issue:
-            raise ValueError(issue)
+            raise ActionRefused(issue)
     state = await workflow.raffle_draw_state(context.guild.id, month_key)
     issue = workflow.raffle_draw_issue(state, reroll=reroll)
     if issue:
-        raise ValueError(issue)
+        raise ActionRefused(issue)
     return workflow, channel, state
 
 
@@ -211,10 +211,10 @@ async def prepare_raffle_prize(context: Any,
                                values: Mapping[str, Any]) -> ChangePreview:
     prize = values["prize"].strip()
     if not prize:
-        raise ValueError("Enter a raffle prize.")
+        raise ActionRefused("Enter a raffle prize.")
     winners = int(values.get("winners", 1))
     if winners < 1:
-        raise ValueError("Choose at least one winner")
+        raise ActionRefused("Choose at least one winner")
     workflow = achievement_workflow(context)
     before = await workflow.raffle_prize_state()
 
@@ -249,7 +249,7 @@ async def prepare_raffle_prize_undo(context: Any,
     before = log.get("before")
     after = log.get("after")
     if before is None or after is None:
-        raise ValueError("That raffle prize change is unavailable")
+        raise ActionRefused("That raffle prize change is unavailable")
     workflow = achievement_workflow(context)
     current = await workflow.raffle_prize_state()
     expected = (after["month_key"], after["prize"], after["winners"])
@@ -258,9 +258,12 @@ async def prepare_raffle_prize_undo(context: Any,
         return await workflow.raffle_prize_state() == expected
 
     async def run() -> ActionOutcome:
-        await workflow.restore_raffle_prize(
-            before["month_key"], before["prize"], before["winners"],
-        )
+        try:
+            await workflow.restore_raffle_prize(
+                before["month_key"], before["prize"], before["winners"],
+            )
+        except ValueError as error:
+            raise ActionRefused(str(error)) from error
         restored = await workflow.raffle_prize_state()
         if restored != (before["month_key"], before["prize"], before["winners"]):
             raise OSError("Raffle prize undo could not be verified")

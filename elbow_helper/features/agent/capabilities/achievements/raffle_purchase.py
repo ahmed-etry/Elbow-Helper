@@ -9,7 +9,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
-from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
@@ -41,11 +41,10 @@ async def prepare_raffle_purchase(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Achievements")
     if workflow is None:
-        raise ValueError('Raffle ticket purchases are unavailable.')
+        raise ActionRefused('Raffle ticket purchases are unavailable.')
     before = await workflow.raffle_purchase_state(context.member.id)
     if before["issue"]:
-        return {"status": "needs_input", "issue": before["issue"],
-                "prepared_count": 0}
+        return {"status": "needs_input", "issue": before["issue"]}
     lines = (
         ACTION_RAFFLE_BUY_LINE.format(member=context.member.mention,
                                      cost=before["cost"]),
@@ -60,7 +59,7 @@ async def prepare_raffle_purchase(context: AgentRequestContext,
     async def run() -> ActionOutcome:
         ok, message = await workflow.buy_raffle_ticket(context.member.id)
         if not ok:
-            raise ValueError(message)
+            raise ActionRefused(message)
         return ActionOutcome("complete", "private", text=message,
                               after={"balance": before["balance"] - before["cost"],
                                      "has_ticket": True})

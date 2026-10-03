@@ -10,7 +10,7 @@ from elbow_helper.features.cwl.config import CWL_HQ_CHANNEL_ID
 
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
-from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome, embed_text
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
@@ -52,13 +52,13 @@ async def prepare_cwl_bonus_review(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("CwlManagement")
     if workflow is None:
-        raise ValueError('That CWL bonus review is unavailable.')
+        raise ActionRefused('That CWL bonus review is unavailable.')
     clan_code = values["clan_code"]
     mode = values.get("mode", "review")
     month_key = values.get("month_key") or workflow.bonus_current_month_key()
     state = workflow.bonus_review_state(clan_code, mode=mode, month_key=month_key)
     if state is None or state["closed"] or state["clan"].get("status") == "completed":
-        raise ValueError('That CWL bonus review is unavailable.')
+        raise ActionRefused('That CWL bonus review is unavailable.')
     decision = values["decision"]
     candidate = None
     source = values.get("source", "scan")
@@ -67,7 +67,7 @@ async def prepare_cwl_bonus_review(context: AgentRequestContext,
         candidate, issue = await workflow.prepare_bonus_review_candidate(
             clan_code, month_key=month_key, source=source, text=source_text)
         if candidate is None:
-            raise ValueError(issue or 'That CWL bonus review is unavailable.')
+            raise ActionRefused(issue or 'That CWL bonus review is unavailable.')
     lines = [ACTION_CWL_BONUS_REVIEW_LINE.format(
         decision=decision, clan=clan_code, month=state["month_label"], mode=mode)]
     details = [ACTION_CWL_BONUS_REVIEW_STATUS.format(
@@ -100,12 +100,15 @@ async def prepare_cwl_bonus_review(context: AgentRequestContext,
             status, detail = await workflow.complete_bonus_review(
                 state["board_key"], candidate, context.member)
             if status != "complete":
-                raise ValueError(str(detail or 'That CWL bonus review is unavailable.'))
+                raise ActionRefused(str(detail or 'That CWL bonus review is unavailable.'))
             result = workflow.bonus_review_result(candidate, detail, context.member)
             return ActionOutcome("complete", "private", text=embed_text(result))
         status = "skipped" if decision == "skip" else "on_hold"
-        text = await workflow.set_bonus_review_status(
-            state["board_key"], clan_code, status, context.member)
+        try:
+            text = await workflow.set_bonus_review_status(
+                state["board_key"], clan_code, status, context.member)
+        except ValueError as error:
+            raise ActionRefused(str(error)) from error
         return ActionOutcome("complete", "private", text=text)
 
     context.state.proposed_changes.append(PreparedAction(

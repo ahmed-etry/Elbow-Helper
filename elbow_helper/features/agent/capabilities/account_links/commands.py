@@ -7,7 +7,7 @@ from typing import Any
 
 import discord
 
-from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...wording import (
     ACTION_ACCOUNT_ADD_LABEL,
     ACTION_ACCOUNT_ADD_LINE,
@@ -29,7 +29,7 @@ from ...commands.registry import CommandAdapter
 def _workflow(context: Any):
     workflow = context.bot.get_cog("AccountLinks")
     if workflow is None:
-        raise ValueError("Account links are unavailable")
+        raise ActionRefused("Account links are unavailable")
     return workflow
 
 
@@ -81,10 +81,10 @@ async def prepare_account_add(context: Any,
     workflow = _workflow(context)
     member = await _member(context, values["member"])
     if member is None:
-        raise ValueError('That member is unavailable.')
+        raise ActionRefused('That member is unavailable.')
     prepared = await workflow.account_add_operation(member, values["tags"], commit=False)
     if prepared["error"]:
-        raise ValueError(prepared["error"])
+        raise ActionRefused(prepared["error"])
 
     async def recheck() -> bool:
         if await _member(context, member.id) is None:
@@ -131,7 +131,7 @@ async def prepare_account_add_undo(context: Any,
     before = (log.get("before") or {}).get("links")
     expected = (log.get("after") or {}).get("links")
     if before is None or expected is None:
-        raise ValueError("That account link change is unavailable")
+        raise ActionRefused("That account link change is unavailable")
     tags = tuple(before)
     current = workflow.get_links_by_tags(tags)
     refresh_boards = workflow.account_board_refresh_available()
@@ -176,7 +176,7 @@ async def prepare_account_remove(context: Any,
     workflow = _workflow(context)
     prepared = await workflow.account_remove_operation(values["tags"], commit=False)
     if prepared["error"]:
-        raise ValueError(prepared["error"])
+        raise ActionRefused(prepared["error"])
     if not prepared["tags_to_remove"]:
         return ActionOutcome("complete", "private", text=prepared["message"])
     lines = [ACTION_ACCOUNT_REMOVE_LINE.format(

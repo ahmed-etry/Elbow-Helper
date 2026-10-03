@@ -6,7 +6,7 @@ from typing import Any
 import discord
 from elbow_helper.features.agent.discord_actions.safety import check_member, check_role
 from ...access import ACCESS_LEAD_PLUS
-from ...actions.contracts import ActionClass, ChangePreview
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview
 from ...wording import (
     ACTION_ROSTER_NO_ROLE,
     ACTION_VALUE_YES,
@@ -40,14 +40,14 @@ async def prepare_roster_timing(context: Any,
                                 values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     try:
         roster_id = int(values["roster"])
     except (TypeError, ValueError):
-        raise ValueError('That roster is unavailable.') from None
+        raise ActionRefused('That roster is unavailable.') from None
     roster = await workflow.get_roster(roster_id)
     if roster is None or roster.guild_id != context.guild.id:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     options = {
         "opens_on": values.get("opens_on"),
         "closes_on": values.get("closes_on"),
@@ -56,7 +56,7 @@ async def prepare_roster_timing(context: Any,
     }
     plan = workflow.plan_roster_timing(roster, **options)
     if plan["issue"]:
-        raise ValueError(plan["issue"])
+        raise ActionRefused(plan["issue"])
     state = await workflow.roster_edit_state(roster)
     opens_now = (not plan["clear"]
                  and plan["window"].opens_at <= plan["now"])
@@ -160,14 +160,14 @@ async def prepare_roster_schedule(context: Any,
                                   values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     try:
         roster_id = int(values["roster"])
     except (TypeError, ValueError):
-        raise ValueError('That roster is unavailable.') from None
+        raise ActionRefused('That roster is unavailable.') from None
     roster = await workflow.get_roster(roster_id)
     if roster is None or roster.guild_id != context.guild.id:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     options = {
         "open_day": values.get("open_day"),
         "open_time": values.get("open_time"),
@@ -179,7 +179,7 @@ async def prepare_roster_schedule(context: Any,
     }
     plan = workflow.plan_roster_schedule(roster, **options)
     if plan["issue"]:
-        raise ValueError(plan["issue"])
+        raise ActionRefused(plan["issue"])
     effect = workflow.roster_schedule_preview(roster, plan)
     state = await workflow.roster_edit_state(roster)
 

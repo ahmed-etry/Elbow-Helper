@@ -11,7 +11,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
-from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
@@ -53,10 +53,10 @@ async def prepare_support_reopen(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("SupportActions")
     if workflow is None or not workflow.can_manage_ticket_controls(context.member):
-        raise ValueError("That ticket couldn't be reopened.")
+        raise ActionRefused("That ticket couldn't be reopened.")
     channel = await resolve_channel(context, values.get("channel_id") or context.source_message.channel.id)
     if not isinstance(channel, discord.TextChannel):
-        raise ValueError("That ticket couldn't be reopened.")
+        raise ActionRefused("That ticket couldn't be reopened.")
     check_post_access(channel, context.member, context.guild.me)
     owner = workflow.support_reopen_state(context.guild, channel)
     check_member(owner, context.guild.me)
@@ -83,7 +83,7 @@ async def prepare_support_reopen(context: AgentRequestContext,
         _, restored = await workflow.reopen_support_ticket(context.guild, channel,
                                                             context.member)
         if not restored:
-            raise ValueError("That ticket couldn't be reopened.")
+            raise ActionRefused("That ticket couldn't be reopened.")
         return ActionOutcome("complete", "private", text=ACTION_TICKET_REOPEN_LABEL)
 
     context.state.proposed_changes.append(PreparedAction(

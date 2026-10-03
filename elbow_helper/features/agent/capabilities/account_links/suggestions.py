@@ -13,7 +13,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ...engine.capability_contract import CapabilityContract
 from ...access import lookup_level, ACCESS_RECRUITER_OR_CORE
 from ...access import require_evidence_access
-from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
@@ -87,7 +87,7 @@ async def _workflow(context: AgentRequestContext):
     await require_evidence_access(context)
     workflow = context.bot.get_cog("AccountLinks")
     if workflow is None or not workflow.can_review_links(context.member):
-        raise ValueError("That account suggestion isn't available.")
+        raise ActionRefused("That account suggestion isn't available.")
     review = await resolve_channel(context, REVIEW_CHANNEL_ID)
     check_view_access(review, context.member, context.guild.me)
     return workflow, review
@@ -124,19 +124,17 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
     check_post_access(review, context.member, context.guild.me)
     tag = normalize_player_tag(values["player_tag"])
     if tag is None:
-        return {"status": "needs_input", "issue": "That player tag is not valid.",
-                "prepared_count": 0}
+        return {"status": "needs_input", "issue": "That player tag is not valid."}
     suggestion = workflow.account_suggestion_snapshot(tag)
     if suggestion is None:
-        raise ValueError("That account suggestion isn't available.")
+        raise ActionRefused("That account suggestion isn't available.")
     member = None
     old = workflow.get_links_by_tags([tag]).get(tag)
     if not ignore:
         member_id = values.get("member_id") or int(
             suggestion.get("proposed_discord_user_id") or 0)
         if not member_id:
-            return {"status": "needs_input", "issue": "Which member owns this Clash account?",
-                    "prepared_count": 0}
+            return {"status": "needs_input", "issue": "Which member owns this Clash account?"}
         member = await resolve_member(context.guild, member_id)
         check_member(member, context.guild.me)
     board_id = CLAN_LEADERSHIP_CHANNELS.get(str(suggestion.get("current_clan_code") or ""))
@@ -168,10 +166,13 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
 
     async def run() -> ActionOutcome:
         proposed = int(suggestion.get("proposed_discord_user_id") or 0)
-        message = await workflow.resolve_account_suggestion(
-            tag, context.member,
-            discord_user_id=(member.id if member and member.id != proposed else None),
-            ignore=ignore)
+        try:
+            message = await workflow.resolve_account_suggestion(
+                tag, context.member,
+                discord_user_id=(member.id if member and member.id != proposed else None),
+                ignore=ignore)
+        except ValueError as error:
+            raise ActionRefused(str(error)) from error
         return ActionOutcome("complete", "private", text=message)
 
     label = ACTION_SUGGESTION_IGNORE_LABEL if ignore else ACTION_SUGGESTION_LINK_LABEL

@@ -7,7 +7,7 @@ from typing import Any
 
 from elbow_helper.features.agent.discord_actions.safety import check_post_access
 
-from ...actions.contracts import ChangePreview
+from ...actions.contracts import ActionRefused, ChangePreview
 from ...wording import ACTION_CWL_BRIEF_LABEL, ACTION_CWL_BRIEF_LINE
 from ...actions.outcomes import ActionOutcome
 from ...commands.registry import CommandAdapter
@@ -16,12 +16,15 @@ from ...commands.registry import CommandAdapter
 async def _brief(context: Any, values: Mapping[str, Any]):
     workflow = context.bot.get_cog("CwlManagement")
     if workflow is None:
-        raise ValueError("CWL briefs are unavailable")
-    brief = await workflow.prepare_cwl_brief(
-        clan=values["clan"], mode=values["mode"],
-        helper_cwl=values["helper_cwl"], rotations=values["rotations"],
-        lead_cwl=values.get("lead_cwl"), intro=values.get("intro"),
-    )
+        raise ActionRefused("CWL briefs are unavailable")
+    try:
+        brief = await workflow.prepare_cwl_brief(
+            clan=values["clan"], mode=values["mode"],
+            helper_cwl=values["helper_cwl"], rotations=values["rotations"],
+            lead_cwl=values.get("lead_cwl"), intro=values.get("intro"),
+        )
+    except ValueError as error:
+        raise ActionRefused(str(error)) from error
     check_post_access(brief.channel, context.member, context.guild.me)
     return workflow, brief
 

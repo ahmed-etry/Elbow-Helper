@@ -55,7 +55,8 @@ class DiscordRoleActionTests(unittest.IsolatedAsyncioTestCase):
             result = await prepare_add_roles(
                 context, {"role_id": role.id, "member_ids": [4, 5]},
             )
-            self.assertEqual(result["prepared_count"], 1)
+            self.assertEqual(result["status"], "confirmation_required")
+            self.assertEqual(len(context.state.proposed_changes), 1)
             action = context.state.proposed_changes[0]
             self.assertIn("@member4", action.preview.lines[0])
             self.assertTrue(await action.preview.recheck())
@@ -91,7 +92,8 @@ class DiscordRoleActionTests(unittest.IsolatedAsyncioTestCase):
             result = await prepare_remove_roles(
                 context, {"role_id": role.id, "member_ids": [4, 5]},
             )
-            self.assertEqual(result["prepared_count"], 1)
+            self.assertEqual(result["status"], "confirmation_required")
+            self.assertEqual(len(context.state.proposed_changes), 1)
             action = context.state.proposed_changes[0]
             self.assertIn("@member5", action.preview.lines[0])
             await action.run()

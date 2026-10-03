@@ -148,7 +148,7 @@ async def prepare_post(context: AgentRequestContext,
         channel = None if deferred else await _channel_for_post(context, channel_value)
         mentions = _mentions(context, arguments, arguments["text"])
     except DiscordActionRefused as error:
-        return {"error": str(error), "prepared_count": 0}
+        return {"error": str(error)}
     attachment = None
     if "file_name" in arguments:
         if "file_message_id" in arguments:
@@ -157,25 +157,23 @@ async def prepare_post(context: AgentRequestContext,
                     context, arguments["file_message_id"], arguments["file_name"],
                 )
             except DiscordActionRefused as error:
-                return {"error": str(error), "prepared_count": 0}
+                return {"error": str(error)}
         else:
             matches = [item for item in context.state.attachments
                        if item.filename == arguments["file_name"]]
             if len(matches) != 1:
-                return {"error": "Choose one file made in this conversation.",
-                        "prepared_count": 0}
+                return {"error": "Choose one file made in this conversation."}
             attachment = matches[0]
     elif "file_message_id" in arguments:
-        return {"error": "Choose the file name from that agent reply.",
-                "prepared_count": 0}
+        return {"error": "Choose the file name from that agent reply."}
     chunks = chunk_response(arguments["text"])
     if not chunks:
-        return {"error": "The message has no text.", "prepared_count": 0}
+        return {"error": "The message has no text."}
     if deferred:
         try:
             target_label = earlier_result_label(context.state.proposed_changes, channel_value)
         except ValueError as error:
-            return {"error": str(error), "prepared_count": 0}
+            return {"error": str(error)}
     await require_evidence_access(context)
     for index, chunk in enumerate(chunks):
         make = _deferred_post_part if deferred else _post_part
@@ -185,7 +183,7 @@ async def prepare_post(context: AgentRequestContext,
             ping_line=_ping_line(context, arguments),
             **({"target_label": target_label} if deferred else {}),
         ))
-    return {"status": "confirmation_required", "prepared_count": len(chunks)}
+    return {"status": "confirmation_required"}
 
 
 def _deferred_post_part(context: AgentRequestContext, reference: Mapping[str, Any],
@@ -320,10 +318,9 @@ async def prepare_edit(context: AgentRequestContext,
         )
         _mentions(context, arguments, arguments["text"])
     except DiscordActionRefused as error:
-        return {"error": str(error), "prepared_count": 0}
+        return {"error": str(error)}
     if len(arguments["text"]) > 2000:
-        return {"error": "One edited message must fit Discord's message limit.",
-                "prepared_count": 0}
+        return {"error": "One edited message must fit Discord's message limit."}
     context.state.proposed_changes.append(_edit_action(
         context, channel.id, message.id, new_text=arguments["text"],
         old_text=message.content, mention_values=arguments,
@@ -397,7 +394,7 @@ async def prepare_delete(context: AgentRequestContext,
             context, arguments["channel_id"], arguments["message_id"],
         )
     except DiscordActionRefused as error:
-        return {"error": str(error), "prepared_count": 0}
+        return {"error": str(error)}
     before = message.content
 
     async def recheck() -> bool:

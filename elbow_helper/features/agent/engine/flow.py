@@ -24,7 +24,6 @@ from ..wording import (
     AGENT_ANSWER_UNFINISHED,
     AGENT_PLAN_UNFINISHED,
     AGENT_RESEARCH_UNFINISHED,
-    ACTION_UNAVAILABLE,
 )
 from . import budgets as limits
 from .rounds import AgentGracefulEnd, ModelRounds
@@ -36,6 +35,7 @@ from elbow_helper.infrastructure.ai.agent import AgentSession
 from ..prompts import (
     RESULT_ANSWER_INSTRUCTION,
     MISSING_VALUES_INSTRUCTION,
+    CHANGE_REFUSAL_INSTRUCTION,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -123,54 +123,33 @@ class AnswerFlow:
 
     async def _result_response(self, results: Mapping[str, Any]) -> str | None:
         state = self.context.state
-        if any(item.status == "needs_input" for item in state.outcomes):
+        lookup_missing = [item for item in results.values()
+                          if item.get("status") == "needs_input"]
+        missing = [item for item in state.outcomes if item.status == "needs_input"]
+        if missing or lookup_missing:
             state.proposed_changes.clear()
-            missing = [item for item in state.outcomes if item.status == "needs_input"]
-            options = list(
-                {
-                    option["name"]: option for item in missing for option in item.missing_options
-                }.values()
+            options = list({option["name"]: option for item in missing
+                            for option in item.missing_options}.values())
+            hints = list(dict.fromkeys(
+                [description for item in missing for description in item.missing]
+                + [description for item in lookup_missing
+                   for description in item.get("missing", ())]
+            ))
+            return await self._feedback_reply(
+                results, MISSING_VALUES_INSTRUCTION,
+                missing_options=options, missing_hints=hints,
             )
-            hints = list(
-                dict.fromkeys(description for item in missing for description in item.missing)
-            )
-            pending = (
-                AgentToolResult(
-                    self.decision.rounds[-1].tool_calls[0].call_id,
-                    json.dumps(
-                        {
-                            "results": results,
-                            "missing_options": options,
-                            "missing_hints": hints,
-                            "instruction": MISSING_VALUES_INSTRUCTION,
-                        },
-                        ensure_ascii=False,
-                        default=str,
-                    ),
-                ),
-            )
-            reply = await self.rounder.advance(
-                pending,
-                allow_tools=False,
-                reasoning_effort=AgentReasoningEffort.LOW,
-                max_output_tokens=limits.FINAL_MAX_OUTPUT_TOKENS,
-            )
-            if reply.tool_calls or not reply.content:
-                raise AgentGracefulEnd(AGENT_PLAN_UNFINISHED)
-            await require_evidence_access(self.context)
-            return reply.content
-        expected = sum(
-            results[step["id"]].get("prepared_count", 1)
-            for step in self.plan["steps"]
-            if self.registry[step["capability"]].action_class
-            in (
-                ActionClass.CHANGE,
-                ActionClass.IRREVERSIBLE,
-            )
-        )
-        if expected and len(state.proposed_changes) != expected:
+        prepared_steps = {action.step_id for action in state.proposed_changes}
+        changes = [step for step in self.plan["steps"]
+                   if self.registry[step["capability"]].action_class in (
+                       ActionClass.CHANGE, ActionClass.IRREVERSIBLE)]
+        if any(step["id"] not in prepared_steps
+               or results[step["id"]].get("error") is not None
+               or results[step["id"]].get("status") == "no_change"
+               or results[step["id"]].get("flags", {}).get("status") in ("failed", "refused")
+               for step in changes):
             state.proposed_changes.clear()
-            return ACTION_UNAVAILABLE
+            return await self._feedback_reply(results, CHANGE_REFUSAL_INSTRUCTION)
         if state.proposed_changes:
             await prepare_preview(self.context)
             response = preview_text(state.proposed_changes)
@@ -182,6 +161,21 @@ class AnswerFlow:
             await require_evidence_access(self.context)
             return command_reply(state.outcomes)
         return None
+
+    async def _feedback_reply(self, results, instruction, **details) -> str:
+        pending = (AgentToolResult(
+            self.decision.rounds[-1].tool_calls[0].call_id,
+            json.dumps({"results": results, "instruction": instruction, **details},
+                       ensure_ascii=False, default=str),
+        ),)
+        reply = await self.rounder.advance(
+            pending, allow_tools=False, reasoning_effort=AgentReasoningEffort.LOW,
+            max_output_tokens=limits.FINAL_MAX_OUTPUT_TOKENS,
+        )
+        if reply.tool_calls or not reply.content:
+            raise AgentGracefulEnd(AGENT_PLAN_UNFINISHED)
+        await require_evidence_access(self.context)
+        return reply.content
 
     async def _answer_round(self, results: Mapping[str, Any]) -> tuple[str | None, Any]:
         pending = (

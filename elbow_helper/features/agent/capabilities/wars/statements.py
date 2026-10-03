@@ -12,7 +12,7 @@ from elbow_helper.features.agent.discord_actions.safety import (
 )
 from elbow_helper.features.wars.commands import resolve_statement_members
 
-from ...actions.contracts import ActionClass, ChangePreview
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview
 from ...wording import (
     ACTION_PREVIEW_BLANK,
     ACTION_WAR_STATEMENT_LABEL,
@@ -35,12 +35,12 @@ async def _member(guild: Any, member_id: int):
 async def _statement(context: Any, values: Mapping[str, Any], kind: str):
     workflow = context.bot.get_cog("WarStatements")
     if workflow is None:
-        raise ValueError("War statements are unavailable")
+        raise ActionRefused("War statements are unavailable")
     if kind == "first_claim":
         victim = await _member(context.guild, values["victim"])
         attacker = await _member(context.guild, values["attacker"])
         if victim is None or attacker is None:
-            raise ValueError('That player is unavailable.')
+            raise ActionRefused('That player is unavailable.')
         prepared = workflow.prepare_statement(
             kind, context.guild, values["clan"],
             victim=victim, attacker=attacker, notes=values.get("notes"),
@@ -54,7 +54,7 @@ async def _statement(context: Any, values: Mapping[str, Any], kind: str):
             players=players, notes=values.get("notes"),
         )
     if prepared["issue"]:
-        raise ValueError(prepared["issue"])
+        raise ActionRefused(prepared["issue"])
     check_post_access(prepared["post_channel"], context.member, context.guild.me)
     check_view_access(prepared["clan_war_channel"], context.member, context.guild.me)
     return workflow, prepared

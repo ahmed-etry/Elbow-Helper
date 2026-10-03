@@ -11,7 +11,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
 from ...access import ACCESS_LEAD_PLUS, require_evidence_access
-from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
@@ -112,10 +112,10 @@ async def prepare_roster_row_removal(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     state = await workflow.roster_signed_rows(values["roster_id"])
     if state is None or state["roster"].guild_id != context.guild.id:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     roster = state["roster"]
     selected = []
     for value in values["accounts"]:
@@ -126,8 +126,7 @@ async def prepare_roster_row_removal(context: AgentRequestContext,
         if len(matches) != 1:
             return {"status": "needs_input",
                     "issue": ("More than one signed-up account has that name. Use a player tag."
-                              if matches else "That account isn't signed up for this roster."),
-                    "prepared_count": 0}
+                              if matches else "That account isn't signed up for this roster.")}
         if matches[0].player_tag not in {row.player_tag for row in selected}:
             selected.append(matches[0])
     role = context.guild.get_role(roster.role_id) if roster.role_id else None
@@ -178,7 +177,7 @@ async def prepare_roster_row_removal(context: AgentRequestContext,
         result = await workflow.remove_roster_signup_rows(
             values["roster_id"], [row.player_tag for row in selected])
         if not result.changed:
-            raise ValueError(result.message)
+            raise ActionRefused(result.message)
         return ActionOutcome("complete", "private", text=result.message)
 
     context.state.proposed_changes.append(PreparedAction(
@@ -196,15 +195,15 @@ async def prepare_bulk_roster_add(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     raw_tags = " ".join(values["player_tags"])
     try:
         state = await workflow.bulk_add_roster_preview(values["roster_id"], raw_tags)
     except ValueError as exc:
-        return {"status": "needs_input", "issue": str(exc), "prepared_count": 0}
+        return {"status": "needs_input", "issue": str(exc)}
     roster = state["roster"]
     if roster.guild_id != context.guild.id:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     if all(row[3] for row in state["accounts"]):
         return {"status": "no_change"}
     role = context.guild.get_role(roster.role_id) if roster.role_id else None
@@ -272,7 +271,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     roster_id = values["roster_id"]
     member_id = values.get("member_id") or context.member.id
     member = await resolve_member(context.guild, member_id)
@@ -282,15 +281,13 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
         for_other_member=member_id != context.member.id)
     roster, picker = state
     if roster is None or roster.guild_id != context.guild.id or not picker.accounts:
-        return {"status": "needs_input", "issue": picker.message if picker else 'That roster is unavailable.',
-                "prepared_count": 0}
+        return {"status": "needs_input", "issue": picker.message if picker else 'That roster is unavailable.'}
     selected, issue = workflow.resolve_roster_account_choices(
         picker.accounts, list(values["accounts"]))
     if issue:
         return {"status": "needs_input", "issue": issue,
                 "available_accounts": [{"name": account.player_name, "tag": account.player_tag}
-                                       for account in picker.accounts],
-                "prepared_count": 0}
+                                       for account in picker.accounts]}
     role = context.guild.get_role(roster.role_id) if roster.role_id else None
     if role is not None:
         check_role(role, context.guild, context.guild.me, {})
@@ -337,7 +334,7 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
             bypass_min_townhall=member_id != context.member.id,
         )
         if not result.changed:
-            raise ValueError(result.message)
+            raise ActionRefused(result.message)
         return ActionOutcome("complete", "private", text=result.message,
                               after={"accounts": selected})
 

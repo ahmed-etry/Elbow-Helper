@@ -15,9 +15,9 @@ from typing import Any
 import discord
 from elbow_helper.infrastructure.ai import AgentToolResult
 from ..models import AgentRequestContext
-from ..actions.contracts import ActionClass, PreparedAction
-from ..access import AgentAccessLost, LookupAccessDenied
+from ..actions.contracts import ActionClass, ActionRefused, PreparedAction
 from ..wording import ACTION_UNAVAILABLE
+from ..access import AgentAccessLost, LookupAccessDenied
 from ..access import has_access_requirements
 from ..access import require_evidence_access
 from .capability_contract import CapabilityBindError
@@ -75,6 +75,10 @@ async def execute_tool(
         outcome = "refused"
         restore_tool_state(context, snapshot)
         return json.dumps({"error": str(error), "required_access": sorted(error.requirements)})
+    except ActionRefused as error:
+        outcome = "refused"
+        restore_tool_state(context, snapshot)
+        return error_result(str(error))
     except CapabilityBindError:
         outcome = "unbound_source"
         restore_tool_state(context, snapshot)
@@ -113,7 +117,8 @@ async def execute_tool(
             name,
             context.member.id,
         )
-        return error_result("That lookup failed.")
+        return error_result(ACTION_UNAVAILABLE if action_class is not ActionClass.READ
+                            else "That lookup failed.")
     except BaseException:
         outcome = "failed"
         restore_tool_state(context, snapshot)

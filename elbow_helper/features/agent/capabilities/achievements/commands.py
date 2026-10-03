@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from typing import Any
 import discord
 from elbow_helper.configuration.channels import GENERAL_CHAT
-from ...actions.contracts import ActionClass, ChangePreview
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview
 from ...wording import (
     ACTION_ACHIEVEMENT_ANNOUNCE_LINE,
     ACTION_ACHIEVEMENT_AWARD_LABEL,
@@ -34,7 +34,7 @@ from ...commands.registry import CommandAdapter
 def achievement_workflow(context: Any):
     workflow = context.bot.get_cog("Achievements")
     if workflow is None:
-        raise ValueError("The raffle is unavailable")
+        raise ActionRefused("The raffle is unavailable")
     return workflow
 
 
@@ -52,9 +52,9 @@ async def _achievement_state(workflow: Any, member_id: int, query: str):
     try:
         state = await workflow.achievement_change_state(member_id, query)
     except ValueError as error:
-        raise ValueError('More than one achievement matches that name.') from error
+        raise ActionRefused('More than one achievement matches that name.') from error
     if state is None:
-        raise ValueError('No achievement matches that name.')
+        raise ActionRefused('No achievement matches that name.')
     return state
 
 
@@ -71,10 +71,10 @@ async def prepare_achievement_award(context: Any,
     workflow = achievement_workflow(context)
     member = await _member(context, values["user"])
     if member is None:
-        raise ValueError('That member is unavailable.')
+        raise ActionRefused('That member is unavailable.')
     state = await _achievement_state(workflow, member.id, values["achievement"])
     if state["completed_date"] is not None:
-        raise ValueError('That member already has that achievement.')
+        raise ActionRefused('That member already has that achievement.')
     silent = bool(values.get("silent", False))
     lines = [ACTION_ACHIEVEMENT_AWARD_LINE.format(
         achievement=state["name"], member=member.mention,
@@ -123,10 +123,10 @@ async def prepare_achievement_remove(context: Any,
     workflow = achievement_workflow(context)
     member = await _member(context, values["user"])
     if member is None:
-        raise ValueError('That member is unavailable.')
+        raise ActionRefused('That member is unavailable.')
     state = await _achievement_state(workflow, member.id, values["achievement"])
     if state["completed_date"] is None:
-        raise ValueError('That member does not have that achievement.')
+        raise ActionRefused('That member does not have that achievement.')
     lines = [ACTION_ACHIEVEMENT_REMOVE_LINE.format(
         achievement=state["name"], member=member.mention,
     )]
@@ -166,14 +166,14 @@ async def prepare_grant_coins(context: Any,
     workflow = achievement_workflow(context)
     member = await _member(context, values["user"])
     if member is None:
-        raise ValueError('That member is unavailable.')
+        raise ActionRefused('That member is unavailable.')
     category = values["category"]
     amount = max(1, min(int(values["amount"]), 10))
     state = await workflow.manual_coin_grant_state(
         member, category, amount, context.member,
     )
     if state["issue"]:
-        raise ValueError(state["issue"])
+        raise ActionRefused(state["issue"])
 
     async def recheck() -> bool:
         if await _member(context, member.id) is None:
@@ -226,10 +226,10 @@ async def prepare_grant_ticket(context: Any,
     workflow = achievement_workflow(context)
     member = await _member(context, values["user"])
     if member is None:
-        raise ValueError('That member is unavailable.')
+        raise ActionRefused('That member is unavailable.')
     state = await workflow.ticket_grant_state(member.id)
     if state["issue"]:
-        raise ValueError(state["issue"])
+        raise ActionRefused(state["issue"])
 
     async def recheck() -> bool:
         if await _member(context, member.id) is None:
@@ -265,10 +265,10 @@ async def prepare_raffle_remove(context: Any,
     workflow = achievement_workflow(context)
     member = await _member(context, values["user"])
     if member is None:
-        raise ValueError('That member is unavailable.')
+        raise ActionRefused('That member is unavailable.')
     state = await workflow.raffle_member_ticket_state(member.id)
     if not state["has_ticket"]:
-        raise ValueError('That member has no raffle ticket this month.')
+        raise ActionRefused('That member has no raffle ticket this month.')
 
     async def recheck() -> bool:
         if await _member(context, member.id) is None:

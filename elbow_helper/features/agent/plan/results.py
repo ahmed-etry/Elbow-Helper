@@ -67,7 +67,7 @@ def model_result(
         if value:
             items = value if isinstance(value, (list, tuple)) else [value]
             limits.extend(_flag(item) for item in items)
-    error = data.pop("error", None)
+    error = data.get("error")
     if error is not None:
         limits.append(_flag(error))
     truncated = truncated or data.get("truncated") is True or existing.get("truncated") is True

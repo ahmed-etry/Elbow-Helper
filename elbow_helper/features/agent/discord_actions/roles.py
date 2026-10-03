@@ -79,15 +79,14 @@ async def _prepare_roles(context: AgentRequestContext, arguments: Mapping[str, A
             if (role in member.roles) != add:
                 selected.append(member)
     except DiscordActionRefused as error:
-        return {"error": str(error), "prepared_count": 0}
+        return {"error": str(error)}
     await require_evidence_access(context)
     for member in selected:
         context.state.proposed_changes.append(_role_action(
             context, role.id, member.id, add=add,
             before=not add, label_role=role.mention, label_member=member.mention,
         ))
-    return {"status": "confirmation_required" if selected else "no_change",
-            "prepared_count": len(selected)}
+    return {"status": "confirmation_required" if selected else "no_change"}
 
 
 def _role_action(

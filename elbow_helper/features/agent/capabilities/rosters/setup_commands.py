@@ -6,7 +6,7 @@ from typing import Any
 from elbow_helper.features.agent.discord_actions.safety import check_member, check_role
 from elbow_helper.features.rosters.config import DEFAULT_MAX_MEMBERS, MAX_ROSTER_MEMBERS
 from ...access import ACCESS_LEAD_PLUS
-from ...actions.contracts import ActionClass, ChangePreview
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview
 from ...wording import (
     ACTION_ROSTER_CREATE_CLAN,
     ACTION_ROSTER_CREATE_LABEL,
@@ -51,19 +51,19 @@ async def prepare_roster_create(context: Any,
                                 values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     name = workflow.validate_roster_name(values["name"])
     if name is None:
-        raise ValueError('Enter a roster name between 1 and 100 characters.')
+        raise ActionRefused('Enter a roster name between 1 and 100 characters.')
     max_members = int(values.get("max_members", DEFAULT_MAX_MEMBERS))
     if not 1 <= max_members <= MAX_ROSTER_MEMBERS:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     role_id = values.get("signup_role")
     role = context.guild.get_role(role_id) if role_id else None
     if role_id:
         check_role(role, context.guild, context.guild.me, {})
     if not await workflow.roster_name_available(context.guild.id, name):
-        raise ValueError('A roster with that name already exists.')
+        raise ActionRefused('A roster with that name already exists.')
     clan_code = values["clan"]
     lines = [
         ACTION_ROSTER_CREATE_LINE.format(name=name),
@@ -110,26 +110,26 @@ async def prepare_roster_clone(context: Any,
                                values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     try:
         source_id = int(values["roster"])
     except (TypeError, ValueError):
-        raise ValueError('That roster is unavailable.') from None
+        raise ActionRefused('That roster is unavailable.') from None
     source = await workflow.get_roster(source_id)
     if source is None or source.guild_id != context.guild.id:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     name = workflow.validate_roster_name(values["name"])
     if name is None:
-        raise ValueError('Enter a roster name between 1 and 100 characters.')
+        raise ActionRefused('Enter a roster name between 1 and 100 characters.')
     if not await workflow.roster_name_available(context.guild.id, name):
-        raise ValueError('A roster with that name already exists.')
+        raise ActionRefused('A roster with that name already exists.')
     role_id = values.get("signup_role")
     max_members = values.get("max_members")
     min_townhall = values.get("min_townhall")
     if max_members is not None and not 1 <= int(max_members) <= MAX_ROSTER_MEMBERS:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     if min_townhall is not None and int(min_townhall) < 0:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     options = {
         "name": name, "clan_code": values.get("clan"),
         "role_id": role_id,
@@ -147,7 +147,7 @@ async def prepare_roster_clone(context: Any,
             "schedule_utc_offset",
         )
     ):
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     schedule = (
         f"{settings['open_day']} {settings['open_time']} to "
         f"{settings['close_day']} {settings['close_time']} "
@@ -210,14 +210,14 @@ async def prepare_roster_delete(context: Any,
                                 values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     try:
         roster_id = int(values["roster"])
     except (TypeError, ValueError):
-        raise ValueError('That roster is unavailable.') from None
+        raise ActionRefused('That roster is unavailable.') from None
     roster = await workflow.get_roster(roster_id)
     if roster is None or roster.guild_id != context.guild.id:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     state = await workflow.roster_deletion_state(roster)
 
     def check_targets() -> None:
@@ -283,20 +283,20 @@ async def prepare_roster_edit(context: Any,
                               values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     try:
         roster_id = int(values["roster"])
     except (TypeError, ValueError):
-        raise ValueError('That roster is unavailable.') from None
+        raise ActionRefused('That roster is unavailable.') from None
     roster = await workflow.get_roster(roster_id)
     if roster is None or roster.guild_id != context.guild.id:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     max_members = values.get("max_members")
     min_townhall = values.get("min_townhall")
     if max_members is not None and not 1 <= int(max_members) <= MAX_ROSTER_MEMBERS:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     if min_townhall is not None and int(min_townhall) < 0:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     changes, issue = workflow.roster_edit_changes(
         name=values.get("name"), clan_code=values.get("clan"),
         role_id=values.get("signup_role"),
@@ -304,17 +304,17 @@ async def prepare_roster_edit(context: Any,
         remove_signup_role=bool(values.get("remove_signup_role", False)),
     )
     if issue:
-        raise ValueError(issue)
+        raise ActionRefused(issue)
     if ("name" in changes
             and changes["name"].casefold() != roster.name.casefold()
             and not await workflow.roster_name_available(
                 context.guild.id, changes["name"],
             )):
-        raise ValueError('A roster with that name already exists.')
+        raise ActionRefused('A roster with that name already exists.')
     state = await workflow.roster_edit_state(roster)
     if ("max_members" in changes
             and changes["max_members"] < state["account_count"]):
-        raise ValueError(workflow.roster_capacity_issue(state["account_count"]))
+        raise ActionRefused(workflow.roster_capacity_issue(state["account_count"]))
 
     def check_targets() -> None:
         if "role_id" not in changes or changes["role_id"] == roster.role_id:

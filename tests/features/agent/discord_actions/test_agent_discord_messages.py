@@ -62,7 +62,8 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
             result = await prepare_post(self.context, {
                 "channel_id": 2, "text": "word " * 500,
             })
-        self.assertEqual(result["prepared_count"], 2)
+        self.assertEqual(result["status"], "confirmation_required")
+        self.assertEqual(len(self.context.state.proposed_changes), 2)
         for action in self.context.state.proposed_changes:
             self.assertTrue(await action.preview.recheck())
             outcome = await action.run()

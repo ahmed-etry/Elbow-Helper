@@ -8,7 +8,7 @@ from typing import Any
 from elbow_helper.configuration.channels import TRANSFER_REQUESTS
 from elbow_helper.features.clan_transfers.config import CLAN_TRANSFER_QUEUES
 
-from ...actions.contracts import ActionClass, ChangePreview
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview
 from ...wording import (
     ACTION_TRANSFER_BOARD,
     ACTION_TRANSFER_CANCEL_LABEL,
@@ -26,15 +26,15 @@ async def _prepare(context: Any, values: Mapping[str, Any],
                    *, cancel: bool) -> PreparedCommandChange:
     workflow = context.bot.get_cog("ClanTransfers")
     if workflow is None:
-        raise ValueError('That transfer queue is unavailable.')
+        raise ActionRefused('That transfer queue is unavailable.')
     clan_code = values["destination"]
     if clan_code not in CLAN_TRANSFER_QUEUES:
-        raise ValueError('That transfer queue is unavailable.')
+        raise ActionRefused('That transfer queue is unavailable.')
     state = workflow.transfer_request_preview(
         clan_code, context.member.id, cancel=cancel,
     )
     if state["issue"]:
-        raise ValueError(state["issue"])
+        raise ActionRefused(state["issue"])
     lines = [
         (ACTION_TRANSFER_CANCEL_LINE if cancel else ACTION_TRANSFER_REQUEST_LINE).format(
             clan=clan_code, member=context.member.mention,

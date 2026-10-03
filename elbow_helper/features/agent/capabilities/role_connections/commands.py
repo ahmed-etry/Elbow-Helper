@@ -13,7 +13,7 @@ from elbow_helper.features.agent.discord_actions.safety import (
 )
 from elbow_helper.features.help.discovery import ParameterInfo
 
-from ...actions.contracts import ChangePreview
+from ...actions.contracts import ActionRefused, ChangePreview
 from ...wording import ACTION_CONNECTIONS_BOARD_LABEL, ACTION_CONNECTIONS_BOARD_LINE
 from ...actions.outcomes import ActionOutcome, embed_text
 from ...commands.registry import CommandAdapter
@@ -21,15 +21,15 @@ from ...commands.registry import CommandAdapter
 
 async def _target(context: Any, values: Mapping[str, Any]) -> tuple[Any, Any]:
     if not has_access_requirements(context.guild, context.member.id, {ACCESS_LEAD}):
-        raise ValueError("Role connections are unavailable")
+        raise ActionRefused("Role connections are unavailable")
     workflow = context.bot.get_cog("RoleConnections")
     if workflow is None:
-        raise ValueError("Role connections are unavailable")
+        raise ActionRefused("Role connections are unavailable")
     context.state.required_access.add(ACCESS_LEAD)
     channel_id = values.get("channel") or context.source_message.channel.id
     channel = await resolve_channel(context, channel_id)
     if not isinstance(channel, discord.TextChannel):
-        raise ValueError("Use a server text channel")
+        raise ActionRefused("Use a server text channel")
     check_post_access(channel, context.member, context.guild.me)
     return workflow, channel
 

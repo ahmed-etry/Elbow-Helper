@@ -11,7 +11,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
-from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
@@ -66,10 +66,10 @@ async def prepare_reactivation_reopen(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Hibernate")
     if workflow is None or not workflow.can_manage_reactivation_ticket(context.member):
-        raise ValueError("That ticket couldn't be reopened.")
+        raise ActionRefused("That ticket couldn't be reopened.")
     channel = await resolve_channel(context, values.get("channel_id") or context.source_message.channel.id)
     if not isinstance(channel, discord.TextChannel):
-        raise ValueError("That ticket couldn't be reopened.")
+        raise ActionRefused("That ticket couldn't be reopened.")
     check_post_access(channel, context.member, context.guild.me)
     owner = await workflow.reactivation_reopen_state(context.guild, channel)
     check_member(owner, context.guild.me)
@@ -96,7 +96,7 @@ async def prepare_reactivation_reopen(context: AgentRequestContext,
         _, restored = await workflow.reopen_reactivation_ticket(context.guild, channel,
                                                                  context.member)
         if not restored:
-            raise ValueError("That ticket couldn't be reopened.")
+            raise ActionRefused("That ticket couldn't be reopened.")
         return ActionOutcome("complete", "private", text=ACTION_TICKET_REOPEN_LABEL)
 
     context.state.proposed_changes.append(PreparedAction(
@@ -112,11 +112,11 @@ async def prepare_reactivation_close(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Hibernate")
     if workflow is None or not workflow.can_manage_reactivation_ticket(context.member):
-        raise ValueError("That reactivation ticket couldn't be closed.")
+        raise ActionRefused("That reactivation ticket couldn't be closed.")
     channel = await resolve_channel(context, values.get("channel_id") or context.source_message.channel.id)
     log_channel = await resolve_channel(context, TICKETS_LOG)
     if not isinstance(channel, discord.TextChannel):
-        raise ValueError("That reactivation ticket couldn't be closed.")
+        raise ActionRefused("That reactivation ticket couldn't be closed.")
     for target in (channel, log_channel):
         check_post_access(target, context.member, context.guild.me)
     owner = await workflow.reactivation_reopen_state(context.guild, channel)
@@ -150,7 +150,7 @@ async def prepare_reactivation_close(context: AgentRequestContext,
         ok, issue = await workflow.close_reactivation_ticket(
             context.guild, channel, context.member)
         if not ok:
-            raise ValueError(issue or "That reactivation ticket couldn't be closed.")
+            raise ActionRefused(issue or "That reactivation ticket couldn't be closed.")
         return ActionOutcome("complete", "private", text=ACTION_TICKET_CLOSE_LABEL)
 
     context.state.proposed_changes.append(PreparedAction(

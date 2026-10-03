@@ -15,7 +15,7 @@ from elbow_helper.features.rosters.config import (
 
 from ...engine.capability_contract import CapabilityContract
 from ...access import ACCESS_LEAD_PLUS, require_evidence_access
-from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
@@ -90,7 +90,7 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
                              "hide": "hide_roster_controls",
                          }.get(values["operation"])), None)
         if selected is None:
-            raise ValueError("Choose open, close, show or hide.")
+            raise ActionRefused("Choose open, close, show or hide.")
         name, operation, classification, label = selected
         return await _prepare(context, values, name, operation, classification, label)
 
@@ -168,11 +168,11 @@ async def prepare_roster_refresh(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     roster_id = values["roster_id"]
     state = await workflow.roster_management_state(roster_id)
     if state is None or state["roster"].guild_id != context.guild.id:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     roster = state["roster"]
     await _check_posts(context, state["posts"])
     role = context.guild.get_role(roster.role_id) if roster.role_id else None
@@ -205,7 +205,7 @@ async def prepare_roster_refresh(context: AgentRequestContext,
     async def run() -> ActionOutcome:
         status = await workflow.refresh_roster(roster_id)
         if status != "complete":
-            raise ValueError("That roster couldn't be refreshed.")
+            raise ActionRefused("That roster couldn't be refreshed.")
         return ActionOutcome("complete", "private", text=ACTION_ROSTER_REFRESH_LABEL)
 
     context.state.proposed_changes.append(PreparedAction(
@@ -222,11 +222,11 @@ async def prepare_roster_layout(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     roster_id = values["roster_id"]
     state = await workflow.roster_layout_state(roster_id)
     if state is None or state[0].guild_id != context.guild.id:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     roster, layout = state
     before = asdict(layout)
     changes = {field: values[field] for field in before if field in values
@@ -256,7 +256,7 @@ async def prepare_roster_layout(context: AgentRequestContext,
     async def run() -> ActionOutcome:
         updated, result = await workflow.set_roster_layout(roster_id, **changes)
         if updated is None:
-            raise ValueError('That roster is unavailable.')
+            raise ActionRefused('That roster is unavailable.')
         return ActionOutcome("complete", "private",
                               text=ACTION_ROSTER_LAYOUT_LINE.format(name=updated.name),
                               after={"layout": asdict(result)})
@@ -274,11 +274,11 @@ async def prepare_roster_layout_undo(context: AgentRequestContext,
                                      log: Mapping[str, Any]) -> PreparedAction:
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     roster_id = log["targets"]["roster_id"]
     state = await workflow.roster_layout_state(roster_id)
     if state is None or state[0].guild_id != context.guild.id:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     roster, layout = state
     prior = log["before"]["layout"]
     expected = log["after"]["layout"]
@@ -302,7 +302,7 @@ async def prepare_roster_layout_undo(context: AgentRequestContext,
     async def run() -> ActionOutcome:
         updated, result = await workflow.set_roster_layout(roster_id, **prior)
         if updated is None:
-            raise ValueError('That roster is unavailable.')
+            raise ActionRefused('That roster is unavailable.')
         return ActionOutcome("complete", "private",
                               text=ACTION_ROSTER_LAYOUT_LINE.format(name=updated.name),
                               after={"layout": asdict(result)})
@@ -321,11 +321,11 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     roster_id = values["roster_id"]
     state = await workflow.roster_management_state(roster_id)
     if state is None or state["roster"].guild_id != context.guild.id:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     roster = state["roster"]
     await _check_posts(context, state["posts"])
     check_members = operation == "clear" or (operation == "open" and roster.reset_on_open)

@@ -12,7 +12,7 @@ from elbow_helper.features.agent.discord_actions.safety import (
 )
 from elbow_helper.features.help.discovery import ParameterInfo
 
-from ...actions.contracts import ActionClass, ChangePreview
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview
 from ...wording import (
     ACTION_TICKET_MEMBER,
     ACTION_TICKET_SUPPORT_ROLE,
@@ -47,7 +47,7 @@ from ...commands.registry import CommandAdapter, PreparedCommandChange
 def _workflow(context: Any):
     workflow = context.bot.get_cog("SupportActions")
     if workflow is None:
-        raise ValueError('Support tickets are unavailable.')
+        raise ActionRefused('Support tickets are unavailable.')
     return workflow
 
 
@@ -57,7 +57,7 @@ async def _member(context: Any, member_id: int):
         try:
             member = await context.guild.fetch_member(member_id)
         except discord.DiscordException:
-            raise ValueError('That member is unavailable.') from None
+            raise ActionRefused('That member is unavailable.') from None
     check_member(member, context.guild.me)
     return member
 
@@ -136,10 +136,10 @@ async def prepare_support_close(context: Any,
         context.guild, channel, context.member,
     )
     if prepared["issue"]:
-        raise ValueError(prepared["issue"])
+        raise ActionRefused(prepared["issue"])
     log_channel = prepared["log_channel"]
     if log_channel is None:
-        raise ValueError("The transcript log channel hasn't been set up.")
+        raise ActionRefused("The transcript log channel hasn't been set up.")
     check_post_access(log_channel, context.member, context.guild.me)
     owner = prepared["owner"]
     if owner is not None:

@@ -28,7 +28,7 @@ class ModelResultTests(unittest.TestCase):
             "status": "failed", "truncated": False,
             "limits": ["access_denied", "partial"],
         })
-        self.assertNotIn("error", result)
+        self.assertEqual(result["error"], "That source is not accessible.")
         self.assertNotIn("limitations", result)
 
     def test_truncation_marks_partial_result(self):
@@ -79,5 +79,6 @@ class ResultHandlerTests(unittest.IsolatedAsyncioTestCase):
         handler = AsyncMock(return_value={"error": "The source is not configured."})
         result = await result_handler(handler)(None, {"value": 7})
         handler.assert_awaited_once_with(None, {"value": 7})
-        self.assertEqual(result, {"flags": {"status": "failed", "truncated": False,
+        self.assertEqual(result, {"error": "The source is not configured.",
+                                  "flags": {"status": "failed", "truncated": False,
                                            "limits": ["missing_setup"]}})

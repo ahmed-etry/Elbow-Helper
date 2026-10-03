@@ -7,7 +7,7 @@ import discord
 from elbow_helper.features.agent.discord_actions.safety import check_post_access, resolve_channel
 from elbow_helper.features.help.discovery import ParameterInfo
 from ...access import ACCESS_LEAD_PLUS
-from ...actions.contracts import ActionClass, ChangePreview
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview
 from ...models import AgentAttachment
 from ...wording import (
     ACTION_ROSTER_POST_REFRESH,
@@ -38,19 +38,19 @@ async def prepare_roster_post(context: Any,
                               values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     try:
         roster_id = int(values["roster"])
     except (TypeError, ValueError):
-        raise ValueError('That roster is unavailable.') from None
+        raise ActionRefused('That roster is unavailable.') from None
     roster = await workflow.get_roster(roster_id)
     if roster is None or roster.guild_id != context.guild.id:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     channel = await resolve_channel(
         context, values.get("channel") or context.source_message.channel.id,
     )
     if not isinstance(channel, (discord.TextChannel, discord.Thread)):
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     check_post_access(channel, context.member, context.guild.me)
     state = await workflow.roster_edit_state(roster)
     render = await workflow.preview_roster_post(roster)
@@ -97,7 +97,7 @@ async def prepare_roster_post(context: Any,
             roster_id, channel.send, rendered=render["rendered"],
         )
         if result is None:
-            raise ValueError('That roster is unavailable.')
+            raise ActionRefused('That roster is unavailable.')
         opened, message = result
         if not await workflow.roster_post_registered(roster_id, message.id):
             raise OSError("Roster post could not be verified")
@@ -127,14 +127,14 @@ async def prepare_roster_export(context: Any,
                                 values: Mapping[str, Any]) -> PreparedCommandChange | ActionOutcome:
     workflow = context.bot.get_cog("Rosters")
     if workflow is None:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     try:
         roster_id = int(values["roster"])
     except (TypeError, ValueError):
-        raise ValueError('That roster is unavailable.') from None
+        raise ActionRefused('That roster is unavailable.') from None
     roster = await workflow.get_roster(roster_id)
     if roster is None or roster.guild_id != context.guild.id:
-        raise ValueError('That roster is unavailable.')
+        raise ActionRefused('That roster is unavailable.')
     plan = await workflow.roster_export_plan(roster)
     if not plan["accounts"]:
         return ActionOutcome(

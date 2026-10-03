@@ -10,7 +10,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
-from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
@@ -46,10 +46,10 @@ async def prepare_cc_status(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("CwlManagement")
     if workflow is None or not workflow.can_change_cc_status(context.member):
-        raise ValueError("That CWL Clan Castle status isn't available.")
+        raise ActionRefused("That CWL Clan Castle status isn't available.")
     snapshot = await workflow.cc_status_snapshot(values["clan_code"])
     if snapshot is None or not snapshot["sticky_message_id"]:
-        raise ValueError("That CWL Clan Castle status isn't available.")
+        raise ActionRefused("That CWL Clan Castle status isn't available.")
     if snapshot["status"] == values["status"]:
         return {"status": "no_change"}
     thread = await resolve_channel(context, snapshot["thread_id"])
@@ -73,7 +73,7 @@ async def prepare_cc_status(context: AgentRequestContext,
             values["clan_code"], values["status"], context.member,
             thread.id, snapshot["sticky_message_id"])
         if not ok:
-            raise ValueError(message)
+            raise ActionRefused(message)
         return ActionOutcome("complete", "private", text=message,
                               after={"status": values["status"],
                                      "war_tag": snapshot["war_tag"]})
@@ -92,12 +92,12 @@ async def prepare_cc_status_undo(context: AgentRequestContext,
                                  log: Mapping[str, Any]) -> PreparedAction:
     workflow = context.bot.get_cog("CwlManagement")
     if workflow is None:
-        raise ValueError("That CWL Clan Castle status isn't available.")
+        raise ActionRefused("That CWL Clan Castle status isn't available.")
     clan = log["targets"]["clan_code"]
     snapshot = await workflow.cc_status_snapshot(clan)
     if snapshot is None or snapshot["war_tag"] != log["after"]["war_tag"] or (
             snapshot["status"] != log["after"]["status"]):
-        raise ValueError("That CWL Clan Castle status isn't available.")
+        raise ActionRefused("That CWL Clan Castle status isn't available.")
     thread = await resolve_channel(context, snapshot["thread_id"])
     check_post_access(thread, context.member, context.guild.me)
     prior = log["before"]["status"]
@@ -114,7 +114,7 @@ async def prepare_cc_status_undo(context: AgentRequestContext,
         ok, message = await workflow.set_cwl_cc_status(
             clan, prior, context.member, thread.id, snapshot["sticky_message_id"])
         if not ok:
-            raise ValueError(message)
+            raise ActionRefused(message)
         return ActionOutcome("complete", "private", text=message,
                               after={"status": prior, "war_tag": snapshot["war_tag"]})
 

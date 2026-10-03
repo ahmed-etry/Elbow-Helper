@@ -7,7 +7,7 @@ from typing import Any
 
 from elbow_helper.features.agent.discord_actions.safety import check_post_access
 
-from ...actions.contracts import ActionClass, ChangePreview
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview
 from ...wording import (
     ACTION_PREVIEW_BLANK,
     ACTION_TRANSFER_REMINDER_CHANNEL,
@@ -25,11 +25,11 @@ async def prepare_transfer_reminder(
 ) -> PreparedCommandChange | ActionOutcome:
     workflow = context.bot.get_cog("CwlManagement")
     if workflow is None:
-        raise ValueError('CWL transfer reminders are unavailable.')
+        raise ActionRefused('CWL transfer reminders are unavailable.')
     exclude = values.get("exclude")
     prepared = await workflow.prepare_transfer_reminder(context.guild.id, exclude)
     if prepared["issue"]:
-        raise ValueError(prepared["issue"])
+        raise ActionRefused(prepared["issue"])
     if prepared["status"] in ("unavailable", "no_change"):
         return ActionOutcome(
             "complete", "private", text="\n".join(prepared["result_lines"]),

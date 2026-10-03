@@ -8,13 +8,12 @@ from datetime import datetime, timezone
 import json
 import re
 from typing import Any
-from zoneinfo import ZoneInfo
 import discord
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
-from ..actions.contracts import ActionClass, ChangePreview, PreparedAction
+from ..actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ..actions.outcomes import ActionOutcome
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
@@ -58,23 +57,23 @@ TOOL_CONTRACTS = {
 def _repository(context: AgentRequestContext):
     repository = context.action_repository
     if repository is None:
-        raise ValueError("Standing requests are unavailable.")
+        raise ActionRefused("Standing requests are unavailable.")
     return repository
 
 
 def entity_kind(value: str) -> str:
     if value not in ("request", "watcher"):
-        raise ValueError("Choose a saved request or watcher.")
+        raise ActionRefused("Choose a saved request or watcher.")
     return value
 
 
 def _schedule(values: Mapping[str, Any], *, watcher: bool, zone: str) -> tuple[datetime, ...]:
     rule = values.get("schedule")
     if not isinstance(rule, Mapping):
-        raise ValueError("Choose a run time.")
+        raise ActionRefused("Choose a run time.")
     times = next_occurrences(rule, after=datetime.now(timezone.utc), watcher=watcher)
     if not times:
-        raise ValueError("Choose a future run time.")
+        raise ActionRefused("Choose a future run time.")
     return times
 
 
@@ -90,12 +89,12 @@ def _allowed_capabilities(
         selected = registry.get(name)
         if name in {"save_standing_rule", "manage_standing_rule"} or selected is None or selected.action_class not in (ActionClass.CHANGE,
                                                                 ActionClass.IRREVERSIBLE):
-            raise ValueError("Choose an available change for this request.")
+            raise ActionRefused("Choose an available change for this request.")
         properties = selected.definition.parameters.get("properties", {})
         named = set(entry["fixed_values"]) | set(entry["variable_fields"])
         required = set(selected.definition.parameters.get("required", ()))
         if not named <= set(properties) or not required <= named:
-            raise ValueError("Set the fixed and changing values for each required action option.")
+            raise ActionRefused("Set the fixed and changing values for each required action option.")
         if name in command_capabilities:
             entry["action_path"] = command_capabilities[name].adapter.path
 
@@ -103,42 +102,42 @@ def _allowed_capabilities(
 def watcher_reads(reads: Any, registry: Mapping[str, RegisteredAgentTool]) -> None:
 
     if not isinstance(reads, list) or not 1 <= len(reads) <= 8:
-        raise ValueError("Choose at least one current or latest lookup.")
+        raise ActionRefused("Choose at least one current or latest lookup.")
     for read in reads:
         if not isinstance(read, Mapping):
-            raise ValueError("Choose current or latest lookups.")
+            raise ActionRefused("Choose current or latest lookups.")
         name = read.get("capability")
         arguments = read.get("arguments")
         tool = registry.get(name)
         if (tool is None or tool.action_class is not ActionClass.READ
                 or tool.effect is not AgentCapabilityEffect.READ
                 or not isinstance(arguments, Mapping)):
-            raise ValueError("Watchers use read lookups only.")
+            raise ActionRefused("Watchers use read lookups only.")
         if not valid_arguments(arguments, tool.definition.parameters):
-            raise ValueError("Choose valid values for each watcher lookup.")
+            raise ActionRefused("Choose valid values for each watcher lookup.")
         contract = tool.contract
         if contract is None:
-            raise ValueError("That lookup cannot be watched.")
+            raise ActionRefused("That lookup cannot be watched.")
         if contract.retained_fields or contract.source_scope in (
             "retained_channel_evidence", "retained_attachment", "request_attachment",
         ):
-            raise ValueError("Watchers need fresh lookups, not earlier reports or attachments.")
+            raise ActionRefused("Watchers need fresh lookups, not earlier reports or attachments.")
         if contract.time_window is not None:
-            raise ValueError("Watchers use current or latest results, not a historical window.")
+            raise ActionRefused("Watchers use current or latest results, not a historical window.")
         if any(field in arguments and arguments[field] not in ("current", "latest")
                for field in contract.time_fields):
-            raise ValueError("Watchers use current or latest results only.")
+            raise ActionRefused("Watchers use current or latest results only.")
 
 
 def _validate_watcher(values: Mapping[str, Any], actions, registry_factory) -> None:
     if actions:
-        raise ValueError("Watchers send alerts only.")
+        raise ActionRefused("Watchers send alerts only.")
     watcher_reads(values.get("reads"), registry_factory())
     condition = values.get("condition")
     if not isinstance(condition, str) or not condition.strip():
-        raise ValueError("Describe when the watcher should alert.")
+        raise ActionRefused("Describe when the watcher should alert.")
     if has_raw_id(condition):
-        raise ValueError("Describe the watcher condition with names instead of IDs.")
+        raise ActionRefused("Describe the watcher condition with names instead of IDs.")
 
 
 def _evidence_label(context: AgentRequestContext, name: str, value: Any) -> str | None:
@@ -186,17 +185,17 @@ def _fixed_display(context: AgentRequestContext, name: str, value: Any) -> str:
     if name.endswith("role_id") or name == "role":
         role = context.guild.get_role(value)
         if role is None:
-            raise ValueError("Choose a role still in this server.")
+            raise ActionRefused("Choose a role still in this server.")
         return role.mention
     if name.endswith(("channel_id", "thread_id")) or name in ("channel", "thread"):
         channel = context.guild.get_channel_or_thread(value)
         if channel is None:
-            raise ValueError("Choose a channel still in this server.")
+            raise ActionRefused("Choose a channel still in this server.")
         return channel.mention
     if name.endswith(("member_id", "user_id")) or name in ("member", "user"):
         member = context.guild.get_member(value)
         if member is None:
-            raise ValueError("Choose a member still in this server.")
+            raise ActionRefused("Choose a member still in this server.")
         return member.mention
     if isinstance(value, bool):
         return ACTION_VALUE_YES if value else ACTION_VALUE_NO
@@ -204,18 +203,17 @@ def _fixed_display(context: AgentRequestContext, name: str, value: Any) -> str:
     if label:
         return label
     if name.endswith("_id") or re.fullmatch(r"\d{17,20}", str(value)):
-        raise ValueError("Choose a named target for each fixed action value.")
+        raise ActionRefused("Choose a named target for each fixed action value.")
     return str(value)
 
 
 def _preview_lines(values: Mapping[str, Any], *, kind: str, request: str,
                    zone: str, times: tuple[datetime, ...], channel: Any,
                    actions: list[Mapping[str, Any]], context: AgentRequestContext) -> tuple[str, ...]:
-    formatted = ", ".join(item.astimezone(ZoneInfo(zone)).strftime("%d %b %Y %H:%M")
-                          for item in times)
+    formatted = ", ".join(f"<t:{int(item.timestamp())}:f>" for item in times)
     lines = [
         ACTION_STANDING_SAVE.format(kind=kind, request=request),
-        ACTION_STANDING_TIME.format(times=formatted, timezone=zone),
+        ACTION_STANDING_TIME.format(times=formatted),
         ACTION_STANDING_DESTINATION.format(channel=channel.mention),
         ACTION_STANDING_SCOPE if actions else ACTION_STANDING_NO_CHANGES,
     ]
@@ -247,17 +245,23 @@ async def prepare_save(
     kind = entity_kind(values["kind"])
     request = str(values["request"]).strip()
     if not request or len(request) > 4000:
-        raise ValueError("Describe the request in fewer than 4,000 characters.")
-    zone = values.get("timezone") or repository.member_timezone(context.member.id)
-    if not zone:
-        return {"missing_timezone": True}
-    zone = timezone_name(zone)
+        raise ActionRefused("Describe the request in fewer than 4,000 characters.")
+    schedule = values.get("schedule")
+    local_time = isinstance(schedule, Mapping) and schedule.get("kind") in ("weekly", "monthly")
+    zone = (values.get("timezone")
+            or (schedule.get("timezone") if isinstance(schedule, Mapping) else None)
+            or repository.member_timezone(context.member.id))
+    if local_time and not zone:
+        return {"status": "needs_input", "missing": ["timezone"]}
+    zone = timezone_name(zone) if zone else ""
+    if local_time:
+        values = {**values, "schedule": {**schedule, "timezone": zone}}
     times = _schedule(values, watcher=kind == "watcher", zone=zone)
     channel = await resolve_channel(context, values["destination_channel_id"])
     check_post_access(channel, context.member, context.guild.me)
     actions = values.get("allowed_actions", [])
     if not isinstance(actions, list):
-        raise ValueError("Choose the changes this request may make.")
+        raise ActionRefused("Choose the changes this request may make.")
     actions = [dict(item) if isinstance(item, Mapping) else item for item in actions]
     validate_scope(actions)
     if actions:
@@ -282,7 +286,7 @@ async def prepare_save(
         current = repository.standing(kind=kind, identifier=identifier,
                                       requester_id=context.member.id)
         if current is None or current["status"] == "cancelled":
-            raise ValueError("That saved rule is unavailable.")
+            raise ActionRefused("That saved rule is unavailable.")
         version = current["version"]
 
     async def recheck() -> bool:
@@ -306,14 +310,15 @@ async def prepare_save(
                 next_at=times[0].timestamp(), expected_version=version,
             )
             if not changed:
-                raise ValueError("That saved rule changed.")
+                raise ActionRefused("That saved rule changed.")
         else:
             repository.create_standing(
                 kind=kind, guild_id=context.guild.id, requester_id=context.member.id,
                 destination_channel_id=channel.id, rule=rule,
                 next_at=times[0].timestamp(),
             )
-        repository.set_member_timezone(context.member.id, zone)
+        if zone:
+            repository.set_member_timezone(context.member.id, zone)
         return ActionOutcome("complete", "public",
                               text=ACTION_STANDING_SAVED.format(kind=kind))
 
@@ -348,12 +353,12 @@ async def prepare_manage(context: AgentRequestContext,
     kind = entity_kind(values["kind"])
     operation = values["operation"]
     if operation not in ("pause", "resume", "cancel"):
-        raise ValueError("Choose pause, resume or cancel.")
+        raise ActionRefused("Choose pause, resume or cancel.")
     identifier = values["id"]
     current = repository.standing(kind=kind, identifier=identifier,
                                   requester_id=context.member.id)
     if current is None or current["status"] not in ("active", "paused"):
-        raise ValueError("That saved rule is unavailable.")
+        raise ActionRefused("That saved rule is unavailable.")
     target = "active" if operation == "resume" else ("paused" if operation == "pause" else "cancelled")
     line = ACTION_STANDING_MANAGE.format(operation=operation.capitalize(), kind=kind,
                                          request=current["rule"]["request"])
@@ -369,7 +374,7 @@ async def prepare_manage(context: AgentRequestContext,
     async def run() -> ActionOutcome:
         if not repository.set_standing_status(kind=kind, identifier=identifier,
                                               requester_id=context.member.id, status=target):
-            raise ValueError("That saved rule changed.")
+            raise ActionRefused("That saved rule changed.")
         return ActionOutcome("complete", "public",
                               text=ACTION_STANDING_MANAGED.format(
                                   kind=kind, result={"resume": "resumed", "pause": "paused",

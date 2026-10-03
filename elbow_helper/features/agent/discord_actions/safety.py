@@ -12,6 +12,7 @@ from ..wording import ACTION_UNAVAILABLE
 from elbow_helper.features.hibernation.config import managed_role_ids as hibernation_roles
 from elbow_helper.features.recruitment.config import managed_role_ids as recruitment_roles
 from elbow_helper.features.wars.roles import managed_role_ids as war_roles
+from ..actions.contracts import ActionRefused
 
 
 POWERFUL_PERMISSIONS = (
@@ -21,7 +22,7 @@ POWERFUL_PERMISSIONS = (
 )
 
 
-class DiscordActionRefused(ValueError):
+class DiscordActionRefused(ActionRefused):
     """A Discord target is outside the agent's action boundary."""
 
 

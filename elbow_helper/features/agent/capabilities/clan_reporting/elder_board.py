@@ -11,7 +11,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
-from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
@@ -44,10 +44,10 @@ async def prepare_missing_elder_board(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("ClanReporting")
     if workflow is None:
-        raise ValueError("That Missing Elder board couldn't be refreshed.")
+        raise ActionRefused("That Missing Elder board couldn't be refreshed.")
     location = workflow.missing_elder_board_location(values["clan_code"])
     if location is None:
-        raise ValueError("That Missing Elder board couldn't be refreshed.")
+        raise ActionRefused("That Missing Elder board couldn't be refreshed.")
     channel = await resolve_channel(context, location["channel_id"])
     check_post_access(channel, context.member, context.guild.me)
     lines = [ACTION_ELDER_REFRESH_LINE.format(clan=values["clan_code"],
@@ -64,7 +64,7 @@ async def prepare_missing_elder_board(context: AgentRequestContext,
 
     async def run() -> ActionOutcome:
         if not await workflow.refresh_missing_elder_board_from_accounts(values["clan_code"]):
-            raise ValueError("That Missing Elder board couldn't be refreshed.")
+            raise ActionRefused("That Missing Elder board couldn't be refreshed.")
         return ActionOutcome("complete", "private", text=ACTION_ELDER_REFRESH_LABEL)
 
     context.state.proposed_changes.append(PreparedAction(

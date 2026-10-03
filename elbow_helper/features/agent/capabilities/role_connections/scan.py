@@ -9,7 +9,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
 from ...access import ACCESS_LEAD, require_evidence_access
-from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
@@ -42,13 +42,13 @@ async def prepare_role_connection_scan(context: AgentRequestContext,
     await require_evidence_access(context)
     workflow = context.bot.get_cog("RoleConnections")
     if workflow is None:
-        raise ValueError('Role connections are unavailable.')
+        raise ActionRefused('Role connections are unavailable.')
     signature = workflow.connections_board_signature()
     plan = await workflow.role_connection_scan_plan(context.guild)
     changes = [(member, role, add) for member, actions in plan
                for role, add in actions]
     if not changes:
-        return {"status": "no_change", "prepared_count": 0}
+        return {"status": "no_change"}
     for member, role, _ in changes:
         check_member(member, context.guild.me)
         check_role(role, context.guild, context.guild.me, {})
@@ -59,7 +59,7 @@ async def prepare_role_connection_scan(context: AgentRequestContext,
             member_label=member.mention, role_label=role.mention,
             signature=signature,
         ))
-    return {"status": "confirmation_required", "prepared_count": len(changes)}
+    return {"status": "confirmation_required"}
 
 
 def _scan_action(context: AgentRequestContext, workflow: Any,
@@ -84,7 +84,7 @@ def _scan_action(context: AgentRequestContext, workflow: Any,
     async def run() -> ActionOutcome:
         member, role = await targets()
         if not await workflow.apply_role_connection_change(member, role, add=add):
-            raise ValueError('Role connections are unavailable.')
+            raise ActionRefused('Role connections are unavailable.')
         return ActionOutcome("complete", after={"has_role": add})
 
     line = (ACTION_ROLE_ADD_LINE if add else ACTION_ROLE_REMOVE_LINE).format(
@@ -103,7 +103,7 @@ async def prepare_role_connection_scan_undo(context: AgentRequestContext,
                                             log: Mapping[str, Any]) -> PreparedAction:
     workflow = context.bot.get_cog("RoleConnections")
     if workflow is None:
-        raise ValueError('Role connections are unavailable.')
+        raise ActionRefused('Role connections are unavailable.')
     values = log["targets"]
     member = await resolve_member(context.guild, values["member_id"])
     role = context.guild.get_role(values["role_id"])

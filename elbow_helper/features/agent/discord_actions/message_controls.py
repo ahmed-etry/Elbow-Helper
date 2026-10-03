@@ -154,12 +154,12 @@ async def _prepare(context: AgentRequestContext, arguments: Mapping[str, Any],
             context, arguments["channel_id"], arguments["message_id"],
         )
     except DiscordActionRefused as error:
-        return {"error": str(error), "prepared_count": 0}
+        return {"error": str(error)}
     add = arguments["operation"] in ("add", "pin")
     emoji = arguments.get("emoji", "")
     before = _reaction_active(message, emoji) if kind == "reaction" else message.pinned
     if before == add:
-        return {"status": "no_change", "prepared_count": 0}
+        return {"status": "no_change"}
     context.state.proposed_changes.append(_control_action(
         context, channel_id=arguments["channel_id"], message_id=message.id,
         kind=kind, add=add, before=before, emoji=emoji,

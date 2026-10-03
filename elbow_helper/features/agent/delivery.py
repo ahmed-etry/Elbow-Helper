@@ -20,7 +20,7 @@ from .models import AgentAttachment, AgentDelivery, AgentRequestContext
 from .engine.service import AgentUnavailableError
 from .actions.private_view import PrivateResultView
 from .actions.answer_view import PrivateAnswerView
-from .actions.preview import ConfirmationView
+from .actions.preview import CONFIRMATION_TIMEOUT, ConfirmationView
 from .actions.preview import preview_text
 from .actions.details import prepare_preview
 from .text import chunk_response as _chunk_response
@@ -46,6 +46,8 @@ class AgentDeliveryMixin:
         *,
         delivery: AgentDelivery | None = None,
         context: AgentRequestContext | None = None,
+        preview_timeout: float = CONFIRMATION_TIMEOUT,
+        mention_requester: bool = False,
         _audience_override: bool = False,
         _nonce_seed: int | None = None,
     ) -> None:
@@ -59,7 +61,7 @@ class AgentDeliveryMixin:
                         message, response, referenced, attachments, conversation,
                         context=context, _audience_override=True, _nonce_seed=interaction.id,
                     )
-                scheduled = getattr(message, "scheduled_run", False)
+                scheduled = mention_requester or getattr(message, "scheduled_run", False)
                 view = PrivateAnswerView(context, response, attachments, post,
                                          timeout=3600.0 if scheduled else 600.0)
                 notice = ACTION_PRIVATE_ANSWER
@@ -95,6 +97,9 @@ class AgentDeliveryMixin:
         }
         if referenced is not None and not referenced.author.bot:
             allowed_users[referenced.author.id] = referenced.author
+        if mention_requester:
+            allowed_users[message.author.id] = message.author
+            response = f"<@{message.author.id}> {response}"
         allowed_mentions = discord.AllowedMentions(
             everyone=False,
             roles=False,
@@ -117,6 +122,7 @@ class AgentDeliveryMixin:
             options = {"files": files} if files else {}
             private_view, confirm_view = build_reply_views(
                 message, context, getattr(self, "action_runner", None),
+                preview_timeout=preview_timeout,
             )
             await self._send_response_parts(
                 message, response, chunks, options, private_view, confirm_view,
@@ -337,7 +343,7 @@ def _uncertain_delivery_error(error: BaseException) -> bool:
     )
 
 
-def build_reply_views(message, context, runner):
+def build_reply_views(message, context, runner, *, preview_timeout=CONFIRMATION_TIMEOUT):
     private_parts = tuple(
         part for outcome in (context.state.outcomes if context else ())
         if outcome.visibility == "private" for part in outcome.private_parts
@@ -361,6 +367,6 @@ def build_reply_views(message, context, runner):
     confirm_view = (ConfirmationView(message.author.id,
                                      tuple(context.state.proposed_changes), context,
                                      private_view,
-                                     runner=runner)
+                                     runner=runner, timeout=preview_timeout)
                     if context and context.state.proposed_changes else None)
     return private_view, confirm_view

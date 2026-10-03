@@ -21,12 +21,11 @@ from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.features.agent.engine.service import AgentUnavailableError
 from elbow_helper.features.agent.commands.bridge import build_command_tools
 from elbow_helper.features.agent.actions.outcomes import ActionOutcome
-from elbow_helper.features.agent.actions.contracts import ChangePreview
+from elbow_helper.features.agent.actions.contracts import ActionRefused, ChangePreview
 from elbow_helper.features.agent.actions.contracts import ActionClass, PreparedAction
 from elbow_helper.features.agent.commands.registry import CommandAdapter
 from elbow_helper.features.agent.wording import (
     AGENT_ANSWER_UNFINISHED, AGENT_PLAN_UNFINISHED,
-    ACTION_UNAVAILABLE,
 )
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 from elbow_helper.features.agent.access import AgentAccessLost
@@ -928,7 +927,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                     ChangePreview((f"Change target {target}",), AsyncMock(return_value=True)),
                     run,
                 ))
-            return {"status": "confirmation_required", "prepared_count": len(arguments["targets"])}
+            return {"status": "confirmation_required"}
         tool = RegisteredAgentTool(AgentToolDefinition(
             name="synthetic_change", description="Change selected targets.",
             parameters={"type": "object", "properties": {
@@ -1012,7 +1011,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         run = AsyncMock(return_value=ActionOutcome("complete", text="Unexpected"))
         async def prepare(context, values):
             if values["target"] == 202:
-                raise ValueError("Synthetic target unavailable")
+                raise ActionRefused("Synthetic target unavailable")
             return ChangePreview((f"Change target {values['target']}",),
                                  AsyncMock(return_value=True))
         command = DiscoveredCommand(path, "registered", (
@@ -1028,7 +1027,8 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         name = next(iter(tools))
         plan = _plan([{**_step(str(value), {"target": value}), "capability": name}
                       for value in (101, 202)])
-        session = _Session([_model_step(plan)], self.events)
+        session = _Session([_model_step(plan),
+                            AgentStep("Explain unavailable changes.", (), AgentUsage())], self.events)
         context = _context()
         with (patch("elbow_helper.features.agent.engine.service.build_agent_tools", return_value=self.registry),
               patch("elbow_helper.features.agent.engine.service.build_command_tools",
@@ -1036,6 +1036,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             context = replace(context, bot=SimpleNamespace(tree=object()))
             answer = await AgentService(_Model(session), actions_enabled=True).answer(
                 question="synthetic request", local_context="", context=context)
-        self.assertEqual(answer, ACTION_UNAVAILABLE)
+        self.assertEqual(answer, "Explain unavailable changes.")
         self.assertEqual(context.state.proposed_changes, [])
         run.assert_not_awaited()

@@ -11,7 +11,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
 from ...access import require_evidence_access
-from ...actions.contracts import ActionClass, ChangePreview, PreparedAction
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
 from ...models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ...wording import (
@@ -115,7 +115,7 @@ async def _workflow(context: AgentRequestContext, *, post: bool = True):
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Examination")
     if workflow is None or not workflow.can_edit_examiner_profile(context.member):
-        raise ValueError("That examiner profile isn't available.")
+        raise ActionRefused("That examiner profile isn't available.")
     channel = await resolve_channel(context, EXAMINATION_PANEL_THREAD)
     if post:
         check_post_access(channel, context.member, context.guild.me)
@@ -140,7 +140,7 @@ async def prepare_examiner_profile(context: AgentRequestContext,
             else:
                 issue = ("Timezone is invalid. Choose one of: "
                          + ", ".join(option.value for option in TIMEZONE_SELECT_OPTIONS) + ".")
-        return {"status": "needs_input", "issue": issue, "prepared_count": 0}
+        return {"status": "needs_input", "issue": issue}
     changed = [key for key in PROFILE_FIELDS if before.get(key) != after.get(key)]
     if not changed:
         return {"status": "no_change"}
@@ -192,7 +192,7 @@ async def prepare_examiner_leave(context: AgentRequestContext,
 
     async def run() -> ActionOutcome:
         if not await workflow.leave_examiner_roster(context.member):
-            raise ValueError("That examiner profile isn't available.")
+            raise ActionRefused("That examiner profile isn't available.")
         return ActionOutcome("complete", "private", text=ACTION_EXAMINER_PROFILE_LEAVE.format(
             member=context.member.mention, channel=channel.mention))
 
@@ -212,7 +212,7 @@ async def prepare_examiner_profile_undo(context: AgentRequestContext,
     current = workflow.examiner_profile_snapshot(context.member)
     if not workflow.has_examiner_profile(context.member) or any(
             current[key] != expected["profile"][key] for key in PROFILE_FIELDS):
-        raise ValueError("That examiner profile isn't available.")
+        raise ActionRefused("That examiner profile isn't available.")
     lines = [ACTION_EXAMINER_PROFILE_LINE.format(member=context.member.mention,
                                                  channel=channel.mention)]
     details = tuple(ACTION_FIELD_CHANGE.format(

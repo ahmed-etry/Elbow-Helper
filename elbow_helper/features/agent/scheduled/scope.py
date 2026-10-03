@@ -7,7 +7,7 @@ import json
 import re
 from typing import Any
 
-from ..actions.contracts import PreparedAction
+from ..actions.contracts import ActionRefused, PreparedAction
 
 
 VARIABLE_WORDS = frozenset({"target", "member", "player", "account", "content", "message", "text", "body"})
@@ -24,7 +24,7 @@ def validate_scope(actions: Sequence[Mapping[str, Any]]) -> None:
     seen: set[str] = set()
     for entry in actions:
         if not isinstance(entry, Mapping) or not isinstance(entry.get("capability"), str):
-            raise ValueError("Choose an action and its fixed values.")
+            raise ActionRefused("Choose an action and its fixed values.")
         fixed = entry.get("fixed_values")
         variable = entry.get("variable_fields")
         maximum = entry.get("max_targets")
@@ -32,21 +32,21 @@ def validate_scope(actions: Sequence[Mapping[str, Any]]) -> None:
         if (not isinstance(fixed, Mapping) or not isinstance(variable, list)
                 or type(maximum) is not int or not 1 <= maximum <= 100
                 or not isinstance(scope_text, str) or not scope_text.strip()):
-            raise ValueError("Choose fixed values, changing fields and a target limit.")
+            raise ActionRefused("Choose fixed values, changing fields and a target limit.")
         if has_raw_id(scope_text):
-            raise ValueError("Describe the action with names instead of IDs.")
+            raise ActionRefused("Describe the action with names instead of IDs.")
         key = json.dumps((entry["capability"], fixed), sort_keys=True, default=str)
         if key in seen:
-            raise ValueError("Choose each allowed action once.")
+            raise ActionRefused("Choose each allowed action once.")
         seen.add(key)
         for name in variable:
             if not isinstance(name, str):
-                raise ValueError("Only targets and message content may change between runs.")
+                raise ActionRefused("Only targets and message content may change between runs.")
             words = {word.removesuffix("s") for word in name.lower().split("_")}
             if not words & VARIABLE_WORDS:
-                raise ValueError("Only targets and message content may change between runs.")
+                raise ActionRefused("Only targets and message content may change between runs.")
             if name in fixed:
-                raise ValueError("A field cannot be fixed and changing.")
+                raise ActionRefused("A field cannot be fixed and changing.")
 
 
 def within_scope(proposals: Sequence[PreparedAction],

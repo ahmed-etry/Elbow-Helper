@@ -9,7 +9,7 @@ import discord
 
 from elbow_helper.features.agent.discord_actions.safety import check_post_access
 
-from ...actions.contracts import ActionClass, ChangePreview
+from ...actions.contracts import ActionRefused, ActionClass, ChangePreview
 from ...wording import (
     ACTION_PLAN_BASE,
     ACTION_PLAN_LABEL,
@@ -32,22 +32,22 @@ async def prepare_attack_plan(context: Any,
                               values: Mapping[str, Any]) -> PreparedCommandChange:
     workflow = context.bot.get_cog("Planning")
     if workflow is None:
-        raise ValueError('Attack plans are unavailable.')
+        raise ActionRefused('Attack plans are unavailable.')
     channel = context.source_message.channel
     check_post_access(channel, context.member, context.guild.me)
     strategy_image = _image(context, values["strategy_image"])
     base_image = _image(context, values["base_image"])
     if strategy_image is None or base_image is None:
-        raise ValueError('Attach both screenshots to your message.')
+        raise ActionRefused('Attach both screenshots to your message.')
     player_tag, issue = await workflow.resolve_plan_account(values["player"])
     if issue:
-        raise ValueError("More than one Clash account matches that name. Use a player tag." if issue == "ambiguous"
+        raise ActionRefused("More than one Clash account matches that name. Use a player tag." if issue == "ambiguous"
                          else "That Clash account is invalid. Use a player tag or an exact account name.")
     prepared = await workflow.prepare_attack_plan(
         player_tag, values["thinking"], strategy_image, base_image,
     )
     if prepared["issue"]:
-        raise ValueError(prepared["issue"])
+        raise ActionRefused(prepared["issue"])
     lines = [ACTION_PLAN_LINE.format(channel=channel.mention)]
     if prepared["mention_roles"]:
         lines.append(ACTION_PLAN_PINGS.format(roles=prepared["mention_roles"]))
