@@ -39,7 +39,7 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
 
     async def run_actions(self, *actions):
         with (patch("elbow_helper.features.agent.actions.runner.require_access"),
-              patch("elbow_helper.features.agent.actions.runner.require_disclosure_access",
+              patch("elbow_helper.features.agent.actions.runner.require_evidence_access",
                     new_callable=AsyncMock)):
             run_id = await self.runner.submit(
                 self.context, tuple(actions), confirmer_id=self.context.member.id,
@@ -75,7 +75,7 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_wait_run_returns_the_finished_action_record(self):
         action, _, _ = self.action("first")
         with (patch("elbow_helper.features.agent.actions.runner.require_access"),
-              patch("elbow_helper.features.agent.actions.runner.require_disclosure_access",
+              patch("elbow_helper.features.agent.actions.runner.require_evidence_access",
                     new_callable=AsyncMock)):
             run_id = await self.runner.submit(self.context, (action,), confirmer_id=4)
             finished = await self.runner.wait_run(run_id)

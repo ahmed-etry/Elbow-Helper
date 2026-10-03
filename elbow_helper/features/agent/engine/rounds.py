@@ -10,8 +10,7 @@ import json
 import time
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from elbow_helper.infrastructure.ai import AgentToolResult
-from ..access import AgentAccessLost
-from ..disclosure import require_disclosure_access
+from ..access import AgentAccessLost, require_evidence_access
 from ..conversation.context import estimate_tokens
 from ..wording import AGENT_ANSWER_UNFINISHED, AGENT_RESEARCH_UNFINISHED
 from . import budgets as limits
@@ -69,7 +68,7 @@ class ModelRounds:
         continued=False,
     ):
         try:
-            await require_disclosure_access(self.context)
+            await require_evidence_access(self.context)
         except AgentAccessLost:
             if self.unpublished is None:
                 raise

@@ -73,6 +73,7 @@ class ScheduledMessage:
     attachments: tuple[Any, ...] = ()
     embeds: tuple[Any, ...] = ()
     archive_reply: bool = False
+    scheduled_run: bool = True
 
     async def reply(self, content=None, **kwargs):
         kwargs.pop("mention_author", None)

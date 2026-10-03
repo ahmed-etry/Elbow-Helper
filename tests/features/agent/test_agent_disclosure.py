@@ -84,7 +84,7 @@ class AgentDisclosureTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_same_channel_and_public_source_can_be_disclosed(self):
         destination = self.channel(100, public=True)
-        source = self.channel(200, public=True)
+        self.channel(200, public=True)
         self.context.source_message.channel = destination
 
         self.assertTrue(await can_disclose_provenance(
@@ -95,7 +95,7 @@ class AgentDisclosureTests(unittest.IsolatedAsyncioTestCase):
         overwrite = {self.lead: SimpleNamespace(
             view_channel=True, read_message_history=True,
         )}
-        source = self.channel(200, allow={self.lead.id}, overwrites=overwrite)
+        self.channel(200, allow={self.lead.id}, overwrites=overwrite)
         destination = self.channel(100, public=True)
         self.context.source_message.channel = destination
         self.assertFalse(await can_disclose_provenance(
@@ -152,7 +152,7 @@ class AgentDisclosureTests(unittest.IsolatedAsyncioTestCase):
             self.context, {100}, {ACCESS_LEAD},
         ))
 
-    async def test_restricted_tool_result_is_rolled_back_before_model_receives_it(self):
+    async def test_requester_can_read_evidence_for_a_private_answer(self):
         destination = self.channel(100, public=True)
         self.channel(200, allow={self.lead.id}, overwrites={
             self.lead: SimpleNamespace(view_channel=True, read_message_history=True),
@@ -186,7 +186,7 @@ class AgentDisclosureTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(answer, "The source cannot be used here.")
         result = json.loads(session.advance.await_args_list[1].args[0][0].content)
-        self.assertEqual(result["results"]["lookup"]["flags"]["status"], "failed")
-        self.assertNotIn("restricted detail", str(session.advance.await_args_list))
-        self.assertEqual(context.state.source_channels, {100})
-        self.assertFalse(any("restricted detail" in item for item in context.state.evidence))
+        self.assertEqual(result["results"]["lookup"]["flags"]["status"], "complete")
+        self.assertIn("restricted detail", str(session.advance.await_args_list))
+        self.assertEqual(context.state.source_channels, {100, 200})
+        self.assertTrue(any("restricted detail" in item for item in context.state.evidence))

@@ -76,7 +76,7 @@ class PrivateCommandViewTests(unittest.IsolatedAsyncioTestCase):
         ))
         context = SimpleNamespace(state=state)
         from unittest.mock import patch
-        with patch("elbow_helper.features.agent.delivery.require_disclosure_access",
+        with patch("elbow_helper.features.agent.delivery.require_evidence_access",
                    new_callable=AsyncMock):
             await delivery_surface.send_response(
                 message, "Result is ready.", None,

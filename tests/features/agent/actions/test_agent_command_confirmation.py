@@ -253,7 +253,7 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         state = AgentTurnState()
         state.proposed_changes.extend(self.proposal(value)[0] for value in (1, 2))
         context = SimpleNamespace(state=state)
-        with patch("elbow_helper.features.agent.delivery.require_disclosure_access",
+        with patch("elbow_helper.features.agent.delivery.require_evidence_access",
                    new_callable=AsyncMock):
             await delivery_surface.send_response(
                 message, preview_text(state.proposed_changes), None,
@@ -281,7 +281,7 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         state = AgentTurnState()
         state.proposed_changes.append(self.proposal("x" * 2000)[0])
         context = SimpleNamespace(state=state)
-        with patch("elbow_helper.features.agent.delivery.require_disclosure_access",
+        with patch("elbow_helper.features.agent.delivery.require_evidence_access",
                    new_callable=AsyncMock):
             await delivery_surface.send_response(
                 message, preview_text(state.proposed_changes), None,
@@ -311,7 +311,7 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
             "complete", "private", private_parts=("synthetic private result",),
         ))
         context = SimpleNamespace(state=state)
-        with patch("elbow_helper.features.agent.delivery.require_disclosure_access",
+        with patch("elbow_helper.features.agent.delivery.require_evidence_access",
                    new_callable=AsyncMock):
             await delivery_surface.send_response(
                 message, preview_text(state.proposed_changes), None,
@@ -342,7 +342,7 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
             "complete", "private", private_panel=panel,
         ))
         context = SimpleNamespace(state=state)
-        with patch("elbow_helper.features.agent.delivery.require_disclosure_access",
+        with patch("elbow_helper.features.agent.delivery.require_evidence_access",
                    new_callable=AsyncMock):
             await delivery_surface.send_response(
                 message, "Result is ready. Open it privately below.", None,
@@ -384,7 +384,7 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
             state.outcomes.append(ActionOutcome(
                 "complete", "private", private_panel=AsyncMock(), command_name=name,
             ))
-        with patch("elbow_helper.features.agent.delivery.require_disclosure_access",
+        with patch("elbow_helper.features.agent.delivery.require_evidence_access",
                    new_callable=AsyncMock):
             await delivery_surface.send_response(
                 message, "Result is ready. Open it privately below.", None,

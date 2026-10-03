@@ -915,7 +915,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.cog._tasks)
         self.assertEqual(conversation.pending, 0)
 
-    @patch("elbow_helper.features.agent.conversation.preparation.can_disclose_provenance", new=AsyncMock(return_value=True))
     async def test_history_from_newly_inaccessible_sources_is_not_replayed(self):
         conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
         conversation.turns = [ConversationTurn("permitted", frozenset({100})),
@@ -934,7 +933,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.state.history_status["included_turns"], 1)
         self.assertEqual(context.state.history_status["older_retained_turns_available"], 0)
 
-    @patch("elbow_helper.features.agent.conversation.preparation.can_disclose_provenance", new=AsyncMock(return_value=True))
     async def test_history_requiring_a_removed_role_is_not_replayed(self):
         core_only = _Member(42, (next(iter(CORE)),))
         conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
@@ -960,7 +958,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
             context.state.authorized_history, (conversation.turns[0],),
         )
 
-    @patch("elbow_helper.features.agent.conversation.preparation.can_disclose_provenance", new=AsyncMock(return_value=True))
     async def test_checkpoint_requires_every_source_and_role_at_use_time(self):
         core_only = _Member(42, (next(iter(CORE)),))
         conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
@@ -1008,7 +1005,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
             await self.cog._conversation_history(conversation, context)
         self.assertIs(context.state.authorized_checkpoint, conversation.checkpoint)
 
-    @patch("elbow_helper.features.agent.conversation.preparation.can_disclose_provenance", new=AsyncMock(return_value=True))
     async def test_changed_knowledge_is_historical_even_after_report_eviction(self):
         reference = ("cwl_policy@v1", "a" * 64)
         conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
@@ -1042,7 +1038,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.state.stale_knowledge_refs, {reference})
         self.assertIsNone(context.state.authorized_checkpoint)
 
-    @patch("elbow_helper.features.agent.conversation.preparation.can_disclose_provenance", new=AsyncMock(return_value=True))
     async def test_current_knowledge_remains_usable_as_context(self):
         reference = ("cwl_policy@v2", "b" * 64)
         conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
@@ -1160,7 +1155,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
             context.state.stale_knowledge_report_ids, {"knowledge"},
         )
 
-    @patch("elbow_helper.features.agent.conversation.preparation.can_disclose_provenance", new=AsyncMock(return_value=True))
     async def test_history_preparation_preserves_all_authorized_candidates_for_compilation(self):
         conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
         conversation.turns = [ConversationTurn("older " + "x" * 60_000, frozenset({100})),

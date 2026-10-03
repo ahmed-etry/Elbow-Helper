@@ -18,7 +18,6 @@ from elbow_helper.discord.message_search import (
 import elbow_helper.features.agent.research.repository as research_job_storage
 import elbow_helper.features.agent.research.transitions as research_job_transitions
 from elbow_helper.features.agent.access import AgentAccessLost
-from elbow_helper.features.agent.disclosure import AgentDisclosureDenied
 from elbow_helper.features.agent.research.repository import (
     ResearchJobBusy, ResearchJobConflict, ResearchJobRepository,
     ResearchJobScope,
@@ -847,22 +846,20 @@ class ResearchJobToolTests(unittest.IsolatedAsyncioTestCase):
             ).fetchone()[0]
         self.assertEqual(count, 0)
 
-    async def test_research_job_is_not_created_for_source_that_cannot_be_disclosed_here(self):
+    async def test_research_jobs_use_requester_access_before_private_delivery(self):
         self.channels[200].denied.add(self.guild.default_role.id)
-        with self.assertRaises(AgentDisclosureDenied):
-            await start_discord_research_job(self.context, {
-                "channel_id": 200, "query": "decision",
-            })
-        with self.assertRaises(AgentDisclosureDenied):
-            await start_discord_research_batch(self.context, {
-                "channel_ids": [100, 200], "kind": "search",
-                "query": "decision",
-            })
+        await start_discord_research_job(self.context, {
+            "channel_id": 200, "query": "decision",
+        })
+        await start_discord_research_batch(self.context, {
+            "channel_ids": [100, 200], "kind": "search",
+            "query": "decision",
+        })
         with self.repository.connect() as connection:
             count = connection.execute(
                 "SELECT COUNT(*) FROM research_jobs",
             ).fetchone()[0]
-        self.assertEqual(count, 0)
+        self.assertEqual(count, 3)
 
     async def test_multi_channel_batch_cancels_all_on_post_create_access_loss(self):
         with patch(

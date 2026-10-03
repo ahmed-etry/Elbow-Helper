@@ -11,8 +11,7 @@ from elbow_helper.infrastructure.ai import AgentModel
 from elbow_helper.infrastructure.ai import TextGenerationError
 from ..models import AgentRequestContext
 from ..actions.contracts import ActionClass
-from ..access import AgentAccessLost
-from ..disclosure import require_disclosure_access
+from ..access import AgentAccessLost, require_evidence_access
 from ..prompts import SYSTEM_PROMPT
 from ..conversation.context import compile_context, estimate_tokens
 from .registry import build_agent_tools
@@ -209,7 +208,7 @@ class AgentService:
             status = "completed"
             return answer
         except AgentGracefulEnd as error:
-            await require_disclosure_access(flow.context)
+            await require_evidence_access(flow.context)
             status = "incomplete"
             return str(error)
         except TextGenerationError as error:
@@ -221,7 +220,7 @@ class AgentService:
                 getattr(flow.context.source_message, "id", None),
                 error,
             )
-            await require_disclosure_access(flow.context)
+            await require_evidence_access(flow.context)
             status = "incomplete"
             return AGENT_PLAN_UNFINISHED
         except asyncio.CancelledError:

@@ -11,7 +11,6 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ..engine.capability_contract import CapabilityContract
 from ..access import AgentAccessLost
 from ..access import accessible_message_channel
-from ..disclosure import require_destination_access
 from ..access import require_evidence_access
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from .contracts import (
@@ -117,7 +116,7 @@ async def start_discord_research_batch(
     context: AgentRequestContext,
     arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
-    sources = await require_evidence_access(context)
+    await require_evidence_access(context)
     repository = context.research_jobs
     root_id = context.conversation_root_id
     if repository is None or root_id is None:
@@ -164,8 +163,6 @@ async def start_discord_research_batch(
         source = await accessible_message_channel(context, channel_id)
         if source is None:
             return {"error": "The asker cannot access every research source."}
-        sources[channel_id] = source
-    await require_destination_access(context, sources)
     definitions = tuple(ResearchJobDefinition(
         source_channel_id=channel_id,
         query=query,
@@ -187,7 +184,8 @@ async def start_discord_research_batch(
             if await accessible_message_channel(context, channel_id) is None:
                 raise AgentAccessLost("Research source access changed")
             context.state.source_channels.add(channel_id)
-        await require_destination_access(context, await require_evidence_access(context))
+
+        await require_evidence_access(context)
     except AgentAccessLost:
         await asyncio.to_thread(
             repository.cancel_many,

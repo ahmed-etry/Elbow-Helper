@@ -352,8 +352,8 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch_contracts(self.registry,
                        {"read_value": contract}),
-            patch("elbow_helper.features.agent.engine.steps.can_disclose_provenance",
-                  return_value=False),
+            patch("elbow_helper.features.agent.engine.steps.accessible_message_channel",
+                  return_value=None),
         ):
             answer, _ = await self._answer(session)
         self.assertEqual(answer, AGENT_PLAN_UNFINISHED)
@@ -520,7 +520,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             return {"value": "unsent_evidence"}
         self.registry["read_value"] = replace(self.registry["read_value"], handler=read)
         session = _Session([_model_step(_plan([_step("first")])), AgentStep("Ready.", (), AgentUsage())], self.events)
-        with patch_engine("require_disclosure_access", side_effect=disclosure):
+        with patch_engine("require_evidence_access", side_effect=disclosure):
             await self._answer(session, context)
         self.assertNotIn("unsent_evidence", str(session.calls[1]))
         self.assertEqual(context.state.source_channels, {91})
@@ -592,7 +592,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         async def disclosure(local):
             nonlocal checks
             checks += 1
-            if checks == 3:
+            if 202 in local.state.source_channels:
                 raise AgentAccessLost("synthetic_revocation")
         async def read(local, arguments):
             self.events.append("read")
@@ -604,7 +604,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         session = _Session([_model_step(_plan([_step("first", {"value": 1})])),
                             _model_step(_plan([_step("second", {"value": 2})])),
                             AgentStep("Ready.", (), AgentUsage())], self.events)
-        with patch_engine("require_disclosure_access", side_effect=disclosure):
+        with patch_engine("require_evidence_access", side_effect=disclosure):
             await self._answer(session, context)
         self.assertNotIn("discarded_evidence", str(session.calls[1]))
         self.assertIn("remaining_evidence", str(session.calls[2]))

@@ -17,9 +17,7 @@ from elbow_helper.infrastructure.ai import AgentToolResult
 from ..models import AgentRequestContext
 from ..actions.contracts import ActionClass, PreparedAction
 from ..access import AgentAccessLost
-from ..disclosure import AgentDisclosureDenied
 from ..access import require_access_requirements
-from ..disclosure import require_destination_access
 from ..access import require_evidence_access
 from .capability_contract import CapabilityBindError
 from .capability_contract import require_source_provenance
@@ -67,16 +65,11 @@ async def execute_tool(
         record_report_provenance(context, snapshot["reports"])
         if action_class in (ActionClass.CHANGE, ActionClass.IRREVERSIBLE):
             capture_detail_provenance(context, snapshot, capability_scope or {})
-        sources = await require_evidence_access(context)
-        await require_destination_access(context, sources)
+        await require_evidence_access(context)
         outcome = "completed"
         content = json.dumps(payload, ensure_ascii=False, default=str, separators=(",", ":"))
         result_characters = len(content)
         return content
-    except AgentDisclosureDenied:
-        outcome = "disclosure_denied"
-        restore_tool_state(context, snapshot)
-        return error_result("That source cannot be shared in this channel.")
     except CapabilityBindError:
         outcome = "unbound_source"
         restore_tool_state(context, snapshot)

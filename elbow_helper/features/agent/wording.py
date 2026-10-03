@@ -26,6 +26,8 @@ LONG_REPLY_FILENAME = "Elbow Helper.txt"
 SPREADSHEET_FILENAME_STEM = "spreadsheet"
 
 ACTION_PRIVATE_NOTE = "Result is ready. Open it privately below."
+ACTION_PRIVATE_ANSWER = "Not everyone here can see the info behind this, so only you can open it."
+ACTION_POST_HERE_BUTTON = "Post here"
 ACTION_PRIVATE_BUTTON = "View result"
 ACTION_PRIVATE_SELECT = "Choose a result"
 ACTION_EMPTY = "That command found nothing to show."

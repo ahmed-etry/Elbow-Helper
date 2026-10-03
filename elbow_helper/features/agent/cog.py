@@ -19,10 +19,9 @@ from elbow_helper.configuration.guild import GUILD_ID
 from .conversation.preparation import ConversationContextMixin
 from .conversation.turns import AgentTurnMixin
 from .delivery import AgentDeliveryMixin, AgentDeliveryUnknown
-from .access import AgentAccessLost
+from .access import AgentAccessLost, require_evidence_access
 from .access import has_agent_entry_access
 from .access import require_access
-from .disclosure import require_disclosure_access
 from .conversation.state import Conversation, ConversationStore
 from .text import message_text
 from .models import AgentDelivery, AgentRequestContext
@@ -390,7 +389,7 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
 
     @staticmethod
     async def _check_sources(context: AgentRequestContext) -> None:
-        await require_disclosure_access(context)
+        await require_evidence_access(context)
 
     async def _build_local_context(
         self,

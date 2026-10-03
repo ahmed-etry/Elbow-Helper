@@ -11,14 +11,9 @@ from elbow_helper.configuration.roles import LEAD, LEAD_PLUS
 
 from .access import (
     ACCESS_LEAD, ACCESS_LEAD_PLUS, KNOWN_ACCESS_REQUIREMENTS,
-    AgentAccessLost, accessible_message_channel, has_access_requirements,
-    require_evidence_access,
+    accessible_message_channel, has_access_requirements,
 )
 from .models import AgentRequestContext
-
-
-class AgentDisclosureDenied(AgentAccessLost):
-    """Authorized source evidence cannot be sent to this channel audience."""
 
 
 def _read_audience_signature(channel: Any) -> tuple[tuple[int, bool | None, bool | None], ...] | None:
@@ -168,22 +163,6 @@ def _resolved_sources_disclosable(
             for source in sources.values()
         )
     )
-
-
-async def require_destination_access(
-    context: AgentRequestContext, sources: Mapping[int, Any],
-) -> None:
-    if not await can_show(
-        context.source_message.channel, sources, context.state.required_access,
-        context.guild,
-        thread_members=getattr(context, "disclosure_thread_members", None),
-    ):
-        raise AgentDisclosureDenied("Evidence cannot be shared in this channel")
-
-
-async def require_disclosure_access(context: AgentRequestContext) -> None:
-    sources = await require_evidence_access(context)
-    await require_destination_access(context, sources)
 
 
 async def _thread_member_ids(thread, cache):

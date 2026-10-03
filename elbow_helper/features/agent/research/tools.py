@@ -12,7 +12,6 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ..engine.capability_contract import CapabilityContract
 from ..access import AgentAccessLost
 from ..access import accessible_message_channel
-from ..disclosure import require_destination_access
 from ..access import require_evidence_access
 from ..reports.base import ArtifactCapacityError, retain_report
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
@@ -195,7 +194,7 @@ async def start_discord_research_job(
     context: AgentRequestContext,
     arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
-    sources = await require_evidence_access(context)
+    await require_evidence_access(context)
     if context.research_jobs is None or context.conversation_root_id is None:
         return {"error": "Durable research jobs are not available."}
     channel_id = arguments.get("channel_id")
@@ -204,7 +203,6 @@ async def start_discord_research_job(
     source = await accessible_message_channel(context, channel_id)
     if source is None:
         return {"error": "The asker cannot access that conversation."}
-    await require_destination_access(context, {**sources, channel_id: source})
     query = str(arguments.get("query") or "").strip()
     author_id = arguments.get("author_id")
     if author_id is not None and (type(author_id) is not int or author_id <= 0):
@@ -244,7 +242,8 @@ async def start_discord_research_job(
         if await accessible_message_channel(context, channel_id) is None:
             raise AgentAccessLost("Research source access changed")
         context.state.source_channels.add(channel_id)
-        await require_destination_access(context, await require_evidence_access(context))
+
+        await require_evidence_access(context)
     except AgentAccessLost:
         await asyncio.to_thread(
             context.research_jobs.cancel,
@@ -261,7 +260,7 @@ async def start_discord_history_job(
     context: AgentRequestContext,
     arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
-    sources = await require_evidence_access(context)
+    await require_evidence_access(context)
     if context.research_jobs is None or context.conversation_root_id is None:
         return {"error": "Durable research jobs are not available."}
     channel_id = arguments.get("channel_id")
@@ -273,7 +272,6 @@ async def start_discord_history_job(
     source = await accessible_message_channel(context, channel_id)
     if source is None:
         return {"error": "The asker cannot access that conversation."}
-    await require_destination_access(context, {**sources, channel_id: source})
     try:
         after = _search_date(arguments.get("after"))
         before = _search_date(arguments.get("before")) or _message_time(context)
@@ -306,7 +304,8 @@ async def start_discord_history_job(
         if await accessible_message_channel(context, channel_id) is None:
             raise AgentAccessLost("Research source access changed")
         context.state.source_channels.add(channel_id)
-        await require_destination_access(context, await require_evidence_access(context))
+
+        await require_evidence_access(context)
     except AgentAccessLost:
         await asyncio.to_thread(
             context.research_jobs.cancel,

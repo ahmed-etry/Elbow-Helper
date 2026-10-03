@@ -280,8 +280,8 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch("elbow_helper.features.agent.engine.service.build_agent_tools", return_value={"lookup": tool}),
             patch("elbow_helper.features.agent.access.accessible_message_channel", return_value=object()),
-            patch_engine("require_disclosure_access"),
-            patch("elbow_helper.features.agent.engine.tool_call.require_destination_access", new=AsyncMock()),
+            patch_engine("require_evidence_access"),
+
         ):
             await AgentService(_AgentModel(session)).answer(
                 question="test", local_context="", context=context,

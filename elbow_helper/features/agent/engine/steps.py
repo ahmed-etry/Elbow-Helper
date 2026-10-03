@@ -14,11 +14,10 @@ from elbow_helper.infrastructure.ai import AgentToolResult
 from ..models import AgentCapabilityEffect, AgentRequestContext
 from ..actions.contracts import ActionClass, PreparedAction
 from ..access import AgentAccessLost
-from ..access import require_access
-from ..disclosure import require_disclosure_access
+from ..wording import ACTION_UNAVAILABLE
+from ..access import require_access, accessible_message_channel, has_access_requirements
 from ..access import require_evidence_access
 from ..reports.tools import COMPARE_NAME, READ_NAME, original_tool
-from ..disclosure import can_disclose_provenance
 from ..plan.checker import entity_kind, parse_periods, check_step
 from ..plan.executor import execute_plan, resolve_arguments
 from ..plan.results import model_result
@@ -67,12 +66,12 @@ async def disclosure_issue(
             channels.add(value)
         elif isinstance(value, list):
             channels.update(item for item in value if type(item) is int)
-    if (channels or contract.required_access) and not await can_disclose_provenance(
-        context,
-        channels,
-        contract.required_access,
-    ):
-        return "That source cannot be shared in this channel."
+    if not has_access_requirements(context.guild, context.member.id, contract.required_access):
+        return ACTION_UNAVAILABLE
+    for channel_id in channels:
+        if await accessible_message_channel(context, channel_id) is None:
+            return "The asker cannot access that conversation."
+
     return ""
 
 
@@ -374,7 +373,7 @@ class PlanRunner:
                 step_id: value if "flags" in value else model_result(value)
                 for step_id, value in result.items()
             }
-            await require_disclosure_access(self.context)
+            await require_evidence_access(self.context)
             self.rounder.unpublished = plan_state.original
             self.rounder.unpublished_scope = plan_state.original_scope
             return result

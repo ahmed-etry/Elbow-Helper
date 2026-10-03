@@ -13,9 +13,8 @@ from uuid import uuid4
 
 import discord
 
-from ..access import require_access, require_access_requirements, accessible_message_channel, AgentAccessLost
+from ..access import require_access, require_access_requirements, accessible_message_channel, AgentAccessLost, require_evidence_access
 from ..disclosure import can_disclose_provenance
-from ..disclosure import require_disclosure_access
 from .outcomes import ActionOutcome
 from .private_view import PrivateResultView
 from ..text import chunk_response
@@ -208,7 +207,7 @@ class AgentActionRunner:
         current_action = action
         try:
             require_access(context.guild, context.member.id, channel)
-            await require_disclosure_access(context)
+            await require_evidence_access(context)
             details_hidden = await self._detail_visibility(context, action)
             if action.bind is not None:
                 current_action = await action.bind(output.results)

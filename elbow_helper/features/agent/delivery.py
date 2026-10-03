@@ -11,13 +11,15 @@ import sqlite3
 
 import discord
 
-from .disclosure import require_disclosure_access
-from .wording import ACTION_PREVIEW_HEADER, FAILURE_MESSAGE, LONG_REPLY_FILENAME
+from .access import require_evidence_access
+from .disclosure import can_show
+from .wording import ACTION_PRIVATE_ANSWER, ACTION_PREVIEW_HEADER, FAILURE_MESSAGE, LONG_REPLY_FILENAME
 from .conversation.state import Conversation
 from .conversation.transcripts import archive_write
 from .models import AgentAttachment, AgentDelivery, AgentRequestContext
 from .engine.service import AgentUnavailableError
 from .actions.private_view import PrivateResultView
+from .actions.answer_view import PrivateAnswerView
 from .actions.preview import ConfirmationView
 from .actions.preview import preview_text
 from .actions.details import prepare_preview
@@ -44,7 +46,43 @@ class AgentDeliveryMixin:
         *,
         delivery: AgentDelivery | None = None,
         context: AgentRequestContext | None = None,
+        _audience_override: bool = False,
+        _nonce_seed: int | None = None,
     ) -> None:
+        if (context is not None and not context.state.proposed_changes
+                and not context.state.outcomes and not _audience_override):
+            sources = await require_evidence_access(context)
+            if not await can_show(message.channel, sources, context.state.required_access,
+                                  context.guild, thread_members=context.disclosure_thread_members):
+                async def post(interaction):
+                    await self.send_response(
+                        message, response, referenced, attachments, conversation,
+                        context=context, _audience_override=True, _nonce_seed=interaction.id,
+                    )
+                scheduled = getattr(message, "scheduled_run", False)
+                view = PrivateAnswerView(context, response, attachments, post,
+                                         timeout=3600.0 if scheduled else 600.0)
+                notice = ACTION_PRIVATE_ANSWER
+                if scheduled:
+                    notice = f"<@{message.author.id}> {notice}"
+                active = delivery or AgentDelivery()
+                sent = await self._send_delivery_part(
+                    message.reply, message.channel, _delivery_nonce(message.id, 0), active,
+                    notice, mention_author=False, view=view,
+                    allowed_mentions=discord.AllowedMentions(
+                        everyone=False, roles=False,
+                        users=[message.author] if scheduled else [], replied_user=False,
+                    ),
+                )
+                view.message = sent
+                if conversation is not None:
+                    self._conversations.register_reply(conversation, sent.id)
+                if delivery is not None:
+                    delivery.record(sent.id, notice)
+                    delivery.complete = True
+                if getattr(message, "archive_reply", True):
+                    await self._archive_reply(message.id, sent.id, notice)
+                return
         if context is not None and context.state.proposed_changes:
             previous_preview = preview_text(context.state.proposed_changes)
             await prepare_preview(context)
@@ -75,7 +113,7 @@ class AgentDeliveryMixin:
         active_delivery = delivery or AgentDelivery()
         try:
             if context is not None:
-                await require_disclosure_access(context)
+                await require_evidence_access(context)
             options = {"files": files} if files else {}
             private_view, confirm_view = build_reply_views(
                 message, context, getattr(self, "action_runner", None),
@@ -83,6 +121,7 @@ class AgentDeliveryMixin:
             await self._send_response_parts(
                 message, response, chunks, options, private_view, confirm_view,
                 allowed_mentions, active_delivery, delivery, context, conversation,
+                nonce_seed=_nonce_seed,
             )
         finally:
             for file in files:
@@ -91,12 +130,13 @@ class AgentDeliveryMixin:
     async def _send_response_parts(
         self, message, response, chunks, options, private_view, confirm_view,
         allowed_mentions, active_delivery, delivery, context, conversation,
+        *, nonce_seed=None,
     ) -> None:
         if private_view is not None and confirm_view is None:
             options["view"] = private_view
         if confirm_view is not None and len(chunks) <= 1:
             options["view"] = confirm_view
-        nonce = _delivery_nonce(message.id, 0)
+        nonce = _delivery_nonce(nonce_seed or message.id, 0)
         sent = await self._send_delivery_part(
             message.reply, getattr(message, "channel", None), nonce,
             active_delivery,
@@ -118,8 +158,8 @@ class AgentDeliveryMixin:
             await self._archive_reply(message.id, sent.id, response if chunks == [None] else (chunks[0] if chunks else ""))
         for index, chunk in enumerate(chunks[1:], start=1):
             if context is not None:
-                await require_disclosure_access(context)
-            nonce = _delivery_nonce(message.id, index)
+                await require_evidence_access(context)
+            nonce = _delivery_nonce(nonce_seed or message.id, index)
             sent = await self._send_delivery_part(
                 message.channel.send, message.channel, nonce,
                 active_delivery, chunk, allowed_mentions=allowed_mentions,

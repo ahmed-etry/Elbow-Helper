@@ -12,8 +12,7 @@ from typing import Any
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from elbow_helper.infrastructure.ai import AgentToolResult
 from ..actions.contracts import ActionClass
-from ..access import require_access
-from ..disclosure import require_disclosure_access
+from ..access import require_access, require_evidence_access
 from ..plan.checker import check_plan
 from ..plan.format import PLAN_TOOL_NAME
 from ..plan.planning import read_request
@@ -85,7 +84,7 @@ class AnswerFlow:
                 self.context.source_message.channel,
             ),
         )
-        await require_disclosure_access(self.context)
+        await require_evidence_access(self.context)
         self.rounder.context = self.runner.context = self.context
         self.decision = await read_request(
             self.session,
@@ -97,7 +96,7 @@ class AnswerFlow:
             advance=self.rounder.advance,
         )
         if self.decision.answer is not None:
-            await require_disclosure_access(self.context)
+            await require_evidence_access(self.context)
             return self.decision.answer
         self.plan = self.decision.plan
         self.revisions = 0
@@ -158,7 +157,7 @@ class AnswerFlow:
             )
             if reply.tool_calls or not reply.content:
                 raise AgentGracefulEnd(AGENT_PLAN_UNFINISHED)
-            await require_disclosure_access(self.context)
+            await require_evidence_access(self.context)
             return reply.content
         expected = sum(
             results[step["id"]].get("prepared_count", 1)
@@ -177,10 +176,10 @@ class AnswerFlow:
             response = preview_text(state.proposed_changes)
             if state.outcomes:
                 response += "\n\n" + command_reply(state.outcomes)
-            await require_disclosure_access(self.context)
+            await require_evidence_access(self.context)
             return response
         if state.outcomes:
-            await require_disclosure_access(self.context)
+            await require_evidence_access(self.context)
             return command_reply(state.outcomes)
         return None
 
@@ -233,7 +232,7 @@ class AnswerFlow:
         if not step.tool_calls:
             if not step.content:
                 raise AgentGracefulEnd(AGENT_ANSWER_UNFINISHED)
-            await require_disclosure_access(self.context)
+            await require_evidence_access(self.context)
             return step.content, None
         if not allow_more:
             refusals = tuple(
@@ -251,7 +250,7 @@ class AnswerFlow:
             )
             if recovery.tool_calls or not recovery.content:
                 raise AgentGracefulEnd(AGENT_RESEARCH_UNFINISHED)
-            await require_disclosure_access(self.context)
+            await require_evidence_access(self.context)
             return recovery.content, None
         return None, step
 
