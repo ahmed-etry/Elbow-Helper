@@ -32,7 +32,6 @@ class ScopeLedger:
     def __init__(self, context: AgentRequestContext, registry: Mapping[str, RegisteredAgentTool]) -> None:
         self.registry = registry
         self.reports: dict[str, tuple[str, Mapping[str, Any]]] = {}
-        self.declared_references: dict[str, Mapping[str, set[str]]] = {}
         for turn in context.state.authorized_history or context.history:
             if turn.record is None:
                 continue
@@ -45,37 +44,37 @@ class ScopeLedger:
                 except (AttributeError, KeyError, TypeError, ValueError, RecursionError):
                     continue
 
-    def remember(self, identity: str, capability: str, arguments: Mapping[str, Any],
-                 declared_references: Mapping[str, set[str]] | None = None) -> None:
+    def remember(self, identity: str, capability: str, arguments: Mapping[str, Any]) -> None:
         contract = getattr(self.registry.get(capability), "contract", None)
         if contract is not None and any(field in arguments for field in contract.retained_fields):
             return
         if identity not in self.reports:
             self.reports[identity] = (capability, dict(arguments))
-            self.declared_references[identity] = {field: set(values)
-                                                for field, values in (declared_references or {}).items()}
 
     def check(
         self, identities: list[str], periods: tuple, named: Mapping[str, set[str]],
-        entities: Mapping[str, set[str]],
     ) -> str:
+        if not periods and not named:
+            return ""
         for identity in identities:
             origin = self.reports.get(identity)
             if origin is None:
                 if periods or named:
-                    return "Read this report's source at the declared scope before reusing it."
+                    return "Read this report's source at the selected scope before reusing it."
                 continue
             name, arguments = origin
             contract = getattr(self.registry.get(name), "contract", None)
             if contract is None:
                 return "The retained scope is unavailable."
-            issue, _ = source_check(contract, arguments, named, entities, {},
-                                    declared_references=self.declared_references.get(identity))
+            issue, _ = source_check(contract, arguments, named)
             if issue:
                 return issue
-            issue = time_check(contract, arguments, periods, set())
-            if issue:
-                return issue
+            if periods:
+                if any(kind == "utc_range" for kind, _, _ in periods) and contract.time_window is None:
+                    return "The retained report has no time window for the selected period."
+                issue = time_check(contract, arguments, periods, set())
+                if issue:
+                    return issue
         return ""
 
     def channels(self, identities: list[str]) -> set[int]:

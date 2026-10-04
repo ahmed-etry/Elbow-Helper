@@ -15,27 +15,30 @@ from ...models import AgentAttachment
 from ...wording import ACTION_UNAVAILABLE
 from ...actions.outcomes import ActionOutcome
 from ...commands.registry import CommandAdapter
+from ...engine.capability_contract import CapabilityContract
+from ...plan.checker import parse_periods, time_check
 
 
 def _health_period_issue(plan: Mapping[str, Any], values: Mapping[str, Any]) -> str:
     selected = values.get("period", "last_30d")
     if selected != "custom":
-        return "Use no declared period with a preset command period." if plan["periods"] else ""
+        return ""
     if not values.get("date_from") or not values.get("date_to"):
         return ""
     try:
         start = datetime.combine(date.fromisoformat(values["date_from"]), time.min, timezone.utc)
         end = datetime.combine(date.fromisoformat(values["date_to"]), time.min, timezone.utc)
-        ranges = [
-            (datetime.fromisoformat(period["start"].replace("Z", "+00:00")),
-             datetime.fromisoformat(period["end"].replace("Z", "+00:00")))
-            for period in plan["periods"] if period["kind"] == "utc_range"
-        ]
     except (TypeError, ValueError, KeyError):
         return "Use UTC dates for the custom command period."
-    if start >= end or not any(lower <= start and end <= upper for lower, upper in ranges):
-        return "Keep the custom command period inside the declared UTC range."
-    return ""
+    if start >= end:
+        return "The start date must be before the end date."
+    if (end - start).days > 365:
+        return "Choose a date range of 365 days or less."
+    return time_check(
+        CapabilityContract((), ("date_from", "date_to"),
+                           time_window=("date_from", "date_to", "iso_utc")),
+        values, parse_periods(plan.get("periods", [])), set(),
+    )
 
 
 def _health_access(context: Any) -> bool:

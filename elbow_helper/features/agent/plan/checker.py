@@ -1,4 +1,4 @@
-"""Check a plan against capability schemas and declared scope."""
+"""Check step arguments against capability schemas and request boundaries."""
 
 from __future__ import annotations
 
@@ -194,10 +194,8 @@ def _values(value: Any) -> set[str]:
 
 def source_check(
     contract: Any, arguments: Mapping[str, Any],
-    named: Mapping[str, set[str]], entities: Mapping[str, set[str]],
-    references: Mapping[str, Any],
+    named: Mapping[str, set[str]],
     bound_kinds: frozenset[str] = frozenset(),
-    declared_references: Mapping[str, set[str]] | None = None,
 ) -> tuple[str, tuple[str, ...]]:
     fields_by_kind: dict[str, list[str]] = {}
     for field, kind in contract.entity_fields:
@@ -210,9 +208,6 @@ def source_check(
         if base in named and not selected <= named[base]:
             return ("The request named other sources of this kind. Offer these instead of reading them.",
                     tuple(sorted(selected - named[base])))
-        declared = entities.get(base, set()) | (declared_references or {}).get(field, set())
-        if base not in bound_kinds and not selected <= declared:
-            return "Declare this entity in the plan.", ()
     for base, fields in fields_by_kind.items():
         if base in named and base not in bound_kinds and not any(field in arguments for field in fields):
             return "Filter this read to the named sources.", ()
@@ -230,12 +225,8 @@ def time_check(
     used = {field: arguments[field] for field in contract.time_fields if field in arguments}
     if not used:
         if contract.time_window and not contract.latest_fields:
-            return "Declare a period and both time boundaries for this read."
-        return "Declare the time field that bounds this read." if periods and contract.time_fields else ""
-    if not periods:
-        if set(used) <= set(contract.latest_fields):
-            return ""
-        return "Declare the period before using a time field."
+            return "Provide both time boundaries for this read."
+        return "Provide the time field for the selected period." if periods and contract.time_fields else ""
     ranges = [(start, end) for kind, start, end in periods if kind == "utc_range"]
     keys = {(field, str(value)) for kind, value, field in periods if kind == "key"}
     resolved = {(step, tuple(path)) for kind, step, path in periods if kind == "resolved"}
@@ -243,18 +234,14 @@ def time_check(
     if contract.time_window and any(field in used for field in contract.time_window[:2]):
         lower_field, upper_field, _ = contract.time_window
         if lower_field not in used or upper_field not in used:
-            return "Provide both time boundaries to keep the read inside the period."
-        if any(_reference(arguments[field], earlier) for field in (lower_field, upper_field)):
-            if not all(_reference(arguments[field], earlier)
-                       and (arguments[field]["step"], tuple(arguments[field]["path"])) in resolved for field in (lower_field, upper_field)):
-                return "Bind both time boundaries to a declared resolved period."
-        else:
+            return "Provide both time boundaries for this read."
+        if not any(has_reference(arguments[field]) for field in (lower_field, upper_field)):
             try:
                 lower, upper = bound_time_window(contract, arguments)
             except CapabilityBindError as error:
                 return str(error)
-            if not any(start <= lower and upper <= end for start, end in ranges):
-                return "The time window is outside the declared periods."
+            if ranges and not any(start <= lower and upper <= end for start, end in ranges):
+                return "The time window is outside the selected periods."
         window_bounded = True
     for field, value in used.items():
         if contract.time_window and field in contract.time_window[:2]:
@@ -262,16 +249,17 @@ def time_check(
         if field in contract.bounded_fields and window_bounded:
             continue
         if _reference(value, earlier):
-            if (value["step"], tuple(value["path"])) not in resolved:
-                return "Bind this time value to a declared resolved period."
             continue
         if field in contract.latest_fields:
-            return "A latest selector cannot accompany a declared period."
+            if periods and not window_bounded:
+                return "A latest selector cannot accompany a selected period."
+            continue
         if field in contract.bounded_fields:
             return "Keep this page selector inside a bounded time window."
-        if (field, str(value)) in keys:
-            continue
-        return "The time value is outside the declared periods."
+        if keys and (field, str(value)) not in keys:
+            return "The time value is outside the selected periods."
+        if ranges or resolved:
+            return "Use an exact time key for the selected period."
     return ""
 
 
@@ -284,10 +272,9 @@ class StepCheck(PlanCheck):
 
 def check_step(
     step: Mapping[str, Any], registry: Mapping[str, RegisteredAgentTool],
-    periods: tuple, entities: Mapping[str, set[str]], named: Mapping[str, set[str]],
+    periods: tuple, named: Mapping[str, set[str]],
     earlier: set[str], *, resolved: bool = False,
     validate_scope: Callable[[RegisteredAgentTool], str] | None = None,
-    declared_references: Mapping[str, set[str]] | None = None,
 ) -> PlanCheck:
     """Check step arguments and evidence scope before binding a capability call."""
     capability = step["capability"]
@@ -326,8 +313,7 @@ def check_step(
         bound = frozenset(named) | frozenset(
             entity_kind(kind) for field, kind in contract.entity_fields if field in contract.retained_fields
         ) if retained else frozenset()
-        issue, offered = source_check(contract, arguments, named, entities, references,
-                                      bound, declared_references)
+        issue, offered = source_check(contract, arguments, named, bound)
         if issue:
             return _error(issue, step_id, offered)
         step_periods = tuple(period for period in periods
@@ -347,7 +333,7 @@ def check_step(
     return StepCheck(True, tool=tool, contract=contract, scope=scope)
 
 
-def _check_steps(raw, registry, periods, entities, named):
+def _check_steps(raw, registry, periods, named):
     earlier: set[str] = set()
     after_change: set[str] = set()
     steps_by_id = {}
@@ -375,7 +361,7 @@ def _check_steps(raw, registry, periods, entities, named):
             after_change.add(step_id)
         if not isinstance(step["reason"], str) or not 1 <= len(step["reason"].strip()) <= 240:
             return _error("Give the step a short reason.", step_id)
-        checked = check_step(step, registry, periods, entities, named, earlier)
+        checked = check_step(step, registry, periods, named, earlier)
         if not checked.ok:
             return checked
         references_checked = _check_result_references(step["arguments"], steps_by_id, registry, step_id)
@@ -410,32 +396,30 @@ def check_plan(
 ) -> PlanCheck:
     """Return a fixable error for malformed or out-of-scope plans."""
     try:
-        if not isinstance(raw, dict) or set(raw) != {
-            "goal", "effort", "output", "periods", "entities", "steps",
-        }:
-            return _error("Supply goal, effort, output, periods, entities and steps.")
+        required = {"goal", "effort", "output", "steps"}
+        if not isinstance(raw, dict) or not required <= set(raw) or set(raw) - required - {"periods", "entities"}:
+            return _error("Supply goal, effort, output and steps; periods and entities are optional.")
         if not isinstance(raw["goal"], str) or not 1 <= len(raw["goal"].strip()) <= 240:
             return _error("Write a short goal.")
         if raw["effort"] not in ("low", "high", "max"):
             return _error("Choose low, high or max effort.")
         if raw["output"] not in output_forms(registry):
             return _error("Choose an available output form.")
-        periods = parse_periods(raw["periods"])
+        periods = parse_periods(raw.get("periods", []))
         key_fields = {field for name in registry if (contract := registry[name].contract) is not None
                       for field in contract.time_fields
                       if field not in (*contract.latest_fields, *contract.bounded_fields,
                                        *(contract.time_window[:2] if contract.time_window else ()))}
         if any(kind == "key" and field not in key_fields for kind, _, field in periods):
             return _error("Use a period key defined by a registered capability.")
-        if not isinstance(raw["entities"], list) or len(raw["entities"]) > 32:
+        if not isinstance(raw.get("entities", []), list) or len(raw.get("entities", [])) > 32:
             return _error("List at most 32 entities.")
-        entities: dict[str, set[str]] = {}
         contracts = [tool.contract for tool in registry.values()]
         contracts.extend(saved_report_contracts(registry).values())
         valid_kinds = {entity_kind(kind) for contract in contracts if contract
                        for _, kind in (*contract.entity_fields, *contract.result_entity_keys,
                                        *contract.result_path_kinds)}
-        for index, entity in enumerate(raw["entities"], 1):
+        for index, entity in enumerate(raw.get("entities", []), 1):
             if not isinstance(entity, dict) or set(entity) != {"kind", "value"}:
                 return _error(f"Entity {index} must be an object with exactly kind and value.")
             kind, value = entity["kind"], entity["value"]
@@ -451,7 +435,7 @@ def check_plan(
                 return _error(f"Entity {index} of kind {kind} needs a non-empty list of IDs or references.")
             for item_index, item in enumerate(entity_values(value), 1):
                 if type(item) is int or isinstance(item, str) and item.strip():
-                    entities.setdefault(entity_kind(kind), set()).add(str(item))
+                    continue
                 elif (isinstance(item, dict) and isinstance(item.get("step"), str)
                       and item["step"] and _reference(item, {item["step"]})):
                     continue
@@ -464,15 +448,12 @@ def check_plan(
             return _error("List between 1 and 48 steps.")
         named = {entity_kind(kind): {str(item) for item in values}
                  for kind, values in (named_sources or {}).items() if values}
-        for kind, values in named.items():
-            if not values <= entities.get(kind, set()):
-                return _error("Declare each named source in the plan entities.")
-        checked = _check_steps(raw, registry, periods, entities, named)
+        checked = _check_steps(raw, registry, periods, named)
         if isinstance(checked, PlanCheck):
             return checked
         earlier = checked
         steps_by_id = {step["id"]: step for step in raw["steps"]}
-        for index, entity in enumerate(raw["entities"], 1):
+        for index, entity in enumerate(raw.get("entities", []), 1):
             for reference in result_references(entity["value"]):
                 if not _reference(reference, earlier):
                     return _error(f"Entity {index} must reference a planned step and result path.")
@@ -499,8 +480,8 @@ def check_plan(
         ):
             return _error("Include the selected output capability in the steps.")
         return PlanCheck(True)
-    except ValueError:
-        return _error("Correct the plan fields and values.")
+    except ValueError as error:
+        return _error(str(error))
     except Exception:
         LOGGER.exception("Agent plan check failed unexpectedly")
         return _error("Correct the plan fields and values.")

@@ -104,14 +104,13 @@ class ResultPathTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "result path kind"):
                     validate_contract_catalogue({"lookup": tool})
 
-    def test_typed_reference_declarations_apply_only_to_the_bound_field(self):
+    def test_literals_need_no_declaration_but_named_sources_still_apply(self):
         contract = CapabilityContract((("role_id", "discord_role"), ("other_id", "discord_role")), ())
-        issue, _ = source_check(contract, {"role_id": 101, "other_id": 101}, {}, {}, {},
-                                declared_references={"role_id": {"101"}})
-        self.assertEqual(issue, "Declare this entity in the plan.")
-        issue, _ = source_check(contract, {"role_id": 101}, {}, {}, {},
-                                declared_references={"role_id": {"101"}})
-        self.assertEqual(issue, "")
+        arguments = {"role_id": 101, "other_id": 202}
+        self.assertEqual(source_check(contract, arguments, {})[0], "")
+        issue, offered = source_check(contract, arguments, {"discord_role": {"101"}})
+        self.assertIn("The request named other sources", issue)
+        self.assertEqual(offered, ("202",))
 
     def test_entity_validation_identifies_the_entity_and_allowed_values(self):
         for entity, expected in (

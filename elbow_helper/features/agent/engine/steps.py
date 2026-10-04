@@ -20,8 +20,8 @@ from ..access import require_access, accessible_message_channel, has_access_requ
 from ..access import require_evidence_access
 from ..reports.tools import original_tool
 from ..plan.checker import entity_kind, parse_periods, check_step
-from ..plan.checker import check_entity_references, entity_values, result_references
-from ..plan.executor import execute_plan, resolve_arguments
+from ..plan.checker import check_entity_references
+from ..plan.executor import execute_plan
 from ..plan.results import model_result
 from ..plan.scope import resource_ids
 from ..commands.bridge import check_command_plan
@@ -85,7 +85,6 @@ class PlanExecutionState:
     original_scope: dict[str, Any]
     emitted: list[AgentToolResult]
     periods: tuple[tuple[str, Any, Any], ...]
-    entities: dict[str, set[str]]
     named: dict[str, set[str]]
 
 
@@ -143,19 +142,13 @@ class PlanRunner:
         try:
             bound_periods = self._bound_periods(step, earlier_results, plan_state)
         except (KeyError, IndexError, TypeError):
-            return {"error": "The declared period could not be resolved."}
-        resolved_entities = self._resolved_entities(earlier_results, plan_state)
+            return {"error": "The selected period could not be resolved."}
         selected = original_tool(self.registry, name, step["arguments"]) or self.registry[name]
-        declared_references = {}
         if selected.contract is not None:
             steps = {owner["id"]: owner for owner in plan_state.plan["steps"]}
             typed = check_entity_references(selected.contract, step["arguments"], steps, self.registry, step["id"])
             if not typed.ok:
                 return {"error": typed.error}
-            for field, _ in selected.contract.entity_fields:
-                for reference in result_references(step["arguments"].get(field)):
-                    value = resolve_arguments({"value": reference}, earlier_results)["value"]
-                    declared_references.setdefault(field, set()).update(str(item) for item in entity_values(value))
         retained = []
 
         def validate_scope(selected: RegisteredAgentTool) -> str:
@@ -178,18 +171,16 @@ class PlanRunner:
                     arguments[field] if isinstance(arguments[field], list) else [arguments[field]]
                 )
             )
-            return self.ledger.check(retained, bound_periods, plan_state.named, resolved_entities)
+            return self.ledger.check(retained, bound_periods, plan_state.named)
 
         checked = check_step(
             {**step, "arguments": arguments},
             self.registry,
             bound_periods,
-            resolved_entities,
             plan_state.named,
             set(step["depends_on"]),
             resolved=True,
             validate_scope=validate_scope,
-            declared_references=declared_references,
         )
         if not checked.ok:
             return {"error": checked.error, "offered": checked.offered}
@@ -201,8 +192,7 @@ class PlanRunner:
         )
         if issue:
             return {"error": issue}
-        return {"name": name, "tool": checked.tool, "contract": checked.contract, "scope": scope,
-                "declared_references": declared_references}
+        return {"name": name, "tool": checked.tool, "contract": checked.contract, "scope": scope}
 
     def _bound_periods(self, step, earlier_results, plan_state: PlanExecutionState):
         bound = []
@@ -212,25 +202,16 @@ class PlanRunner:
                 continue
             if value == step["id"]:
                 continue
+            fields = [field for field, reference in step["arguments"].items()
+                      if isinstance(reference, dict) and reference == {"step": value, "path": extra}]
+            if not fields:
+                continue
             key_value = earlier_results[value]
             for part in extra:
                 key_value = key_value[part]
-            for field, reference in step["arguments"].items():
-                if isinstance(reference, dict) and reference == {"step": value, "path": extra}:
-                    bound.append(("key", key_value, field))
+            for field in fields:
+                bound.append(("key", key_value, field))
         return tuple(bound)
-
-    def _resolved_entities(self, earlier_results, plan_state: PlanExecutionState):
-        resolved = {kind: set(values) for kind, values in plan_state.entities.items()}
-        for entity in plan_state.plan["entities"]:
-            for reference in result_references(entity["value"]):
-                try:
-                    value = resolve_arguments({"value": reference}, earlier_results)["value"]
-                except (KeyError, IndexError, TypeError):
-                    continue
-                selected = value if isinstance(value, list) else [value]
-                resolved.setdefault(entity_kind(entity["kind"]), set()).update(str(item) for item in selected)
-        return resolved
 
     async def _reserve_tool(self, step, arguments, tool, plan_state: PlanExecutionState):
         key = step["capability"] + json.dumps(arguments, sort_keys=True, default=str)
@@ -328,7 +309,6 @@ class PlanRunner:
         )
         return await self._record_result(
             step, arguments, checked["scope"], local, previous, payload, model_content, plan_state,
-            checked["declared_references"],
         )
 
     async def _record_result(
@@ -341,7 +321,6 @@ class PlanRunner:
         payload,
         model_content,
         plan_state: PlanExecutionState,
-        declared_references: Mapping[str, set[str]],
     ):
         async with self.state_lock:
             limit = self.budget.result_character_limit(
@@ -358,9 +337,9 @@ class PlanRunner:
             merge_tool_state(self.context, local, previous)
             for identity in local.state.reports:
                 if identity not in plan_state.original["reports"]:
-                    self.ledger.remember(identity, step["capability"], arguments, declared_references)
+                    self.ledger.remember(identity, step["capability"], arguments)
             for identity in resource_ids(payload, self.registry):
-                self.ledger.remember(identity, step["capability"], arguments, declared_references)
+                self.ledger.remember(identity, step["capability"], arguments)
             self.context.state.evidence.append(
                 evidence_record(
                     call_id=step["id"],
@@ -379,18 +358,12 @@ class PlanRunner:
             return {"error": "The result could not be included."}
 
     async def run(self, plan: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
-        entities: dict[str, set[str]] = {}
-        for entity in plan["entities"]:
-            for value in entity_values(entity["value"]):
-                if not isinstance(value, dict):
-                    entities.setdefault(entity_kind(entity["kind"]), set()).add(str(value))
         plan_state = PlanExecutionState(
             plan=plan,
             original=tool_state_snapshot(self.context),
             original_scope=dict(self.ledger.reports),
             emitted=[],
-            periods=parse_periods(plan["periods"]),
-            entities=entities,
+            periods=parse_periods(plan.get("periods", [])),
             named={
                 entity_kind(kind): {str(value) for value in values}
                 for kind, values in self.sources.items()

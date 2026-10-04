@@ -43,14 +43,6 @@ from ..prompts import (
 LOGGER = logging.getLogger(__name__)
 
 
-def scope_entries(plan: Mapping[str, Any]) -> frozenset[str]:
-    return frozenset(
-        kind + json.dumps(value, sort_keys=True)
-        for kind in ("periods", "entities")
-        for value in plan[kind]
-    )
-
-
 class AnswerFlow:
     """Read a request, run checked steps, and shape its final reply."""
 
@@ -133,7 +125,6 @@ class AnswerFlow:
         self.plan = self.decision.plan
         self.revisions = 0
         self.correction_used = len(self.decision.rounds) > 1
-        self.scope = scope_entries(self.plan)
         self._reserve_answer()
         while self.rounder.rounds < limits.MAX_MODEL_ROUNDS:
             results = await self.runner.run(self.plan)
@@ -342,15 +333,7 @@ class AnswerFlow:
             if not check.ok:
                 raise AgentGracefulEnd(AGENT_PLAN_UNFINISHED)
             model_step = corrected
-        changed = scope_entries(next_plan)
-        if changed - self.scope:
-            self.revisions += 1
-            LOGGER.info(
-                "Agent scope revision: request=%s revision=%s", self.request_id, self.revisions
-            )
-            if self.revisions > limits.MAX_SCOPE_REVISIONS:
-                raise AgentLimitReached(AGENT_RESEARCH_UNFINISHED)
-        self.scope |= changed
+        self.revisions += 1
         self.plan = next_plan
         self._reserve_answer()
         self.decision = type(self.decision)(None, self.plan, (model_step,))

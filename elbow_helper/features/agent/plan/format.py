@@ -139,7 +139,7 @@ def plan_definition(registry: Mapping[str, RegisteredAgentTool]) -> AgentToolDef
                               "depends_on": {"type": "array", "items": {"type": "string"}},
                           }, "required": ["id", "capability", "arguments", "reason", "depends_on"]}},
             },
-            "required": ["goal", "effort", "output", "periods", "entities", "steps"],
+            "required": ["goal", "effort", "output", "steps"],
             "additionalProperties": False,
         },
     )

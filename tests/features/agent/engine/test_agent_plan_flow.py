@@ -19,7 +19,6 @@ import discord
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.models import AgentRequestContext, RegisteredAgentTool, AgentCapabilityEffect
 from elbow_helper.features.agent.engine.service import AgentService
-from elbow_helper.features.agent.engine.steps import PlanRunner
 from elbow_helper.features.agent.engine.service import AgentUnavailableError
 from elbow_helper.features.agent.commands.bridge import build_command_tools
 from elbow_helper.features.agent.actions.outcomes import ActionOutcome
@@ -112,14 +111,6 @@ class _Model:
 
 
 class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
-    def test_set_entity_references_resolve_to_individual_ids(self):
-        runner = object.__new__(PlanRunner)
-        state = SimpleNamespace(entities={"discord_role": {"202"}}, plan={"entities": [
-            {"kind": "discord_role_set", "value": [202, {"step": "lookup", "path": ["role_ids"]}]},
-        ]})
-        resolved = runner._resolved_entities({"lookup": {"role_ids": [101, 303]}}, state)
-        self.assertEqual(resolved, {"discord_role": {"101", "202", "303"}})
-
     async def test_referenced_entities_require_matching_kinds_before_change_preview(self):
         role = {"step": "roles", "path": ["roles", 0, "role_id"]}
         member = {"step": "members", "path": ["members", 0, "member_id"]}
@@ -211,6 +202,21 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(context.state.proposed_changes), 1)
         self.assertEqual(audit.await_count, 3)
         self.assertEqual(page.await_count, 3)
+        from elbow_helper.features.agent.plan.scope import ScopeLedger
+        restored = replace(_context(), history=(SimpleNamespace(text="Synthetic earlier answer", source_channels=frozenset(),
+            required_access=frozenset(), record=SimpleNamespace(
+            request_message_id=71, evidence=tuple(context.state.evidence))),))
+        ledger = ScopeLedger(restored, self.registry)
+        self.assertEqual(ledger.check(["synthetic-report"], (), {}), "")
+        follow_up = _plan([{**_step("follow_up", {"report_id": "synthetic-report"}),
+                            "capability": "synthetic_page"}])
+        follow_up.pop("entities")
+        follow_up.pop("periods")
+        session = _Session([_model_step(follow_up), AgentStep("Ready.", (), AgentUsage())], self.events)
+        restored.state.authorized_history = restored.history
+        restored = replace(restored, history=())
+        await self._answer(session, restored)
+        self.assertEqual(page.await_count, 4)
 
     async def test_set_entities_declare_literal_and_referenced_ids_consistently(self):
         self.registry["read_value"] = replace(self.registry["read_value"], contract=CapabilityContract(
@@ -224,19 +230,17 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         plan = _plan([_step("lookup", {"value": 101}),
                       {**_step("literal", {"role_ids": [101, 202]}, ["lookup"]), "capability": "synthetic_read"}])
         plan["entities"] = [{"kind": "discord_role_set", "value": [reference, 202]}]
-        # Literals need declarations before their referenced values are known.
         checked = check_plan(plan, self.registry)
-        self.assertFalse(checked.ok)
+        self.assertTrue(checked.ok, checked.error)
         plan["entities"][0]["value"].append(101)
         self.assertTrue(check_plan(plan, self.registry).ok)
         session = _Session([_model_step(plan), AgentStep("Ready.", (), AgentUsage())], self.events)
         await self._answer(session)
         read.assert_awaited_once()
         self.assertEqual(read.await_args.args[1], {"role_ids": [101, 202]})
-        # A typed reference does not declare a different literal in the same field.
         plan["entities"] = []
         plan["steps"][-1]["arguments"]["role_ids"] = [reference, 202]
-        self.assertFalse(check_plan(plan, self.registry).ok)
+        self.assertTrue(check_plan(plan, self.registry).ok)
         plan["steps"][-1]["arguments"]["role_ids"] = [reference]
         plan["entities"] = [{"kind": "discord_role_set", "value": [202]}]
         named = {"discord_role": frozenset({202})}
@@ -287,29 +291,18 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                     else:
                         self.assertIn("Synthetic preview", answer)
 
-    async def test_results_receive_a_final_answer_at_scope_and_output_limits(self):
-        self.registry["read_value"] = replace(self.registry["read_value"], contract=CapabilityContract(
-            (), (), result_entity_keys=(("value", "synthetic"),)))
-        instruction = "Answer now from these results. Say briefly what you couldn't finish."
-        first = _plan([_step("first")])
-        second = {**_plan([_step("second")]),
-                  "entities": [{"kind": "synthetic", "value": 8}]}
-        for kind in ("scope", "output"):
-            self.events.clear()
-            intermediate = ([_model_step(second)] if kind == "scope" else [
-                AgentStep("Part one", (), AgentUsage(), output_limit_reached=True),
-            ])
-            session = _Session([_model_step(first), *intermediate,
-                                AgentStep("Checked seven; no more reads.", (), AgentUsage())],
-                               self.events)
-            with self.subTest(kind=kind), patch(
-                "elbow_helper.features.agent.engine.budgets.MAX_SCOPE_REVISIONS", 0,
-            ):
-                answer, _ = await self._answer(session)
-                self.assertEqual(answer, "Checked seven; no more reads.")
-                self.assertFalse(session.calls[-1][1])
-                self.assertEqual(session.instructions[-1], instruction)
-                self.assertEqual(self.events.count("read"), 1)
+    async def test_results_receive_a_final_answer_at_output_limits(self):
+        session = _Session([
+            _model_step(_plan([_step("first")])),
+            AgentStep("Part one", (), AgentUsage(), output_limit_reached=True),
+            AgentStep("Checked seven; no more reads.", (), AgentUsage()),
+        ], self.events)
+        answer, _ = await self._answer(session)
+        self.assertEqual(answer, "Checked seven; no more reads.")
+        self.assertFalse(session.calls[-1][1])
+        self.assertEqual(session.instructions[-1],
+                         "Answer now from these results. Say briefly what you couldn't finish.")
+        self.assertEqual(self.events.count("read"), 1)
 
     async def test_small_remaining_context_still_answers_from_checked_results(self):
         session = _Session([_model_step(_plan([_step("first")])),
@@ -493,21 +486,21 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.events, ["model", "read", "read", "model"])
         self.assertEqual(len(session.calls), 2)
 
-    async def test_scope_revisions_stop_after_four(self):
+    async def test_period_changes_can_continue_past_four_revisions(self):
         self.registry["read_value"] = replace(self.registry["read_value"], definition=AgentToolDefinition(
             "read_value", "Read a value.", {"type": "object", "properties": {
                 "period": {"type": "integer", "minimum": 0}}, "required": ["period"]}))
         plans = [_plan([_step("first", {"period": n})], periods=[{"kind": "key", "field": "period", "value": n}])
                  for n in range(6)]
         session = _Session([*[_model_step(plan) for plan in plans],
-                            AgentStep("Checked five periods.", (), AgentUsage())], self.events)
+                            AgentStep("Checked six periods.", (), AgentUsage())], self.events)
         with patch_contracts(self.registry, {
             "read_value": CapabilityContract((), ("period",))
         }):
             answer, _ = await self._answer(session)
-        self.assertEqual(answer, "Checked five periods.")
+        self.assertEqual(answer, "Checked six periods.")
         self.assertEqual(len(session.calls), 7)
-        self.assertFalse(session.calls[-1][1])
+        self.assertEqual(self.events.count("read"), 6)
 
     async def test_answer_only_round_refuses_extra_calls_once(self):
         plan = _plan([_step("first")])
@@ -921,7 +914,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         prompts = [call.kwargs["messages"][0]["content"] for call in create.await_args_list]
         self.assertEqual(len(set(prompts)), 1)
 
-    async def test_reordering_and_narrowing_entities_do_not_use_revisions(self):
+    async def test_entity_changes_do_not_limit_plan_revisions(self):
         self.registry["read_value"] = replace(self.registry["read_value"], contract=CapabilityContract(
             (), (), result_entity_keys=(("value", "synthetic_source"),)))
         plans = [_plan([_step(str(index), {"value": index + 1})]) for index in range(5)]
@@ -929,8 +922,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         for plan, selected in zip(plans, values):
             plan["entities"] = [{"kind": "synthetic_source", "value": value} for value in selected]
         session = _Session([*map(_model_step, plans), AgentStep("Ready.", (), AgentUsage())], self.events)
-        with patch("elbow_helper.features.agent.engine.budgets.MAX_SCOPE_REVISIONS", 0):
-            await self._answer(session)
+        await self._answer(session)
         self.assertEqual(self.events.count("read"), 5)
 
     async def test_selected_artifact_keeps_a_tool_slot_after_research_budget_ends(self):

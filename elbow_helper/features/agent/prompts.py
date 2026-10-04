@@ -60,9 +60,9 @@ RESPONSE_RULES = """Answer directly and naturally. Use headings or bullets only 
 
 PLANNING_RULES = """Reply from supplied context without lookups, or call submit_request_plan once. Plan only needed capabilities; independent steps have depends_on=[]. Follow catalogue types, required fields, choices and bounds.
 
-Periods: utc_range uses UTC start and exclusive end; key uses an owning capability's time field; resolved uses its advertised path. For latest/current, look up and declare a resolved period before referencing it. Empty periods mean current state; latest-N is allowed only then.
+Periods: utc_range uses UTC start and exclusive end; key uses an owning capability's time field; resolved uses its advertised path. Empty periods mean current state; latest-N is allowed only then.
 
-Entities have kind/value. Declare literal entities and requester-named sources; *_set accepts ID/reference lists. Earlier-result references {"step":"earlier_id","path":["field"]} need no entity declaration when path:kind matches the argument's normalized entity kind. Offer other sources instead of reading them. Never broaden a period or source to make a lookup work.
+Periods and entities are optional. Pass earlier results to later steps with {"step":"earlier_id","path":["field"]}. Offer other sources instead of reading them. Never broaden a period or source to make a lookup work.
 
 Use low effort unless substantial synthesis is needed, max only for the hardest synthesis. Answer from checked results; request more steps only for remaining gaps, staying in scope unless revising it. Mention a limit only if it changes the conclusion."""
 

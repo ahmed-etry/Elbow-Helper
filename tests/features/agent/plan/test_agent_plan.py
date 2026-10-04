@@ -210,6 +210,54 @@ class PlanContractTests(unittest.TestCase):
         self.assertEqual(plan_definition(self.registry), plan_definition(build_agent_tools()))
         self.assertEqual(len(capability_list(self.registry).splitlines()), len(self.registry))
 
+    def test_valid_arguments_need_no_entities_or_periods(self):
+        for name, tool in self.registry.items():
+            plan = _plan_for(name, tool, CONTRACTS[name])
+            plan.pop("entities")
+            plan.pop("periods")
+            with self.subTest(capability=name):
+                checked = check_plan(plan, self.registry)
+                self.assertTrue(checked.ok, checked.error)
+        self.assertNotIn("entities", plan_definition(self.registry).parameters["required"])
+        self.assertNotIn("periods", plan_definition(self.registry).parameters["required"])
+
+    def test_specific_time_errors_and_argument_limits_without_declarations(self):
+        tool = self.registry["read_discord_channel_history"]
+        plan = _plan_for(tool.definition.name, tool, tool.contract)
+        plan.pop("entities")
+        plan.pop("periods")
+        args = plan["steps"][0]["arguments"]
+        args.update(after="2026-01-03", before="2026-01-02")
+        checked = check_plan(plan, self.registry)
+        self.assertEqual(checked.error, "The selected time window must be increasing.")
+        args.update(after="2026-01-01", before="2026-01-02", limit=101)
+        self.assertFalse(check_plan(plan, self.registry).ok)
+        plan["periods"] = [{"kind": "utc_range", "start": "2026-01-03", "end": "2026-01-02"}]
+        self.assertEqual(check_plan(plan, self.registry).error, "A period start must precede its end.")
+
+    def test_named_channel_requires_only_matching_arguments(self):
+        tool = self.registry["read_discord_channel_history"]
+        plan = _plan_for(tool.definition.name, tool, tool.contract)
+        plan.pop("entities")
+        plan.pop("periods")
+        args = plan["steps"][0]["arguments"]
+        args["channel_id"] = 101
+        named = {"discord_channel": frozenset({101})}
+        self.assertTrue(check_plan(plan, self.registry, named).ok)
+        args["channel_id"] = 202
+        checked = check_plan(plan, self.registry, named)
+        self.assertFalse(checked.ok)
+        self.assertEqual(checked.offered, ("202",))
+
+    def test_health_command_checks_its_own_custom_dates(self):
+        from elbow_helper.features.agent.capabilities.clan_health.commands import _health_period_issue
+        for period in ({}, {"periods": []}, {"periods": [{"kind": "key", "field": "month", "value": "2026-01"}]}):
+            with self.subTest(plan=period):
+                self.assertEqual(_health_period_issue(period, {"period": "last_30d"}), "")
+                self.assertEqual(_health_period_issue(period, {"period": "custom", "date_from": "2026-01-01", "date_to": "2026-12-31"}), "")
+                self.assertEqual(_health_period_issue(period, {"period": "custom", "date_from": "2026-01-02", "date_to": "2026-01-01"}), "The start date must be before the end date.")
+                self.assertEqual(_health_period_issue(period, {"period": "custom", "date_from": "2026-01-01", "date_to": "2027-01-02"}), "Choose a date range of 365 days or less.")
+
     def test_every_time_field_is_bounded_by_the_declared_period(self):
         checked = 0
         for name, tool in self.registry.items():
@@ -275,12 +323,11 @@ class PlanContractTests(unittest.TestCase):
                     if schema.get("type") == "string":
                         selected = "101"
                     named = {entity_kind(kind): {"101"}}
-                    self.assertEqual(source_check(contract, {field: selected}, named,
-                                     named, {})[0], "")
+                    self.assertEqual(source_check(contract, {field: selected}, named)[0], "")
                     other = [202] if isinstance(selected, list) else (
                         "202" if isinstance(selected, str) else 202
                     )
-                    issue, offered = source_check(contract, {field: other}, named, {}, {})
+                    issue, offered = source_check(contract, {field: other}, named)
                     self.assertTrue(issue)
                     self.assertEqual(offered, ("202",))
                     checked += 1
@@ -362,7 +409,7 @@ class PlanContractTests(unittest.TestCase):
                         initial = check_plan(candidate, self.registry)
                         runtime = check_step(
                             candidate["steps"][0], self.registry,
-                            parse_periods(candidate["periods"]), entities, {}, set(),
+                            parse_periods(candidate["periods"]), {}, set(),
                             resolved=True,
                         )
                         self.assertEqual((initial.ok, initial.error, initial.offered),
