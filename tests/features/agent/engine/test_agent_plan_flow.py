@@ -428,6 +428,54 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["value"], 7)
         self.assertEqual(result["flags"], {"status": "complete", "truncated": False})
 
+    async def test_initial_plan_and_each_revision_get_one_correction(self):
+        initial = _plan([_step("initial", {"value": 1})])
+        invalid_initial = {**initial, "output": "unavailable"}
+        first_revision = _plan([_step("revision_one", {"value": 2})])
+        second_revision = _plan([_step("revision_two", {"value": 3})])
+        session = _Session([
+            _model_step(invalid_initial), _model_step(initial),
+            _model_step(_plan([_step("revision_one", {"value": "invalid"})])),
+            _model_step(first_revision),
+            _model_step(_plan([_step("revision_two", {"value": "invalid"})])),
+            _model_step(second_revision),
+            AgentStep("Synthetic request complete.", (), AgentUsage()),
+        ], self.events)
+        answer, _ = await self._answer(session)
+        self.assertEqual(answer, "Synthetic request complete.")
+        self.assertEqual(self.events.count("read"), 3)
+        self.assertEqual(len(session.calls), 7)
+        for index in (1, 3, 5):
+            self.assertIn("rule", session.calls[index][0][0].content)
+        self.assertEqual(json.loads(session.calls[-1][0][0].content)["results"]["revision_two"]["value"], 3)
+
+    async def test_invalid_revision_correction_does_not_get_another_attempt(self):
+        initial = _plan([_step("initial")])
+        invalid = _plan([_step("revision", {"value": "invalid"})])
+        for broken in (_model_step(invalid), AgentStep("", (
+                AgentToolCall("synthetic-broken", "submit_request_plan", "{"),), AgentUsage())):
+            with self.subTest(arguments=broken.tool_calls[0].arguments):
+                self.events.clear()
+                session = _Session([_model_step(initial), broken, broken,
+                                    _model_step(_plan([_step("unexpected")]))], self.events)
+                answer, _ = await self._answer(session)
+                self.assertEqual(answer, AGENT_PLAN_UNFINISHED)
+                self.assertEqual(self.events.count("read"), 1)
+                self.assertEqual(len(session.calls), 3)
+
+    async def test_corrected_revision_rechecks_command_boundaries(self):
+        initial = _plan([_step("initial")])
+        invalid = _plan([_step("revision", {"value": "invalid"})])
+        correction = _plan([_step("revision", {"value": 99})])
+        session = _Session([_model_step(initial), _model_step(invalid),
+                            _model_step(correction)], self.events)
+        def check(plan, *_):
+            return "Synthetic command boundary." if plan["steps"][0]["arguments"].get("value") == 99 else ""
+        with patch("elbow_helper.features.agent.engine.service.check_command_plan", side_effect=check):
+            answer, _ = await self._answer(session)
+        self.assertEqual(answer, AGENT_PLAN_UNFINISHED)
+        self.assertEqual(self.events.count("read"), 1)
+
     async def test_max_effort_is_reserved_for_the_answer_round(self):
         plan = _plan([_step("first")], effort="max")
         session = _Session([_model_step(plan), AgentStep("Seven.", (), AgentUsage())],

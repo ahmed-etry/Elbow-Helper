@@ -124,7 +124,6 @@ class AnswerFlow:
             return self.decision.answer
         self.plan = self.decision.plan
         self.revisions = 0
-        self.correction_used = len(self.decision.rounds) > 1
         self._reserve_answer()
         while self.rounder.rounds < limits.MAX_MODEL_ROUNDS:
             results = await self.runner.run(self.plan)
@@ -282,7 +281,7 @@ class AnswerFlow:
         try:
             next_plan = json.loads(model_step.tool_calls[0].arguments)
         except (TypeError, ValueError):
-            raise AgentGracefulEnd(AGENT_PLAN_UNFINISHED) from None
+            next_plan = None
         check = check_plan(next_plan, self.registry, self.sources)
         if check.ok:
             issue = self.command_check(next_plan)
@@ -303,9 +302,6 @@ class AnswerFlow:
             check.error,
         )
         if not check.ok:
-            if self.correction_used:
-                raise AgentGracefulEnd(AGENT_PLAN_UNFINISHED)
-            self.correction_used = True
             corrected = await self.rounder.advance(
                 (
                     AgentToolResult(
@@ -321,8 +317,15 @@ class AnswerFlow:
                 return corrected.content
             if len(corrected.tool_calls) != 1 or corrected.tool_calls[0].name != PLAN_TOOL_NAME:
                 raise AgentGracefulEnd(AGENT_PLAN_UNFINISHED)
-            next_plan = json.loads(corrected.tool_calls[0].arguments)
+            try:
+                next_plan = json.loads(corrected.tool_calls[0].arguments)
+            except (TypeError, ValueError):
+                next_plan = None
             check = check_plan(next_plan, self.registry, self.sources)
+            if check.ok:
+                issue = self.command_check(next_plan)
+                if issue:
+                    check = type(check)(False, issue)
             LOGGER.info(
                 "Agent plan correction: request=%s ok=%s plan=%s error=%s",
                 self.request_id,
