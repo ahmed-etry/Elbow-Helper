@@ -156,7 +156,7 @@ def role_tools() -> tuple[RegisteredAgentTool, ...]:
                         "clan_code": {"type": "string", "maxLength": 10},
                         "member_id": {"type": "integer", "minimum": 1},
                         "offset": {"type": "integer", "minimum": 0},
-                        "limit": {"type": "integer", "minimum": 1, "maximum": 25},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 50},
                     },
                     "required": ["report_id"],
                     "additionalProperties": False,
