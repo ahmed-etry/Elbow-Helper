@@ -1,10 +1,9 @@
-"""Auto responder and auto reaction listener."""
+"""Auto reaction listener."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import random
 import time
 from dataclasses import dataclass
 
@@ -14,8 +13,6 @@ from discord.ext import commands
 from .config import AUTO_REACTION_EXCLUDED_EMOJIS
 from .config import AUTO_REACTION_MAX_EMOJIS
 from .config import AUTO_REACTION_SILENCE_WINDOW_SECONDS
-from .config import KEYWORDS
-from .config import KEYWORD_REPLIES
 from .config import REACT_ALLOWED_CHANNEL_IDS
 from .emoji_utils import extract_reaction_emojis
 from .emoji_utils import filter_reaction_emojis
@@ -103,15 +100,6 @@ class AutoTools(commands.Cog):
             bool(REACT_ALLOWED_CHANNEL_IDS)
             and message.channel.id in REACT_ALLOWED_CHANNEL_IDS
         )
-        if not react_allowed and not (message.content or ""):
-            return
-
-        content_lower = (message.content or "").lower()
-        if any(word in content_lower for word in KEYWORDS):
-            try:
-                await message.reply(random.choice(KEYWORD_REPLIES))
-            except (discord.Forbidden, discord.HTTPException) as exc:
-                LOGGER.debug("Keyword reply failed: message_id=%s reason=%s", message.id, exc)
         if not react_allowed:
             return
 

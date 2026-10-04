@@ -8,14 +8,6 @@ from elbow_helper.configuration.channels import CWL_SIGNUP
 from elbow_helper.configuration.channels import LEAD_NEWS
 from elbow_helper.configuration.channels import PUBLIC_NEWS
 
-KEYWORDS = frozenset({"elbow", "elbo", "elbows", "elbowed", "elbowing"})
-KEYWORD_REPLIES = (
-    "ELBOWS UP, ELBOWS OUT",
-    "ELBOW SUPREMACY",
-    "ELBOWS ON TOP",
-    "EEEELLLLLLBBBOOOOOOOOOWWWWW",
-)
-
 REACT_ALLOWED_CHANNEL_IDS = frozenset(
     {
         ANNOUNCEMENT,
