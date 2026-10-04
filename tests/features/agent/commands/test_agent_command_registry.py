@@ -84,7 +84,7 @@ class CommandRegistryTests(unittest.TestCase):
         )
         self.assertLess(estimate_tokens(without_results), 30_000)
         self.assertLess(estimate_tokens(prompt) - estimate_tokens(without_results), 2_000)
-        self.assertLess(estimate_tokens(prompt), 31_000)
+        self.assertLess(estimate_tokens(prompt), 31_500)
         self.assertEqual(len(capability_list(registry).splitlines()), len(registry))
         self.assertTrue(all(" | class " in line for line in capability_list(registry).splitlines()))
         self.assertTrue(all(

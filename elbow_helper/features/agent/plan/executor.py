@@ -20,6 +20,16 @@ class UnresolvedReferenceError(KeyError):
         self.path = path
 
 
+def _walk(source: Any, path: list[Any]) -> Any:
+    for index, part in enumerate(path):
+        if part == "*":
+            if not isinstance(source, list):
+                raise TypeError("Only a list can be expanded")
+            return [_walk(item, path[index + 1:]) for item in source]
+        source = source[part]
+    return source
+
+
 def resolve_arguments(
     arguments: Mapping[str, Any], results: Mapping[str, Mapping[str, Any]],
 ) -> dict[str, Any]:
@@ -29,9 +39,7 @@ def resolve_arguments(
                 source = results[value["step"]]
                 if source.get("status") == "confirmation_required":
                     return value
-                for part in value["path"]:
-                    source = source[part]
-                return source
+                return _walk(source, value["path"])
             except (KeyError, IndexError, TypeError):
                 raise UnresolvedReferenceError(value["step"], value["path"]) from None
         if isinstance(value, dict):

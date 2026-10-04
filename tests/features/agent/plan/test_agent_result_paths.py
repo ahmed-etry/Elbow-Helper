@@ -6,7 +6,7 @@ import unittest
 from elbow_helper.features.agent.engine.capability_contract import CapabilityContract, validate_contract_catalogue
 from elbow_helper.features.agent.models import RegisteredAgentTool
 from elbow_helper.features.agent.plan.checker import check_plan, source_check
-from elbow_helper.features.agent.plan.executor import execute_plan
+from elbow_helper.features.agent.plan.executor import execute_plan, resolve_arguments
 from elbow_helper.features.agent.plan.format import capability_list
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
@@ -45,6 +45,33 @@ class ResultPathTests(unittest.TestCase):
             with self.subTest(path=path):
                 checked = check_plan(self.plan(path), self.registry)
                 self.assertTrue(checked.ok, checked.error)
+
+    def test_star_passes_one_field_from_every_listed_item(self):
+        self.assertTrue(check_plan(self.plan(["roles", "*", "role_id"]), self.registry).ok)
+        self.assertFalse(check_plan(self.plan(["groups", "*", "members", "*", "member_id"]),
+                                    self.registry).ok)
+        resolved = resolve_arguments(
+            {"ids": {"step": "source", "path": ["roles", "*", "role_id"]}},
+            {"source": {"roles": [{"role_id": 3}, {"role_id": 5}]}},
+        )
+        self.assertEqual(resolved, {"ids": [3, 5]})
+
+    def test_star_only_feeds_list_arguments(self):
+        contract = CapabilityContract((("member_ids", "discord_member_set"), ("member_id", "discord_member")), (),
+                                      result_paths=(("members", "N", "member_id"),),
+                                      result_path_kinds=((("members", "N", "member_id"), "discord_member"),))
+        registry = {**self.registry, "lookup": replace(self.registry["lookup"], contract=contract),
+                    "consume": RegisteredAgentTool(AgentToolDefinition("consume", "Synthetic consumer.", {
+                        "type": "object", "properties": {
+                            "member_ids": {"type": "array", "items": {"type": "integer"}},
+                            "member_id": {"type": "integer"},
+                        },
+                    }), None, contract=contract)}
+        for field, ok in (("member_ids", True), ("member_id", False)):
+            with self.subTest(field=field):
+                plan = self.plan(["members", "*", "member_id"])
+                plan["steps"][1]["arguments"] = {field: {"step": "source", "path": ["members", "*", "member_id"]}}
+                self.assertEqual(check_plan(plan, registry).ok, ok)
 
     def test_bad_paths_name_source_bad_path_and_valid_paths(self):
         for path in (["roles", 0, "id"], ["roles", "0", "role_id"],

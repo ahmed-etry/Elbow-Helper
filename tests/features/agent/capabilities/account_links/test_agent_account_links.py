@@ -196,10 +196,10 @@ class AgentAccountLinkTests(unittest.IsolatedAsyncioTestCase):
     async def test_bulk_member_details_enforce_input_and_output_bounds(self):
         from elbow_helper.features.agent.capabilities.account_links.reads import read_discord_members
         context = self.member_context()
-        for args in ({"member_ids": []}, {"member_ids": list(range(1, 102))},
+        for args in ({"member_ids": []}, {"member_ids": list(range(1, 1002))},
                      {"member_ids": [101, 101]}, {"member_ids": [True]},
                      {"member_ids": [0]}, {"member_ids": ["101"]},
-                     {"member_ids": [101], "offset": -1}, {"member_ids": [101], "offset": 101},
+                     {"member_ids": [101], "offset": -1}, {"member_ids": [101], "offset": 1001},
                      {"member_ids": [101], "limit": 0}, {"member_ids": [101], "limit": 101},
                      {"member_ids": [101], "sort": "unsupported"}):
             with self.subTest(args=args):

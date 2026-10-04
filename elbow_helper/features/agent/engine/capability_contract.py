@@ -111,7 +111,8 @@ class CapabilityContract:
 
 def result_path_matches(path, pattern) -> bool:
     return len(path) == len(pattern) and all(
-        type(part) is int and part >= 0 if key == "N" else type(part) is str and part == key
+        (type(part) is int and part >= 0 or part == "*") if key == "N"
+        else type(part) is str and part == key
         for part, key in zip(path, pattern)
     )
 

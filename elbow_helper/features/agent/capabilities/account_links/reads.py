@@ -23,6 +23,7 @@ from ..validation import positive_int
 
 MEMBER_RESULT_LIMIT = 8
 MEMBER_DETAILS_LIMIT = 100
+MEMBER_ID_LIMIT = 1000
 
 
 def member_tools() -> tuple[RegisteredAgentTool, ...]:
@@ -60,16 +61,16 @@ def member_tools() -> tuple[RegisteredAgentTool, ...]:
                 name="read_discord_members",
                 description=(
                     "Read member details. Return display names, usernames, UTC server join times "
-                    "and roles for up to 100 exact member IDs. Sort by joined_at oldest_first or newest_first before "
+                    "and roles for up to 1000 exact member IDs, in pages of up to 100. Sort by joined_at oldest_first or newest_first before "
                     "paging; unknown join times come last. Omit sort to preserve the ID order."
                 ),
                 parameters={
                     "type": "object", "properties": {
                         "member_ids": {"type": "array", "minItems": 1,
-                                       "maxItems": MEMBER_DETAILS_LIMIT, "uniqueItems": True,
+                                       "maxItems": MEMBER_ID_LIMIT, "uniqueItems": True,
                                        "items": {"type": "integer", "minimum": 1}},
                         "sort": {"type": "string", "enum": ["oldest_first", "newest_first"]},
-                        "offset": {"type": "integer", "minimum": 0, "maximum": MEMBER_DETAILS_LIMIT},
+                        "offset": {"type": "integer", "minimum": 0, "maximum": MEMBER_ID_LIMIT},
                         "limit": {"type": "integer", "minimum": 1, "maximum": MEMBER_DETAILS_LIMIT},
                     }, "required": ["member_ids"], "additionalProperties": False,
                 },
@@ -203,14 +204,14 @@ async def read_discord_members(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
     identifiers = arguments.get("member_ids")
-    if (not isinstance(identifiers, list) or not 1 <= len(identifiers) <= MEMBER_DETAILS_LIMIT
+    if (not isinstance(identifiers, list) or not 1 <= len(identifiers) <= MEMBER_ID_LIMIT
             or any(type(value) is not int or value <= 0 for value in identifiers)
             or len(set(identifiers)) != len(identifiers)):
-        return {"error": "Provide between 1 and 100 distinct member IDs."}
+        return {"error": "Provide between 1 and 1000 distinct member IDs."}
     offset, limit = arguments.get("offset", 0), arguments.get("limit", 25)
-    if (type(offset) is not int or not 0 <= offset <= MEMBER_DETAILS_LIMIT
+    if (type(offset) is not int or not 0 <= offset <= MEMBER_ID_LIMIT
             or type(limit) is not int or not 1 <= limit <= MEMBER_DETAILS_LIMIT):
-        return {"error": "Use an offset from 0 to 100 and a limit from 1 to 100."}
+        return {"error": "Use an offset from 0 to 1000 and a limit from 1 to 100."}
     sorting = arguments.get("sort")
     if sorting is not None and sorting not in ("oldest_first", "newest_first"):
         return {"error": "Sort join dates oldest_first or newest_first."}
