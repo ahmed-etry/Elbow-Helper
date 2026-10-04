@@ -109,16 +109,18 @@ class ResultPathTests(unittest.TestCase):
                 self.assertFalse(checked.ok)
                 self.assertIn("Valid paths: none", checked.error)
 
-    def test_entity_references_also_require_declared_paths(self):
+    def test_invalid_optional_entity_references_are_logged_and_ignored(self):
         plan = self.plan(["roles", 0, "role_id"])
         plan["entities"] = [{"kind": "discord_role", "value": {
             "step": "source", "path": ["roles", 0, "id"],
         }}]
-        checked = check_plan(plan, self.registry)
-        self.assertFalse(checked.ok)
-        self.assertIn("Entity 1", checked.error)
+        with self.assertLogs("elbow_helper.features.agent.plan.checker", level="INFO") as logs:
+            checked = check_plan(plan, self.registry)
+        self.assertTrue(checked.ok, checked.error)
+        self.assertIn("Ignoring optional agent entity 1", logs.output[0])
         plan["entities"][0]["value"]["path"][-1] = "role_id"
-        self.assertTrue(check_plan(plan, self.registry).ok)
+        with self.assertNoLogs("elbow_helper.features.agent.plan.checker", level="INFO"):
+            self.assertTrue(check_plan(plan, self.registry).ok)
 
     def test_catalogue_advertises_generic_indexes_and_nested_paths(self):
         catalogue = capability_list(self.registry)
@@ -153,23 +155,49 @@ class ResultPathTests(unittest.TestCase):
         self.assertIn("The request named other sources", issue)
         self.assertEqual(offered, ("202",))
 
-    def test_entity_validation_identifies_the_entity_and_allowed_values(self):
+    def test_invalid_optional_entities_log_once_without_mutating_the_plan(self):
         for entity, expected in (
-            ({"kind": "discord_role"}, "Entity 1 must be an object"),
-            ({"kind": "", "value": 101}, "Entity 1 kind must be a non-empty string"),
-            ({"kind": "discord_role", "value": [101]}, "use discord_role_set"),
-            ({"kind": "discord_role_set", "value": []}, "needs a non-empty list"),
-            ({"kind": "discord_role_set", "value": [101, True]}, "Entity 1 value 2 must be an ID"),
-            ({"kind": "discord_role", "value": ""}, "Entity 1 value 1 must be an ID"),
+            ({"kind": "discord_role"}, "expected exactly kind and value"),
+            ({"kind": "", "value": 101}, "kind must be a non-empty string"),
+            ({"kind": [], "value": 101}, "kind must be a non-empty string"),
+            ({"kind": "synthetic_unknown", "value": 101}, "unknown kind"),
+            ({"kind": "synthetic_unknown_set", "value": {"step": "missing", "path": []}}, "unknown kind"),
+            ({"kind": "discord_role", "value": [101]}, "only set kinds"),
+            ({"kind": "discord_role_set", "value": []}, "only set kinds"),
+            ({"kind": "discord_role_set", "value": [101, True]}, "value must be an ID"),
+            ({"kind": "discord_role", "value": ""}, "value must be an ID"),
+            ({"kind": "discord_role", "value": None}, "value must be an ID"),
+            ({"kind": "discord_role", "value": {"step": "missing", "path": ["roles", 0, "role_id"]}},
+             "planned result reference"),
             ({"kind": "discord_role_set", "value": [{"step": "source", "path": []}]},
-             "reference with step and path"),
+             "planned result reference"),
+            (None, "expected exactly kind and value"),
         ):
             with self.subTest(entity=entity):
                 plan = self.plan(["roles", 0, "role_id"])
                 plan["entities"] = [entity]
+                with self.assertLogs("elbow_helper.features.agent.plan.checker", level="INFO") as logs:
+                    checked = check_plan(plan, self.registry)
+                self.assertTrue(checked.ok, checked.error)
+                self.assertEqual(len(logs.output), 1)
+                self.assertIn(expected, logs.output[0])
+                self.assertEqual(plan["entities"], [entity])
+
+    def test_invalid_entities_do_not_relax_enforced_step_references(self):
+        plan = self.plan(["roles", 0, "id"])
+        plan["entities"] = [{"kind": "synthetic_unknown", "value": None}]
+        checked = check_plan(plan, self.registry)
+        self.assertFalse(checked.ok)
+        self.assertIn("does not expose result path", checked.error)
+
+    def test_entity_container_and_count_remain_bounded(self):
+        for entities in (None, {}, [{"kind": "discord_role", "value": 101}] * 33):
+            with self.subTest(entities=entities):
+                plan = self.plan(["roles", 0, "role_id"])
+                plan["entities"] = entities
                 checked = check_plan(plan, self.registry)
                 self.assertFalse(checked.ok)
-                self.assertIn(expected, checked.error)
+                self.assertEqual(checked.error, "List at most 32 entities.")
 
     def test_entity_paths_merge_with_explicit_paths_without_duplicates(self):
         contract = replace(self.contract, result_entity_keys=(

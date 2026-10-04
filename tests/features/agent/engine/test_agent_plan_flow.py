@@ -111,6 +111,24 @@ class _Model:
 
 
 class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unknown_and_invalid_optional_entities_do_not_stop_valid_reads(self):
+        self.registry["read_value"] = replace(self.registry["read_value"], contract=CapabilityContract(
+            (), (), result_paths=(("value",),), result_path_kinds=((("value",), "discord_member"),)))
+        for entity in ({"kind": "synthetic_unknown", "value": 101},
+                       {"kind": "discord_member", "value": None}):
+            with self.subTest(entity=entity):
+                plan = _plan([_step("lookup")])
+                plan["entities"] = [entity]
+                session = _Session([_model_step(plan), AgentStep("Synthetic answer", (), AgentUsage())], self.events)
+                context = _context()
+                with self.assertLogs("elbow_helper.features.agent.plan.checker", level="INFO") as logs:
+                    answer, _ = await self._answer(session, context)
+                self.assertEqual(answer, "Synthetic answer")
+                self.assertIn("Ignoring optional agent entity 1", logs.output[0])
+                self.assertEqual(self.events.count("read"), 1)
+                self.assertTrue(context.state.evidence)
+                self.events.clear()
+
     async def test_reply_order_tracks_plan_order_while_reads_still_execute_first(self):
         async def prepare(context, arguments):
             self.events.append("change")
@@ -302,9 +320,10 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                 plan["entities"] = []
                 plan["steps"][-1]["arguments"][field] = original
         plan["entities"] = [{"kind": "role_id", "value": role}]
-        checked = check_plan(plan, self.registry)
-        self.assertFalse(checked.ok)
-        self.assertIn("Valid kinds: discord_member, discord_role, synthetic_report", checked.error)
+        with self.assertLogs("elbow_helper.features.agent.plan.checker", level="INFO") as logs:
+            checked = check_plan(plan, self.registry)
+        self.assertTrue(checked.ok, checked.error)
+        self.assertIn("unknown kind", logs.output[0])
         declared = [{"kind": "discord_role_set", "value": [role, 303]},
                     {"kind": "discord_member_set", "value": [member, 404]}]
         for entities, role_argument in (([], [role]), (declared, [role]),

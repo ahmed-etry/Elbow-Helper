@@ -399,6 +399,28 @@ def _mixes_irreversible_changes(steps, registry) -> bool:
     )
 
 
+def _entity_issue(entity, valid_kinds, steps, registry) -> str:
+    """Validate optional declarations without making them execution boundaries."""
+    if not isinstance(entity, dict) or set(entity) != {"kind", "value"}:
+        return "expected exactly kind and value"
+    kind, value = entity["kind"], entity["value"]
+    if not isinstance(kind, str) or not kind.strip():
+        return "kind must be a non-empty string"
+    if entity_kind(kind) not in valid_kinds:
+        return "unknown kind"
+    if isinstance(value, list) and (not kind.endswith("_set") or not value):
+        return "only set kinds accept non-empty lists"
+    for item in entity_values(value):
+        if type(item) is int or isinstance(item, str) and item.strip():
+            continue
+        if not _reference(item, set(steps)):
+            return "value must be an ID, a non-empty name, or a planned result reference"
+        checked = _check_result_references(item, steps, registry)
+        if not checked.ok:
+            return checked.error
+    return ""
+
+
 def check_plan(
     raw: Any, registry: Mapping[str, RegisteredAgentTool],
     named_sources: Mapping[str, frozenset[Any]] | None = None,
@@ -428,31 +450,6 @@ def check_plan(
         valid_kinds = {entity_kind(kind) for contract in contracts if contract
                        for _, kind in (*contract.entity_fields, *contract.result_entity_keys,
                                        *contract.result_path_kinds)}
-        for index, entity in enumerate(raw.get("entities", []), 1):
-            if not isinstance(entity, dict) or set(entity) != {"kind", "value"}:
-                return _error(f"Entity {index} must be an object with exactly kind and value.")
-            kind, value = entity["kind"], entity["value"]
-            if not isinstance(kind, str) or not kind.strip():
-                return _error(f"Entity {index} kind must be a non-empty string.")
-            if entity_kind(kind) not in valid_kinds:
-                return _error(
-                    f"Entity {index} has unknown kind {kind!r}. Valid kinds: {', '.join(sorted(valid_kinds)) or 'none'}."
-                )
-            if isinstance(value, list) and not kind.endswith("_set"):
-                return _error(f"Entity {index} of kind {kind} cannot use a list; use {kind}_set for IDs or references.")
-            if isinstance(value, list) and not value:
-                return _error(f"Entity {index} of kind {kind} needs a non-empty list of IDs or references.")
-            for item_index, item in enumerate(entity_values(value), 1):
-                if type(item) is int or isinstance(item, str) and item.strip():
-                    continue
-                elif (isinstance(item, dict) and isinstance(item.get("step"), str)
-                      and item["step"] and _reference(item, {item["step"]})):
-                    continue
-                else:
-                    return _error(
-                        f"Entity {index} value {item_index} must be an ID, a non-empty name, "
-                        "or a reference with step and path. Lists require a *_set kind.",
-                    )
         if not isinstance(raw["steps"], list) or not 1 <= len(raw["steps"]) <= 48:
             return _error("List between 1 and 48 steps.")
         named = {entity_kind(kind): {str(item) for item in values}
@@ -463,12 +460,9 @@ def check_plan(
         earlier = checked
         steps_by_id = {step["id"]: step for step in raw["steps"]}
         for index, entity in enumerate(raw.get("entities", []), 1):
-            for reference in result_references(entity["value"]):
-                if not _reference(reference, earlier):
-                    return _error(f"Entity {index} must reference a planned step and result path.")
-                checked = _check_result_references(reference, steps_by_id, registry)
-                if not checked.ok:
-                    return _error(f"Entity {index}: {checked.error}", checked.step_id)
+            issue = _entity_issue(entity, valid_kinds, steps_by_id, registry)
+            if issue:
+                LOGGER.info("Ignoring optional agent entity %s: %s", index, issue)
         if _mixes_irreversible_changes(raw["steps"], registry):
             return _error("Only irreversible changes of the same kind may share a preview.")
         for kind, step_id, path in periods:
