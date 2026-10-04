@@ -50,6 +50,8 @@ class AgentDeliveryMixin:
         mention_requester: bool = False,
         _audience_override: bool = False,
         _nonce_seed: int | None = None,
+        _notice_message: discord.Message | None = None,
+        _notice_content: str | None = None,
     ) -> None:
         if (context is not None and not context.state.proposed_changes
                 and not context.state.outcomes and not _audience_override):
@@ -57,10 +59,31 @@ class AgentDeliveryMixin:
             if not await can_show(message.channel, sources, context.state.required_access,
                                   context.guild, thread_members=context.disclosure_thread_members):
                 async def post(interaction):
-                    await self.send_response(
-                        message, response, referenced, attachments, conversation,
-                        context=context, _audience_override=True, _nonce_seed=interaction.id,
-                    )
+                    async def deliver():
+                        posted = AgentDelivery()
+                        try:
+                            await self.send_response(
+                                message, response, referenced, attachments, conversation,
+                                context=context, delivery=posted, _audience_override=True,
+                                _nonce_seed=interaction.id, _notice_message=view.message,
+                                _notice_content=notice,
+                            )
+                        finally:
+                            if conversation is not None and posted.message_ids:
+                                conversation.record_answer_delivery(
+                                    message.id, "\n".join(posted.text_parts),
+                                    tuple(posted.message_ids), posted.complete,
+                                    posted.unknown, tuple(posted.attempted_nonces),
+                                    posted.uncertain_nonce,
+                                )
+                                persistence = getattr(self, "persistence", None)
+                                if persistence is not None:
+                                    await persistence.save(self._conversations, conversation)
+                    if conversation is None:
+                        await deliver()
+                    else:
+                        async with conversation.lock:
+                            await deliver()
                 scheduled = mention_requester or getattr(message, "scheduled_run", False)
                 view = PrivateAnswerView(context, response, attachments, post,
                                          timeout=3600.0 if scheduled else 600.0)
@@ -129,6 +152,8 @@ class AgentDeliveryMixin:
                 message, response, chunks, options, private_view, confirm_view,
                 allowed_mentions, active_delivery, delivery, context, conversation,
                 nonce_seed=_nonce_seed,
+                notice_message=_notice_message,
+                notice_content=_notice_content,
             )
         finally:
             for file in files:
@@ -137,20 +162,28 @@ class AgentDeliveryMixin:
     async def _send_response_parts(
         self, message, response, chunks, options, private_view, confirm_view,
         allowed_mentions, active_delivery, delivery, context, conversation,
-        *, nonce_seed=None,
+        *, nonce_seed=None, notice_message=None, notice_content=None,
     ) -> None:
         if private_view is not None and confirm_view is None:
             options["view"] = private_view
         if confirm_view is not None and len(chunks) <= 1:
             options["view"] = confirm_view
         nonce = _delivery_nonce(nonce_seed or message.id, 0)
-        sent = await self._send_delivery_part(
-            message.reply, getattr(message, "channel", None), nonce,
-            active_delivery,
-            chunks[0] if chunks else None,
-            mention_author=False, allowed_mentions=allowed_mentions,
-            **options,
-        )
+        if notice_message is not None and not allowed_mentions.users:
+            active_delivery.attempt(nonce)
+            sent = await notice_message.edit(
+                content=chunks[0] if chunks else None,
+                attachments=options.get("files", []), view=None,
+                allowed_mentions=allowed_mentions,
+            )
+        else:
+            sent = await self._send_delivery_part(
+                message.reply, getattr(message, "channel", None), nonce,
+                active_delivery,
+                chunks[0] if chunks else None,
+                mention_author=False, allowed_mentions=allowed_mentions,
+                **options,
+            )
         if private_view is not None:
             private_view.message = sent
         if confirm_view is not None and len(chunks) <= 1:
@@ -162,7 +195,13 @@ class AgentDeliveryMixin:
         if conversation is not None:
             self._conversations.register_reply(conversation, sent.id)
         if getattr(message, "archive_reply", True):
-            await self._archive_reply(message.id, sent.id, response if chunks == [None] else (chunks[0] if chunks else ""))
+            await self._archive_reply(
+                message.id, sent.id, response if chunks == [None] else (chunks[0] if chunks else ""),
+                **({"previous_content": notice_content}
+                   if notice_message is not None and not allowed_mentions.users else {}),
+            )
+        if notice_message is not None and allowed_mentions.users:
+            await notice_message.delete()
         for index, chunk in enumerate(chunks[1:], start=1):
             if context is not None:
                 await require_evidence_access(context)
@@ -269,12 +308,18 @@ class AgentDeliveryMixin:
             reconciled_count += 1
         return reconciled_count
 
-    async def _archive_reply(self, request_id: int, reply_id: int, content: str) -> None:
+    async def _archive_reply(
+        self, request_id: int, reply_id: int, content: str,
+        *, previous_content: str | None = None,
+    ) -> None:
         if self.transcript_archive is None:
             return
         try:
-            await archive_write(self.transcript_archive.record_reply, message_id=reply_id,
-                                request_message_id=request_id, content=content)
+            operation = (self.transcript_archive.replace_reply if previous_content is not None
+                         else self.transcript_archive.record_reply)
+            await archive_write(operation, message_id=reply_id,
+                                request_message_id=request_id, content=content,
+                                **({"previous_content": previous_content} if previous_content is not None else {}))
         except (OSError, sqlite3.Error, ValueError):
             # The reply is already visible. Do not send a misleading generation
             # failure or duplicate it because archival failed.

@@ -57,6 +57,4 @@ class PrivateAnswerView(PrivateResultView):
                 sorted(self.context.state.source_channels), sorted(self.context.state.required_access),
             )
             self.expired = True
-            if self.message is not None:
-                await self.message.edit(view=None)
             self.stop()

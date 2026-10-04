@@ -206,6 +206,27 @@ class Conversation:
         return next((turn for turn in self.turns
                      if turn.record and turn.record.request_message_id == message_id), None)
 
+    def record_answer_delivery(
+        self, request_id: int, answer: str, reply_ids: tuple[int, ...],
+        complete: bool, unknown: bool, attempted_nonces: tuple[int, ...],
+        uncertain_nonce: int | None,
+    ) -> None:
+        """Replace a private-answer notice's delivery with the posted answer."""
+        for index, turn in enumerate(self.turns):
+            if turn.record is None or turn.record.request_message_id != request_id:
+                continue
+            record = replace(
+                turn.record, delivered_answer=answer, reply_ids=reply_ids,
+                delivery_complete=complete, delivery_unknown=unknown,
+                attempted_nonces=attempted_nonces, uncertain_nonce=uncertain_nonce,
+            )
+            self.turns[index] = replace(turn, record=record)
+            if self.checkpoint is not None and index < self.checkpoint.covered_turn_count:
+                self.checkpoint = None
+            self.version += 1
+            self.touched_at = time.monotonic()
+            return
+
     def reconcile_unknown_delivery(
         self, *, request_message_id: int, reply_id: int, nonce: int,
         delivered_part: str, delivery_complete: bool,

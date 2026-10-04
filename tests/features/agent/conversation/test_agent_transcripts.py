@@ -51,3 +51,17 @@ class TranscriptTests(unittest.TestCase):
         self.assertEqual(self.archive.read_page(guild_id=9, channel_id=3, root_message_id=1), ())
         with self.assertRaises(sqlite3.IntegrityError):
             self.archive.record_reply(message_id=99, request_message_id=999, content="orphan")
+
+    def test_edited_notice_replaces_archive_content_and_preserves_identity(self):
+        self.request()
+        self.archive.record_reply(message_id=10, request_message_id=1, content="Synthetic notice")
+        values = dict(message_id=10, request_message_id=1,
+                      previous_content="Synthetic notice", content="Synthetic answer")
+        self.archive.replace_reply(**values)
+        self.archive.replace_reply(**values)
+        rows = TranscriptArchive(self.path).read_page(guild_id=2, channel_id=3, root_message_id=1)
+        self.assertEqual(rows[0]["replies"][0]["content"], "Synthetic answer")
+        with self.assertRaises(ValueError):
+            self.archive.replace_reply(**{**values, "request_message_id": 2})
+        with self.assertRaises(ValueError):
+            self.archive.replace_reply(**{**values, "content": "Unrelated edit"})

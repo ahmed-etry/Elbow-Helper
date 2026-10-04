@@ -55,6 +55,27 @@ class TranscriptArchive:
             connection.execute("INSERT INTO replies(message_id, request_message_id, content) VALUES (?, ?, ?)",
                                (message_id, request_message_id, content))
 
+    def replace_reply(
+        self, *, message_id: int, request_message_id: int,
+        previous_content: str, content: str,
+    ) -> None:
+        """Archive an edited notice only when its original identity still matches."""
+        with self.connect() as connection, sqlite_transaction(connection, immediate=True):
+            row = connection.execute(
+                "SELECT request_message_id, content FROM replies WHERE message_id=?", (message_id,),
+            ).fetchone()
+            if row is None:
+                connection.execute(
+                    "INSERT INTO replies(message_id, request_message_id, content) VALUES (?, ?, ?)",
+                    (message_id, request_message_id, content),
+                )
+            elif tuple(row) == (request_message_id, content):
+                return
+            elif tuple(row) == (request_message_id, previous_content):
+                connection.execute("UPDATE replies SET content=? WHERE message_id=?", (content, message_id))
+            else:
+                raise ValueError("Archived reply identity conflicts with the edited notice")
+
     def read_page(self, *, guild_id: int, channel_id: int, root_message_id: int,
                   after_message_id: int = 0, limit: int = 50) -> tuple[dict, ...]:
         """Operator-side structured export; never an unrestricted agent tool."""
