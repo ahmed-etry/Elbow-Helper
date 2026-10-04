@@ -48,7 +48,7 @@ class ResultPathTests(unittest.TestCase):
 
     def test_star_passes_one_field_from_every_listed_item(self):
         self.assertTrue(check_plan(self.plan(["roles", "*", "role_id"]), self.registry).ok)
-        self.assertFalse(check_plan(self.plan(["groups", "*", "members", "*", "member_id"]),
+        self.assertTrue(check_plan(self.plan(["groups", "*", "members", "*", "member_id"]),
                                     self.registry).ok)
         resolved = resolve_arguments(
             {"ids": {"step": "source", "path": ["roles", "*", "role_id"]}},

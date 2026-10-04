@@ -64,7 +64,7 @@ PLANNING_RULES = """Reply from supplied context without lookups, or call submit_
 
 Periods: utc_range uses UTC start and exclusive end; key uses an owning capability's time field; resolved uses its advertised path. Empty periods mean current state; latest-N is allowed only then.
 
-Periods and entities are optional. Pass earlier results to later steps with {"step":"earlier_id","path":["field"]}; "*" as one index passes that field from every item. Offer other sources instead of reading them. Never broaden a period or source to make a lookup work.
+Periods and entities are optional. Pass earlier results to later steps with {"step":"earlier_id","path":["field"]}; "*" expands list indexes, flattening nested expansions. Offer other sources instead of reading them. Never broaden a period or source to make a lookup work.
 
 Large record lists use columns and rows; reference their original field paths.
 

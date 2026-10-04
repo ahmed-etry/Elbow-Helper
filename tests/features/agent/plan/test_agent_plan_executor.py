@@ -3,10 +3,28 @@
 import asyncio
 import unittest
 
-from elbow_helper.features.agent.plan.executor import execute_plan, resolve_arguments
+from elbow_helper.features.agent.plan.executor import (
+    UnresolvedReferenceError, execute_plan, resolve_arguments,
+)
 
 
 class PlanExecutorTests(unittest.IsolatedAsyncioTestCase):
+    def test_nested_wildcards_flatten_only_expanded_indexes(self):
+        source = {"groups": [{"members": [{"accounts": [{"tag": "#P0"}, {"tag": "#P2"}]}]},
+                             {"members": []},
+                             {"members": [{"accounts": []}, {"accounts": [{"tag": "#P8"}]}]}]}
+        reference = {"step": "source", "path": ["groups", "*", "members", "*", "accounts", "*", "tag"]}
+        self.assertEqual(resolve_arguments({"tags": reference}, {"source": source}),
+                         {"tags": ["#P0", "#P2", "#P8"]})
+        self.assertEqual(resolve_arguments({"tags": ["#P9", reference]}, {"source": source}),
+                         {"tags": ["#P9", "#P0", "#P2", "#P8"]})
+        self.assertEqual(resolve_arguments({"rows": {"step": "source", "path": ["groups", "*", "members"]}},
+                                           {"source": source}),
+                         {"rows": [group["members"] for group in source["groups"]]})
+        source["groups"][0]["members"] = None
+        with self.assertRaises(UnresolvedReferenceError):
+            resolve_arguments({"tags": reference}, {"source": source})
+
     def test_action_result_reference_waits_for_confirmed_run(self):
         reference = {"step": "created", "path": ["target_id"]}
         arguments = {"target_id": reference}

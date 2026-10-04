@@ -25,7 +25,9 @@ def _walk(source: Any, path: list[Any]) -> Any:
         if part == "*":
             if not isinstance(source, list):
                 raise TypeError("Only a list can be expanded")
-            return [_walk(item, path[index + 1:]) for item in source]
+            rest = path[index + 1:]
+            collected = [_walk(item, rest) for item in source]
+            return [value for group in collected for value in group] if "*" in rest else collected
         source = source[part]
     return source
 

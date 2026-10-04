@@ -177,8 +177,6 @@ def _check_result_references(
     if isinstance(value, dict) and set(value) == {"step", "path"}:
         if not _reference(value, set(steps)):
             return _error("Resolve each reference with an earlier step and result path.", consumer)
-        if value["path"].count("*") > 1:
-            return _error("Use * for at most one index in a result path.", consumer)
         contract = reference_contract(value, steps, registry)
         paths = contract.referenceable_result_paths if contract else ()
         if not any(result_path_matches(value["path"], pattern) for pattern in paths):
