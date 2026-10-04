@@ -22,7 +22,7 @@ from ..reports.tools import original_tool
 from ..plan.checker import entity_kind, parse_periods, check_step
 from ..plan.checker import check_entity_references
 from ..plan.executor import execute_plan
-from ..plan.results import model_result
+from ..plan.results import model_result, model_view
 from ..plan.scope import resource_ids
 from ..commands.bridge import check_command_plan
 from . import budgets as limits
@@ -115,6 +115,8 @@ class PlanRunner:
         self.completed = set()
         self.tool_calls = 0
         self.evidence_characters = 0
+        self.model_results = {}
+        self.sent_summaries = {}
 
     async def run_one(
         self,
@@ -301,14 +303,9 @@ class PlanRunner:
             coverage_dates = {
                 field: arguments[field] for field in contract.time_window[:2] if field in arguments
             }
-        model_content = json.dumps(
-            model_result(payload, coverage_dates=coverage_dates),
-            ensure_ascii=False,
-            default=str,
-            separators=(",", ":"),
-        )
+        payload = model_result(payload, coverage_dates=coverage_dates)
         return await self._record_result(
-            step, arguments, checked["scope"], local, previous, payload, model_content, plan_state,
+            step, arguments, checked["scope"], local, previous, payload, checked["contract"], plan_state,
         )
 
     async def _record_result(
@@ -319,10 +316,22 @@ class PlanRunner:
         local,
         previous,
         payload,
-        model_content,
+        contract,
         plan_state: PlanExecutionState,
     ):
         async with self.state_lock:
+            summaries = {key: values.copy() for key, values in self.sent_summaries.items()}
+            row_fields = {
+                path[0] for path in (contract.referenceable_result_paths if contract else ())
+                if "N" in path
+            }
+            view = model_view(
+                payload,
+                summaries=summaries if payload.get("report_id") in local.state.reports else None,
+                row_fields=row_fields,
+            )
+            model_content = json.dumps(view, ensure_ascii=False, default=str, separators=(",", ":"))
+            structured_content = json.dumps(payload, ensure_ascii=False, default=str, separators=(",", ":"))
             limit = self.budget.result_character_limit(
                 plan_state.emitted,
                 pending_call_ids=(step["id"],),
@@ -332,6 +341,12 @@ class PlanRunner:
                 ),
             )
             content = bound_tool_result(model_content, limit)
+            self.model_results[step["id"]] = (
+                json.loads(content) if content == model_content else
+                model_result(json.loads(content) if content else {}, truncated=True)
+            )
+            if content == model_content:
+                self.sent_summaries = summaries
             plan_state.emitted.append(AgentToolResult(step["id"], content))
             self.evidence_characters += len(content) if content else max(0, limit)
             merge_tool_state(self.context, local, previous)
@@ -345,19 +360,18 @@ class PlanRunner:
                     call_id=step["id"],
                     tool=step["capability"],
                     arguments=arguments,
-                    result=content,
-                    raw_result_characters=len(model_content),
+                    result=structured_content,
+                    raw_result_characters=len(structured_content),
                     result_complete=content == model_content,
                     capability_scope=scope,
                     context=self.context,
                 )
             )
-        try:
-            return json.loads(content)
-        except ValueError:
-            return {"error": "The result could not be included."}
+        return payload
 
     async def run(self, plan: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+        self.model_results = {}
+        original_summaries = {key: values.copy() for key, values in self.sent_summaries.items()}
         plan_state = PlanExecutionState(
             plan=plan,
             original=tool_state_snapshot(self.context),
@@ -387,8 +401,14 @@ class PlanRunner:
             self.rounder.unpublished_scope = plan_state.original_scope
             return result
         except AgentAccessLost:
+            self.model_results = {}
+            self.sent_summaries = original_summaries
             await discard_unpublished_results(self.context, plan_state.original, ())
             self.ledger.reports = plan_state.original_scope
             return {
                 step["id"]: model_result({"error": "That lookup failed."}) for step in plan["steps"]
             }
+
+    def model_results_for(self, results):
+        return {step_id: self.model_results[step_id] if step_id in self.model_results else model_view(payload)
+                for step_id, payload in results.items()}

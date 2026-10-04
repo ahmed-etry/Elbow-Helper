@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import json
 from functools import wraps
 from collections.abc import Mapping
 from typing import Any
@@ -15,6 +16,46 @@ LIMIT_FIELDS = frozenset({
     "limitations", "caveats", "warnings", "projection_note",
     "coverage_note", "interpretation_notes", "caveat",
 })
+
+
+PAGING_FIELDS = frozenset({
+    "report_id", "offset", "limit", "cursor", "next_offset", "next_cursor", "flags",
+})
+
+
+def compact_result(value: Any) -> Any:
+    """Encode homogeneous records as a table only in the model's JSON view."""
+    if isinstance(value, Mapping):
+        return {key: compact_result(item) for key, item in value.items()}
+    if isinstance(value, list):
+        if len(value) >= 10 and all(isinstance(item, Mapping) for item in value):
+            columns = list(value[0])
+            if all(item.keys() == value[0].keys() for item in value):
+                return {"columns": columns, "rows": [[item[column] for column in columns]
+                                                      for item in value]}
+        return [compact_result(item) for item in value]
+    return value
+
+
+def model_view(
+    payload: Mapping[str, Any], *, summaries: dict[str, set[str]] | None = None,
+    row_fields=(),
+) -> dict[str, Any]:
+    """Omit an unchanged retained page summary already included in this request."""
+    data = dict(payload)
+    report_id = data.get("report_id")
+    if (summaries is not None and isinstance(report_id, str) and row_fields
+            and ("next_offset" in data or "next_cursor" in data) and "error" not in data):
+        summary = {key: value for key, value in data.items()
+                   if key not in PAGING_FIELDS and key not in row_fields}
+        signature = json.dumps(summary, ensure_ascii=False, sort_keys=True, default=str,
+                               separators=(",", ":"))
+        sent = summaries.setdefault(report_id, set())
+        if signature in sent:
+            data = {key: value for key, value in data.items()
+                    if key in PAGING_FIELDS or key in row_fields}
+        sent.add(signature)
+    return compact_result(data)
 
 
 def _flag(value: Any) -> str:

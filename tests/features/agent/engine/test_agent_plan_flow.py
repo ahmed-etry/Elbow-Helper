@@ -111,6 +111,98 @@ class _Model:
 
 
 class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_compact_pages_preserve_payload_references_evidence_and_report(self):
+        report = SimpleNamespace(report_id="synthetic-report", retained_bytes=100,
+                                 manifest=lambda: {"report_id": "synthetic-report"})
+
+        async def page(context, arguments):
+            context.state.reports[report.report_id] = report
+            offset = arguments.get("offset", 0)
+            return {"report_id": report.report_id, "summary": {"total": 20},
+                    "players": [{"target_id": 101 + index, "name": f"Synthetic {index}"}
+                                for index in range(offset, offset + 10)],
+                    "next_offset": 10 if offset == 0 else None}
+
+        consume = AsyncMock(return_value={"value": 7})
+        self.registry = {
+            "synthetic_page": RegisteredAgentTool(AgentToolDefinition(
+                "synthetic_page", "Read synthetic values.", {"type": "object", "properties": {
+                    "report_id": {"type": "string"}, "offset": {"type": "integer", "minimum": 0},
+                }, "required": []}), page, contract=CapabilityContract(
+                    (("report_id", "synthetic_report"),), (), retained_fields=("report_id",),
+                    result_paths=(("report_id",), ("next_offset",)),
+                    result_path_kinds=((("report_id",), "synthetic_report"),),
+                    result_entity_keys=(("players[].target_id", "synthetic_target"),))),
+            "synthetic_consume": RegisteredAgentTool(AgentToolDefinition(
+                "synthetic_consume", "Use synthetic values.", {"type": "object", "properties": {
+                    "targets": {"type": "array", "items": {"type": "integer"}, "maxItems": 20},
+                }, "required": ["targets"]}), consume, contract=CapabilityContract(
+                    (("targets", "synthetic_target_set"),), ())),
+        }
+        plan = _plan([
+            {**_step("first"), "capability": "synthetic_page"},
+            {**_step("second", {"report_id": {"step": "first", "path": ["report_id"]},
+                               "offset": {"step": "first", "path": ["next_offset"]}}, ["first"]),
+             "capability": "synthetic_page"},
+            {**_step("consume", {"targets": {"step": "second", "path": ["players", "*", "target_id"]}},
+                     ["second"]), "capability": "synthetic_consume"},
+        ])
+        context = _context()
+        session = _Session([_model_step(plan), AgentStep("Synthetic answer", (), AgentUsage())], self.events)
+        answer, _ = await self._answer(session, context)
+        self.assertEqual(answer, "Synthetic answer")
+        consume.assert_awaited_once()
+        self.assertEqual(consume.await_args.args[1]["targets"], list(range(111, 121)))
+        results = json.loads(session.calls[-1][0][0].content)["results"]
+        self.assertEqual(results["first"]["players"]["columns"], ["target_id", "name"])
+        self.assertIn("summary", results["first"])
+        self.assertNotIn("summary", results["second"])
+        self.assertEqual(results["second"]["players"]["rows"][0], [111, "Synthetic 10"])
+        evidence = json.loads(json.loads(context.state.evidence[1])["result"])
+        self.assertIn("summary", evidence)
+        self.assertEqual(evidence["players"][0]["target_id"], 111)
+        self.assertIs(context.state.reports[report.report_id], report)
+
+        consume.reset_mock()
+        continuation = _plan([
+            {**plan["steps"][1], "arguments": {"report_id": report.report_id, "offset": 10},
+             "depends_on": []}, plan["steps"][2],
+        ])
+        session = _Session([_model_step(_plan([plan["steps"][0]])), _model_step(continuation),
+                            AgentStep("Synthetic answer", (), AgentUsage())], self.events)
+        context = _context()
+        await self._answer(session, context)
+        first = json.loads(session.calls[1][0][0].content)["results"]["first"]
+        second = json.loads(session.calls[2][0][0].content)["results"]["second"]
+        self.assertIn("summary", first)
+        self.assertNotIn("summary", second)
+        self.assertEqual(consume.await_args.args[1]["targets"], list(range(111, 121)))
+
+    async def test_model_truncation_preserves_structured_references_and_evidence(self):
+        rows = [{"target_id": 101 + index, "details": "synthetic " * 100}
+                for index in range(10)]
+
+        async def read(context, arguments):
+            return {"players": rows} if not arguments else {"value": arguments["value"]}
+
+        self.registry["read_value"] = replace(
+            self.registry["read_value"], handler=read,
+            contract=CapabilityContract((), (), result_paths=(("players", "N", "target_id"), ("value",))),
+        )
+        plan = _plan([_step("first"), _step("second", {
+            "value": {"step": "first", "path": ["players", 0, "target_id"]},
+        }, ["first"])])
+        session = _Session([_model_step(plan), AgentStep("Synthetic answer", (), AgentUsage())], self.events)
+        context = _context()
+        with patch.object(ContextBudget, "result_character_limit", return_value=160):
+            await self._answer(session, context)
+        results = json.loads(session.calls[-1][0][0].content)["results"]
+        self.assertTrue(results["first"]["flags"]["truncated"])
+        self.assertEqual(results["second"]["value"], 101)
+        record = json.loads(context.state.evidence[0])
+        self.assertEqual(json.loads(record["result"])["players"], rows)
+        self.assertFalse(record["result_complete"])
+
     async def test_referenced_entities_require_matching_kinds_before_change_preview(self):
         role = {"step": "roles", "path": ["roles", 0, "role_id"]}
         member = {"step": "members", "path": ["members", 0, "member_id"]}

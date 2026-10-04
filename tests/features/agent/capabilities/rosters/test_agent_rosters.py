@@ -139,7 +139,10 @@ class AgentRosterTests(unittest.IsolatedAsyncioTestCase):
         result = await AgentService(model).answer(question="Read the signup roster", local_context="", context=self.context)
         self.assertIn("Thirty accounts", result)
         self.assertEqual(rounds, 2)
-        self.assertEqual(sum(len(page["accounts"]) for page in pages), 30)
+        self.assertEqual(sum(len(accounts["rows"] if isinstance(accounts, dict) else accounts)
+                             for accounts in (page["accounts"] for page in pages)), 30)
+        self.assertIn("columns", pages[0]["accounts"])
+        self.assertIsInstance(pages[1]["accounts"], list)
         self.assertEqual(pages[0]["report_id"], pages[1]["report_id"])
 
     async def test_comparison_counts_all_rows_and_pages_exact_changes(self):

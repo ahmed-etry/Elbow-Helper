@@ -81,7 +81,7 @@ class AnswerFlow:
     async def _limit_reply(self, error: AgentLimitReached) -> str:
         pending = self.rounder.pending_results or tuple(
             AgentToolResult(call.call_id, json.dumps({
-                "results": self.completed_results,
+                "results": self.runner.model_results_for(self.completed_results),
                 "flags": {"status": "refused", "reason": "answer_only"},
             }, ensure_ascii=False, default=str))
             for call in self.rounder.pending_calls
@@ -210,7 +210,7 @@ class AnswerFlow:
     async def _feedback_reply(self, results, instruction, **details) -> str:
         pending = (AgentToolResult(
             self.decision.rounds[-1].tool_calls[0].call_id,
-            json.dumps({"results": results, "instruction": instruction, **details},
+            json.dumps({"results": self.runner.model_results_for(results), "instruction": instruction, **details},
                        ensure_ascii=False, default=str),
         ),)
         reply = await self.rounder.advance(
@@ -228,7 +228,7 @@ class AnswerFlow:
                 self.decision.rounds[-1].tool_calls[0].call_id,
                 json.dumps(
                     {
-                        "results": results,
+                        "results": self.runner.model_results_for(results),
                         "instruction": RESULT_ANSWER_INSTRUCTION,
                     },
                     ensure_ascii=False,

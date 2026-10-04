@@ -1,13 +1,74 @@
 """Model-facing lookup results keep data and bounded flags."""
 
 import unittest
+import json
+from copy import deepcopy
+from dataclasses import asdict
 
-from elbow_helper.features.agent.plan.results import model_result, result_handler, plan_feedback
+from elbow_helper.features.agent.plan.results import (
+    compact_result, model_view, model_result, result_handler, plan_feedback,
+)
+from elbow_helper.features.agent.plan.executor import resolve_arguments
+from elbow_helper.features.cwl.queries import CwlPerformanceRow
 from elbow_helper.features.agent.engine.registry import build_agent_tools
 from unittest.mock import AsyncMock
 
 
 class ModelResultTests(unittest.TestCase):
+    def test_long_homogeneous_lists_use_first_record_column_order(self):
+        rows = [{"target_id": index, "details": {"values": [index, None]}, "enabled": True}
+                for index in range(10)]
+        rows[1] = dict(reversed(list(rows[1].items())))
+        original = deepcopy(rows)
+        view = compact_result({"players": rows})
+        self.assertEqual(view["players"]["columns"], ["target_id", "details", "enabled"])
+        self.assertEqual(view["players"]["rows"][1], [1, {"values": [1, None]}, True])
+        self.assertEqual(rows, original)
+        self.assertEqual(json.loads(json.dumps(view)), view)
+
+    def test_short_and_mixed_lists_keep_their_shape(self):
+        for rows in ([{"value": index} for index in range(9)],
+                     [{"value": index} for index in range(9)] + [{"other": 9}],
+                     [{"value": index} for index in range(9)] + [None]):
+            with self.subTest(rows=rows):
+                self.assertEqual(compact_result({"rows": rows}), {"rows": rows})
+
+    def test_compaction_leaves_wildcard_and_index_references_on_payload(self):
+        payload = {"players": [{"target_id": index + 101} for index in range(10)]}
+        view = compact_result(payload)
+        self.assertIn("columns", view["players"])
+        arguments = {"targets": {"step": "read", "path": ["players", "*", "target_id"]},
+                     "first": {"step": "read", "path": ["players", 0, "target_id"]}}
+        self.assertEqual(resolve_arguments(arguments, {"read": payload}),
+                         {"targets": list(range(101, 111)), "first": 101})
+
+    def test_400_cwl_like_rows_shrink_by_at_least_half(self):
+        payload = synthetic_cwl_payload()
+        before = len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+        after = len(json.dumps(compact_result(payload), ensure_ascii=False, separators=(",", ":")))
+        self.assertLessEqual(after, before // 2, (before, after))
+        self.assertEqual(len(compact_result(payload)["players"]["rows"]), 400)
+
+    def test_repeated_page_summaries_are_omitted_only_from_model_view(self):
+        summaries = {}
+        payload = {"report_id": "synthetic-report", "summary": {"total": 20},
+                   "clan_seasons": [{"season": "2026-01", "attacks": 140}],
+                   "players": [{"target_id": index} for index in range(10)],
+                   "next_offset": 10, "flags": {"status": "partial"}}
+        first = model_view(payload, summaries=summaries, row_fields={"players"})
+        self.assertEqual(first["summary"], payload["summary"])
+        later = deepcopy(payload)
+        later.update(players=[{"target_id": index} for index in range(10, 20)],
+                     next_offset=None, flags={"status": "complete"})
+        second = model_view(later, summaries=summaries, row_fields={"players"})
+        self.assertEqual(set(second), {"report_id", "players", "next_offset", "flags"})
+        self.assertIn("summary", later)
+        later["summary"]["total"] = 21
+        self.assertIn("summary", model_view(later, summaries=summaries, row_fields={"players"}))
+        later["report_id"] = "other-synthetic-report"
+        self.assertIn("summary", model_view(later, summaries=summaries, row_fields={"players"}))
+        self.assertIn("summary", model_view(payload, summaries={}, row_fields={"players"}))
+
     def test_complete_result_keeps_data_and_dates(self):
         result = model_result({"rows": [{"value": 1}], "complete": True},
                               coverage_dates={"after": "2026-01-01T00:00:00Z"})
@@ -82,3 +143,14 @@ class ResultHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, {"error": "The source is not configured.",
                                   "flags": {"status": "failed", "truncated": False,
                                            "limits": ["missing_setup"]}})
+
+
+def synthetic_cwl_payload():
+    return {"players": [asdict(CwlPerformanceRow(
+        season="2026-01", clan_code="SYN", league="Synthetic League",
+        profile_key="synthetic_profile", player_tag=f"#SYN{index}",
+        player_name=f"Synthetic player {index}", townhall=18, wars=7, attacks=7,
+        attacks_expected=7, stars=21, average_destruction=100.0, score=21.0,
+        rank=index + 1, rank_total=400, multi_season_score=21.0,
+        multi_season_rank=index + 1, multi_season_rank_total=400,
+    )) for index in range(400)]}

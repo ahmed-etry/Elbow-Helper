@@ -66,6 +66,8 @@ Periods: utc_range uses UTC start and exclusive end; key uses an owning capabili
 
 Periods and entities are optional. Pass earlier results to later steps with {"step":"earlier_id","path":["field"]}; "*" as one index passes that field from every item. Offer other sources instead of reading them. Never broaden a period or source to make a lookup work.
 
+Large record lists use columns and rows; reference their original field paths.
+
 Use low effort unless substantial synthesis is needed, max only for the hardest synthesis. Answer from checked results; request more steps only for remaining gaps, staying in scope unless revising it. Mention a limit only if it changes the conclusion."""
 
 
