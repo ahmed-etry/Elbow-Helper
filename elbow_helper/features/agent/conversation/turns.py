@@ -82,6 +82,7 @@ class AgentTurnMixin:
             conversation_root_id=root_id,
             attachment_sources=tuple(item for item in (message, referenced) if item is not None),
             deadline_monotonic=deadline_monotonic,
+            application_owner=self.application_owner,
         )
         return context, root_id
 

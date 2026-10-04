@@ -13,6 +13,7 @@ from .state import (
     ConversationTurn, checkpoint_input_hash,
 )
 from ..prompts import SYSTEM_PROMPT, build_request_prompt
+from ..identity import agent_identity, guild_identity
 
 
 # A soft working target, not a model limit or an estimate of billed tokens.
@@ -153,6 +154,10 @@ def compile_context(
     candidates = context.state.authorized_history
     checkpoint = context.state.authorized_checkpoint
     instructions = [asdict(instruction) for instruction in context.state.authorized_instructions]
+    own_identity = agent_identity(getattr(context, "bot", None), context.guild)
+    owner = getattr(context, "application_owner", None)
+    if owner is not None:
+        owner = guild_identity(owner, context.guild)
     for instruction in context.state.authorized_instructions:
         context.state.source_channels.add(instruction.source_channel_id)
 
@@ -164,6 +169,8 @@ def compile_context(
             asker_name=context.member.display_name, asked_at=context.source_message.created_at,
             conversation_history=history, history_status=status, report_manifest=manifest,
             task_instructions=instructions, history_checkpoint=checkpoint_text,
+            agent_identity=asdict(own_identity) if own_identity is not None else None,
+            application_owner=asdict(owner) if owner is not None else None,
         )
 
     selected = []

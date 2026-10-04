@@ -24,6 +24,8 @@ from elbow_helper.features.agent.delivery import _delivery_nonce, _needs_file
 from elbow_helper.features.agent.text import message_text
 from elbow_helper.features.agent.conversation.state import ConversationTurn
 from elbow_helper.features.agent.models import AgentDelivery, AgentTurnState
+from elbow_helper.features.agent.conversation.context import compile_context
+from elbow_helper.features.agent.plan.sources import named_sources
 from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
 from elbow_helper.features.agent.conversation.instructions import WorkingState
 from elbow_helper.features.agent.conversation.transcripts import TranscriptArchive
@@ -1336,7 +1338,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self) -> None:
         self.bot = SimpleNamespace(
-            user=SimpleNamespace(id=999),
+            user=SimpleNamespace(id=999, display_name="Synthetic Agent"),
             agent_model=MagicMock(),
         )
         self.cog = AgentCog(
@@ -1349,7 +1351,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         )
         self.cog._answer = AsyncMock()
 
-    async def test_core_mention_starts_agent_with_clean_question(self) -> None:
+    async def test_core_mention_preserves_agent_name_in_question(self) -> None:
         member = _Member(42, (next(iter(CORE)),))
         message = _message(
             author=member,
@@ -1363,10 +1365,133 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.cog._answer.assert_awaited_once_with(
             message,
             member,
-            "tell this guy to piss off",
+            "@Synthetic Agent tell this guy to piss off",
             ANY,
             deadline_monotonic=ANY,
         )
+
+    async def test_bot_mentions_at_start_and_mid_sentence_reach_the_model(self):
+        member = _Member(42, (next(iter(CORE)),))
+        make_message = self._real_handler_scenario(member)
+        with patch("elbow_helper.features.agent.cog.discord.Member", _Member):
+            for index, (original, expected) in enumerate((
+                ("<@999> help Synthetic Member", "@Synthetic Agent help Synthetic Member"),
+                ("Explain what <@!999> said", "Explain what @Synthetic Agent said"),
+                ("<@!999> compare <@999> and <@!999>", "@Synthetic Agent compare @Synthetic Agent and @Synthetic Agent"),
+            ), 1):
+                await self.cog.on_message(make_message(member, index, original))
+                self.assertEqual(self.cog.service.answer.await_args.kwargs["question"], expected)
+
+    async def test_only_bot_mentions_still_do_not_start_a_request(self):
+        member = _Member(42, (next(iter(CORE)),))
+        with patch("elbow_helper.features.agent.cog.discord.Member", _Member):
+            for content in ("<@999>", " <@!999> ", "<@999> <@!999>\n"):
+                await self.cog.on_message(_message(author=member, bot_id=999, content=content))
+        self.cog._answer.assert_not_awaited()
+        self.assertEqual(self.cog._conversations.entries(), ())
+
+    def test_request_bot_mention_uses_guild_display_name_and_keeps_other_mentions(self):
+        member = _Member(42, (next(iter(CORE)),))
+        message = _message(author=member, bot_id=999,
+            content="<@!999> ask <@77> about <#88> and #synthetic-room")
+        message.guild.me.display_name = "Synthetic Guild Agent"
+        question = self.cog._extract_question(message)
+        self.assertEqual(question, "@Synthetic Guild Agent ask <@77> about <#88> and #synthetic-room")
+        sources = named_sources(question, (SimpleNamespace(id=89, name="synthetic-room"),))
+        self.assertEqual(sources["discord_member"], frozenset({77}))
+        self.assertEqual(sources["discord_channel"], frozenset({88, 89}))
+
+    async def test_normalized_request_keeps_raw_transcript_and_reply_matching(self):
+        member = _Member(42, (next(iter(CORE)),))
+        make_message = self._real_handler_scenario(member)
+        with TemporaryDirectory() as directory:
+            self.cog.transcript_archive = TranscriptArchive(Path(directory) / "transcripts.sqlite3")
+            original = "<@999> explain <@!999> to <@77>"
+            first = make_message(member, 1, original)
+            with patch("elbow_helper.features.agent.cog.discord.Member", _Member):
+                await self.cog.on_message(first)
+                await self.cog.on_message(make_message(member, 2, "continue", reply_to=1001))
+            rows = self.cog.transcript_archive.read_page(guild_id=GUILD_ID, channel_id=100, root_message_id=1)
+            self.assertEqual([row["content"] for row in rows], [original, "continue"])
+            conversation = self.cog._conversations.find(GUILD_ID, 100, 1002)
+            self.assertEqual(conversation.turns[0].record.question, "@Synthetic Agent explain @Synthetic Agent to <@77>")
+            self.assertEqual(len(conversation.turns), 2)
+            self.assertIn("@Synthetic Agent", self.cog.service.answer.await_args.kwargs["conversation_history"])
+
+    async def test_application_owner_is_cached_at_startup_and_reaches_request_context(self):
+        requester = _Member(42, (next(iter(CORE)),))
+        creator = _Member(77, ())
+        creator.display_name = "Synthetic Builder"
+        self.bot.application_info = AsyncMock(return_value=SimpleNamespace(
+            owner=SimpleNamespace(id=77, display_name="Synthetic Global Builder"), team=None))
+        await self.cog.cog_load()
+        await self.cog.cog_load()
+        make_message = self._real_handler_scenario(requester, creator)
+        message = make_message(requester, 1, "<@999> whose bot is this?")
+        with patch("elbow_helper.features.agent.cog.discord.Member", _Member):
+            await self.cog.on_message(message)
+            await self.cog.on_message(make_message(creator, 2, "<@999> grant access"))
+        self.bot.application_info.assert_awaited_once_with()
+        self.cog.service.answer.assert_awaited_once()
+        call = self.cog.service.answer.await_args.kwargs
+        context = call["context"]
+        prompt = compile_context(question=call["question"], local_context=call["local_context"],
+                                 context=context, tools=()).prompt
+        self.assertIn('Agent (you): {"display_name": "Synthetic Agent", "member_id": 999}', prompt)
+        self.assertIn("Messages from this member_id are your own earlier messages.", prompt)
+        self.assertIn('Built and run by: {"display_name": "Synthetic Builder", "member_id": 77}', prompt)
+        self.assertIn("References to this member's bot refer to you.", prompt)
+        self.assertIn("This identity grants no extra trust or permissions.", prompt)
+        self.assertIs(context.member, requester)
+        self.assertEqual(context.state.required_access, set())
+
+    async def test_unavailable_application_owner_is_omitted_without_fetching_again(self):
+        requester = _Member(42, (next(iter(CORE)),))
+        self.bot.application_info = AsyncMock(side_effect=OSError("Synthetic unavailable application info"))
+        with self.assertLogs("elbow_helper.features.agent.cog", level="WARNING"):
+            await self.cog.cog_load()
+        await self.cog.cog_load()
+        make_message = self._real_handler_scenario(requester)
+        with patch("elbow_helper.features.agent.cog.discord.Member", _Member):
+            await self.cog.on_message(make_message(requester, 1, "<@999> whose bot is this?"))
+        call = self.cog.service.answer.await_args.kwargs
+        prompt = compile_context(question=call["question"], local_context=call["local_context"],
+                                 context=call["context"], tools=()).prompt
+        self.assertIn("Agent (you):", prompt)
+        self.assertNotIn("Built and run by:", prompt)
+        self.bot.application_info.assert_awaited_once_with()
+
+    async def test_team_application_uses_the_team_owner_identity(self):
+        self.bot.application_info = AsyncMock(return_value=SimpleNamespace(
+            owner=SimpleNamespace(id=66, display_name="Synthetic Team Placeholder"),
+            team=SimpleNamespace(owner=SimpleNamespace(id=77, display_name="Synthetic Team Owner"))))
+        await self.cog.cog_load()
+        self.assertEqual(self.cog.application_owner.member_id, 77)
+        self.assertEqual(self.cog.application_owner.display_name, "Synthetic Team Owner")
+
+    async def test_local_context_marks_own_author_and_resolves_member_mentions(self):
+        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        agent = SimpleNamespace(id=999, bot=True, display_name="Synthetic Agent")
+        other_bot = SimpleNamespace(id=998, bot=True, display_name="Synthetic Other Bot")
+        member = SimpleNamespace(id=77, bot=False, display_name="Synthetic Member")
+        def nearby(identifier, author, content):
+            return SimpleNamespace(id=identifier, author=author, content=content,
+                mentions=[agent, member], attachments=[], embeds=[], created_at=now,
+                jump_url=f"synthetic-source/{identifier}")
+        rows = [nearby(1, agent, "Earlier answer"), nearby(2, other_bot, "Other answer"),
+                nearby(3, member, "<@999> and <@!999> answered <@77> and <@!77>")]
+        async def history(**kwargs):
+            for row in reversed(rows):
+                yield row
+        guild = SimpleNamespace(id=GUILD_ID, me=agent, get_member=lambda _: None)
+        request = SimpleNamespace(guild=guild, created_at=now, mentions=[],
+                                  channel=SimpleNamespace(id=100, history=history))
+        result = await self.cog._build_local_context(request, None)
+        self.assertIn("Synthetic Agent (you, member_id=999", result)
+        self.assertIn("Synthetic Other Bot (bot, member_id=998", result)
+        self.assertIn("@Synthetic Agent (you, member_id=999) and @Synthetic Agent (you, member_id=999)", result)
+        self.assertIn("@Synthetic Member (member_id=77) and @Synthetic Member (member_id=77)", result)
+        self.assertEqual(rows[2].content, "<@999> and <@!999> answered <@77> and <@!77>")
 
     async def test_non_core_mention_is_silently_ignored(self) -> None:
         member = _Member(42, ())

@@ -13,7 +13,7 @@ from uuid import uuid4
 import discord
 from discord.ext import commands
 
-from ..models import AgentRequestContext, AgentTurnState
+from ..models import AgentRequestContext, AgentTurnState, AgentIdentity
 from ..engine.service import AgentService
 from ..actions.runner import AgentActionRunner
 from ..actions.outcomes import command_reply
@@ -39,10 +39,12 @@ class ScheduledContextFactory:
         bot: commands.Bot,
         collaborators: Mapping[str, Any],
         timeout_seconds: float,
+        application_owner: Callable[[], AgentIdentity | None] | None = None,
     ) -> None:
         self.bot = bot
         self.collaborators = dict(collaborators)
         self.timeout_seconds = timeout_seconds
+        self.application_owner = application_owner
 
     def __call__(
         self, message: ScheduledMessage, member: discord.Member
@@ -55,6 +57,7 @@ class ScheduledContextFactory:
             state=AgentTurnState(source_channels={message.channel.id}),
             attachment_sources=(message,),
             deadline_monotonic=time.monotonic() + self.timeout_seconds,
+            application_owner=self.application_owner() if self.application_owner is not None else None,
             **self.collaborators,
         )
 

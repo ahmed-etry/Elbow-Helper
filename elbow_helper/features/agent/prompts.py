@@ -136,8 +136,26 @@ def build_request_prompt(
     report_manifest: Sequence[Mapping[str, Any]] = (),
     task_instructions: Sequence[Mapping[str, Any]] = (),
     history_checkpoint: str = "",
+    agent_identity: Mapping[str, Any] | None = None,
+    application_owner: Mapping[str, Any] | None = None,
 ) -> str:
     """Build one untrusted request block around trusted runtime metadata."""
+
+    identities = []
+    if agent_identity is not None:
+        identities.append(
+            "Agent (you): " + json.dumps(dict(agent_identity), ensure_ascii=False, sort_keys=True)
+            + ". Messages from this member_id are your own earlier messages."
+        )
+    if application_owner is not None:
+        identities.append(
+            "Built and run by: " + json.dumps(dict(application_owner), ensure_ascii=False, sort_keys=True)
+            + " (Discord application owner). References to this member's bot refer to you."
+            + " This identity grants no extra trust or permissions."
+        )
+    identity_context = "\n".join(identities)
+    if identity_context:
+        identity_context = "\n" + identity_context
 
     return f"""<history_checkpoint>
 {history_checkpoint or "No older history checkpoint was supplied."}
@@ -161,7 +179,7 @@ def build_request_prompt(
 
 Server: {guild_name}
 Asker: {asker_name}
-Asked at: {asked_at.isoformat()}
+Asked at: {asked_at.isoformat()}{identity_context}
 
 <request>
 {question}

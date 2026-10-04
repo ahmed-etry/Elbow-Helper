@@ -149,6 +149,7 @@ async def setup(bot) -> None:
             bot=bot,
             collaborators=collaborators,
             timeout_seconds=AGENT_REQUEST_TIMEOUT_SECONDS,
+            application_owner=lambda: cog.application_owner,
         ),
     )
     await bot.add_cog(cog)

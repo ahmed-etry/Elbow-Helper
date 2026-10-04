@@ -23,8 +23,9 @@ from .access import AgentAccessLost, require_evidence_access
 from .access import has_agent_entry_access
 from .access import require_access
 from .conversation.state import Conversation, ConversationStore
-from .text import message_text
-from .models import AgentDelivery, AgentRequestContext
+from .text import message_text, render_member_mentions
+from .models import AgentDelivery, AgentRequestContext, AgentIdentity
+from .identity import agent_identity, member_identity
 from .engine.service import AgentUnavailableError
 from .engine.service import AgentService
 from .conversation.transcripts import TranscriptArchive, archive_write
@@ -109,8 +110,15 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
         self._previews: WeakValueDictionary[int, object] = WeakValueDictionary()
         self._tasks: set[asyncio.Task] = set()
         self._semaphore = asyncio.Semaphore(AGENT_CONCURRENCY)
+        self._application_owner: AgentIdentity | None = None
+        self._application_owner_loaded = False
+
+    @property
+    def application_owner(self) -> AgentIdentity | None:
+        return self._application_owner
 
     async def cog_load(self) -> None:
+        await self._load_application_owner()
         if self.persistence is not None:
             await self.persistence.restore(self._conversations, guild_id=GUILD_ID)
         if (
@@ -123,6 +131,22 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
             self.action_runner.start()
         if self.scheduled_runner is not None:
             self.scheduled_runner.start()
+
+    async def _load_application_owner(self) -> None:
+        if self._application_owner_loaded:
+            return
+        self._application_owner_loaded = True
+        application_info = getattr(self.bot, "application_info", None)
+        if not callable(application_info):
+            return
+        try:
+            async with asyncio.timeout(10):
+                info = await application_info()
+            team = getattr(info, "team", None)
+            owner = getattr(team, "owner", None) if team is not None else getattr(info, "owner", None)
+            self._application_owner = member_identity(owner)
+        except (discord.DiscordException, OSError, TimeoutError):
+            LOGGER.warning("Agent application owner identity is unavailable", exc_info=True)
 
     async def _prune_checkpoints(self) -> None:
         while True:
@@ -322,7 +346,13 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
         if bot_user is None:
             return ""
         mention_pattern = re.compile(rf"<@!?{bot_user.id}>")
-        return mention_pattern.sub("", message.content or "").strip()
+        content = message.content or ""
+        if not mention_pattern.sub("", content).strip():
+            return ""
+        identity = agent_identity(self.bot, getattr(message, "guild", None))
+        if identity is None:
+            return content.strip()
+        return mention_pattern.sub(lambda _: f"@{identity.display_name}", content).strip()
 
 
     async def _answer(
@@ -416,6 +446,8 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
                 exc_info=True,
             )
 
+        identity = agent_identity(self.bot, getattr(message, "guild", None))
+
         def render(item: discord.Message) -> str:
             guild = getattr(message, "guild", None)
             owner = (self._conversations.find_message(guild.id, message.channel.id, item.id)
@@ -426,10 +458,11 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
             other = ((owner is not None and owner is not conversation)
                      or (owner is None and (is_request or is_agent_reply)))
             if not other:
-                return _render_local_message(item)
+                return _render_local_message(item, identity=identity)
             now = getattr(message, "created_at", None) or datetime.now(timezone.utc)
             age = max(0, int((now - item.created_at).total_seconds()))
-            return _render_local_message(item, context_note=f"other agent conversation, {age}s old")
+            return _render_local_message(item, identity=identity,
+                                         context_note=f"other agent conversation, {age}s old")
 
         lines = [
             "Immediate channel conversation (oldest to newest):",
@@ -481,11 +514,14 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
             return None
 
 
-def _render_local_message(message: discord.Message, *, context_note: str = "") -> str:
-    content = message_text(message)
+def _render_local_message(
+    message: discord.Message, *, identity: AgentIdentity | None = None, context_note: str = "",
+) -> str:
+    content = render_member_mentions(message_text(message), message, identity=identity)
     if len(content) > LOCAL_MESSAGE_CHARACTER_LIMIT:
         content = f"{content[: LOCAL_MESSAGE_CHARACTER_LIMIT - 3]}..."
-    author_type = "bot" if message.author.bot else "member"
+    author_type = ("you" if identity is not None and message.author.id == identity.member_id
+                   else "bot" if message.author.bot else "member")
     return (
         f"- {message.author.display_name} ({author_type}, member_id={message.author.id}, "
         f"message_id={message.id}, timestamp={message.created_at.isoformat()}, "

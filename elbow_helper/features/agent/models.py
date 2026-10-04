@@ -104,6 +104,12 @@ class AgentTurnState:
 
 
 @dataclass(frozen=True, slots=True)
+class AgentIdentity:
+    display_name: str
+    member_id: int
+
+
+@dataclass(frozen=True, slots=True)
 class AgentRequestContext:
     """Trusted runtime objects available to bounded agent tools."""
 
@@ -139,6 +145,7 @@ class AgentRequestContext:
     attachment_sources: tuple[discord.Message, ...] = ()
     deadline_monotonic: float | None = None
     disclosure_thread_members: dict[int, frozenset[int] | None] = field(default_factory=dict)
+    application_owner: AgentIdentity | None = None
 
 
 AgentToolHandler = Callable[
