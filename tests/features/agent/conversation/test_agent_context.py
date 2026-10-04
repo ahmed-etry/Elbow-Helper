@@ -16,7 +16,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 def _context(turns=()):
     return SimpleNamespace(
-        guild=SimpleNamespace(name="Brown Elbow"), member=SimpleNamespace(display_name="Tester"),
+        guild=SimpleNamespace(name="Brown Elbow"), member=SimpleNamespace(display_name="Tester", id=7),
         source_message=SimpleNamespace(created_at=datetime(2026, 9, 17, tzinfo=timezone.utc)),
         state=AgentTurnState(authorized_history=tuple(turns)),
     )

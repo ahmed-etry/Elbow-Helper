@@ -166,7 +166,8 @@ def compile_context(
                   "history_may_be_incomplete": True}
         return build_request_prompt(
             question=question, local_context=local_context, guild_name=context.guild.name,
-            asker_name=context.member.display_name, asked_at=context.source_message.created_at,
+            asker_name=context.member.display_name, asker_id=context.member.id,
+            asked_at=context.source_message.created_at,
             conversation_history=history, history_status=status, report_manifest=manifest,
             task_instructions=instructions, history_checkpoint=checkpoint_text,
             agent_identity=asdict(own_identity) if own_identity is not None else None,

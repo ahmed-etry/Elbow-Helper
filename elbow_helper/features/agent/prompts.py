@@ -131,6 +131,7 @@ def build_request_prompt(
     guild_name: str,
     asker_name: str,
     asked_at: datetime,
+    asker_id: int | None = None,
     conversation_history: str = "",
     history_status: Mapping[str, int | bool] | None = None,
     report_manifest: Sequence[Mapping[str, Any]] = (),
@@ -178,7 +179,7 @@ def build_request_prompt(
 </task_instructions>
 
 Server: {guild_name}
-Asker: {asker_name}
+Asker: {asker_name}{f' (member_id={asker_id})' if asker_id is not None else ''}
 Asked at: {asked_at.isoformat()}{identity_context}
 
 <request>

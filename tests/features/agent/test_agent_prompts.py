@@ -65,4 +65,9 @@ class RequestPromptTests(unittest.TestCase):
             self.assertTrue(prompt.startswith(prefix))
         self.assertIn('Server: server 1\nAsker: member 1\nAsked at: 2026-09-16T01:00:00+00:00', prompts[0])
         self.assertIn('<request>\nquestion 1\n</request>', prompts[0])
+        with_id = build_request_prompt(
+            question='q', local_context='', guild_name='server', asker_name='member',
+            asked_at=datetime(2026, 9, 16, tzinfo=timezone.utc), asker_id=42,
+        )
+        self.assertIn('Asker: member (member_id=42)\n', with_id)
         self.assertIn('<local_context>\nnearby 1\n</local_context>', prompts[0])
