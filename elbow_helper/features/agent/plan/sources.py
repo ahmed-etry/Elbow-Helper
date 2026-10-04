@@ -44,5 +44,4 @@ def named_sources(question: str, channels: Sequence[Any]) -> dict[str, frozenset
         "discord_channel": requested_channels(question, channels),
         "clash_account": requested_player_tags(question),
         "discord_member": requested_member_ids(question),
-        "clan": requested_clans(question),
     }
