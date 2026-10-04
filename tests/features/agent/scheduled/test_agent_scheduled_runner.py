@@ -419,6 +419,29 @@ class ScheduledRunnerTests(unittest.IsolatedAsyncioTestCase):
 
 
 class SavedRequestScopeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_in_scope_change_preserves_a_read_answer_without_output_steps(self):
+        proposal = PreparedAction(
+            "synthetic_change", {"target": 321},
+            ChangePreview(("Change synthetic target",), AsyncMock(return_value=True)), AsyncMock(),
+            step_id="change", capability_name="synthetic_change", checked_arguments={"target": 321},
+        )
+        state = AgentTurnState(proposed_changes=[proposal], preview_reply="Synthetic preview")
+        context = AgentRequestContext(
+            bot=None, guild=None, member=SimpleNamespace(id=121), source_message=object(),
+            account_links=None, clan_health=None, message_search=None, state=state,
+        )
+        service = SimpleNamespace(answer=AsyncMock(return_value="Synthetic lookup answer"))
+        runner = SimpleNamespace(submit=AsyncMock(return_value="synthetic-run"),
+                                 wait_run=AsyncMock(return_value={"status": "completed"}))
+        delivery = AsyncMock()
+        with patch("elbow_helper.features.agent.scheduled.requests.within_scope", return_value=True):
+            result = await run_saved_request(context, {"request": "Synthetic mixed request"},
+                                            service=service, action_runner=runner, delivery=delivery)
+        self.assertEqual(result.action_run["status"], "completed")
+        self.assertEqual(delivery.await_args.args[1], "Synthetic lookup answer")
+        self.assertEqual(delivery.await_args.kwargs["context"].state.proposed_changes, [])
+        self.assertIsNone(delivery.await_args.kwargs["context"].state.preview_reply)
+
     async def test_in_scope_action_also_delivers_output_steps(self):
         async def recheck():
             return True
@@ -503,7 +526,7 @@ class SavedRequestScopeTests(unittest.IsolatedAsyncioTestCase):
             checked_arguments={"role_id": 12, "member_ids": [21]},
         )
         state = SimpleNamespace(
-            proposed_changes=[], outcomes=[], attachments=[]
+            proposed_changes=[], outcomes=[], attachments=[], preview_reply=None
         )
         context = SimpleNamespace(
             source_message=object(), state=state, member=SimpleNamespace(id=2)
@@ -559,7 +582,7 @@ class SavedRequestScopeTests(unittest.IsolatedAsyncioTestCase):
             checked_arguments={"role_id": 13, "member_ids": [21]},
         )
         state = SimpleNamespace(
-            proposed_changes=[], outcomes=[], attachments=[]
+            proposed_changes=[], outcomes=[], attachments=[], preview_reply=None
         )
         context = SimpleNamespace(
             source_message=object(), state=state, member=SimpleNamespace(id=2)

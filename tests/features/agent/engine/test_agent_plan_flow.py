@@ -194,14 +194,32 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                 plan["steps"][-1]["arguments"]["role_ids"] = role_argument
                 checked = check_plan(plan, self.registry)
                 self.assertTrue(checked.ok, checked.error)
-                session = _Session([_model_step(plan)], self.events)
+                session = _Session([_model_step(plan), AgentStep("Synthetic answer", (), AgentUsage())], self.events)
                 context = replace(_context(), bot=SimpleNamespace(tree=object()))
                 with patch("elbow_helper.features.agent.engine.service.build_command_tools", return_value=({}, {})):
                     answer, _ = await self._answer(session, context)
-                self.assertIn("Synthetic preview", answer)
+                self.assertEqual(answer, "Synthetic answer")
+                self.assertIn("Synthetic preview", context.state.preview_reply)
+                self.assertEqual(len(session.calls), 2)
+                self.assertFalse(session.calls[-1][1])
+                self.assertIn("do not describe them as done", session.calls[-1][0][0].content)
                 self.assertEqual(len(context.state.proposed_changes), 1)
         self.assertEqual(audit.await_count, 3)
         self.assertEqual(page.await_count, 3)
+
+        targets_only = _plan([
+            {**_step("roles"), "capability": "synthetic_roles"},
+            {**_step("members"), "capability": "synthetic_members"},
+            {**_step("change", {"role_ids": [role], "member_ids": [member]}, ["roles", "members"]),
+             "capability": "synthetic_change"},
+        ])
+        session = _Session([_model_step(targets_only)], self.events)
+        context = replace(_context(), bot=SimpleNamespace(tree=object()))
+        with patch("elbow_helper.features.agent.engine.service.build_command_tools", return_value=({}, {})):
+            answer, _ = await self._answer(session, context)
+        self.assertIn("Synthetic preview", answer)
+        self.assertIsNone(context.state.preview_reply)
+        self.assertEqual(len(session.calls), 1)
         from elbow_helper.features.agent.plan.scope import ScopeLedger
         restored = replace(_context(), history=(SimpleNamespace(text="Synthetic earlier answer", source_channels=frozenset(),
             required_access=frozenset(), record=SimpleNamespace(

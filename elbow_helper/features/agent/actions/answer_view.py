@@ -16,8 +16,13 @@ LOGGER = logging.getLogger(__name__)
 
 class PrivateAnswerView(PrivateResultView):
     def __init__(self, context, response, attachments, post,
-                 *, timeout=PRIVATE_RESULT_TIMEOUT):
-        super().__init__(context.member.id, (response,), tuple(attachments))
+                 *, timeout=PRIVATE_RESULT_TIMEOUT, private_view=None):
+        super().__init__(
+            context.member.id, (response,) + (private_view.parts if private_view else ()),
+            tuple(attachments) + (private_view.attachments if private_view else ()),
+            panels=private_view.panels if private_view else (),
+            panel_labels=private_view.panel_labels if private_view else (),
+        )
         self.timeout = timeout
         self.context = context
         self.post = post

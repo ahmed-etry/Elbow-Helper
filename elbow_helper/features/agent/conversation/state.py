@@ -41,6 +41,7 @@ class ConversationRecord:
     delivery_unknown: bool = False
     attempted_nonces: tuple[int, ...] = ()
     uncertain_nonce: int | None = None
+    generated_parts: tuple[str, ...] = ()
     retained_bytes: int = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -50,6 +51,8 @@ class ConversationRecord:
             or type(self.member_id) is not int or self.member_id <= 0
             or type(self.delivery_complete) is not bool
             or type(self.delivery_unknown) is not bool
+            or not isinstance(self.generated_parts, tuple)
+            or any(not isinstance(value, str) for value in self.generated_parts)
             or self.delivery_complete and self.delivery_unknown
             or not isinstance(self.reply_ids, tuple)
             or len(self.reply_ids) != len(set(self.reply_ids))
@@ -69,7 +72,7 @@ class ConversationRecord:
             raise ValueError("Invalid conversation delivery record")
         values = (
             self.created_at, self.question, self.generated_answer, self.delivered_answer,
-            self.local_context, *self.evidence, *self.report_ids,
+            self.local_context, *self.evidence, *self.report_ids, *self.generated_parts,
         )
         size = sum(len(value.encode("utf-8")) for value in values) + 8 * (
             2 + len(self.reply_ids) + len(self.attempted_nonces)
@@ -255,15 +258,33 @@ class Conversation:
         self, request_id: int, answer: str, reply_ids: tuple[int, ...],
         complete: bool, unknown: bool, attempted_nonces: tuple[int, ...],
         uncertain_nonce: int | None,
+        *, replaced_reply_id: int | None = None, generated_parts: tuple[str, ...] = (),
     ) -> None:
         """Replace a private-answer notice's delivery with the posted answer."""
         for index, turn in enumerate(self.turns):
             if turn.record is None or turn.record.request_message_id != request_id:
                 continue
+            previous = turn.record
+            if replaced_reply_id is not None and replaced_reply_id in previous.reply_ids:
+                position = previous.reply_ids.index(replaced_reply_id)
+                before, after = previous.reply_ids[:position], previous.reply_ids[position + 1:]
+                parts_before = previous.generated_parts[:position]
+                parts_after = previous.generated_parts[position + 1:]
+                delivered_after = previous.generated_parts[position + 1:len(previous.reply_ids)]
+                answer = "\n".join((*parts_before, answer, *delivered_after))
+                reply_ids = (*before, *reply_ids, *after)
+                attempted_nonces = (*previous.attempted_nonces[:position], *attempted_nonces,
+                                    *previous.attempted_nonces[position + 1:])
+                generated_parts = (*parts_before, *generated_parts, *parts_after)
+                complete = complete and previous.delivery_complete
+                unknown = unknown or previous.delivery_unknown
+                if uncertain_nonce is None:
+                    uncertain_nonce = previous.uncertain_nonce
             record = replace(
                 turn.record, delivered_answer=answer, reply_ids=reply_ids,
                 delivery_complete=complete, delivery_unknown=unknown,
                 attempted_nonces=attempted_nonces, uncertain_nonce=uncertain_nonce,
+                generated_parts=generated_parts,
             )
             self.turns[index] = replace(turn, record=record)
             if self.checkpoint is not None and index < self.checkpoint.covered_turn_count:

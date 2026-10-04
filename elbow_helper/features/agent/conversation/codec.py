@@ -323,6 +323,8 @@ def decode_conversation(snapshot: StoredConversation, *, wall_time: float | None
                 record[key] = tuple(record[key])
             if "attempted_nonces" in record:
                 record["attempted_nonces"] = tuple(record["attempted_nonces"])
+            if "generated_parts" in record:
+                record["generated_parts"] = tuple(record["generated_parts"])
             for value in (record["request_message_id"], record["member_id"], *record["reply_ids"]):
                 _integer(value)
             if (

@@ -8,6 +8,7 @@ import io
 import logging
 import re
 import sqlite3
+from dataclasses import replace
 
 import discord
 
@@ -52,10 +53,40 @@ class AgentDeliveryMixin:
         _nonce_seed: int | None = None,
         _notice_message: discord.Message | None = None,
         _notice_content: str | None = None,
+        _answer_disclosure: bool = False,
     ) -> None:
+        if context is not None and context.state.preview_reply is not None:
+            active = delivery or AgentDelivery()
+            answer_context = replace(context, state=replace(
+                context.state, proposed_changes=[], preview_reply=None,
+            ))
+            try:
+                await self.send_response(
+                    message, response, referenced, attachments, conversation,
+                    delivery=active, context=answer_context, mention_requester=mention_requester,
+                    _answer_disclosure=True,
+                )
+            except BaseException:
+                pending_preview = context.state.preview_reply
+                if mention_requester:
+                    pending_preview = f"<@{message.author.id}> {pending_preview}"
+                active.generated_parts.extend(_chunk_response(pending_preview))
+                active.complete = False
+                raise
+            active.complete = False
+            preview_context = replace(context, state=replace(
+                context.state, outcomes=[], attachments=[], preview_reply=None,
+            ))
+            await self.send_response(
+                message, context.state.preview_reply, referenced, (), conversation,
+                delivery=active, context=preview_context, preview_timeout=preview_timeout,
+                mention_requester=mention_requester,
+                _nonce_seed=_delivery_nonce(message.id, 1_000_001),
+            )
+            return
         reused_disclosure = False
         if (context is not None and not context.state.proposed_changes
-                and not context.state.outcomes and not _audience_override):
+                and (not context.state.outcomes or _answer_disclosure) and not _audience_override):
             sources = await require_evidence_access(context)
             audience_allowed = await can_show(
                 message.channel, sources, context.state.required_access,
@@ -72,6 +103,7 @@ class AgentDeliveryMixin:
                 async def post(interaction):
                     async def deliver():
                         posted = AgentDelivery()
+                        notice_reply_id = view.message.id
                         try:
                             await self.send_response(
                                 message, response, referenced, attachments, conversation,
@@ -91,6 +123,8 @@ class AgentDeliveryMixin:
                                     tuple(posted.message_ids), posted.complete,
                                     posted.unknown, tuple(posted.attempted_nonces),
                                     posted.uncertain_nonce,
+                                    replaced_reply_id=notice_reply_id if _answer_disclosure else None,
+                                    generated_parts=tuple(posted.generated_parts),
                                 )
                                 persistence = getattr(self, "persistence", None)
                                 if persistence is not None:
@@ -104,12 +138,15 @@ class AgentDeliveryMixin:
                         async with conversation.lock:
                             await deliver()
                 scheduled = mention_requester or getattr(message, "scheduled_run", False)
+                private_view, _ = build_reply_views(message, context, None)
                 view = PrivateAnswerView(context, response, attachments, post,
+                                         private_view=private_view,
                                          timeout=3600.0 if scheduled else 600.0)
                 notice = ACTION_PRIVATE_ANSWER
                 if scheduled:
                     notice = f"<@{message.author.id}> {notice}"
                 active = delivery or AgentDelivery()
+                active.generated_parts.append(notice)
                 sent = await self._send_delivery_part(
                     message.reply, message.channel, _delivery_nonce(message.id, 0), active,
                     notice, mention_author=False, view=view,
@@ -159,6 +196,9 @@ class AgentDeliveryMixin:
         if not chunks and not files:
             raise AgentUnavailableError("The agent returned an empty answer")
         active_delivery = delivery or AgentDelivery()
+        active_delivery.generated_parts.extend(
+            [response] if chunks == [None] else chunks
+        )
         try:
             if context is not None:
                 await require_evidence_access(context)
@@ -198,7 +238,7 @@ class AgentDeliveryMixin:
             active_delivery.attempt(nonce)
             sent = await notice_message.edit(
                 content=chunks[0] if chunks else None,
-                attachments=options.get("files", []), view=None,
+                attachments=options.get("files", []), view=options.get("view"),
                 allowed_mentions=allowed_mentions,
             )
         else:
@@ -316,10 +356,11 @@ class AgentDeliveryMixin:
             sent = await self._find_delivery_nonce(channel, nonce)
             if sent is None:
                 continue
-            part, total_parts = _delivery_part(
-                record.generated_answer,
-                len(record.attempted_nonces) - 1,
-            )
+            part_index = len(record.attempted_nonces) - 1
+            if record.generated_parts:
+                part, total_parts = record.generated_parts[part_index], len(record.generated_parts)
+            else:
+                part, total_parts = _delivery_part(record.generated_answer, part_index)
             complete = len(record.attempted_nonces) == total_parts
             conversation.reconcile_unknown_delivery(
                 request_message_id=record.request_message_id,

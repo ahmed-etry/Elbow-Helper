@@ -111,21 +111,22 @@ async def run_saved_request(
             confirmer_id=context.member.id,
         )
         run = await action_runner.wait_run(run_id)
-        if context.state.outcomes or context.state.attachments:
+        if context.state.preview_reply or context.state.outcomes or context.state.attachments:
             output_context = replace(
                 context,
-                state=replace(context.state, proposed_changes=[]),
+                state=replace(context.state, proposed_changes=[], preview_reply=None),
             )
             await delivery(
                 message,
                 (
-                    command_reply(context.state.outcomes)
-                    if context.state.outcomes
-                    else ""
+                    response if context.state.preview_reply else (
+                        command_reply(context.state.outcomes) if context.state.outcomes else ""
+                    )
                 ),
                 None,
                 context.state.attachments,
                 context=output_context,
+                **({"_answer_disclosure": True} if context.state.preview_reply else {}),
             )
         return ScheduledResult(action_run=run)
     await delivery(

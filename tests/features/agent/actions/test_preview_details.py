@@ -182,13 +182,16 @@ class PreviewDetailTests(unittest.IsolatedAsyncioTestCase):
         self.message.created_at = datetime.now(timezone.utc)
         member = SimpleNamespace(id=2, display_name="Member")
         delivery = SimpleNamespace(attempted_nonces=(1,), complete=True, unknown=False,
-                                   message_ids=(31,), uncertain_nonce=None)
+                                   message_ids=(31,), uncertain_nonce=None,
+                                   text_parts=[], generated_parts=[])
         for hidden in (False, True):
             with self.subTest(hidden=hidden):
                 self.context.state.proposed_changes[:] = [replace(self.action, details_hidden=hidden)]
                 turns = []
                 conversation = SimpleNamespace(append=turns.append, turns=turns, working=None)
                 response = preview_text(self.context.state.proposed_changes)
+                delivery.text_parts = [response]
+                delivery.generated_parts = [response]
                 await AgentTurnMixin._record_turn(
                     recorder, self.message, member, "Change target", response, "",
                     self.context, delivery, conversation,

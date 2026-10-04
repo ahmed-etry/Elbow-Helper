@@ -59,6 +59,7 @@ class AgentDelivery:
     complete: bool = False
     unknown: bool = False
     uncertain_nonce: int | None = None
+    generated_parts: list[str] = field(default_factory=list)
 
     def attempt(self, nonce: int) -> None:
         self.attempted_nonces.append(nonce)
@@ -101,6 +102,7 @@ class AgentTurnState:
     stale_knowledge_refs: set[tuple[str, str]] = field(default_factory=set)
     outcomes: list[Any] = field(default_factory=list)
     proposed_changes: list[Any] = field(default_factory=list)
+    preview_reply: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

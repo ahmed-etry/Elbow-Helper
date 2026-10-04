@@ -12,6 +12,33 @@ from elbow_helper.features.agent.conversation.context import select_recent_turns
 
 
 class ConversationStoreTests(unittest.TestCase):
+    def test_posting_an_answer_preserves_an_uncertain_preview_without_recording_it_as_delivered(self):
+        conversation = ConversationStore().create(121, 221, 321)
+        conversation.append(ConversationTurn("Synthetic turn", frozenset(), record=ConversationRecord(
+            request_message_id=321, member_id=121, created_at="2026-01-01",
+            question="Synthetic mixed request", generated_answer="Synthetic answer and preview",
+            delivered_answer="Synthetic private notice", local_context="", evidence=(), report_ids=(),
+            reply_ids=(421,), delivery_complete=False, delivery_unknown=True,
+            attempted_nonces=(801, 0), uncertain_nonce=0,
+            generated_parts=("Synthetic private notice", "Synthetic preview"),
+        )))
+        conversation.record_answer_delivery(
+            321, "Synthetic answer", (421,), True, False, (901,), None,
+            replaced_reply_id=421, generated_parts=("Synthetic answer",),
+        )
+        record = conversation.turns[0].record
+        self.assertEqual(record.delivered_answer, "Synthetic answer")
+        self.assertEqual(record.generated_parts, ("Synthetic answer", "Synthetic preview"))
+        self.assertFalse(record.delivery_complete)
+        self.assertTrue(record.delivery_unknown)
+        self.assertEqual(record.uncertain_nonce, 0)
+        record = conversation.reconcile_unknown_delivery(
+            request_message_id=321, reply_id=422, nonce=0,
+            delivered_part="Synthetic preview", delivery_complete=True,
+        )
+        self.assertEqual(record.delivered_answer, "Synthetic answer\nSynthetic preview")
+        self.assertTrue(record.delivery_complete)
+
     def test_restore_reindexes_replies_without_refreshing_idle_time(self):
         original = ConversationStore()
         conversation = original.create(1, 100, 1)

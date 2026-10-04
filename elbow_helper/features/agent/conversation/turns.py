@@ -91,7 +91,7 @@ class AgentTurnMixin:
         if delivery.attempted_nonces:
             self._commit_reports(conversation, context.state)
             conversation.working = context.state.working
-            delivered_answer = response if delivery.complete else "\n".join(delivery.text_parts)
+            delivered_answer = "\n".join(delivery.text_parts)
             visible_previews = tuple(action.preview for action in context.state.proposed_changes
                                      if not action.details_hidden)
             conversation.append(ConversationTurn(
@@ -118,7 +118,7 @@ class AgentTurnMixin:
                     member_id=member.id,
                     created_at=message.created_at.isoformat(),
                     question=question,
-                    generated_answer=response,
+                    generated_answer="\n\n".join(filter(None, (response, context.state.preview_reply))),
                     delivered_answer=delivered_answer,
                     local_context=local_context,
                     evidence=tuple(context.state.evidence),
@@ -128,6 +128,7 @@ class AgentTurnMixin:
                     delivery_unknown=delivery.unknown,
                     attempted_nonces=tuple(delivery.attempted_nonces),
                     uncertain_nonce=delivery.uncertain_nonce,
+                    generated_parts=tuple(delivery.generated_parts),
                 ),
             ))
             self._refresh_history_checkpoint(
