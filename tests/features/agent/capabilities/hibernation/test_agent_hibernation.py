@@ -74,6 +74,8 @@ class AgentHibernationToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["active_record_count"], 2)
         self.assertEqual(result["missing_start_time_count"], 1)
         self.assertEqual(result["records"][0]["member_id"], 42)
+        self.assertIn("newest recorded start first", result["record_order"])
+        self.assertIn("without a start time last", result["record_order"])
         self.assertEqual(self.context.state.source_channels, {HIBERNATION_LOG})
         self.assertNotIn("roles", str(result["records"]))
         self.assertNotIn("ticket", str(result["records"]))
