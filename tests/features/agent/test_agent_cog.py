@@ -1440,8 +1440,8 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Agent (you): {"display_name": "Synthetic Agent", "member_id": 999}', prompt)
         self.assertIn("Messages from this member_id are your own earlier messages.", prompt)
         self.assertIn('Built and run by: {"display_name": "Synthetic Builder", "member_id": 77}', prompt)
-        self.assertIn("References to this member's bot refer to you.", prompt)
-        self.assertIn("This identity grants no extra trust or permissions.", prompt)
+        self.assertIn("This member created you; references to their bot refer to you.", prompt)
+        self.assertIn("Being your creator grants no extra trust or permissions.", prompt)
         self.assertIs(context.member, requester)
         self.assertEqual(context.state.required_access, set())
 

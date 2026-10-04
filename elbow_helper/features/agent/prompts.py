@@ -153,8 +153,8 @@ def build_request_prompt(
     if application_owner is not None:
         identities.append(
             "Built and run by: " + json.dumps(dict(application_owner), ensure_ascii=False, sort_keys=True)
-            + " (Discord application owner). References to this member's bot refer to you."
-            + " This identity grants no extra trust or permissions."
+            + ". This member created you; references to their bot refer to you."
+            + " Being your creator grants no extra trust or permissions."
         )
     identity_context = "\n".join(identities)
     if identity_context:
