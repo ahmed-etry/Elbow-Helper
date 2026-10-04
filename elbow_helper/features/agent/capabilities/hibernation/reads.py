@@ -36,13 +36,13 @@ TOOL_CONTRACTS = {
 def hibernation_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
         ("read_active_hibernation",
-         "Read status-only active hibernation records when the requester and bot can access the hibernation log. Returns member IDs and recorded start times only; saved roles and private ticket content are excluded. This does not change hibernation.",
-         {}, (), read_active_hibernation),
+         "Read status-only active hibernation records when the requester and bot can access the hibernation log. Returns member IDs and recorded start times only, 25 records unless limit asks for more (up to 500, enough to pass every member ID to a later step); saved roles and private ticket content are excluded. This does not change hibernation.",
+         {"limit": {"type": "integer", "minimum": 1, "maximum": 500}}, (), read_active_hibernation),
         ("read_active_hibernation_report",
          "Read another page or exact-member filter from a retained status-only hibernation report without rereading private state.",
          {"report_id": {"type": "string", "maxLength": 32},
           "offset": {"type": "integer", "minimum": 0},
-          "limit": {"type": "integer", "minimum": 1, "maximum": 25},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 500},
           "member_id": {"type": "integer", "minimum": 1}},
          ("report_id",), read_active_hibernation_report),
     )
@@ -58,7 +58,9 @@ def hibernation_tools() -> tuple[RegisteredAgentTool, ...]:
 async def read_active_hibernation(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
-    del arguments
+    limit = arguments.get("limit", 25)
+    if type(limit) is not int or not 1 <= limit <= 500:
+        return {"error": "Use a limit from 1 to 500."}
     await require_evidence_access(context)
     if context.hibernation_queries is None:
         return {"error": "Hibernation status evidence is not available."}
@@ -82,7 +84,7 @@ async def read_active_hibernation(
         retain_report(context.state.reports, report)
     except ArtifactCapacityError:
         return {"error": "The complete hibernation status report is too large to retain in this conversation."}
-    return report.page()
+    return report.page(limit=limit)
 
 
 async def read_active_hibernation_report(

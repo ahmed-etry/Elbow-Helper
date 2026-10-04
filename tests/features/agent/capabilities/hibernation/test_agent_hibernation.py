@@ -88,6 +88,10 @@ class AgentHibernationToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(page["matched_count"], 1)
         self.queries.active_snapshot.assert_called_once_with()
 
+    async def test_status_read_limit_covers_more_records_within_bounds(self):
+        self.assertEqual(len((await read_active_hibernation(self.context, {"limit": 1}))["records"]), 1)
+        self.assertIn("error", await read_active_hibernation(self.context, {"limit": 501}))
+
     async def test_denied_log_access_prevents_private_state_read(self):
         self.log.allowed = False
         result = await read_active_hibernation(self.context, {})
