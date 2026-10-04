@@ -62,6 +62,22 @@ class PreviewDetailTests(unittest.IsolatedAsyncioTestCase):
                                      context=self.context)
         self.assertEqual(self.message.reply.await_args.kwargs["allowed_mentions"].users, [])
 
+    async def test_answer_pings_the_members_it_writes_as_mentions(self):
+        delivery = AgentDeliveryMixin()
+        delivery.bot = self.context.bot
+        delivery.action_runner = object()
+        extra = {member_id: Member(member_id, ()) for member_id in (5, 6, 7)}
+        lookup = {**{m.id: m for m in self.guild.members}, **extra}
+        self.guild.get_member = lookup.get
+        await delivery.send_response(self.message, "<@3> off you go", None)
+        self.assertEqual(self.message.reply.await_args.kwargs["allowed_mentions"].users, [self.other])
+        await delivery.send_response(self.message, "<@3> <@5> <@6> <@7> addressed", None)
+        self.assertEqual([member.id for member in self.message.reply.await_args.kwargs["allowed_mentions"].users],
+                         [3, 5, 6, 7])
+        await delivery.send_response(self.message, preview_text([self.action]) + " <@3>", None,
+                                     context=self.context)
+        self.assertEqual(self.message.reply.await_args.kwargs["allowed_mentions"].users, [])
+
     async def test_watcher_save_checks_the_destination_audience(self):
         tool = RegisteredAgentTool(AgentToolDefinition("synthetic_read", "Synthetic", {
             "type": "object", "properties": {"channel_id": {"type": "integer"}},

@@ -28,6 +28,7 @@ from .text import chunk_response as _chunk_response
 
 LOGGER = logging.getLogger(__name__)
 MAX_RESPONSE_CHARACTERS = 12_000
+_USER_MENTION = re.compile(r"<@!?(\d+)>")
 
 
 class AgentDeliveryUnknown(RuntimeError):
@@ -178,6 +179,13 @@ class AgentDeliveryMixin:
         }
         if referenced is not None and not referenced.author.bot and not has_preview:
             allowed_users[referenced.author.id] = referenced.author
+        get_member = getattr(getattr(message, "guild", None), "get_member", None)
+        if not has_preview and callable(get_member):
+            # The model decides who to address; it pings only members it writes as mentions.
+            for member_id in dict.fromkeys(int(value) for value in _USER_MENTION.findall(response or "")):
+                member = get_member(member_id)
+                if member is not None and not getattr(member, "bot", False):
+                    allowed_users[member.id] = member
         if mention_requester:
             allowed_users[message.author.id] = message.author
             response = f"<@{message.author.id}> {response}"
