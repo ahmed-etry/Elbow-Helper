@@ -22,6 +22,7 @@ from ..validation import positive_int
 
 
 MEMBER_RESULT_LIMIT = 8
+MEMBER_DETAILS_LIMIT = 100
 
 
 def member_tools() -> tuple[RegisteredAgentTool, ...]:
@@ -52,6 +53,34 @@ def member_tools() -> tuple[RegisteredAgentTool, ...]:
                 result_path_kinds=((('members', 'N', 'member_id'), 'discord_member'),),
                 entity_fields=(),
                 time_fields=(),
+            ),
+        ),
+        RegisteredAgentTool(
+            AgentToolDefinition(
+                name="read_discord_members",
+                description=(
+                    "Read member details. Return display names, usernames, UTC server join times "
+                    "and roles for up to 100 exact member IDs. Sort by joined_at oldest_first or newest_first before "
+                    "paging; unknown join times come last. Omit sort to preserve the ID order."
+                ),
+                parameters={
+                    "type": "object", "properties": {
+                        "member_ids": {"type": "array", "minItems": 1,
+                                       "maxItems": MEMBER_DETAILS_LIMIT, "uniqueItems": True,
+                                       "items": {"type": "integer", "minimum": 1}},
+                        "sort": {"type": "string", "enum": ["oldest_first", "newest_first"]},
+                        "offset": {"type": "integer", "minimum": 0, "maximum": MEMBER_DETAILS_LIMIT},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": MEMBER_DETAILS_LIMIT},
+                    }, "required": ["member_ids"], "additionalProperties": False,
+                },
+            ),
+            read_discord_members,
+            contract=CapabilityContract(
+                entity_fields=(("member_ids", "discord_member_set"),), time_fields=(),
+                filter_fields=("sort",),
+                result_paths=(("members", "N", "joined_at"), ("next_offset",)),
+                result_entity_keys=(("members[].member_id", "discord_member"),
+                                    ("members[].roles[].role_id", "discord_role")),
             ),
         ),
         RegisteredAgentTool(
@@ -152,11 +181,64 @@ async def find_discord_members(
                 "member_id": member.id,
                 "display_name": member.display_name,
                 "username": member.name,
+                "joined_at": _joined_at(member),
                 "mention": member.mention,
                 "roles": [role.name for role in member.roles if not role.is_default()],
             }
             for _, _, member in ranked[:MEMBER_RESULT_LIMIT]
         ],
+    }
+
+
+def _joined_at(member: discord.Member) -> str | None:
+    joined = getattr(member, "joined_at", None)
+    if joined is None:
+        return None
+    if joined.tzinfo is None:
+        joined = joined.replace(tzinfo=timezone.utc)
+    return joined.astimezone(timezone.utc).isoformat()
+
+
+async def read_discord_members(
+    context: AgentRequestContext, arguments: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    identifiers = arguments.get("member_ids")
+    if (not isinstance(identifiers, list) or not 1 <= len(identifiers) <= MEMBER_DETAILS_LIMIT
+            or any(type(value) is not int or value <= 0 for value in identifiers)
+            or len(set(identifiers)) != len(identifiers)):
+        return {"error": "Provide between 1 and 100 distinct member IDs."}
+    offset, limit = arguments.get("offset", 0), arguments.get("limit", 25)
+    if (type(offset) is not int or not 0 <= offset <= MEMBER_DETAILS_LIMIT
+            or type(limit) is not int or not 1 <= limit <= MEMBER_DETAILS_LIMIT):
+        return {"error": "Use an offset from 0 to 100 and a limit from 1 to 100."}
+    sorting = arguments.get("sort")
+    if sorting is not None and sorting not in ("oldest_first", "newest_first"):
+        return {"error": "Sort join dates oldest_first or newest_first."}
+    await require_evidence_access(context)
+    rows, missing = [], []
+    for identifier in identifiers:
+        member = context.guild.get_member(identifier)
+        if member is None:
+            missing.append(identifier)
+            continue
+        rows.append({
+            "member_id": member.id, "display_name": member.display_name,
+            "username": member.name, "joined_at": _joined_at(member),
+            "roles": [{"role_id": role.id, "name": role.name}
+                      for role in member.roles if not role.is_default()],
+        })
+    if sorting is not None:
+        known = [row for row in rows if row["joined_at"] is not None]
+        unknown = [row for row in rows if row["joined_at"] is None]
+        known.sort(key=lambda row: row["member_id"])
+        known.sort(key=lambda row: row["joined_at"], reverse=sorting == "newest_first")
+        rows = known + sorted(unknown, key=lambda row: row["member_id"])
+    selected = rows[offset:offset + limit]
+    await require_evidence_access(context)
+    return {
+        "members": selected, "total_members": len(rows), "missing_member_ids": missing,
+        "offset": offset, "limit": limit,
+        "next_offset": offset + len(selected) if offset + len(selected) < len(rows) else None,
     }
 
 
