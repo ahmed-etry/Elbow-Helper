@@ -45,7 +45,13 @@ def resolve_arguments(
         if isinstance(value, dict):
             return {field: resolve(item) for field, item in value.items()}
         if isinstance(value, list):
-            return [resolve(item) for item in value]
+            items = []
+            for item in value:
+                resolved = resolve(item)
+                expanded = (isinstance(item, dict) and set(item) == {"step", "path"}
+                            and "*" in item["path"] and isinstance(resolved, list))
+                items.extend(resolved) if expanded else items.append(resolved)
+            return items
         return value
     return resolve(dict(arguments))
 

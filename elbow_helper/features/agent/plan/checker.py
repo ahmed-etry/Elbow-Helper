@@ -298,6 +298,13 @@ def check_step(
     selected = original_tool(registry, capability, arguments) if capability in (READ_NAME, COMPARE_NAME) else None
     if selected is not None and unsupported_fields(selected, arguments):
         return _error(unsupported_field_error(selected, arguments), step_id)
+    for reference in result_references(arguments):
+        if reference.get("step") not in set(dependencies):
+            return _error(
+                f"Step {step_id} uses results of step {reference.get('step')!r}, which must be an "
+                "earlier step in this plan listed in depends_on. Results of earlier plans cannot be "
+                "referenced; read them again in this plan.", step_id,
+            )
     if not valid_arguments(arguments, schema, set(dependencies)):
         return _error("Arguments must match the capability schema.", step_id)
     if capability in (READ_NAME, COMPARE_NAME):

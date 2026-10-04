@@ -55,6 +55,20 @@ class ResultPathTests(unittest.TestCase):
             {"source": {"roles": [{"role_id": 3}, {"role_id": 5}]}},
         )
         self.assertEqual(resolved, {"ids": [3, 5]})
+        merged = resolve_arguments(
+            {"ids": [{"step": "a", "path": ["roles", "*", "role_id"]},
+                     {"step": "b", "path": ["roles", "*", "role_id"]}]},
+            {"a": {"roles": [{"role_id": 3}]}, "b": {"roles": [{"role_id": 5}, {"role_id": 7}]}},
+        )
+        self.assertEqual(merged, {"ids": [3, 5, 7]})
+
+    def test_reference_outside_depends_on_names_the_step(self):
+        plan = self.plan(["roles", 0, "role_id"])
+        plan["steps"][1]["depends_on"] = []
+        checked = check_plan(plan, self.registry)
+        self.assertFalse(checked.ok)
+        self.assertIn("uses results of step 'source'", checked.error)
+        self.assertIn("depends_on", checked.error)
 
     def test_star_only_feeds_list_arguments(self):
         contract = CapabilityContract((("member_ids", "discord_member_set"), ("member_id", "discord_member")), (),
