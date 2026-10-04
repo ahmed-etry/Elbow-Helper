@@ -53,11 +53,22 @@ class AgentDeliveryMixin:
         _notice_message: discord.Message | None = None,
         _notice_content: str | None = None,
     ) -> None:
+        reused_disclosure = False
         if (context is not None and not context.state.proposed_changes
                 and not context.state.outcomes and not _audience_override):
             sources = await require_evidence_access(context)
-            if not await can_show(message.channel, sources, context.state.required_access,
-                                  context.guild, thread_members=context.disclosure_thread_members):
+            audience_allowed = await can_show(
+                message.channel, sources, context.state.required_access,
+                context.guild, thread_members=context.disclosure_thread_members,
+            )
+            reused_disclosure = bool(
+                not audience_allowed and conversation is not None
+                and conversation.can_reuse_answer_disclosure(
+                    context.member.id, message.channel.id,
+                    context.state.source_channels, context.state.required_access,
+                )
+            )
+            if not audience_allowed and not reused_disclosure:
                 async def post(interaction):
                     async def deliver():
                         posted = AgentDelivery()
@@ -68,6 +79,11 @@ class AgentDeliveryMixin:
                                 _nonce_seed=interaction.id, _notice_message=view.message,
                                 _notice_content=notice,
                             )
+                            if conversation is not None:
+                                conversation.remember_answer_disclosure(
+                                    context.member.id, message.channel.id,
+                                    context.state.source_channels, context.state.required_access,
+                                )
                         finally:
                             if conversation is not None and posted.message_ids:
                                 conversation.record_answer_delivery(
@@ -78,7 +94,10 @@ class AgentDeliveryMixin:
                                 )
                                 persistence = getattr(self, "persistence", None)
                                 if persistence is not None:
-                                    await persistence.save(self._conversations, conversation)
+                                    try:
+                                        await persistence.save(self._conversations, conversation)
+                                    except (OSError, sqlite3.Error, RuntimeError, TypeError, ValueError):
+                                        LOGGER.exception("Agent checkpoint save failed: request=%s", message.id)
                     if conversation is None:
                         await deliver()
                     else:
@@ -155,6 +174,12 @@ class AgentDeliveryMixin:
                 notice_message=_notice_message,
                 notice_content=_notice_content,
             )
+            if reused_disclosure:
+                LOGGER.info(
+                    "Agent answer disclosure reused: requester=%s channel=%s sources=%s levels=%s",
+                    context.member.id, message.channel.id,
+                    sorted(context.state.source_channels), sorted(context.state.required_access),
+                )
         finally:
             for file in files:
                 file.close()

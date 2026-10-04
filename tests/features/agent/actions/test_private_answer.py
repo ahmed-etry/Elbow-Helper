@@ -152,6 +152,53 @@ class PrivateAnswerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(record.delivery_unknown)
         self.assertEqual(record.reply_ids, (7, 8))
         self.assertEqual(record.delivered_answer, "\n".join(chunk_response(response)))
+    async def test_post_here_decision_reuses_only_subsets_in_same_conversation(self):
+        view = await self.notice()
+        await view.post_here(self.interaction())
+        self.message.reply.reset_mock()
+        self.context.state.source_channels = {20}
+        with patch("elbow_helper.features.agent.delivery.can_show", new=AsyncMock(return_value=False)):
+            with self.assertLogs("elbow_helper.features.agent.delivery", level="INFO") as logs:
+                await self.delivery.send_response(self.message, "Synthetic follow-up", None,
+                    conversation=self.conversation, context=self.context)
+        self.assertEqual(self.message.reply.await_args.args[0], "Synthetic follow-up")
+        self.assertNotIn("view", self.message.reply.await_args.kwargs)
+        self.assertIn("disclosure reused: requester=2 channel=10 sources=[20] levels=['lead']", logs.output[0])
+        for sources, levels, requester in (({20, 30}, {"lead"}, 2),
+                                           ({20}, {"lead", "core"}, 2),
+                                           ({20}, {"lead"}, 3)):
+            self.context.state.source_channels = sources
+            self.context.state.required_access = levels
+            self.context.member = SimpleNamespace(id=requester)
+            with patch("elbow_helper.features.agent.delivery.can_show", new=AsyncMock(return_value=False)):
+                await self.delivery.send_response(self.message, "Synthetic restricted answer", None,
+                    conversation=self.conversation, context=self.context)
+            self.assertEqual(self.message.reply.await_args.args[0], ACTION_PRIVATE_ANSWER)
+            self.assertIn("view", self.message.reply.await_args.kwargs)
+        self.context.member = self.member
+        self.context.state.source_channels = {20}
+        self.context.state.required_access = {"lead"}
+        with patch("elbow_helper.features.agent.delivery.can_show", new=AsyncMock(return_value=False)):
+            await self.delivery.send_response(self.message, "Synthetic other conversation", None,
+                conversation=Conversation(1, 10), context=self.context)
+        self.assertEqual(self.message.reply.await_args.args[0], ACTION_PRIVATE_ANSWER)
+        self.assertFalse(self.conversation.can_reuse_answer_disclosure(2, 11, {20}, {"lead"}))
+
+    async def test_remembered_disclosure_still_requires_source_access(self):
+        self.conversation.remember_answer_disclosure(2, 10, {10, 20}, {"lead"})
+        with patch("elbow_helper.features.agent.delivery.require_evidence_access",
+                   new=AsyncMock(side_effect=AgentAccessLost())):
+            with self.assertRaises(AgentAccessLost):
+                await self.delivery.send_response(self.message, "Synthetic answer", None,
+                    conversation=self.conversation, context=self.context)
+        self.message.reply.assert_not_awaited()
+
+    async def test_incomplete_post_does_not_remember_disclosure(self):
+        view = await self.notice(response="Synthetic long answer. " * 200)
+        self.message.channel.send.side_effect = RuntimeError("Synthetic delivery failure")
+        with self.assertRaises(RuntimeError):
+            await view.post_here(self.interaction())
+        self.assertEqual(self.conversation.answer_disclosures, {})
 
     async def test_other_members_cannot_use_either_button(self):
         view = await self.notice()

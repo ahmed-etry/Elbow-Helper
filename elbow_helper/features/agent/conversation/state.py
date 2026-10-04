@@ -155,6 +155,22 @@ def checkpoint_input_hash(turns: tuple[ConversationTurn, ...]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+@dataclass(frozen=True, slots=True)
+class AnswerDisclosure:
+    requester_id: int
+    source_channels: frozenset[int]
+    required_access: frozenset[str]
+
+    def __post_init__(self) -> None:
+        from ..access import KNOWN_ACCESS_REQUIREMENTS
+        if (type(self.requester_id) is not int or self.requester_id <= 0
+                or not isinstance(self.source_channels, frozenset) or not self.source_channels
+                or any(type(value) is not int or value <= 0 for value in self.source_channels)
+                or not isinstance(self.required_access, frozenset)
+                or not self.required_access <= KNOWN_ACCESS_REQUIREMENTS):
+            raise ValueError("Invalid answer disclosure decision")
+
+
 @dataclass(slots=True)
 class Conversation:
     guild_id: int
@@ -171,6 +187,35 @@ class Conversation:
     evicted_turns: int = 0
     working: WorkingState = field(default_factory=WorkingState)
     checkpoint: ConversationCheckpoint | None = None
+    answer_disclosures: dict[int, AnswerDisclosure] = field(default_factory=dict)
+
+    def remember_answer_disclosure(
+        self, requester_id: int, channel_id: int,
+        sources: set[int], access: set[str],
+    ) -> None:
+        if channel_id != self.channel_id:
+            raise ValueError("Answer disclosure belongs to another channel")
+        previous = self.answer_disclosures.get(requester_id)
+        decision = AnswerDisclosure(
+            requester_id,
+            frozenset(sources) | (previous.source_channels if previous else frozenset()),
+            frozenset(access) | (previous.required_access if previous else frozenset()),
+        )
+        self.answer_disclosures[requester_id] = decision
+        while len(self.answer_disclosures) > MAX_REPLY_REFERENCES:
+            self.answer_disclosures.pop(next(iter(self.answer_disclosures)))
+        self.version += 1
+        self.touched_at = time.monotonic()
+
+    def can_reuse_answer_disclosure(
+        self, requester_id: int, channel_id: int,
+        sources: set[int], access: set[str],
+    ) -> bool:
+        decision = self.answer_disclosures.get(requester_id)
+        return bool(
+            channel_id == self.channel_id and decision is not None
+            and sources <= decision.source_channels and access <= decision.required_access
+        )
 
     def append(self, turn: ConversationTurn) -> None:
         if turn.retained_bytes > MAX_RETAINED_BYTES:

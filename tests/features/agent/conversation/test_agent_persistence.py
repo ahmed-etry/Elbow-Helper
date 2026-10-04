@@ -34,6 +34,46 @@ class PersistenceTests(unittest.IsolatedAsyncioTestCase):
         snapshot = self.repository.find_reply(1, 100, 10, now=time.time())
         self.assertEqual(snapshot.revision, 2)
 
+    async def test_answer_disclosure_survives_restart_without_expanding_scope(self):
+        self.conversation.remember_answer_disclosure(41, 100, {100, 200}, {"lead"})
+        self.conversation.remember_answer_disclosure(41, 100, {100, 300}, {"core"})
+        await self.persistence.save(self.store, self.conversation)
+        restored_store = ConversationStore()
+        restarted = ConversationPersistence(ConversationRepository(self.repository.path))
+        await restarted.restore(restored_store, guild_id=1)
+        conversation = restored_store.find(1, 100, 10)
+        self.assertTrue(conversation.can_reuse_answer_disclosure(41, 100, {200, 300}, {"lead", "core"}))
+        self.assertFalse(conversation.can_reuse_answer_disclosure(42, 100, {200}, {"lead"}))
+        self.assertFalse(conversation.can_reuse_answer_disclosure(41, 101, {200}, {"lead"}))
+        self.assertFalse(conversation.can_reuse_answer_disclosure(41, 100, {400}, {"lead"}))
+        self.assertFalse(conversation.can_reuse_answer_disclosure(41, 100, {200}, {"lead_plus"}))
+
+    async def test_legacy_snapshot_has_no_implicit_disclosure_decision(self):
+        import json
+        from dataclasses import replace
+        from elbow_helper.features.agent.conversation.codec import encode_conversation, decode_conversation
+        snapshot = encode_conversation(self.conversation, root_message_id=1, revision=0)
+        data = json.loads(snapshot.payload)
+        data.pop("answer_disclosures")
+        restored = decode_conversation(replace(snapshot, payload=json.dumps(data)))
+        self.assertFalse(restored.can_reuse_answer_disclosure(41, 100, {100}, set()))
+
+    async def test_invalid_disclosure_provenance_is_rejected_on_restore(self):
+        import json
+        from dataclasses import replace
+        from elbow_helper.features.agent.conversation.codec import encode_conversation, decode_conversation
+        snapshot = encode_conversation(self.conversation, root_message_id=1, revision=0)
+        baseline = json.loads(snapshot.payload)
+        valid = {"requester_id": 41, "source_channels": [100, 200], "required_access": ["lead"]}
+        for decisions in ([{**valid, "requester_id": True}], [valid, valid],
+                          [{**valid, "source_channels": [100, 100]}],
+                          [{**valid, "source_channels": [False]}],
+                          [{**valid, "required_access": ["unrecognized"]}]):
+            with self.subTest(decisions=decisions):
+                data = {**baseline, "answer_disclosures": decisions}
+                with self.assertRaises(ValueError):
+                    decode_conversation(replace(snapshot, payload=json.dumps(data)))
+
     async def test_foreign_and_invalid_snapshot_are_not_restored(self):
         await self.persistence.save(self.store, self.conversation)
         now = time.time()

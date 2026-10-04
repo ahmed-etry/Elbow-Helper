@@ -11,7 +11,7 @@ from ..reports.base import retain_report
 from ..access import KNOWN_ACCESS_REQUIREMENTS
 from .state import (
     CONVERSATION_IDLE_SECONDS, MAX_RETAINED_BYTES, MAX_RETAINED_TURNS, MAX_REPLY_REFERENCES,
-    Conversation, ConversationCheckpoint, ConversationRecord, ConversationTurn,
+    AnswerDisclosure, Conversation, ConversationCheckpoint, ConversationRecord, ConversationTurn,
     checkpoint_input_hash,
 )
 from ..capabilities.account_links.role_report import RoleAccountReport
@@ -94,6 +94,12 @@ def encode_conversation(conversation: Conversation, *, root_message_id: int, rev
         raise ValueError("Conversation turn access requirements are invalid")
     if conversation.checkpoint is not None:
         _validate_checkpoint(conversation.checkpoint, conversation.turns)
+    if len(conversation.answer_disclosures) > MAX_REPLY_REFERENCES:
+        raise ValueError("Too many answer disclosure decisions")
+    for requester_id, decision in conversation.answer_disclosures.items():
+        if requester_id != decision.requester_id:
+            raise ValueError("Answer disclosure requester differs from its key")
+        decision.__post_init__()
     report_ids = set(conversation.reports)
     if (set(conversation.report_sources) != report_ids
             or set(conversation.report_access_requirements) != report_ids):
@@ -220,6 +226,11 @@ def encode_conversation(conversation: Conversation, *, root_message_id: int, rev
     payload = json.dumps({
         "format": 2, "version": conversation.version, "evicted_turns": conversation.evicted_turns,
         "reply_ids": conversation.reply_ids,
+        "answer_disclosures": [{
+            "requester_id": decision.requester_id,
+            "source_channels": sorted(decision.source_channels),
+            "required_access": sorted(decision.required_access),
+        } for decision in conversation.answer_disclosures.values()],
         "turns": [{"text": turn.text, "source_channels": sorted(turn.source_channels),
                    "retention_limited": turn.retention_limited,
                    "required_access": sorted(turn.required_access),
@@ -284,6 +295,24 @@ def decode_conversation(snapshot: StoredConversation, *, wall_time: float | None
     conversation.reply_ids = [_integer(value) for value in data["reply_ids"]]
     if len(conversation.reply_ids) != len(set(conversation.reply_ids)):
         raise ValueError("Duplicate conversation reply identities")
+    decisions = data.get("answer_disclosures", [])
+    if not isinstance(decisions, list) or len(decisions) > MAX_REPLY_REFERENCES:
+        raise ValueError("Invalid answer disclosure decisions")
+    for row in decisions:
+        if not isinstance(row, dict) or set(row) != {"requester_id", "source_channels", "required_access"}:
+            raise ValueError("Invalid answer disclosure decision fields")
+        requester_id = _integer(row["requester_id"])
+        if requester_id in conversation.answer_disclosures:
+            raise ValueError("Duplicate answer disclosure requester")
+        sources, access = row["source_channels"], row["required_access"]
+        if (not isinstance(sources, list) or any(type(value) is not int or value <= 0 for value in sources)
+                or len(sources) != len(set(sources))
+                or not isinstance(access, list) or any(not isinstance(value, str) for value in access)
+                or len(access) != len(set(access))):
+            raise ValueError("Invalid answer disclosure provenance")
+        conversation.answer_disclosures[requester_id] = AnswerDisclosure(
+            requester_id, frozenset(sources), frozenset(access),
+        )
     for row in data["turns"]:
         if type(row["retention_limited"]) is not bool:
             raise ValueError("Invalid retention flag")
