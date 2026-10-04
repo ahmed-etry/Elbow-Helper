@@ -146,6 +146,11 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second["matching_rows"], 30)
         self.assertIs(report, self.context.state.reports[first["report_id"]])
         self.assertEqual(self.queries.calls, [3])
+        whole = await read_cwl_performance_report(self.context, {
+            "report_id": first["report_id"], "limit": 100,
+        })
+        self.assertEqual(len(whole["players"]), 30)
+        self.assertIsNone(whole["next_offset"])
 
     async def test_performance_source_receives_requested_period_and_clan(self):
         await read_cwl_performance(self.context, {

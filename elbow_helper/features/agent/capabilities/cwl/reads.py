@@ -43,7 +43,7 @@ TOOL_CONTRACTS = {
 
 def cwl_tools() -> tuple[RegisteredAgentTool, ...]:
     offset = {"type": "integer", "minimum": 0}
-    limit = {"type": "integer", "minimum": 1, "maximum": 25}
+    limit = {"type": "integer", "minimum": 1, "maximum": 100}
     filters = {
         "season": {"type": "string", "maxLength": 20},
         "clan_code": {"type": "string", "enum": list(CLAN_ORDER)},
