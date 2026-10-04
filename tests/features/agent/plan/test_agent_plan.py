@@ -235,6 +235,20 @@ class PlanContractTests(unittest.TestCase):
         plan["periods"] = [{"kind": "utc_range", "start": "2026-01-03", "end": "2026-01-02"}]
         self.assertEqual(check_plan(plan, self.registry).error, "A period start must precede its end.")
 
+    def test_range_period_does_not_restrict_season_keys(self):
+        tool = self.registry["read_cwl_performance"]
+        plan = _plan_for(tool.definition.name, tool, tool.contract)
+        plan["steps"][0]["arguments"]["season"] = "2026-01"
+        plan["periods"] = [{"kind": "utc_range", "start": "2026-01-01",
+                            "end": "2026-02-01"}]
+        self.assertTrue(check_plan(plan, self.registry).ok)
+        plan["steps"][0]["arguments"]["season"] = "invalid-season"
+        self.assertFalse(check_plan(plan, self.registry).ok)
+        plan["steps"][0]["arguments"]["season"] = "2026-01"
+        plan["periods"] = [{"kind": "key", "field": "season", "value": "2026-02"}]
+        self.assertEqual(check_plan(plan, self.registry).error,
+                         "The time value is outside the selected periods.")
+
     def test_named_channel_requires_only_matching_arguments(self):
         tool = self.registry["read_discord_channel_history"]
         plan = _plan_for(tool.definition.name, tool, tool.contract)

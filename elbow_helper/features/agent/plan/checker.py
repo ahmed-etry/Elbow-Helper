@@ -236,7 +236,6 @@ def time_check(
         return "Provide the time field for the selected period." if periods and contract.time_fields else ""
     ranges = [(start, end) for kind, start, end in periods if kind == "utc_range"]
     keys = {(field, str(value)) for kind, value, field in periods if kind == "key"}
-    resolved = {(step, tuple(path)) for kind, step, path in periods if kind == "resolved"}
     window_bounded = False
     if contract.time_window and any(field in used for field in contract.time_window[:2]):
         lower_field, upper_field, _ = contract.time_window
@@ -265,8 +264,6 @@ def time_check(
             return "Keep this page selector inside a bounded time window."
         if keys and (field, str(value)) not in keys:
             return "The time value is outside the selected periods."
-        if ranges or resolved:
-            return "Use an exact time key for the selected period."
     return ""
 
 
