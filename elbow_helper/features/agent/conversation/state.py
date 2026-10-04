@@ -293,6 +293,64 @@ class Conversation:
             self.touched_at = time.monotonic()
             return
 
+    def replace_reply_content(self, request_id: int, reply_id: int, content: str) -> None:
+        """Retain an in-place part edit without losing other replies or delivery state."""
+        for index, turn in enumerate(self.turns):
+            previous = turn.record
+            if (previous is None or previous.request_message_id != request_id
+                    or reply_id not in previous.reply_ids):
+                continue
+            position = previous.reply_ids.index(reply_id)
+            parts = list(previous.generated_parts)
+            if position >= len(parts):
+                return
+            parts[position] = content
+            delivered = "\n".join(parts[:len(previous.reply_ids)])
+            record = replace(previous, generated_parts=tuple(parts), delivered_answer=delivered)
+            try:
+                data = json.loads(turn.text)
+                if isinstance(data, dict):
+                    data.update(answer=delivered[:16_000], answer_truncated=len(delivered) > 16_000)
+                    turn = replace(turn, text=json.dumps(data, ensure_ascii=False))
+            except ValueError:
+                pass
+            self.turns[index] = replace(turn, record=record)
+            self.checkpoint = None
+            self.version += 1
+            self.touched_at = time.monotonic()
+            return
+
+    def record_additional_delivery(
+        self, request_id, answer, reply_ids, complete, unknown, attempted_nonces,
+        uncertain_nonce, generated_parts,
+    ) -> None:
+        for index, turn in enumerate(self.turns):
+            previous = turn.record
+            if previous is None or previous.request_message_id != request_id:
+                continue
+            record = replace(
+                previous, delivered_answer="\n".join(filter(None, (previous.delivered_answer, answer))),
+                reply_ids=(*previous.reply_ids, *reply_ids),
+                generated_parts=(*previous.generated_parts, *generated_parts),
+                attempted_nonces=(*previous.attempted_nonces, *attempted_nonces),
+                delivery_complete=previous.delivery_complete and complete,
+                delivery_unknown=previous.delivery_unknown or unknown,
+                uncertain_nonce=uncertain_nonce if uncertain_nonce is not None else previous.uncertain_nonce,
+            )
+            try:
+                data = json.loads(turn.text)
+                if isinstance(data, dict):
+                    data.update(answer=record.delivered_answer[:16_000],
+                                answer_truncated=len(record.delivered_answer) > 16_000)
+                    turn = replace(turn, text=json.dumps(data, ensure_ascii=False))
+            except ValueError:
+                pass
+            self.turns[index] = replace(turn, record=record)
+            self.checkpoint = None
+            self.version += 1
+            self.touched_at = time.monotonic()
+            return
+
     def reconcile_unknown_delivery(
         self, *, request_message_id: int, reply_id: int, nonce: int,
         delivered_part: str, delivery_complete: bool,

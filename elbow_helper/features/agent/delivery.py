@@ -24,6 +24,8 @@ from .actions.answer_view import PrivateAnswerView
 from .actions.preview import CONFIRMATION_TIMEOUT, ConfirmationView
 from .actions.preview import preview_text
 from .actions.details import prepare_preview
+from .actions.combined_reply import CombinedReplyView
+from .text import DISCORD_MESSAGE_LIMIT
 from .text import chunk_response as _chunk_response
 
 LOGGER = logging.getLogger(__name__)
@@ -57,32 +59,9 @@ class AgentDeliveryMixin:
         _answer_disclosure: bool = False,
     ) -> None:
         if context is not None and context.state.preview_reply is not None:
-            active = delivery or AgentDelivery()
-            answer_context = replace(context, state=replace(
-                context.state, proposed_changes=[], preview_reply=None,
-            ))
-            try:
-                await self.send_response(
-                    message, response, referenced, attachments, conversation,
-                    delivery=active, context=answer_context, mention_requester=mention_requester,
-                    _answer_disclosure=True,
-                )
-            except BaseException:
-                pending_preview = context.state.preview_reply
-                if mention_requester:
-                    pending_preview = f"<@{message.author.id}> {pending_preview}"
-                active.generated_parts.extend(_chunk_response(pending_preview))
-                active.complete = False
-                raise
-            active.complete = False
-            preview_context = replace(context, state=replace(
-                context.state, outcomes=[], attachments=[], preview_reply=None,
-            ))
-            await self.send_response(
-                message, context.state.preview_reply, referenced, (), conversation,
-                delivery=active, context=preview_context, preview_timeout=preview_timeout,
-                mention_requester=mention_requester,
-                _nonce_seed=_delivery_nonce(message.id, 1_000_001),
+            await self._send_mixed_response(
+                message, response, referenced, attachments, conversation, context,
+                delivery or AgentDelivery(), preview_timeout, mention_requester,
             )
             return
         reused_disclosure = False
@@ -149,7 +128,7 @@ class AgentDeliveryMixin:
                 active = delivery or AgentDelivery()
                 active.generated_parts.append(notice)
                 sent = await self._send_delivery_part(
-                    message.reply, message.channel, _delivery_nonce(message.id, 0), active,
+                    message.reply, message.channel, _delivery_nonce(_nonce_seed or message.id, 0), active,
                     notice, mention_author=False, view=view,
                     allowed_mentions=discord.AllowedMentions(
                         everyone=False, roles=False,
@@ -231,6 +210,164 @@ class AgentDeliveryMixin:
         finally:
             for file in files:
                 file.close()
+
+    async def _send_mixed_response(
+        self, message, response, referenced, attachments, conversation, context,
+        active, preview_timeout, mention_requester,
+    ) -> None:
+        answer_context = replace(context, state=replace(
+            context.state, proposed_changes=[], preview_reply=None,
+        ))
+        preview_context = replace(context, state=replace(
+            context.state, outcomes=[], attachments=[], preview_reply=None,
+        ))
+        scheduled = getattr(message, "scheduled_run", False)
+        if scheduled:
+            await self._send_split_response(
+                message, response, referenced, attachments, conversation, answer_context,
+                preview_context, active, preview_timeout, mention_requester, preview_first=False,
+            )
+            return
+        await prepare_preview(context)
+        preview = preview_text(context.state.proposed_changes)
+        context.state.preview_reply = preview
+        sources = await require_evidence_access(answer_context)
+        allowed = await can_show(
+            message.channel, sources, answer_context.state.required_access, context.guild,
+            thread_members=context.disclosure_thread_members,
+        )
+        if not allowed and conversation is not None:
+            allowed = conversation.can_reuse_answer_disclosure(
+                context.member.id, message.channel.id,
+                context.state.source_channels, context.state.required_access,
+            )
+        answer = response if allowed else ACTION_PRIVATE_ANSWER
+        private_view, _ = build_reply_views(message, answer_context, None)
+        _, confirm_view = build_reply_views(
+            message, preview_context, getattr(self, "action_runner", None), preview_timeout=preview_timeout,
+        )
+
+        async def changed(sent, previous, content):
+            await self._archive_reply(message.id, sent.id, content, previous_content=previous)
+            if conversation is not None:
+                async with conversation.lock:
+                    conversation.replace_reply_content(message.id, sent.id, content)
+                    await self._save_reply_conversation(conversation, message.id)
+
+        async def post(interaction):
+            await require_evidence_access(answer_context)
+            async with combined.lock:
+                fits = (len(combined.render(answer=response)) <= DISCORD_MESSAGE_LIMIT
+                        and not _answer_needs_ping(message, response, referenced, self.bot))
+                if fits:
+                    files = [discord.File(io.BytesIO(item.data), filename=item.filename) for item in attachments]
+                    try:
+                        await combined.edit_part_locked("answer", content=response, view=private_view, attachments=files)
+                    finally:
+                        for file in files:
+                            file.close()
+            if not fits:
+                posted = AgentDelivery()
+                try:
+                    await self.send_response(
+                        message, response, referenced, attachments, conversation,
+                        delivery=posted, context=answer_context, _audience_override=True,
+                        _nonce_seed=interaction.id,
+                    )
+                finally:
+                    if conversation is not None and posted.attempted_nonces:
+                        async with conversation.lock:
+                            conversation.record_additional_delivery(
+                                message.id, "\n".join(posted.text_parts), tuple(posted.message_ids),
+                                posted.complete, posted.unknown, tuple(posted.attempted_nonces),
+                                posted.uncertain_nonce, tuple(posted.generated_parts),
+                            )
+                            await self._save_reply_conversation(conversation, message.id)
+            if conversation is not None:
+                async with conversation.lock:
+                    conversation.remember_answer_disclosure(
+                        context.member.id, message.channel.id,
+                        context.state.source_channels, context.state.required_access,
+                    )
+                    await self._save_reply_conversation(conversation, message.id)
+
+        answer_view = private_view if allowed else PrivateAnswerView(
+            answer_context, response, attachments, post, private_view=private_view,
+        )
+        combined = CombinedReplyView(
+            preview, answer, confirm_view, answer_view,
+            preview_first=context.state.preview_first, on_change=changed,
+        )
+        if (len(combined.render()) > DISCORD_MESSAGE_LIMIT or mention_requester
+                or _answer_needs_ping(message, response, referenced, self.bot)
+                or allowed and _needs_file(response)):
+            combined.stop()
+            await self._send_split_response(
+                message, response, referenced, attachments, conversation, answer_context,
+                preview_context, active, preview_timeout, mention_requester,
+                preview_first=context.state.preview_first,
+            )
+            return
+        files = [discord.File(io.BytesIO(item.data), filename=item.filename)
+                 for item in (attachments if allowed else ())]
+        content = combined.render()
+        active.generated_parts.append(content)
+        try:
+            await require_evidence_access(context)
+            sent = await self._send_delivery_part(
+                message.reply, message.channel, _delivery_nonce(message.id, 0), active,
+                content, mention_author=False, allowed_mentions=discord.AllowedMentions.none(),
+                view=combined, **({"files": files} if files else {}),
+            )
+        except BaseException:
+            combined.stop()
+            raise
+        finally:
+            for file in files:
+                file.close()
+        combined.start(sent)
+        if hasattr(self, "_previews"):
+            self._previews[sent.id] = confirm_view
+        active.record(sent.id, content)
+        active.complete = True
+        if conversation is not None:
+            self._conversations.register_reply(conversation, sent.id)
+        if getattr(message, "archive_reply", True):
+            await self._archive_reply(message.id, sent.id, content)
+
+    async def _send_split_response(
+        self, message, response, referenced, attachments, conversation, answer_context,
+        preview_context, active, preview_timeout, mention_requester, *, preview_first,
+    ) -> None:
+        preview = preview_text(preview_context.state.proposed_changes)
+        parts = [(preview, preview_context, (), False), (response, answer_context, attachments, True)]
+        if not preview_first:
+            parts.reverse()
+        for index, (content, selected, files, answer) in enumerate(parts):
+            active.complete = False
+            try:
+                await self.send_response(
+                    message, content, referenced, files, conversation, delivery=active, context=selected,
+                    preview_timeout=preview_timeout, mention_requester=mention_requester,
+                    _answer_disclosure=answer,
+                    _nonce_seed=None if index == 0 else _delivery_nonce(message.id, 1_000_001),
+                )
+            except BaseException:
+                if index == 0:
+                    pending = parts[1][0]
+                    if mention_requester:
+                        pending = f"<@{message.author.id}> {pending}"
+                    active.generated_parts.extend(_chunk_response(pending))
+                active.complete = False
+                raise
+
+    async def _save_reply_conversation(self, conversation, request_id):
+        persistence = getattr(self, "persistence", None)
+        if persistence is not None:
+            try:
+                await persistence.save(self._conversations, conversation)
+            except (OSError, sqlite3.Error, RuntimeError, TypeError, ValueError):
+                LOGGER.exception("Agent checkpoint save failed: request=%s", request_id)
 
     async def _send_response_parts(
         self, message, response, chunks, options, private_view, confirm_view,
@@ -426,6 +563,19 @@ def _delivery_part(response: str, part_index: int) -> tuple[str, int]:
     if part_index >= len(chunks):
         raise ValueError("Delivery part is outside the generated response")
     return chunks[part_index], len(chunks)
+
+
+def _answer_needs_ping(message, response, referenced, bot) -> bool:
+    named = {int(value) for value in _USER_MENTION.findall(response or "")}
+    candidates = {member.id for member in getattr(message, "mentions", ())
+                  if bot.user is None or member.id != bot.user.id}
+    if referenced is not None and not referenced.author.bot:
+        candidates.add(referenced.author.id)
+    get_member = getattr(getattr(message, "guild", None), "get_member", None)
+    if callable(get_member):
+        candidates.update(member_id for member_id in named
+                          if (member := get_member(member_id)) is not None and not getattr(member, "bot", False))
+    return bool(named & candidates)
 
 
 def _needs_file(response: str) -> bool:

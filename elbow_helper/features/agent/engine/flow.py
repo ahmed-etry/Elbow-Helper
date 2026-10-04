@@ -187,13 +187,23 @@ class AnswerFlow:
                     continue
                 feeds_change.add(step_id)
                 pending.extend(steps_by_id[step_id]["depends_on"])
-            reads = any(self.registry[step["capability"]].action_class is ActionClass.READ
-                        and step["id"] in results and step["id"] not in feeds_change
-                        for step in self.plan["steps"])
+            answered = [step for step in self.plan["steps"]
+                        if self.registry[step["capability"]].action_class is ActionClass.READ
+                        and step["id"] in results and step["id"] not in feeds_change]
+            reads = bool(answered)
             if reads or state.outcomes:
                 state.preview_reply = response
+                answer_ids = {step["id"] for step in answered}
+                if state.outcomes:
+                    answer_ids.update(step["id"] for step in self.plan["steps"]
+                                      if self.registry[step["capability"]].action_class is ActionClass.OUTPUT)
+                order = [step["id"] for step in self.plan["steps"]]
+                state.preview_first = min(order.index(step["id"]) for step in changes) < min(
+                    (order.index(step_id) for step_id in answer_ids), default=len(order),
+                )
             answer = await self._feedback_reply(
-                results, RESULT_ANSWER_INSTRUCTION + " Changes are waiting for the member's "
+                {step_id: value for step_id, value in results.items() if step_id not in feeds_change},
+                RESULT_ANSWER_INSTRUCTION + " Changes are waiting for the member's "
                 "confirmation; do not describe them as done.",
             ) if reads else ""
             if state.outcomes:

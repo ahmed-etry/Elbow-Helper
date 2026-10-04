@@ -118,7 +118,10 @@ class AgentTurnMixin:
                     member_id=member.id,
                     created_at=message.created_at.isoformat(),
                     question=question,
-                    generated_answer="\n\n".join(filter(None, (response, context.state.preview_reply))),
+                    generated_answer="\n\n".join(filter(None, (
+                        (context.state.preview_reply, response) if context.state.preview_first
+                        else (response, context.state.preview_reply)
+                    ))),
                     delivered_answer=delivered_answer,
                     local_context=local_context,
                     evidence=tuple(context.state.evidence),

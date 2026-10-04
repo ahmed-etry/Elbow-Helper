@@ -63,3 +63,8 @@ class PrivateAnswerView(PrivateResultView):
             )
             self.expired = True
             self.stop()
+            if (getattr(self.message, "preserves_other_text", False)
+                    and self.message.reply.views[self.message.key] is self):
+                for item in self.children:
+                    item.disabled = True
+                await self.message.edit(view=self)

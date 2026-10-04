@@ -159,9 +159,13 @@ class ConfirmationView(discord.ui.View):
         async with self._lock:
             if not await self._claim(interaction):
                 return
-            await interaction.response.edit_message(
-                content=self._replacement(ACTION_CANCELLED), view=self,
-            )
+            if getattr(self.message, "preserves_other_text", False):
+                await interaction.response.defer()
+                await self.message.edit(content=ACTION_CANCELLED, view=self)
+            else:
+                await interaction.response.edit_message(
+                    content=self._replacement(ACTION_CANCELLED), view=self,
+                )
             LOGGER.info("Agent command preview cancelled: requester=%s", self.owner_id)
 
     async def confirm(self, interaction: discord.Interaction) -> None:
@@ -194,7 +198,9 @@ class ConfirmationView(discord.ui.View):
                     self.stop()
 
     def _progress_message(self):
-        """Return the message for the run to report in when it holds only this preview."""
+        """Hand the run an edit target that owns only the preview's content."""
+        if getattr(self.message, "preserves_other_text", False):
+            return self.message
         if (self.private_result is None
                 and getattr(self.message, "content", None) == preview_text(self.proposals)):
             return self.message

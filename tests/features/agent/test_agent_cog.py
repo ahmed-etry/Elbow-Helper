@@ -76,11 +76,12 @@ def _message(*, author: _Member, bot_id: int, content: str):
 
 
 class AgentCogTests(unittest.IsolatedAsyncioTestCase):
-    async def test_mixed_answer_and_preview_use_separate_delivery_and_records(self):
+    async def test_mixed_answer_and_preview_share_delivery_and_records(self):
         from elbow_helper.features.agent.actions.contracts import PreparedAction, ChangePreview
         from elbow_helper.features.agent.actions.preview import ConfirmationView, preview_text
         from elbow_helper.features.agent.actions.answer_view import PrivateAnswerView
         from elbow_helper.features.agent.actions.private_view import PrivateResultView
+        from elbow_helper.features.agent.actions.combined_reply import CombinedReplyView
         from elbow_helper.features.agent.actions.outcomes import ActionOutcome
         from elbow_helper.features.agent.wording import ACTION_PRIVATE_ANSWER
 
@@ -97,8 +98,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 preview = preview_text((proposal,))
                 answer_message = SimpleNamespace(id=1501, edit=AsyncMock())
                 answer_message.edit.return_value = answer_message
-                preview_message = SimpleNamespace(id=1502, content=preview, edit=AsyncMock())
-                message.reply.side_effect = [answer_message, preview_message]
+                message.reply.return_value = answer_message
                 self.cog.action_runner = SimpleNamespace(submit=AsyncMock(return_value="synthetic-run"))
                 self.cog._archive_reply = AsyncMock()
 
@@ -106,6 +106,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                     state = kwargs["context"].state
                     state.proposed_changes.append(proposal)
                     state.preview_reply = preview
+                    state.preview_first = True
                     state.outcomes.append(ActionOutcome(
                         "complete", "private", private_parts=("Synthetic command result",),
                     ))
@@ -116,36 +117,40 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                       patch("elbow_helper.features.agent.delivery.can_show", AsyncMock(return_value=allowed))):
                     await self.cog.on_message(message)
                 calls = message.reply.await_args_list
-                self.assertEqual(len(calls), 2)
-                self.assertEqual(calls[0].args[0], "Synthetic lookup answer" if allowed else ACTION_PRIVATE_ANSWER)
-                answer_view = calls[0].kwargs["view"]
+                self.assertEqual(len(calls), 1)
+                combined = calls[0].kwargs["view"]
+                self.addCleanup(combined.stop)
+                self.assertIsInstance(combined, CombinedReplyView)
+                answer_part = "Synthetic lookup answer" if allowed else ACTION_PRIVATE_ANSWER
+                self.assertEqual(calls[0].args[0], f"1. {preview}\n\n2. {answer_part}")
+                answer_view = combined.views["answer"]
                 self.assertIsInstance(answer_view, PrivateResultView if allowed else PrivateAnswerView)
                 self.assertIn("Synthetic command result", answer_view.parts)
-                self.assertEqual(calls[1].args[0], preview)
-                confirm = calls[1].kwargs["view"]
+                confirm = combined.views["preview"]
                 self.assertIsInstance(confirm, ConfirmationView)
                 self.assertIsNone(confirm.private_result)
-                self.assertNotEqual(calls[0].kwargs["nonce"], calls[1].kwargs["nonce"])
-                self.cog._archive_reply.assert_any_await(message.id, preview_message.id, preview)
-                conversation = self.cog._conversations.find(GUILD_ID, 100, preview_message.id)
+                self.cog._archive_reply.assert_any_await(message.id, answer_message.id, combined.render())
+                conversation = self.cog._conversations.find(GUILD_ID, 100, answer_message.id)
                 record = conversation.turns[0].record
-                self.assertEqual(record.reply_ids, (1501, 1502))
+                self.assertEqual(record.reply_ids, (1501,))
                 self.assertIn(preview, record.delivered_answer)
                 self.assertIn(calls[0].args[0], record.delivered_answer)
                 interaction = SimpleNamespace(user=member, response=SimpleNamespace(defer=AsyncMock()))
                 await confirm.confirm(interaction)
                 self.cog.action_runner.submit.assert_awaited_once()
-                self.assertIs(self.cog.action_runner.submit.await_args.kwargs["progress_message"], preview_message)
-                preview_message.edit.assert_awaited_once_with(view=confirm)
+                progress = self.cog.action_runner.submit.await_args.kwargs["progress_message"]
+                self.assertTrue(progress.preserves_other_text)
+                self.assertEqual(progress.id, 1501)
+                answer_message.edit.assert_awaited_once()
                 if not allowed:
                     interaction.id = 601
                     await answer_view.post_here(interaction)
                     record = conversation.turns[0].record
-                    self.assertEqual(record.reply_ids, (1501, 1502))
+                    self.assertEqual(record.reply_ids, (1501,))
                     self.assertIn("Synthetic lookup answer", record.delivered_answer)
                     self.assertIn(preview, record.delivered_answer)
-                    self.assertEqual(record.generated_parts, ("Synthetic lookup answer", preview))
-                    self.assertIsInstance(answer_message.edit.await_args.kwargs["view"], PrivateResultView)
+                    self.assertEqual(record.generated_parts, (combined.render(),))
+                    self.assertIsInstance(combined.views["answer"], PrivateResultView)
 
     def test_discord_registers_only_the_message_handler(self):
         self.assertIn(("on_message", "on_message"), AgentCog.__cog_listeners__)

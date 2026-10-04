@@ -330,7 +330,8 @@ class AgentActionRunner:
         for index, (status, outcome) in output.step_outcomes.items():
             run["steps"][index] = {**run["steps"][index], "status": status,
                                    "outcome_json": json.dumps(outcome)}
-        if progress is not None and self._only_posted_here(run, output):
+        if (progress is not None and not getattr(progress, "preserves_other_text", False)
+                and self._only_posted_here(run, output)):
             try:
                 await progress.delete()
             except discord.DiscordException:
@@ -346,13 +347,17 @@ class AgentActionRunner:
         reported = None
         try:
             if progress is not None:
-                await progress.edit(content=chunks[0],
-                                    view=private_view if len(chunks) == 1 else None)
+                if getattr(progress, "preserves_other_text", False):
+                    remaining = await progress.replace_report(report, private_view)
+                else:
+                    await progress.edit(content=chunks[0],
+                                        view=private_view if len(chunks) == 1 else None)
+                    remaining = chunks[1:]
                 reported = progress
-                for index, chunk in enumerate(chunks[1:], start=1):
+                for index, chunk in enumerate(remaining):
                     reported = await channel.send(
                         chunk,
-                        view=private_view if index == len(chunks) - 1 else None,
+                        view=private_view if index == len(remaining) - 1 else None,
                         allowed_mentions=discord.AllowedMentions.none(),
                     )
             else:

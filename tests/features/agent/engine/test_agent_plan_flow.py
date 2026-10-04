@@ -111,6 +111,34 @@ class _Model:
 
 
 class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_reply_order_tracks_plan_order_while_reads_still_execute_first(self):
+        async def prepare(context, arguments):
+            self.events.append("change")
+            context.state.proposed_changes.append(PreparedAction(
+                "synthetic_change", {}, ChangePreview(("Synthetic preview",), AsyncMock(return_value=True)),
+                AsyncMock(),
+            ))
+            return {"status": "confirmation_required"}
+
+        self.registry["synthetic_change"] = RegisteredAgentTool(AgentToolDefinition(
+            "synthetic_change", "Change a synthetic value.",
+            {"type": "object", "properties": {}, "required": []}),
+            prepare, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
+        )
+        for preview_first in (True, False):
+            with self.subTest(preview_first=preview_first):
+                self.events.clear()
+                change = {**_step("change"), "capability": "synthetic_change"}
+                read = _step("lookup")
+                plan = _plan([change, read] if preview_first else [read, change])
+                context = replace(_context(), bot=SimpleNamespace(tree=object()))
+                session = _Session([_model_step(plan), AgentStep("Synthetic answer", (), AgentUsage())], self.events)
+                with patch("elbow_helper.features.agent.engine.service.build_command_tools", return_value=({}, {})):
+                    answer, _ = await self._answer(session, context)
+                self.assertEqual(answer, "Synthetic answer")
+                self.assertEqual(context.state.preview_first, preview_first)
+                self.assertEqual(self.events, ["model", "read", "change", "model"])
+
     async def test_compact_pages_preserve_payload_references_evidence_and_report(self):
         report = SimpleNamespace(report_id="synthetic-report", retained_bytes=100,
                                  manifest=lambda: {"report_id": "synthetic-report"})

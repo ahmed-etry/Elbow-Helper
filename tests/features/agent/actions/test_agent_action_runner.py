@@ -18,10 +18,90 @@ from elbow_helper.features.agent.actions.runner import AgentActionRunner, StopAc
 from elbow_helper.features.agent.actions.outcomes import ActionOutcome
 from elbow_helper.features.agent.actions.preview import preview_text
 from elbow_helper.features.agent.actions.private_view import PrivateResultView
+from elbow_helper.features.agent.actions.combined_reply import CombinedReplyView
+from elbow_helper.features.agent.actions.preview import ConfirmationView
 from elbow_helper.features.agent.text import chunk_response
 
 
 class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_combined_confirmation_keeps_dispatch_alive_until_the_run_finishes(self):
+        action = self.action("synthetic change", outcome=ActionOutcome("complete"))[0]
+        preview = ConfirmationView(4, (action,), self.context, runner=self.runner)
+        combined = CombinedReplyView(preview_text([action]), "Synthetic answer", preview, None,
+                                     preview_first=True, on_change=AsyncMock())
+        self.addCleanup(combined.stop)
+        message = SimpleNamespace(id=701, edit=AsyncMock())
+        running_controls = []
+        async def edit(**kwargs):
+            if isinstance(combined.views["preview"], StopActionRunView):
+                running_controls.append((combined.views["preview"], combined.is_finished()))
+            return message
+        message.edit.side_effect = edit
+        combined.start(message)
+        interaction = SimpleNamespace(user=SimpleNamespace(id=4), response=SimpleNamespace(defer=AsyncMock()))
+        with (patch("elbow_helper.features.agent.actions.runner.require_access"),
+              patch("elbow_helper.features.agent.actions.runner.require_evidence_access", AsyncMock())):
+            await preview.confirm(interaction)
+            await asyncio.gather(*tuple(self.runner._tasks))
+        self.assertEqual(combined.parts["preview"], "Done: synthetic change.")
+        self.assertEqual(combined.parts["answer"], "Synthetic answer")
+        self.assertEqual(len(running_controls), 1)
+        self.assertFalse(running_controls[0][1])
+        self.channel.send.assert_not_awaited()
+
+    async def test_combined_preview_reports_preserve_the_answer_and_private_controls(self):
+        actions = [self.action(name, outcome=ActionOutcome("complete"))[0] for name in ("first", "second")]
+        preview = ConfirmationView(4, tuple(actions), self.context, runner=self.runner)
+        private = PrivateResultView(4, ("Synthetic private lookup",))
+        combined = CombinedReplyView(preview_text(actions), "Synthetic answer", preview, private,
+                                     preview_first=True, on_change=AsyncMock())
+        self.addCleanup(combined.stop)
+        message = SimpleNamespace(id=701, edit=AsyncMock(), delete=AsyncMock())
+        message.edit.return_value = message
+        combined.start(message)
+        await self.run_actions(*actions, progress_message=preview._progress_message())
+        contents = [call.kwargs["content"] for call in message.edit.await_args_list]
+        self.assertEqual(contents, [f"1. {text}\n\n2. Synthetic answer" for text in (
+            "Running 2 changes...", "1 of 2 done...", "Done: first, second.",
+        )])
+        self.assertIs(combined.views["answer"], private)
+        self.assertFalse(private.expired)
+        self.assertTrue(all(not item.disabled for item in private.children))
+        self.channel.send.assert_not_awaited()
+        message.delete.assert_not_awaited()
+
+    async def test_combined_posting_run_keeps_the_answer_instead_of_deleting_its_message(self):
+        action = self.action("synthetic post", outcome=ActionOutcome("complete", posted_in=2))[0]
+        preview = ConfirmationView(4, (action,), self.context, runner=self.runner)
+        combined = CombinedReplyView(preview_text([action]), "Synthetic answer", preview, None,
+                                     preview_first=False, on_change=AsyncMock())
+        self.addCleanup(combined.stop)
+        message = SimpleNamespace(id=701, edit=AsyncMock(), delete=AsyncMock())
+        message.edit.return_value = message
+        combined.start(message)
+        await self.run_actions(action, progress_message=preview._progress_message())
+        message.delete.assert_not_awaited()
+        self.assertEqual(message.edit.await_args.kwargs["content"],
+                         "1. Synthetic answer\n\n2. Done: synthetic post.")
+
+    async def test_long_combined_run_report_uses_remaining_room_without_losing_text(self):
+        action = self.action("long", allowed=False)[0]
+        action = replace(action, preview=replace(action.preview, summary="Synthetic " + "x" * 2500))
+        # The initial preview was short; a later run report can grow beyond its part.
+        preview = ConfirmationView(4, (self.action("long")[0],), self.context)
+        combined = CombinedReplyView("Synthetic preview", "Synthetic answer " + "y" * 1800,
+                                     preview, None, preview_first=True, on_change=AsyncMock())
+        self.addCleanup(combined.stop)
+        message = SimpleNamespace(id=701, edit=AsyncMock())
+        message.edit.return_value = message
+        combined.start(message)
+        await self.run_actions(action, progress_message=preview._progress_message())
+        self.assertTrue(all(len(call.kwargs["content"]) <= 2000 for call in message.edit.await_args_list))
+        self.assertTrue(all(len(call.args[0]) <= 2000 for call in self.channel.send.await_args_list))
+        self.assertEqual(sum(call.args[0].count("x") for call in self.channel.send.await_args_list)
+                         + combined.parts["preview"].count("x"), 2500)
+        self.assertEqual(combined.parts["answer"], "Synthetic answer " + "y" * 1800)
+
     async def test_public_parts_follow_the_shared_text_boundaries(self):
         content = "Synthetic line. " * 300 + "\n" + "x" * 2500
         await self.runner._send_parts(self.channel, content)

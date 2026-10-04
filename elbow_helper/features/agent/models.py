@@ -103,6 +103,7 @@ class AgentTurnState:
     outcomes: list[Any] = field(default_factory=list)
     proposed_changes: list[Any] = field(default_factory=list)
     preview_reply: str | None = None
+    preview_first: bool = False
 
 
 @dataclass(frozen=True, slots=True)
