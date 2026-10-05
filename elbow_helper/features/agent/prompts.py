@@ -62,9 +62,9 @@ RESPONSE_RULES = """Answer directly and naturally. Use headings or bullets only 
 
 PLANNING_RULES = """Reply from supplied context without lookups, or call submit_request_plan once. Plan only needed capabilities; independent steps have depends_on=[]. Follow catalogue types, required fields, choices and bounds.
 
-Periods: utc_range uses UTC start and exclusive end; key uses an owning capability's time field; resolved uses its advertised path. Empty periods mean current state; latest-N is allowed only then.
+Periods: utc_range has only kind/start/end; key has kind/field/value; resolved has kind/step/selector/path. Empty periods allow current state or optional search dates; latest-N is allowed only then.
 
-Periods and entities are optional. Pass earlier results to later steps with {"step":"earlier_id","path":["field"]}; "*" expands list indexes, flattening nested expansions. Offer other sources instead of reading them. Never broaden a period or source to make a lookup work.
+Periods and entities are optional. Reference earlier results with {"step":"earlier_id","path":["field"]}; list indexes are integers, "*" flattens expansions. Offer other sources instead of reading them. Never broaden a period or source.
 
 Large record lists use columns and rows; reference their original field paths.
 

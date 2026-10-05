@@ -20,6 +20,8 @@ from ..reports.tools import (COMPARE_NAME, READ_NAME, original_arguments,
                                    original_tool, unsupported_fields,
                                    unsupported_field_error, saved_report_contracts)
 from .format import output_forms
+from .format import PERIOD_FIELDS
+from .arguments import argument_errors, period_fields_error
 
 LOGGER = logging.getLogger(__name__)
 
@@ -55,6 +57,10 @@ def parse_periods(raw: Any) -> tuple[tuple[str, Any, Any], ...]:
         if not isinstance(period, dict):
             raise ValueError("Each period needs a kind and value.")
         kind = period.get("kind")
+        if isinstance(kind, str) and kind in PERIOD_FIELDS:
+            issue = period_fields_error(kind, period, PERIOD_FIELDS[kind])
+            if issue:
+                raise ValueError(issue)
         if kind == "utc_range" and set(period) == {"kind", "start", "end"}:
             start, end = _utc(period["start"]), _utc(period["end"])
             if start >= end:
@@ -85,7 +91,7 @@ def _valid_value(value: Any, schema: Mapping[str, Any], dependencies: set[str] |
         return False
     kind = schema.get("type")
     if kind == "string":
-        return (isinstance(value, str) and bool(value.strip())
+        return (isinstance(value, str) and (bool(value.strip()) or schema.get("minLength") == 0)
                 and schema.get("minLength", 1) <= len(value) <= schema.get("maxLength", 1024))
     if kind == "integer":
         return (type(value) is int and schema.get("minimum", 1) <= value
@@ -228,18 +234,19 @@ def time_check(
     earlier: set[str],
 ) -> str:
     used = {field: arguments[field] for field in contract.time_fields if field in arguments}
+    optional_window = contract.optional_time_window and not periods
     if not used:
-        if contract.time_window and not contract.latest_fields:
-            return "Provide both time boundaries for this read."
+        if contract.time_window and not contract.latest_fields and not optional_window:
+            return "Provide both time boundaries for this read: " + ", ".join(contract.time_window[:2]) + "."
         return "Provide the time field for the selected period." if periods and contract.time_fields else ""
     ranges = [(start, end) for kind, start, end in periods if kind == "utc_range"]
     keys = {(field, str(value)) for kind, value, field in periods if kind == "key"}
     window_bounded = False
     if contract.time_window and any(field in used for field in contract.time_window[:2]):
         lower_field, upper_field, _ = contract.time_window
-        if lower_field not in used or upper_field not in used:
-            return "Provide both time boundaries for this read."
-        if not any(has_reference(arguments[field]) for field in (lower_field, upper_field)):
+        if (lower_field not in used or upper_field not in used) and not optional_window:
+            return f"Provide both time boundaries for this read: {lower_field}, {upper_field}."
+        if not any(has_reference(arguments.get(field)) for field in (lower_field, upper_field)):
             try:
                 lower, upper = bound_time_window(contract, arguments)
             except CapabilityBindError as error:
@@ -259,6 +266,8 @@ def time_check(
                 return "A latest selector cannot accompany a selected period."
             continue
         if field in contract.bounded_fields:
+            if optional_window:
+                continue
             return "Keep this page selector inside a bounded time window."
         if keys and (field, str(value)) not in keys:
             return "The time value is outside the selected periods."
@@ -294,14 +303,20 @@ def check_step(
     if selected is not None and unsupported_fields(selected, arguments):
         return _error(unsupported_field_error(selected, arguments), step_id)
     for reference in result_references(arguments):
-        if reference.get("step") not in set(dependencies):
+        if not isinstance(reference.get("step"), str) or reference["step"] not in set(dependencies):
             return _error(
                 f"Step {step_id} uses results of step {reference.get('step')!r}, which must be an "
                 "earlier step in this plan listed in depends_on. Results of earlier plans cannot be "
                 "referenced; read them again in this plan.", step_id,
             )
     if not valid_arguments(arguments, schema, set(dependencies)):
-        return _error("Arguments must match the capability schema.", step_id)
+        issues = argument_errors(arguments, schema, set(dependencies), _valid_value)
+        contract = (selected or tool).contract
+        if contract is not None:
+            issue = time_check(contract, arguments, periods, earlier)
+            if issue:
+                issues.append(issue)
+        return _error("Invalid arguments: " + "; ".join(issues), step_id)
     if capability in (READ_NAME, COMPARE_NAME):
         if selected is None or not valid_arguments(
             original_arguments(arguments), selected.definition.parameters,

@@ -15,6 +15,29 @@ from ..prompts import (
 
 
 PLAN_TOOL_NAME = "submit_request_plan"
+PERIOD_FIELDS = {
+    "utc_range": ("kind", "start", "end"),
+    "key": ("kind", "field", "value"),
+    "resolved": ("kind", "step", "selector", "path"),
+}
+
+
+def period_schema():
+    properties = {
+        "start": {"type": "string"}, "end": {"type": "string"},
+        "value": {"type": ["string", "integer"]}, "field": {"type": "string"},
+        "step": {"type": "string"},
+        "path": {"type": "array", "minItems": 1, "maxItems": 8,
+                 "items": {"type": ["string", "integer"]}},
+        "selector": {"type": "string", "enum": ["latest", "current"]},
+    }
+    return {"oneOf": [
+        {"type": "object", "properties": {
+            "kind": {"type": "string", "enum": [kind]},
+            **{field: properties[field] for field in fields if field != "kind"},
+        }, "required": list(fields), "additionalProperties": False}
+        for kind, fields in PERIOD_FIELDS.items()
+    ]}
 
 
 def system_instructions(
@@ -42,6 +65,8 @@ def _argument(detail: Mapping) -> str:
                  else f"({len(choices)} choices)")
     bounds = [f"{key}={detail[key]}" for key in
               ("minimum", "maximum", "minItems", "maxItems", "maxLength") if key in detail]
+    if detail.get("minLength") == 0:
+        bounds.append("minLength=0")
     return kind + ("(" + ",".join(bounds) + ")" if bounds else "")
 
 
@@ -75,6 +100,8 @@ def capability_list(registry: Mapping[str, RegisteredAgentTool]) -> str:
             ]
         meaning = " ".join(tool.definition.description.split(".", 1)[0].split())[:120]
         time_fields = ",".join(contract.time_fields) if contract else ""
+        if contract and contract.optional_time_window:
+            time_fields += " (optional)"
         latest_fields = ",".join(contract.latest_fields) if contract else ""
         period_results = ",".join("/".join(map(str, path)) for path in contract.period_results) if contract else ""
         result_kinds = {**(contract.referenceable_result_kinds if contract else {}),
@@ -112,17 +139,7 @@ def plan_definition(registry: Mapping[str, RegisteredAgentTool]) -> AgentToolDef
                 "goal": {"type": "string", "maxLength": 240},
                 "effort": {"type": "string", "enum": ["low", "high", "max"]},
                 "output": {"type": "string", "enum": list(output_forms(registry))},
-                "periods": {"type": "array", "maxItems": 12, "items": {
-                    "type": "object", "properties": {
-                        "kind": {"type": "string", "enum": ["utc_range", "key", "resolved"]},
-                        "start": {"type": "string"}, "end": {"type": "string"},
-                        "value": {"type": ["string", "integer"]},
-                        "field": {"type": "string"},
-                        "step": {"type": "string"},
-                        "path": {"type": "array", "items": {"type": ["string", "integer"]}},
-                        "selector": {"type": "string", "enum": ["latest", "current"]},
-                    },
-                }},
+                "periods": {"type": "array", "maxItems": 12, "items": period_schema()},
                 "entities": {"type": "array", "maxItems": 32, "items": {
                     "type": "object", "properties": {
                         "kind": {"type": "string"},

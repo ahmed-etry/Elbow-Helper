@@ -123,7 +123,7 @@ class ModelResultTests(unittest.TestCase):
         self.assertEqual(result["flags"], {"status": "refused", "rule": "use_the_registered_value"})
         self.assertEqual(result["step_id"], "second")
         self.assertEqual(result["offered"], ["202"])
-        self.assertNotIn("error", result)
+        self.assertEqual(result["error"], "Use the registered value.")
 
     def test_every_page_cursor_marks_the_model_view_partial(self):
         for field, value in (("next_offset", 7), ("next_cursor", "synthetic-cursor")):

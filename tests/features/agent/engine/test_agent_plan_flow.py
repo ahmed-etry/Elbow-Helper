@@ -938,7 +938,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(logs.records[0].levelname, "WARNING")
         self.assertEqual(logs.records[0].getMessage(),
                          "Agent planned step refused: step=second capability=read_value "
-                         "error=Arguments must match the capability schema.")
+                         'error=Invalid arguments: value must match {"type":"integer"}')
         self.assertNotIn("wrong-type", " ".join(logs.output))
         self.assertEqual(self.events.count("read"), 1)
         self.assertEqual(json.loads(session.calls[1][0][0].content)["results"]["second"]["flags"]["status"],

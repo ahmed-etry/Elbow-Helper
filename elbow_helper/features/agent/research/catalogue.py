@@ -34,8 +34,8 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
             AgentToolDefinition(
                 name="search_discord_messages",
                 description=(
-                    "Search accessible Discord history by words or phrases, optionally restricted "
-                    "to one or more channels, an author, or a date range. Honour the scope requested by the asker. "
+                    "Search accessible Discord history by author, words, channels or dates; omit query for author history. "
+                    "Honour the scope requested by the asker. "
                     "For one explicit channel, continue with the returned cursor when broader coverage "
                     "is needed. Results are not proof of absence; read surrounding messages when needed."
                 ),
@@ -45,7 +45,7 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                         "query": {
                             "type": "string",
                             "description": "Narrow words or phrase to search for.",
-                            "minLength": 1,
+                            "minLength": 0,
                             "maxLength": 1024,
                         },
                         "limit": {
@@ -96,6 +96,7 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                 result_channel_lists=(("matches", "channel_id"),),
                 result_sources_within_query=True,
                 time_window=("after", "before", "iso_utc"),
+                optional_time_window=True,
                 bounded_fields=("cursor",),
             ),
         ),

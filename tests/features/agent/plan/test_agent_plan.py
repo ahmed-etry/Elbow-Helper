@@ -489,7 +489,7 @@ class PlanContractTests(unittest.TestCase):
 
     def test_historical_windows_cannot_default_to_unbounded_reads(self):
         for name, contract in CONTRACTS.items():
-            if contract.time_window and not contract.latest_fields:
+            if contract.time_window and not contract.latest_fields and not contract.optional_time_window:
                 with self.subTest(capability=name):
                     self.assertTrue(time_check(contract, {}, (), set()))
                     self.assertTrue(time_check(contract, {}, (("key", "synthetic-key", "selected"),), set()))

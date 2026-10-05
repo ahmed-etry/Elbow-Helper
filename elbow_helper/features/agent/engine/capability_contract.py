@@ -55,6 +55,7 @@ class CapabilityContract:
     filter_fields: tuple[str, ...] = ()
     result_entity_keys: tuple[tuple[str, str], ...] = ()
     time_window: tuple[str, str, str] | None = None
+    optional_time_window: bool = False
     required_access: frozenset[str] = frozenset()
     latest_fields: tuple[str, ...] = ()
     bounded_fields: tuple[str, ...] = ()
@@ -101,6 +102,7 @@ class CapabilityContract:
             "filter_fields": self.filter_fields,
             "result_entity_keys": dict(self.result_entity_keys),
             "time_window": self.time_window,
+            "optional_time_window": self.optional_time_window,
             "latest_fields": self.latest_fields,
             "bounded_fields": self.bounded_fields,
             "period_results": self.period_results,
@@ -220,6 +222,10 @@ def validate_contract_catalogue(registry: Mapping[str, CapabilityTool]) -> None:
                 variant for variant, _ in contract.scope_variants
             }:
                 raise ValueError(f"Scope variants differ from query schema: {name}")
+        if type(contract.optional_time_window) is not bool or (
+            contract.optional_time_window and contract.time_window is None
+        ):
+            raise ValueError(f"Invalid optional time window: {name}")
         if contract.time_window is not None:
             window = contract.time_window
             if (
