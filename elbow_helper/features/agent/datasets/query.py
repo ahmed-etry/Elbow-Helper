@@ -1,5 +1,7 @@
 """Read SQLite datasets with table access and bounded execution."""
+
 from __future__ import annotations
+
 import asyncio
 from contextlib import closing
 import json
@@ -32,10 +34,10 @@ def _parameters(params):
     return result
 
 
-def _cell(value):
+def _cell(value, truncate=True):
     if isinstance(value, bytes):
         return value.hex()
-    if isinstance(value, str) and len(value) > 4000:
+    if truncate and isinstance(value, str) and len(value) > 4000:
         return value[:4000] + "…"
     return value
 
@@ -152,10 +154,15 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=200):
                 return {"error": "The export is too large; narrow the query."}, set()
             result = {
                 "rows": [
-                    {key: _cell(value) for key, value in zip(columns, row)}
+                    {
+                        key: _cell(value, truncate=max_rows is not None)
+                        for key, value in zip(columns, row)
+                    }
                     for row in raw_rows[:cap]
                 ],
-                      "row_count": min(len(raw_rows), cap), "truncated": truncated}
+                "row_count": min(len(raw_rows), cap),
+                "truncated": truncated,
+            }
             if truncated:
                 result["total_rows"] = connection.execute(
                     "SELECT COUNT(*) FROM (" + query + ")", bindings,

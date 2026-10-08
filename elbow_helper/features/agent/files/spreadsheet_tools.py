@@ -9,6 +9,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
 from ..access import require_evidence_access
+from ..datasets.query import query_context
 from .workbooks import render_workbook_bytes
 from .report_tables import materialize_report_table
 from ..models import AgentAttachment, AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
@@ -30,6 +31,8 @@ def spreadsheet_tools() -> tuple[RegisteredAgentTool, ...]:
         "type": "object", "additionalProperties": False,
         "properties": {
             "name": {"type": "string", "minLength": 1, "maxLength": 31},
+            "sql": {"type": "string", "minLength": 1, "maxLength": 4000},
+            "params": {"type": "object", "additionalProperties": True},
             "columns": {
                 "type": "array", "minItems": 1, "maxItems": 20,
                 "uniqueItems": True, "items": heading,
@@ -42,7 +45,7 @@ def spreadsheet_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             },
         },
-        "required": ["name", "columns", "rows"],
+        "required": ["name"],
     }
     source_column = {
         "type": "object", "additionalProperties": False,
@@ -64,7 +67,14 @@ def spreadsheet_tools() -> tuple[RegisteredAgentTool, ...]:
         },
         "required": ["name", "report_id", "collection", "columns"],
     }
-    authored_sheet = {**sheet, "properties": dict(sheet["properties"])}
+    authored_sheet = {
+        **sheet,
+        "properties": {
+            key: value for key, value in sheet["properties"].items()
+            if key not in ("sql", "params")
+        },
+        "required": ["name", "columns", "rows"],
+    }
     return (RegisteredAgentTool(
         AgentToolDefinition(
             name="prepare_spreadsheet",
@@ -126,8 +136,49 @@ async def prepare_spreadsheet(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
     await require_evidence_access(context)
+    specifications = arguments.get("sheets")
+    if (
+        not isinstance(specifications, list)
+        or not 1 <= len(specifications) <= MAX_DATA_BACKED_SHEETS
+        or not valid_text(arguments.get("title"), maximum=80)
+    ):
+        return {"error": "The spreadsheet title or sheets are invalid"}
+    sheets = []
     try:
-        spreadsheet = parse_agent_spreadsheet(arguments)
+        for specification in specifications:
+            if (
+                not isinstance(specification, dict)
+                or not valid_sheet_name(specification.get("name"))
+            ):
+                raise ValueError("A spreadsheet sheet is invalid")
+            if "sql" in specification:
+                if set(specification) - {"name", "sql", "params"}:
+                    raise ValueError("Choose exactly one kind per sheet.")
+                result = await query_context(
+                    context, specification["sql"], specification.get("params"), max_rows=None,
+                )
+                if "error" in result:
+                    return result
+                columns = tuple(result["rows"][0]) if result["rows"] else tuple(result["columns"])
+                rows = tuple(
+                    tuple("" if row[column] is None else str(row[column]) for column in columns)
+                    for row in result["rows"]
+                )
+                sheets.append(AgentSpreadsheetSheet(specification["name"], columns, rows))
+            else:
+                sheets.extend(parse_agent_spreadsheet({
+                    "title": arguments["title"], "sheets": [specification],
+                }).sheets)
+        if len({sheet.name.casefold() for sheet in sheets}) != len(sheets):
+            raise ValueError("A spreadsheet sheet name is repeated")
+        cells = sum(len(sheet.columns) * (len(sheet.rows) + 1) for sheet in sheets)
+        characters = sum(
+            len(value) for sheet in sheets for row in (sheet.columns, *sheet.rows)
+            for value in row
+        )
+        if cells > MAX_DATA_BACKED_CELLS or characters > MAX_DATA_BACKED_CHARACTERS:
+            return {"error": "The export is too large; narrow the query."}
+        spreadsheet = AgentSpreadsheet(arguments["title"], tuple(sheets))
     except ValueError as error:
         return {"error": str(error)}
     return await _store_spreadsheet(context, spreadsheet)
