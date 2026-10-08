@@ -72,6 +72,78 @@ def _message(*, author: _Member, bot_id: int, content: str):
 
 
 class AgentCogTests(unittest.IsolatedAsyncioTestCase):
+    async def test_reaction_plans_deliver_and_record_only_the_reply_needed(self):
+        from features.agent.engine.test_agent_plan_flow import (
+            _Model, _Session, _model_step, _plan, _step,
+        )
+        from elbow_helper.features.agent.discord_actions.reactions import reaction_tools
+        from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
+
+        for mode in ("silent", "text", "failed", "partial", "mixed"):
+            with self.subTest(mode=mode):
+                self.setUp()
+                member = _Member(121, (next(iter(CORE)),))
+                make_message = self._real_handler_scenario(member)
+                message = make_message(member, 501, "<@999> thanks")
+                message.add_reaction = AsyncMock()
+                reaction = reaction_tools()[0]
+                registry = {reaction.definition.name: reaction}
+                steps = [{**_step("reaction", {"emoji": "👍"}),
+                          "capability": "react_to_request"}]
+                if mode == "failed":
+                    message.add_reaction.side_effect = discord.HTTPException(
+                        SimpleNamespace(status=403, reason="Forbidden"), "Unavailable",
+                    )
+                if mode == "partial":
+                    steps.append({**_step("second", {"emoji": "👏"}, ["reaction"]),
+                                  "capability": "react_to_request"})
+                    message.add_reaction.side_effect = [None, discord.HTTPException(
+                        SimpleNamespace(status=403, reason="Forbidden"), "Unavailable",
+                    )]
+                if mode == "mixed":
+                    registry["read_value"] = RegisteredAgentTool(
+                        AgentToolDefinition(
+                            "read_value", "Read a synthetic value.",
+                            {"type": "object", "properties": {}, "required": []},
+                        ),
+                        AsyncMock(return_value={"value": 7}),
+                        contract=CapabilityContract(()),
+                    )
+                    steps.append(_step("read"))
+                first = _model_step(_plan(steps))
+                if mode == "text":
+                    first = AgentStep("You're welcome.", first.tool_calls, AgentUsage())
+                rounds = [first]
+                fallback = mode in ("failed", "partial", "mixed")
+                if fallback:
+                    rounds.append(AgentStep("Normal answer.", (), AgentUsage()))
+                session = _Session(rounds, [])
+                self.cog.service = AgentService(_Model(session))
+                with (
+                    patch("elbow_helper.features.agent.cog.discord.Member", _Member),
+                    patch("elbow_helper.features.agent.engine.service.build_agent_tools",
+                          return_value=registry),
+                ):
+                    await self.cog.on_message(message)
+                self.assertEqual(len(session.calls), 2 if fallback else 1)
+                self.assertEqual(message.add_reaction.await_args_list[0].args, ("👍",))
+                self.assertEqual(message.add_reaction.await_count, 2 if mode == "partial" else 1)
+                message.channel.send.assert_not_awaited()
+                conversation = self.cog._conversations.get(message.id)
+                self.assertEqual(len(conversation.turns), 1)
+                answer = json.loads(conversation.turns[0].text)["answer"]
+                if mode == "silent":
+                    message.reply.assert_not_awaited()
+                    self.assertEqual(answer, "Reactions: 👍")
+                    self.assertTrue(conversation.turns[0].record.delivery_complete)
+                    self.assertEqual(conversation.turns[0].record.reply_ids, ())
+                else:
+                    message.reply.assert_awaited_once()
+                    expected = "You're welcome." if mode == "text" else "Normal answer."
+                    self.assertIn(expected, message.reply.await_args.args[0])
+                    self.assertIn(expected, answer)
+                    self.assertEqual("Reactions: 👍" in answer, mode != "failed")
+
 
     async def test_mixed_answer_and_preview_share_delivery_and_records(self):
         from elbow_helper.features.agent.actions.contracts import PreparedAction, ChangePreview

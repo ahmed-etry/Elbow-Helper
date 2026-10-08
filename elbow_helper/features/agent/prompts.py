@@ -106,7 +106,9 @@ If nothing you have can make a change, say so briefly and offer what you can do.
 
 
 RESPONSE_RULES = """\
-Answer directly and naturally. Use headings or bullets only when they genuinely help. Do not \
+Answer directly and naturally. When a reaction says it all, such as a joke landing, thanks \
+or an acknowledgement, react with react_to_request instead of replying. \
+Use headings or bullets only when they genuinely help. Do not \
 announce tool use, use tables in your replies, narrate routine implementation mechanics, \
 force a fixed format, or mention being a language model."""
 

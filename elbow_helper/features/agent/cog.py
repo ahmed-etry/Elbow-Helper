@@ -395,10 +395,13 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
             await self._check_sources(context)
             delivery = AgentDelivery()
             try:
-                await self.send_response(
-                    message, response, referenced, context.state.attachments, conversation,
-                    delivery=delivery, context=context,
-                )
+                if response or not context.state.reactions.emojis:
+                    await self.send_response(
+                        message, response, referenced, context.state.attachments, conversation,
+                        delivery=delivery, context=context,
+                    )
+                else:
+                    delivery.complete = True
             finally:
                 await self._record_turn(
                     message, member, question, response, local_context,

@@ -11,6 +11,7 @@ from ..research.catalogue import discord_tools
 from ..research.members import member_tools
 from ..discord_actions.roles import discord_role_tools
 from ..discord_actions.direct_messages import direct_message_tools
+from ..discord_actions.reactions import reaction_tools
 from ..discord_actions.message_tools import discord_message_tools
 from ..discord_actions.threads import discord_thread_tools
 from ..discord_actions.message_controls import discord_message_control_tools
@@ -44,7 +45,8 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
         ),
         "discord_actions": (
             *discord_message_tools(), *discord_thread_tools(), *discord_message_control_tools(),
-            *discord_nickname_tools(), *discord_role_tools(), *direct_message_tools(),
+            *discord_nickname_tools(), *discord_role_tools(),
+            *direct_message_tools(), *reaction_tools(),
         ),
         "files": attachment_tools(),
         "knowledge_history": (*history_tools(), *knowledge_tools(), *action_log_tools()),

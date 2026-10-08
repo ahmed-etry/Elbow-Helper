@@ -120,6 +120,14 @@ class AnswerFlow:
             results = await self.runner.run(self.plan)
             self.completed_results.update(results)
             self.rounder.results_available = bool(results)
+            if self.plan["steps"] and all(
+                step["capability"] == "react_to_request"
+                and results.get(step["id"], {}).get("reacted") is True
+                and not results[step["id"]].get("error")
+                for step in self.plan["steps"]
+            ):
+                await require_evidence_access(self.context)
+                return self.decision.rounds[-1].content or ""
             response = await self._result_response(results)
             if response is not None:
                 return response

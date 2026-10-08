@@ -88,10 +88,14 @@ class AgentTurnMixin:
 
     async def _record_turn(self, message, member, question, response,
                            local_context, context, delivery, conversation):
-        if delivery.attempted_nonces:
+        if delivery.attempted_nonces or context.state.reactions.emojis:
             self._commit_reports(conversation, context.state)
             conversation.working = context.state.working
-            delivered_answer = "\n".join(delivery.text_parts)
+            reaction_reply = (
+                "Reactions: " + " ".join(context.state.reactions.emojis)
+                if context.state.reactions.emojis else ""
+            )
+            delivered_answer = "\n".join(filter(None, (*delivery.text_parts, reaction_reply)))
             visible_previews = tuple(action.preview for action in context.state.proposed_changes
                                      if not action.details_hidden)
             conversation.append(ConversationTurn(
@@ -121,7 +125,7 @@ class AgentTurnMixin:
                     generated_answer="\n\n".join(filter(None, (
                         (context.state.preview_reply, response) if context.state.preview_first
                         else (response, context.state.preview_reply)
-                    ))),
+                    ) + (reaction_reply,))),
                     delivered_answer=delivered_answer,
                     local_context=local_context,
                     evidence=tuple(context.state.evidence),

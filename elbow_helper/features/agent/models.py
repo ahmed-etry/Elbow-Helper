@@ -10,7 +10,6 @@ from typing import Any, TYPE_CHECKING
 from typing import Mapping
 
 import asyncio
-
 import discord
 from discord.ext import commands
 
@@ -81,6 +80,13 @@ class AgentDelivery:
 
 
 @dataclass(slots=True)
+class RequestReactions:
+    count: int = 0
+    emojis: list[str] = field(default_factory=list)
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+
+@dataclass(slots=True)
 class DirectMessageDelivery:
     sent: bool = False
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -90,7 +96,10 @@ class DirectMessageDelivery:
 class AgentTurnState:
     """Evidence provenance and reports retained independently of model text."""
 
+    reactions: RequestReactions = field(default_factory=RequestReactions)
     direct_messages: DirectMessageDelivery = field(default_factory=DirectMessageDelivery)
+    stale_knowledge_report_ids: set[str] = field(default_factory=set)
+    stale_knowledge_refs: set[tuple[str, str]] = field(default_factory=set)
     source_channels: set[int] = field(default_factory=set)
     evidence: list[str] = field(default_factory=list)
     reports: dict[str, ReportArtifact] = field(default_factory=dict)
@@ -107,8 +116,6 @@ class AgentTurnState:
     working: WorkingState = field(default_factory=WorkingState)
     authorized_instructions: tuple[TaskInstruction, ...] = ()
     request_text: str = ""
-    stale_knowledge_report_ids: set[str] = field(default_factory=set)
-    stale_knowledge_refs: set[tuple[str, str]] = field(default_factory=set)
     outcomes: list[Any] = field(default_factory=list)
     proposed_changes: list[Any] = field(default_factory=list)
     preview_reply: str | None = None
@@ -157,6 +164,7 @@ class AgentRequestContext:
     conversation_root_id: int | None = None
     attachment_sources: tuple[discord.Message, ...] = ()
     deadline_monotonic: float | None = None
+    dm_delivery: bool = False
     disclosure_thread_members: dict[int, frozenset[int] | None] = field(default_factory=dict)
     application_owner: AgentIdentity | None = None
 
