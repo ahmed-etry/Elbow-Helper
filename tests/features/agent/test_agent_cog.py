@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 from contextlib import nullcontext
@@ -13,6 +14,7 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 from unittest.mock import ANY
+
 from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import CORE, LEAD_PLUS
 from elbow_helper.discord.interactions import DEFAULT_FAILURE_MESSAGE
@@ -35,6 +37,7 @@ from elbow_helper.infrastructure.ai.client import DeepSeekTextClient
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from elbow_helper.features.agent.models import RegisteredAgentTool
 from elbow_helper.features.agent.engine.capability_contract import CapabilityContract
+
 from features.agent.engine.helpers import patch_contracts
 
 
@@ -344,8 +347,8 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 if extra_final_call:
                     responses.append(response(tool_calls=[{
                         "id": "extra", "function": {
-                        "name": "submit_request_plan", "arguments": json.dumps(plan),
-                    },
+                            "name": "submit_request_plan", "arguments": json.dumps(plan),
+                        },
                     }]))
                 responses.append(response(content=answer))
                 create = AsyncMock(side_effect=responses)
@@ -1137,57 +1140,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
             await self.cog._conversation_history(conversation, context)
         self.assertIs(context.state.authorized_checkpoint, conversation.checkpoint)
 
-    async def test_changed_knowledge_is_historical_even_after_report_eviction(self):
-        reference = ("cwl_policy@v1", "a" * 64)
-        conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
-        conversation.turns = [
-            ConversationTurn(
-                f"policy turn {index}", frozenset({100}),
-                knowledge_refs=(reference,),
-            )
-            for index in range(8)
-        ]
-        conversation.checkpoint = build_history_checkpoint(
-            conversation.turns, covered_turn_count=8,
-            created_at=datetime(2026, 9, 17, 12, tzinfo=timezone.utc),
-        )
-        self.cog.knowledge_store = SimpleNamespace(load=lambda: SimpleNamespace(
-            references_are_current=lambda references: False,
-        ))
-        member = _Member(42, (next(iter(CORE)),))
-        context = SimpleNamespace(
-            state=AgentTurnState(), member=member,
-            guild=SimpleNamespace(get_member=lambda member_id: member),
-        )
 
-        with patch(
-            "elbow_helper.features.agent.conversation.preparation.accessible_message_channel",
-            return_value=object(),
-        ):
-            history = await self.cog._conversation_history(conversation, context)
-
-        self.assertIn("Historical context", history)
-        self.assertEqual(context.state.stale_knowledge_refs, {reference})
-        self.assertIsNone(context.state.authorized_checkpoint)
-
-    async def test_current_knowledge_remains_usable_as_context(self):
-        reference = ("cwl_policy@v2", "b" * 64)
-        conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
-        conversation.turns = [ConversationTurn(
-            "current policy turn", frozenset({100}),
-            knowledge_refs=(reference,),
-        )]
-        self.cog.knowledge_store = SimpleNamespace(load=lambda: SimpleNamespace(
-            references_are_current=lambda references: True,
-        ))
-        context = SimpleNamespace(state=AgentTurnState())
-        with patch(
-            "elbow_helper.features.agent.conversation.preparation.accessible_message_channel",
-            return_value=object(),
-        ):
-            history = await self.cog._conversation_history(conversation, context)
-        self.assertEqual(history, "current policy turn")
-        self.assertEqual(context.state.stale_knowledge_refs, set())
 
     def test_checkpoint_refresh_requires_pressure_full_access_and_growth(self):
         conversation = self.cog._conversations.create(GUILD_ID, 100, 91)
@@ -1257,35 +1210,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.cog._commit_reports(conversation, context.state)
         self.assertIs(conversation.reports["report"], report)
 
-    async def test_stale_knowledge_report_is_hidden_and_preserved(self):
-        class _KnowledgeReport:
-            report_id = "knowledge"
-            sections = ()
-
-        member = _Member(42, (next(iter(CORE)),))
-        conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
-        report = _KnowledgeReport()
-        conversation.reports[report.report_id] = report
-        conversation.report_sources[report.report_id] = frozenset({100})
-        conversation.report_access_requirements[report.report_id] = frozenset()
-        self.cog.knowledge_store = SimpleNamespace(load=lambda: SimpleNamespace(
-            sections_are_current=lambda sections: False,
-        ))
-        context = SimpleNamespace(
-            state=AgentTurnState(source_channels={100}),
-            guild=SimpleNamespace(get_member=lambda member_id: member),
-            member=member,
-        )
-        with patch(
-            "elbow_helper.features.agent.conversation.preparation.KnowledgeReport",
-            _KnowledgeReport,
-        ):
-            await self.cog._load_authorized_reports(conversation, context)
-        self.assertEqual(context.state.reports, {})
-        self.assertIs(context.state.preserved_reports["knowledge"], report)
-        self.assertEqual(
-            context.state.stale_knowledge_report_ids, {"knowledge"},
-        )
 
     async def test_history_preparation_preserves_all_authorized_candidates_for_compilation(self):
         conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
@@ -1643,5 +1567,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertFalse(self.cog._is_agent_request(message))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -23,8 +23,11 @@ PLAN_TOOL_NAME = "submit_request_plan"
 
 
 def system_instructions(
-    registry: Mapping[str, RegisteredAgentTool], *,
-    actions_enabled: bool = True, data_guide: str = "",
+    registry: Mapping[str, RegisteredAgentTool],
+    *,
+    actions_enabled: bool = True,
+    data_guide: str = "",
+    community_knowledge: str = "",
 ) -> str:
     data_rules = DATA_RULES if "find_gif" in registry else DATA_RULES.rsplit("\n", 1)[0]
     parts = [
@@ -39,6 +42,8 @@ def system_instructions(
     parts.append(f"<capabilities>\n{capability_list(registry)}\n</capabilities>")
     if data_guide:
         parts.append(f"<data_guide>\n{data_guide}\n</data_guide>")
+    if community_knowledge:
+        parts.append(f"<community_knowledge>\n{community_knowledge}\n</community_knowledge>")
     return "\n\n".join(parts)
 
 

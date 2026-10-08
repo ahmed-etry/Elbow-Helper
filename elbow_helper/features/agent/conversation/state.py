@@ -87,7 +87,6 @@ class ConversationTurn:
     record: ConversationRecord | None = None
     retention_limited: bool = False
     required_access: frozenset[str] = frozenset()
-    knowledge_refs: tuple[tuple[str, str], ...] = ()
     retained_bytes: int = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -95,21 +94,7 @@ class ConversationTurn:
             len(self.text.encode("utf-8")) + 8 * len(self.source_channels)
             + sum(len(value.encode("utf-8")) for value in self.required_access)
             + (self.record.retained_bytes if self.record else 0)
-            + sum(len(section_id) + len(digest)
-                  for section_id, digest in self.knowledge_refs)
         )
-        if (
-            len(self.knowledge_refs) > 20
-            or len(set(self.knowledge_refs)) != len(self.knowledge_refs)
-            or any(
-                not isinstance(section_id, str) or not section_id
-                or len(section_id) > 100
-                or not isinstance(digest, str) or len(digest) != 64
-                or any(character not in "0123456789abcdef" for character in digest)
-                for section_id, digest in self.knowledge_refs
-            )
-        ):
-            raise ValueError("Invalid conversation knowledge references")
         object.__setattr__(self, "retained_bytes", size)
 
 
@@ -150,7 +135,6 @@ def checkpoint_input_hash(turns: tuple[ConversationTurn, ...]) -> str:
         "text": turn.text,
         "source_channels": sorted(turn.source_channels),
         "required_access": sorted(turn.required_access),
-        "knowledge_refs": turn.knowledge_refs,
         "request_message_id": (
             turn.record.request_message_id if turn.record else None
         ),
@@ -227,7 +211,6 @@ class Conversation:
             turn = ConversationTurn(
                 turn.text, turn.source_channels, retention_limited=True,
                 required_access=turn.required_access,
-                knowledge_refs=turn.knowledge_refs,
             )
             LOGGER.warning("Agent turn exceeds full-record retention budget")
         if turn.retained_bytes > MAX_RETAINED_BYTES:

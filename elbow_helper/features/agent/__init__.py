@@ -92,6 +92,7 @@ async def setup(bot) -> None:
     from .datasets.guide import DataGuide
     data_guide = await asyncio.to_thread(DataGuide, bot.paths)
     knowledge_store = KnowledgeStore(bot.paths.data_root / "agent" / "knowledge")
+    await asyncio.to_thread(knowledge_store.load)
     collaborators = {
         "account_links": account_links,
         "message_search": message_search,

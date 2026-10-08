@@ -1,10 +1,12 @@
 """Explicit JSON conversation format; never persist SDK sessions or reasoning."""
+
 from dataclasses import asdict, fields
 from datetime import datetime
 import json
 import math
 import time
 from typing import Any
+
 from ..reports.base import retain_report
 from ..access import KNOWN_ACCESS_REQUIREMENTS
 from .state import (
@@ -16,7 +18,6 @@ from ..capabilities.achievements.report import AchievementProgressReport
 from ..capabilities.events.report import EventScheduleReport
 from ..capabilities.member_lifecycle.report import MemberLifecycleReport
 from ..capabilities.clan_reporting.report import MissingElderReport
-from ..knowledge.report import KnowledgeReport
 from ..capabilities.cwl.report import CwlPerformanceReport
 from ..capabilities.clan_transfers.report import TransferQueueReport
 from ..capabilities.hibernation.report import HibernationReport
@@ -111,11 +112,6 @@ def encode_conversation(
         ):
             raise ValueError("Missing Elder report provenance is incomplete")
         if (
-            isinstance(report, KnowledgeReport)
-            and not report.required_access <= requirements
-        ):
-            raise ValueError("Approved knowledge report access is incomplete")
-        if (
             isinstance(report, DiscordResearchReport)
             and report.source_channel_id not in sources
         ):
@@ -145,10 +141,6 @@ def encode_conversation(
             reports.append({
                 "kind": "missing_elder", **report.storage_payload(),
             })
-        elif isinstance(report, KnowledgeReport):
-            reports.append({
-                "kind": "approved_knowledge", **report.storage_payload(),
-            })
         elif isinstance(report, CwlPerformanceReport):
             reports.append({"kind": "cwl_performance", "report_id": report.report_id,
                             "guild_id": report.guild_id, "snapshot": asdict(report.snapshot)})
@@ -173,7 +165,9 @@ def encode_conversation(
         else:
             raise ValueError("Unsupported conversation report kind")
     payload = json.dumps({
-        "format": 2, "version": conversation.version, "evicted_turns": conversation.evicted_turns,
+        "format": 2,
+        "version": conversation.version,
+        "evicted_turns": conversation.evicted_turns,
         "reply_ids": conversation.reply_ids,
         "answer_disclosures": [
             {
@@ -183,11 +177,16 @@ def encode_conversation(
             }
             for decision in conversation.answer_disclosures.values()
         ],
-        "turns": [{"text": turn.text, "source_channels": sorted(turn.source_channels),
-                   "retention_limited": turn.retention_limited,
-                   "required_access": sorted(turn.required_access),
-                   "knowledge_refs": [list(value) for value in turn.knowledge_refs],
-                   "record": _record_data(turn.record) if turn.record else None} for turn in conversation.turns],
+        "turns": [
+            {
+                "text": turn.text,
+                "source_channels": sorted(turn.source_channels),
+                "retention_limited": turn.retention_limited,
+                "required_access": sorted(turn.required_access),
+                "record": _record_data(turn.record) if turn.record else None,
+            }
+            for turn in conversation.turns
+        ],
         "reports": reports,
         "report_sources": {
             report_id: sorted(conversation.report_sources[report_id])
@@ -198,13 +197,11 @@ def encode_conversation(
             for report_id in conversation.reports
         },
         "working": asdict(conversation.working),
-        "checkpoint": (
-            {
+        "checkpoint": {
             **asdict(conversation.checkpoint),
             "source_channels": sorted(conversation.checkpoint.source_channels),
             "required_access": sorted(conversation.checkpoint.required_access),
-        } if conversation.checkpoint is not None else None
-        ),
+        } if conversation.checkpoint is not None else None,
     }, ensure_ascii=False, separators=(",", ":"))
     if len(payload.encode("utf-8")) > MAX_SNAPSHOT_BYTES:
         raise ValueError("Conversation snapshot exceeds its storage budget")
@@ -212,8 +209,10 @@ def encode_conversation(
                               touched_at, touched_at + CONVERSATION_IDLE_SECONDS, payload)
 
 
-def decode_conversation(snapshot: StoredConversation, *, wall_time: float | None = None,
-                        monotonic_time: float | None = None) -> Conversation:
+def decode_conversation(
+    snapshot: StoredConversation, *, wall_time: float | None = None,
+    monotonic_time: float | None = None,
+) -> Conversation:
     now = time.time() if wall_time is None else wall_time
     monotonic = time.monotonic() if monotonic_time is None else monotonic_time
     for value in (snapshot.guild_id, snapshot.channel_id, snapshot.root_message_id):
@@ -290,12 +289,8 @@ def decode_conversation(snapshot: StoredConversation, *, wall_time: float | None
                 or not required_access <= KNOWN_ACCESS_REQUIREMENTS):
             raise ValueError("Invalid turn access requirements")
         conversation.turns.append(ConversationTurn(
-            row["text"],
-            frozenset(_integer(value) for value in row["source_channels"]),
-            record,
-            bool(row["retention_limited"]),
-            required_access,
-            _decode_knowledge_refs(row.get("knowledge_refs", [])),
+            row["text"], frozenset(_integer(value) for value in row["source_channels"]),
+            record, bool(row["retention_limited"]), required_access,
         ))
     if sum(turn.retained_bytes for turn in conversation.turns) > MAX_RETAINED_BYTES:
         raise ValueError("Conversation snapshot exceeds retained text bounds")
@@ -311,8 +306,22 @@ def decode_conversation(snapshot: StoredConversation, *, wall_time: float | None
             created_at=checkpoint_data["created_at"],
             format_version=checkpoint_data["format_version"],
         )
+        if any("knowledge_refs" in row for row in data["turns"]):
+            checkpoint = build_history_checkpoint(
+                conversation.turns, covered_turn_count=checkpoint.covered_turn_count,
+                created_at=datetime.fromisoformat(checkpoint.created_at),
+            )
         _validate_checkpoint(checkpoint, conversation.turns)
         conversation.checkpoint = checkpoint
+    ignored_ids = {
+        row["report_id"] for row in data["reports"] if row["kind"] == "approved_knowledge"
+    }
+    data["reports"] = [row for row in data["reports"] if row["kind"] != "approved_knowledge"]
+    for field in ("report_sources", "report_access_requirements"):
+        if isinstance(data.get(field), dict):
+            data[field] = {
+                key: value for key, value in data[field].items() if key not in ignored_ids
+            }
     for row in data["reports"]:
         retain_report(
             conversation.reports,
@@ -358,11 +367,6 @@ def decode_conversation(snapshot: StoredConversation, *, wall_time: float | None
             ):
                 raise ValueError("Missing Elder report provenance is incomplete")
             if (
-                isinstance(report, KnowledgeReport)
-                and not report.required_access <= requirements
-            ):
-                raise ValueError("Approved knowledge report access is incomplete")
-            if (
                 isinstance(report, DiscordResearchReport)
                 and report.source_channel_id not in sources
             ):
@@ -390,18 +394,3 @@ def decode_conversation(snapshot: StoredConversation, *, wall_time: float | None
         raise ValueError("Snapshot task instructions exceed retention bounds")
     conversation.working = WorkingState(instructions, _integer(working["version"], minimum=0))
     return conversation
-
-
-def _decode_knowledge_refs(value: Any) -> tuple[tuple[str, str], ...]:
-    if not isinstance(value, list):
-        raise ValueError("Invalid conversation knowledge references")
-    references = []
-    for item in value:
-        if (
-            not isinstance(item, list)
-            or len(item) != 2
-            or any(not isinstance(part, str) for part in item)
-        ):
-            raise ValueError("Invalid conversation knowledge references")
-        references.append((item[0], item[1]))
-    return tuple(references)

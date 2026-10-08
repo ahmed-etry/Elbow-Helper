@@ -9,7 +9,6 @@ import sqlite3
 from .state import ConversationRecord, ConversationTurn
 from .instructions import WorkingState
 from ..models import AgentRequestContext, AgentTurnState
-from ..knowledge.report import KnowledgeReport
 from ..actions.targets import target_links
 
 LOGGER = logging.getLogger(__name__)
@@ -111,12 +110,6 @@ class AgentTurnMixin:
                     *(preview.detail_sources for preview in visible_previews)),
                 required_access=frozenset(context.state.required_access).union(
                     *(preview.detail_access for preview in visible_previews)),
-                knowledge_refs=tuple(sorted(
-                    (section.section_id, section.content_sha256)
-                    for report in context.state.reports.values()
-                    if isinstance(report, KnowledgeReport)
-                    for section in report.sections
-                )),
                 record=ConversationRecord(
                     request_message_id=message.id,
                     member_id=member.id,

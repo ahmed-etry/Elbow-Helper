@@ -128,15 +128,6 @@ class AgentHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["results"][0]["retention_limited"])
         self.assertIsNone(result["results"][0]["request_message_id"])
 
-    async def test_stale_knowledge_turn_is_explicitly_historical(self):
-        reference = ("policy@v1", "a" * 64)
-        turn = ConversationTurn(
-            "old policy", frozenset({100}), knowledge_refs=(reference,),
-        )
-        context, _ = _context(turn)
-        context.state.stale_knowledge_refs.add(reference)
-        result = await read_conversation_history(context, {})
-        self.assertIn("HISTORICAL KNOWLEDGE WARNING", result["results"][0]["content"])
 
     async def test_actual_service_can_retrieve_history_and_continue_answer(self):
         context, _ = _context(_turn(1, "Keep these two accounts together", source=200))

@@ -273,8 +273,6 @@ def merge_tool_state(
         target.state.authorized_checkpoint = local.state.authorized_checkpoint
     target.state.working = local.state.working
     target.state.authorized_instructions = local.state.authorized_instructions
-    target.state.stale_knowledge_report_ids.update(local.state.stale_knowledge_report_ids)
-    target.state.stale_knowledge_refs.update(local.state.stale_knowledge_refs)
     target.state.outcomes.extend(
         local.state.outcomes[len(previous["outcomes"]) :]
     )

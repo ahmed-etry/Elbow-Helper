@@ -1,11 +1,17 @@
 """Route retained reports through their owning readers."""
+
 from __future__ import annotations
+
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
+
 from elbow_helper.infrastructure.ai import AgentToolDefinition
+
 from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool
+
+
 REPORT_READERS = {
     "discord_research": "read_discord_research_report",
     "achievement_progress": "read_member_achievement_report",
@@ -21,7 +27,6 @@ REPORT_READERS = {
     "csv_import": "read_csv_import",
     "xlsx_import": "read_xlsx_import",
     "text_import": "read_text_import",
-    "approved_knowledge": "read_approved_knowledge_report",
 }
 REPORT_COMPARERS = {}
 READ_NAME = "read_saved_report"

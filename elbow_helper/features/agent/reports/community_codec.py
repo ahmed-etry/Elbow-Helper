@@ -1,4 +1,5 @@
 """Reconstruct typed report data within its guild boundary."""
+
 from typing import Any
 from elbow_helper.features.achievements.queries import (
     AchievementProgressRow, MemberAchievementSnapshot,
@@ -9,7 +10,6 @@ from elbow_helper.features.event_stats.queries import (
 from elbow_helper.features.member_lifecycle.queries import (
     MemberLifecycleRow, MemberLifecycleSnapshot, OverdueApplicant,
 )
-from ..knowledge.store import KnowledgeSection
 from elbow_helper.features.hibernation.queries import (
     ActiveHibernationRecord, ActiveHibernationSnapshot,
 )
@@ -25,7 +25,6 @@ from elbow_helper.features.examination.queries import (
 from ..capabilities.achievements.report import AchievementProgressReport
 from ..capabilities.events.report import EventScheduleReport
 from ..capabilities.member_lifecycle.report import MemberLifecycleReport
-from ..knowledge.report import KnowledgeReport
 from ..capabilities.examination.report import ExaminationCaseReport
 from ..capabilities.hibernation.report import HibernationReport
 from ..capabilities.recruitment.report import RecruitmentTrialReport
@@ -90,20 +89,6 @@ def decode_member_lifecycle(row: dict[str, Any], guild_id: int) -> Any:
             ),
             rows=tuple(MemberLifecycleRow(**item) for item in value["rows"]),
         ),
-    )
-
-
-def decode_approved_knowledge(row: dict[str, Any], guild_id: int) -> Any:
-    require_guild(row, guild_id, "Approved knowledge report")
-    return KnowledgeReport(
-        row["report_id"], row["guild_id"], row["observed_at"],
-        row["query"], tuple(row["topics"]),
-        tuple(KnowledgeSection(**{
-            **item,
-            "topics": tuple(item["topics"]),
-            "source_refs": tuple(item["source_refs"]),
-            "conflicts_with": tuple(item["conflicts_with"]),
-        }) for item in row["sections"]),
     )
 
 

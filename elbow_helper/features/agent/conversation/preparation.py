@@ -1,16 +1,12 @@
 """Authorize retained evidence and prepare conversation context for each asker."""
 
 from __future__ import annotations
-
-import asyncio
-from dataclasses import replace
 import logging
 
 from ..access import accessible_message_channel
 from ..access import has_access_requirements
 from ..models import AgentRequestContext, AgentTurnState
 from ..reports.base import retain_report
-from ..knowledge.report import KnowledgeReport
 from .state import Conversation
 from .context import CHECKPOINT_MIN_GROWTH, CHECKPOINT_MIN_OMITTED_TURNS, build_history_checkpoint
 
@@ -23,14 +19,6 @@ class ConversationContextMixin:
     async def _conversation_history(self, conversation: Conversation, context: AgentRequestContext) -> str:
         access: dict[int, bool] = {}
         retained = []
-        referenced = tuple(
-            reference
-            for turn in conversation.turns
-            for reference in turn.knowledge_refs
-        )
-        knowledge_catalog = None
-        if referenced and self.knowledge_store is not None:
-            knowledge_catalog = await asyncio.to_thread(self.knowledge_store.load)
         for turn in conversation.turns:
             for channel_id in turn.source_channels:
                 if channel_id not in access:
@@ -39,29 +27,6 @@ class ConversationContextMixin:
                     and (not turn.required_access or has_access_requirements(
                         context.guild, context.member.id, turn.required_access,
                     ))):
-                stale_references = {
-                    reference for reference in turn.knowledge_refs
-                    if (
-                        knowledge_catalog is None
-                        or not knowledge_catalog.references_are_current((reference,))
-                    )
-                }
-                if stale_references:
-                    context.state.stale_knowledge_refs.update(stale_references)
-                if stale_references or (
-                    turn.record is not None and set(turn.record.report_ids)
-                    & context.state.stale_knowledge_report_ids
-                ):
-                    turn = replace(
-                        turn,
-                        text=(
-                            "[Historical context: this turn used an approved-"
-                            "knowledge version that has since changed, expired "
-                            "or retired. Do not treat its policy claims as "
-                            "current; search approved knowledge again.]\n"
-                            f"{turn.text}"
-                        ),
-                    )
                 retained.append(turn)
         context.state.authorized_history = tuple(retained)
         checkpoint = conversation.checkpoint
@@ -77,10 +42,6 @@ class ConversationContextMixin:
                 and has_access_requirements(
                     context.guild, context.member.id,
                     checkpoint.required_access,
-                )
-                and not any(
-                    set(turn.knowledge_refs) & context.state.stale_knowledge_refs
-                    for turn in conversation.turns[:checkpoint.covered_turn_count]
                 )
             ):
                 context.state.authorized_checkpoint = checkpoint
@@ -137,7 +98,6 @@ class ConversationContextMixin:
     ) -> None:
         """Expose retained artifacts only while all original access still holds."""
         access: dict[int, bool] = {}
-        knowledge_catalog = None
         for report_id, report in conversation.reports.items():
             sources = conversation.report_sources.get(report_id)
             requirements = conversation.report_access_requirements.get(report_id)
@@ -147,22 +107,6 @@ class ConversationContextMixin:
                     report_id,
                 )
                 continue
-            if isinstance(report, KnowledgeReport):
-                if knowledge_catalog is None and self.knowledge_store is not None:
-                    knowledge_catalog = await asyncio.to_thread(
-                        self.knowledge_store.load,
-                    )
-                if (
-                    knowledge_catalog is None
-                    or not knowledge_catalog.sections_are_current(report.sections)
-                ):
-                    context.state.stale_knowledge_report_ids.add(report_id)
-                    context.state.preserved_reports[report_id] = report
-                    context.state.preserved_report_sources[report_id] = sources
-                    context.state.preserved_report_access_requirements[
-                        report_id
-                    ] = requirements
-                    continue
             for channel_id in sources:
                 if channel_id not in access:
                     access[channel_id] = (

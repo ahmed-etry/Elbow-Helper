@@ -6,16 +6,13 @@ import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
+
 from elbow_helper.features.agent.conversation.state import Conversation, ConversationRecord, ConversationTurn
 from features.agent.report_helpers import make_event_report
 from elbow_helper.features.agent.capabilities.events.report import EventScheduleReport
 from elbow_helper.features.agent.capabilities.member_lifecycle.report import MemberLifecycleReport
 from elbow_helper.features.agent.capabilities.clan_reporting.report import MissingElderReport
-from elbow_helper.features.agent.knowledge.report import KnowledgeReport
-from elbow_helper.features.agent.knowledge.store import KnowledgeStore
-from elbow_helper.features.agent.capabilities.cwl.report import (
-    CwlPerformanceReport,
-)
+from elbow_helper.features.agent.capabilities.cwl.report import CwlPerformanceReport
 from elbow_helper.features.agent.capabilities.clan_transfers.report import TransferQueueReport
 from elbow_helper.features.agent.capabilities.hibernation.report import HibernationReport
 from elbow_helper.features.agent.capabilities.support_tickets.report import SupportTicketReport
@@ -45,8 +42,7 @@ from elbow_helper.features.agent.files.contracts import (
     XlsxSheet,
 )
 from elbow_helper.features.cwl.queries import (
-    CwlClanSeasonSummary,
-    CwlPerformanceRow, CwlPerformanceSnapshot,
+    CwlClanSeasonSummary, CwlPerformanceRow, CwlPerformanceSnapshot,
 )
 from elbow_helper.features.event_stats.queries import (
     EventScheduleRow, EventScheduleSnapshot,
@@ -198,8 +194,8 @@ class ConversationCodecTests(unittest.TestCase):
             data[field] = value
             with self.subTest(field=field, value=value), self.assertRaises(ValueError):
                 decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
+                    replace(snapshot, payload=json.dumps(data)), wall_time=1001,
+                )
 
     def test_legacy_snapshot_with_reports_is_rejected_but_empty_snapshot_restores(self):
         snapshot = encode_conversation(
@@ -214,8 +210,8 @@ class ConversationCodecTests(unittest.TestCase):
             turn.pop("required_access")
         with self.assertRaises(ValueError):
             decode_conversation(
-            replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-        )
+                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
+            )
 
         data["reports"] = []
         restored = decode_conversation(
@@ -242,8 +238,8 @@ class ConversationCodecTests(unittest.TestCase):
         data["turns"][0]["required_access"] = ["unknown"]
         with self.assertRaises(ValueError):
             decode_conversation(
-            replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-        )
+                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
+            )
 
     def test_invalid_timestamps_and_identity_types_are_rejected(self):
         snapshot = encode_conversation(self.conversation(), root_message_id=1, revision=0, wall_time=1000, monotonic_time=60)
@@ -316,7 +312,8 @@ class ConversationCodecTests(unittest.TestCase):
         )
         original.turns[0] = replace(original.turns[0], record=record)
         snapshot = encode_conversation(
-            original, root_message_id=1, revision=0, wall_time=1000, monotonic_time=60,
+            original, root_message_id=1, revision=0,
+            wall_time=1000, monotonic_time=60,
         )
         restored = decode_conversation(snapshot, wall_time=1001)
         self.assertEqual(restored.turns[0].record, record)
@@ -330,8 +327,8 @@ class ConversationCodecTests(unittest.TestCase):
             data["turns"][0]["record"][field] = value
             with self.subTest(field=field), self.assertRaises(ValueError):
                 decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
+                    replace(snapshot, payload=json.dumps(data)), wall_time=1001,
+                )
 
         data = json.loads(snapshot.payload)
         legacy_record = data["turns"][0]["record"]
@@ -361,7 +358,8 @@ class ConversationCodecTests(unittest.TestCase):
             created_at=datetime(2026, 9, 17, 12, tzinfo=timezone.utc),
         )
         snapshot = encode_conversation(
-            original, root_message_id=1, revision=0, wall_time=1000, monotonic_time=60,
+            original, root_message_id=1, revision=0,
+            wall_time=1000, monotonic_time=60,
         )
         restored = decode_conversation(snapshot, wall_time=1001, monotonic_time=61)
         self.assertEqual(restored.checkpoint, original.checkpoint)
@@ -377,8 +375,8 @@ class ConversationCodecTests(unittest.TestCase):
             target[path[0]] = value
             with self.subTest(path=path), self.assertRaises(ValueError):
                 decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
+                    replace(snapshot, payload=json.dumps(data)), wall_time=1001,
+                )
 
     def test_expired_and_future_format_payloads_are_rejected(self):
         snapshot = encode_conversation(self.conversation(), root_message_id=1, revision=0, wall_time=1000, monotonic_time=60)
@@ -420,9 +418,7 @@ class ConversationCodecTests(unittest.TestCase):
         data = json.loads(snapshot.payload)
         data["reports"][0]["guild_id"] = 2
         with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
+            decode_conversation(replace(snapshot, payload=json.dumps(data)), wall_time=1001)
 
 
     def test_event_schedule_roundtrip_rejects_forged_counter_coverage(self):
@@ -455,9 +451,7 @@ class ConversationCodecTests(unittest.TestCase):
         self.assertEqual(restored.reports[report.report_id], report)
         self.assertEqual(
             restored.report_access_requirements[report.report_id],
-            frozenset({
-            ACCESS_LEAD,
-        }),
+            frozenset({ACCESS_LEAD}),
         )
         data = json.loads(snapshot.payload)
         data["reports"][0]["snapshot"]["rows"][0]["count_coverage"] = (
@@ -465,8 +459,8 @@ class ConversationCodecTests(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             decode_conversation(
-            replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-        )
+                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
+            )
 
     def test_member_lifecycle_roundtrip_requires_embedded_source_provenance(self):
         original = self.conversation()
@@ -498,9 +492,9 @@ class ConversationCodecTests(unittest.TestCase):
         original.report_sources[report.report_id] = frozenset({900})
         with self.assertRaises(ValueError):
             _encode_conversation(
-            original, root_message_id=1, revision=0,
-            wall_time=1000, monotonic_time=60,
-        )
+                original, root_message_id=1, revision=0,
+                wall_time=1000, monotonic_time=60,
+            )
 
         data = json.loads(snapshot.payload)
         data["reports"][0]["snapshot"]["rows"][0][
@@ -508,8 +502,23 @@ class ConversationCodecTests(unittest.TestCase):
         ] = 902
         with self.assertRaises(ValueError):
             decode_conversation(
+                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
+            )
+
+    def test_legacy_knowledge_fields_are_ignored(self):
+        original = self.conversation()
+        snapshot = encode_conversation(original, root_message_id=1, revision=0,
+                                       wall_time=1000, monotonic_time=60)
+        data = json.loads(snapshot.payload)
+        data["turns"][0]["knowledge_refs"] = {"obsolete": True}
+        data["reports"].append({"kind": "approved_knowledge", "report_id": "old-knowledge"})
+        data["report_sources"]["old-knowledge"] = [100]
+        data["report_access_requirements"]["old-knowledge"] = ["lead"]
+        restored = decode_conversation(
             replace(snapshot, payload=json.dumps(data)), wall_time=1001,
         )
+        self.assertEqual(restored.turns, original.turns)
+        self.assertNotIn("old-knowledge", restored.reports)
 
     def test_missing_elder_roundtrip_requires_leadership_source_provenance(self):
         original = self.conversation()
@@ -539,93 +548,17 @@ class ConversationCodecTests(unittest.TestCase):
         original.report_sources[report.report_id] = frozenset({100})
         with self.assertRaises(ValueError):
             _encode_conversation(
-            original, root_message_id=1, revision=0,
-            wall_time=1000, monotonic_time=60,
-        )
+                original, root_message_id=1, revision=0,
+                wall_time=1000, monotonic_time=60,
+            )
 
         data = json.loads(snapshot.payload)
         data["reports"][0]["source_channel_ids"] = [channel_id + 1]
         with self.assertRaises(ValueError):
             decode_conversation(
-            replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-        )
-
-    def test_approved_knowledge_roundtrip_requires_role_and_content_integrity(self):
-        directory = TemporaryDirectory()
-        self.addCleanup(directory.cleanup)
-        knowledge_path = Path(directory.name) / "knowledge"
-        knowledge_path.mkdir()
-        (knowledge_path / "policy.md").write_text(
-            "+++\n"
-            'key = "lead_policy"\n'
-            "version = 1\n"
-            'title = "Lead policy"\n'
-            'topics = ["lead"]\n'
-            'source_refs = ["owner-review:2026-09"]\n'
-            'effective_from = "2026-01-01T00:00:00+00:00"\n'
-            'reviewed_at = "2026-09-19T10:00:00+00:00"\n'
-            "approved_by = 42\n"
-            'visibility = "lead"\n'
-            'status = "approved"\n'
-            "+++\n"
-            "Only current Lead members may read this.\n",
-            encoding="utf-8",
-        )
-        section = KnowledgeStore(knowledge_path).load(
-            now=datetime(2026, 9, 19, 12, tzinfo=timezone.utc),
-        ).active_sections[0]
-        report = KnowledgeReport(
-            "knowledge", 1, "2026-09-19T12:00:00+00:00",
-            "lead", ("lead",), (section,),
-        )
-        original = self.conversation()
-        original.reports.clear()
-        original.reports[report.report_id] = report
-        original.report_sources[report.report_id] = frozenset({100})
-        original.report_access_requirements[report.report_id] = frozenset({
-            ACCESS_LEAD,
-        })
-        snapshot = _encode_conversation(
-            original, root_message_id=1, revision=0,
-            wall_time=1000, monotonic_time=60,
-        )
-        restored = decode_conversation(snapshot, wall_time=1001)
-        self.assertEqual(restored.reports[report.report_id], report)
-
-        original.turns[0] = replace(
-            original.turns[0],
-            knowledge_refs=((section.section_id, section.content_sha256),),
-        )
-        turn_snapshot = _encode_conversation(
-            original, root_message_id=1, revision=0,
-            wall_time=1000, monotonic_time=60,
-        )
-        restored = decode_conversation(turn_snapshot, wall_time=1001)
-        self.assertEqual(
-            restored.turns[0].knowledge_refs,
-            ((section.section_id, section.content_sha256),),
-        )
-        malformed = json.loads(turn_snapshot.payload)
-        malformed["turns"][0]["knowledge_refs"] = [[section.section_id]]
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(turn_snapshot, payload=json.dumps(malformed)),
-                wall_time=1001,
+                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
             )
 
-        original.report_access_requirements[report.report_id] = frozenset()
-        with self.assertRaises(ValueError):
-            _encode_conversation(
-            original, root_message_id=1, revision=0,
-            wall_time=1000, monotonic_time=60,
-        )
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["sections"][0]["body"] = "tampered"
-        with self.assertRaises(ValueError):
-            decode_conversation(
-            replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-        )
 
 
     def test_pending_transfer_report_roundtrip_and_validation(self):
@@ -645,7 +578,8 @@ class ConversationCodecTests(unittest.TestCase):
         )
         original.reports[report.report_id] = report
         snapshot = encode_conversation(
-            original, root_message_id=1, revision=0, wall_time=1000, monotonic_time=60,
+            original, root_message_id=1, revision=0,
+            wall_time=1000, monotonic_time=60,
         )
 
         restored = decode_conversation(snapshot, wall_time=1001, monotonic_time=61)
@@ -655,15 +589,15 @@ class ConversationCodecTests(unittest.TestCase):
         data["reports"][0]["queues"][0]["pending"][0]["expires_ts"] += 1
         with self.assertRaises(ValueError):
             decode_conversation(
-            replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-        )
+                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
+            )
 
         data = json.loads(snapshot.payload)
         data["reports"][0]["guild_id"] = 2
         with self.assertRaises(ValueError):
             decode_conversation(
-            replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-        )
+                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
+            )
 
     def test_hibernation_report_roundtrip_excludes_private_state_and_validates(self):
         original = self.conversation()
@@ -680,7 +614,8 @@ class ConversationCodecTests(unittest.TestCase):
         )
         original.reports[report.report_id] = report
         snapshot = encode_conversation(
-            original, root_message_id=1, revision=0, wall_time=1000, monotonic_time=60,
+            original, root_message_id=1, revision=0,
+            wall_time=1000, monotonic_time=60,
         )
 
         restored = decode_conversation(snapshot, wall_time=1001, monotonic_time=61)
@@ -692,22 +627,22 @@ class ConversationCodecTests(unittest.TestCase):
         data["reports"][0]["snapshot"]["records"][0]["start_time_status"] = "private"
         with self.assertRaises(ValueError):
             decode_conversation(
-            replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-        )
+                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
+            )
 
         data = json.loads(snapshot.payload)
         data["reports"][0]["source_channel_id"] = 1
         with self.assertRaises(ValueError):
             decode_conversation(
-            replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-        )
+                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
+            )
 
         data = json.loads(snapshot.payload)
         data["reports"][0]["guild_id"] = 2
         with self.assertRaises(ValueError):
             decode_conversation(
-            replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-        )
+                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
+            )
 
     def test_support_ticket_report_roundtrip_excludes_content_and_validates(self):
         original = self.conversation()
@@ -728,7 +663,8 @@ class ConversationCodecTests(unittest.TestCase):
         )
         original.reports[report.report_id] = report
         snapshot = encode_conversation(
-            original, root_message_id=1, revision=0, wall_time=1000, monotonic_time=60,
+            original, root_message_id=1, revision=0,
+            wall_time=1000, monotonic_time=60,
         )
 
         restored = decode_conversation(snapshot, wall_time=1001, monotonic_time=61)
@@ -740,15 +676,15 @@ class ConversationCodecTests(unittest.TestCase):
         data["reports"][0]["snapshot"]["tickets"][0]["owner_status"] = "forged"
         with self.assertRaises(ValueError):
             decode_conversation(
-            replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-        )
+                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
+            )
 
         data = json.loads(snapshot.payload)
         data["reports"][0]["guild_id"] = 2
         with self.assertRaises(ValueError):
             decode_conversation(
-            replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-        )
+                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
+            )
 
     def test_recruitment_trial_report_roundtrip_excludes_private_state_and_validates(self):
         original = self.conversation()
@@ -769,7 +705,8 @@ class ConversationCodecTests(unittest.TestCase):
         )
         original.reports[report.report_id] = report
         snapshot = encode_conversation(
-            original, root_message_id=1, revision=0, wall_time=1000, monotonic_time=60,
+            original, root_message_id=1, revision=0,
+            wall_time=1000, monotonic_time=60,
         )
 
         restored = decode_conversation(snapshot, wall_time=1001, monotonic_time=61)
@@ -782,22 +719,22 @@ class ConversationCodecTests(unittest.TestCase):
         data["reports"][0]["snapshot"]["trials"][0]["expected_end_ts"] += 1
         with self.assertRaises(ValueError):
             decode_conversation(
-            replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-        )
+                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
+            )
 
         data = json.loads(snapshot.payload)
         data["reports"][0]["snapshot"]["trials"][0]["timing_status"] = "accepted"
         with self.assertRaises(ValueError):
             decode_conversation(
-            replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-        )
+                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
+            )
 
         data = json.loads(snapshot.payload)
         data["reports"][0]["guild_id"] = 2
         with self.assertRaises(ValueError):
             decode_conversation(
-            replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-        )
+                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
+            )
 
     def test_examination_report_roundtrip_excludes_private_state_and_validates(self):
         original = self.conversation()
@@ -815,7 +752,8 @@ class ConversationCodecTests(unittest.TestCase):
         )
         original.reports[report.report_id] = report
         snapshot = encode_conversation(
-            original, root_message_id=1, revision=0, wall_time=1000, monotonic_time=60,
+            original, root_message_id=1, revision=0,
+            wall_time=1000, monotonic_time=60,
         )
 
         restored = decode_conversation(snapshot, wall_time=1001, monotonic_time=61)
@@ -830,22 +768,22 @@ class ConversationCodecTests(unittest.TestCase):
         data["reports"][0]["snapshot"]["cases"][0]["workflow_status"] = "approved"
         with self.assertRaises(ValueError):
             decode_conversation(
-            replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-        )
+                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
+            )
 
         data = json.loads(snapshot.payload)
         data["reports"][0]["snapshot"]["cases"][0]["response_status"] = "recorded"
         with self.assertRaises(ValueError):
             decode_conversation(
-            replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-        )
+                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
+            )
 
         data = json.loads(snapshot.payload)
         data["reports"][0]["guild_id"] = 2
         with self.assertRaises(ValueError):
             decode_conversation(
-            replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-        )
+                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
+            )
 
     def test_csv_import_roundtrip_and_source_scope(self):
         original = self.conversation()
@@ -864,9 +802,7 @@ class ConversationCodecTests(unittest.TestCase):
         data = json.loads(snapshot.payload)
         data["reports"][0]["rows"][0].append("extra")
         with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
+            decode_conversation(replace(snapshot, payload=json.dumps(data)), wall_time=1001)
 
     def test_xlsx_import_roundtrip_and_source_scope(self):
         original = self.conversation()
@@ -886,15 +822,11 @@ class ConversationCodecTests(unittest.TestCase):
         data = json.loads(snapshot.payload)
         data["reports"][0]["sheets"][0]["issues"] = ["formula_like_cells:1"]
         with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
+            decode_conversation(replace(snapshot, payload=json.dumps(data)), wall_time=1001)
         data = json.loads(snapshot.payload)
         data["reports"][0]["sheets"][0]["rows"][0].append("extra")
         with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
+            decode_conversation(replace(snapshot, payload=json.dumps(data)), wall_time=1001)
 
     def test_text_import_roundtrip_and_source_scope(self):
         original = self.conversation()
@@ -904,9 +836,8 @@ class ConversationCodecTests(unittest.TestCase):
             "a" * 64, "2026-09-17T12:00:00+00:00", 1, "utf-8-sig",
             "markdown", "# Notes\n", 1,
         )
-        snapshot = encode_conversation(
-            original, root_message_id=1, revision=0, wall_time=1000, monotonic_time=60,
-        )
+        snapshot = encode_conversation(original, root_message_id=1, revision=0,
+                                       wall_time=1000, monotonic_time=60)
         restored = decode_conversation(snapshot, wall_time=1001, monotonic_time=61)
         self.assertEqual(restored.reports["text"], original.reports["text"])
 

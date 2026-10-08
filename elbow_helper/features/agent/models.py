@@ -10,6 +10,7 @@ from typing import Any, TYPE_CHECKING
 from typing import Mapping
 
 import asyncio
+
 import discord
 from discord.ext import commands
 
@@ -98,8 +99,6 @@ class AgentTurnState:
 
     reactions: RequestReactions = field(default_factory=RequestReactions)
     direct_messages: DirectMessageDelivery = field(default_factory=DirectMessageDelivery)
-    stale_knowledge_report_ids: set[str] = field(default_factory=set)
-    stale_knowledge_refs: set[tuple[str, str]] = field(default_factory=set)
     source_channels: set[int] = field(default_factory=set)
     evidence: list[str] = field(default_factory=list)
     reports: dict[str, ReportArtifact] = field(default_factory=dict)

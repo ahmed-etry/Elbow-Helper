@@ -44,16 +44,10 @@ def history_tools() -> tuple[RegisteredAgentTool, ...]:
             ),)
 
 
-def _document(turn: ConversationTurn, *, stale_knowledge: bool = False) -> str:
+def _document(turn: ConversationTurn) -> str:
     record = turn.record
     if record is None:
-        document = turn.text
-        return (
-            "HISTORICAL KNOWLEDGE WARNING: policy cited in this retained turn "
-            "has changed, expired or retired; search approved knowledge again.\n"
-            f"{document}"
-            if stale_knowledge else document
-        )
+        return turn.text
     # Undelivered generated text is not conversation evidence.
     document = json.dumps({
         "question": record.question,
@@ -65,12 +59,7 @@ def _document(turn: ConversationTurn, *, stale_knowledge: bool = False) -> str:
         "report_ids": record.report_ids,
         "reply_ids": record.reply_ids,
     }, ensure_ascii=False)
-    return (
-        "HISTORICAL KNOWLEDGE WARNING: policy cited in this retained turn has "
-        "changed, expired or retired; search approved knowledge again.\n"
-        f"{document}"
-        if stale_knowledge else document
-    )
+    return document
 
 
 def _excerpt(turn: ConversationTurn, document: str, start: int) -> dict[str, Any]:
@@ -114,15 +103,7 @@ async def read_conversation_history(
                 access[channel_id] = await accessible_message_channel(context, channel_id) is not None
         if not all(access[channel_id] for channel_id in turn.source_channels):
             continue
-        stale_knowledge = bool(
-            set(turn.knowledge_refs) & context.state.stale_knowledge_refs
-            or (
-                turn.record is not None
-                and set(turn.record.report_ids)
-                & context.state.stale_knowledge_report_ids
-            )
-        )
-        document = _document(turn, stale_knowledge=stale_knowledge)
+        document = _document(turn)
         if query and query not in document.casefold():
             continue
         matches.append((turn, document))
