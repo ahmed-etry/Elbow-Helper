@@ -30,8 +30,8 @@ from elbow_helper.features.agent.wording import (
 )
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 from elbow_helper.features.agent.access import AgentAccessLost
+from elbow_helper.features.agent.plan.checker import check_plan
 from elbow_helper.features.agent.engine.capability_contract import CapabilityContract
-from elbow_helper.features.agent.plan import check_plan
 from elbow_helper.features.agent.engine.budgets import ContextBudget
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentToolDefinition, AgentUsage
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
@@ -696,7 +696,10 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.registry["read_value"] = replace(self.registry["read_value"], definition=AgentToolDefinition(
             "read_value", "Read a value.", {"type": "object", "properties": {
                 "period": {"type": "integer", "minimum": 0}}, "required": ["period"]}))
-        plans = [_plan([_step("first", {"period": n})], periods=[{"kind": "key", "field": "period", "value": n}])
+        plans = [_plan(
+            [_step(f"period_{n}", {"period": n})],
+            periods=[{"kind": "key", "field": "period", "value": n}],
+        )
                  for n in range(6)]
         session = _Session([*[_model_step(plan) for plan in plans],
                             AgentStep("Checked six periods.", (), AgentUsage())], self.events)
@@ -753,7 +756,59 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.events.count("read"), 1)
         results = json.loads(session.calls[1][0][0].content)["results"]
         self.assertEqual(sorted(result["flags"]["status"] for result in results.values()),
-                         ["complete", "failed"])
+                         ["complete", "complete"])
+
+    async def test_revised_plan_references_completed_read(self):
+        first = _plan([_step("first", {"value": 7})])
+        second = _plan([
+            _step("second", {
+            "value": {"step": "first", "path": ["value"]},
+        }, ["first"]),
+        ])
+        session = _Session([
+            _model_step(first), _model_step(second), AgentStep("Done.", (), AgentUsage()),
+        ], self.events)
+        answer, _ = await self._answer(session)
+        self.assertEqual(answer, "Done.")
+        self.assertEqual(self.events.count("read"), 1)
+        self.assertEqual(
+            json.loads(session.calls[-1][0][0].content)["results"]["second"]["value"], 7,
+        )
+
+    async def test_lookup_exception_returns_data_and_can_be_corrected(self):
+        original = self.registry["read_value"]
+        async def read(context, arguments):
+            if arguments.get("value") == 1:
+                raise AttributeError("Synthetic failure")
+            return {"value": arguments.get("value")}
+        self.registry["read_value"] = replace(original, handler=read)
+        session = _Session([_model_step(_plan([_step("first", {"value": 1})])),
+            _model_step(_plan([_step("second", {"value": 2})])),
+            AgentStep("Corrected.", (), AgentUsage())], self.events)
+        with self.assertLogs("elbow_helper.features.agent.engine.tool_call", level="ERROR"):
+            answer, _ = await self._answer(session)
+        self.assertEqual(answer, "Corrected.")
+        self.assertIn("error", json.loads(session.calls[1][0][0].content)["results"]["first"])
+        self.assertEqual(
+            json.loads(session.calls[2][0][0].content)["results"]["second"]["value"], 2,
+        )
+
+    async def test_identical_outputs_are_not_deduplicated(self):
+        original = self.registry["read_value"]
+        self.registry["read_value"] = replace(original, action_class=ActionClass.OUTPUT)
+        session = _Session([_model_step(_plan([_step("first", {"value":7})])),
+            _model_step(_plan([_step("second", {"value":7})])),
+            AgentStep("Done.", (), AgentUsage())], self.events)
+        await self._answer(session)
+        self.assertEqual(self.events.count("read"), 2)
+
+    async def test_revised_plan_requires_new_step_id(self):
+        first = _plan([_step("first", {"value": 7})])
+        session = _Session([_model_step(first), _model_step(first),
+                            AgentStep("Done.", (), AgentUsage())], self.events)
+        await self._answer(session)
+        self.assertIn("Use a new step ID.", session.calls[-1][0][0].content)
+        self.assertEqual(self.events.count("read"), 1)
 
     async def test_request_deadline_blocks_lookup_and_reserves_answer(self):
         plan = _plan([_step("first")])

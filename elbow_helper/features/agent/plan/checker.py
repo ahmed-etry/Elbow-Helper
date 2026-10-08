@@ -102,7 +102,8 @@ def _valid_value(value: Any, schema: Mapping[str, Any], dependencies: set[str] |
         return (isinstance(value, list) and schema.get("minItems", 0) <= len(value)
                 <= schema.get("maxItems", 20)
                 and all(_valid_value(item, schema["items"], dependencies) for item in value)
-                and (not schema.get("uniqueItems") or len({str(item) for item in value}) == len(value)))
+                and (not schema.get("uniqueItems")
+                     or len({str(item) for item in value}) == len(value)))
     if kind == "object":
         return valid_arguments(value, schema, dependencies)
     return False
@@ -139,7 +140,8 @@ def result_references(value: Any):
 
 def _reference(value: Any, earlier: set[str]) -> bool:
     return (isinstance(value, dict) and set(value) == {"step", "path"}
-            and isinstance(value["step"], str) and value["step"] in earlier and isinstance(value["path"], list)
+            and isinstance(value["step"], str) and value["step"] in earlier
+            and isinstance(value["path"], list)
             and 1 <= len(value["path"]) <= 8
             and all(isinstance(part, str) and part or type(part) is int and part >= 0
                     for part in value["path"]))
@@ -162,12 +164,12 @@ def check_entity_references(contract, arguments, steps, registry, step_id="") ->
             if "*" in reference["path"] and not kind.endswith("_set"):
                 return _error(
                     f"Argument {field} takes one {expected}; use an index instead of * in "
-                    f"path {reference['path']!r}.", step_id,
+                    f"path {reference["path"]!r}.", step_id,
                 )
             if actual != expected:
                 return _error(
-                    f"Argument {field} expects {expected}; reference to step {reference['step']} "
-                    f"path {reference['path']!r} has kind {actual or 'untyped'}.", step_id,
+                    f"Argument {field} expects {expected}; reference to step {reference["step"]} "
+                    f"path {reference["path"]!r} has kind {actual or "untyped"}.", step_id,
                 )
     return PlanCheck(True)
 
@@ -188,7 +190,8 @@ def _check_result_references(
         if not any(result_path_matches(value["path"], pattern) for pattern in paths):
             valid = ", ".join("/".join(path) for path in paths) or "none"
             return _error(
-                f"Step {value['step']} does not expose result path {value['path']!r}. Valid paths: {valid}.",
+                f"Step {value["step"]} does not expose result path {value["path"]!r}. "
+                f"Valid paths: {valid}.",
                 consumer or value["step"],
             )
     elif isinstance(value, (dict, list)):
@@ -299,15 +302,17 @@ def check_step(
     references = {field: value for field, value in arguments.items()
                   if has_reference(value)}
     schema = tool.definition.parameters
-    selected = original_tool(registry, capability, arguments) if capability in (READ_NAME, COMPARE_NAME) else None
+    selected = (
+        original_tool(registry, capability, arguments)
+        if capability in (READ_NAME, COMPARE_NAME) else None
+    )
     if selected is not None and unsupported_fields(selected, arguments):
         return _error(unsupported_field_error(selected, arguments), step_id)
     for reference in result_references(arguments):
         if not isinstance(reference.get("step"), str) or reference["step"] not in set(dependencies):
             return _error(
                 f"Step {step_id} uses results of step {reference.get('step')!r}, which must be an "
-                "earlier step in this plan listed in depends_on. Results of earlier plans cannot be "
-                "referenced; read them again in this plan.", step_id,
+                "completed step listed in depends_on.", step_id,
             )
     if not valid_arguments(arguments, schema, set(dependencies)):
         issues = argument_errors(arguments, schema, set(dependencies), _valid_value)
@@ -357,16 +362,18 @@ def check_step(
     return StepCheck(True, tool=tool, contract=contract, scope=scope)
 
 
-def _check_steps(raw, registry, periods, named):
-    earlier: set[str] = set()
+def _check_steps(raw, registry, periods, named, completed_steps):
+    earlier: set[str] = set(completed_steps)
     after_change: set[str] = set()
-    steps_by_id = {}
+    steps_by_id = dict(completed_steps)
     for step in raw["steps"]:
         if not isinstance(step, dict) or set(step) != {
             "id", "capability", "arguments", "reason", "depends_on",
         }:
             return _error("Each step needs id, capability, arguments, reason and depends_on.")
         step_id = step["id"]
+        if isinstance(step_id, str) and step_id in completed_steps:
+            return _error("Use a new step ID.", step_id)
         if not isinstance(step_id, str) or not 1 <= len(step_id) <= 40 or step_id in earlier:
             return _error("Give each step a unique short ID.")
         capability = step["capability"]
@@ -381,13 +388,15 @@ def _check_steps(raw, registry, periods, named):
             return _error(
                 "Plan reads before changes; a read can't use a change's result.", step_id,
             )
-        if depends_on_change or classification in (ActionClass.CHANGE, ActionClass.IRREVERSIBLE):
+        if depends_on_change or classification in (
+        ActionClass.CHANGE, ActionClass.IRREVERSIBLE,
+    ):
             after_change.add(step_id)
         if not isinstance(step["reason"], str) or not 1 <= len(step["reason"].strip()) <= 240:
             return _error("Give the step a short reason.", step_id)
         checked = check_step(step, registry, periods, named, earlier)
         if not checked.ok:
-            return checked
+                return checked
         references_checked = _check_result_references(step["arguments"], steps_by_id, registry, step_id)
         if not references_checked.ok:
             return references_checked
@@ -439,6 +448,7 @@ def _entity_issue(entity, valid_kinds, steps, registry) -> str:
 def check_plan(
     raw: Any, registry: Mapping[str, RegisteredAgentTool],
     named_sources: Mapping[str, frozenset[Any]] | None = None,
+    *, completed_steps: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> PlanCheck:
     """Return a fixable error for malformed or out-of-scope plans."""
     try:
@@ -469,7 +479,7 @@ def check_plan(
             return _error("List between 1 and 48 steps.")
         named = {entity_kind(kind): {str(item) for item in values}
                  for kind, values in (named_sources or {}).items() if values}
-        checked = _check_steps(raw, registry, periods, named)
+        checked = _check_steps(raw, registry, periods, named, completed_steps or {})
         if isinstance(checked, PlanCheck):
             return checked
         earlier = checked

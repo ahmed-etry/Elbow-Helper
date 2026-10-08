@@ -62,6 +62,7 @@ async def execute_plan(
     plan: Mapping[str, Any],
     run: Callable[[Mapping[str, Any], Mapping[str, Any], Mapping[str, Any]], Awaitable[Mapping[str, Any]]],
     *, max_concurrency: int = 4,
+    earlier_results: Mapping[str, Mapping[str, Any]] | None = None,
     parallel: Callable[[Mapping[str, Any]], bool] | None = None,
 ) -> dict[str, Mapping[str, Any]]:
     """Run independent steps together and wait for dependencies."""
@@ -69,7 +70,7 @@ async def execute_plan(
         raise ValueError("Concurrency must be positive")
     steps = {step["id"]: step for step in plan["steps"]}
     pending = set(steps)
-    results: dict[str, Mapping[str, Any]] = {}
+    results: dict[str, Mapping[str, Any]] = dict(earlier_results or {})
     semaphore = asyncio.Semaphore(max_concurrency)
 
     async def run_step(step: Mapping[str, Any]) -> tuple[str, Mapping[str, Any]]:
@@ -104,4 +105,4 @@ async def execute_plan(
         for step_id, result in outcomes:
             results[step_id] = result
             pending.remove(step_id)
-    return results
+    return {step_id: results[step_id] for step_id in steps}

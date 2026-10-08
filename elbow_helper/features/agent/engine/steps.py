@@ -113,7 +113,9 @@ class PlanRunner:
         self.ledger = ledger
         self.rounder = rounder
         self.state_lock = asyncio.Lock()
-        self.completed = set()
+        self.reads = {}
+        self.results = {}
+        self.completed_steps = {}
         self.tool_calls = 0
         self.evidence_characters = 0
         self.model_results = {}
@@ -132,15 +134,39 @@ class PlanRunner:
             LOGGER.warning("Agent planned step refused: step=%s capability=%s error=%s",
                            step["id"], step["capability"], checked["error"])
             return checked
-        reserved = await self._reserve_tool(step, arguments, checked["tool"], plan_state)
-        if isinstance(reserved, dict):
-            LOGGER.warning("Agent planned step refused: step=%s capability=%s error=%s",
-                           step["id"], step["capability"], reserved["error"])
-            return reserved
-        local, previous = reserved
-        return await self._execute_checked(
+        key = step["capability"] + json.dumps(arguments, sort_keys=True, default=str)
+        future = None
+        if (
+            checked["tool"].effect is AgentCapabilityEffect.READ
+            and checked["tool"].action_class is ActionClass.READ
+        ):
+            async with self.state_lock:
+                if key in self.reads:
+                    future = self.reads[key]
+                    owner = False
+                else:
+                    future = self.reads[key] = asyncio.get_running_loop().create_future()
+                    owner = True
+            if not owner:
+                await require_evidence_access(self.context)
+                return await asyncio.shield(future)
+        try:
+            reserved = await self._reserve_tool(step, arguments, checked["tool"], plan_state)
+            if isinstance(reserved, dict):
+                result = reserved
+            else:
+                local, previous = reserved
+                result = await self._execute_checked(
                     step, arguments, checked, local, previous, plan_state,
                 )
+            if future is not None:
+                future.set_result(result)
+            return result
+        except BaseException:
+            if future is not None:
+                future.cancel()
+                self.reads.pop(key, None)
+            raise
 
     async def _check_step(self, step, arguments, earlier_results, plan_state: PlanExecutionState):
         name = step["capability"]
@@ -150,7 +176,10 @@ class PlanRunner:
             return {"error": "The selected period could not be resolved."}
         selected = original_tool(self.registry, name, step["arguments"]) or self.registry[name]
         if selected.contract is not None:
-            steps = {owner["id"]: owner for owner in plan_state.plan["steps"]}
+            steps = {
+                **self.completed_steps,
+                **{owner["id"]: owner for owner in plan_state.plan["steps"]},
+            }
             typed = check_entity_references(selected.contract, step["arguments"], steps, self.registry, step["id"])
             if not typed.ok:
                 return {"error": typed.error}
@@ -219,10 +248,7 @@ class PlanRunner:
         return tuple(bound)
 
     async def _reserve_tool(self, step, arguments, tool, plan_state: PlanExecutionState):
-        key = step["capability"] + json.dumps(arguments, sort_keys=True, default=str)
         async with self.state_lock:
-            if key in self.completed:
-                return {"error": "This identical lookup already ran."}
             if self.tool_calls >= limits.MAX_TOOL_CALLS:
                 return {"error": "The request reached its lookup limit."}
             if self.evidence_characters >= limits.MAX_EVIDENCE_CHARACTERS:
@@ -246,7 +272,6 @@ class PlanRunner:
             ):
                 return {"error": "The request has no context room for another lookup."}
             self.tool_calls += 1
-            self.completed.add(key)
             local = replace(self.context, state=clone_tool_state(self.context.state))
             previous = tool_state_snapshot(local)
         return local, previous
@@ -392,6 +417,7 @@ class PlanRunner:
                 plan,
                 partial(self.run_one, plan_state=plan_state),
                 max_concurrency=4,
+                earlier_results=self.results,
                 parallel=lambda step: self.registry[step["capability"]].effect
                 is AgentCapabilityEffect.READ,
             )
@@ -400,6 +426,8 @@ class PlanRunner:
                 for step_id, value in result.items()
             }
             await require_evidence_access(self.context)
+            self.results.update(result)
+            self.completed_steps.update({step["id"]: step for step in plan["steps"]})
             self.rounder.unpublished = plan_state.original
             self.rounder.unpublished_scope = plan_state.original_scope
             return result

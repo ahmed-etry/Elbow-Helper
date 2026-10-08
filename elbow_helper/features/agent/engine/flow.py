@@ -126,7 +126,7 @@ class AnswerFlow:
         self._reserve_answer()
         while self.rounder.rounds < limits.MAX_MODEL_ROUNDS:
             results = await self.runner.run(self.plan)
-            self.completed_results = results
+            self.completed_results.update(results)
             self.rounder.results_available = bool(results)
             response = await self._result_response(results)
             if response is not None:
@@ -312,7 +312,9 @@ class AnswerFlow:
             next_plan = json.loads(model_step.tool_calls[0].arguments)
         except (TypeError, ValueError):
             next_plan = None
-        check = check_plan(next_plan, self.registry, self.sources)
+        check = check_plan(
+            next_plan, self.registry, self.sources, completed_steps=self.runner.completed_steps,
+        )
         if check.ok:
             issue = self.command_check(next_plan)
             if issue:
@@ -351,7 +353,9 @@ class AnswerFlow:
                 next_plan = json.loads(corrected.tool_calls[0].arguments)
             except (TypeError, ValueError):
                 next_plan = None
-            check = check_plan(next_plan, self.registry, self.sources)
+            check = check_plan(
+                next_plan, self.registry, self.sources, completed_steps=self.runner.completed_steps,
+            )
             if check.ok:
                 issue = self.command_check(next_plan)
                 if issue:
