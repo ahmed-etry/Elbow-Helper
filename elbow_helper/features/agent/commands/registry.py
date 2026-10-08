@@ -23,6 +23,7 @@ class CommandAdapter:
     action_class: ActionClass | None = None
     option_types: tuple[tuple[str, str], ...] = ()
     agent_details: str = ""
+    capability_name: str | None = None
 
     def __post_init__(self) -> None:
         if self.delivery == "confirm" and self.classification not in (
@@ -84,10 +85,36 @@ def _option_schema(option: ParameterInfo) -> dict[str, Any]:
     return schema
 
 
+def command_capability_name(adapter):
+    return adapter.capability_name or adapter.path.lstrip("/").replace(" ", "_").replace("-", "_")
+
+
+def legacy_capability_names():
+    from ..capabilities import enabled_adapters
+    return {
+        "run_command_" + adapter.path.lstrip("/").replace(" ", "_"):
+        command_capability_name(adapter)
+        for adapter in enabled_adapters()
+    }
+
+
+def validate_command_names(adapters: Sequence[CommandAdapter]) -> None:
+    from ..engine.registry import build_agent_tools
+    names = set(build_agent_tools()) | {"find_gif"}
+    for adapter in adapters:
+        name = command_capability_name(adapter)
+        if name in names:
+            raise ValueError(f"Command capability already exists: {name}")
+        names.add(name)
+
+
 def build_command_capabilities(
     bot: Any, adapters: Sequence[CommandAdapter],
 ) -> dict[str, CommandCapability]:
     """Expose only adapters backed by both a command and a help entry."""
+    validate_command_names(adapters)
+    from ..engine.registry import build_agent_tools
+    reserved_names = set(build_agent_tools())
     commands = discover_commands(bot)
     help_entries = {entry.path: entry for entry in HELP_ENTRIES}
     result: dict[str, CommandCapability] = {}
@@ -106,14 +133,13 @@ def build_command_capabilities(
         )
         if len({option.name for option in options}) != len(options):
             raise ValueError("Command options must have distinct names")
-        name = "run_command_" + adapter.path.lstrip("/").replace(" ", "_")
-        if name in result:
-            raise ValueError("Command capability already exists")
+        name = command_capability_name(adapter)
+        if name in result or name in reserved_names:
+            raise ValueError(f"Command capability already exists: {name}")
         definition = AgentToolDefinition(
             name=name,
-            description=(f"{help_entry.summary} {adapter.agent_details or help_entry.details} "
-                         + ("The result is private." if adapter.delivery == "private" else
-                            "Requires confirmation." if adapter.delivery == "confirm" else "")).strip(),
+            description=(f"{help_entry.summary} {adapter.agent_details} "
+                         + ("Private result." if adapter.delivery == "private" else "")).strip(),
             parameters={
                 "type": "object",
                 "properties": {option.name: _option_schema(option) for option in options},

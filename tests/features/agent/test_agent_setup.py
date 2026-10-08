@@ -8,6 +8,19 @@ from elbow_helper.features.agent import setup
 
 
 class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
+    async def test_capability_collision_stops_setup_before_registration(self):
+        from elbow_helper.features.agent.commands.registry import CommandAdapter
+        bot = SimpleNamespace(add_cog=AsyncMock())
+        adapters = (CommandAdapter(
+            "/synthetic", "public", AsyncMock(), capability_name="read_clash",
+        ),)
+        with patch(
+            "elbow_helper.features.agent.capabilities.enabled_adapters", return_value=adapters,
+        ):
+            with self.assertRaisesRegex(ValueError, "read_clash"):
+                await setup(bot)
+        bot.add_cog.assert_not_awaited()
+
     def test_dependencies_load_before_agent(self):
         agent = REQUIRED_EXTENSIONS.index("elbow_helper.features.agent")
         for name in (

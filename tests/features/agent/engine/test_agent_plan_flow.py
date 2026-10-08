@@ -1075,7 +1075,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         with patch("elbow_helper.features.agent.engine.service.build_command_tools") as commands:
             _, model = await self._answer(session)
         commands.assert_not_called()
-        self.assertNotIn("run_command_", model.request["system_prompt"])
+        self.assertNotIn("Changes run only after", model.request["system_prompt"])
 
     async def test_enabled_command_asks_once_then_runs_on_reply(self):
         run = AsyncMock(return_value=ActionOutcome("complete", text="Synthetic result"))

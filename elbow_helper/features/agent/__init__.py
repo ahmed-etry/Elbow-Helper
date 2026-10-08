@@ -20,6 +20,9 @@ from .engine.registry import build_undo_handlers
 
 
 async def setup(bot) -> None:
+    from .capabilities import enabled_adapters
+    from .commands.registry import validate_command_names
+    validate_command_names(enabled_adapters())
     account_links = bot.get_cog("AccountLinks")
     clan_health = bot.get_cog("ClanHealth")
     clan_health_queries = getattr(clan_health, "queries", None)

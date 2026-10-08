@@ -111,6 +111,10 @@ class ScheduledStore:
     def _standing_record(row: sqlite3.Row) -> dict[str, Any]:
         value = dict(row)
         value["rule"] = json.loads(value.pop("rule_json"))
+        from ..commands.registry import legacy_capability_names
+        names = legacy_capability_names()
+        for action in value["rule"].get("allowed_actions", []):
+            action["capability"] = names.get(action.get("capability"), action.get("capability"))
         if "last_result_json" in value:
             last_result = value.pop("last_result_json")
             value["last_result"] = json.loads(last_result) if last_result else None

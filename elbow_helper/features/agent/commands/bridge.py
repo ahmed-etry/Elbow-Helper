@@ -6,7 +6,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import Any
 
-
 from ..models import AgentCapabilityEffect, RegisteredAgentTool
 from ..actions.outcomes import ActionOutcome, command_reply
 from ..actions.contracts import ChangePreview, PreparedAction
@@ -64,6 +63,7 @@ def _record_outcome(context: Any, outcome: ActionOutcome,
 def build_command_tools(
     bot: Any, adapters: Sequence[CommandAdapter],
 ) -> tuple[dict[str, RegisteredAgentTool], dict[str, CommandCapability]]:
+    from ..engine.result_hints import RETURN_HINTS
     capabilities = build_command_capabilities(bot, adapters)
     tools: dict[str, RegisteredAgentTool] = {}
     for name, capability in capabilities.items():
@@ -114,7 +114,7 @@ def build_command_tools(
                     "visibility": outcome.visibility}
         tools[name] = RegisteredAgentTool(
             capability.definition, handle, AgentCapabilityEffect.COMMAND,
-            capability.adapter.classification,
+            capability.adapter.classification, returns=RETURN_HINTS.get(name),
         )
     return tools, capabilities
 
@@ -127,4 +127,3 @@ def _authorized_run(context, selected, run):
                 return ActionOutcome.unavailable()
         return await run()
     return checked
-

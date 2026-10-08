@@ -224,15 +224,17 @@ async def run_support_close(context: Any,
 
 def support_ticket_adapters() -> tuple[CommandAdapter, ...]:
     return (
-        CommandAdapter("/open", "confirm", run_support_open,
-                       prepare=prepare_support_open,
-                       action_class=ActionClass.CHANGE),
-        CommandAdapter("/close", "confirm", run_support_close,
-                       prepare=prepare_support_close,
-                       action_class=ActionClass.CHANGE,
-                       options=(ParameterInfo(
-                           "channel", ACTION_SUPPORT_CLOSE_CHANNEL_OPTION,
-                           False, "channel",
-                       ),),
-                       entity_options=(("channel", "discord_channel"),)),
+        CommandAdapter(
+            "/open", "confirm", run_support_open,
+            prepare=prepare_support_open, action_class=ActionClass.CHANGE,
+            capability_name="open_support_ticket",
+        ),
+        CommandAdapter(
+            "/close", "confirm", run_support_close,
+            prepare=prepare_support_close, action_class=ActionClass.CHANGE,
+            options=(ParameterInfo(
+                "channel", ACTION_SUPPORT_CLOSE_CHANNEL_OPTION, False, "channel",
+            ),),
+            entity_options=(("channel", "discord_channel"),), capability_name="close_ticket",
+        ),
     )

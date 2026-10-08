@@ -69,5 +69,4 @@ def role_connection_adapters() -> tuple[CommandAdapter, ...]:
             "channel", "Channel for the role connections board; defaults to this channel.",
             False, "channel",
         ),),
-        prepare=prepare_connections,
-    ),)
+        prepare=prepare_connections, capability_name="post_role_connections_board"),)

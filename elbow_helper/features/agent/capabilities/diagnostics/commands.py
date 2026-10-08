@@ -22,4 +22,4 @@ async def run_api(context: Any, values: Mapping[str, Any]) -> ActionOutcome:
 
 
 def diagnostic_adapters() -> tuple[CommandAdapter, ...]:
-    return (CommandAdapter("/api", "public", run_api),)
+    return (CommandAdapter("/api", "public", run_api, capability_name="check_clash_api"),)

@@ -87,8 +87,10 @@ class CommandRegistryTests(unittest.TestCase):
         self.assertLess(estimate_tokens(prompt), 32_000)
         self.assertEqual(len(capability_list(registry).splitlines()), len(registry))
         self.assertTrue(all(
-            any(" | " + kind + " | " in line
-                for kind in ("read", "output", "change", "irreversible"))
+            any(
+                " | " + kind + " | " in line
+                for kind in ("read", "output", "change", "irreversible")
+            )
             for line in capability_list(registry).splitlines()
         ))
         self.assertTrue(all(
@@ -103,13 +105,13 @@ class CommandRegistryTests(unittest.TestCase):
         )))
         capabilities = build_command_capabilities(bot, enabled_adapters())
         self.assertEqual(set(capabilities), {
-            "run_command_opinion", "run_command_health_player",
-            "run_command_health_clan", "run_command_health_settings",
+            "applicant_second_opinion", "health_player",
+            "health_clan", "health_settings",
         })
-        self.assertEqual(capabilities["run_command_opinion"].required, ("ticket",))
-        self.assertEqual(capabilities["run_command_health_player"].required, ("account",))
+        self.assertEqual(capabilities["applicant_second_opinion"].required, ("ticket",))
+        self.assertEqual(capabilities["health_player"].required, ("account",))
         self.assertEqual(
-            capabilities["run_command_health_player"].definition.parameters["properties"]["period"]["enum"],
+            capabilities["health_player"].definition.parameters["properties"]["period"]["enum"],
             ["last_7d", "last_14d", "last_30d", "custom"],
         )
 
@@ -127,14 +129,14 @@ class CommandRegistryTests(unittest.TestCase):
                     return_value={path: command}),
               patch("elbow_helper.features.agent.commands.registry.HELP_ENTRIES", (help_entry,))):
             capabilities = build_command_capabilities(object(), (adapter,))
-        capability = capabilities["run_command_synthetic_inspect"]
+        capability = capabilities["synthetic_inspect"]
         self.assertEqual(capability.required, ("target",))
-        catalogue = capability_list({"run_command_synthetic_inspect": RegisteredAgentTool(
+        catalogue = capability_list({"synthetic_inspect": RegisteredAgentTool(
             capability.definition, AsyncMock(), AgentCapabilityEffect.COMMAND,
         )})
         self.assertIn("target:string*", catalogue)
         self.assertEqual(capability.definition.description,
-                         "Inspect a target. Shows its current state.")
+                         "Inspect a target.")
         self.assertEqual(capability.definition.parameters["properties"]["mode"]["enum"],
                          ["first", "second"])
         self.assertIn("First (first)",
@@ -153,7 +155,7 @@ class CommandRegistryTests(unittest.TestCase):
                     return_value={path: command}),
               patch("elbow_helper.features.agent.commands.registry.HELP_ENTRIES", (help_entry,))):
             capability = build_command_capabilities(object(), (adapter,))[
-                "run_command_synthetic_inspect"]
+                "synthetic_inspect"]
         self.assertEqual(capability.definition.parameters["properties"]["record"]["type"],
                          "integer")
         self.assertEqual(command.parameters[0].type_name, "string")
@@ -209,7 +211,7 @@ class ConfirmedCommandInputTests(unittest.IsolatedAsyncioTestCase):
               patch("elbow_helper.features.agent.commands.registry.HELP_ENTRIES", (help_entry,))):
             tools, _ = build_command_tools(object(), (adapter,))
         context = SimpleNamespace(state=AgentTurnState())
-        result = await tools["run_command_synthetic_edit"].handler(
+        result = await tools["synthetic_edit"].handler(
             context, {"target": 7},
         )
         self.assertEqual(result["status"], "needs_input")

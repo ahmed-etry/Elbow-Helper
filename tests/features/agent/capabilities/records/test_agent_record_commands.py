@@ -35,17 +35,17 @@ class RecordCommandPatternTests(unittest.IsolatedAsyncioTestCase):
                    return_value=commands):
             capabilities = build_command_capabilities(object(), record_adapters())
         self.assertEqual(set(capabilities), {
-            "run_command_" + path.removeprefix("/").replace(" ", "_")
+            "" + path.removeprefix("/").replace(" ", "_")
             for path in paths
         })
-        self.assertEqual(capabilities["run_command_record_remove"].definition.parameters[
+        self.assertEqual(capabilities["record_remove"].definition.parameters[
             "properties"]["record"]["type"], "integer")
-        self.assertEqual(capabilities["run_command_record_edit"].required,
+        self.assertEqual(capabilities["record_edit"].required,
                          ("record",))
         self.assertIn("old and new values",
-                      capabilities["run_command_record_edit"].definition.description)
+                      capabilities["record_edit"].definition.description)
         self.assertNotIn("Opens controls",
-                         capabilities["run_command_record_edit"].definition.description)
+                         capabilities["record_edit"].definition.description)
 
     def setUp(self):
         self.member = SimpleNamespace(id=4, mention="@member", display_name="Member")
