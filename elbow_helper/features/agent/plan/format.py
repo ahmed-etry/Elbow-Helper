@@ -8,8 +8,14 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..models import AgentCapabilityEffect, RegisteredAgentTool
 from ..prompts import (
-    ACTION_SYSTEM_PROMPT, SYSTEM_PROMPT, PLANNING_RULES,
-    ACTION_PLANNING_RULES, STANDING_RULE_RULES,
+    BEHAVIOR_RULES,
+    ACTION_CAPABILITY_PARAGRAPH,
+    READ_ONLY_CAPABILITY_PARAGRAPH,
+    RESPONSE_RULES,
+    DATA_RULES,
+    PLANNING_RULES,
+    ACTION_PLANNING_RULES,
+    STANDING_RULE_RULES,
 )
 
 
@@ -20,7 +26,14 @@ def system_instructions(
     registry: Mapping[str, RegisteredAgentTool], *,
     actions_enabled: bool = True, data_guide: str = "",
 ) -> str:
-    parts = [ACTION_SYSTEM_PROMPT if actions_enabled else SYSTEM_PROMPT, PLANNING_RULES]
+    data_rules = DATA_RULES if "find_gif" in registry else DATA_RULES.rsplit("\n", 1)[0]
+    parts = [
+        BEHAVIOR_RULES,
+        ACTION_CAPABILITY_PARAGRAPH if actions_enabled else READ_ONLY_CAPABILITY_PARAGRAPH,
+        RESPONSE_RULES,
+        data_rules,
+        PLANNING_RULES,
+    ]
     if actions_enabled:
         parts.extend((ACTION_PLANNING_RULES, STANDING_RULE_RULES))
     parts.append(f"<capabilities>\n{capability_list(registry)}\n</capabilities>")

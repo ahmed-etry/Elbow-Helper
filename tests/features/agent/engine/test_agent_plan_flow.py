@@ -567,9 +567,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_revised_plan_references_completed_read(self):
         first = _plan([_step("first", {"value": 7})])
         second = _plan([
-            _step("second", {
-            "value": {"step": "first", "path": ["value"]},
-        }, ["first"]),
+            _step("second", {"value": {"step": "first", "path": ["value"]}}, ["first"]),
         ])
         session = _Session([
             _model_step(first), _model_step(second), AgentStep("Done.", (), AgentUsage()),
@@ -588,8 +586,8 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                 raise AttributeError("Synthetic failure")
             return {"value": arguments.get("value")}
         self.registry["read_value"] = replace(original, handler=read)
-        session = _Session([_model_step(_plan([_step("first", {"value": 1})])),
-            _model_step(_plan([_step("second", {"value": 2})])),
+        session = _Session([_model_step(_plan([_step("first", {"value":1})])),
+            _model_step(_plan([_step("second", {"value":2})])),
             AgentStep("Corrected.", (), AgentUsage())], self.events)
         with self.assertLogs("elbow_helper.features.agent.engine.tool_call", level="ERROR"):
             answer, _ = await self._answer(session)
@@ -1075,7 +1073,10 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         with patch("elbow_helper.features.agent.engine.service.build_command_tools") as commands:
             _, model = await self._answer(session)
         commands.assert_not_called()
-        self.assertNotIn("Changes run only after", model.request["system_prompt"])
+        self.assertIn(
+            "You cannot browse the internet, remember other conversations unless they are "
+            "supplied, or change anything", model.request["system_prompt"],
+        )
 
     async def test_enabled_command_asks_once_then_runs_on_reply(self):
         run = AsyncMock(return_value=ActionOutcome("complete", text="Synthetic result"))
@@ -1114,7 +1115,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             "name": "value", "description": "A required value.", "choices": [],
         }])
         self.assertIn(command_name, model.request["system_prompt"])
-        self.assertIn("Use only listed capabilities", model.request["system_prompt"])
+        self.assertIn("Do the task yourself with your capabilities", model.request["system_prompt"])
         run.assert_not_awaited()
         complete = _plan([{**_step("command", {"value": 7}), "capability": command_name}])
         response, session, context, _ = await answer(complete, history=question)
