@@ -17,12 +17,15 @@ PLAN_TOOL_NAME = "submit_request_plan"
 
 
 def system_instructions(
-    registry: Mapping[str, RegisteredAgentTool], *, actions_enabled: bool = True,
+    registry: Mapping[str, RegisteredAgentTool], *,
+    actions_enabled: bool = True, data_guide: str = "",
 ) -> str:
     parts = [ACTION_SYSTEM_PROMPT if actions_enabled else SYSTEM_PROMPT, PLANNING_RULES]
     if actions_enabled:
         parts.extend((ACTION_PLANNING_RULES, STANDING_RULE_RULES))
     parts.append(f"<capabilities>\n{capability_list(registry)}\n</capabilities>")
+    if data_guide:
+        parts.append(f"<data_guide>\n{data_guide}\n</data_guide>")
     return "\n\n".join(parts)
 
 

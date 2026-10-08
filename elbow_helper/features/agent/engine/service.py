@@ -11,7 +11,12 @@ from elbow_helper.infrastructure.ai import AgentModel
 from elbow_helper.infrastructure.ai import TextGenerationError
 from ..models import AgentRequestContext
 from ..actions.contracts import ActionClass
-from ..access import AgentAccessLost, require_evidence_access
+from ..access import (
+    AgentAccessLost,
+    require_evidence_access,
+    KNOWN_ACCESS_REQUIREMENTS,
+    has_access_requirements,
+)
 from ..prompts import SYSTEM_PROMPT
 from ..conversation.context import compile_context, estimate_tokens
 from .registry import build_agent_tools
@@ -39,8 +44,9 @@ class AgentUnavailableError(RuntimeError):
 class AgentService:
     """Plan checked reads and answer from their results."""
 
-    def __init__(self, model: AgentModel) -> None:
+    def __init__(self, model: AgentModel, *, data_guide=None) -> None:
         self._model = model
+        self._data_guide = data_guide
 
     execute_tool = staticmethod(execute_tool)
 
@@ -109,7 +115,13 @@ class AgentService:
             )
             registry.update(command_tools)
         definition = plan_definition(registry)
-        system_prompt = system_instructions(registry, actions_enabled=actions_available)
+        guide = self._data_guide
+        levels = {
+            level for level in KNOWN_ACCESS_REQUIREMENTS
+            if has_access_requirements(context.guild, context.member.id, {level})
+        }
+        system_prompt = system_instructions(registry, actions_enabled=actions_available,
+                                            data_guide=guide.for_levels(levels) if guide else "")
         context.state.request_text = question
         compiled = compile_context(
             question=question,

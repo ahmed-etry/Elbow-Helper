@@ -90,7 +90,10 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
         dependencies["RoleConnections"] = SimpleNamespace(
             queries=role_connection_queries,
         )
-        bot = SimpleNamespace(get_cog=dependencies.get, add_cog=AsyncMock(), http=object(), paths=SimpleNamespace(data_root=Path("unused")))
+        bot = SimpleNamespace(
+            get_cog=dependencies.get, add_cog=AsyncMock(), http=object(),
+            paths=SimpleNamespace(data_root=Path("unused"), project_root=Path("unused")),
+        )
         with (patch("elbow_helper.features.agent.AgentCog") as factory,
               patch("elbow_helper.features.agent.TranscriptArchive") as archive,
               patch("elbow_helper.features.agent.ConversationRepository") as repository,
@@ -109,6 +112,8 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
             runner.message_search, factory.call_args.kwargs["message_search"],
         )
         self.assertIsNotNone(factory.call_args.kwargs["thread_discovery"])
+        self.assertIsNotNone(factory.call_args.kwargs["data_guide"])
+        self.assertFalse(hasattr(bot, "agent_data_guide"))
         self.assertIs(factory.call_args.kwargs["roster_queries"], queries)
         self.assertIs(factory.call_args.kwargs["clan_health"], clan_health_queries)
         self.assertIs(factory.call_args.kwargs["cwl_queries"], cwl_queries)

@@ -1,6 +1,7 @@
 """Mention-driven agent feature with separately configured rollout access."""
 
 from __future__ import annotations
+
 import asyncio
 
 from elbow_helper.discord.message_search import DiscordMessageSearch
@@ -53,60 +54,44 @@ async def setup(bot) -> None:
     clan_reporting_queries = getattr(clan_reporting, "queries", None)
     role_connection_queries = getattr(role_connections, "queries", None)
     if (
-        account_links is None
-        or clan_health_queries is None
-        or rosters is None
-        or cwl_queries is None
-        or war_queries is None
-        or transfer_queries is None
-        or hibernation_queries is None
-        or support_queries is None
-        or recruitment_queries is None
-        or examination_queries is None
-        or record_queries is None
-        or achievement_queries is None
+        account_links is None or clan_health_queries is None or rosters is None
+        or cwl_queries is None or war_queries is None or transfer_queries is None
+        or hibernation_queries is None or support_queries is None or recruitment_queries is None
+        or examination_queries is None or record_queries is None or achievement_queries is None
         or event_queries is None
         or member_lifecycle_queries is None
         or clan_reporting_queries is None
         or role_connection_queries is None
     ):
         raise RuntimeError(
-            "Agent requires AccountLinks, ClanHealth, Wars, Rosters, CWL, "
-            "ClanTransfers, Hibernation, SupportActions, Recruitment, Examination, "
-            "Records, Achievements, EventStats, MemberLifecycle, ClanReporting "
-            "and RoleConnections"
+            "Agent requires AccountLinks, ClanHealth, Wars, Rosters, CWL, ClanTransfers, "
+            "Hibernation, SupportActions, Recruitment, Examination, Records, Achievements, "
+            "EventStats, MemberLifecycle, ClanReporting and RoleConnections"
         )
     archive = await asyncio.to_thread(
-        TranscriptArchive, bot.paths.data_root / "agent" / "transcripts.sqlite3"
+        TranscriptArchive, bot.paths.data_root / "agent" / "transcripts.sqlite3",
     )
     repository = await asyncio.to_thread(
-        ConversationRepository, bot.paths.data_root / "agent" / "agent.sqlite3"
+        ConversationRepository, bot.paths.data_root / "agent" / "agent.sqlite3",
     )
     research_jobs = await asyncio.to_thread(
-        ResearchJobRepository,
-        bot.paths.data_root / "agent" / "research_jobs.sqlite3",
+        ResearchJobRepository, bot.paths.data_root / "agent" / "research_jobs.sqlite3",
     )
     action_repository = await asyncio.to_thread(
-        AgentActionRepository,
-        bot.paths.data_root / "agent" / "actions.sqlite3",
+        AgentActionRepository, bot.paths.data_root / "agent" / "actions.sqlite3",
     )
     message_search = DiscordMessageSearch(bot.http)
     thread_discovery = DiscordThreadDiscovery()
     research_runner = ResearchJobRunner(
-        bot=bot,
-        repository=research_jobs,
-        message_search=message_search,
-        guild_id=GUILD_ID,
+        bot=bot, repository=research_jobs, message_search=message_search, guild_id=GUILD_ID,
     )
     action_runner = AgentActionRunner(
-        bot=bot,
-        repository=action_repository,
-        guild_id=GUILD_ID,
+        bot=bot, repository=action_repository, guild_id=GUILD_ID,
         undo_handlers=build_undo_handlers(),
     )
-    knowledge_store = KnowledgeStore(
-        bot.paths.data_root / "agent" / "knowledge",
-    )
+    from .datasets.guide import DataGuide
+    data_guide = await asyncio.to_thread(DataGuide, bot.paths)
+    knowledge_store = KnowledgeStore(bot.paths.data_root / "agent" / "knowledge")
     collaborators = {
         "account_links": account_links,
         "clan_health": clan_health_queries,
@@ -132,23 +117,14 @@ async def setup(bot) -> None:
         "action_repository": action_repository,
     }
     cog = AgentCog(
-        bot,
-        **collaborators,
-        research_runner=research_runner,
-        transcript_archive=archive,
-        persistence=ConversationPersistence(repository),
+        bot, **collaborators, research_runner=research_runner, data_guide=data_guide,
+        transcript_archive=archive, persistence=ConversationPersistence(repository),
     )
     cog.scheduled_runner = ScheduledRunner(
-        bot=bot,
-        repository=action_repository,
-        guild_id=GUILD_ID,
-        service=cog.service,
-        delivery=cog.send_response,
-        action_runner=action_runner,
+        bot=bot, repository=action_repository, guild_id=GUILD_ID, service=cog.service,
+        delivery=cog.send_response, action_runner=action_runner,
         context_factory=ScheduledContextFactory(
-            bot=bot,
-            collaborators=collaborators,
-            timeout_seconds=AGENT_REQUEST_TIMEOUT_SECONDS,
+            bot=bot, collaborators=collaborators, timeout_seconds=AGENT_REQUEST_TIMEOUT_SECONDS,
             application_owner=lambda: cog.application_owner,
         ),
     )

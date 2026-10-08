@@ -67,6 +67,7 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
         clan_reporting_queries=None,
         role_connection_queries=None,
         knowledge_store=None,
+        data_guide=None,
         research_jobs=None,
         research_runner=None,
         action_runner=None,
@@ -104,7 +105,7 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
         self.transcript_archive = transcript_archive
         self.persistence = persistence
         self._cleanup_task: asyncio.Task | None = None
-        self.service = AgentService(bot.agent_model)
+        self.service = AgentService(bot.agent_model, data_guide=data_guide)
         self._conversations = ConversationStore()
         self._member_locks: WeakValueDictionary[int, asyncio.Lock] = WeakValueDictionary()
         self._previews: WeakValueDictionary[int, object] = WeakValueDictionary()
