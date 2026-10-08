@@ -189,7 +189,10 @@ class ConfirmationView(discord.ui.View):
                 LOGGER.info("Agent preview confirmed: requester=%s", self.owner_id)
             except Exception:
                 LOGGER.exception("Agent preview could not be queued: requester=%s", self.owner_id)
-                await self.context.source_message.channel.send(
+                await (
+                    getattr(self.context, "delivery_channel", None)
+                    or self.context.source_message.channel
+                ).send(
                     ACTION_UNAVAILABLE, allowed_mentions=discord.AllowedMentions.none(),
                 )
             else:

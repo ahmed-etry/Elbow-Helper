@@ -65,7 +65,7 @@ class ScheduledStore:
                     guild_id,
                     requester_id,
                     destination_channel_id,
-                    encode_record(rule),
+                    encode_record({**rule, "kind": kind} if kind == "reminder" else rule),
                     next_at,
                     current,
                     current,
@@ -75,7 +75,7 @@ class ScheduledStore:
 
     @staticmethod
     def _standing_columns(kind: str) -> tuple[str, str, str]:
-        if kind == "request":
+        if kind in ("request", "reminder"):
             return "saved_requests", "request_id", "next_run_at"
         if kind == "watcher":
             return "watchers", "watcher_id", "next_check_at"
@@ -91,7 +91,12 @@ class ScheduledStore:
                 + (" AND requester_id=?" if requester_id is not None else ""),
                 (identifier,) if requester_id is None else (identifier, requester_id),
             ).fetchone()
-        return self._standing_record(row) if row is not None else None
+        record = self._standing_record(row) if row is not None else None
+        actual = (
+            record["rule"].get("kind", "watcher" if kind == "watcher" else "request")
+            if record else None
+        )
+        return record if actual == kind else None
 
     def list_standing(self, *, requester_id: int, kind: str | None = None) -> list[dict[str, Any]]:
         kinds = (kind,) if kind is not None else ("request", "watcher")
@@ -104,7 +109,11 @@ class ScheduledStore:
                     "ORDER BY created_at DESC",
                     (requester_id,),
                 ).fetchall()
-                records.extend({**self._standing_record(row), "kind": selected} for row in rows)
+                for row in rows:
+                    record = self._standing_record(row)
+                    actual = record["rule"].get("kind", selected)
+                    if kind is None or kind == actual:
+                        records.append({**record, "kind": actual})
         return records
 
     @staticmethod
@@ -164,7 +173,7 @@ class ScheduledStore:
                     AND lease_owner IS NULL
             """,
                 (
-                    encode_record(rule),
+                    encode_record({**rule, "kind": kind} if kind == "reminder" else rule),
                     destination_channel_id,
                     next_at,
                     time.time() if now is None else now,
@@ -214,7 +223,8 @@ class ScheduledStore:
                     """,
                         (current, row[key], row["lease_owner"]),
                     )
-                    interrupted.append({**self._standing_record(row), "kind": kind})
+                    record = self._standing_record(row)
+                    interrupted.append({**record, "kind": record["rule"].get("kind", kind)})
         return interrupted
 
     def claim_standing(

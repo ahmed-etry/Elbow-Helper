@@ -153,7 +153,7 @@ class AgentActionRunner:
         owner = uuid4().hex
         if not await asyncio.to_thread(self.repository.claim, run_id, owner=owner):
             return
-        channel = context.source_message.channel
+        channel = getattr(context, "delivery_channel", None) or context.source_message.channel
         view = StopActionRunView(self.repository, run_id, context.member.id)
         progress = None
         output = ActionRunOutput()
@@ -212,7 +212,7 @@ class AgentActionRunner:
     ) -> str:
         current_action = action
         try:
-            require_access(context.guild, context.member.id, channel)
+            require_access(context.guild, context.member.id, context.source_message.channel)
             await require_evidence_access(context)
             details_hidden = await self._detail_visibility(context, action)
             if action.bind is not None:

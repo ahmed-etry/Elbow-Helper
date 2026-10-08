@@ -127,7 +127,9 @@ async def can_disclose_provenance(
     required_access: frozenset[str] | set[str],
 ) -> bool:
     """Prove that every current destination viewer may see all source evidence."""
-    destination = getattr(getattr(context, "source_message", None), "channel", None)
+    destination = getattr(context, "delivery_channel", None) or getattr(
+        getattr(context, "source_message", None), "channel", None,
+    )
     if destination is None or not has_access_requirements(
         context.guild, context.member.id, required_access,
     ):
@@ -191,6 +193,11 @@ async def can_show(
     *, thread_members: dict[int, frozenset[int] | None] | None = None,
 ) -> bool:
     """Compare the actual destination audience with every source's readership."""
+    if isinstance(destination, discord.DMChannel):
+        recipient = destination.recipient
+        return recipient is not None and await can_show_in_dm(
+            guild, recipient.id, sources, access_levels,
+        )
     if (getattr(getattr(destination, "guild", None), "id", None) != guild.id
             or not access_levels <= KNOWN_ACCESS_REQUIREMENTS
             or any(getattr(getattr(source, "guild", None), "id", None) != guild.id
@@ -229,5 +236,25 @@ async def can_show(
             if not (permissions.view_channel and permissions.read_message_history):
                 return False
             if private_members is not None and actor.id not in private_members:
+                return False
+    return True
+
+
+async def can_show_in_dm(guild, member_id, sources, levels):
+    """Check the recipient's current roles and source-channel membership."""
+    if not has_access_requirements(guild, member_id, set(levels)):
+        return False
+    member = guild.get_member(member_id)
+    for source in sources.values() if isinstance(sources, Mapping) else sources:
+        channel = guild.get_channel_or_thread(source) if type(source) is int else source
+        if channel is None:
+            return False
+        permissions = channel.permissions_for(member)
+        if not (permissions.view_channel and permissions.read_message_history):
+            return False
+        if isinstance(channel, discord.Thread) and channel.is_private():
+            try:
+                await channel.fetch_member(member_id)
+            except discord.HTTPException:
                 return False
     return True

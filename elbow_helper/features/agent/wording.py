@@ -6,6 +6,13 @@ AGENT_RESEARCH_UNFINISHED = "I couldn't finish checking everything. Ask me to co
 AGENT_ANSWER_UNFINISHED = "That got too long to finish in one go. Ask me for a shorter version or one part at a time."
 ACTION_STANDING_SAVE = "{kind}: {request}"
 ACTION_STANDING_DESTINATION = "Send results to {channel}."
+ACTION_STANDING_POST_DESTINATION = "Post in {channel}."
+ACTION_STANDING_DM_DESTINATION = "DM {members}."
+ACTION_STANDING_DM_SELF = "Send results to your DMs."
+ACTION_STANDING_DM_PAUSED = (
+    "{kind} paused because I couldn't DM you. Open your DMs from this server "
+    "and ask me to resume it."
+)
 ACTION_STANDING_TIME = "Next runs: {times}."
 ACTION_STANDING_SCOPE = "Allowed changes:"
 ACTION_STANDING_ACTION = "{action}. Up to {targets} {target_word} per run."
@@ -18,11 +25,21 @@ ACTION_STANDING_SAVED = "Saved {kind}."
 ACTION_STANDING_MANAGE = "{operation} the {kind}: {request}"
 ACTION_STANDING_MANAGED = "{kind} {result}."
 ACTION_STANDING_REQUEST_NAME = "Saved request"
+ACTION_STANDING_REMINDER_NAME = "Reminder"
 ACTION_STANDING_WATCHER_NAME = "Watcher"
 ACTION_STANDING_REQUEST_NOUN = "saved request"
+ACTION_STANDING_REMINDER_NOUN = "reminder"
 ACTION_STANDING_WATCHER_NOUN = "watcher"
-ACTION_STANDING_SAVE_LABELS = {"request": "Schedule request", "watcher": "Set up watcher"}
-ACTION_STANDING_MANAGE_LABELS = {"request": "Change saved request", "watcher": "Change watcher"}
+ACTION_STANDING_SAVE_LABELS = {
+    "request": "Schedule request",
+    "watcher": "Set up watcher",
+    "reminder": "Set reminder",
+}
+ACTION_STANDING_MANAGE_LABELS = {
+    "request": "Change saved request",
+    "watcher": "Change watcher",
+    "reminder": "Change reminder",
+}
 ACTION_STANDING_OPERATIONS = {"pause": "Pause", "resume": "Resume", "cancel": "Cancel"}
 ACTION_STANDING_RESULTS = {"pause": "paused", "resume": "resumed", "cancel": "cancelled"}
 ACTION_STANDING_TARGET_ONE = "target"

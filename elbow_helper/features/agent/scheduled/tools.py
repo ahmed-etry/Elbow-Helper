@@ -30,8 +30,12 @@ from ..wording import (
     ACTION_STANDING_OPERATIONS, ACTION_STANDING_RESULTS,
     ACTION_STANDING_TARGET_ONE, ACTION_STANDING_TARGET_MANY,
     ACTION_VALUE_YES, ACTION_VALUE_NO,
+    ACTION_STANDING_REMINDER_NAME, ACTION_STANDING_REMINDER_NOUN, ACTION_STANDING_POST_DESTINATION,
+    ACTION_STANDING_DM_DESTINATION, ACTION_STANDING_DM_SELF, ACTION_UNAVAILABLE,
 )
 from ..discord_actions.safety import check_post_access, resolve_channel
+from ..discord_actions.messages import content_options, post_mentions
+from ..discord_actions.direct_messages import dm_recipients
 from ..capabilities import enabled_adapters
 from ..commands.bridge import build_command_tools
 from ..plan.checker import valid_arguments
@@ -66,7 +70,7 @@ def _repository(context: AgentRequestContext):
 
 
 def entity_kind(value: str) -> str:
-    if value not in ("request", "watcher"):
+    if value not in ("request", "watcher", "reminder"):
         raise ActionRefused("Choose a saved request or watcher.")
     return value
 
@@ -154,6 +158,8 @@ async def _watcher_destination(context, values, destination, registry_factory) -
                 if source is None:
                     raise ActionRefused("That source cannot be shared in this channel.")
                 sources[identifier] = source
+    if values.get("deliver_to") == "dm":
+        return
     if not await can_show(destination, sources, levels, context.guild,
                           thread_members=getattr(context, "disclosure_thread_members", None)):
         raise ActionRefused("That source cannot be shared in this channel.")
@@ -232,10 +238,17 @@ def _preview_lines(values: Mapping[str, Any], *, kind: str, request: str,
     formatted = ", ".join(f"<t:{int(item.timestamp())}:f>" for item in times)
     lines = [
         ACTION_STANDING_SAVE.format(
-            kind=ACTION_STANDING_REQUEST_NAME if kind == "request" else ACTION_STANDING_WATCHER_NAME,
+            kind=(ACTION_STANDING_REQUEST_NAME if kind == "request"
+                  else ACTION_STANDING_REMINDER_NAME if kind == "reminder"
+                  else ACTION_STANDING_WATCHER_NAME),
             request=request),
         ACTION_STANDING_TIME.format(times=formatted),
-        ACTION_STANDING_DESTINATION.format(channel=channel.mention),
+        (ACTION_STANDING_DM_DESTINATION.format(members=", ".join(
+            member.mention for member in dm_recipients(context, values["dm_member_ids"])
+        )) if kind == "reminder" and values.get("dm_member_ids")
+         else ACTION_STANDING_POST_DESTINATION.format(channel=channel.mention) if kind == "reminder"
+         else ACTION_STANDING_DM_SELF if values.get("deliver_to") == "dm"
+         else ACTION_STANDING_DESTINATION.format(channel=channel.mention)),
         ACTION_STANDING_SCOPE if actions else ACTION_STANDING_NO_CHANGES,
     ]
     for action in actions:
@@ -265,8 +278,29 @@ async def prepare_save(
 ) -> Mapping[str, Any]:
     repository = _repository(context)
     kind = entity_kind(values["kind"])
+    if kind == "reminder":
+        values = {
+            **values,
+            "request": values.get("text", ""),
+            "destination_channel_id": values.get(
+                "destination_channel_id", context.source_message.channel.id,
+            ),
+        }
+    elif "request" not in values or "destination_channel_id" not in values:
+        raise ActionRefused(ACTION_UNAVAILABLE)
+    if values.get("deliver_to", "channel") not in ("channel", "dm"):
+        raise ActionRefused(ACTION_UNAVAILABLE)
+    if kind == "reminder" and values.get("dm_member_ids"):
+        dm_recipients(context, values["dm_member_ids"])
+        values = {**values, "deliver_to": "dm"}
     request = str(values["request"]).strip()
-    if not request or len(request) > 4000:
+    maximum = (
+        50000 if kind == "reminder" and values.get("deliver_to", "channel") == "channel"
+        else 4000
+    )
+    if kind == "reminder" and (not request or len(request) > maximum):
+        raise ActionRefused(ACTION_UNAVAILABLE)
+    if not request or len(request) > maximum:
         raise ActionRefused("Describe the request in fewer than 4,000 characters.")
     schedule = values.get("schedule")
     local_time = isinstance(schedule, Mapping) and schedule.get("kind") in ("weekly", "monthly")
@@ -280,11 +314,18 @@ async def prepare_save(
         values = {**values, "schedule": {**schedule, "timezone": zone}}
     times = _schedule(values, watcher=kind == "watcher", zone=zone)
     channel = await resolve_channel(context, values["destination_channel_id"])
-    check_post_access(channel, context.member, context.guild.me)
+    if values.get("deliver_to", "channel") == "channel":
+        check_post_access(channel, context.member, context.guild.me)
+        if kind == "reminder":
+            post_mentions(context, values, request)
+    elif kind == "reminder" and not values.get("dm_member_ids"):
+        raise ActionRefused(ACTION_UNAVAILABLE)
     actions = values.get("allowed_actions", [])
     if not isinstance(actions, list):
         raise ActionRefused("Choose the changes this request may make.")
     actions = [dict(item) if isinstance(item, Mapping) else item for item in actions]
+    if kind == "reminder" and (actions or values.get("reads")):
+        raise ActionRefused(ACTION_UNAVAILABLE)
     validate_scope(actions)
     if actions:
         _allowed_capabilities(actions, context, registry_factory)
@@ -315,7 +356,10 @@ async def prepare_save(
     async def recheck() -> bool:
         try:
             refreshed = await resolve_channel(context, values["destination_channel_id"])
-            check_post_access(refreshed, context.member, context.guild.me)
+            if values.get("deliver_to", "channel") == "channel":
+                check_post_access(refreshed, context.member, context.guild.me)
+            elif kind == "reminder":
+                dm_recipients(context, values["dm_member_ids"])
             if kind == "watcher":
                 await _watcher_destination(context, values, refreshed, registry_factory)
             if not identifier:
@@ -351,7 +395,8 @@ async def prepare_save(
         "save_standing_rule", rule,
         ChangePreview(lines[1:4], recheck, summary=ACTION_STANDING_SAVE_LABELS[kind],
                       details=(lines[0], *lines[4:]),
-                      detail_sources=detail_sources, detail_access=detail_access),
+                      detail_sources=detail_sources, detail_access=detail_access,
+                      count=len(values.get("dm_member_ids", ())) or 1),
         run, action_class=ActionClass.CHANGE,
     ))
     return {"status": "confirmation_required"}
@@ -366,7 +411,7 @@ async def list_standing(context: AgentRequestContext,
         context.state.required_access.update(record["rule"].get("detail_access", ()))
     return {"rules": [{
         "id": item.get("request_id") or item.get("watcher_id"),
-        "kind": item["kind"], "request": item["rule"]["request"],
+        "kind": item["kind"], "request": item["rule"].get("request", item["rule"].get("text", "")),
         "status": item["status"],
         "next_at": item.get("next_run_at") or item.get("next_check_at"),
     } for item in records]}
@@ -387,7 +432,9 @@ async def prepare_manage(context: AgentRequestContext,
     target = "active" if operation == "resume" else ("paused" if operation == "pause" else "cancelled")
     line = ACTION_STANDING_MANAGE.format(
         operation=ACTION_STANDING_OPERATIONS[operation],
-        kind=ACTION_STANDING_REQUEST_NOUN if kind == "request" else ACTION_STANDING_WATCHER_NOUN,
+        kind=(ACTION_STANDING_REQUEST_NOUN if kind == "request"
+              else ACTION_STANDING_REMINDER_NOUN if kind == "reminder"
+              else ACTION_STANDING_WATCHER_NOUN),
         request=current["rule"]["request"])
 
     async def recheck() -> bool:
@@ -404,8 +451,9 @@ async def prepare_manage(context: AgentRequestContext,
             raise ActionRefused("That saved rule changed.")
         return ActionOutcome("complete", "public",
                               text=ACTION_STANDING_MANAGED.format(
-                                  kind=(ACTION_STANDING_REQUEST_NAME if kind == "request"
-                                        else ACTION_STANDING_WATCHER_NAME),
+                                  kind=ACTION_STANDING_REQUEST_NAME if kind == "request"
+                                       else ACTION_STANDING_REMINDER_NAME if kind == "reminder"
+                                       else ACTION_STANDING_WATCHER_NAME,
                                   result=ACTION_STANDING_RESULTS[operation]))
 
     context.state.proposed_changes.append(PreparedAction(
@@ -425,7 +473,13 @@ def standing_tools(
         "save_standing_rule",
         "Save or change a scheduled request or watcher after confirmation. Give exact UTC once/interval times or weekly/monthly local times, destination, fixed action values, changing target/content fields and target limits. Name every fixed value in scope_text. Watchers need current/latest reads, condition and repeat choice.",
         {"type": "object", "properties": {
-            "kind": {"type": "string", "enum": ["request", "watcher"]},
+            "kind": {"type": "string", "enum": ["request", "watcher", "reminder"]},
+            **content_options(),
+            "dm_member_ids": {
+                "type": "array", "minItems": 1, "maxItems": 50, "uniqueItems": True,
+                "items": {"type": "integer", "minimum": 1},
+            },
+            "deliver_to": {"type": "string", "enum": ["channel", "dm"]},
             "request": {"type": "string"},
             "schedule": {"type": "object", "properties": {
                 "kind": {"type": "string", "enum": ["once", "interval", "weekly", "monthly"]},
@@ -442,28 +496,30 @@ def standing_tools(
             "timezone": {"type": "string"},
             "destination_channel_id": {"type": "integer"},
             "allowed_actions": {"type": "array", "items": {"type": "object", "properties": {
-                "capability": {"type": "string"}, "fixed_values": {"type": "object"},
+                "capability": {"type": "string"},
+                "fixed_values": {"type": "object", "additionalProperties": True},
                 "variable_fields": {"type": "array", "items": {"type": "string"}},
                 "max_targets": {"type": "integer"}, "scope_text": {"type": "string"},
             }}},
             "reads": {"type": "array", "items": {"type": "object", "properties": {
-                "capability": {"type": "string"}, "arguments": {"type": "object"},
+                "capability": {"type": "string"},
+                "arguments": {"type": "object", "additionalProperties": True},
             }}},
             "condition": {"type": "string"},
             "repeat": {"type": "boolean"},
             "replace_id": {"type": "string"},
-        }, "required": ["kind", "request", "schedule", "destination_channel_id"]},
+        }, "required": ["kind", "schedule"]},
     )
     listing = AgentToolDefinition(
         "list_standing_rules", "List this member's saved requests and watchers.",
         {"type": "object", "properties": {
-            "kind": {"type": "string", "enum": ["request", "watcher"]},
+            "kind": {"type": "string", "enum": ["request", "watcher", "reminder"]},
         }},
     )
     manage = AgentToolDefinition(
         "manage_standing_rule", "Pause, resume or cancel a member's saved request or watcher after confirmation.",
         {"type": "object", "properties": {
-            "kind": {"type": "string", "enum": ["request", "watcher"]},
+            "kind": {"type": "string", "enum": ["request", "watcher", "reminder"]},
             "id": {"type": "string"},
             "operation": {"type": "string", "enum": ["pause", "resume", "cancel"]},
         }, "required": ["kind", "id", "operation"]},

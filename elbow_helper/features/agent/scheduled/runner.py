@@ -10,16 +10,19 @@ from uuid import uuid4
 
 import discord
 
-from ..access import AgentAccessLost, require_access
+from ..access import AgentAccessLost, require_access, require_evidence_access
 from ..engine.service import AgentUnavailableError
 from ..discord_actions.safety import check_post_access
+from ..discord_actions.direct_messages import deliver_dms
+from ..discord_actions.messages import post_mentions
+from ..text import chunk_response
 from ..wording import (
     ACTION_STANDING_ACCESS_PAUSED,
     ACTION_STANDING_INTERRUPTED,
     ACTION_STANDING_REQUEST_NAME,
     ACTION_STANDING_RUN_FAILED,
     ACTION_STANDING_WATCHER_NAME,
-    ACTION_STANDING_AI_UNAVAILABLE,
+    ACTION_STANDING_AI_UNAVAILABLE, ACTION_STANDING_REMINDER_NAME, ACTION_STANDING_DM_PAUSED,
 )
 from .time_rules import next_occurrences
 from .requests import (
@@ -27,7 +30,7 @@ from .requests import (
     ContextFactory,
     DeliveryFunction,
     run_saved_request,
-    check_watcher,
+    check_watcher, StandingDMUnavailable, ScheduledResult,
 )
 from ..engine.service import AgentService
 from ..actions.runner import AgentActionRunner
@@ -116,27 +119,29 @@ class ScheduledRunner:
                 limit=MAX_DUE_PER_KIND,
             )
             for rule in due:
-                identifier = self._identifier(kind, rule)
+                selected_kind = rule["rule"].get("kind", kind)
+                identifier = self._identifier(selected_kind, rule)
                 owner = uuid4().hex
                 claimed = await asyncio.to_thread(
                     self.repository.claim_standing,
-                    kind=kind,
+                    kind=selected_kind,
                     identifier=identifier,
                     version=rule["version"],
                     owner=owner,
                 )
                 if claimed:
-                    self._track(asyncio.create_task(self._execute(kind, rule, owner)))
+                    self._track(asyncio.create_task(self._execute(selected_kind, rule, owner)))
 
     @staticmethod
     def _identifier(kind: str, rule: dict[str, Any]) -> str:
-        return rule["request_id" if kind == "request" else "watcher_id"]
+        return rule["request_id" if kind != "watcher" else "watcher_id"]
 
     @staticmethod
     def _name(kind: str) -> str:
         return (
             ACTION_STANDING_REQUEST_NAME
             if kind == "request"
+            else ACTION_STANDING_REMINDER_NAME if kind == "reminder"
             else ACTION_STANDING_WATCHER_NAME
         )
 
@@ -210,7 +215,8 @@ class ScheduledRunner:
         guild = self.bot.get_guild(self.guild_id)
         try:
             member = require_access(guild, rule["requester_id"], channel)
-            check_post_access(channel, member, guild.me)
+            if rule["rule"].get("deliver_to", "channel") == "channel":
+                check_post_access(channel, member, guild.me)
         except (AgentAccessLost, ValueError, discord.DiscordException):
             LOGGER.warning(
                 "Agent standing access lost: kind=%s rule=%s", kind, identifier
@@ -229,13 +235,28 @@ class ScheduledRunner:
     async def _run_with_access(self, kind, rule, owner, channel, member):
         identifier = self._identifier(kind, rule)
         message = ScheduledMessage(
-            member.guild, channel, member, rule["rule"]["request"]
+            member.guild, channel, member, rule["rule"].get("request", rule["rule"].get("text", ""))
         )
         context = self.context_factory(message, member)
         result = None
         failure = None
         try:
-            if kind == "request":
+            context.state.source_channels.update(rule["rule"].get("detail_sources", ()))
+            context.state.required_access.update(rule["rule"].get("detail_access", ()))
+            if rule["rule"].get("detail_sources") or rule["rule"].get("detail_access"):
+                await require_evidence_access(context)
+            if kind == "reminder":
+                content = rule["rule"]["text"]
+                if rule["rule"].get("dm_member_ids"):
+                    outcomes = await deliver_dms(context, rule["rule"]["dm_member_ids"], content)
+                    if not any(row["delivered"] for row in outcomes):
+                        raise ValueError("No reminder recipient received the message")
+                else:
+                    mentions = post_mentions(context, rule["rule"], content)
+                    for part in chunk_response(content):
+                        await channel.send(part, allowed_mentions=mentions)
+                result = ScheduledResult()
+            elif kind == "request":
                 result = await run_saved_request(
                     context,
                     rule["rule"],
@@ -245,6 +266,16 @@ class ScheduledRunner:
                 )
             else:
                 result = await check_watcher(context, rule)
+        except AgentAccessLost:
+            failure = ACTION_STANDING_ACCESS_PAUSED.format(kind=self._name(kind))
+        except StandingDMUnavailable:
+            failure = ACTION_STANDING_DM_PAUSED.format(kind=self._name(kind))
+        except discord.HTTPException:
+            failure = (
+                ACTION_STANDING_DM_PAUSED
+                if rule["rule"].get("deliver_to") == "dm" and kind != "reminder"
+                else ACTION_STANDING_RUN_FAILED
+            ).format(kind=self._name(kind))
         except AgentUnavailableError:
             LOGGER.exception(
                 "Agent standing model unavailable: kind=%s rule=%s", kind, identifier
@@ -292,7 +323,7 @@ class ScheduledRunner:
         )
         next_at = upcoming[0].timestamp() if upcoming else None
         if status == "active" and next_at is None:
-            next_at = rule["next_run_at" if kind == "request" else "next_check_at"]
+            next_at = rule["next_run_at" if kind != "watcher" else "next_check_at"]
         if status is None:
             status = "active" if next_at is not None else "completed"
         if kind == "watcher":

@@ -13,6 +13,9 @@ from uuid import uuid4
 import discord
 from discord.ext import commands
 
+from ..disclosure import can_show_in_dm
+from ..access import AgentAccessLost
+
 from ..models import AgentRequestContext, AgentTurnState, AgentIdentity
 from ..engine.service import AgentService
 from ..actions.runner import AgentActionRunner
@@ -22,6 +25,23 @@ from . import watchers
 
 DeliveryFunction = Callable[..., Awaitable[Any]]
 ContextFactory = Callable[["ScheduledMessage", discord.Member], AgentRequestContext]
+
+
+class StandingDMUnavailable(RuntimeError):
+    """The scheduled destination DM could not be delivered."""
+
+
+async def dm_message(context, message):
+    if not await can_show_in_dm(
+        context.guild, context.member.id,
+        context.state.source_channels, context.state.required_access,
+    ):
+        raise AgentAccessLost("Scheduled DM evidence access is no longer available")
+    try:
+        channel = await context.member.create_dm()
+    except discord.HTTPException as error:
+        raise StandingDMUnavailable() from error
+    return replace(message, channel=channel)
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,7 +75,7 @@ class ScheduledContextFactory:
             member=member,
             source_message=message,
             state=AgentTurnState(source_channels={message.channel.id}),
-            attachment_sources=(message,),
+            attachment_sources=(),
             deadline_monotonic=time.monotonic() + self.timeout_seconds,
             application_owner=self.application_owner() if self.application_owner is not None else None,
             **self.collaborators,
@@ -92,6 +112,16 @@ async def run_saved_request(
     delivery: DeliveryFunction,
 ) -> ScheduledResult:
     message = context.source_message
+    original_delivery = delivery
+    if rule.get("deliver_to") == "dm":
+        async def delivery(message, *args, **kwargs):
+            destination = await dm_message(context, message)
+            if kwargs.get("context") is not None:
+                kwargs["context"] = replace(kwargs["context"], delivery_channel=destination.channel)
+            try:
+                return await original_delivery(destination, *args, **kwargs)
+            except discord.HTTPException as error:
+                raise StandingDMUnavailable() from error
     allowed = rule.get("allowed_actions", [])
     local_context = "Confirmed standing scope: " + json.dumps(
         allowed,
@@ -103,6 +133,9 @@ async def run_saved_request(
         local_context=local_context,
         context=context,
     )
+    if rule.get("deliver_to") == "dm":
+        destination = await dm_message(context, message)
+        context = replace(context, delivery_channel=destination.channel)
     proposals = tuple(context.state.proposed_changes)
     if proposals and within_scope(proposals, allowed):
         run_id = await action_runner.submit(
@@ -145,13 +178,17 @@ async def check_watcher(
     saved: Mapping[str, Any],
 ) -> ScheduledResult:
     rule = saved["rule"]
+    if rule.get("deliver_to") == "dm":
+        context = replace(context, dm_delivery=True)
     results = await watchers.read_current(context, rule["reads"])
     if results == saved["last_result"]:
         return ScheduledResult(last_result=results, holding=bool(saved["holding"]))
     holds, alert = await watchers.evaluate(context, rule["condition"], results)
     started = holds and not saved["holding"]
     if started:
-        await watchers.send_alert(context, alert)
+        await watchers.send_alert(
+            context, alert, **({"deliver_to": "dm"} if rule.get("deliver_to") == "dm" else {}),
+        )
     return ScheduledResult(
         last_result=results,
         holding=holds,

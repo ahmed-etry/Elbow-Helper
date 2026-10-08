@@ -55,16 +55,17 @@ async def read_current(context, reads):
     if len(encoded) > WATCHER_MAX_RESULT_CHARACTERS:
         raise ValueError("Watcher results exceed their size limit")
     sources = await require_evidence_access(context)
-    if not await can_show(context.source_message.channel, sources,
-                          context.state.required_access, context.guild,
-                          thread_members=context.disclosure_thread_members):
+    if not getattr(context, "dm_delivery", False) and not await can_show(
+        context.source_message.channel, sources, context.state.required_access, context.guild,
+        thread_members=context.disclosure_thread_members,
+    ):
         raise ValueError("Watcher evidence cannot be shared in this channel")
     return results
 
 
 def comparison_data(payload):
     """Drop lookup metadata while preserving source facts and their timestamps."""
-    metadata = {"report_id", "observed_at", "ownership_observed_at", "retained_bytes"}
+    metadata = {"report_id", "observed_at", "ownership_observed_at", "retained_bytes", "flags"}
     return {key: value for key, value in payload.items() if key not in metadata}
 
 
@@ -124,12 +125,16 @@ async def evaluate(context, condition: str, results):
     return result["holds"], result["alert"].strip()
 
 
-async def send_alert(context, alert: str):
+async def send_alert(context, alert: str, *, deliver_to="channel"):
     if not alert:
         raise ValueError("Watcher alert was empty")
     member = context.member
+    destination = context.source_message.channel
+    if deliver_to == "dm":
+        from .requests import dm_message
+        destination = (await dm_message(context, context.source_message)).channel
     for index, part in enumerate(chunk_response(f"{member.mention} {alert}")):
-        await context.source_message.channel.send(
+        await destination.send(
             part, allowed_mentions=discord.AllowedMentions(
                 everyone=False, roles=False, users=[member] if index == 0 else [],
             ),

@@ -24,6 +24,24 @@ from elbow_helper.features.agent.text import chunk_response
 
 
 class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_dm_delivery_keeps_access_checks_in_the_home_channel(self):
+        destination = SimpleNamespace(id=9, send=AsyncMock(return_value=self.progress))
+        self.context.delivery_channel = destination
+        action = self.action("synthetic change", outcome=ActionOutcome("complete"))[0]
+        with (
+            patch("elbow_helper.features.agent.actions.runner.require_access") as access,
+            patch(
+                "elbow_helper.features.agent.actions.runner.require_evidence_access", AsyncMock(),
+            ),
+        ):
+            run_id = await self.runner.submit(self.context, (action,), confirmer_id=4)
+            await self.runner.wait_run(run_id)
+        self.channel.send.assert_not_awaited()
+        destination.send.assert_awaited_once()
+        self.assertEqual(self.progress.edit.await_args.kwargs["content"], "Done: synthetic change.")
+        self.assertTrue(access.called)
+        self.assertTrue(all(call.args[2] is self.channel for call in access.call_args_list))
+
     async def test_combined_confirmation_keeps_dispatch_alive_until_the_run_finishes(self):
         action = self.action("synthetic change", outcome=ActionOutcome("complete"))[0]
         preview = ConfirmationView(4, (action,), self.context, runner=self.runner)

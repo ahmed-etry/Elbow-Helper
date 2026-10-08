@@ -95,7 +95,7 @@ async def find_agent_files(context: AgentRequestContext,
     return {"files": files, "next_offset": offset + limit if offset + limit < len(reply_ids) else None}
 
 
-def _mentions(context: Any, arguments: Mapping[str, Any], text: str) -> discord.AllowedMentions:
+def post_mentions(context: Any, arguments: Mapping[str, Any], text: str) -> discord.AllowedMentions:
     roles = []
     for role_id in arguments.get("ping_role_ids", ()):
         if f"<@&{role_id}>" not in text:
@@ -167,7 +167,7 @@ async def prepare_post(context: AgentRequestContext,
     deferred = isinstance(channel_value, Mapping) and set(channel_value) == {"step", "path"}
     try:
         channel = None if deferred else await _channel_for_post(context, channel_value)
-        mentions = _mentions(context, arguments, arguments["text"])
+        mentions = post_mentions(context, arguments, arguments["text"])
     except DiscordActionRefused as error:
         return {"error": str(error)}
     try:
@@ -325,7 +325,7 @@ async def prepare_edit(context: AgentRequestContext,
         channel, message = await _owned_message(
             context, arguments["channel_id"], arguments["message_id"],
         )
-        _mentions(context, arguments, arguments["text"])
+        post_mentions(context, arguments, arguments["text"])
     except DiscordActionRefused as error:
         return {"error": str(error)}
     if len(arguments["text"]) > 2000:
@@ -351,7 +351,7 @@ def _edit_action(context: AgentRequestContext, channel_id: int, message_id: int,
     async def run() -> ActionOutcome:
         channel, message = await _owned_message(context, channel_id, message_id)
         await message.edit(content=new_text,
-                           allowed_mentions=_mentions(context, mention_values, new_text))
+                           allowed_mentions=post_mentions(context, mention_values, new_text))
         return ActionOutcome(
             "complete",
             after={"content": new_text},
