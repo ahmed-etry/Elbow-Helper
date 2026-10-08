@@ -98,6 +98,7 @@ class AgentService:
         local_context: str,
         context: AgentRequestContext,
         conversation_history: str,
+        images=(),
     ):
         registry = build_agent_tools()
         command_capabilities = {}
@@ -132,13 +133,18 @@ class AgentService:
             report_filter_fields=filter_fields(registry),
         )
         request_prompt = (
-            compiled.prompt + "\nCurrent UTC: " + datetime.now(timezone.utc).isoformat()
+            compiled.prompt.replace(
+                "<images>\nNo images.\n</images>",
+                "<images>\n" + ("\n".join(image.label for image in images) or "No images.")
+                + "\n</images>",
+            ) + "\nCurrent UTC: " + datetime.now(timezone.utc).isoformat()
         )
         session = self._model.create_agent_session(
             system_prompt=system_prompt,
             prompt=request_prompt,
             tools=(definition,),
             max_output_tokens=limits.AGENT_MAX_OUTPUT_TOKENS,
+            **({"images": images} if images else {}),
         )
         if session is None:
             raise AgentUnavailableError("The AI backend is not configured")
@@ -190,11 +196,14 @@ class AgentService:
         context: AgentRequestContext,
         conversation_history: str = "",
     ) -> str:
+        from ..files.images import request_images
+        images = await request_images(context) if getattr(context, "attachment_sources", ()) else ()
         flow, usage = self._start_flow(
             question=question,
             local_context=local_context,
             context=context,
             conversation_history=conversation_history,
+            images=images,
         )
         started_at = time.monotonic()
         status = "incomplete"

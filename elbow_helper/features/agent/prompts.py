@@ -208,6 +208,7 @@ statuses or flags, are that feature's opinion; use them as one input, and give t
 answer only when asked for that feature's result.
 - When a GIF fits, find_gif returns a link; put it alone on the last line of your reply."""
 
+
 WATCHER_SYSTEM_PROMPT = """\
 Check whether the saved condition holds using only the supplied current results. Return one \
 JSON object with boolean holds and string alert. Write the alert in clear, short member-facing \
@@ -238,6 +239,7 @@ def build_request_prompt(
     history_checkpoint: str = "",
     agent_identity: Mapping[str, Any] | None = None,
     application_owner: Mapping[str, Any] | None = None,
+    image_labels: Sequence[str] = (),
 ) -> str:
     """Build one untrusted request block around trusted runtime metadata."""
 
@@ -286,6 +288,10 @@ Asked at: {asked_at.isoformat()}{identity_context}
 <request>
 {question}
 </request>
+
+<images>
+{chr(10).join(image_labels) if image_labels else "No images."}
+</images>
 
 <local_context>
 {local_context or "No nearby conversation was available."}

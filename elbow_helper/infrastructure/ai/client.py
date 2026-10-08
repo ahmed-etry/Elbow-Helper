@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+import base64
+from .agent import AgentImage
+
 from collections.abc import Sequence
 from enum import StrEnum
 import json
@@ -21,6 +25,9 @@ from .agent import AgentToolCall
 from .agent import AgentToolDefinition
 from .agent import AgentToolResult
 from .agent import AgentUsage
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
@@ -186,6 +193,7 @@ class DeepSeekTextClient:
         prompt: str,
         tools: Sequence[AgentToolDefinition],
         max_output_tokens: int | None = None,
+        images: Sequence[AgentImage] = (),
     ) -> AgentSession | None:
         """Create a tool-capable session without exposing provider messages."""
 
@@ -197,6 +205,7 @@ class DeepSeekTextClient:
             prompt=prompt,
             tools=tools,
             max_output_tokens=max_output_tokens,
+            images=images,
         )
 
     async def close(self) -> None:
@@ -245,17 +254,37 @@ class _DeepSeekAgentSession:
         prompt: str,
         tools: Sequence[AgentToolDefinition],
         max_output_tokens: int | None,
+        images: Sequence[AgentImage] = (),
     ):
         self._client = client
+        self._system_prompt, self._prompt = system_prompt, prompt
+        self._replacement = None
+        self._image_fallback_available = bool(images)
+        self._first_round = True
+        content = prompt if not images else [{"type": "text", "text": prompt}]
+        for item in images:
+            content.extend([
+                {"type": "text", "text": item.label},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "data:" + item.mime_type + ";base64,"
+                        + base64.b64encode(item.data).decode("ascii"),
+                    },
+                },
+            ])
         self._messages: list[Any] = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt},
+            {"role": "user", "content": content},
         ]
         self.replace_tools(tools)
         self._max_output_tokens = max_output_tokens
         self._text_tool_call_sequence = 0
 
     def replace_tools(self, tools: Sequence[AgentToolDefinition]) -> None:
+        self._tool_definitions = tuple(tools)
+        if self._replacement is not None:
+            self._replacement.replace_tools(tools)
         self._tools = [
             {
                 "type": "function",
@@ -277,6 +306,12 @@ class _DeepSeekAgentSession:
         max_output_tokens: int | None = None,
         continuation_instruction: str | None = None,
     ) -> AgentStep:
+        if self._replacement is not None:
+            return await self._replacement.advance(tool_results, allow_tools=allow_tools,
+                reasoning_effort=reasoning_effort, max_output_tokens=max_output_tokens,
+                continuation_instruction=continuation_instruction)
+        first_round = self._first_round
+        self._first_round = False
         for result in tool_results:
             self._messages.append(
                 {
@@ -363,6 +398,22 @@ class _DeepSeekAgentSession:
                 if reasoning_content is not None:
                     message["reasoning_content"] = reasoning_content
         except OpenAIError as error:
+            if (
+                first_round and self._image_fallback_available
+                and getattr(error, "status_code", None) == 400
+            ):
+                self._image_fallback_available = False
+                LOGGER.warning("Agent provider rejected request images; continuing with text")
+                self._replacement = _DeepSeekAgentSession(
+                    client=self._client, system_prompt=self._system_prompt,
+                    prompt=self._prompt + "\nImages were attached but could not be viewed.",
+                    tools=self._tool_definitions, max_output_tokens=self._max_output_tokens,
+                )
+                return await self._replacement.advance(
+                    allow_tools=allow_tools, reasoning_effort=reasoning_effort,
+                    max_output_tokens=max_output_tokens,
+                    continuation_instruction=continuation_instruction,
+                )
             raise TextGenerationError(
                 DeepSeekTextClient._format_provider_error(error)
             ) from error

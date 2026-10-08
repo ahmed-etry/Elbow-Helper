@@ -11,6 +11,13 @@ from typing import Sequence
 
 
 @dataclass(frozen=True, slots=True)
+class AgentImage:
+    mime_type: str
+    data: bytes
+    label: str
+
+
+@dataclass(frozen=True, slots=True)
 class AgentToolDefinition:
     """A callable capability described to a text-generation provider."""
 
@@ -99,4 +106,5 @@ class AgentModel(Protocol):
         prompt: str,
         tools: Sequence[AgentToolDefinition],
         max_output_tokens: int | None = None,
+        images: Sequence[AgentImage] = (),
     ) -> AgentSession | None: ...

@@ -17,6 +17,23 @@ def message_text(message: discord.Message) -> str:
     if message.attachments:
         names = ", ".join(item.filename for item in message.attachments)
         parts.append(f"[attachments, contents not read: {names}]")
+    if any(
+        str(getattr(item, "content_type", "") or "").startswith("image/")
+        or str(getattr(item, "filename", "")).lower().endswith(
+            (".png", ".jpg", ".jpeg", ".webp", ".gif"),
+        )
+        for item in getattr(message, "attachments", ())
+    ):
+        parts.append("[image]")
+    if any(
+        getattr(embed, "type", None) in ("image", "gifv", "rich")
+        and (
+            getattr(getattr(embed, "image", None), "proxy_url", None)
+            or getattr(getattr(embed, "thumbnail", None), "proxy_url", None)
+        )
+        for embed in getattr(message, "embeds", ())
+    ):
+        parts.append("[image]")
     return "\n".join(part for part in parts if part)
 
 
