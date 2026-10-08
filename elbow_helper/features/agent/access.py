@@ -7,7 +7,9 @@ from functools import wraps
 
 import discord
 
-from elbow_helper.configuration.roles import CORE, CWL_HELPERS, LEAD, LEAD_PLUS, RECRUITERS
+from elbow_helper.configuration.roles import (
+    AGENT_TESTER_ROLE_ID, CORE, CWL_HELPERS, LEAD, LEAD_PLUS, RECRUITERS,
+)
 
 from .models import AgentRequestContext
 from .wording import ACTION_UNAVAILABLE
@@ -45,7 +47,7 @@ ACCESS_ROLE_SETS = {
     ACCESS_LEAD_PLUS_OR_CWL_HELPER: LEAD_PLUS | CWL_HELPERS,
 }
 KNOWN_ACCESS_REQUIREMENTS = frozenset(ACCESS_ROLE_SETS)
-AGENT_ROLLOUT_ROLE_IDS = CORE
+AGENT_ROLLOUT_ROLE_IDS = CORE | {AGENT_TESTER_ROLE_ID}
 
 
 def has_agent_entry_access(member: Any) -> bool:
