@@ -249,9 +249,8 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
         async def broken(*_):
             context.state.reports.clear()
             context.state.source_channels.add(999)
-            raise AssertionError("simulated invariant failure")
-
-        with self.assertRaises(AssertionError):
+            raise BaseException("simulated interruption")
+        with self.assertRaises(BaseException):
             await AgentService.execute_tool(
                 name="broken", handler=broken, arguments={}, context=context,
             )

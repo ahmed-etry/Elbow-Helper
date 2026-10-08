@@ -28,7 +28,7 @@ from ..wording import (
 )
 from . import budgets as limits
 from .rounds import AgentGracefulEnd, AgentLimitReached, ModelRounds
-from .steps import PlanRunner, disclosure_issue
+from .steps import PlanRunner
 from collections.abc import Callable
 from ..models import AgentRequestContext, RegisteredAgentTool
 from .budgets import ContextBudget
@@ -115,7 +115,6 @@ class AnswerFlow:
             self.registry,
             self.sources,
             self.request_id,
-            validate_step=lambda step: disclosure_issue(self.context, self.registry, step),
             validate_plan=self.command_check,
             advance=self.rounder.advance,
         )

@@ -354,8 +354,9 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         ])
         session = _Session([_model_step(targets_only)], self.events)
         context = replace(_context(), bot=SimpleNamespace(tree=object()))
-        with patch("elbow_helper.features.agent.engine.service.build_command_tools", return_value=({}, {})):
-            answer, _ = await self._answer(session, context)
+        with patch("elbow_helper.features.agent.engine.service.build_command_tools",
+                    return_value=({}, {})):
+                    answer, _ = await self._answer(session, context)
         self.assertIn("Synthetic preview", answer)
         self.assertIsNone(context.state.preview_reply)
         self.assertEqual(len(session.calls), 1)
@@ -782,7 +783,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("read", self.events)
         self.assertEqual(len(session.calls), 1)
 
-    async def test_disclosure_rejection_uses_one_plan_correction(self):
+    async def test_disclosure_rejection_is_returned_to_the_model(self):
         async def read(_, arguments):
             self.events.append("read")
             return {"channel_id": arguments["channel_id"]}
@@ -801,7 +802,9 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         )
         plan = _plan([_step("first", {"channel_id": 202})])
         plan["entities"] = [{"kind": "discord_channel", "value": 202}]
-        session = _Session([_model_step(plan), _model_step(plan)], self.events)
+        session = _Session([
+            _model_step(plan), AgentStep("That conversation is unavailable.", (), AgentUsage()),
+        ], self.events)
         with (
             patch_contracts(self.registry,
                        {"read_value": contract}),
@@ -809,7 +812,8 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                   return_value=None),
         ):
             answer, _ = await self._answer(session)
-        self.assertEqual(answer, AGENT_PLAN_UNFINISHED)
+        self.assertEqual(answer, "That conversation is unavailable.")
+        self.assertIn("cannot access", session.calls[1][0][0].content)
         self.assertEqual(len(session.calls), 2)
         self.assertNotIn("read", self.events)
 
@@ -1260,7 +1264,10 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             path, "registered", (ParameterInfo(
                 "value", "A required value.", True, "integer"),))
         help_entry = SimpleNamespace(path=path, summary="Get a synthetic result.", details="Uses a value.")
-        with (patch("elbow_helper.features.agent.commands.registry.discover_commands", return_value={path: command}),
+        with (patch(
+            "elbow_helper.features.agent.commands.registry.discover_commands",
+            return_value={path: command},
+        ),
               patch("elbow_helper.features.agent.commands.registry.HELP_ENTRIES", (help_entry,))):
             tools, capabilities = build_command_tools(object(), (CommandAdapter(path, "public", run),))
         command_name = next(iter(tools))
@@ -1330,8 +1337,10 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             ParameterInfo("target", "Select a target.", True, "integer"),
         ))
         help_entry = SimpleNamespace(path=path, summary="Get a result.", details="Uses one target.")
-        with (patch("elbow_helper.features.agent.commands.registry.discover_commands",
-                    return_value={path: command}),
+        with (patch(
+            "elbow_helper.features.agent.commands.registry.discover_commands",
+            return_value={path: command},
+        ),
               patch("elbow_helper.features.agent.commands.registry.HELP_ENTRIES", (help_entry,))):
             tools, capabilities = build_command_tools(object(), (
                 CommandAdapter(path, "public", run,
@@ -1343,7 +1352,8 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         plan["entities"] = [{"kind": "synthetic_source", "value": 101},
                             {"kind": "synthetic_source", "value": command_step["arguments"]["target"]}]
         session = _Session([_model_step(plan), AgentStep("Refused.", (), AgentUsage())], self.events)
-        with (patch("elbow_helper.features.agent.engine.service.build_agent_tools", return_value=self.registry),
+        with (patch("elbow_helper.features.agent.engine.service.build_agent_tools",
+                   return_value=self.registry),
               patch("elbow_helper.features.agent.engine.service.build_command_tools",
                     return_value=(tools, capabilities)),
               patch("elbow_helper.features.agent.engine.service.named_sources",

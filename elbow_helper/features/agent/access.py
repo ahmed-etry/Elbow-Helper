@@ -12,7 +12,6 @@ from elbow_helper.configuration.roles import (
 )
 
 from .models import AgentRequestContext
-from .wording import ACTION_UNAVAILABLE
 
 
 class AgentAccessLost(RuntimeError):
@@ -23,7 +22,7 @@ class LookupAccessDenied(RuntimeError):
     """The requester lacks a new lookup's role group."""
 
     def __init__(self, requirements):
-        super().__init__(ACTION_UNAVAILABLE)
+        super().__init__("This needs " + ", ".join(sorted(requirements)) + " access.")
         self.requirements = frozenset(requirements)
 
 
@@ -80,13 +79,13 @@ def lookup_level(level: str):
         async def read(context, arguments):
             await require_evidence_access(context)
             if not has_access_requirements(context.guild, context.member.id, {level}):
-                return {"error": ACTION_UNAVAILABLE, "required_access": [level]}
+                return {"error": f"This needs {level} access.", "required_access": [level]}
             previous = dict(context.state.reports)
             result = await handler(context, arguments)
             if not has_access_requirements(context.guild, context.member.id, {level}):
                 context.state.reports.clear()
                 context.state.reports.update(previous)
-                return {"error": ACTION_UNAVAILABLE, "required_access": [level]}
+                return {"error": f"This needs {level} access.", "required_access": [level]}
             if "error" not in result:
                 context.state.required_access.add(level)
                 for report_id, report in context.state.reports.items():

@@ -85,8 +85,9 @@ class ActionRefusalTests(unittest.IsolatedAsyncioTestCase):
                     self.assertIn("timezone", feedback["missing_hints"])
                 else:
                     self.assertEqual(feedback["instruction"],
-                        "Say briefly which changes can't be made and why, and offer to go ahead "
-                        "with the rest. Don't say anything ran.")
+                        "Say briefly which changes can't be made and why, "
+                        "and offer to go ahead with the rest. "
+                        "Don't say anything ran.")
                 if status == "refused":
                     self.assertEqual(feedback["results"]["202"]["error"], "Synthetic target unavailable")
 

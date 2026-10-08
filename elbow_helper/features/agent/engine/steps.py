@@ -51,17 +51,17 @@ LOGGER = logging.getLogger(__name__)
 
 async def disclosure_issue(
     context: AgentRequestContext, registry: Mapping[str, Any], step: Mapping[str, Any]
-) -> str:
+) -> dict[str, Any]:
     selected = original_tool(registry, step["capability"], step["arguments"])
     if (selected or registry[step["capability"]]).action_class in (
         ActionClass.CHANGE, ActionClass.IRREVERSIBLE,
     ):
-        return ""
+        return {}
     contract = (
         selected.contract if selected else registry[step["capability"]].contract
     )
     if contract is None:
-        return ""
+        return {}
     channels: set[int] = set()
     for field in contract.channel_fields:
         value = step["arguments"].get(field)
@@ -70,12 +70,13 @@ async def disclosure_issue(
         elif isinstance(value, list):
             channels.update(item for item in value if type(item) is int)
     if not has_access_requirements(context.guild, context.member.id, contract.required_access):
-        return ACTION_UNAVAILABLE
+        return {"error": "This needs " + ", ".join(sorted(contract.required_access)) + " access.",
+                "required_access": sorted(contract.required_access)}
     for channel_id in channels:
         if await accessible_message_channel(context, channel_id) is None:
-            return "The asker cannot access that conversation."
+            return {"error": "The asker cannot access that conversation."}
 
-    return ""
+    return {}
 
 
 @dataclass(slots=True)
@@ -137,7 +138,9 @@ class PlanRunner:
                            step["id"], step["capability"], reserved["error"])
             return reserved
         local, previous = reserved
-        return await self._execute_checked(step, arguments, checked, local, previous, plan_state)
+        return await self._execute_checked(
+                    step, arguments, checked, local, previous, plan_state,
+                )
 
     async def _check_step(self, step, arguments, earlier_results, plan_state: PlanExecutionState):
         name = step["capability"]
@@ -193,7 +196,7 @@ class PlanRunner:
             self.context, self.registry, {**step, "arguments": arguments}
         )
         if issue:
-            return {"error": issue}
+            return issue
         return {"name": name, "tool": checked.tool, "contract": checked.contract, "scope": scope}
 
     def _bound_periods(self, step, earlier_results, plan_state: PlanExecutionState):

@@ -9,10 +9,8 @@ from dataclasses import fields, replace
 from datetime import datetime, timezone
 from collections.abc import Mapping, Sequence
 import json
-import sqlite3
 import time
 from typing import Any
-import discord
 from elbow_helper.infrastructure.ai import AgentToolResult
 from ..models import AgentRequestContext
 from ..actions.contracts import ActionClass, ActionRefused, PreparedAction
@@ -101,15 +99,7 @@ async def execute_tool(
             context.member.id,
         )
         return error_result("That lookup timed out.")
-    except (
-        discord.DiscordException,
-        KeyError,
-        OSError,
-        RuntimeError,
-        sqlite3.Error,
-        TypeError,
-        ValueError,
-    ):
+    except Exception:
         outcome = "failed"
         restore_tool_state(context, snapshot)
         LOGGER.exception(
