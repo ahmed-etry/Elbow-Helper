@@ -8,7 +8,7 @@ from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.capabilities.hibernation.report import HibernationReport
 from elbow_helper.features.agent.models import AgentRequestContext
-from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
+from features.agent.report_helpers import make_event_report
 from elbow_helper.features.agent.capabilities.hibernation.reads import (
     read_active_hibernation,
     read_active_hibernation_report,
@@ -47,6 +47,7 @@ class _Channel:
 
 
 class AgentHibernationToolTests(unittest.IsolatedAsyncioTestCase):
+
     def setUp(self):
         member = SimpleNamespace(id=42, roles=[SimpleNamespace(id=next(iter(CORE)))])
         self.source = _Channel(100)
@@ -125,10 +126,9 @@ class AgentHibernationToolTests(unittest.IsolatedAsyncioTestCase):
             result = await read_active_hibernation(self.context, {})
         self.assertIn("error", result)
         self.assertEqual(self.context.state.reports, {})
-
         result = await read_active_hibernation(self.context, {})
         report = self.context.state.reports[result["report_id"]]
-        self.context.state.reports["role"] = RoleAccountReport("role", "now", (), ())
+        self.context.state.reports["role"] = make_event_report("role", "now")
         self.context.state.reports["foreign"] = HibernationReport(
             "foreign", 2, HIBERNATION_LOG, report.snapshot,
         )

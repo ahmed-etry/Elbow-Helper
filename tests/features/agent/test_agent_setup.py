@@ -115,7 +115,6 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(factory.call_args.kwargs["data_guide"])
         self.assertFalse(hasattr(bot, "agent_data_guide"))
         self.assertIs(factory.call_args.kwargs["roster_queries"], queries)
-        self.assertIs(factory.call_args.kwargs["clan_health"], clan_health_queries)
         self.assertIs(factory.call_args.kwargs["cwl_queries"], cwl_queries)
         self.assertIs(factory.call_args.kwargs["war_queries"], war_queries)
         self.assertIs(factory.call_args.kwargs["transfer_queries"], transfer_queries)

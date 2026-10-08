@@ -6,13 +6,8 @@ import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
-
 from elbow_helper.features.agent.conversation.state import Conversation, ConversationRecord, ConversationTurn
-from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
-from elbow_helper.features.agent.capabilities.achievements.report import (
-    AchievementLeaderboardMember, AchievementLeaderboardReport,
-    AchievementProgressReport, CoinTransactionReport, RaffleReport,
-)
+from features.agent.report_helpers import make_event_report
 from elbow_helper.features.agent.capabilities.events.report import EventScheduleReport
 from elbow_helper.features.agent.capabilities.member_lifecycle.report import MemberLifecycleReport
 from elbow_helper.features.agent.capabilities.clan_reporting.report import MissingElderReport
@@ -22,23 +17,11 @@ from elbow_helper.features.agent.capabilities.cwl.report import (
     CwlAssScopeReport, CwlPerformanceReport,
 )
 from elbow_helper.features.agent.capabilities.cwl.bonus_report import CwlBonusScopeReport
-from elbow_helper.features.agent.capabilities.clan_health.report import ClanHealthReport
-from elbow_helper.features.agent.capabilities.wars.report import RegularWarReport
-from elbow_helper.features.agent.capabilities.wars.history_report import (
-    HistoricalRegularWarReport, HistoricalWarOwnedMember,
-)
-from elbow_helper.features.agent.capabilities.clan_health.movement_report import (
-    FamilyMovementReport, OwnedFamilyAccountMovement,
-)
 from elbow_helper.features.agent.capabilities.clan_transfers.report import TransferQueueReport
 from elbow_helper.features.agent.capabilities.hibernation.report import HibernationReport
 from elbow_helper.features.agent.capabilities.support_tickets.report import SupportTicketReport
 from elbow_helper.features.agent.capabilities.recruitment.report import RecruitmentTrialReport
 from elbow_helper.features.agent.capabilities.examination.report import ExaminationCaseReport
-from elbow_helper.features.agent.capabilities.records.report import LeadershipRecordReport
-from elbow_helper.features.records.queries import (
-    LeadershipRecordRow, LeadershipRecordSnapshot,
-)
 from elbow_helper.configuration.channels import HIBERNATION_LOG
 from elbow_helper.features.clan_transfers.config import CLAN_TRANSFER_QUEUES
 from elbow_helper.features.clan_transfers.queries import (
@@ -62,15 +45,10 @@ from elbow_helper.features.agent.files.contracts import (
     XlsxImportArtifact,
     XlsxSheet,
 )
-
 from elbow_helper.features.cwl.queries import (
     CwlAssScopeRow, CwlAssScopeSnapshot, CwlBonusAttackScore,
     CwlBonusScopeSnapshot, CwlBonusSettings, CwlClanSeasonSummary,
     CwlPerformanceRow, CwlPerformanceSnapshot,
-)
-from elbow_helper.features.achievements.queries import (
-    AchievementProgressRow, CoinTransactionRow, CoinTransactionSnapshot,
-    MemberAchievementSnapshot, RaffleSnapshot, RaffleWinnerRow,
 )
 from elbow_helper.features.event_stats.queries import (
     EventScheduleRow, EventScheduleSnapshot,
@@ -82,13 +60,6 @@ from elbow_helper.features.clan_reporting.queries import (
     MissingElderRow, MissingElderSnapshot,
 )
 from elbow_helper.configuration.channels import CLAN_LEADERSHIP_CHANNELS
-from elbow_helper.features.clan_health.queries import (
-    ClanHealthPlayerRow, ClanHealthReportRun, ClanHealthReportSnapshot,
-    HistoricalRegularWar, HistoricalRegularWarHistory, HistoricalRegularWarMember,
-    CompleteFamilySnapshotRun, FamilyAccountMovement, FamilyMovementHistory,
-    FamilySnapshotInterval,
-)
-from elbow_helper.features.wars.queries import RegularWarSnapshot, WarMemberEvidence
 from elbow_helper.features.agent.conversation.repository import ConversationRepository, SnapshotCapacityError, SnapshotConflict, StoredConversation
 from elbow_helper.features.agent.conversation.codec import (
     encode_conversation as _encode_conversation, decode_conversation,
@@ -207,79 +178,6 @@ class AgentStorageTests(unittest.TestCase):
 
 
 class ConversationCodecTests(unittest.TestCase):
-    def test_role_account_refresh_lineage_survives_restart(self):
-        original = self.conversation()
-        account = {
-            "player_tag": "#2PP", "player_name": "Player", "primary": True,
-            "clan_tag": None, "clan_code": None, "clan_name": None,
-            "clan_role": None, "in_clan": None,
-            "location_status": "refresh_failed", "checked_at": None,
-        }
-        member = {
-            "member_id": 42, "member": "Member", "matched_roles": ["Role"],
-            "accounts": [account],
-        }
-        parent = RoleAccountReport("parent", "2026-09-17", (), (member,))
-        revision = RoleAccountReport(
-            "revision", "2026-09-18", (), (member,), "parent", ("#2PP",),
-        )
-        original.reports = {parent.report_id: parent, revision.report_id: revision}
-
-        snapshot = encode_conversation(
-            original, root_message_id=1, revision=0,
-            wall_time=1000, monotonic_time=60,
-        )
-        restored = decode_conversation(snapshot, wall_time=1001)
-
-        self.assertEqual(restored.reports["parent"], parent)
-        self.assertEqual(restored.reports["revision"], revision)
-
-        data = json.loads(snapshot.payload)
-        revised = next(
-            row for row in data["reports"] if row["report_id"] == "revision"
-        )
-        revised["refresh_attempted_player_tags"] = ["#PPP"]
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
-    def test_leadership_record_report_roundtrip_requires_role_provenance(self):
-        original = self.conversation()
-        original.reports.clear()
-        report = LeadershipRecordReport(
-            "records", 1,
-            LeadershipRecordSnapshot(
-                "2026-09-17T12:00:00+00:00", None,
-                (LeadershipRecordRow(
-                    1, "2026-09-16T12:00:00+00:00",
-                    "2026-09-16T13:00:00+00:00", 42, "Member",
-                    "war", "War", "war_missed_attacks", "Missed Attack",
-                    "Missed both attacks.", "Lead",
-                ),),
-            ),
-        )
-        original.reports[report.report_id] = report
-        original.report_sources = {report.report_id: frozenset({100})}
-        original.report_access_requirements = {
-            report.report_id: frozenset({ACCESS_LEAD_PLUS}),
-        }
-        snapshot = _encode_conversation(
-            original, root_message_id=1, revision=0,
-            wall_time=1000, monotonic_time=60,
-        )
-        restored = decode_conversation(snapshot, wall_time=1001)
-        self.assertEqual(restored.reports[report.report_id], report)
-        self.assertEqual(
-            restored.report_access_requirements[report.report_id],
-            frozenset({ACCESS_LEAD_PLUS}),
-        )
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["snapshot"]["records"][0]["note"] = ""
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
 
     def test_report_provenance_is_required_and_tampering_fails_closed(self):
         conversation = self.conversation()
@@ -385,7 +283,7 @@ class ConversationCodecTests(unittest.TestCase):
                                     "Delivered part", "Context", ("Evidence",), ("report",), (10,), False)
         conversation.append(ConversationTurn('{"answer":"Delivered part"}', frozenset({100, 200}), record))
         conversation.reply_ids = [10]
-        conversation.reports["report"] = RoleAccountReport("report", "2026-09-17", (), ())
+        conversation.reports["report"] = make_event_report("report", "2026-09-17")
         conversation.working, _ = WorkingState().remember(label="Grouping", quote="Keep together", request_text="Keep together",
             member_id=42, message_id=1, channel_id=100, created_at="2026-09-17")
         conversation.touched_at = 50
@@ -525,142 +423,6 @@ class ConversationCodecTests(unittest.TestCase):
         data["reports"][0]["guild_id"] = 2
         with self.assertRaises(ValueError):
             decode_conversation(replace(snapshot, payload=json.dumps(data)), wall_time=1001)
-
-    def test_achievement_reports_roundtrip_and_reject_tampered_counts(self):
-        original = self.conversation()
-        original.reports.clear()
-        progress = AchievementProgressReport(
-            "achievement-progress", 1, "Alpha",
-            MemberAchievementSnapshot(
-                "2026-09-18T12:00:00+00:00", 42, 1, 2,
-                (
-                    AchievementProgressRow(
-                        "chatterbox", "Chatterbox", "Send messages", 100,
-                        "counter", 75, True, 1000,
-                    ),
-                    AchievementProgressRow(
-                        "storyteller", "Storyteller", "Long message", 1,
-                        "completion_only", 0, False, None,
-                    ),
-                ),
-            ),
-        )
-        leaderboard = AchievementLeaderboardReport(
-            "achievement-leaders", 1, "2026-09-18T12:00:00+00:00", 25,
-            (
-                AchievementLeaderboardMember(42, "Alpha", 3),
-                AchievementLeaderboardMember(43, "Beta", 2),
-            ),
-        )
-        original.reports[progress.report_id] = progress
-        original.reports[leaderboard.report_id] = leaderboard
-        snapshot = encode_conversation(
-            original, root_message_id=1, revision=0,
-            wall_time=1000, monotonic_time=60,
-        )
-
-        restored = decode_conversation(snapshot, wall_time=1001)
-
-        self.assertEqual(restored.reports[progress.report_id], progress)
-        self.assertEqual(restored.reports[leaderboard.report_id], leaderboard)
-        data = json.loads(snapshot.payload)
-        progress_row = next(
-            row for row in data["reports"]
-            if row["kind"] == "achievement_progress"
-        )
-        progress_row["snapshot"]["completed_count"] = 2
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
-        data = json.loads(snapshot.payload)
-        leaderboard_row = next(
-            row for row in data["reports"]
-            if row["kind"] == "achievement_leaderboard"
-        )
-        leaderboard_row["rows"][0]["achievement_count"] = 26
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
-
-    def test_coin_transaction_report_roundtrip_and_rejects_bad_coverage(self):
-        original = self.conversation()
-        original.reports.clear()
-        report = CoinTransactionReport(
-            "coin-history", 1, "Alpha", CoinTransactionSnapshot(
-                "2026-09-19T12:00:00+00:00", 42, 2,
-                (
-                    CoinTransactionRow(
-                        2, -100, "raffle_purchase", "ticket", 42, 1001,
-                    ),
-                    CoinTransactionRow(1, 5, "daily", None, None, 1000),
-                ),
-                True, 1000, 1002,
-            ),
-        )
-        original.reports[report.report_id] = report
-        snapshot = encode_conversation(
-            original, root_message_id=1, revision=0,
-            wall_time=1000, monotonic_time=60,
-        )
-
-        restored = decode_conversation(snapshot, wall_time=1001)
-        self.assertEqual(restored.reports[report.report_id], report)
-        self.assertEqual(
-            restored.reports[report.report_id].page()["before_exclusive_ts"],
-            1002,
-        )
-
-        legacy = json.loads(snapshot.payload)
-        legacy["reports"][0]["snapshot"].pop("after")
-        legacy["reports"][0]["snapshot"].pop("before")
-        legacy_report = decode_conversation(
-            replace(snapshot, payload=json.dumps(legacy)), wall_time=1001,
-        ).reports[report.report_id]
-        self.assertIsNone(legacy_report.snapshot.after)
-        self.assertIsNone(legacy_report.snapshot.before)
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["snapshot"]["total_transactions"] = 3
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["snapshot"]["before"] = 1001
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
-
-    def test_raffle_report_roundtrip_and_rejects_foreign_member_names(self):
-        original = self.conversation()
-        original.reports.clear()
-        report = RaffleReport(
-            "raffle", 1, RaffleSnapshot(
-                "2026-09-19T12:00:00+00:00", 24321, "September 2026",
-                "Gold Pass", 1, 1, (42,), 1,
-                (RaffleWinnerRow(1, 42, 1000, "draw", None, True),),
-                True,
-            ),
-            ((42, "Alpha"),),
-        )
-        original.reports[report.report_id] = report
-        snapshot = encode_conversation(
-            original, root_message_id=1, revision=0,
-            wall_time=1000, monotonic_time=60,
-        )
-
-        restored = decode_conversation(snapshot, wall_time=1001)
-        self.assertEqual(restored.reports[report.report_id], report)
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["member_names"].append([99, "Foreign"])
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
 
     def test_scoped_cwl_ass_roundtrip_preserves_selected_scope_projection(self):
         original = self.conversation()
@@ -926,144 +688,6 @@ class ConversationCodecTests(unittest.TestCase):
         data["reports"][0]["snapshot"]["coverage_status"] = (
             "no_matching_scored_attacks"
         )
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
-
-    def test_clan_health_report_roundtrip_and_validation(self):
-        original = self.conversation()
-        original.reports.clear()
-        row = ClanHealthPlayerRow(
-            "#P0", "Alpha", "BEH", "Good", (), "", 2, 2, 0,
-            6.0, 100.0, 2, 6, 6, False, 1000, 50, 10,
-            18, 300, 4000, 1, 10, 0, 100,
-        )
-        report = ClanHealthReport(
-            "health", 1, ClanHealthReportSnapshot(
-                ClanHealthReportRun("run", 141, "2026-08", 100, 140, 1),
-                "BEH", (row,), (),
-            ),
-        )
-        original.reports[report.report_id] = report
-        snapshot = encode_conversation(
-            original, root_message_id=1, revision=0, wall_time=1000, monotonic_time=60,
-        )
-        restored = decode_conversation(snapshot, wall_time=1001, monotonic_time=61)
-        self.assertEqual(restored.reports["health"], report)
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["snapshot"]["rows"][0]["player_tag"] = "bad"
-        with self.assertRaises(ValueError):
-            decode_conversation(replace(snapshot, payload=json.dumps(data)), wall_time=1001)
-
-    def test_regular_war_report_roundtrip_and_validation(self):
-        original = self.conversation()
-        original.reports.clear()
-        member = WarMemberEvidence("#P0", "Alpha", 18, 1, 2, 1, 1, 0, 3, 100.0)
-        war = RegularWarSnapshot(
-            clan_code="BEH", evidence_status="observed",
-            observed_at="2026-09-17T00:00:00+00:00", selected="current",
-            war_id="war", state="inwar",
-            preparation_start_at="2026-09-15T00:00:00+00:00",
-            start_at="2026-09-16T00:00:00+00:00",
-            end_at="2026-09-17T00:00:00+00:00",
-            team_size=1, attacks_per_member=2,
-            clan_tag="#P0", clan_name="Hellbow", clan_stars=3,
-            clan_destruction=100.0, opponent_tag="#P8", opponent_name="Opponent",
-            opponent_stars=1, opponent_destruction=50.0, result=None,
-            roster_complete=True, members=(member,), issues=(),
-        )
-        report = RegularWarReport("war", 1, war)
-        original.reports[report.report_id] = report
-        snapshot = encode_conversation(
-            original, root_message_id=1, revision=0, wall_time=1000, monotonic_time=60,
-        )
-        restored = decode_conversation(snapshot, wall_time=1001, monotonic_time=61)
-        self.assertEqual(restored.reports["war"], report)
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["snapshot"]["members"][0]["attacks_used"] = 3
-        with self.assertRaises(ValueError):
-            decode_conversation(replace(snapshot, payload=json.dumps(data)), wall_time=1001)
-
-    def test_historical_regular_war_roundtrip_and_validation(self):
-        original = self.conversation()
-        original.reports.clear()
-        member = HistoricalRegularWarMember(
-            "war", 100, "#P0", "Alpha", 18, 1, 2, 1, 1,
-            1, True, 3, 100.0, 1,
-        )
-        war = HistoricalRegularWar(
-            "war", "BEH", "#P0", "#P8", "Opponent", 1, 2,
-            98, 99, 100, 101, 1, 1, True, True, (),
-        )
-        history = HistoricalRegularWarHistory(
-            "2026-09-17T00:00:00+00:00", "BEH", (war,), (member,), None,
-        )
-        report = HistoricalRegularWarReport(
-            "history", 1, "2026-09-17T00:01:00+00:00", history,
-            (HistoricalWarOwnedMember(member, 42, "Alpha"),),
-        )
-        original.reports[report.report_id] = report
-        snapshot = encode_conversation(
-            original, root_message_id=1, revision=0,
-            wall_time=1000, monotonic_time=60,
-        )
-
-        restored = decode_conversation(snapshot, wall_time=1001, monotonic_time=61)
-        self.assertEqual(restored.reports[report.report_id], report)
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["rows"][0]["source"]["attacks_used"] = 2
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["guild_id"] = 2
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
-
-    def test_family_movement_report_roundtrip_and_validation(self):
-        original = self.conversation()
-        original.reports.clear()
-        movement = FamilyAccountMovement(
-            "#P0", "Alpha", "observed_family_clan_change", "BEH", "BEC",
-            "old", 100, "new", 200,
-        )
-        history = FamilyMovementHistory(
-            "2026-09-17T00:00:00+00:00",
-            (CompleteFamilySnapshotRun("new", 200, 1, 1, ()),
-             CompleteFamilySnapshotRun("old", 100, 1, 1, ())),
-            (FamilySnapshotInterval("old", 100, "new", 200, 1, 1, 1, ()),),
-            (movement,), None,
-        )
-        report = FamilyMovementReport(
-            "movement", 1, "2026-09-17T00:01:00+00:00", history,
-            (OwnedFamilyAccountMovement(movement, 42, "Alpha"),),
-        )
-        original.reports[report.report_id] = report
-        snapshot = encode_conversation(
-            original, root_message_id=1, revision=0,
-            wall_time=1000, monotonic_time=60,
-        )
-
-        restored = decode_conversation(snapshot, wall_time=1001, monotonic_time=61)
-        self.assertEqual(restored.reports[report.report_id], report)
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["history"]["movements"][0]["transition"] = "transfer"
-        with self.assertRaises(ValueError):
-            decode_conversation(
-                replace(snapshot, payload=json.dumps(data)), wall_time=1001,
-            )
-
-        data = json.loads(snapshot.payload)
-        data["reports"][0]["guild_id"] = 2
         with self.assertRaises(ValueError):
             decode_conversation(
                 replace(snapshot, payload=json.dumps(data)), wall_time=1001,

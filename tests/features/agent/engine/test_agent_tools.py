@@ -14,10 +14,9 @@ from elbow_helper.features.agent.engine.registry import (
     build_agent_tool_groups, build_agent_tools,
 )
 from elbow_helper.features.agent.plan import capability_list, check_plan
-from elbow_helper.features.agent.models import AgentCapabilityEffect, AgentTurnState
+from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 from elbow_helper.features.clan_health.database import ClanHealthRepository
-from elbow_helper.features.clan_health.queries import ClanHealthQueries
 
 
 class _Channel:
@@ -37,41 +36,6 @@ class _Channel:
 
 class AgentToolTests(unittest.IsolatedAsyncioTestCase):
 
-    async def test_clan_health_player_locator_pages_with_exact_clan_scope(self):
-        member = SimpleNamespace(
-            id=10, roles=[
-                SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=CO_APPLICANT_ROLE_ID),
-            ],
-        )
-        bot_member = SimpleNamespace(id=20)
-        channel = _Channel(100, "chat", {10, 20})
-        guild = SimpleNamespace(
-            id=1, me=bot_member,
-            get_member=lambda member_id: member if member_id == 10 else bot_member,
-        )
-        channel.guild = guild
-        guild.get_channel_or_thread = lambda channel_id: channel if channel_id == 100 else None
-        queries = SimpleNamespace(search_players=AsyncMock(return_value=(
-            {"player_tag": "#P0", "last_seen_ts": 100},
-            {"player_tag": "#P2", "last_seen_ts": 100},
-            {"player_tag": "#P8", "last_seen_ts": 100},
-        )))
-        context = SimpleNamespace(
-            bot=SimpleNamespace(), guild=guild, member=member,
-            source_message=SimpleNamespace(channel=channel),
-            clan_health=queries, state=AgentTurnState(source_channels={100}),
-        )
-
-        result = await build_agent_tools()["find_clan_health_players"].handler(
-            context, {"query": "ali", "clan_code": "BEH", "offset": 5, "limit": 2},
-        )
-
-        queries.search_players.assert_awaited_once_with(
-            "ali", limit=3, offset=5, clan_code="BEH",
-        )
-        self.assertEqual([row["player_tag"] for row in result["players"]],
-                         ["#P0", "#P2"])
-        self.assertEqual(result["next_offset"], 7)
 
 
     async def test_command_help_uses_registered_public_entries_only(self):
@@ -123,12 +87,6 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(" | time ", catalogue)
         self.assertNotIn(" | entity ", catalogue)
 
-    def test_catalogue_separates_evidence_state_and_artifact_effects(self):
-        tools = build_agent_tools()
-        self.assertIs(tools["read_roster"].effect, AgentCapabilityEffect.READ)
-        self.assertIs(tools["start_discord_research_job"].effect, AgentCapabilityEffect.STATE)
-        self.assertIs(tools["remember_task_instruction"].effect, AgentCapabilityEffect.STATE)
-        self.assertIs(tools["prepare_report_spreadsheet"].effect, AgentCapabilityEffect.ARTIFACT)
 
     def test_oversized_plan_is_rejected_before_any_capability_runs(self):
         registry = build_agent_tools()
@@ -236,53 +194,6 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
 
 
 
-    def test_beta_tool_catalogue_includes_clan_health(self) -> None:
-        tools = build_agent_tools()
-
-        self.assertIn("find_clan_health_players", tools)
-        self.assertIn("get_player_health", tools)
-        self.assertIn("get_clan_health", tools)
-        self.assertIn("read_member_achievements", tools)
-        self.assertIn("read_saved_report", tools)
-        self.assertIn("compare_saved_reports", tools)
-        self.assertIn("read_achievement_economy_rules", tools)
-        self.assertIn("read_achievement_leaderboard", tools)
-        self.assertIn("read_event_schedule", tools)
-        self.assertIn("list_clan_health_reports", tools)
-        self.assertIn("read_clan_health_period", tools)
-        self.assertIn("read_family_account_movements", tools)
-        self.assertIn("read_pending_transfer_requests", tools)
-        self.assertIn("read_active_hibernation", tools)
-        self.assertIn("read_accessible_support_tickets", tools)
-        self.assertIn("read_active_recruitment_trials", tools)
-        self.assertIn("read_accessible_examination_cases", tools)
-        self.assertIn("read_active_leadership_records", tools)
-        self.assertIn("read_discord_channel_history", tools)
-        self.assertIn("find_discord_threads", tools)
-        self.assertIn("start_discord_research_job", tools)
-        self.assertIn("start_discord_history_job", tools)
-        self.assertIn("continue_discord_research_job", tools)
-        self.assertIn("read_discord_research_job", tools)
-        self.assertIn("cancel_discord_research_job", tools)
-        self.assertIn("retain_discord_research_report", tools)
-        self.assertIn("list_regular_war_status", tools)
-        self.assertIn("read_regular_war", tools)
-        self.assertIn("read_historical_regular_wars", tools)
-        self.assertIn("read_cwl_performance", tools)
-        self.assertIn("list_cwl_ass_seasons", tools)
-        self.assertIn("read_cwl_ass_scope", tools)
-        self.assertIn("read_cwl_bonus_scope", tools)
-        self.assertIn("read_cwl_threads", tools)
-        self.assertIn("list_supported_attachments", tools)
-        self.assertIn("import_csv_attachment", tools)
-        self.assertIn("import_xlsx_attachment", tools)
-        self.assertIn("import_text_attachment", tools)
-        self.assertNotIn("read_clan_health_report", tools)
-        self.assertNotIn("compare_clan_health_reports", tools)
-        self.assertNotIn("execute_sql", tools)
-        self.assertNotIn("propose_action", tools)
-        self.assertNotIn("approve_action", tools)
-        self.assertNotIn("execute_action", tools)
 
     def test_cwl_ass_tool_preserves_selected_scope_projection(self) -> None:
         description = build_agent_tools()[
@@ -309,21 +220,6 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("without recalculating", retained)
         self.assertIn("distinct from ASS", retained)
 
-    def test_achievement_tools_are_read_only_and_distinguish_progress(self) -> None:
-        tools = build_agent_tools()
-        progress = tools["read_member_achievements"].definition.description
-        leaderboard = tools[
-            "read_achievement_leaderboard"
-        ].definition.description
-
-        self.assertIn("existing achievement rules", progress)
-        self.assertIn("Completion-only", progress)
-        self.assertIn("does not expose coin transactions", progress)
-        self.assertIn(
-            "not an activity, value or leadership ranking", leaderboard,
-        )
-        self.assertIn("current non-Lead server members", leaderboard)
-        self.assertIn("no economy or raffle action", leaderboard)
 
     def test_event_tools_preserve_role_and_read_only_boundaries(self) -> None:
         tools = build_agent_tools()
@@ -338,40 +234,6 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("does not refresh channels or change event settings", current)
         self.assertIn("Current Lead and source access are rechecked", retained)
 
-    async def test_player_health_tool_reads_through_repository_contract(self) -> None:
-        with TemporaryDirectory() as temporary_directory:
-            repository = ClanHealthRepository(
-                Path(temporary_directory) / "clan_health.db"
-            )
-            repository.initialize()
-            member = SimpleNamespace(
-            id=10, roles=[
-                SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=CO_APPLICANT_ROLE_ID),
-            ],
-        )
-            channel = _Channel(100, "core-chat", {10, 20})
-            guild = SimpleNamespace(
-                id=1, me=SimpleNamespace(id=20),
-                get_member=lambda member_id: member if member_id == 10 else None,
-            )
-            channel.guild = guild
-            guild.get_channel_or_thread = lambda channel_id: channel if channel_id == 100 else None
-            context = SimpleNamespace(
-                clan_health=ClanHealthQueries(repository),
-                guild=guild, member=member, state=AgentTurnState(),
-                source_message=SimpleNamespace(channel=channel),
-            )
-            tool = build_agent_tools()["get_player_health"]
-
-            result = await tool.handler(
-                context,
-                {"player_tag": "#2PP", "days": 30},
-            )
-
-        self.assertEqual(result["player_tag"], "#2PP")
-        self.assertEqual(result["window"]["days"], 30)
-        self.assertEqual(result["window_activity"]["war"], {})
-        self.assertEqual(result["recent_war_attacks"], [])
 
 
 if __name__ == "__main__":

@@ -23,12 +23,11 @@ from . import (
 )
 from .clan_health.commands import run_health_player
 from .recruitment.commands import run_opinion
-
 FEATURES = {
+    "clan_health": clan_health,
     "account_links": account_links,
     "achievements": achievements,
     "attack_plans": attack_plans,
-    "clan_health": clan_health,
     "clan_reporting": clan_reporting,
     "clan_transfers": clan_transfers,
     "cwl": cwl,

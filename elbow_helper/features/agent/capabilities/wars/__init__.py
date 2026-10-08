@@ -1,11 +1,9 @@
 """Wars agent capabilities."""
 
-from .reads import war_tools
 from .statements import war_statement_adapters
 
 
 TOOLS = (
-    *war_tools(),
 )
 
 COMMAND_ADAPTERS = (

@@ -1,13 +1,10 @@
 """Mention-driven agent feature with separately configured rollout access."""
 
 from __future__ import annotations
-
 import asyncio
-
 from elbow_helper.discord.message_search import DiscordMessageSearch
 from elbow_helper.discord.thread_discovery import DiscordThreadDiscovery
 from elbow_helper.configuration.guild import GUILD_ID
-
 from .cog import AgentCog, AGENT_REQUEST_TIMEOUT_SECONDS
 from .conversation.transcripts import TranscriptArchive
 from .conversation.repository import ConversationRepository
@@ -94,7 +91,6 @@ async def setup(bot) -> None:
     knowledge_store = KnowledgeStore(bot.paths.data_root / "agent" / "knowledge")
     collaborators = {
         "account_links": account_links,
-        "clan_health": clan_health_queries,
         "message_search": message_search,
         "thread_discovery": thread_discovery,
         "roster_queries": rosters.queries,

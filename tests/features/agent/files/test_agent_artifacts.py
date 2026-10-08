@@ -5,10 +5,11 @@ from unittest.mock import patch
 from elbow_helper.features.agent.reports.base import (
     ArtifactCapacityError, retain_report, retain_reports,
 )
-from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
+from features.agent.report_helpers import make_event_report
 
 
 class ArtifactTests(unittest.TestCase):
+
     def test_byte_budget_evicts_oldest_complete_reports(self):
         reports = {}
         with patch("elbow_helper.features.agent.reports.base.MAX_REPORT_PAYLOAD_BYTES", 100):
@@ -96,7 +97,7 @@ class ArtifactTests(unittest.TestCase):
         self.assertIs(reports["same"], replacement)
 
     def test_report_accounting_counts_utf8_payload(self):
-        ascii_report = RoleAccountReport("id", "now", ({"name": "x"},), ())
-        unicode_report = RoleAccountReport("id", "now", ({"name": "界"},), ())
+        ascii_report = make_event_report("x", "now")
+        unicode_report = make_event_report("\u754c", "now")
         self.assertEqual(unicode_report.retained_bytes - ascii_report.retained_bytes, 2)
-        self.assertEqual(unicode_report.manifest()["kind"], "role_accounts")
+        self.assertEqual(unicode_report.manifest()["kind"], "event_schedule")

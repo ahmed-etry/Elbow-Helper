@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 import unittest
 from elbow_helper.features.agent.access import LookupAccessDenied
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 from elbow_helper.configuration.roles import CORE, LEAD, CO_APPLICANT_ROLE_ID
 from elbow_helper.features.achievements.queries import (
@@ -15,13 +15,10 @@ from elbow_helper.features.achievements.queries import (
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
 from elbow_helper.features.agent.capabilities.achievements.reads import (
-    read_achievement_leaderboard, read_achievement_leaderboard_report,
     read_member_achievement_report, read_member_achievements,
 )
 from elbow_helper.features.agent.capabilities.achievements.economy import (
-    read_achievement_economy_rules, read_member_coin_history,
-    read_member_coin_history_report, read_member_inventory, read_raffle,
-    read_raffle_report,
+    read_achievement_economy_rules, read_member_inventory,
 )
 
 
@@ -156,16 +153,6 @@ class AgentAchievementTests(unittest.IsolatedAsyncioTestCase):
             second["achievements"][0]["progress_kind"], "completion_only",
         )
 
-    async def test_leaderboard_keeps_only_current_server_members(self):
-        first = await read_achievement_leaderboard(self.context, {})
-
-        self.assertEqual(first["represented_members"], 1)
-        self.assertEqual(first["members"][0]["member_id"], 42)
-        self.assertEqual(first["members"][0]["rank"], 1)
-        retained = await read_achievement_leaderboard_report(self.context, {
-            "report_id": first["report_id"],
-        })
-        self.assertEqual(retained, first)
 
     async def test_requester_permission_loss_hides_retained_report(self):
         first = await read_member_achievements(
@@ -178,15 +165,6 @@ class AgentAchievementTests(unittest.IsolatedAsyncioTestCase):
                 "report_id": first["report_id"],
             })
 
-    async def test_access_loss_during_query_does_not_retain_result(self):
-        with patch(
-            "elbow_helper.features.agent.capabilities.achievements.reads.require_evidence_access",
-            AsyncMock(side_effect=[None, AgentAccessLost("revoked")]),
-        ):
-            with self.assertRaises(AgentAccessLost):
-                await read_achievement_leaderboard(self.context, {})
-
-        self.assertEqual(self.context.state.reports, {})
 
     async def test_missing_or_departed_member_is_not_queried(self):
         result = await read_member_achievements(
@@ -261,81 +239,6 @@ class AgentAchievementTests(unittest.IsolatedAsyncioTestCase):
             await read_member_inventory(
                 self.context, {"member_id": self.target.id},
             )
-
-    async def test_coin_history_is_retained_and_paged(self):
-        first = await read_member_coin_history(
-            self.context, {"member_id": self.target.id, "limit": 1},
-        )
-        self.assertEqual(first["total_transactions"], 2)
-        self.assertTrue(first["complete_snapshot"])
-        self.assertEqual(first["transactions"][0]["transaction_id"], 2)
-
-        second = await read_member_coin_history_report(self.context, {
-            "report_id": first["report_id"],
-            "offset": first["next_offset"],
-        })
-        self.assertEqual(second["transactions"][0]["transaction_id"], 1)
-
-    async def test_coin_history_retains_exact_time_window_across_pages(self):
-        first = await read_member_coin_history(self.context, {
-            "member_id": self.target.id,
-            "after": "1970-01-01T00:16:41Z",
-            "before": "1970-01-01T00:16:42Z",
-        })
-        self.assertEqual(first["total_transactions"], 1)
-        self.assertEqual(first["after_inclusive_ts"], 1001)
-        self.assertEqual(first["before_exclusive_ts"], 1002)
-        self.assertEqual(first["transactions"][0]["created_at"], 1001)
-        second = await read_member_coin_history_report(self.context, {
-            "report_id": first["report_id"],
-        })
-        self.assertEqual(second["after_inclusive_ts"], 1001)
-        self.assertEqual(second["total_transactions"], 1)
-
-        empty = await read_member_coin_history(self.context, {
-            "member_id": self.target.id,
-            "after": "1970-01-01T00:16:40.1Z",
-            "before": "1970-01-01T00:16:40.2Z",
-        })
-        self.assertEqual(empty["total_transactions"], 0)
-        self.assertEqual(empty["after_inclusive_ts"], 1001)
-        self.assertEqual(empty["before_exclusive_ts"], 1001)
-
-    async def test_coin_history_permission_loss_hides_retained_report(self):
-        first = await read_member_coin_history(
-            self.context, {"member_id": self.target.id},
-        )
-        self.requester.roles = []
-        with self.assertRaises(AgentAccessLost):
-            await read_member_coin_history_report(self.context, {
-                "report_id": first["report_id"],
-            })
-
-    async def test_raffle_is_retained_paged_and_preserves_unknown_members(self):
-        first = await read_raffle(self.context, {"month": "2026-09", "limit": 1})
-
-        self.assertEqual(first["month_label"], "September 2026")
-        self.assertEqual(first["prize"], "Gold Pass")
-        self.assertEqual(first["total_tickets"], 2)
-        self.assertEqual(first["tickets"][0]["member_name"], "Alpha")
-        self.assertEqual(first["unresolved_member_count"], 1)
-        second = await read_raffle_report(self.context, {
-            "report_id": first["report_id"],
-            "ticket_offset": first["next_ticket_offset"],
-            "winner_offset": first["next_winner_offset"],
-        })
-        self.assertIsNone(second["tickets"][0]["member_name"])
-        self.assertEqual(second["winners"][0]["member_id"], 77)
-
-    async def test_raffle_rejects_invalid_month_and_permission_loss(self):
-        invalid = await read_raffle(self.context, {"month": "bad"})
-        self.assertIn("YYYY-MM", invalid["error"])
-        first = await read_raffle(self.context, {})
-        self.requester.roles = []
-        with self.assertRaises(AgentAccessLost):
-            await read_raffle_report(self.context, {
-                "report_id": first["report_id"],
-            })
 
 
 async def _capture_access_loss(awaitable):

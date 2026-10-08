@@ -24,7 +24,7 @@ from elbow_helper.features.agent.plan.checker import valid_arguments
 from elbow_helper.features.agent.engine.tool_call import bound_tool_result as _bound_tool_result
 from elbow_helper.features.agent.engine.tool_call import evidence_record as _evidence_record
 from elbow_helper.features.agent.access import ACCESS_LEAD_PLUS, AgentAccessLost
-from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
+from features.agent.report_helpers import make_event_report
 from elbow_helper.infrastructure.ai import AgentStep
 from elbow_helper.infrastructure.ai import AgentToolCall
 from elbow_helper.infrastructure.ai import AgentToolDefinition
@@ -93,6 +93,7 @@ def _context():
 
 
 class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
+
     async def test_static_role_contract_blocks_handler_and_public_disclosure(self):
         tool = build_agent_tools()["read_role_connections"]
         scope = compile_capability_call(tool, {})
@@ -130,12 +131,11 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
             view_channel=getattr(actor, "id", None) in {context.member.id, lead_role.id},
             read_message_history=True,
         )
-        report = RoleAccountReport("role-report", "2026-09-17", (), ())
+        report = make_event_report("role-report", "2026-09-17")
 
         async def handler(request_context, _arguments):
             request_context.state.reports[report.report_id] = report
             return {"report_id": report.report_id}
-
         result = await AgentService.execute_tool(
             name="read_role_connections", handler=handler, arguments={},
             capability_scope=scope, context=context,
@@ -149,8 +149,8 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_failed_tool_restores_request_local_state_exactly(self):
         context = _context()
-        original = RoleAccountReport("original", "2026-09-17", (), ())
-        replacement = RoleAccountReport("replacement", "2026-09-18", (), ())
+        original = make_event_report("original", "2026-09-17")
+        replacement = make_event_report("replacement", "2026-09-18")
         context.state.source_channels = {100, 200}
         context.state.required_access = {ACCESS_LEAD_PLUS}
         context.state.reports = {original.report_id: original}
@@ -173,7 +173,6 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
             context.state.attachments.append(AgentAttachment("after.xlsx", b"after"))
             context.state.history_status["included_turns"] = 99
             raise RuntimeError("simulated failure")
-
         with self.assertLogs(
             "elbow_helper.features.agent.engine.tool_call", level="ERROR",
         ):
@@ -200,8 +199,8 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_access_loss_after_tool_rolls_back_new_report_and_eviction(self):
         context = _context()
-        original = RoleAccountReport("original", "2026-09-17", (), ())
-        replacement = RoleAccountReport("replacement", "2026-09-18", (), ())
+        original = make_event_report("original", "2026-09-17")
+        replacement = make_event_report("replacement", "2026-09-18")
         context.state.reports[original.report_id] = original
         context.state.report_sources[original.report_id] = frozenset({100})
         context.state.report_access_requirements[original.report_id] = frozenset()
@@ -210,7 +209,6 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
             context.state.reports.clear()
             context.state.reports[replacement.report_id] = replacement
             return {"report_id": replacement.report_id}
-
         with patch(
             "elbow_helper.features.agent.engine.tool_call.require_evidence_access",
             new=AsyncMock(side_effect=AgentAccessLost("lost")),
@@ -226,14 +224,13 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_cancelled_tool_rolls_back_before_propagating(self):
         context = _context()
-        original = RoleAccountReport("original", "2026-09-17", (), ())
+        original = make_event_report("original", "2026-09-17")
         context.state.reports[original.report_id] = original
 
         async def cancelled(*_):
             context.state.reports.clear()
             context.state.attachments.append(AgentAttachment("partial.xlsx", b"x"))
             raise asyncio.CancelledError
-
         with self.assertRaises(asyncio.CancelledError):
             await AgentService.execute_tool(
                 name="cancelled", handler=cancelled, arguments={}, context=context,
@@ -243,7 +240,7 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unexpected_base_exception_rolls_back_before_propagating(self):
         context = _context()
-        original = RoleAccountReport("original", "2026-09-17", (), ())
+        original = make_event_report("original", "2026-09-17")
         context.state.reports[original.report_id] = original
 
         async def broken(*_):
@@ -262,12 +259,11 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
         context.state.source_channels.update({100, 200})
         context.state.required_access.add(ACCESS_LEAD_PLUS)
         context.member.roles.append(SimpleNamespace(id=next(iter(LEAD_PLUS))))
-        report = RoleAccountReport("report", "2026-09-17", (), ())
+        report = make_event_report("report", "2026-09-17")
 
         async def lookup(request_context, _):
             request_context.state.reports[report.report_id] = report
             return {"report_id": report.report_id}
-
         tool = RegisteredAgentTool(
             AgentToolDefinition("lookup", "test", {"properties": {}}), lookup,
         )

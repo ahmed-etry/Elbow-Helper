@@ -269,15 +269,6 @@ class DependencyBoundaryTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertNotIn("aiohttp.ClientSession(", source)
 
-    def test_role_agent_tool_uses_feature_owned_account_refresh(self) -> None:
-        source = (
-            FEATURE_ROOT / "agent" / "capabilities" / "account_links" / "role_audit.py"
-        ).read_text(encoding="utf-8-sig")
-        self.assertIn("refresh_account_locations", source)
-        self.assertNotIn("clash_client", source)
-        self.assertIn("compare_reports", source)
-        self.assertNotIn("ownership_changed", source)
-
     def test_thread_discovery_transport_stays_out_of_agent_tools(self) -> None:
         source = (
             FEATURE_ROOT / "agent" / "research" / "threads.py"

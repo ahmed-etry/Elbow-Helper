@@ -1,6 +1,5 @@
 """Rosters agent capabilities."""
 
-from .reads import roster_tools
 from .management import roster_management_tools
 from .signups import roster_account_management_tools
 from .setup_commands import roster_adapters
@@ -11,7 +10,6 @@ from .management import UNDO_HANDLERS as MANAGEMENT_UNDO_HANDLERS
 
 
 TOOLS = (
-    *roster_tools(),
     *roster_management_tools(),
     *roster_account_management_tools(),
 )

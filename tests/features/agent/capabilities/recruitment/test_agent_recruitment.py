@@ -10,7 +10,7 @@ from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
 from elbow_helper.features.agent.capabilities.recruitment.report import RecruitmentTrialReport
-from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
+from features.agent.report_helpers import make_event_report
 from elbow_helper.features.agent.capabilities.recruitment.reads import (
     read_active_recruitment_trial_report,
     read_active_recruitment_trials,
@@ -38,6 +38,7 @@ class _Channel:
 
 
 class AgentRecruitmentToolTests(unittest.IsolatedAsyncioTestCase):
+
     def setUp(self):
         requester = SimpleNamespace(
             id=10, roles=[SimpleNamespace(id=next(iter(CORE)))],
@@ -264,13 +265,10 @@ class AgentRecruitmentToolTests(unittest.IsolatedAsyncioTestCase):
             result = await read_active_recruitment_trials(self.context, {})
         self.assertIn("error", result)
         self.assertEqual(self.context.state.reports, {})
-
         self.context.state.source_channels.clear()
         result = await read_active_recruitment_trials(self.context, {})
         report = self.context.state.reports[result["report_id"]]
-        self.context.state.reports["role"] = RoleAccountReport(
-            "role", "now", (), (),
-        )
+        self.context.state.reports["role"] = make_event_report("role", "now")
         self.context.state.reports["foreign"] = RecruitmentTrialReport(
             "foreign", 2, report.snapshot,
         )

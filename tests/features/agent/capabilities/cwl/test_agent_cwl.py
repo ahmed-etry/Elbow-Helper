@@ -3,20 +3,16 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 from unittest.mock import patch
-
-
 from elbow_helper.configuration.roles import CORE, CO_APPLICANT_ROLE_ID
 from elbow_helper.features.agent.capabilities.cwl.report import CwlPerformanceReport
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
-from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
+from features.agent.report_helpers import make_event_report
 from elbow_helper.features.agent.capabilities.cwl.reads import read_cwl_performance, read_cwl_performance_report, read_cwl_threads
 from elbow_helper.features.agent.capabilities.cwl.scoring import (
-    list_cwl_ass_seasons, read_cwl_ass_scope, read_cwl_ass_scope_report,
-    read_cwl_bonus_scope, read_cwl_bonus_scope_report,
+    read_cwl_ass_scope, read_cwl_bonus_scope, read_cwl_bonus_scope_report,
 )
 from elbow_helper.features.agent.files.spreadsheet_tools import prepare_spreadsheet
-
 from elbow_helper.features.cwl.queries import (
     CwlAssScopeRow, CwlAssScopeSnapshot, CwlBonusAttackScore,
     CwlBonusScopeSnapshot, CwlBonusSettings, CwlClanSeasonSummary,
@@ -113,6 +109,7 @@ class _Queries:
 
 
 class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
+
     def setUp(self):
         member = SimpleNamespace(id=42, display_name="Tester", roles=[SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=CO_APPLICANT_ROLE_ID)])
         guild = SimpleNamespace(id=1, name="Brown Elbow", me=member, get_member=lambda _: member)
@@ -169,7 +166,7 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
             "report_id": first["report_id"], "player_tag": "BAD",
         })
         self.assertIn("error", invalid)
-        self.context.state.reports["wrong"] = RoleAccountReport("wrong", "now", (), ())
+        self.context.state.reports["wrong"] = make_event_report("wrong", "now")
         self.assertIn("error", await read_cwl_performance_report(
             self.context, {"report_id": "wrong"},
         ))
@@ -179,41 +176,6 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([row["thread_id"] for row in result["threads"]], [100])
         self.assertEqual(result["omitted_inaccessible_count"], 1)
         self.assertEqual(self.context.state.source_channels, {100})
-
-    async def test_scoped_ass_tools_preserve_projection_scope_and_sample(self):
-        seasons = await list_cwl_ass_seasons(
-            self.context, {"clan_code": "BEH"},
-        )
-        season = await read_cwl_ass_scope(self.context, {
-            "clan_code": "BEH", "season": "2026-08",
-            "scope_type": "season",
-        })
-        round_result = await read_cwl_ass_scope(self.context, {
-            "clan_code": "BEH", "season": "2026-08",
-            "scope_type": "round", "cwl_round": 1,
-        })
-
-        self.assertEqual(seasons["seasons"], ["2026-09", "2026-08"])
-        self.assertEqual(seasons["latest_seven_war_season"], "2026-08")
-        self.assertEqual(seasons["season_coverage"][0]["ended_wars"], 1)
-        self.assertFalse(seasons["season_coverage"][0]["seven_wars_recorded"])
-        self.assertEqual(
-            season["scoring_status"], "calculated_from_selected_scope",
-        )
-        self.assertEqual(season["players"][0]["ass_score"], 21.0)
-        self.assertEqual(
-            round_result["scoring_status"], "calculated_from_selected_scope",
-        )
-        self.assertEqual(round_result["players"][0]["ass_score"], 21.0)
-        self.assertEqual(round_result["players"][0]["attacks"], 1)
-        self.assertEqual(round_result["projection_attack_target"], 7)
-        self.assertEqual(round_result["projection_note"]["scope"], "selected")
-        self.assertEqual(round_result["projection_note"]["basis"], "observed_attack_averages")
-        self.assertFalse(round_result["projection_note"]["completed_season_verified"])
-        retained = await read_cwl_ass_scope_report(self.context, {
-            "report_id": round_result["report_id"],
-        })
-        self.assertEqual(retained, round_result)
 
     async def test_scoped_ass_evidence_can_feed_generic_spreadsheet_output(self):
         result = await read_cwl_ass_scope(self.context, {

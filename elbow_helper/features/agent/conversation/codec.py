@@ -1,12 +1,10 @@
 """Explicit JSON conversation format; never persist SDK sessions or reasoning."""
-
 from dataclasses import asdict, fields
 from datetime import datetime
 import json
 import math
 import time
 from typing import Any
-
 from ..reports.base import retain_report
 from ..access import KNOWN_ACCESS_REQUIREMENTS
 from .state import (
@@ -14,28 +12,18 @@ from .state import (
     AnswerDisclosure, Conversation, ConversationCheckpoint, ConversationRecord, ConversationTurn,
     checkpoint_input_hash,
 )
-from ..capabilities.account_links.role_report import RoleAccountReport
-from ..capabilities.achievements.report import (
-    AchievementLeaderboardReport, AchievementProgressReport,
-    CoinTransactionReport, RaffleReport,
-)
+from ..capabilities.achievements.report import AchievementProgressReport
 from ..capabilities.events.report import EventScheduleReport
 from ..capabilities.member_lifecycle.report import MemberLifecycleReport
 from ..capabilities.clan_reporting.report import MissingElderReport
 from ..knowledge.report import KnowledgeReport
-from ..capabilities.rosters.report import RosterReport
 from ..capabilities.cwl.report import CwlAssScopeReport, CwlPerformanceReport
 from ..capabilities.cwl.bonus_report import CwlBonusScopeReport
-from ..capabilities.clan_health.report import ClanHealthReport
-from ..capabilities.wars.report import RegularWarReport
-from ..capabilities.wars.history_report import HistoricalRegularWarReport
-from ..capabilities.clan_health.movement_report import FamilyMovementReport
 from ..capabilities.clan_transfers.report import TransferQueueReport
 from ..capabilities.hibernation.report import HibernationReport
 from ..capabilities.support_tickets.report import SupportTicketReport
 from ..capabilities.recruitment.report import RecruitmentTrialReport
 from ..capabilities.examination.report import ExaminationCaseReport
-from ..capabilities.records.report import LeadershipRecordReport
 from ..files.contracts import (
     CsvImportArtifact,
     TextImportArtifact,
@@ -82,8 +70,10 @@ def _validate_checkpoint(
         raise ValueError("Conversation checkpoint does not match retained turns")
 
 
-def encode_conversation(conversation: Conversation, *, root_message_id: int, revision: int,
-                        wall_time: float | None = None, monotonic_time: float | None = None) -> StoredConversation:
+def encode_conversation(
+    conversation: Conversation, *, root_message_id: int, revision: int,
+    wall_time: float | None = None, monotonic_time: float | None = None,
+) -> StoredConversation:
     now = time.time() if wall_time is None else wall_time
     monotonic = time.monotonic() if monotonic_time is None else monotonic_time
     touched_at = now - max(0, monotonic - conversation.touched_at)
@@ -140,89 +130,63 @@ def encode_conversation(conversation: Conversation, *, root_message_id: int, rev
             raise ValueError("Attachment report provenance is incomplete")
     reports = []
     for report in conversation.reports.values():
-        if isinstance(report, RoleAccountReport):
-            reports.append({"kind": "role_accounts", "report_id": report.report_id,
-                            "created_at": report.created_at, "roles": report.roles,
-                            "members": report.members,
-                            "parent_report_id": report.parent_report_id,
-                            "refresh_attempted_player_tags": (
-                            report.refresh_attempted_player_tags
-                            )})
-        elif isinstance(report, AchievementProgressReport):
+        if isinstance(report, AchievementProgressReport):
             reports.append({
                 "kind": "achievement_progress", **report.storage_payload(),
             })
-        elif isinstance(report, AchievementLeaderboardReport):
-            reports.append({
-                "kind": "achievement_leaderboard", **report.storage_payload(),
-            })
-        elif isinstance(report, CoinTransactionReport):
-            reports.append({
-                "kind": "coin_transactions", **report.storage_payload(),
-            })
-        elif isinstance(report, RaffleReport):
-            reports.append({
-                "kind": "raffle", **report.storage_payload(),
-            })
-        elif isinstance(report, EventScheduleReport):
-            reports.append({
+        else:
+            if isinstance(report, EventScheduleReport):
+                reports.append({
                 "kind": "event_schedule", **report.storage_payload(),
             })
-        elif isinstance(report, MemberLifecycleReport):
-            reports.append({
+            elif isinstance(report, MemberLifecycleReport):
+                reports.append({
                 "kind": "member_lifecycle", **report.storage_payload(),
             })
-        elif isinstance(report, MissingElderReport):
-            reports.append({
+            elif isinstance(report, MissingElderReport):
+                reports.append({
                 "kind": "missing_elder", **report.storage_payload(),
             })
-        elif isinstance(report, KnowledgeReport):
-            reports.append({
+            elif isinstance(report, KnowledgeReport):
+                reports.append({
                 "kind": "approved_knowledge", **report.storage_payload(),
             })
-        elif isinstance(report, RosterReport):
-            reports.append({"kind": "roster_signups", "report_id": report.report_id, "snapshot": asdict(report.snapshot)})
-        elif isinstance(report, CwlPerformanceReport):
-            reports.append({"kind": "cwl_performance", "report_id": report.report_id,
+            elif isinstance(report, CwlPerformanceReport):
+                reports.append({"kind": "cwl_performance", "report_id": report.report_id,
                             "guild_id": report.guild_id, "snapshot": asdict(report.snapshot)})
-        elif isinstance(report, CwlAssScopeReport):
-            reports.append({
+            elif isinstance(report, CwlAssScopeReport):
+                reports.append({
                 "kind": "cwl_ass_scope", **report.storage_payload(),
             })
-        elif isinstance(report, CwlBonusScopeReport):
-            reports.append({
+            elif isinstance(report, CwlBonusScopeReport):
+                reports.append({
                 "kind": "cwl_bonus_scope", **report.storage_payload(),
             })
-        elif isinstance(report, ClanHealthReport):
-            reports.append({"kind": "clan_health", **report.storage_payload()})
-        elif isinstance(report, RegularWarReport):
-            reports.append({"kind": "regular_war", **report.storage_payload()})
-        elif isinstance(report, HistoricalRegularWarReport):
-            reports.append({"kind": "historical_regular_wars", **report.storage_payload()})
-        elif isinstance(report, FamilyMovementReport):
-            reports.append({"kind": "family_account_movements", **report.storage_payload()})
-        elif isinstance(report, TransferQueueReport):
-            reports.append({"kind": "pending_transfer_requests", **report.storage_payload()})
-        elif isinstance(report, HibernationReport):
-            reports.append({"kind": "active_hibernation", **report.storage_payload()})
-        elif isinstance(report, SupportTicketReport):
-            reports.append({"kind": "support_ticket_inventory", **report.storage_payload()})
-        elif isinstance(report, RecruitmentTrialReport):
-            reports.append({"kind": "active_recruitment_trials", **report.storage_payload()})
-        elif isinstance(report, ExaminationCaseReport):
-            reports.append({"kind": "examination_case_status", **report.storage_payload()})
-        elif isinstance(report, LeadershipRecordReport):
-            reports.append({"kind": "active_leadership_records", **report.storage_payload()})
-        elif isinstance(report, CsvImportArtifact):
-            reports.append({"kind": "csv_import", **report.storage_payload()})
-        elif isinstance(report, XlsxImportArtifact):
-            reports.append({"kind": "xlsx_import", **report.storage_payload()})
-        elif isinstance(report, TextImportArtifact):
-            reports.append({"kind": "text_import", **report.storage_payload()})
-        elif isinstance(report, DiscordResearchReport):
-            reports.append({"kind": "discord_research", **report.storage_payload()})
-        else:
-            raise ValueError("Unsupported conversation report kind")
+            else:
+                if isinstance(report, TransferQueueReport):
+                    reports.append({
+                        "kind": "pending_transfer_requests", **report.storage_payload(),
+                    })
+                elif isinstance(report, HibernationReport):
+                    reports.append({"kind": "active_hibernation", **report.storage_payload()})
+                elif isinstance(report, SupportTicketReport):
+                    reports.append({"kind": "support_ticket_inventory", **report.storage_payload()})
+                elif isinstance(report, RecruitmentTrialReport):
+                    reports.append({
+                        "kind": "active_recruitment_trials", **report.storage_payload(),
+                    })
+                elif isinstance(report, ExaminationCaseReport):
+                    reports.append({"kind": "examination_case_status", **report.storage_payload()})
+                elif isinstance(report, CsvImportArtifact):
+                    reports.append({"kind": "csv_import", **report.storage_payload()})
+                elif isinstance(report, XlsxImportArtifact):
+                    reports.append({"kind": "xlsx_import", **report.storage_payload()})
+                elif isinstance(report, TextImportArtifact):
+                    reports.append({"kind": "text_import", **report.storage_payload()})
+                elif isinstance(report, DiscordResearchReport):
+                    reports.append({"kind": "discord_research", **report.storage_payload()})
+                else:
+                    raise ValueError("Unsupported conversation report kind")
     payload = json.dumps({
         "format": 2, "version": conversation.version, "evicted_turns": conversation.evicted_turns,
         "reply_ids": conversation.reply_ids,

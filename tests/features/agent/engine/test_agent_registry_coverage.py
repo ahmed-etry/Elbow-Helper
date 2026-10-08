@@ -20,17 +20,18 @@ IRREVERSIBLE_COMMANDS = frozenset({
 
 READ_COVERAGE = {
     "/achievements": ("read_member_achievements",),
-    "/achievement leaderboard": ("read_achievement_leaderboard",),
+    "/achievement leaderboard": ("query_bot_data",),
     "/inventory": ("read_member_inventory",),
     "/economyinfo": ("read_achievement_economy_rules",),
-    "/coinlog": ("read_member_coin_history",),
-    "/raffle list": ("read_raffle",),
-    "/raffle history": ("read_raffle",),
-    "/account list": ("get_linked_accounts", "get_account_link"),
-    "/roster list": ("find_rosters", "read_roster"),
+    "/coinlog": ("query_bot_data",),
+    "/raffle list": ("query_bot_data",),
+    "/raffle history": ("query_bot_data",),
+    "/account list": ("query_bot_data", "query_bot_data"),
+    "/roster list": ("query_bot_data", "query_bot_data"),
     "/event list": ("read_event_schedule",),
     "/recstats": ("read_member_lifecycle",),
 }
+
 
 class AgentRegistryCoverageTests(unittest.TestCase):
     def test_command_classes_follow_action_effects(self):

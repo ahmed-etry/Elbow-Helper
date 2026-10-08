@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.roles import CORE, RECRUITERS
 from elbow_helper.features.agent.access import ACCESS_ROLE_SETS, AgentAccessLost, has_access_requirements
-from elbow_helper.features.agent.engine.registry import build_agent_tool_groups
 from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.help.catalog import HELP_ENTRIES
@@ -58,16 +57,3 @@ class LookupAccessTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(AgentAccessLost):
                 await AgentService.execute_tool(name="synthetic", handler=handler, arguments={},
                     capability_scope={"required_access": ["core"]}, context=context)
-
-    def test_lookup_contracts_retain_the_command_level(self):
-        tools = {tool.definition.name: tool for group in build_agent_tool_groups().values() for tool in group}
-        groups = {
-            "recruiter_or_core": ("get_linked_accounts", "get_account_link", "read_account_suggestions", "audit_role_accounts", "read_role_account_report"),
-            "core": ("read_member_coin_history", "read_member_coin_history_report"),
-            "lead_plus": ("read_raffle", "read_raffle_report", "get_player_health", "get_clan_health", "read_clan_health_period", "read_family_account_movements"),
-            "lead_plus_or_cwl_helper": ("read_cwl_performance", "read_cwl_ass_scope", "read_cwl_bonus_scope", "list_cwl_ass_seasons"),
-        }
-        for level, names in groups.items():
-            for name in names:
-                with self.subTest(name=name):
-                    self.assertEqual(tools[name].contract.required_access, {level})

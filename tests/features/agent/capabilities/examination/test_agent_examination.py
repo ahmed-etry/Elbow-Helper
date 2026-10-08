@@ -15,7 +15,7 @@ from elbow_helper.features.agent.actions.preview import preview_text
 from elbow_helper.features.agent.capabilities.examination.examiner_profile import prepare_examiner_leave
 from elbow_helper.features.agent.capabilities.examination.report import ExaminationCaseReport
 from elbow_helper.features.agent.models import AgentRequestContext, AgentTurnState
-from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
+from features.agent.report_helpers import make_event_report
 from elbow_helper.features.agent.capabilities.examination.reads import (
     read_accessible_examination_cases,
     read_examination_case_report,
@@ -61,6 +61,7 @@ class _Channel:
 
 
 class AgentExaminationToolTests(unittest.IsolatedAsyncioTestCase):
+
     async def test_leave_examiner_preview_formats_the_heading_and_targets(self):
         member = SimpleNamespace(id=10, mention="<@10>")
         channel = SimpleNamespace(id=200, mention="<#200>")
@@ -322,13 +323,10 @@ class AgentExaminationToolTests(unittest.IsolatedAsyncioTestCase):
             result = await read_accessible_examination_cases(self.context, {})
         self.assertIn("error", result)
         self.assertEqual(self.context.state.reports, {})
-
         self.context.state.source_channels.clear()
         result = await read_accessible_examination_cases(self.context, {})
         report = self.context.state.reports[result["report_id"]]
-        self.context.state.reports["role"] = RoleAccountReport(
-            "role", "now", (), (),
-        )
+        self.context.state.reports["role"] = make_event_report("role", "now")
         self.context.state.reports["foreign"] = ExaminationCaseReport(
             "foreign", 2, report.snapshot,
         )

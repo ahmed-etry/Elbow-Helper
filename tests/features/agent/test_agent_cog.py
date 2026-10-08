@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 from contextlib import nullcontext
@@ -14,7 +13,6 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 from unittest.mock import ANY
-
 from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import CORE, LEAD_PLUS
 from elbow_helper.discord.interactions import DEFAULT_FAILURE_MESSAGE
@@ -25,7 +23,7 @@ from elbow_helper.features.agent.text import message_text
 from elbow_helper.features.agent.conversation.state import ConversationTurn
 from elbow_helper.features.agent.models import AgentDelivery, AgentTurnState
 from elbow_helper.features.agent.conversation.context import compile_context
-from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
+from features.agent.report_helpers import make_event_report
 from elbow_helper.features.agent.conversation.instructions import WorkingState
 from elbow_helper.features.agent.conversation.transcripts import TranscriptArchive
 from elbow_helper.features.agent.conversation.repository import ConversationRepository
@@ -37,7 +35,6 @@ from elbow_helper.infrastructure.ai.client import DeepSeekTextClient
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from elbow_helper.features.agent.models import RegisteredAgentTool
 from elbow_helper.features.agent.engine.capability_contract import CapabilityContract
-
 from features.agent.engine.helpers import patch_contracts
 
 
@@ -75,6 +72,7 @@ def _message(*, author: _Member, bot_id: int, content: str):
 
 
 class AgentCogTests(unittest.IsolatedAsyncioTestCase):
+
     async def test_mixed_answer_and_preview_share_delivery_and_records(self):
         from elbow_helper.features.agent.actions.contracts import PreparedAction, ChangePreview
         from elbow_helper.features.agent.actions.preview import ConfirmationView, preview_text
@@ -344,9 +342,8 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 role.id == lead_role for role in getattr(actor, "roles", ())
             )
             return SimpleNamespace(view_channel=visible, read_message_history=visible)
-
         channel.permissions_for = permissions_for
-        report = RoleAccountReport("restricted", "2026-09-17", (), ())
+        report = make_event_report("restricted", "2026-09-17")
         observed = []
 
         async def answer(**kwargs):
@@ -362,7 +359,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 )
                 state.required_access.add(ACCESS_LEAD_PLUS)
             return "Answer"
-
         self.cog.service.answer.side_effect = answer
         with patch("elbow_helper.features.agent.cog.discord.Member", _Member):
             await self.cog.on_message(first)
@@ -370,7 +366,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
             await self.cog.on_message(make_message(lead, 2, "continue", reply_to=1001))
             lead.roles.append(SimpleNamespace(id=lead_role))
             await self.cog.on_message(make_message(lead, 3, "continue", reply_to=1001))
-
         self.assertEqual(observed, [(), ("restricted",)])
         conversation = self.cog._conversations.find(GUILD_ID, 100, 1003)
         self.assertIn("restricted", conversation.reports)
@@ -860,7 +855,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         member = _Member(42, (next(iter(CORE)),))
         make_message = self._real_handler_scenario(member)
         message = make_message(member, 1, "<@999> build a report")
-        report = RoleAccountReport(report_id="report", created_at="2026-09-16", roles=(), members=())
+        report = make_event_report(report_id="report", created_at="2026-09-16")
 
         async def generate(**kwargs):
             state = kwargs["context"].state
@@ -870,7 +865,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
             )
             state.report_access_requirements[report.report_id] = frozenset()
             return "x" * 2100
-
         self.cog.service.answer.side_effect = generate
         message.channel.send.side_effect = OSError("Simulated delivery failure")
         with (
@@ -880,14 +874,12 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
             await self.cog.on_message(message)
         conversation = self.cog._conversations.find(GUILD_ID, 100, 1001)
         self.assertIs(conversation.reports["report"], report)
-
         self.cog.service.answer.side_effect = None
         self.cog.service.answer.return_value = "The report is ready."
         followup = make_message(member, 2, "use that report", reply_to=1001)
         with patch("elbow_helper.features.agent.cog.discord.Member", _Member):
             await self.cog.on_message(followup)
         self.assertIs(self.cog.service.answer.await_args.kwargs["context"].state.reports["report"], report)
-
 
     async def test_deleted_replied_to_message_does_not_raise(self):
         message = SimpleNamespace(
@@ -1174,7 +1166,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
     async def test_report_from_revoked_source_is_hidden_without_erasure(self):
         member = _Member(42, (next(iter(CORE)),))
         conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
-        report = RoleAccountReport("report", "2026-09-17", (), ())
+        report = make_event_report("report", "2026-09-17")
         conversation.reports[report.report_id] = report
         conversation.report_sources[report.report_id] = frozenset({200})
         conversation.report_access_requirements[report.report_id] = frozenset()
@@ -1579,7 +1571,5 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertFalse(self.cog._is_agent_request(message))
-
-
 if __name__ == "__main__":
     unittest.main()

@@ -1,12 +1,7 @@
 """Reconstruct typed report data within its guild boundary."""
-
 from typing import Any
 from elbow_helper.features.achievements.queries import (
     AchievementProgressRow, MemberAchievementSnapshot,
-)
-from elbow_helper.features.achievements.economy_queries import (
-    CoinTransactionRow, CoinTransactionSnapshot, RaffleSnapshot,
-    RaffleWinnerRow,
 )
 from elbow_helper.features.event_stats.queries import (
     EventScheduleRow, EventScheduleSnapshot,
@@ -27,21 +22,13 @@ from elbow_helper.features.recruitment.queries import (
 from elbow_helper.features.examination.queries import (
     ExaminationCaseSnapshot, ExaminationCaseStatus,
 )
-from elbow_helper.features.records.queries import (
-    LeadershipRecordRow, LeadershipRecordSnapshot,
-)
-from ..capabilities.achievements.report import (
-    AchievementLeaderboardMember, AchievementLeaderboardReport,
-    AchievementProgressReport, CoinTransactionReport, RaffleReport,
-)
+from ..capabilities.achievements.report import AchievementProgressReport
 from ..capabilities.events.report import EventScheduleReport
 from ..capabilities.member_lifecycle.report import MemberLifecycleReport
 from ..knowledge.report import KnowledgeReport
 from ..capabilities.examination.report import ExaminationCaseReport
 from ..capabilities.hibernation.report import HibernationReport
-from ..capabilities.records.report import LeadershipRecordReport
 from ..capabilities.recruitment.report import RecruitmentTrialReport
-from ..capabilities.account_links.role_report import RoleAccountReport
 from ..research.report import DiscordResearchReport
 from ..capabilities.support_tickets.report import SupportTicketReport
 from .guild_boundary import require_guild
@@ -57,46 +44,6 @@ def decode_achievement_progress(row: dict[str, Any], guild_id: int) -> Any:
             value["completed_count"], value["total_count"],
             tuple(AchievementProgressRow(**item) for item in value["rows"]),
         ),
-    )
-
-
-def decode_achievement_leaderboard(row: dict[str, Any], guild_id: int) -> Any:
-    require_guild(row, guild_id, "Achievement leaderboard report")
-    return AchievementLeaderboardReport(
-        row["report_id"], row["guild_id"], row["observed_at"],
-        row["total_achievements"],
-        tuple(AchievementLeaderboardMember(**item) for item in row["rows"]),
-    )
-
-
-def decode_coin_transactions(row: dict[str, Any], guild_id: int) -> Any:
-    require_guild(row, guild_id, "Coin transaction report")
-    value = row["snapshot"]
-    return CoinTransactionReport(
-        row["report_id"], row["guild_id"], row["member_name"],
-        CoinTransactionSnapshot(
-            value["observed_at"], value["member_id"],
-            value["total_transactions"],
-            tuple(CoinTransactionRow(**item) for item in value["rows"]),
-            value["complete"],
-            value.get("after"), value.get("before"),
-        ),
-    )
-
-
-def decode_raffle(row: dict[str, Any], guild_id: int) -> Any:
-    require_guild(row, guild_id, "Raffle report")
-    value = row["snapshot"]
-    return RaffleReport(
-        row["report_id"], row["guild_id"], RaffleSnapshot(
-            value["observed_at"], value["month_key"], value["month_label"],
-            value["prize"], value["configured_winners"],
-            value["total_tickets"], tuple(value["ticket_member_ids"]),
-            value["total_winner_rows"],
-            tuple(RaffleWinnerRow(**item) for item in value["winners"]),
-            value["complete"],
-        ),
-        tuple(tuple(item) for item in row["member_names"]),
     )
 
 
@@ -157,14 +104,6 @@ def decode_approved_knowledge(row: dict[str, Any], guild_id: int) -> Any:
             "source_refs": tuple(item["source_refs"]),
             "conflicts_with": tuple(item["conflicts_with"]),
         }) for item in row["sections"]),
-    )
-
-
-def decode_role_accounts(row: dict[str, Any], guild_id: int) -> Any:
-    return RoleAccountReport(
-        row["report_id"], row["created_at"], tuple(row["roles"]),
-        tuple(row["members"]), row.get("parent_report_id"),
-        tuple(row.get("refresh_attempted_player_tags", ())),
     )
 
 
@@ -229,18 +168,6 @@ def decode_examination_case_status(row: dict[str, Any], guild_id: int) -> Any:
             ],
             cases=tuple(ExaminationCaseStatus(**item)
                         for item in value["cases"]),
-        ),
-    )
-
-
-def decode_active_leadership_records(row: dict[str, Any], guild_id: int) -> Any:
-    require_guild(row, guild_id, "Leadership record report")
-    value = row["snapshot"]
-    return LeadershipRecordReport(
-        row["report_id"], row["guild_id"], LeadershipRecordSnapshot(
-            observed_at=value["observed_at"], member_id=value["member_id"],
-            records=tuple(LeadershipRecordRow(**item)
-                          for item in value["records"]),
         ),
     )
 

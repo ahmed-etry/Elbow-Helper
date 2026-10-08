@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import discord
 
-
 from elbow_helper.discord.message_search import (
     DiscordHistoryPage, DiscordSearchMessage, DiscordSearchPage,
 )

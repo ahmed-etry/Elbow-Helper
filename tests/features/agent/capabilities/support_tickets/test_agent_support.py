@@ -9,7 +9,7 @@ from elbow_helper.configuration.channels import SUPPORT_TICKET_CATEGORY
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
-from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
+from features.agent.report_helpers import make_event_report
 from elbow_helper.features.agent.capabilities.support_tickets.report import SupportTicketReport
 from elbow_helper.features.agent.capabilities.support_tickets.reads import (
     read_accessible_support_tickets,
@@ -52,6 +52,7 @@ class _Channel:
 
 
 class AgentSupportToolTests(unittest.IsolatedAsyncioTestCase):
+
     def setUp(self):
         requester = SimpleNamespace(
             id=10, roles=[SimpleNamespace(id=next(iter(CORE)))],
@@ -196,13 +197,10 @@ class AgentSupportToolTests(unittest.IsolatedAsyncioTestCase):
             result = await read_accessible_support_tickets(self.context, {})
         self.assertIn("error", result)
         self.assertEqual(self.context.state.reports, {})
-
         self.context.state.source_channels.clear()
         result = await read_accessible_support_tickets(self.context, {})
         report = self.context.state.reports[result["report_id"]]
-        self.context.state.reports["role"] = RoleAccountReport(
-            "role", "now", (), (),
-        )
+        self.context.state.reports["role"] = make_event_report("role", "now")
         self.context.state.reports["foreign"] = SupportTicketReport(
             "foreign", 2, report.registered_ticket_count,
             report.omitted_inaccessible_count, report.snapshot,

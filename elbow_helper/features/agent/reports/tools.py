@@ -1,31 +1,16 @@
 """Route retained reports through their owning readers."""
-
 from __future__ import annotations
-
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
-
 from elbow_helper.infrastructure.ai import AgentToolDefinition
-
 from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool
-
-
 REPORT_READERS = {
     "discord_research": "read_discord_research_report",
-    "role_accounts": "read_role_account_report",
     "achievement_progress": "read_member_achievement_report",
-    "achievement_leaderboard": "read_achievement_leaderboard_report",
-    "coin_transactions": "read_member_coin_history_report",
-    "raffle": "read_raffle_report",
     "event_schedule": "read_event_schedule_report",
     "missing_elder": "read_missing_elder_report",
-    "clan_health": "read_clan_health_report",
-    "family_account_movements": "read_family_account_movement_report",
-    "regular_war": "read_regular_war_report",
-    "historical_regular_wars": "read_historical_regular_war_report",
-    "roster_signups": "read_roster_report",
     "cwl_performance": "read_cwl_performance_report",
     "cwl_ass_scope": "read_cwl_ass_scope_report",
     "cwl_bonus_scope": "read_cwl_bonus_scope_report",
@@ -35,17 +20,12 @@ REPORT_READERS = {
     "support_ticket_inventory": "read_support_ticket_report",
     "active_recruitment_trials": "read_active_recruitment_trial_report",
     "examination_case_status": "read_examination_case_report",
-    "active_leadership_records": "read_leadership_record_report",
     "csv_import": "read_csv_import",
     "xlsx_import": "read_xlsx_import",
     "text_import": "read_text_import",
     "approved_knowledge": "read_approved_knowledge_report",
 }
-REPORT_COMPARERS = {
-    "role_accounts": "compare_role_account_reports",
-    "clan_health": "compare_clan_health_reports",
-    "roster_signups": "compare_roster_reports",
-}
+REPORT_COMPARERS = {}
 READ_NAME = "read_saved_report"
 COMPARE_NAME = "compare_saved_reports"
 
@@ -186,8 +166,8 @@ def _tool(name: str, specs: Mapping[str, RegisteredAgentTool]) -> RegisteredAgen
 
 def replace_report_tools(tools: Sequence[RegisteredAgentTool]) -> tuple[RegisteredAgentTool, ...]:
     by_name = {tool.definition.name: tool for tool in tools}
-    readers = {kind: by_name[name] for kind, name in REPORT_READERS.items()}
-    comparers = {kind: by_name[name] for kind, name in REPORT_COMPARERS.items()}
+    readers = {kind: by_name[name] for kind, name in REPORT_READERS.items() if name in by_name}
+    comparers = {kind: by_name[name] for kind, name in REPORT_COMPARERS.items() if name in by_name}
     replaced = set(REPORT_READERS.values()) | set(REPORT_COMPARERS.values())
     retained = []
     for tool in tools:
@@ -201,4 +181,8 @@ def replace_report_tools(tools: Sequence[RegisteredAgentTool]) -> tuple[Register
         if description != tool.definition.description:
             tool = replace(tool, definition=replace(tool.definition, description=description))
         retained.append(tool)
-    return (*retained, _tool(READ_NAME, readers), _tool(COMPARE_NAME, comparers))
+    routed = tuple(
+        _tool(name, specs)
+        for name, specs in ((READ_NAME, readers), (COMPARE_NAME, comparers)) if specs
+    )
+    return (*retained, *routed)

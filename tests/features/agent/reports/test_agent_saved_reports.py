@@ -31,9 +31,14 @@ class SavedReportRegistryTests(unittest.TestCase):
         self.assertTrue(readers.isdisjoint(registry))
         self.assertTrue(comparers.isdisjoint(registry))
         self.assertEqual(set(registry) & {saved_reports.READ_NAME, saved_reports.COMPARE_NAME},
-                         {saved_reports.READ_NAME, saved_reports.COMPARE_NAME})
+                         {name for name, kinds in ((saved_reports.READ_NAME, readers),
+                                                  (saved_reports.COMPARE_NAME, comparers))
+                          if kinds})
         for generic, kinds in ((saved_reports.READ_NAME, saved_reports.REPORT_READERS),
                                (saved_reports.COMPARE_NAME, saved_reports.REPORT_COMPARERS)):
+            if not kinds:
+                self.assertNotIn(generic, registry)
+                continue
             self.assertEqual(
                 set(registry[generic].definition.parameters["properties"]["report_kind"]["enum"]),
                 set(kinds),
@@ -82,8 +87,8 @@ class SavedReportRoutingTests(unittest.IsolatedAsyncioTestCase):
                     "report_id": {"type": "string"},
                 }, "required": ["report_id"], "additionalProperties": False},
             ), handler, contract=CapabilityContract(
-            entity_fields=(("report_id", "synthetic_report"),), retained_fields=("report_id",),
-        ))
+                entity_fields=(("report_id", "synthetic_report"),), retained_fields=("report_id",),
+            ))
             return saved_reports._tool(saved_reports.READ_NAME, {"synthetic": tool})
         context = SimpleNamespace(state=SimpleNamespace(reports={"one": SimpleNamespace(
             manifest=lambda: {"kind": "synthetic"},

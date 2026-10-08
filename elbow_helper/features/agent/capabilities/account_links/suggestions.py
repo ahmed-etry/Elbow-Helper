@@ -11,7 +11,6 @@ from elbow_helper.features.account_links.config import REVIEW_CHANNEL_ID
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
-from ...access import lookup_level, ACCESS_RECRUITER_OR_CORE
 from ...access import require_evidence_access
 from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
@@ -37,20 +36,6 @@ def account_suggestion_tools() -> tuple[RegisteredAgentTool, ...]:
         "member_id": {"type": "integer", "minimum": 1},
     }, "required": ["player_tag"], "additionalProperties": False}
     return (
-        RegisteredAgentTool(AgentToolDefinition(
-            name="read_account_suggestions",
-            description="Read pending recruiter account matches in the review channel.",
-            parameters={"type": "object", "properties": {
-                "offset": {"type": "integer", "minimum": 0},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 25},
-            }, "additionalProperties": False},
-        ), read_account_suggestions,
-            contract=CapabilityContract(
-                entity_fields=(), source_scope="channel_status",
-                result_channel_fields=("review_channel_id",), filter_fields=("offset", "limit"),
-                required_access=frozenset({ACCESS_RECRUITER_OR_CORE}),
-            ),
-        ),
         RegisteredAgentTool(
             AgentToolDefinition(
                 name="link_account_suggestion",
@@ -95,21 +80,6 @@ async def _workflow(context: AgentRequestContext):
     review = await resolve_channel(context, REVIEW_CHANNEL_ID)
     check_view_access(review, context.member, context.guild.me)
     return workflow, review
-
-
-@lookup_level(ACCESS_RECRUITER_OR_CORE)
-async def read_account_suggestions(context: AgentRequestContext,
-                                   values: Mapping[str, Any]) -> Mapping[str, Any]:
-    workflow, review = await _workflow(context)
-    rows = workflow.list_pending_suggestions()
-    offset, limit = values.get("offset", 0), values.get("limit", 25)
-    await require_evidence_access(context)
-    return {"review_channel_id": review.id, "total": len(rows), "offset": offset,
-            "suggestions": [{"player_tag": row.get("player_tag"),
-                             "player_name": row.get("player_name"),
-                             "clan_code": row.get("current_clan_code"),
-                             "suggested_member_id": row.get("proposed_discord_user_id")}
-                            for row in rows[offset:offset + limit]]}
 
 
 async def prepare_suggestion_link(context: AgentRequestContext,

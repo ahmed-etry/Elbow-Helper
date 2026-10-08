@@ -10,7 +10,7 @@ from elbow_helper.features.agent.conversation.state import (
     ConversationRecord, ConversationTurn,
 )
 from elbow_helper.features.agent.models import AgentTurnState
-from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
+from features.agent.report_helpers import make_event_report
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 
@@ -49,6 +49,7 @@ def _compile(context, **changes):
 
 
 class AgentContextTests(unittest.TestCase):
+
     def test_available_report_names_its_supported_filters(self):
         context = _context()
         context.state.reports["synthetic"] = SimpleNamespace(
@@ -170,10 +171,10 @@ class AgentContextTests(unittest.TestCase):
 
     def test_report_manifest_follows_history_not_inside_stable_prefix(self):
         context = _context((ConversationTurn("stable", frozenset()),))
-        context.state.reports["report"] = RoleAccountReport("report", "now", (), ())
+        context.state.reports["report"] = make_event_report("report", "now")
         result = _compile(context)
         self.assertLess(result.prompt.index("</conversation_history>"), result.prompt.index("<available_reports>"))
-        self.assertIn('"kind": "role_accounts"', result.prompt)
+        self.assertIn("\"kind\": \"event_schedule\"", result.prompt)
 
     def test_changed_metadata_does_not_change_history_prefix(self):
         context = _context((ConversationTurn("stable", frozenset()),))
