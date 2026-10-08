@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
-import re
 from typing import Any
 from typing import Mapping
 
-import discord
 
 from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.infrastructure.ai import AgentToolDefinition
@@ -26,55 +24,8 @@ MEMBER_DETAILS_LIMIT = 100
 MEMBER_ID_LIMIT = 1000
 
 
-def member_tools() -> tuple[RegisteredAgentTool, ...]:
+def member_tools():
     return (
-        RegisteredAgentTool(
-            AgentToolDefinition(
-                name="find_discord_members",
-                description=(
-                    "Resolve a member name, mention, or Discord ID when the request does not "
-                    "already identify the member unambiguously."
-                ),
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 100,
-                        }
-                    },
-                    "required": ["query"],
-                    "additionalProperties": False,
-                },
-            ),
-            find_discord_members,
-            contract=CapabilityContract(entity_fields=()),
-        ),
-        RegisteredAgentTool(
-            AgentToolDefinition(
-                name="read_discord_members",
-                description=(
-                    "Read member details. Return display names, usernames, UTC server join times "
-                    "and roles for up to 1000 exact member IDs, in pages of up to 100. Sort by joined_at oldest_first or newest_first before "
-                    "paging; unknown join times come last. Omit sort to preserve the ID order."
-                ),
-                parameters={
-                    "type": "object", "properties": {
-                        "member_ids": {"type": "array", "minItems": 1,
-                                       "maxItems": MEMBER_ID_LIMIT, "uniqueItems": True,
-                                       "items": {"type": "integer", "minimum": 1}},
-                        "sort": {"type": "string", "enum": ["oldest_first", "newest_first"]},
-                        "offset": {"type": "integer", "minimum": 0, "maximum": MEMBER_ID_LIMIT},
-                        "limit": {"type": "integer", "minimum": 1, "maximum": MEMBER_DETAILS_LIMIT},
-                    }, "required": ["member_ids"], "additionalProperties": False,
-                },
-            ),
-            read_discord_members,
-            contract=CapabilityContract(
-                entity_fields=(("member_ids", "discord_member_set"),), filter_fields=("sort",),
-            ),
-        ),
         RegisteredAgentTool(
             AgentToolDefinition(
                 name="get_linked_accounts",
@@ -124,104 +75,6 @@ def member_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
         ),
     )
-
-
-async def find_discord_members(
-    context: AgentRequestContext,
-    arguments: Mapping[str, Any],
-) -> Mapping[str, Any]:
-    query = str(arguments.get("query") or "").strip()
-    if not query:
-        return {"error": "A member name, mention, or ID is required."}
-    match = re.fullmatch(r"<@!?(\d+)>", query)
-    numeric_id = int(match.group(1)) if match else (positive_int(query) or 0)
-    needle = query.casefold()
-    ranked: list[tuple[int, str, discord.Member]] = []
-    for member in context.guild.members:
-        names = {
-            str(member.display_name or ""),
-            str(member.name or ""),
-            str(getattr(member, "global_name", "") or ""),
-        }
-        folded = {name.casefold() for name in names if name}
-        if numeric_id and member.id == numeric_id:
-            score = 0
-        elif needle in folded:
-            score = 1
-        elif any(name.startswith(needle) for name in folded):
-            score = 2
-        elif any(needle in name for name in folded):
-            score = 3
-        else:
-            continue
-        ranked.append((score, member.display_name.casefold(), member))
-    ranked.sort(key=lambda item: (item[0], item[1], item[2].id))
-    return {
-        "query": query,
-        "members": [
-            {
-                "member_id": member.id,
-                "display_name": member.display_name,
-                "username": member.name,
-                "joined_at": _joined_at(member),
-                "mention": member.mention,
-                "roles": [role.name for role in member.roles if not role.is_default()],
-            }
-            for _, _, member in ranked[:MEMBER_RESULT_LIMIT]
-        ],
-    }
-
-
-def _joined_at(member: discord.Member) -> str | None:
-    joined = getattr(member, "joined_at", None)
-    if joined is None:
-        return None
-    if joined.tzinfo is None:
-        joined = joined.replace(tzinfo=timezone.utc)
-    return joined.astimezone(timezone.utc).isoformat()
-
-
-async def read_discord_members(
-    context: AgentRequestContext, arguments: Mapping[str, Any],
-) -> Mapping[str, Any]:
-    identifiers = arguments.get("member_ids")
-    if (not isinstance(identifiers, list) or not 1 <= len(identifiers) <= MEMBER_ID_LIMIT
-            or any(type(value) is not int or value <= 0 for value in identifiers)
-            or len(set(identifiers)) != len(identifiers)):
-        return {"error": "Provide between 1 and 1000 distinct member IDs."}
-    offset, limit = arguments.get("offset", 0), arguments.get("limit", 25)
-    if (type(offset) is not int or not 0 <= offset <= MEMBER_ID_LIMIT
-            or type(limit) is not int or not 1 <= limit <= MEMBER_DETAILS_LIMIT):
-        return {"error": "Use an offset from 0 to 1000 and a limit from 1 to 100."}
-    sorting = arguments.get("sort")
-    if sorting is not None and sorting not in ("oldest_first", "newest_first"):
-        return {"error": "Sort join dates oldest_first or newest_first."}
-    await require_evidence_access(context)
-    rows, missing = [], []
-    for identifier in identifiers:
-        member = context.guild.get_member(identifier)
-        if member is None:
-            missing.append(identifier)
-            continue
-        rows.append({
-            "member_id": member.id, "display_name": member.display_name,
-            "username": member.name, "joined_at": _joined_at(member),
-            "roles": [{"role_id": role.id, "name": role.name}
-                      for role in member.roles if not role.is_default()],
-        })
-    if sorting is not None:
-        known = [row for row in rows if row["joined_at"] is not None]
-        unknown = [row for row in rows if row["joined_at"] is None]
-        known.sort(key=lambda row: row["member_id"])
-        known.sort(key=lambda row: row["joined_at"], reverse=sorting == "newest_first")
-        rows = known + sorted(unknown, key=lambda row: row["member_id"])
-    selected = rows[offset:offset + limit]
-    await require_evidence_access(context)
-    return {
-        "members": selected, "total_members": len(rows), "missing_member_ids": missing,
-        "offset": offset, "limit": limit,
-        "next_offset": offset + len(selected) if offset + len(selected) < len(rows) else None,
-    }
 
 
 @lookup_level(ACCESS_RECRUITER_OR_CORE)

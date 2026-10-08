@@ -11,6 +11,7 @@ from ..files.attachment_tools import attachment_tools
 from ..actions.log_tools import action_log_tools
 from ..commands.help_tool import command_tools
 from ..research.catalogue import discord_tools
+from ..research.members import member_tools
 from ..discord_actions.roles import discord_role_tools
 from ..discord_actions.message_tools import discord_message_tools
 from ..discord_actions.threads import discord_thread_tools
@@ -40,7 +41,9 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
     return {
         "datasets": (*dataset_tools(), *clash_tools()),
         "commands": command_tools(),
-        "discord_research": (*discord_tools(), *thread_tools(), *research_tools()),
+        "discord_research": (
+            *discord_tools(), *member_tools(), *thread_tools(), *research_tools(),
+        ),
         "discord_actions": (*discord_message_tools(), *discord_thread_tools(),
                             *discord_message_control_tools(),
                             *discord_nickname_tools(), *discord_role_tools()),

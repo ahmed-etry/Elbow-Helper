@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from datetime import datetime, timezone
 from typing import Any, Mapping
 from uuid import uuid4
 
-from elbow_helper.configuration.clans import CLANS
 from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.features.account_links.evidence import (
     member_account_evidence, refresh_account_locations,
@@ -36,26 +34,6 @@ REPORT_ID_FIELD = {
 
 def role_tools() -> tuple[RegisteredAgentTool, ...]:
     return (
-        RegisteredAgentTool(
-            AgentToolDefinition(
-                name="find_discord_roles",
-                description=(
-                    "Find server roles by name or ID and inspect their membership counts "
-                    "and configured clan purpose. Distinguish similarly named roles before "
-                    "selecting members for a report."
-                ),
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "maxLength": 100},
-                        "offset": {"type": "integer", "minimum": 0},
-                    },
-                    "additionalProperties": False,
-                },
-            ),
-            find_discord_roles,
-            contract=CapabilityContract(entity_fields=()),
-        ),
         RegisteredAgentTool(
             AgentToolDefinition(
                 name="audit_role_accounts",
@@ -199,45 +177,6 @@ async def _complete_members(guild: Any) -> tuple[Any, ...]:
     if not guild.chunked:
         raise RuntimeError("Complete guild membership is unavailable")
     return tuple(guild.members)
-
-
-async def find_discord_roles(context: AgentRequestContext, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
-    await require_evidence_access(context)
-    members = await _complete_members(context.guild)
-    query = str(arguments.get("query") or "").strip().casefold()
-    numeric = query.removeprefix("<@&").removesuffix(">")
-    roles = []
-    counts = Counter(role.id for member in members for role in member.roles)
-    for role in context.guild.roles:
-        purposes = [
-            {"clan_code": clan.code, "purpose": field.removesuffix("_role_id")}
-            for clan in CLANS.values()
-            for field in ROLE_PURPOSES
-            if getattr(clan, field) == role.id
-        ]
-        aliases = [value for entry in purposes for value in (entry["clan_code"], CLANS[entry["clan_code"]].name)]
-        if (
-            query and str(role.id) != numeric and query not in role.name.casefold()
-            and not any(query in alias.casefold() for alias in aliases)
-        ):
-            continue
-        roles.append({
-            "role_id": role.id,
-            "name": role.name,
-            "position": role.position,
-            "managed": role.managed,
-            "permissions": [name for name, enabled in role.permissions if enabled],
-            "member_count": counts[role.id],
-            "clan_purposes": purposes,
-        })
-    offset = arguments.get("offset", 0)
-    result = {
-        "roles": roles[offset:offset + 25],
-        "matched_count": len(roles),
-        "next_offset": offset + 25 if offset + 25 < len(roles) else None,
-    }
-    await require_evidence_access(context)
-    return result
 
 
 @lookup_level(ACCESS_RECRUITER_OR_CORE)

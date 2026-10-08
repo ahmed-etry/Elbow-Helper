@@ -159,11 +159,14 @@ class AgentAccountLinkTests(unittest.IsolatedAsyncioTestCase):
     async def test_bulk_member_details_sort_before_limit_and_page_without_duplicates(self):
         handler = build_agent_tools()["read_discord_members"].handler
         context = self.member_context()
-        with patch("elbow_helper.features.agent.capabilities.account_links.reads.require_evidence_access",
+        with patch("elbow_helper.features.agent.research.members.require_evidence_access",
                    new=AsyncMock()) as access:
             for sorting, expected in (("oldest_first", [202, 404, 101, 303]),
                                       ("newest_first", [101, 202, 404, 303])):
-                args = {"member_ids": [303, 101, 404, 202, 999], "sort": sorting, "limit": 2}
+                args = {
+                    "member_ids": [303, 101, 404, 202, 999], "sort": sorting,
+                    "limit": 2, "include_roles": True,
+                }
                 first = await handler(context, args)
                 second = await handler(context, {**args, "offset": first["next_offset"]})
                 self.assertEqual([row["member_id"] for row in first["members"] + second["members"]], expected)
@@ -176,7 +179,7 @@ class AgentAccountLinkTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_bulk_member_details_preserve_requested_order_and_unknown_dates(self):
         handler = build_agent_tools()["read_discord_members"].handler
-        with patch("elbow_helper.features.agent.capabilities.account_links.reads.require_evidence_access",
+        with patch("elbow_helper.features.agent.research.members.require_evidence_access",
                    new=AsyncMock()):
             result = await handler(self.member_context(), {"member_ids": [303, 101], "limit": 1})
             self.assertEqual(result["members"][0]["member_id"], 303)
@@ -188,18 +191,18 @@ class AgentAccountLinkTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(empty["next_offset"])
 
     async def test_bulk_member_details_enforce_input_and_output_bounds(self):
-        from elbow_helper.features.agent.capabilities.account_links.reads import read_discord_members
+        from elbow_helper.features.agent.research.members import read_discord_members
         context = self.member_context()
         for args in ({"member_ids": []}, {"member_ids": list(range(1, 1002))},
                      {"member_ids": [101, 101]}, {"member_ids": [True]},
                      {"member_ids": [0]}, {"member_ids": ["101"]},
                      {"member_ids": [101], "offset": -1}, {"member_ids": [101], "offset": 1001},
-                     {"member_ids": [101], "limit": 0}, {"member_ids": [101], "limit": 101},
+                     {"member_ids": [101], "limit": 0}, {"member_ids": [101], "limit": 1001},
                      {"member_ids": [101], "sort": "unsupported"}):
             with self.subTest(args=args):
                 result = await read_discord_members(context, args)
                 self.assertIn("error", result)
-        with patch("elbow_helper.features.agent.capabilities.account_links.reads.require_evidence_access",
+        with patch("elbow_helper.features.agent.research.members.require_evidence_access",
                    new=AsyncMock()):
             context.guild.get_member = lambda identifier: SimpleNamespace(
                 id=identifier, name="synthetic", display_name="Synthetic", roles=[],
@@ -210,8 +213,8 @@ class AgentAccountLinkTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_bulk_member_access_is_rechecked_before_returning(self):
         from elbow_helper.features.agent.access import AgentAccessLost
-        from elbow_helper.features.agent.capabilities.account_links.reads import read_discord_members
-        with patch("elbow_helper.features.agent.capabilities.account_links.reads.require_evidence_access",
+        from elbow_helper.features.agent.research.members import read_discord_members
+        with patch("elbow_helper.features.agent.research.members.require_evidence_access",
                    new=AsyncMock(side_effect=[None, AgentAccessLost()])):
             with self.assertRaises(AgentAccessLost):
                 await read_discord_members(self.member_context(), {"member_ids": [101]})
