@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import discord
 
-from features.agent.result_path_helpers import assert_result_paths
 
 from elbow_helper.discord.message_search import (
     DiscordHistoryPage, DiscordSearchMessage, DiscordSearchPage,
@@ -90,7 +89,6 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
         results = []
         for _ in range(len(rows) + 1):
             result = await read_discord_channel_history(context, arguments)
-            assert_result_paths(self, "read_discord_channel_history", result)
             self.assertNotIn("error", result)
             results.append(result)
             cursor = result["coverage"]["next_cursor"]
@@ -160,7 +158,6 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
         )
         result = await search_discord_messages(context, {"query": "decision", "channel_id": 100, "author_id": 1,
                                                          "after": "2026-09-14", "before": "2026-09-16"})
-        assert_result_paths(self, "search_discord_messages", result)
         self.assertEqual(len(result["matches"]), 1)
         call = context.message_search.search_page.await_args.kwargs
         self.assertEqual(call["channel_ids"], (100,))
@@ -304,7 +301,6 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
         context = _context()
         context.guild.channels[1].permissions_for = lambda member: SimpleNamespace(view_channel=False, read_message_history=False)
         result = await find_discord_channels(context, {"query": "room"})
-        assert_result_paths(self, "find_discord_channels", result)
         self.assertEqual(result["channels"], [{"channel_id": 100, "name": "room-100"}])
 
     async def test_archived_public_thread_discovery_is_paged_and_scope_bound(self):
@@ -323,7 +319,6 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
             "parent_channel_id": 100, "state": "archived",
             "visibility": "public", "query": "cwl", "limit": 1,
         })
-        assert_result_paths(self, "find_discord_threads", first)
         self.assertEqual(first["threads"][0]["thread_id"], 300)
         self.assertFalse(first["coverage"]["coverage_complete"])
         self.assertTrue(first["coverage"]["continuable"])
@@ -562,5 +557,4 @@ class MessageContextResultContractTests(unittest.IsolatedAsyncioTestCase):
         context = SimpleNamespace(guild=SimpleNamespace(id=1), state=SimpleNamespace(source_channels=set()))
         with patch("elbow_helper.features.agent.research.history.accessible_message_channel", return_value=channel):
             result = await read_message_context(context, {"channel_id": 100, "message_id": 301})
-        assert_result_paths(self, "read_message_context", result)
         self.assertEqual(result["messages"][0]["message_id"], 301)

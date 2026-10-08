@@ -29,6 +29,7 @@ from ..actions.contracts import ActionClass
 from ..models import AgentCapabilityEffect
 from .capability_contract import validate_contract_catalogue
 from ..plan.results import result_handler
+from .result_hints import RETURN_HINTS
 
 
 def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
@@ -66,7 +67,7 @@ def build_agent_tools() -> dict[str, RegisteredAgentTool]:
         raise ValueError("Duplicate agent capability")
     validate_contract_catalogue(registry)
     return {name: replace(
-        tool, handler=result_handler(tool.handler),
+        tool, handler=result_handler(tool.handler), returns=tool.returns or RETURN_HINTS.get(name),
         action_class=(ActionClass.OUTPUT if tool.effect is AgentCapabilityEffect.ARTIFACT
                       else tool.action_class),
     )

@@ -39,7 +39,9 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_clan_health_player_locator_pages_with_exact_clan_scope(self):
         member = SimpleNamespace(
-            id=10, roles=[SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=CO_APPLICANT_ROLE_ID)],
+            id=10, roles=[
+                SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=CO_APPLICANT_ROLE_ID),
+            ],
         )
         bot_member = SimpleNamespace(id=20)
         channel = _Channel(100, "chat", {10, 20})
@@ -74,7 +76,9 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_command_help_uses_registered_public_entries_only(self):
         member = SimpleNamespace(
-            id=10, roles=[SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=CO_APPLICANT_ROLE_ID)],
+            id=10, roles=[
+                SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=CO_APPLICANT_ROLE_ID),
+            ],
         )
         bot_member = SimpleNamespace(id=20)
         channel = _Channel(100, "chat", {10, 20})
@@ -116,8 +120,8 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(catalogue.splitlines()), len(registry))
         for name in registry:
             self.assertEqual(catalogue.count(name + ":"), 1)
-        self.assertIn("time ", catalogue)
-        self.assertIn("entity ", catalogue)
+        self.assertNotIn(" | time ", catalogue)
+        self.assertNotIn(" | entity ", catalogue)
 
     def test_catalogue_separates_evidence_state_and_artifact_effects(self):
         tools = build_agent_tools()
@@ -130,7 +134,7 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
         registry = build_agent_tools()
         plan = {
             "goal": "Read selected values", "effort": "low", "output": "text",
-            "periods": [], "entities": [], "steps": [
+              "steps": [
                 {"id": f"step-{index}", "capability": next(iter(registry)),
                  "arguments": {}, "reason": "Read", "depends_on": []}
                 for index in range(49)
@@ -151,7 +155,7 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
         missing.pop(next(iter(missing)))
         self.assertFalse(check_plan({
             "goal": "Read", "effort": "low", "output": "text",
-            "periods": [], "entities": [], "steps": [
+              "steps": [
                 {"id": "one", "capability": next(iter(set(registry) - set(missing))),
                  "arguments": {}, "reason": "Read", "depends_on": []},
             ],
@@ -340,7 +344,11 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
                 Path(temporary_directory) / "clan_health.db"
             )
             repository.initialize()
-            member = SimpleNamespace(id=10, roles=[SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=CO_APPLICANT_ROLE_ID)])
+            member = SimpleNamespace(
+            id=10, roles=[
+                SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=CO_APPLICANT_ROLE_ID),
+            ],
+        )
             channel = _Channel(100, "core-chat", {10, 20})
             guild = SimpleNamespace(
                 id=1, me=SimpleNamespace(id=20),

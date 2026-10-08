@@ -38,14 +38,8 @@ def player_tools() -> tuple[RegisteredAgentTool, ...]:
             },
         ), read_live_players,
         contract=CapabilityContract(
-            entity_fields=(("player_tags", "clash_account_set"),), time_fields=(),
+            entity_fields=(("player_tags", "clash_account_set"),),
             filter_fields=("min_townhall", "max_townhall"),
-            result_entity_keys=(("accounts[].player_tag", "clash_account"),
-                                ("not_found_tags[]", "clash_account"),
-                                ("unavailable_tags[]", "clash_account")),
-            result_paths=(("accounts", "N", "name"), ("accounts", "N", "townhall"),
-                          ("accounts", "N", "current_clan"),
-                          ("accounts", "N", "observed_at")),
         ),
     ),)
 

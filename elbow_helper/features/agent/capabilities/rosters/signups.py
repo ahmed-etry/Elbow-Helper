@@ -46,30 +46,22 @@ def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
             description="Sign up selected linked Clash accounts for an open roster after confirmation.",
             parameters=schema,
         ), prepare_roster_signup, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
-            contract=CapabilityContract(
-                entity_fields=(
+            contract=CapabilityContract(entity_fields=(
                     ("roster_id", "roster"),
                     ("member_id", "discord_member"),
                     ("accounts", "clash_account_set"),
-                ),
-                time_fields=(),
-                source_scope="request_context",
-            ),
+                ), source_scope="request_context"),
         ),
         RegisteredAgentTool(AgentToolDefinition(
             name="remove_roster_accounts",
             description="Remove selected Clash accounts from an open roster after confirmation.",
             parameters=schema,
         ), prepare_roster_removal, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
-            contract=CapabilityContract(
-                entity_fields=(
+            contract=CapabilityContract(entity_fields=(
                     ("roster_id", "roster"),
                     ("member_id", "discord_member"),
                     ("accounts", "clash_account_set"),
-                ),
-                time_fields=(),
-                source_scope="request_context",
-            ),
+                ), source_scope="request_context"),
         ),
         RegisteredAgentTool(AgentToolDefinition(
             name="bulk_add_roster_accounts",
@@ -82,7 +74,6 @@ def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
         ), prepare_bulk_roster_add, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
                 entity_fields=(("roster_id", "roster"), ("player_tags", "clash_account_set")),
-                time_fields=(),
                 source_scope="request_context",
                 required_access=frozenset({ACCESS_LEAD_PLUS}),
             ),
@@ -99,7 +90,6 @@ def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
             ActionClass.CHANGE,
             contract=CapabilityContract(
                 entity_fields=(("roster_id", "roster"), ("accounts", "clash_account_set")),
-                time_fields=(),
                 source_scope="request_context",
                 required_access=frozenset({ACCESS_LEAD_PLUS}),
             ),

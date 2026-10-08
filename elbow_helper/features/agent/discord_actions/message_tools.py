@@ -7,6 +7,7 @@ from ..actions.contracts import ActionClass
 from ..models import AgentCapabilityEffect, RegisteredAgentTool
 from .messages import prepare_post, prepare_edit, prepare_delete, find_agent_files, content_options
 
+
 def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
     return (
         RegisteredAgentTool(AgentToolDefinition(
@@ -18,12 +19,8 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
             }, "required": [], "additionalProperties": False},
         ), find_agent_files,
             contract=CapabilityContract(
-                result_paths=(('files', 'N', 'file_name'), ('next_offset',)),
-                entity_fields=(),
-                time_fields=(),
-                source_scope="request_context",
+                entity_fields=(), source_scope="request_context",
                 filter_fields=("offset", "limit"),
-                result_entity_keys=(("files[].message_id", "agent_file_message"),),
             ),
         ),
         RegisteredAgentTool(AgentToolDefinition(
@@ -36,15 +33,11 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
                 "file_message_id": {"type": "integer", "minimum": 1},
             }, "required": ["channel_id", "text"], "additionalProperties": False},
         ), prepare_post, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
-            contract=CapabilityContract(
-                result_path_kinds=((('message_id',), 'discord_message'), (('channel_id',), 'discord_channel')),
-                result_paths=(('message_id',), ('channel_id',)),
-                entity_fields=(
+            contract=CapabilityContract(entity_fields=(
                     ("channel_id", "discord_channel"),
                     ("ping_role_ids", "discord_role_set"),
                     ("file_message_id", "agent_file_message"),
                 ),
-                time_fields=(),
                 source_scope="request_context",
                 filter_fields=("text", "ping_everyone", "file_name"),
             ),
@@ -59,18 +52,11 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
             }, "required": ["channel_id", "message_id", "text"],
                "additionalProperties": False},
         ), prepare_edit, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
-            contract=CapabilityContract(
-                result_path_kinds=((('message_id',), 'discord_message'), (('channel_id',), 'discord_channel')),
-                result_paths=(('message_id',), ('channel_id',)),
-                entity_fields=(
+            contract=CapabilityContract(entity_fields=(
                     ("channel_id", "discord_channel"),
                     ("message_id", "discord_message"),
                     ("ping_role_ids", "discord_role_set"),
-                ),
-                time_fields=(),
-                source_scope="request_context",
-                filter_fields=("text", "ping_everyone"),
-            ),
+                ), source_scope="request_context", filter_fields=("text", "ping_everyone")),
         ),
         RegisteredAgentTool(AgentToolDefinition(
             name="delete_agent_message",
@@ -81,14 +67,10 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
             }, "required": ["channel_id", "message_id"],
                "additionalProperties": False},
         ), prepare_delete, AgentCapabilityEffect.COMMAND, ActionClass.IRREVERSIBLE,
-            contract=CapabilityContract(
-                entity_fields=(
+            contract=CapabilityContract(entity_fields=(
                     ("channel_id", "discord_channel"),
                     ("message_id", "discord_message"),
-                ),
-                time_fields=(),
-                source_scope="request_context",
-            ),
+                ), source_scope="request_context"),
         ),
     )
 

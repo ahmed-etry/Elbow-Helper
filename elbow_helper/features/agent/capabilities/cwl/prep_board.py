@@ -31,7 +31,6 @@ def cwl_prep_refresh_tools() -> tuple[RegisteredAgentTool, ...]:
         ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("clan_code", "clan"),),
-            time_fields=(),
             source_scope="request_context",
         ),
             ),)

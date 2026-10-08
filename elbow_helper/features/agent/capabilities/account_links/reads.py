@@ -49,12 +49,7 @@ def member_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             find_discord_members,
-            contract=CapabilityContract(
-                result_paths=(('members', 'N', 'member_id'),),
-                result_path_kinds=((('members', 'N', 'member_id'), 'discord_member'),),
-                entity_fields=(),
-                time_fields=(),
-            ),
+            contract=CapabilityContract(entity_fields=()),
         ),
         RegisteredAgentTool(
             AgentToolDefinition(
@@ -77,11 +72,7 @@ def member_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
             read_discord_members,
             contract=CapabilityContract(
-                entity_fields=(("member_ids", "discord_member_set"),), time_fields=(),
-                filter_fields=("sort",),
-                result_paths=(("members", "N", "joined_at"), ("next_offset",)),
-                result_entity_keys=(("members[].member_id", "discord_member"),
-                                    ("members[].roles[].role_id", "discord_role")),
+                entity_fields=(("member_ids", "discord_member_set"),), filter_fields=("sort",),
             ),
         ),
         RegisteredAgentTool(
@@ -105,11 +96,6 @@ def member_tools() -> tuple[RegisteredAgentTool, ...]:
             get_linked_accounts,
             contract=CapabilityContract(
                 entity_fields=(("member_id", "discord_member"),),
-                time_fields=(),
-                result_entity_keys=(
-                    ("member_id", "discord_member"),
-                    ("accounts[].player_tag", "clash_account"),
-                ),
                 required_access=frozenset({ACCESS_RECRUITER_OR_CORE}),
             ),
         ),
@@ -134,11 +120,6 @@ def member_tools() -> tuple[RegisteredAgentTool, ...]:
             get_account_link,
             contract=CapabilityContract(
                 entity_fields=(("player_tag", "clash_account"),),
-                time_fields=(),
-                result_entity_keys=(
-                    ("player_tag", "clash_account"),
-                    ("linked_member_id", "discord_member"),
-                ),
                 required_access=frozenset({ACCESS_RECRUITER_OR_CORE}),
             ),
         ),

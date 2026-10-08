@@ -30,7 +30,6 @@ from elbow_helper.features.agent.wording import (
 )
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 from elbow_helper.features.agent.access import AgentAccessLost
-from elbow_helper.features.agent.plan.checker import check_plan
 from elbow_helper.features.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.features.agent.engine.budgets import ContextBudget
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentToolDefinition, AgentUsage
@@ -65,7 +64,7 @@ def _context():
 
 def _plan(steps, *, effort="low", periods=None):
     return {"goal": "Answer from the selected data", "effort": effort,
-            "output": "text", "periods": periods or [], "entities": [],
+            "output": "text",
             "steps": steps}
 
 
@@ -111,23 +110,6 @@ class _Model:
 
 
 class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
-    async def test_unknown_and_invalid_optional_entities_do_not_stop_valid_reads(self):
-        self.registry["read_value"] = replace(self.registry["read_value"], contract=CapabilityContract(
-            (), (), result_paths=(("value",),), result_path_kinds=((("value",), "discord_member"),)))
-        for entity in ({"kind": "synthetic_unknown", "value": 101},
-                       {"kind": "discord_member", "value": None}):
-            with self.subTest(entity=entity):
-                plan = _plan([_step("lookup")])
-                plan["entities"] = [entity]
-                session = _Session([_model_step(plan), AgentStep("Synthetic answer", (), AgentUsage())], self.events)
-                context = _context()
-                with self.assertLogs("elbow_helper.features.agent.plan.checker", level="INFO") as logs:
-                    answer, _ = await self._answer(session, context)
-                self.assertEqual(answer, "Synthetic answer")
-                self.assertIn("Ignoring optional agent entity 1", logs.output[0])
-                self.assertEqual(self.events.count("read"), 1)
-                self.assertTrue(context.state.evidence)
-                self.events.clear()
 
     async def test_reply_order_tracks_plan_order_while_reads_still_execute_first(self):
         async def prepare(context, arguments):
@@ -175,15 +157,14 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                 "synthetic_page", "Read synthetic values.", {"type": "object", "properties": {
                     "report_id": {"type": "string"}, "offset": {"type": "integer", "minimum": 0},
                 }, "required": []}), page, contract=CapabilityContract(
-                    (("report_id", "synthetic_report"),), (), retained_fields=("report_id",),
-                    result_paths=(("report_id",), ("next_offset",)),
-                    result_path_kinds=((("report_id",), "synthetic_report"),),
-                    result_entity_keys=(("players[].target_id", "synthetic_target"),))),
+                    (("report_id", "synthetic_report"),), retained_fields=("report_id",),
+                )),
             "synthetic_consume": RegisteredAgentTool(AgentToolDefinition(
                 "synthetic_consume", "Use synthetic values.", {"type": "object", "properties": {
                     "targets": {"type": "array", "items": {"type": "integer"}, "maxItems": 20},
                 }, "required": ["targets"]}), consume, contract=CapabilityContract(
-                    (("targets", "synthetic_target_set"),), ())),
+                    (("targets", "synthetic_target_set"),),
+                )),
         }
         plan = _plan([
             {**_step("first"), "capability": "synthetic_page"},
@@ -233,7 +214,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
 
         self.registry["read_value"] = replace(
             self.registry["read_value"], handler=read,
-            contract=CapabilityContract((), (), result_paths=(("players", "N", "target_id"), ("value",))),
+            contract=CapabilityContract(()),
         )
         plan = _plan([_step("first"), _step("second", {
             "value": {"step": "first", "path": ["players", 0, "target_id"]},
@@ -249,167 +230,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(json.loads(record["result"])["players"], rows)
         self.assertFalse(record["result_complete"])
 
-    async def test_referenced_entities_require_matching_kinds_before_change_preview(self):
-        role = {"step": "roles", "path": ["roles", 0, "role_id"]}
-        member = {"step": "members", "path": ["members", 0, "member_id"]}
-        async def prepare(context, arguments):
-            self.assertEqual(arguments, {"role_ids": [101], "member_ids": [202]})
-            context.state.proposed_changes.append(PreparedAction(
-                "synthetic_change", dict(arguments),
-                ChangePreview(("Synthetic preview",), AsyncMock(return_value=True)), AsyncMock(),
-            ))
-            return {"status": "confirmation_required"}
-        roles = AsyncMock(return_value={"roles": [{"role_id": 101}], "role_ids": [101], "label": "Synthetic"})
-        members = AsyncMock(return_value={"members": [{"member_id": 202}]})
-        audit = AsyncMock(return_value={"report_id": "synthetic-report"})
-        page = AsyncMock(return_value={"value": 7})
-        schema = {"type": "object", "properties": {
-            "role_ids": {"type": "array", "items": {"type": "integer"}},
-            "member_ids": {"type": "array", "items": {"type": "integer"}}},
-            "required": ["role_ids", "member_ids"]}
-        self.registry = {
-            "synthetic_roles": RegisteredAgentTool(AgentToolDefinition(
-                "synthetic_roles", "Synthetic", {"type": "object", "properties": {}}), roles,
-                contract=CapabilityContract((), (), result_paths=(("roles", "N", "role_id"), ("role_ids",), ("label",)),
-                    result_path_kinds=((("roles", "N", "role_id"), "discord_role"),
-                                       (("role_ids",), "discord_role_set")))),
-            "synthetic_members": RegisteredAgentTool(AgentToolDefinition(
-                "synthetic_members", "Synthetic", {"type": "object", "properties": {}}), members,
-                contract=CapabilityContract((), (), result_entity_keys=(("members[].member_id", "discord_member"),))),
-            "synthetic_audit": RegisteredAgentTool(AgentToolDefinition(
-                "synthetic_audit", "Synthetic", {"type": "object", "properties": {
-                    "role_ids": schema["properties"]["role_ids"]}, "required": ["role_ids"]}), audit,
-                contract=CapabilityContract((("role_ids", "discord_role_set"),), (),
-                    result_paths=(("report_id",),), result_path_kinds=((("report_id",), "synthetic_report"),))),
-            "synthetic_page": RegisteredAgentTool(AgentToolDefinition(
-                "synthetic_page", "Synthetic", {"type": "object", "properties": {
-                    "report_id": {"type": "string"}}, "required": ["report_id"]}), page,
-                contract=CapabilityContract((("report_id", "synthetic_report"),), (), retained_fields=("report_id",))),
-            "synthetic_change": RegisteredAgentTool(AgentToolDefinition(
-                "synthetic_change", "Synthetic", schema),
-                prepare, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
-                contract=CapabilityContract((("role_ids", "discord_role_set"),
-                                             ("member_ids", "discord_member_set")), ())),
-        }
-        plan = _plan([
-            {**_step("roles"), "capability": "synthetic_roles"},
-            {**_step("members"), "capability": "synthetic_members"},
-            {**_step("audit", {"role_ids": [role]}, ["roles"]), "capability": "synthetic_audit"},
-            {**_step("page", {"report_id": {"step": "audit", "path": ["report_id"]}}, ["audit"]),
-             "capability": "synthetic_page"},
-            {**_step("change", {"role_ids": [role], "member_ids": [member]}, ["roles", "members"]),
-             "capability": "synthetic_change"},
-        ])
-        for field, expected, wrong in (
-            ("role_ids", "discord_role", member),
-            ("member_ids", "discord_member", role),
-            ("role_ids", "discord_role", {"step": "roles", "path": ["label"]}),
-        ):
-            with self.subTest(field=field, wrong=wrong):
-                original = plan["steps"][-1]["arguments"][field]
-                plan["steps"][-1]["arguments"][field] = [wrong]
-                checked = check_plan(plan, self.registry)
-                self.assertFalse(checked.ok)
-                self.assertEqual(checked.step_id, "change")
-                actual = "untyped" if wrong["path"] == ["label"] else (
-                    "discord_member" if wrong is member else "discord_role")
-                for text in (field, expected, repr(wrong["path"]), f"kind {actual}"):
-                    self.assertIn(text, checked.error)
-                plan["entities"] = [{"kind": expected, "value": wrong}]
-                self.assertFalse(check_plan(plan, self.registry).ok)
-                plan["entities"] = []
-                plan["steps"][-1]["arguments"][field] = original
-        plan["entities"] = [{"kind": "role_id", "value": role}]
-        with self.assertLogs("elbow_helper.features.agent.plan.checker", level="INFO") as logs:
-            checked = check_plan(plan, self.registry)
-        self.assertTrue(checked.ok, checked.error)
-        self.assertIn("unknown kind", logs.output[0])
-        declared = [{"kind": "discord_role_set", "value": [role, 303]},
-                    {"kind": "discord_member_set", "value": [member, 404]}]
-        for entities, role_argument in (([], [role]), (declared, [role]),
-                                       ([], {"step": "roles", "path": ["role_ids"]})):
-            with self.subTest(entities=entities, role_argument=role_argument):
-                plan["entities"] = entities
-                plan["steps"][-1]["arguments"]["role_ids"] = role_argument
-                checked = check_plan(plan, self.registry)
-                self.assertTrue(checked.ok, checked.error)
-                session = _Session([_model_step(plan), AgentStep("Synthetic answer", (), AgentUsage())], self.events)
-                context = replace(_context(), bot=SimpleNamespace(tree=object()))
-                with patch("elbow_helper.features.agent.engine.service.build_command_tools", return_value=({}, {})):
-                    answer, _ = await self._answer(session, context)
-                self.assertEqual(answer, "Synthetic answer")
-                self.assertIn("Synthetic preview", context.state.preview_reply)
-                self.assertEqual(len(session.calls), 2)
-                self.assertFalse(session.calls[-1][1])
-                self.assertIn("do not describe them as done", session.calls[-1][0][0].content)
-                self.assertEqual(len(context.state.proposed_changes), 1)
-        self.assertEqual(audit.await_count, 3)
-        self.assertEqual(page.await_count, 3)
 
-        targets_only = _plan([
-            {**_step("roles"), "capability": "synthetic_roles"},
-            {**_step("members"), "capability": "synthetic_members"},
-            {**_step("change", {"role_ids": [role], "member_ids": [member]}, ["roles", "members"]),
-             "capability": "synthetic_change"},
-        ])
-        session = _Session([_model_step(targets_only)], self.events)
-        context = replace(_context(), bot=SimpleNamespace(tree=object()))
-        with patch("elbow_helper.features.agent.engine.service.build_command_tools",
-                    return_value=({}, {})):
-                    answer, _ = await self._answer(session, context)
-        self.assertIn("Synthetic preview", answer)
-        self.assertIsNone(context.state.preview_reply)
-        self.assertEqual(len(session.calls), 1)
-        from elbow_helper.features.agent.plan.scope import ScopeLedger
-        restored = replace(_context(), history=(SimpleNamespace(text="Synthetic earlier answer", source_channels=frozenset(),
-            required_access=frozenset(), record=SimpleNamespace(
-            request_message_id=71, evidence=tuple(context.state.evidence))),))
-        ledger = ScopeLedger(restored, self.registry)
-        self.assertEqual(ledger.check(["synthetic-report"], (), {}), "")
-        follow_up = _plan([{**_step("follow_up", {"report_id": "synthetic-report"}),
-                            "capability": "synthetic_page"}])
-        follow_up.pop("entities")
-        follow_up.pop("periods")
-        session = _Session([_model_step(follow_up), AgentStep("Ready.", (), AgentUsage())], self.events)
-        restored.state.authorized_history = restored.history
-        restored = replace(restored, history=())
-        await self._answer(session, restored)
-        self.assertEqual(page.await_count, 4)
-
-    async def test_set_entities_declare_literal_and_referenced_ids_consistently(self):
-        self.registry["read_value"] = replace(self.registry["read_value"], contract=CapabilityContract(
-            (), (), result_paths=(("value",),), result_path_kinds=((("value",), "discord_role"),)))
-        read = AsyncMock(return_value={"value": 7})
-        self.registry["synthetic_read"] = RegisteredAgentTool(AgentToolDefinition(
-            "synthetic_read", "Synthetic", {"type": "object", "properties": {
-                "role_ids": {"type": "array", "items": {"type": "integer"}}}, "required": ["role_ids"]}),
-            read, contract=CapabilityContract((("role_ids", "discord_role_set"),), ()))
-        reference = {"step": "lookup", "path": ["value"]}
-        plan = _plan([_step("lookup", {"value": 101}),
-                      {**_step("literal", {"role_ids": [101, 202]}, ["lookup"]), "capability": "synthetic_read"}])
-        plan["entities"] = [{"kind": "discord_role_set", "value": [reference, 202]}]
-        checked = check_plan(plan, self.registry)
-        self.assertTrue(checked.ok, checked.error)
-        plan["entities"][0]["value"].append(101)
-        self.assertTrue(check_plan(plan, self.registry).ok)
-        session = _Session([_model_step(plan), AgentStep("Ready.", (), AgentUsage())], self.events)
-        await self._answer(session)
-        read.assert_awaited_once()
-        self.assertEqual(read.await_args.args[1], {"role_ids": [101, 202]})
-        plan["entities"] = []
-        plan["steps"][-1]["arguments"]["role_ids"] = [reference, 202]
-        self.assertTrue(check_plan(plan, self.registry).ok)
-        plan["steps"][-1]["arguments"]["role_ids"] = [reference]
-        plan["entities"] = [{"kind": "discord_role_set", "value": [202]}]
-        named = {"discord_role": frozenset({202})}
-        self.assertTrue(check_plan(plan, self.registry, named).ok)
-        session = _Session([_model_step(plan), AgentStep("Refused.", (), AgentUsage())], self.events)
-        with patch("elbow_helper.features.agent.engine.service.named_sources", return_value=named):
-            with self.assertLogs("elbow_helper.features.agent.engine.steps", level="WARNING") as logs:
-                await self._answer(session)
-        read.assert_awaited_once()
-        self.assertIn("The request named other sources of this kind", logs.records[0].getMessage())
-        self.assertNotIn("101", logs.records[0].getMessage())
 
     async def test_prepared_actions_must_match_the_registered_class(self):
         for registered in ActionClass:
@@ -443,7 +264,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                     if mismatch:
                         self.assertEqual(answer, "Synthetic refusal")
                         if registered in (ActionClass.CHANGE, ActionClass.IRREVERSIBLE):
-                            self.assertFalse(session.calls[-1][1])
+                            self.assertTrue(session.calls[-1][1])
                         result = json.loads(session.calls[-1][0][0].content)["results"]["changed"]
                         self.assertEqual(result["flags"]["status"], "failed")
                     else:
@@ -505,7 +326,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             AgentToolDefinition("read_value", "Read a value.", {
                 "type": "object", "properties": {"value": {"type": "integer"}},
                 "required": [],
-            }), read, contract=CapabilityContract((), (), result_paths=(("value",),)),
+            }), read, contract=CapabilityContract(()),
         )}
 
     async def _answer(self, session, context=None, conversation_history=""):
@@ -558,20 +379,20 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(answer, AGENT_ANSWER_UNFINISHED)
         self.assertNotIn("First part", answer)
 
-    async def test_undeclared_result_path_is_replanned_before_any_lookup(self):
+    async def test_wrong_result_path_can_be_corrected_in_a_later_plan(self):
         bad = _plan([_step("first"), _step("second", {
             "value": {"step": "first", "path": ["id"]},
         }, ["first"])])
-        good = _plan([_step("first"), _step("second", {
+        good = _plan([_step("third", {
             "value": {"step": "first", "path": ["value"]},
         }, ["first"])])
         session = _Session([_model_step(bad), _model_step(good),
                             AgentStep("Seven.", (), AgentUsage())], self.events)
         answer, _ = await self._answer(session)
         self.assertEqual(answer, "Seven.")
-        self.assertEqual(self.events, ["model", "model", "read", "read", "model"])
+        self.assertEqual(self.events, ["model", "read", "model", "read", "model"])
         self.assertIn("first", session.calls[1][0][0].content)
-        self.assertIn("valid_paths", session.calls[1][0][0].content)
+        self.assertIn("required earlier result", session.calls[1][0][0].content)
 
     async def test_one_step_plan_uses_two_model_calls(self):
         plan = _plan([_step("first")], effort="high")
@@ -621,18 +442,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.events.count("read"), 1)
                 self.assertEqual(len(session.calls), 3)
 
-    async def test_corrected_revision_rechecks_command_boundaries(self):
-        initial = _plan([_step("initial")])
-        invalid = _plan([_step("revision", {"value": "invalid"})])
-        correction = _plan([_step("revision", {"value": 99})])
-        session = _Session([_model_step(initial), _model_step(invalid),
-                            _model_step(correction)], self.events)
-        def check(plan, *_):
-            return "Synthetic command boundary." if plan["steps"][0]["arguments"].get("value") == 99 else ""
-        with patch("elbow_helper.features.agent.engine.service.check_command_plan", side_effect=check):
-            answer, _ = await self._answer(session)
-        self.assertEqual(answer, AGENT_PLAN_UNFINISHED)
-        self.assertEqual(self.events.count("read"), 1)
 
     async def test_max_effort_is_reserved_for_the_answer_round(self):
         plan = _plan([_step("first")], effort="max")
@@ -692,19 +501,16 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.events, ["model", "read", "read", "model"])
         self.assertEqual(len(session.calls), 2)
 
-    async def test_period_changes_can_continue_past_four_revisions(self):
+    async def test_six_plans_can_complete(self):
         self.registry["read_value"] = replace(self.registry["read_value"], definition=AgentToolDefinition(
             "read_value", "Read a value.", {"type": "object", "properties": {
                 "period": {"type": "integer", "minimum": 0}}, "required": ["period"]}))
-        plans = [_plan(
-            [_step(f"period_{n}", {"period": n})],
-            periods=[{"kind": "key", "field": "period", "value": n}],
-        )
+        plans = [_plan([_step(f"period_{n}", {"period": n})])
                  for n in range(6)]
         session = _Session([*[_model_step(plan) for plan in plans],
                             AgentStep("Checked six periods.", (), AgentUsage())], self.events)
         with patch_contracts(self.registry, {
-            "read_value": CapabilityContract((), ("period",))
+            "read_value": CapabilityContract(())
         }):
             answer, _ = await self._answer(session)
         self.assertEqual(answer, "Checked six periods.")
@@ -851,12 +657,10 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             }), read,
         )}
         contract = CapabilityContract(
-            (("channel_id", "discord_channel"),), (),
-            channel_fields=("channel_id",), source_scope="channel_messages",
-            result_channel_fields=("channel_id",),
+            (("channel_id", "discord_channel"),), channel_fields=("channel_id",),
+            source_scope="channel_messages", result_channel_fields=("channel_id",),
         )
         plan = _plan([_step("first", {"channel_id": 202})])
-        plan["entities"] = [{"kind": "discord_channel", "value": 202}]
         session = _Session([
             _model_step(plan), AgentStep("That conversation is unavailable.", (), AgentUsage()),
         ], self.events)
@@ -1092,7 +896,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("answer_only", session.calls[2][0][0].content)
 
     async def test_dependent_period_is_bound_to_the_owner_result(self):
-        contract = CapabilityContract((), ("selected_key",), period_results=(("key",),), result_paths=(("key",),))
+        contract = CapabilityContract(())
         async def read(_, arguments):
             self.events.append(arguments)
             return {"key": "synthetic-key", "value": 7}
@@ -1178,13 +982,11 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         prompts = [call.kwargs["messages"][0]["content"] for call in create.await_args_list]
         self.assertEqual(len(set(prompts)), 1)
 
-    async def test_entity_changes_do_not_limit_plan_revisions(self):
-        self.registry["read_value"] = replace(self.registry["read_value"], contract=CapabilityContract(
-            (), (), result_entity_keys=(("value", "synthetic_source"),)))
+    async def test_distinct_reads_do_not_limit_plan_revisions(self):
+        self.registry["read_value"] = replace(
+            self.registry["read_value"], contract=CapabilityContract(()),
+        )
         plans = [_plan([_step(str(index), {"value": index + 1})]) for index in range(5)]
-        values = ((101, 202), (202, 101), (101,), (202, 101), (202,))
-        for plan, selected in zip(plans, values):
-            plan["entities"] = [{"kind": "synthetic_source", "value": value} for value in selected]
         session = _Session([*map(_model_step, plans), AgentStep("Ready.", (), AgentUsage())], self.events)
         await self._answer(session)
         self.assertEqual(self.events.count("read"), 5)
@@ -1267,43 +1069,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("read", self.events)
         self.assertEqual(len(session.calls), 2)
 
-    async def test_retained_pages_keep_the_original_source_through_service(self):
-        context = _context()
-        context.state.source_channels.add(202)
-        async def read(local, arguments):
-            local.state.source_channels.add(arguments["channel_id"])
-            return {"resource_id": "synthetic-id", "channel_id": arguments["channel_id"]}
-        page = AsyncMock(return_value={"channel_id": 91, "value": 7})
-        self.registry = {
-            "read_value": RegisteredAgentTool(AgentToolDefinition("read_value", "Read a value.", {
-                "type": "object", "properties": {"channel_id": {"type": "integer"}}, "required": ["channel_id"]}), read),
-            "read_page": RegisteredAgentTool(AgentToolDefinition("read_page", "Read a page.", {
-                "type": "object", "properties": {"resource_id": {"type": "string"}}, "required": ["resource_id"]}), page)}
-        contracts = {
-            "read_value": CapabilityContract((("channel_id", "discord_channel"),), (), channel_fields=("channel_id",),
-                result_channel_fields=("channel_id",), source_scope="channel_messages", result_sources_within_query=True,
-                result_paths=(("resource_id",),),
-                result_path_kinds=((("resource_id",), "synthetic_report"),)),
-            "read_page": CapabilityContract((("resource_id", "synthetic_report"),), (), retained_fields=("resource_id",),
-                result_channel_fields=("channel_id",), source_scope="retained_channel_evidence")}
-        output = {**_step("page", {"resource_id": {"step": "first", "path": ["resource_id"]}}, ["first"]), "capability": "read_page"}
-        plan = _plan([_step("first", {"channel_id": 91}), output])
-        plan["entities"] = [{"kind": "discord_channel", "value": 91},
-                            {"kind": "synthetic_report", "value": output["arguments"]["resource_id"]}]
-        for source in (91, 202):
-            page.return_value = {"channel_id": source, "value": 7}
-            page.reset_mock()
-            session = _Session([_model_step(plan), AgentStep("Ready.", (), AgentUsage())], self.events)
-            context.state.evidence.clear()
-            with (patch_contracts(self.registry, contracts),
-                  patch("elbow_helper.features.agent.engine.service.named_sources", return_value={"discord_channel": frozenset({91})})):
-                await self._answer(session, context)
-            page.assert_awaited_once()
-            result = json.loads(session.calls[1][0][0].content)["results"]["page"]
-            self.assertEqual(result["flags"]["status"], "complete" if source == 91 else "failed")
-            self.assertEqual(json.loads(context.state.evidence[-1])["capability_scope"]["bound_source_channels"], [91])
-            if source == 202:
-                self.assertNotIn('"value": 7', session.calls[1][0][0].content)
 
     async def test_disabled_commands_keep_the_read_only_catalogue(self):
         session = _Session([AgentStep("Ready.", (), AgentUsage())], self.events)
@@ -1382,43 +1147,6 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                          ("synthetic private data",))
         self.assertEqual(len(session.calls), 1)
 
-    async def test_command_reference_cannot_escape_named_sources(self):
-        self.registry["synthetic_source_lookup"] = replace(
-            self.registry["read_value"], contract=CapabilityContract(
-                (("value", "synthetic_source"),), ()))
-        run = AsyncMock(return_value=ActionOutcome("complete", text="Unexpected"))
-        path = "/synthetic"
-        command = DiscoveredCommand(path, "registered", (
-            ParameterInfo("target", "Select a target.", True, "integer"),
-        ))
-        help_entry = SimpleNamespace(path=path, summary="Get a result.", details="Uses one target.")
-        with (patch(
-            "elbow_helper.features.agent.commands.registry.discover_commands",
-            return_value={path: command},
-        ),
-              patch("elbow_helper.features.agent.commands.registry.HELP_ENTRIES", (help_entry,))):
-            tools, capabilities = build_command_tools(object(), (
-                CommandAdapter(path, "public", run,
-                               entity_options=(("target", "synthetic_source"),)),
-            ))
-        command_step = {**_step("command", {"target": {"step": "first", "path": ["value"]}},
-                                ["first"]), "capability": next(iter(tools))}
-        plan = _plan([_step("first", {"value": 202}), command_step])
-        plan["entities"] = [{"kind": "synthetic_source", "value": 101},
-                            {"kind": "synthetic_source", "value": command_step["arguments"]["target"]}]
-        session = _Session([_model_step(plan), AgentStep("Refused.", (), AgentUsage())], self.events)
-        with (patch("elbow_helper.features.agent.engine.service.build_agent_tools",
-                   return_value=self.registry),
-              patch("elbow_helper.features.agent.engine.service.build_command_tools",
-                    return_value=(tools, capabilities)),
-              patch("elbow_helper.features.agent.engine.service.named_sources",
-                    return_value={"synthetic_source": frozenset({101})})):
-            context = replace(_context(), bot=SimpleNamespace(tree=object()))
-            await AgentService(_Model(session)).answer(
-                question="synthetic request", local_context="", context=context)
-        run.assert_not_awaited()
-        data = json.loads(session.calls[1][0][0].content)["results"]
-        self.assertEqual(data["command"]["flags"]["status"], "failed")
 
     async def test_confirmed_steps_make_one_preview_without_running(self):
         path = "/synthetic"
@@ -1516,7 +1244,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                 parameters={"type": "object", "properties": {}, "required": [],
                             "additionalProperties": False},
             ), create, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
-                contract=CapabilityContract((), (), result_paths=(("target_id",),))),
+                contract=CapabilityContract(())),
             "synthetic_use": RegisteredAgentTool(AgentToolDefinition(
                 name="synthetic_use", description="Use a target.",
                 parameters={"type": "object", "properties": {

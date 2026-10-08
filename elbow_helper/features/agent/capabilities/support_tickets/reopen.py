@@ -21,6 +21,7 @@ from ...wording import (
 )
 from ...discord_actions.safety import check_member, check_post_access, resolve_channel
 
+
 def support_reopen_tools() -> tuple[RegisteredAgentTool, ...]:
     schema = {"type": "object", "properties": {
         "channel_id": {"type": "integer", "minimum": 1},
@@ -34,7 +35,6 @@ def support_reopen_tools() -> tuple[RegisteredAgentTool, ...]:
         ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("channel_id", "support_ticket_channel"),),
-            time_fields=(),
             source_scope="request_context",
             channel_fields=("channel_id",),
         ),

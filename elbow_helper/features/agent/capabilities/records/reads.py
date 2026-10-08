@@ -24,19 +24,16 @@ from ...models import AgentRequestContext, RegisteredAgentTool
 
 
 TOOL_CONTRACTS = {
-    'read_active_leadership_records': CapabilityContract(
-        entity_fields=(('member_id', 'discord_member'),),
-        time_fields=(),
-        required_access=frozenset({'lead_plus'}),
+    "read_active_leadership_records": CapabilityContract(
+        entity_fields=(("member_id", "discord_member"),), required_access=frozenset({"lead_plus"}),
     ),
-    'read_leadership_record_report': CapabilityContract(
-        entity_fields=(('report_id', 'leadership_record_report'), ('member_id', 'discord_member')),
-        time_fields=(),
-        filter_fields=('category_key', 'incident_type_key', 'search'),
-        required_access=frozenset({'lead_plus'}),
-        retained_fields=('report_id',),
+    "read_leadership_record_report": CapabilityContract(
+        entity_fields=(("report_id", "leadership_record_report"), ("member_id", "discord_member")),
+        filter_fields=("category_key", "incident_type_key", "search"),
+        required_access=frozenset({"lead_plus"}), retained_fields=("report_id",),
     ),
 }
+
 
 def record_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (

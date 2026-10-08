@@ -6,7 +6,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import Any
 
-from elbow_helper.domain.player_tags import normalize_player_tag
 
 from ..models import AgentCapabilityEffect, RegisteredAgentTool
 from ..actions.outcomes import ActionOutcome, command_reply
@@ -129,26 +128,3 @@ def _authorized_run(context, selected, run):
         return await run()
     return checked
 
-
-def check_command_plan(
-    plan: Mapping[str, Any], capabilities: Mapping[str, CommandCapability],
-    named_sources: Mapping[str, frozenset[Any]],
-) -> str:
-    for step in plan["steps"]:
-        capability = capabilities.get(step["capability"])
-        if capability is None:
-            continue
-        values = step["arguments"]
-        for option, kind in capability.adapter.entity_options:
-            value = values.get(option)
-            named = named_sources.get(kind, frozenset())
-            if value is None or not named or isinstance(value, dict):
-                continue
-            selected = normalize_player_tag(value) if kind == "clash_account" else str(value)
-            if selected is None or str(selected) not in {str(item) for item in named}:
-                return "Offer other named sources instead of running this command for them."
-        if capability.adapter.check_period is not None:
-            issue = capability.adapter.check_period(plan, values)
-            if issue:
-                return issue
-    return ""

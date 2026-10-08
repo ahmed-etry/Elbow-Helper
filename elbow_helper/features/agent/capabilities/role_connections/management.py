@@ -43,17 +43,15 @@ def role_connection_management_tools() -> tuple[RegisteredAgentTool, ...]:
         }, "required": ["operation"], "additionalProperties": False},
     ), prepare_role_connection_change, AgentCapabilityEffect.COMMAND,
         ActionClass.CHANGE,
-        contract=CapabilityContract(
-            entity_fields=(
+        contract=CapabilityContract(entity_fields=(
                 ("connection_id", "role_connection"),
                 ("target_role_id", "discord_role"),
                 ("channel_id", "discord_channel"),
             ),
-            time_fields=(),
-            source_scope="request_context",
-            required_access=frozenset({ACCESS_LEAD}),
-            filter_fields=("operation", "all", "any"),
-        ),
+                source_scope="request_context",
+                required_access=frozenset({ACCESS_LEAD}),
+                filter_fields=("operation", "all", "any"),
+            ),
              )
     remove = RegisteredAgentTool(AgentToolDefinition(
         name="remove_role_connection",
@@ -64,15 +62,10 @@ def role_connection_management_tools() -> tuple[RegisteredAgentTool, ...]:
         }, "required": ["connection_id"], "additionalProperties": False},
     ), prepare_remove_role_connection, AgentCapabilityEffect.COMMAND,
         ActionClass.IRREVERSIBLE,
-        contract=CapabilityContract(
-            entity_fields=(
+        contract=CapabilityContract(entity_fields=(
                 ("connection_id", "role_connection"),
                 ("channel_id", "discord_channel"),
-            ),
-            time_fields=(),
-            source_scope="request_context",
-            required_access=frozenset({ACCESS_LEAD}),
-        ),
+            ), source_scope="request_context", required_access=frozenset({ACCESS_LEAD})),
              )
     return manage, remove
 

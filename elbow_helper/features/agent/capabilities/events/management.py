@@ -37,53 +37,37 @@ from ...wording import (
 
 
 TOOL_CONTRACTS = {
-    'set_event_enabled': CapabilityContract(
-        entity_fields=(('event', 'event_tracker'),),
-        time_fields=(),
-        source_scope='request_context',
-        required_access=frozenset({ACCESS_LEAD}),
-        filter_fields=('enabled',),
+    "set_event_enabled": CapabilityContract(
+        entity_fields=(("event", "event_tracker"),), source_scope="request_context",
+        required_access=frozenset({ACCESS_LEAD}), filter_fields=("enabled",),
     ),
-    'set_event_category': CapabilityContract(
-        entity_fields=(('event', 'event_tracker'), ('category_id', 'discord_channel')),
-        time_fields=(),
-        source_scope='request_context',
-        required_access=frozenset({ACCESS_LEAD}),
+    "set_event_category": CapabilityContract(
+        entity_fields=(("event", "event_tracker"), ("category_id", "discord_channel")),
+        source_scope="request_context", required_access=frozenset({ACCESS_LEAD}),
     ),
-    'move_event': CapabilityContract(
-        entity_fields=(('event', 'event_tracker'),),
-        time_fields=(),
-        source_scope='request_context',
-        required_access=frozenset({ACCESS_LEAD}),
-        filter_fields=('position', 'edge'),
+    "move_event": CapabilityContract(
+        entity_fields=(("event", "event_tracker"),), source_scope="request_context",
+        required_access=frozenset({ACCESS_LEAD}), filter_fields=("position", "edge"),
     ),
-    'restore_event_defaults': CapabilityContract(
-        entity_fields=(('event', 'event_tracker'),),
-        time_fields=(),
-        source_scope='request_context',
+    "restore_event_defaults": CapabilityContract(
+        entity_fields=(("event", "event_tracker"),), source_scope="request_context",
         required_access=frozenset({ACCESS_LEAD}),
     ),
-    'delete_event': CapabilityContract(
-        entity_fields=(('event', 'event_tracker'),),
-        time_fields=(),
-        source_scope='request_context',
+    "delete_event": CapabilityContract(
+        entity_fields=(("event", "event_tracker"),), source_scope="request_context",
         required_access=frozenset({ACCESS_LEAD}),
     ),
-    'create_event_tracker': CapabilityContract(
-        entity_fields=(),
-        time_fields=(),
-        source_scope='request_context',
-        required_access=frozenset({ACCESS_LEAD}),
-        filter_fields=('name', 'start', 'end', 'timezone', 'grace_hours'),
+    "create_event_tracker": CapabilityContract(
+        entity_fields=(), source_scope="request_context", required_access=frozenset({ACCESS_LEAD}),
+        filter_fields=("name", "start", "end", "timezone", "grace_hours"),
     ),
-    'edit_event_tracker': CapabilityContract(
-        entity_fields=(('event', 'event_tracker'),),
-        time_fields=(),
-        source_scope='request_context',
+    "edit_event_tracker": CapabilityContract(
+        entity_fields=(("event", "event_tracker"),), source_scope="request_context",
         required_access=frozenset({ACCESS_LEAD}),
-        filter_fields=('name', 'start', 'end', 'timezone', 'grace_hours'),
+        filter_fields=("name", "start", "end", "timezone", "grace_hours"),
     ),
 }
+
 
 def event_management_tools() -> tuple[RegisteredAgentTool, ...]:
     specs = (
@@ -144,11 +128,8 @@ def event_management_tools() -> tuple[RegisteredAgentTool, ...]:
         }, "required": ["event", "name"], "additionalProperties": False},
     ), _prepare_preset, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
         contract=CapabilityContract(
-            entity_fields=(("event", "event_tracker"),),
-            time_fields=(),
-            source_scope="request_context",
-            required_access=frozenset({ACCESS_LEAD}),
-            filter_fields=("name", "grace_hours"),
+            entity_fields=(("event", "event_tracker"),), source_scope="request_context",
+            required_access=frozenset({ACCESS_LEAD}), filter_fields=("name", "grace_hours"),
         ),
                  ))
     tools.append(RegisteredAgentTool(AgentToolDefinition(
@@ -157,9 +138,7 @@ def event_management_tools() -> tuple[RegisteredAgentTool, ...]:
         parameters={"type": "object", "properties": {}, "additionalProperties": False},
     ), prepare_event_refresh, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
         contract=CapabilityContract(
-            entity_fields=(),
-            time_fields=(),
-            source_scope="request_context",
+            entity_fields=(), source_scope="request_context",
             required_access=frozenset({ACCESS_LEAD}),
         ),
                  ))

@@ -30,7 +30,6 @@ def role_connection_scan_tools() -> tuple[RegisteredAgentTool, ...]:
         ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(),
-            time_fields=(),
             source_scope="request_context",
             required_access=frozenset({ACCESS_LEAD}),
         ),

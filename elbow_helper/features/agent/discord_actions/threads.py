@@ -47,10 +47,7 @@ def discord_thread_tools() -> tuple[RegisteredAgentTool, ...]:
             }, "required": ["parent_channel_id", "name"], "additionalProperties": False},
         ), prepare_create_thread, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
-                result_path_kinds=((('thread_id',), 'discord_channel'),),
-                result_paths=(('thread_id',),),
                 entity_fields=(("parent_channel_id", "parent_discord_channel"),),
-                time_fields=(),
                 source_scope="request_context",
                 filter_fields=("name", "private", "initial_message"),
             ),
@@ -65,12 +62,8 @@ def discord_thread_tools() -> tuple[RegisteredAgentTool, ...]:
             }, "required": ["thread_id", "operation"], "additionalProperties": False},
         ), prepare_update_thread, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
-                result_path_kinds=((('thread_id',), 'discord_channel'),),
-                result_paths=(('thread_id',),),
                 entity_fields=(("thread_id", "discord_channel"),),
-                time_fields=(),
-                source_scope="request_context",
-                filter_fields=("operation", "name"),
+                source_scope="request_context", filter_fields=("operation", "name"),
             ),
         ),
         RegisteredAgentTool(AgentToolDefinition(
@@ -84,17 +77,10 @@ def discord_thread_tools() -> tuple[RegisteredAgentTool, ...]:
             }, "required": ["thread_id", "operation", "member_ids"],
                "additionalProperties": False},
         ), prepare_thread_members, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
-            contract=CapabilityContract(
-                result_path_kinds=((('thread_id',), 'discord_channel'),),
-                result_paths=(('thread_id',),),
-                entity_fields=(
+            contract=CapabilityContract(entity_fields=(
                     ("thread_id", "discord_channel"),
                     ("member_ids", "discord_member_set"),
-                ),
-                time_fields=(),
-                source_scope="request_context",
-                filter_fields=("operation",),
-            ),
+                ), source_scope="request_context", filter_fields=("operation",)),
         ),
     )
 

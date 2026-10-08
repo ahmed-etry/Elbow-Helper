@@ -5,18 +5,6 @@ from __future__ import annotations
 import json
 
 
-def period_fields_error(kind, period, fields):
-    if set(period) == set(fields):
-        return ""
-    missing, extra = set(fields) - set(period), set(period) - set(fields)
-    details = []
-    if missing:
-        details.append("add " + ", ".join(sorted(missing)))
-    if extra:
-        details.append("remove " + ", ".join(sorted(extra)))
-    return f"Period {kind}: {'; '.join(details)}."
-
-
 def argument_errors(arguments, schema, dependencies, valid_value):
     properties = schema.get("properties", {})
     issues = []
@@ -24,7 +12,7 @@ def argument_errors(arguments, schema, dependencies, valid_value):
     unknown = set(arguments) - set(properties)
     if missing:
         issues.append("Missing fields: " + ", ".join(sorted(missing)))
-    if unknown:
+    if unknown and schema.get("additionalProperties") is not True:
         issues.append("Unsupported fields: " + ", ".join(sorted(unknown)))
     for field, value in arguments.items():
         if field not in properties or valid_value(value, properties[field], dependencies):

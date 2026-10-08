@@ -22,27 +22,22 @@ from ...models import AgentRequestContext, RegisteredAgentTool
 
 
 TOOL_CONTRACTS = {
-    'read_member_achievements': CapabilityContract(
-        entity_fields=(('member_id', 'discord_member'),),
-        time_fields=(),
-        filter_fields=('status',),
+    "read_member_achievements": CapabilityContract(
+        entity_fields=(("member_id", "discord_member"),),
+        filter_fields=("status",),
     ),
-    'read_member_achievement_report': CapabilityContract(
-        entity_fields=(('report_id', 'achievement_progress_report'),),
-        time_fields=(),
-        filter_fields=('status',),
-        retained_fields=('report_id',),
+    "read_member_achievement_report": CapabilityContract(
+        entity_fields=(("report_id", "achievement_progress_report"),),
+        filter_fields=("status",),
+        retained_fields=("report_id",),
     ),
-    'read_achievement_leaderboard': CapabilityContract(
-        entity_fields=(),
-        time_fields=(),
-    ),
-    'read_achievement_leaderboard_report': CapabilityContract(
-        entity_fields=(('report_id', 'achievement_leaderboard_report'),),
-        time_fields=(),
-        retained_fields=('report_id',),
+    "read_achievement_leaderboard": CapabilityContract(entity_fields=()),
+    "read_achievement_leaderboard_report": CapabilityContract(
+        entity_fields=(("report_id", "achievement_leaderboard_report"),),
+        retained_fields=("report_id",),
     ),
 }
+
 
 def achievement_tools() -> tuple[RegisteredAgentTool, ...]:
     report_id = {"type": "string", "minLength": 1, "maxLength": 32}
@@ -51,13 +46,13 @@ def achievement_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
         (
             "read_member_achievements",
-            "Read and retain complete achievement progress for one current Discord member using the existing achievement rules. Completion-only achievements are not presented as measurable counters. This does not expose coin transactions or change achievements.",
+            "Read and retain complete achievement progress for one current Discord member "
+            "using the existing achievement rules. Completion-only achievements are not "
+            "presented as measurable counters. This does not expose coin transactions or "
+            "change achievements.",
             {
                 "member_id": {"type": "integer", "minimum": 1},
-                "status": {
-                    "type": "string",
-                    "enum": ["all", "completed", "in_progress"],
-                },
+                "status": {"type": "string", "enum": ["all", "completed", "in_progress"]},
                 "limit": limit,
             },
             ("member_id",),
@@ -65,14 +60,13 @@ def achievement_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         (
             "read_member_achievement_report",
-            "Read another filtered page from one retained member achievement snapshot without rereading mutable progress.",
+            "Read another filtered page from one retained member achievement snapshot "
+            "without rereading mutable progress.",
             {
                 "report_id": report_id,
-                "status": {
-                    "type": "string",
-                    "enum": ["all", "completed", "in_progress"],
-                },
-                "offset": offset, "limit": limit,
+                "status": {"type": "string", "enum": ["all", "completed", "in_progress"]},
+                "offset": offset,
+                "limit": limit,
             },
             ("report_id",),
             read_member_achievement_report,

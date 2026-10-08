@@ -40,7 +40,6 @@ def clan_health_settings_tools() -> tuple[RegisteredAgentTool, ...]:
     ), read_health_settings,
         contract=CapabilityContract(
             entity_fields=(("clan_code", "clan"),),
-            time_fields=(),
             source_scope="request_context",
             required_access=frozenset({ACCESS_LEAD_PLUS}),
             filter_fields=("block",),
@@ -59,7 +58,6 @@ def clan_health_settings_tools() -> tuple[RegisteredAgentTool, ...]:
         ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("clan_code", "clan"),),
-            time_fields=(),
             source_scope="request_context",
             required_access=frozenset({ACCESS_LEAD_PLUS}),
             filter_fields=("block", "values"),

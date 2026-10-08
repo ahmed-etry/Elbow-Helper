@@ -39,7 +39,6 @@ def leadership_news_tools() -> tuple[RegisteredAgentTool, ...]:
         ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("message_id", "discord_message"),),
-            time_fields=(),
             source_scope="request_context",
         ),
             ),
@@ -53,7 +52,6 @@ def leadership_news_tools() -> tuple[RegisteredAgentTool, ...]:
             ActionClass.IRREVERSIBLE,
             contract=CapabilityContract(
                 entity_fields=(("prompt_message_id", "discord_message"),),
-                time_fields=(),
                 source_scope="request_context",
             ),
         ),)

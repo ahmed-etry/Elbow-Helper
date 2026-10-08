@@ -173,3 +173,4 @@ class RegisteredAgentTool:
     effect: AgentCapabilityEffect = AgentCapabilityEffect.READ
     action_class: ActionClass = ActionClass.READ
     contract: CapabilityContract | None = None
+    returns: str | None = None

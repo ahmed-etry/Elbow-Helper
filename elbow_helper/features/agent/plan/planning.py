@@ -36,7 +36,7 @@ class ReadDecision:
 
 async def read_request(
     session: AgentSession, registry: Mapping[str, RegisteredAgentTool],
-    named_sources: Mapping[str, frozenset[Any]], request_id: int | None,
+    request_id: int | None,
     validate_step: Callable[[Mapping[str, Any]], Awaitable[str]] | None = None,
     validate_plan: Callable[[Mapping[str, Any]], str] | None = None,
     advance: Callable[..., Awaitable[Any]] | None = None,
@@ -61,7 +61,7 @@ async def read_request(
                 plan = json.loads(step.tool_calls[0].arguments)
             except (TypeError, ValueError):
                 plan = None
-            check = check_plan(plan, registry, named_sources)
+            check = check_plan(plan, registry)
             if check.ok and validate_plan is not None:
                 issue = validate_plan(plan)
                 if issue:

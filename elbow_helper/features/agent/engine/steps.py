@@ -19,17 +19,14 @@ from ..access import AgentAccessLost
 from ..access import require_access, accessible_message_channel, has_access_requirements
 from ..access import require_evidence_access
 from ..reports.tools import original_tool
-from ..plan.checker import entity_kind, parse_periods, check_step
-from ..plan.checker import check_entity_references
+from ..plan.checker import check_step
 from ..plan.executor import execute_plan
 from ..plan.results import model_result, model_view
-from ..plan.scope import resource_ids
-from ..commands.bridge import check_command_plan
 from . import budgets as limits
 from functools import partial
 from .rounds import ModelRounds
-from ..plan.scope import ScopeLedger
 from .budgets import ContextBudget
+from .capability_contract import CapabilityBindError, compile_capability_call
 from ..models import RegisteredAgentTool
 from ..commands.registry import CommandCapability
 from typing import TYPE_CHECKING
@@ -83,10 +80,7 @@ async def disclosure_issue(
 class PlanExecutionState:
     plan: Mapping[str, Any]
     original: dict[str, Any]
-    original_scope: dict[str, Any]
     emitted: list[AgentToolResult]
-    periods: tuple[tuple[str, Any, Any], ...]
-    named: dict[str, set[str]]
 
 
 class PlanRunner:
@@ -99,27 +93,59 @@ class PlanRunner:
         context: AgentRequestContext,
         registry: Mapping[str, RegisteredAgentTool],
         command_capabilities: Mapping[str, CommandCapability],
-        sources: Mapping[str, frozenset[int | str]],
         budget: ContextBudget,
-        ledger: ScopeLedger,
         rounder: ModelRounds,
     ) -> None:
         self.service = service
         self.context = context
         self.registry = registry
         self.command_capabilities = command_capabilities
-        self.sources = sources
         self.budget = budget
-        self.ledger = ledger
         self.rounder = rounder
         self.state_lock = asyncio.Lock()
         self.reads = {}
         self.results = {}
         self.completed_steps = {}
+        self.source_identities = dict(context.state.report_sources)
+        for turn in context.state.authorized_history or context.history:
+            if turn.record is None:
+                continue
+            for encoded in turn.record.evidence:
+                try:
+                    record = json.loads(encoded)
+                    self._remember_sources(
+                        json.loads(record["result"]), record.get("capability_scope", {}),
+                        record["arguments"],
+                    )
+                except (KeyError, TypeError, ValueError):
+                    continue
         self.tool_calls = 0
         self.evidence_characters = 0
         self.model_results = {}
         self.sent_summaries = {}
+
+    def _remember_sources(self, payload, scope, arguments):
+        channels = set(scope.get("bound_source_channels", ()))
+        for field in scope.get("channel_fields", ()):
+            value = arguments.get(field)
+            channels.update(
+                item for item in (value if isinstance(value, list) else [value])
+                if type(item) is int
+            )
+        fields = {field for tool in self.registry.values() if tool.contract
+                  for field in tool.contract.retained_fields}
+        def visit(value):
+            if isinstance(value, Mapping):
+                for key, item in value.items():
+                    if key in fields:
+                        for identity in item if isinstance(item, list) else [item]:
+                            if isinstance(identity, str) and channels:
+                                self.source_identities.setdefault(identity, frozenset(channels))
+                    visit(item)
+            elif isinstance(value, list):
+                for item in value:
+                    visit(item)
+        visit(payload)
 
     async def run_one(
         self,
@@ -170,82 +196,21 @@ class PlanRunner:
 
     async def _check_step(self, step, arguments, earlier_results, plan_state: PlanExecutionState):
         name = step["capability"]
-        try:
-            bound_periods = self._bound_periods(step, earlier_results, plan_state)
-        except (KeyError, IndexError, TypeError):
-            return {"error": "The selected period could not be resolved."}
-        selected = original_tool(self.registry, name, step["arguments"]) or self.registry[name]
-        if selected.contract is not None:
-            steps = {
-                **self.completed_steps,
-                **{owner["id"]: owner for owner in plan_state.plan["steps"]},
-            }
-            typed = check_entity_references(selected.contract, step["arguments"], steps, self.registry, step["id"])
-            if not typed.ok:
-                return {"error": typed.error}
-        retained = []
-
-        def validate_scope(selected: RegisteredAgentTool) -> str:
-            if self.registry[name].effect is AgentCapabilityEffect.COMMAND:
-                issue = check_command_plan(
-                    {**plan_state.plan, "steps": [{**step, "arguments": arguments}]},
-                    self.command_capabilities,
-                    self.sources,
-                )
-                if issue:
-                    return issue
-            contract = selected.contract
-            if contract is None:
-                return ""
-            retained.extend(
-                identity
-                for field in contract.retained_fields
-                if field in arguments
-                for identity in (
-                    arguments[field] if isinstance(arguments[field], list) else [arguments[field]]
-                )
-            )
-            return self.ledger.check(retained, bound_periods, plan_state.named)
-
-        checked = check_step(
-            {**step, "arguments": arguments},
-            self.registry,
-            bound_periods,
-            plan_state.named,
-            set(step["depends_on"]),
-            resolved=True,
-            validate_scope=validate_scope,
-        )
+        checked = check_step({**step, "arguments": arguments}, self.registry, resolved=True)
         if not checked.ok:
             return {"error": checked.error, "offered": checked.offered}
-        scope = dict(checked.scope)
-        if retained:
-            scope["bound_source_channels"] = sorted(self.ledger.channels(retained))
+        try:
+            scope = compile_capability_call(
+                checked.tool, arguments, self.source_identities, contract=checked.contract,
+            )
+        except CapabilityBindError as error:
+            return {"error": str(error)}
         issue = await disclosure_issue(
             self.context, self.registry, {**step, "arguments": arguments}
         )
         if issue:
             return issue
         return {"name": name, "tool": checked.tool, "contract": checked.contract, "scope": scope}
-
-    def _bound_periods(self, step, earlier_results, plan_state: PlanExecutionState):
-        bound = []
-        for kind, value, extra in plan_state.periods:
-            if kind != "resolved":
-                bound.append((kind, value, extra))
-                continue
-            if value == step["id"]:
-                continue
-            fields = [field for field, reference in step["arguments"].items()
-                      if isinstance(reference, dict) and reference == {"step": value, "path": extra}]
-            if not fields:
-                continue
-            key_value = earlier_results[value]
-            for part in extra:
-                key_value = key_value[part]
-            for field in fields:
-                bound.append(("key", key_value, field))
-        return tuple(bound)
 
     async def _reserve_tool(self, step, arguments, tool, plan_state: PlanExecutionState):
         async with self.state_lock:
@@ -325,13 +290,7 @@ class PlanRunner:
             payload = json.loads(raw)
         except ValueError:
             payload = {"error": "Invalid lookup result"}
-        contract = checked["contract"]
-        coverage_dates = {}
-        if contract is not None and contract.time_window is not None:
-            coverage_dates = {
-                field: arguments[field] for field in contract.time_window[:2] if field in arguments
-            }
-        payload = model_result(payload, coverage_dates=coverage_dates)
+        payload = model_result(payload)
         return await self._record_result(
             step, arguments, checked["scope"], local, previous, payload, checked["contract"], plan_state,
         )
@@ -349,14 +308,10 @@ class PlanRunner:
     ):
         async with self.state_lock:
             summaries = {key: values.copy() for key, values in self.sent_summaries.items()}
-            row_fields = {
-                path[0] for path in (contract.referenceable_result_paths if contract else ())
-                if "N" in path
-            }
             view = model_view(
                 payload,
                 summaries=summaries if payload.get("report_id") in local.state.reports else None,
-                row_fields=row_fields,
+                row_fields={field for field, value in payload.items() if isinstance(value, list)},
             )
             model_content = json.dumps(view, ensure_ascii=False, default=str, separators=(",", ":"))
             structured_content = json.dumps(payload, ensure_ascii=False, default=str, separators=(",", ":"))
@@ -378,11 +333,8 @@ class PlanRunner:
             plan_state.emitted.append(AgentToolResult(step["id"], content))
             self.evidence_characters += len(content) if content else max(0, limit)
             merge_tool_state(self.context, local, previous)
-            for identity in local.state.reports:
-                if identity not in plan_state.original["reports"]:
-                    self.ledger.remember(identity, step["capability"], arguments)
-            for identity in resource_ids(payload, self.registry):
-                self.ledger.remember(identity, step["capability"], arguments)
+            self.source_identities.update(local.state.report_sources)
+            self._remember_sources(payload, scope, arguments)
             self.context.state.evidence.append(
                 evidence_record(
                     call_id=step["id"],
@@ -403,14 +355,7 @@ class PlanRunner:
         plan_state = PlanExecutionState(
             plan=plan,
             original=tool_state_snapshot(self.context),
-            original_scope=dict(self.ledger.reports),
             emitted=[],
-            periods=parse_periods(plan.get("periods", [])),
-            named={
-                entity_kind(kind): {str(value) for value in values}
-                for kind, values in self.sources.items()
-                if values
-            },
         )
         try:
             result = await execute_plan(
@@ -429,13 +374,11 @@ class PlanRunner:
             self.results.update(result)
             self.completed_steps.update({step["id"]: step for step in plan["steps"]})
             self.rounder.unpublished = plan_state.original
-            self.rounder.unpublished_scope = plan_state.original_scope
             return result
         except AgentAccessLost:
             self.model_results = {}
             self.sent_summaries = original_summaries
             await discard_unpublished_results(self.context, plan_state.original, ())
-            self.ledger.reports = plan_state.original_scope
             return {
                 step["id"]: model_result({"error": "That lookup failed."}) for step in plan["steps"]
             }

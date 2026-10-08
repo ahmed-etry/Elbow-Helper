@@ -21,25 +21,25 @@ _TIMING_STATUSES = {"due", "in_progress"}
 
 
 TOOL_CONTRACTS = {
-    'read_active_recruitment_trials': CapabilityContract(
-        entity_fields=(('ticket_channel_id', 'recruitment_ticket_channel'),),
-        time_fields=(),
-        source_scope='channel_status',
-        channel_fields=('ticket_channel_id',),
-        result_channel_lists=(('trials', 'ticket_channel_id'),),
+    "read_active_recruitment_trials": CapabilityContract(
+        entity_fields=(("ticket_channel_id", "recruitment_ticket_channel"),),
+        source_scope="channel_status", channel_fields=("ticket_channel_id",),
+        result_channel_lists=(("trials", "ticket_channel_id"),),
         result_sources_within_query=True,
     ),
-    'read_active_recruitment_trial_report': CapabilityContract(
-        entity_fields=(('report_id', 'recruitment_trial_report'), ('ticket_channel_id', 'recruitment_ticket_channel'), ('applicant_member_id', 'discord_member')),
-        time_fields=(),
-        source_scope='retained_channel_evidence',
-        channel_fields=('ticket_channel_id',),
-        result_channel_lists=(('trials', 'ticket_channel_id'),),
-        result_sources_within_query=True,
-        filter_fields=('timing_status',),
-        retained_fields=('report_id',),
+    "read_active_recruitment_trial_report": CapabilityContract(
+        entity_fields=(
+            ("report_id", "recruitment_trial_report"),
+            ("ticket_channel_id", "recruitment_ticket_channel"),
+            ("applicant_member_id", "discord_member"),
+        ),
+        source_scope="retained_channel_evidence", channel_fields=("ticket_channel_id",),
+        result_channel_lists=(("trials", "ticket_channel_id"),),
+        result_sources_within_query=True, filter_fields=("timing_status",),
+        retained_fields=("report_id",),
     ),
 }
+
 
 def recruitment_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (

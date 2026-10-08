@@ -86,7 +86,11 @@ class CommandRegistryTests(unittest.TestCase):
         self.assertLess(estimate_tokens(prompt) - estimate_tokens(without_results), 2_000)
         self.assertLess(estimate_tokens(prompt), 32_000)
         self.assertEqual(len(capability_list(registry).splitlines()), len(registry))
-        self.assertTrue(all(" | class " in line for line in capability_list(registry).splitlines()))
+        self.assertTrue(all(
+            any(" | " + kind + " | " in line
+                for kind in ("read", "output", "change", "irreversible"))
+            for line in capability_list(registry).splitlines()
+        ))
         self.assertTrue(all(
             tool.effect is AgentCapabilityEffect.COMMAND for tool in registry.values()
             if tool.action_class in (ActionClass.CHANGE, ActionClass.IRREVERSIBLE)

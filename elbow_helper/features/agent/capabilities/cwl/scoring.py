@@ -20,46 +20,28 @@ from ...models import AgentRequestContext, RegisteredAgentTool
 
 
 TOOL_CONTRACTS = {
-    'list_cwl_ass_seasons': CapabilityContract(
-        entity_fields=(('clan_code', 'clan'),),
-        time_fields=(),
-        result_entity_keys=(('season_coverage[].season', 'cwl_season'), ('clan_code', 'clan')),
-        result_paths=(('seasons', 'N'), ('latest_seven_war_season',)),
-        result_path_kinds=((('seasons', 'N'), 'cwl_season'), (('latest_seven_war_season',), 'cwl_season')),
-        period_results=(('seasons', 0), ('latest_seven_war_season',)),
+    "list_cwl_ass_seasons": CapabilityContract(
+        entity_fields=(("clan_code", "clan"),),
         required_access=frozenset({ACCESS_LEAD_PLUS_OR_CWL_HELPER}),
     ),
-    'read_cwl_ass_scope': CapabilityContract(
-        entity_fields=(('clan_code', 'clan'),),
-        time_fields=('season', 'scope_type', 'cwl_round', 'war_id'),
-        scope_field='scope_type',
-        scope_variants=(('season', ()), ('round', ('cwl_round',)), ('war', ('war_id',))),
-        result_entity_keys=(('players[].player_tag', 'clash_account'), ('season', 'cwl_season'), ('clan_code', 'clan')),
-        value_patterns=(('season', '20\\d{2}-(0[1-9]|1[0-2])'),),
+    "read_cwl_ass_scope": CapabilityContract(
+        entity_fields=(("clan_code", "clan"),),
         required_access=frozenset({ACCESS_LEAD_PLUS_OR_CWL_HELPER}),
     ),
-    'read_cwl_ass_scope_report': CapabilityContract(
-        entity_fields=(('report_id', 'cwl_ass_report'),),
-        time_fields=(),
-        result_entity_keys=(('players[].player_tag', 'clash_account'), ('season', 'cwl_season'), ('clan_code', 'clan')),
-        retained_fields=('report_id',),
+    "read_cwl_ass_scope_report": CapabilityContract(
+        entity_fields=(("report_id", "cwl_ass_report"),), retained_fields=("report_id",),
         required_access=frozenset({ACCESS_LEAD_PLUS_OR_CWL_HELPER}),
     ),
-    'read_cwl_bonus_scope': CapabilityContract(
-        entity_fields=(('clan_code', 'clan'),),
-        time_fields=('season', 'scope_type', 'cwl_round', 'war_tag'),
-        scope_field='scope_type',
-        scope_variants=(('season', ()), ('round', ('cwl_round',)), ('war', ('war_tag',))),
-        value_patterns=(('season', '20\\d{2}-(0[1-9]|1[0-2])'),),
+    "read_cwl_bonus_scope": CapabilityContract(
+        entity_fields=(("clan_code", "clan"),),
         required_access=frozenset({ACCESS_LEAD_PLUS_OR_CWL_HELPER}),
     ),
-    'read_cwl_bonus_scope_report': CapabilityContract(
-        entity_fields=(('report_id', 'cwl_bonus_report'),),
-        time_fields=(),
-        retained_fields=('report_id',),
+    "read_cwl_bonus_scope_report": CapabilityContract(
+        entity_fields=(("report_id", "cwl_bonus_report"),), retained_fields=("report_id",),
         required_access=frozenset({ACCESS_LEAD_PLUS_OR_CWL_HELPER}),
     ),
 }
+
 
 def cwl_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
     offset = {"type": "integer", "minimum": 0}
@@ -71,9 +53,7 @@ def cwl_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
             "the distinct ended-war count and whether seven wars are recorded. "
             "Use this to resolve an exact season without treating a partial "
             "season as complete. This does not calculate a score or poll Clash.",
-            {"clan_code": {
-                "type": "string", "enum": list(CWL_CLAN_CODES),
-            }},
+            {"clan_code": {"type": "string", "enum": list(CWL_CLAN_CODES)}},
             ("clan_code",), list_cwl_ass_seasons,
         ),
         (
@@ -85,22 +65,11 @@ def cwl_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
             "partial-scope result as a completed-season score. Retain the "
             "complete result for paging or a requested spreadsheet.",
             {
-                "clan_code": {
-                    "type": "string", "enum": list(CWL_CLAN_CODES),
-                },
-                "season": {
-                    "type": "string",
-                    "pattern": r"^20\d{2}-(0[1-9]|1[0-2])$",
-                },
-                "scope_type": {
-                    "type": "string", "enum": ["season", "round", "war"],
-                },
-                "cwl_round": {
-                    "type": "integer", "minimum": 1, "maximum": 7,
-                },
-                "war_id": {
-                    "type": "string", "minLength": 1, "maxLength": 100,
-                },
+                "clan_code": {"type": "string", "enum": list(CWL_CLAN_CODES)},
+                "season": {"type": "string", "pattern": "^20\\d{2}-(0[1-9]|1[0-2])$"},
+                "scope_type": {"type": "string", "enum": ["season", "round", "war"]},
+                "cwl_round": {"type": "integer", "minimum": 1, "maximum": 7},
+                "war_id": {"type": "string", "minLength": 1, "maxLength": 100},
                 "limit": limit,
             },
             ("clan_code", "season", "scope_type"), read_cwl_ass_scope,
@@ -125,22 +94,11 @@ def cwl_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
             "a bonus recommendation. Retain the complete result for paging or a "
             "requested spreadsheet.",
             {
-                "clan_code": {
-                    "type": "string", "enum": list(CWL_CLAN_CODES),
-                },
-                "season": {
-                    "type": "string",
-                    "pattern": r"^20\d{2}-(0[1-9]|1[0-2])$",
-                },
-                "scope_type": {
-                    "type": "string", "enum": ["season", "round", "war"],
-                },
-                "cwl_round": {
-                    "type": "integer", "minimum": 1, "maximum": 7,
-                },
-                "war_tag": {
-                    "type": "string", "minLength": 1, "maxLength": 100,
-                },
+                "clan_code": {"type": "string", "enum": list(CWL_CLAN_CODES)},
+                "season": {"type": "string", "pattern": "^20\\d{2}-(0[1-9]|1[0-2])$"},
+                "scope_type": {"type": "string", "enum": ["season", "round", "war"]},
+                "cwl_round": {"type": "integer", "minimum": 1, "maximum": 7},
+                "war_tag": {"type": "string", "minLength": 1, "maxLength": 100},
                 "limit": limit,
             },
             ("clan_code", "season", "scope_type"), read_cwl_bonus_scope,
@@ -159,12 +117,13 @@ def cwl_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
     )
     return tuple(RegisteredAgentTool(
         AgentToolDefinition(
-            name=name, description=description,
-            parameters={
-                "type": "object", "properties": properties,
-                "required": list(required), "additionalProperties": False,
-            },
-        ),
+                name=name,
+                description=description,
+                parameters={
+                    "type": "object", "properties": properties,
+                    "required": list(required), "additionalProperties": False,
+                },
+            ),
         handler,
         contract=TOOL_CONTRACTS[name],
     ) for name, description, properties, required, handler in definitions)

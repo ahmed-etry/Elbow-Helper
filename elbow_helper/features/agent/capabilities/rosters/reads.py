@@ -14,77 +14,79 @@ from .report import RosterReport, compare_roster_reports as compare_reports, ros
 
 
 TOOL_CONTRACTS = {
-    'find_rosters': CapabilityContract(
-        result_path_kinds=((('rosters', 'N', 'roster_id'), 'roster'),
-                           (('rosters', 'N', 'active_cycle_id'), 'roster_cycle')),
-        result_paths=(('rosters', 'N', 'roster_id'), ('rosters', 'N', 'active_cycle_id')),
-        entity_fields=(),
-        time_fields=(),
+    "find_rosters": CapabilityContract(entity_fields=()),
+    "list_roster_cycles": CapabilityContract(entity_fields=(("roster_id", "roster"),)),
+    "read_roster": CapabilityContract(entity_fields=(("roster_id", "roster"),)),
+    "read_roster_report": CapabilityContract(
+        entity_fields=(("report_id", "roster_report"),), retained_fields=("report_id",),
     ),
-    'list_roster_cycles': CapabilityContract(
-        result_path_kinds=((('cycles', 'N', 'id'), 'roster_cycle'),),
-        entity_fields=(('roster_id', 'roster'),),
-        time_fields=('before_id',),
-        latest_fields=('before_id',),
-        result_paths=(('cycles', 'N', 'id'),),
-        period_results=(('cycles', 0, 'id'),),
-    ),
-    'read_roster': CapabilityContract(
-        result_path_kinds=((('report_id',), 'roster_report'),
-                           (('accessible_posts', 'N', 'channel_id'), 'discord_channel'),
-                           (('accessible_posts', 'N', 'message_id'), 'discord_message')),
-        result_paths=(
-            ('report_id',),
-            ('next_offset',),
-            ('accessible_posts', 'N', 'channel_id'),
-            ('accessible_posts', 'N', 'message_id'),
-        ),
-        entity_fields=(('roster_id', 'roster'),),
-        time_fields=('cycle_id',),
-        result_entity_keys=(('accounts[].player_tag', 'clash_account'), ('accounts[].discord_user_id', 'discord_member'), ('roster_id', 'roster'), ('cycle_id', 'roster_cycle')),
-    ),
-    'read_roster_report': CapabilityContract(
-        result_path_kinds=((('report_id',), 'roster_report'),
-                           (('accessible_posts', 'N', 'channel_id'), 'discord_channel'),
-                           (('accessible_posts', 'N', 'message_id'), 'discord_message')),
-        result_paths=(
-            ('report_id',),
-            ('next_offset',),
-            ('accessible_posts', 'N', 'channel_id'),
-            ('accessible_posts', 'N', 'message_id'),
-        ),
-        entity_fields=(('report_id', 'roster_report'),),
-        time_fields=(),
-        result_entity_keys=(('accounts[].player_tag', 'clash_account'), ('accounts[].discord_user_id', 'discord_member'), ('roster_id', 'roster'), ('cycle_id', 'roster_cycle')),
-        retained_fields=('report_id',),
-    ),
-    'compare_roster_reports': CapabilityContract(
-        entity_fields=(('before_report_id', 'roster_report'), ('after_report_id', 'roster_report')),
-        time_fields=(),
-        retained_fields=('before_report_id', 'after_report_id'),
+    "compare_roster_reports": CapabilityContract(
+        entity_fields=(("before_report_id", "roster_report"), ("after_report_id", "roster_report")),
+        retained_fields=("before_report_id", "after_report_id"),
     ),
 }
+
 
 def roster_tools() -> tuple[RegisteredAgentTool, ...]:
     positive_id = {"type": "integer", "minimum": 1}
     offset = {"type": "integer", "minimum": 0}
     limit = {"type": "integer", "minimum": 1, "maximum": 25}
     definitions = (
-        ("find_rosters", "Find rosters in this server by name or clan. Results identify the roster and its current signup cycle.",
-         {"query": {"type": "string", "maxLength": 100}, "offset": offset}, (), find_rosters),
-        ("list_roster_cycles", "List saved cycles for an identified roster. Use exact cycle IDs for historical membership; do not infer a season from a roster name.",
-         {"roster_id": positive_id, "before_id": positive_id, "limit": limit}, ("roster_id",), list_roster_cycles),
-        ("read_roster", "Read all stored signups for an identified roster and cycle. Omitting the cycle selects its current cycle. Roster settings and post locations are current, even when signups are historical. Stored signups do not prove current clan membership. Results retain a complete report; use read_roster_report for subsequent pages without repeating the lookup.",
-         {"roster_id": positive_id, "cycle_id": positive_id}, ("roster_id",), read_roster),
-        ("read_roster_report", "Read another page of a retained roster signup report from this conversation. Reuse its snapshot for comparisons; call read_roster again only when fresh data is needed.",
-         {"report_id": {"type": "string", "maxLength": 32}, "offset": offset, "limit": limit}, ("report_id",), read_roster_report),
-        ("compare_roster_reports", "Compare two retained roster reports by account tag. Supply before and after report IDs in the intended comparison order. Counts cover all signups; pages show added, removed and changed accounts. Signup timestamps are ignored. This compares stored signups, not current clan membership or historical roster settings.",
-         {"before_report_id": {"type": "string", "maxLength": 32}, "after_report_id": {"type": "string", "maxLength": 32}, "offset": offset, "limit": limit},
-         ("before_report_id", "after_report_id"), compare_roster_reports),
+        (
+            "find_rosters",
+            "Find rosters in this server by name or clan. Results identify the roster and "
+            "its current signup cycle.",
+            {"query": {"type": "string", "maxLength": 100}, "offset": offset},
+            (), find_rosters,
+        ),
+        (
+            "list_roster_cycles",
+            "List saved cycles for an identified roster. Use exact cycle IDs for historical "
+            "membership; do not infer a season from a roster name.",
+            {"roster_id": positive_id, "before_id": positive_id, "limit": limit},
+            ("roster_id",), list_roster_cycles,
+        ),
+        (
+            "read_roster",
+            "Read all stored signups for an identified roster and cycle. Omitting the cycle "
+            "selects its current cycle. Roster settings and post locations are current, even "
+            "when signups are historical. Stored signups do not prove current clan membership. "
+            "Results retain a complete report; use read_roster_report for subsequent pages "
+            "without repeating the lookup.",
+            {"roster_id": positive_id, "cycle_id": positive_id},
+            ("roster_id",), read_roster,
+        ),
+        (
+            "read_roster_report",
+            "Read another page of a retained roster signup report from this conversation. "
+            "Reuse its snapshot for comparisons; call read_roster again only when fresh data "
+            "is needed.",
+            {
+                "report_id": {"type": "string", "maxLength": 32},
+                "offset": offset, "limit": limit,
+            },
+            ("report_id",), read_roster_report,
+        ),
+        (
+            "compare_roster_reports",
+            "Compare two retained roster reports by account tag. Supply before and after "
+            "report IDs in the intended comparison order. Counts cover all signups; pages "
+            "show added, removed and changed accounts. Signup timestamps are ignored. This "
+            "compares stored signups, not current clan membership or historical roster settings.",
+            {
+                "before_report_id": {"type": "string", "maxLength": 32},
+                "after_report_id": {"type": "string", "maxLength": 32},
+                "offset": offset, "limit": limit,
+            },
+            ("before_report_id", "after_report_id"), compare_roster_reports,
+        ),
     )
     return tuple(RegisteredAgentTool(AgentToolDefinition(
         name=name, description=description,
-        parameters={"type": "object", "properties": properties, "required": list(required), "additionalProperties": False},
+        parameters={
+            "type": "object", "properties": properties, "required": list(required),
+            "additionalProperties": False,
+        },
     ), handler,
         contract=TOOL_CONTRACTS[name],
     ) for name, description, properties, required, handler in definitions)

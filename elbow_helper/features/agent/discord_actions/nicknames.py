@@ -30,9 +30,7 @@ def discord_nickname_tools() -> tuple[RegisteredAgentTool, ...]:
     ), prepare_nickname, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("member_id", "discord_member"),),
-            time_fields=(),
-            source_scope="request_context",
-            filter_fields=("nickname",),
+            source_scope="request_context", filter_fields=("nickname",),
         ),
             ),)
 

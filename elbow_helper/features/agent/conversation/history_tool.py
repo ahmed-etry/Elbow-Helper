@@ -40,10 +40,7 @@ def history_tools() -> tuple[RegisteredAgentTool, ...]:
             },
         ),
         read_conversation_history,
-        contract=CapabilityContract(
-            entity_fields=(("request_message_id", "discord_message"),),
-            time_fields=(),
-        ),
+        contract=CapabilityContract(entity_fields=(("request_message_id", "discord_message"),)),
             ),)
 
 

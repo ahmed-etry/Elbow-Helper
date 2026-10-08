@@ -20,5 +20,5 @@ def plan_call(
     ]
     return AgentToolCall("plan-" + calls[0].call_id, "submit_request_plan", json.dumps({
         "goal": "Answer from selected values", "effort": effort, "output": output,
-        "periods": list(periods), "entities": list(entities), "steps": steps,
+        "steps": steps,
     }))

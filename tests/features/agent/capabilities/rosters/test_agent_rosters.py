@@ -7,7 +7,6 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from features.agent.result_path_helpers import assert_result_paths
 
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.access import AgentAccessLost
@@ -47,26 +46,22 @@ class AgentRosterTests(unittest.IsolatedAsyncioTestCase):
     async def test_discovery_filters_clan_and_guild(self):
         self.repository.create_roster(guild_id=2, name="Foreign", clan_code="BEC", role_id=None, max_members=50)
         result = await find_rosters(self.context, {"query": "BEC"})
-        assert_result_paths(self, "find_rosters", result)
         self.assertEqual(result["matched_count"], 1)
         self.assertEqual(result["rosters"][0]["roster_id"], self.roster.id)
         self.assertEqual((await find_rosters(self.context, {"query": "no match"}))["rosters"], [])
 
     async def test_cycle_discovery_returns_exact_cycle_identity(self):
         result = await list_roster_cycles(self.context, {"roster_id": self.roster.id})
-        assert_result_paths(self, "list_roster_cycles", result)
         self.assertEqual(result["cycles"][0]["id"], self.roster.active_cycle_id)
         self.assertIn("error", await list_roster_cycles(self.context, {"roster_id": 999}))
 
     async def test_full_report_pages_survive_a_database_change(self):
         first = await read_roster(self.context, {"roster_id": self.roster.id})
-        assert_result_paths(self, "read_roster", first)
         self.assertEqual(first["total_accounts"], 30)
         self.assertEqual(first["total_members"], 1)
         self.assertEqual(len(first["accounts"]), 25)
         self.repository.clear_members(self.roster.id, self.roster.active_cycle_id)
         second = await read_roster_report(self.context, {"report_id": first["report_id"], "offset": first["next_offset"]})
-        assert_result_paths(self, "read_roster_report", second)
         self.assertEqual(len(second["accounts"]), 5)
         self.assertEqual(second["total_accounts"], 30)
         self.assertIsNone(second["next_offset"])
@@ -83,7 +78,6 @@ class AgentRosterTests(unittest.IsolatedAsyncioTestCase):
         self.repository.add_post(self.roster.id, 100, 101)
         self.repository.add_post(self.roster.id, 200, 201)
         result = await read_roster(self.context, {"roster_id": self.roster.id})
-        assert_result_paths(self, "read_roster", result)
         self.assertEqual([item["message_id"] for item in result["accessible_posts"]], [101])
         self.assertEqual(self.context.state.source_channels, {100})
 

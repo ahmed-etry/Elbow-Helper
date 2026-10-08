@@ -38,7 +38,6 @@ def promotion_route_tools() -> tuple[RegisteredAgentTool, ...]:
     ), read_promotion_review,
         contract=CapabilityContract(
             entity_fields=(("ticket_channel_id", "examination_ticket_channel"),),
-            time_fields=(),
             source_scope="channel_status",
             channel_fields=("ticket_channel_id",),
             result_channel_fields=("ticket_channel_id", "review_channel_id"),
@@ -60,7 +59,6 @@ def promotion_route_tools() -> tuple[RegisteredAgentTool, ...]:
         ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("ticket_channel_id", "examination_ticket_channel"),),
-            time_fields=(),
             source_scope="request_context",
             channel_fields=("ticket_channel_id",),
             filter_fields=("from_clan", "to_clan"),

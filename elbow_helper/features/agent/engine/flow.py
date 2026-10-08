@@ -29,14 +29,12 @@ from ..wording import (
 from . import budgets as limits
 from .rounds import AgentGracefulEnd, AgentLimitReached, ModelRounds
 from .steps import PlanRunner
-from collections.abc import Callable
 from ..models import AgentRequestContext, RegisteredAgentTool
 from .budgets import ContextBudget
 from elbow_helper.infrastructure.ai.agent import AgentSession
 from ..prompts import (
     RESULT_ANSWER_INSTRUCTION,
     MISSING_VALUES_INSTRUCTION,
-    CHANGE_REFUSAL_INSTRUCTION,
     LIMIT_ANSWER_INSTRUCTION,
 )
 
@@ -52,8 +50,6 @@ class AnswerFlow:
         context: AgentRequestContext,
         session: AgentSession,
         registry: Mapping[str, RegisteredAgentTool],
-        sources: Mapping[str, frozenset[int | str]],
-        command_check: Callable[[Mapping[str, Any]], str],
         budget: ContextBudget,
         rounder: ModelRounds,
         runner: PlanRunner,
@@ -62,8 +58,6 @@ class AnswerFlow:
         self.context = context
         self.session = session
         self.registry = registry
-        self.sources = sources
-        self.command_check = command_check
         self.budget = budget
         self.rounder = rounder
         self.runner = runner
@@ -113,9 +107,7 @@ class AnswerFlow:
         self.decision = await read_request(
             self.session,
             self.registry,
-            self.sources,
             self.request_id,
-            validate_plan=self.command_check,
             advance=self.rounder.advance,
         )
         if self.decision.answer is not None:
@@ -172,7 +164,7 @@ class AnswerFlow:
                or results[step["id"]].get("flags", {}).get("status") in ("failed", "refused")
                for step in changes):
             state.proposed_changes.clear()
-            return await self._feedback_reply(results, CHANGE_REFUSAL_INSTRUCTION)
+            return None
         if state.proposed_changes:
             await prepare_preview(self.context)
             response = preview_text(state.proposed_changes)
@@ -312,13 +304,7 @@ class AnswerFlow:
             next_plan = json.loads(model_step.tool_calls[0].arguments)
         except (TypeError, ValueError):
             next_plan = None
-        check = check_plan(
-            next_plan, self.registry, self.sources, completed_steps=self.runner.completed_steps,
-        )
-        if check.ok:
-            issue = self.command_check(next_plan)
-            if issue:
-                check = type(check)(False, issue)
+        check = check_plan(next_plan, self.registry, completed_steps=self.runner.completed_steps)
         LOGGER.info(
             "Agent plan: request=%s revision=%s plan=%s",
             self.request_id,
@@ -354,12 +340,8 @@ class AnswerFlow:
             except (TypeError, ValueError):
                 next_plan = None
             check = check_plan(
-                next_plan, self.registry, self.sources, completed_steps=self.runner.completed_steps,
+                next_plan, self.registry, completed_steps=self.runner.completed_steps,
             )
-            if check.ok:
-                issue = self.command_check(next_plan)
-                if issue:
-                    check = type(check)(False, issue)
             LOGGER.info(
                 "Agent plan correction: request=%s ok=%s plan=%s error=%s",
                 self.request_id,

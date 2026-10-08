@@ -16,16 +16,19 @@ from .report import TransferQueueReport
 
 
 TOOL_CONTRACTS = {
-    'read_pending_transfer_requests': CapabilityContract(
-        entity_fields=(('clan_code', 'destination_clan'),),
-        time_fields=(),
+    "read_pending_transfer_requests": CapabilityContract(
+        entity_fields=(("clan_code", "destination_clan"),),
     ),
-    'read_pending_transfer_report': CapabilityContract(
-        entity_fields=(('report_id', 'pending_transfer_report'), ('clan_code', 'destination_clan'), ('member_id', 'discord_member')),
-        time_fields=(),
-        retained_fields=('report_id',),
+    "read_pending_transfer_report": CapabilityContract(
+        entity_fields=(
+            ("report_id", "pending_transfer_report"),
+            ("clan_code", "destination_clan"),
+            ("member_id", "discord_member"),
+        ),
+        retained_fields=("report_id",),
     ),
 }
+
 
 def transfer_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (

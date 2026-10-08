@@ -16,18 +16,16 @@ from ...models import AgentRequestContext, RegisteredAgentTool
 
 
 TOOL_CONTRACTS = {
-    'read_member_lifecycle': CapabilityContract(
-        entity_fields=(),
-        time_fields=(),
-        filter_fields=('platform', 'activity', 'overdue_only'),
+    "read_member_lifecycle": CapabilityContract(
+        entity_fields=(), filter_fields=("platform", "activity", "overdue_only"),
     ),
-    'read_member_lifecycle_report': CapabilityContract(
-        entity_fields=(('report_id', 'member_lifecycle_report'),),
-        time_fields=(),
-        filter_fields=('platform', 'activity', 'overdue_only'),
-        retained_fields=('report_id',),
+    "read_member_lifecycle_report": CapabilityContract(
+        entity_fields=(("report_id", "member_lifecycle_report"),),
+        filter_fields=("platform", "activity", "overdue_only"),
+        retained_fields=("report_id",),
     ),
 }
+
 
 def member_lifecycle_tools() -> tuple[RegisteredAgentTool, ...]:
     activity = {

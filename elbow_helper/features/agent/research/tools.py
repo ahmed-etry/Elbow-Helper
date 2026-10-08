@@ -24,63 +24,55 @@ from .batches import research_batch_tools
 
 
 TOOL_CONTRACTS = {
-    'start_discord_research_job': CapabilityContract(
-        entity_fields=(('channel_id', 'discord_channel'), ('author_id', 'discord_member')),
-        time_fields=('after', 'before'),
-        source_scope='channel_messages',
-        channel_fields=('channel_id',),
-        result_channel_fields=('source_channel_id',),
+    "start_discord_research_job": CapabilityContract(
+        entity_fields=(("channel_id", "discord_channel"), ("author_id", "discord_member")),
+        source_scope="channel_messages",
+        channel_fields=("channel_id",),
+        result_channel_fields=("source_channel_id",),
         result_sources_within_query=True,
-        time_window=('after', 'before', 'iso_utc'),
     ),
-    'start_discord_history_job': CapabilityContract(
-        entity_fields=(('channel_id', 'discord_channel'), ('author_id', 'discord_member')),
-        time_fields=('after', 'before'),
-        source_scope='channel_messages',
-        channel_fields=('channel_id',),
-        result_channel_fields=('source_channel_id',),
+    "start_discord_history_job": CapabilityContract(
+        entity_fields=(("channel_id", "discord_channel"), ("author_id", "discord_member")),
+        source_scope="channel_messages",
+        channel_fields=("channel_id",),
+        result_channel_fields=("source_channel_id",),
         result_sources_within_query=True,
-        time_window=('after', 'before', 'iso_utc'),
     ),
-    'continue_discord_research_job': CapabilityContract(
-        entity_fields=(('job_id', 'discord_research_job'),),
-        time_fields=(),
-        source_scope='retained_channel_evidence',
-        result_channel_lists=(('new_messages', 'channel_id'),),
-        result_channel_fields=('source_channel_id',),
-        retained_fields=('job_id',),
+    "continue_discord_research_job": CapabilityContract(
+        entity_fields=(("job_id", "discord_research_job"),),
+        source_scope="retained_channel_evidence",
+        result_channel_lists=(("new_messages", "channel_id"),),
+        result_channel_fields=("source_channel_id",),
+        retained_fields=("job_id",),
     ),
-    'read_discord_research_job': CapabilityContract(
-        entity_fields=(('job_id', 'discord_research_job'),),
-        time_fields=(),
-        source_scope='retained_channel_evidence',
-        result_channel_lists=(('messages', 'channel_id'),),
-        result_channel_fields=('source_channel_id',),
-        retained_fields=('job_id',),
+    "read_discord_research_job": CapabilityContract(
+        entity_fields=(("job_id", "discord_research_job"),),
+        source_scope="retained_channel_evidence",
+        result_channel_lists=(("messages", "channel_id"),),
+        result_channel_fields=("source_channel_id",),
+        retained_fields=("job_id",),
     ),
-    'retain_discord_research_report': CapabilityContract(
-        entity_fields=(('job_id', 'discord_research_job'),),
-        time_fields=(),
-        source_scope='retained_channel_evidence',
-        result_channel_lists=(('messages', 'channel_id'),),
-        result_channel_fields=('source_channel_id',),
-        retained_fields=('job_id',),
+    "retain_discord_research_report": CapabilityContract(
+        entity_fields=(("job_id", "discord_research_job"),),
+        source_scope="retained_channel_evidence",
+        result_channel_lists=(("messages", "channel_id"),),
+        result_channel_fields=("source_channel_id",),
+        retained_fields=("job_id",),
     ),
-    'read_discord_research_report': CapabilityContract(
-        entity_fields=(('report_id', 'discord_research_report'),),
-        time_fields=(),
-        source_scope='retained_channel_evidence',
-        result_channel_lists=(('messages', 'channel_id'),),
-        result_channel_fields=('source_channel_id',),
-        retained_fields=('report_id',),
+    "read_discord_research_report": CapabilityContract(
+        entity_fields=(("report_id", "discord_research_report"),),
+        source_scope="retained_channel_evidence",
+        result_channel_lists=(("messages", "channel_id"),),
+        result_channel_fields=("source_channel_id",),
+        retained_fields=("report_id",),
     ),
-    'cancel_discord_research_job': CapabilityContract(
-        entity_fields=(('job_id', 'discord_research_job'),),
-        time_fields=(),
-        source_scope='conversation_control',
-        retained_fields=('job_id',),
+    "cancel_discord_research_job": CapabilityContract(
+        entity_fields=(("job_id", "discord_research_job"),),
+        source_scope="conversation_control",
+        retained_fields=("job_id",),
     ),
 }
+
 
 def research_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (

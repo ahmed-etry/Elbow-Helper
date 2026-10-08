@@ -45,11 +45,9 @@ from ...discord_actions.safety import (
 
 
 TOOL_CONTRACTS = {
-    'clear_roster_signups': CapabilityContract(
-        entity_fields=(('roster_id', 'roster'),),
-        time_fields=(),
-        source_scope='request_context',
-        required_access=frozenset({ACCESS_LEAD_PLUS}),
+    "clear_roster_signups": CapabilityContract(
+        entity_fields=(("roster_id", "roster"),),
+        source_scope="request_context", required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),
 }
 
@@ -64,6 +62,7 @@ def _layout_field(field: str) -> str:
         minimum, maximum = limits[field]
         return label.format(minimum=minimum, maximum=maximum)
     return label
+
 
 async def _check_posts(context: AgentRequestContext,
                        posts: tuple[tuple[int, int], ...]) -> None:
@@ -117,11 +116,8 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
         }, "required": ["roster_id", "operation"], "additionalProperties": False},
     ), prepare_state, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
         contract=CapabilityContract(
-            entity_fields=(("roster_id", "roster"),),
-            time_fields=(),
-            source_scope="request_context",
-            required_access=frozenset({ACCESS_LEAD_PLUS}),
-            filter_fields=("operation",),
+            entity_fields=(("roster_id", "roster"),), source_scope="request_context",
+            required_access=frozenset({ACCESS_LEAD_PLUS}), filter_fields=("operation",),
         ),
              )]
     name, operation, classification, label = _OPERATIONS[4]
@@ -140,9 +136,7 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
         parameters=schema,
     ), prepare_roster_refresh, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
         contract=CapabilityContract(
-            entity_fields=(("roster_id", "roster"),),
-            time_fields=(),
-            source_scope="request_context",
+            entity_fields=(("roster_id", "roster"),), source_scope="request_context",
             required_access=frozenset({ACCESS_LEAD_PLUS}),
         ),
                  ))
@@ -161,9 +155,7 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
         }, "required": ["roster_id"], "additionalProperties": False},
     ), prepare_roster_layout, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
         contract=CapabilityContract(
-            entity_fields=(("roster_id", "roster"),),
-            time_fields=(),
-            source_scope="request_context",
+            entity_fields=(("roster_id", "roster"),), source_scope="request_context",
             required_access=frozenset({ACCESS_LEAD_PLUS}),
             filter_fields=(
                 "show_townhall",
@@ -171,8 +163,7 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
                 "show_clan",
                 "player_width",
                 "discord_width",
-            ),
-        ),
+            )),
                  ))
     return tuple(tools)
 

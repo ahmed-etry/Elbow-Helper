@@ -50,9 +50,7 @@ def cwl_bonus_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
         ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("clan_code", "clan"), ("source_clan", "clan")),
-            time_fields=(),
-            source_scope="request_context",
-            required_access=frozenset({ACCESS_LEAD}),
+            source_scope="request_context", required_access=frozenset({ACCESS_LEAD}),
             filter_fields=(
                 "operation",
                 "attacker_th",
@@ -63,8 +61,7 @@ def cwl_bonus_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
                 "downhit_severe_after",
                 "downhit_severe_base",
                 "downhit_severe_multiplier",
-            ),
-        ),
+            )),
             ),)
 
 

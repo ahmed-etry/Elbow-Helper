@@ -25,53 +25,38 @@ from ..models import AgentRequestContext, RegisteredAgentTool
 
 
 TOOL_CONTRACTS = {
-    'list_supported_attachments': CapabilityContract(
-        entity_fields=(),
-        time_fields=(),
-        source_scope='request_attachment',
-        result_channel_lists=(('attachments', 'channel_id'),),
+    "list_supported_attachments": CapabilityContract(
+        entity_fields=(), source_scope="request_attachment",
+        result_channel_lists=(("attachments", "channel_id"),),
     ),
-    'import_csv_attachment': CapabilityContract(
-        entity_fields=(('attachment_id', 'discord_attachment'),),
-        time_fields=(),
-        source_scope='request_attachment',
-        result_channel_fields=('source_channel_id',),
-        filter_fields=('delimiter',),
+    "import_csv_attachment": CapabilityContract(
+        entity_fields=(("attachment_id", "discord_attachment"),),
+        source_scope="request_attachment", result_channel_fields=("source_channel_id",),
+        filter_fields=("delimiter",),
     ),
-    'read_csv_import': CapabilityContract(
-        entity_fields=(('report_id', 'csv_import'),),
-        time_fields=(),
-        source_scope='retained_attachment',
-        result_channel_fields=('source_channel_id',),
-        retained_fields=('report_id',),
+    "read_csv_import": CapabilityContract(
+        entity_fields=(("report_id", "csv_import"),), source_scope="retained_attachment",
+        result_channel_fields=("source_channel_id",), retained_fields=("report_id",),
     ),
-    'import_xlsx_attachment': CapabilityContract(
-        entity_fields=(('attachment_id', 'discord_attachment'),),
-        time_fields=(),
-        source_scope='request_attachment',
-        result_channel_fields=('source_channel_id',),
+    "import_xlsx_attachment": CapabilityContract(
+        entity_fields=(("attachment_id", "discord_attachment"),),
+        source_scope="request_attachment", result_channel_fields=("source_channel_id",),
     ),
-    'read_xlsx_import': CapabilityContract(
-        entity_fields=(('report_id', 'xlsx_import'), ('sheet_name', 'workbook_sheet')),
-        time_fields=(),
-        source_scope='retained_attachment',
-        result_channel_fields=('source_channel_id',),
-        retained_fields=('report_id',),
+    "read_xlsx_import": CapabilityContract(
+        entity_fields=(("report_id", "xlsx_import"), ("sheet_name", "workbook_sheet")),
+        source_scope="retained_attachment", result_channel_fields=("source_channel_id",),
+        retained_fields=("report_id",),
     ),
-    'import_text_attachment': CapabilityContract(
-        entity_fields=(('attachment_id', 'discord_attachment'),),
-        time_fields=(),
-        source_scope='request_attachment',
-        result_channel_fields=('source_channel_id',),
+    "import_text_attachment": CapabilityContract(
+        entity_fields=(("attachment_id", "discord_attachment"),),
+        source_scope="request_attachment", result_channel_fields=("source_channel_id",),
     ),
-    'read_text_import': CapabilityContract(
-        entity_fields=(('report_id', 'text_import'),),
-        time_fields=(),
-        source_scope='retained_attachment',
-        result_channel_fields=('source_channel_id',),
-        retained_fields=('report_id',),
+    "read_text_import": CapabilityContract(
+        entity_fields=(("report_id", "text_import"),), source_scope="retained_attachment",
+        result_channel_fields=("source_channel_id",), retained_fields=("report_id",),
     ),
 }
+
 
 def attachment_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (

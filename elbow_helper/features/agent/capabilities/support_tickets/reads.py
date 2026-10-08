@@ -18,25 +18,25 @@ _ACTIVITY_STATUSES = {"no_message_id", "channel_last_message"}
 
 
 TOOL_CONTRACTS = {
-    'read_accessible_support_tickets': CapabilityContract(
-        entity_fields=(('channel_id', 'support_ticket_channel'),),
-        time_fields=(),
-        source_scope='channel_status',
-        channel_fields=('channel_id',),
-        result_channel_lists=(('tickets', 'channel_id'),),
+    "read_accessible_support_tickets": CapabilityContract(
+        entity_fields=(("channel_id", "support_ticket_channel"),),
+        source_scope="channel_status", channel_fields=("channel_id",),
+        result_channel_lists=(("tickets", "channel_id"),),
         result_sources_within_query=True,
     ),
-    'read_support_ticket_report': CapabilityContract(
-        entity_fields=(('report_id', 'support_ticket_report'), ('channel_id', 'support_ticket_channel'), ('owner_member_id', 'discord_member')),
-        time_fields=(),
-        source_scope='retained_channel_evidence',
-        channel_fields=('channel_id',),
-        result_channel_lists=(('tickets', 'channel_id'),),
+    "read_support_ticket_report": CapabilityContract(
+        entity_fields=(
+            ("report_id", "support_ticket_report"),
+            ("channel_id", "support_ticket_channel"),
+            ("owner_member_id", "discord_member"),
+        ),
+        source_scope="retained_channel_evidence", channel_fields=("channel_id",),
+        result_channel_lists=(("tickets", "channel_id"),),
         result_sources_within_query=True,
-        filter_fields=('owner_can_send', 'activity_status'),
-        retained_fields=('report_id',),
+        filter_fields=("owner_can_send", "activity_status"), retained_fields=("report_id",),
     ),
 }
+
 
 def support_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (

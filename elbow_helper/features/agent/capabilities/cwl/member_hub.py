@@ -14,17 +14,10 @@ from ...models import AgentRequestContext, RegisteredAgentTool
 
 
 TOOL_CONTRACTS = {
-    'read_my_cwl_placement': CapabilityContract(
-        entity_fields=(),
-        time_fields=(),
-        source_scope='request_context',
-    ),
-    'read_my_cwl_channels': CapabilityContract(
-        entity_fields=(),
-        time_fields=(),
-        source_scope='request_context',
-    ),
+    "read_my_cwl_placement": CapabilityContract(entity_fields=(), source_scope="request_context"),
+    "read_my_cwl_channels": CapabilityContract(entity_fields=(), source_scope="request_context"),
 }
+
 
 def cwl_member_hub_tools() -> tuple[RegisteredAgentTool, ...]:
     return tuple(RegisteredAgentTool(AgentToolDefinition(

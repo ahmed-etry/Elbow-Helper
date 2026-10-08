@@ -26,11 +26,7 @@ def action_log_tools() -> tuple[RegisteredAgentTool, ...]:
                 "limit": {"type": "integer", "minimum": 1, "maximum": 25},
             }, "required": [], "additionalProperties": False},
         ), read_agent_action_log,
-        contract=CapabilityContract(
-            entity_fields=(),
-            time_fields=(),
-            result_entity_keys=(("actions[].log_id", "agent_action_log"),),
-        ),
+        contract=CapabilityContract(entity_fields=()),
             ), RegisteredAgentTool(
         AgentToolDefinition(
             name="undo_agent_action",
@@ -39,10 +35,7 @@ def action_log_tools() -> tuple[RegisteredAgentTool, ...]:
                 "log_id": {"type": "string", "minLength": 1, "maxLength": 32},
             }, "required": ["log_id"], "additionalProperties": False},
         ), undo_agent_action, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
-        contract=CapabilityContract(
-            entity_fields=(("log_id", "agent_action_log"),),
-            time_fields=(),
-        ),
+        contract=CapabilityContract(entity_fields=(("log_id", "agent_action_log"),)),
        ))
 
 

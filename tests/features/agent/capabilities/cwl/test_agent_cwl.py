@@ -4,7 +4,6 @@ import unittest
 from unittest.mock import AsyncMock
 from unittest.mock import patch
 
-from features.agent.result_path_helpers import assert_result_paths
 
 from elbow_helper.configuration.roles import CORE, CO_APPLICANT_ROLE_ID
 from elbow_helper.features.agent.capabilities.cwl.report import CwlPerformanceReport
@@ -194,7 +193,6 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
             "scope_type": "round", "cwl_round": 1,
         })
 
-        assert_result_paths(self, "list_cwl_ass_seasons", seasons)
         self.assertEqual(seasons["seasons"], ["2026-09", "2026-08"])
         self.assertEqual(seasons["latest_seven_war_season"], "2026-08")
         self.assertEqual(seasons["season_coverage"][0]["ended_wars"], 1)

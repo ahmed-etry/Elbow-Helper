@@ -40,7 +40,6 @@ def cwl_bonus_review_tools() -> tuple[RegisteredAgentTool, ...]:
         ActionClass.CHANGE,
         contract=CapabilityContract(
             entity_fields=(("clan_code", "clan"),),
-            time_fields=(),
             source_scope="request_context",
             filter_fields=("mode", "month_key", "decision", "source", "source_text"),
         ),

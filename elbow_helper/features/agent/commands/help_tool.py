@@ -33,10 +33,7 @@ def command_tools() -> tuple[RegisteredAgentTool, ...]:
             "required": [], "additionalProperties": False,
         },
     ), read_bot_command_help,
-        contract=CapabilityContract(
-            entity_fields=(),
-            time_fields=(),
-        ),
+        contract=CapabilityContract(entity_fields=()),
             ),)
 
 

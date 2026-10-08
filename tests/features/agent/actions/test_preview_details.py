@@ -83,7 +83,7 @@ class PreviewDetailTests(unittest.IsolatedAsyncioTestCase):
             "type": "object", "properties": {"channel_id": {"type": "integer"}},
             "required": ["channel_id"],
         }), AsyncMock(), contract=CapabilityContract(
-            (("channel_id", "discord_channel"),), (), channel_fields=("channel_id",),
+            (("channel_id", "discord_channel"),), channel_fields=("channel_id",),
             required_access=frozenset({ACCESS_LEAD}),
         ))
         with TemporaryDirectory() as directory:

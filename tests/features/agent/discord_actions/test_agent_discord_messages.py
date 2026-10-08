@@ -6,7 +6,6 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from features.agent.result_path_helpers import assert_result_paths
 
 from elbow_helper.features.agent.actions.contracts import (
     ActionClass, ChangePreview, PreparedAction,
@@ -69,7 +68,6 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
         for action in self.context.state.proposed_changes:
             self.assertTrue(await action.preview.recheck())
             outcome = await action.run()
-            assert_result_paths(self, "post_discord_message", outcome.result)
             self.assertEqual(outcome.posted_in, 2)
             self.assertTrue(await action.verify())
             self.assertIsNotNone(self.repository.agent_message(
@@ -90,8 +88,7 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(edit["status"], "confirmation_required")
             change = self.context.state.proposed_changes.pop()
             self.assertTrue(await change.preview.recheck())
-            outcome = await change.run()
-            assert_result_paths(self, "edit_agent_message", outcome.result)
+            await change.run()
             self.assertEqual(self.messages[message_id].content, "Second")
             removal = await prepare_delete(self.context, {
                 "channel_id": 2, "message_id": message_id,
@@ -119,7 +116,6 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
         with patch("elbow_helper.features.agent.discord_actions.messages.require_evidence_access",
                    new_callable=AsyncMock):
             listed = await find_agent_files(self.context, {})
-            assert_result_paths(self, "find_agent_files", listed)
             self.assertEqual(listed["files"][0]["file_name"], "result.txt")
             result = await prepare_post(self.context, {
                 "channel_id": 2, "text": "File attached",

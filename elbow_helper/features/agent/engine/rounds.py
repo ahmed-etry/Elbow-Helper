@@ -18,7 +18,6 @@ from .tool_call import discard_unpublished_results
 from ..models import AgentRequestContext
 from .budgets import ContextBudget
 from .usage import RequestUsage
-from ..plan.scope import ScopeLedger
 from elbow_helper.infrastructure.ai.agent import AgentSession
 from ..prompts import (
     REPEAT_TOOL_CALL_INSTRUCTION,
@@ -49,17 +48,14 @@ class ModelRounds:
         usage: RequestUsage,
         session: AgentSession,
         request_id: int | None,
-        ledger: ScopeLedger,
     ) -> None:
         self.context = context
         self.budget = budget
         self.usage = usage
         self.session = session
         self.request_id = request_id
-        self.ledger = ledger
         self.rounds = 0
         self.unpublished = None
-        self.unpublished_scope = None
         self.pending_results = ()
         self.pending_calls = ()
         self.final_attempted = False
@@ -83,7 +79,6 @@ class ModelRounds:
             if self.unpublished is None:
                 raise
             await discard_unpublished_results(self.context, self.unpublished, results)
-            self.ledger.reports = self.unpublished_scope
             results = tuple(
                 (
                     AgentToolResult(
@@ -98,7 +93,7 @@ class ModelRounds:
                     for item in results
                 )
             )
-        self.unpublished = self.unpublished_scope = None
+        self.unpublished = None
         self.pending_results = tuple(results)
         projected = self.budget.projected_input(results) + estimate_tokens(
             continuation_instruction or ""

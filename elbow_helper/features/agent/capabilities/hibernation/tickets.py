@@ -40,7 +40,6 @@ def reactivation_ticket_tools() -> tuple[RegisteredAgentTool, ...]:
             ActionClass.CHANGE,
             contract=CapabilityContract(
                 entity_fields=(("channel_id", "support_ticket_channel"),),
-                time_fields=(),
                 source_scope="request_context",
                 channel_fields=("channel_id",),
             ),
@@ -53,7 +52,6 @@ def reactivation_ticket_tools() -> tuple[RegisteredAgentTool, ...]:
             ActionClass.CHANGE,
             contract=CapabilityContract(
                 entity_fields=(("channel_id", "support_ticket_channel"),),
-                time_fields=(),
                 source_scope="request_context",
                 channel_fields=("channel_id",),
             ),

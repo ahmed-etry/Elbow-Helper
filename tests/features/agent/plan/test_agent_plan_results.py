@@ -70,12 +70,10 @@ class ModelResultTests(unittest.TestCase):
         self.assertIn("summary", model_view(payload, summaries={}, row_fields={"players"}))
 
     def test_complete_result_keeps_data_and_dates(self):
-        result = model_result({"rows": [{"value": 1}], "complete": True},
-                              coverage_dates={"after": "2026-01-01T00:00:00Z"})
+        result = model_result({"rows": [{"value": 1}], "complete": True})
         self.assertEqual(result["rows"], [{"value": 1}])
         self.assertEqual(result["flags"], {
             "status": "complete", "truncated": False,
-            "coverage_dates": {"after": "2026-01-01T00:00:00Z"},
         })
 
     def test_failure_and_limits_are_flags_without_caveat_sentences(self):

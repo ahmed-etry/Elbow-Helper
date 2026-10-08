@@ -46,37 +46,41 @@ def account_suggestion_tools() -> tuple[RegisteredAgentTool, ...]:
             }, "additionalProperties": False},
         ), read_account_suggestions,
             contract=CapabilityContract(
-                entity_fields=(),
-                time_fields=(),
-                source_scope="channel_status",
-                result_channel_fields=("review_channel_id",),
-                filter_fields=("offset", "limit"),
+                entity_fields=(), source_scope="channel_status",
+                result_channel_fields=("review_channel_id",), filter_fields=("offset", "limit"),
                 required_access=frozenset({ACCESS_RECRUITER_OR_CORE}),
             ),
         ),
-        RegisteredAgentTool(AgentToolDefinition(
-            name="link_account_suggestion",
-            description="Confirm or correct a pending account match after confirmation.",
-            parameters=tag_schema,
-        ), prepare_suggestion_link, AgentCapabilityEffect.COMMAND,
+        RegisteredAgentTool(
+            AgentToolDefinition(
+                name="link_account_suggestion",
+                description="Confirm or correct a pending account match after confirmation.",
+                parameters=tag_schema,
+            ),
+            prepare_suggestion_link,
+            AgentCapabilityEffect.COMMAND,
             ActionClass.CHANGE,
             contract=CapabilityContract(
                 entity_fields=(("player_tag", "clash_account"), ("member_id", "discord_member")),
-                time_fields=(),
                 source_scope="request_context",
             ),
         ),
-        RegisteredAgentTool(AgentToolDefinition(
-            name="ignore_account_suggestion",
-            description="Permanently ignore a pending account match after confirmation.",
-            parameters={"type": "object", "properties": {
-                "player_tag": {"type": "string"},
-            }, "required": ["player_tag"], "additionalProperties": False},
-        ), prepare_suggestion_ignore, AgentCapabilityEffect.COMMAND,
+        RegisteredAgentTool(
+            AgentToolDefinition(
+                name="ignore_account_suggestion",
+                description="Permanently ignore a pending account match after confirmation.",
+                parameters={
+                    "type": "object",
+                    "properties": {"player_tag": {"type": "string"}},
+                    "required": ["player_tag"],
+                    "additionalProperties": False,
+                },
+            ),
+            prepare_suggestion_ignore,
+            AgentCapabilityEffect.COMMAND,
             ActionClass.IRREVERSIBLE,
             contract=CapabilityContract(
                 entity_fields=(("player_tag", "clash_account"),),
-                time_fields=(),
                 source_scope="request_context",
             ),
         ),

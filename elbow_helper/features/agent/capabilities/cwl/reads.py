@@ -19,27 +19,21 @@ from .scoring import cwl_scoring_tools
 
 
 TOOL_CONTRACTS = {
-    'read_cwl_performance': CapabilityContract(
-        entity_fields=(('clan_code', 'clan'), ('player_tag', 'clash_account')),
-        time_fields=('season', 'history_limit'),
-        result_entity_keys=(('players[].player_tag', 'clash_account'), ('players[].season', 'cwl_season'), ('players[].clan_code', 'clan')),
-        latest_fields=('history_limit',),
-        value_patterns=(('season', '20\\d{2}-(0[1-9]|1[0-2])'),),
+    "read_cwl_performance": CapabilityContract(
+        entity_fields=(("clan_code", "clan"), ("player_tag", "clash_account")),
         required_access=frozenset({ACCESS_LEAD_PLUS_OR_CWL_HELPER}),
     ),
-    'read_cwl_performance_report': CapabilityContract(
-        entity_fields=(('report_id', 'cwl_performance_report'), ('clan_code', 'clan'), ('player_tag', 'clash_account')),
-        time_fields=('season',),
-        result_entity_keys=(('players[].player_tag', 'clash_account'), ('players[].season', 'cwl_season'), ('players[].clan_code', 'clan')),
-        value_patterns=(('season', '20\\d{2}-(0[1-9]|1[0-2])'),),
-        retained_fields=('report_id',),
+    "read_cwl_performance_report": CapabilityContract(
+        entity_fields=(
+            ("report_id", "cwl_performance_report"),
+            ("clan_code", "clan"), ("player_tag", "clash_account"),
+        ),
+        retained_fields=("report_id",),
         required_access=frozenset({ACCESS_LEAD_PLUS_OR_CWL_HELPER}),
     ),
-    'read_cwl_threads': CapabilityContract(
-        entity_fields=(),
-        time_fields=(),
-    ),
+    "read_cwl_threads": CapabilityContract(entity_fields=()),
 }
+
 
 def cwl_tools() -> tuple[RegisteredAgentTool, ...]:
     offset = {"type": "integer", "minimum": 0}

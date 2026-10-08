@@ -3,7 +3,6 @@ import unittest
 from unittest.mock import Mock, AsyncMock, patch
 from datetime import datetime, timedelta, timezone
 
-from features.agent.result_path_helpers import assert_result_paths
 
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.models import AgentTurnState
@@ -64,7 +63,6 @@ class AgentAccountLinkTests(unittest.IsolatedAsyncioTestCase):
 
         account_links.get_link_by_tag.assert_called_once_with("#P0")
         account_links.get_player_locations_snapshot.assert_called_once_with(("#P0",))
-        assert_result_paths(self, "get_account_link", linked)
         self.assertEqual(linked["linked_member_id"], 42)
         self.assertEqual(linked["linked_member_display_name"], "Owner")
         self.assertTrue(linked["primary"])
@@ -127,7 +125,6 @@ class AgentAccountLinkTests(unittest.IsolatedAsyncioTestCase):
             context, {"member_id": 10},
         )
 
-        assert_result_paths(self, "get_linked_accounts", result)
         self.assertEqual(result["total_linked_accounts"], 26)
         self.assertTrue(result["accounts_truncated"])
         self.assertEqual(len(result["accounts"]), 25)
@@ -142,7 +139,6 @@ class AgentAccountLinkTests(unittest.IsolatedAsyncioTestCase):
                                  joined_at=datetime(2026, 1, 2, 12, tzinfo=timezone(timedelta(hours=2))))
         context = SimpleNamespace(guild=SimpleNamespace(members=[member]))
         result = await build_agent_tools()["find_discord_members"].handler(context, {"query": "synthetic"})
-        assert_result_paths(self, "find_discord_members", result)
         self.assertEqual(result["members"][0]["member_id"], 101)
         self.assertEqual(result["members"][0]["joined_at"], "2026-01-02T10:00:00+00:00")
 
@@ -170,8 +166,6 @@ class AgentAccountLinkTests(unittest.IsolatedAsyncioTestCase):
                 args = {"member_ids": [303, 101, 404, 202, 999], "sort": sorting, "limit": 2}
                 first = await handler(context, args)
                 second = await handler(context, {**args, "offset": first["next_offset"]})
-                assert_result_paths(self, "read_discord_members", first)
-                assert_result_paths(self, "read_discord_members", second)
                 self.assertEqual([row["member_id"] for row in first["members"] + second["members"]], expected)
                 self.assertEqual(first["total_members"], 4)
                 self.assertEqual(first["missing_member_ids"], [999])

@@ -53,7 +53,6 @@ def examiner_profile_tools() -> tuple[RegisteredAgentTool, ...]:
         ), read_examiner_profile,
             contract=CapabilityContract(
                 entity_fields=(),
-                time_fields=(),
                 source_scope="channel_status",
                 result_channel_fields=("panel_channel_id",),
             ),
@@ -68,7 +67,6 @@ def examiner_profile_tools() -> tuple[RegisteredAgentTool, ...]:
         ), read_examiner_roster,
             contract=CapabilityContract(
                 entity_fields=(),
-                time_fields=(),
                 source_scope="channel_status",
                 result_channel_fields=("panel_channel_id",),
                 filter_fields=("offset", "limit"),
@@ -81,7 +79,6 @@ def examiner_profile_tools() -> tuple[RegisteredAgentTool, ...]:
         ), prepare_examiner_profile, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
                 entity_fields=(),
-                time_fields=(),
                 source_scope="request_context",
                 filter_fields=("th_levels", "status", "timezone", "availability"),
             ),
@@ -91,11 +88,7 @@ def examiner_profile_tools() -> tuple[RegisteredAgentTool, ...]:
             description="Remove yourself from the examiner roster after confirmation.",
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
         ), prepare_examiner_leave, AgentCapabilityEffect.COMMAND, ActionClass.IRREVERSIBLE,
-            contract=CapabilityContract(
-                entity_fields=(),
-                time_fields=(),
-                source_scope="request_context",
-            ),
+            contract=CapabilityContract(entity_fields=(), source_scope="request_context"),
         ),
     )
 

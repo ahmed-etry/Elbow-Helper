@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 import math
 from typing import Any, Mapping
 from uuid import uuid4
@@ -15,43 +16,29 @@ from ...access import ACCESS_LEAD, require_lookup_access, require_evidence_acces
 from .report import CoinTransactionReport, RaffleReport
 from ...reports.base import ArtifactCapacityError, retain_report
 from ...models import AgentRequestContext, RegisteredAgentTool
-from ...engine.capability_contract import bound_time_window
 
 
 TOOL_CONTRACTS = {
-    'read_achievement_economy_rules': CapabilityContract(
-        entity_fields=(),
-        time_fields=(),
+    "read_achievement_economy_rules": CapabilityContract(entity_fields=()),
+    "read_member_inventory": CapabilityContract(
+        entity_fields=(("member_id", "discord_member"),),
     ),
-    'read_member_inventory': CapabilityContract(
-        entity_fields=(('member_id', 'discord_member'),),
-        time_fields=(),
+    "read_member_coin_history": CapabilityContract(
+        entity_fields=(("member_id", "discord_member"),), required_access=frozenset({ACCESS_CORE}),
     ),
-    'read_member_coin_history': CapabilityContract(
-        entity_fields=(('member_id', 'discord_member'),),
-        time_fields=('after', 'before'),
-        time_window=('after', 'before', 'iso_utc'),
-        required_access=frozenset({ACCESS_CORE}),
+    "read_member_coin_history_report": CapabilityContract(
+        entity_fields=(("report_id", "coin_transaction_report"),),
+        retained_fields=("report_id",), required_access=frozenset({ACCESS_CORE}),
     ),
-    'read_member_coin_history_report': CapabilityContract(
-        entity_fields=(('report_id', 'coin_transaction_report'),),
-        time_fields=(),
-        retained_fields=('report_id',),
-        required_access=frozenset({ACCESS_CORE}),
+    "read_raffle": CapabilityContract(
+        entity_fields=(), required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),
-    'read_raffle': CapabilityContract(
-        entity_fields=(),
-        time_fields=('month',),
-        value_patterns=(('month', '20\\d{2}-(0[1-9]|1[0-2])'),),
-        required_access=frozenset({ACCESS_LEAD_PLUS}),
-    ),
-    'read_raffle_report': CapabilityContract(
-        entity_fields=(('report_id', 'raffle_report'),),
-        time_fields=(),
-        retained_fields=('report_id',),
+    "read_raffle_report": CapabilityContract(
+        entity_fields=(("report_id", "raffle_report"),), retained_fields=("report_id",),
         required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),
 }
+
 
 def achievement_economy_tools() -> tuple[RegisteredAgentTool, ...]:
     report_id = {"type": "string", "minLength": 1, "maxLength": 32}
@@ -60,14 +47,22 @@ def achievement_economy_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
         (
             "read_achievement_economy_rules",
-            "Read the configured coin, ticket, salary, manual-award cap and achievement-reward rules from the owning feature. This returns current rules, not a member balance, raffle result or permission to grant rewards.",
-            {}, (), read_achievement_economy_rules,
+            "Read the configured coin, ticket, salary, manual-award cap and achievement-reward "
+            "rules from the owning feature. This returns current rules, not a member balance, "
+            "raffle result or permission to grant rewards.",
+            {},
+            (),
+            read_achievement_economy_rules,
         ),
         (
             "read_member_inventory",
-            "Read one current member's coin balance and current-month raffle-ticket status using the existing inventory rules. A requester may read their own inventory; viewing another member requires current Lead access. This performs no economy or raffle action.",
+            "Read one current member's coin balance and current-month raffle-ticket status "
+            "using the existing inventory rules. A requester may read their own inventory; "
+            "viewing another member requires current Lead access. This performs no economy "
+            "or raffle action.",
             {"member_id": {"type": "integer", "minimum": 1}},
-            ("member_id",), read_member_inventory,
+            ("member_id",),
+            read_member_inventory,
         ),
         (
             "read_member_coin_history",
@@ -195,7 +190,14 @@ async def read_member_coin_history(
     member_id = arguments["member_id"]
     if context.guild.get_member(member_id) is None:
         return {"error": "That member is not currently in this server."}
-    after, before = bound_time_window(TOOL_CONTRACTS["read_member_coin_history"], arguments)
+    after = (
+        datetime.fromisoformat(arguments["after"].replace("Z", "+00:00"))
+        if "after" in arguments else None
+    )
+    before = (
+        datetime.fromisoformat(arguments["before"].replace("Z", "+00:00"))
+        if "before" in arguments else None
+    )
     try:
         snapshot = await asyncio.to_thread(
             context.achievement_queries.coin_transactions, member_id,

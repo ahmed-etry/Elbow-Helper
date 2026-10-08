@@ -46,7 +46,6 @@ def role_connection_tools() -> tuple[RegisteredAgentTool, ...]:
             read_role_connections,
             contract=CapabilityContract(
                 entity_fields=(("member_id", "discord_member"),),
-                time_fields=(),
                 required_access=frozenset({"lead"}),
             ),
         ),

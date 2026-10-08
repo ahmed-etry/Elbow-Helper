@@ -90,11 +90,7 @@ def spreadsheet_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         prepare_spreadsheet,
         AgentCapabilityEffect.ARTIFACT,
-        contract=CapabilityContract(
-            entity_fields=(),
-            time_fields=(),
-            source_scope="request_context",
-        ),
+        contract=CapabilityContract(entity_fields=(), source_scope="request_context"),
             ), RegisteredAgentTool(
         AgentToolDefinition(
             name="prepare_report_spreadsheet",
@@ -122,11 +118,7 @@ def spreadsheet_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         prepare_report_spreadsheet,
         AgentCapabilityEffect.ARTIFACT,
-        contract=CapabilityContract(
-            entity_fields=(),
-            time_fields=(),
-            source_scope="request_context",
-        ),
+        contract=CapabilityContract(entity_fields=(), source_scope="request_context"),
        ))
 
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import date, datetime, time, timezone
 from typing import Any
 
 from elbow_helper.features.agent.access import ACCESS_LEAD_PLUS, has_access_requirements
@@ -15,30 +14,6 @@ from ...models import AgentAttachment
 from ...wording import ACTION_UNAVAILABLE
 from ...actions.outcomes import ActionOutcome
 from ...commands.registry import CommandAdapter
-from ...engine.capability_contract import CapabilityContract
-from ...plan.checker import parse_periods, time_check
-
-
-def _health_period_issue(plan: Mapping[str, Any], values: Mapping[str, Any]) -> str:
-    selected = values.get("period", "last_30d")
-    if selected != "custom":
-        return ""
-    if not values.get("date_from") or not values.get("date_to"):
-        return ""
-    try:
-        start = datetime.combine(date.fromisoformat(values["date_from"]), time.min, timezone.utc)
-        end = datetime.combine(date.fromisoformat(values["date_to"]), time.min, timezone.utc)
-    except (TypeError, ValueError, KeyError):
-        return "Use UTC dates for the custom command period."
-    if start >= end:
-        return "The start date must be before the end date."
-    if (end - start).days > 365:
-        return "Choose a date range of 365 days or less."
-    return time_check(
-        CapabilityContract((), ("date_from", "date_to"),
-                           time_window=("date_from", "date_to", "iso_utc")),
-        values, parse_periods(plan.get("periods", [])), set(),
-    )
 
 
 def _health_access(context: Any) -> bool:
@@ -131,10 +106,9 @@ def health_adapters() -> tuple[CommandAdapter, ...]:
     return (CommandAdapter("/health player", "public", run_health_player, (
         ParameterInfo("date_from", "Start date for Custom dates.", False, "string"),
         ParameterInfo("date_to", "End date for Custom dates.", False, "string"),
-    ), entity_options=(("account", "clash_account"),),
-        check_period=_health_period_issue),
+    ), entity_options=(("account", "clash_account"),)),
         CommandAdapter("/health clan", "public", run_health_clan, (
             ParameterInfo("date_from", "Start date for Custom dates.", False, "string"),
             ParameterInfo("date_to", "End date for Custom dates.", False, "string"),
-        ), check_period=_health_period_issue),
+        )),
         CommandAdapter("/health settings", "private", run_health_settings))

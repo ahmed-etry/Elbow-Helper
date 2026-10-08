@@ -16,16 +16,21 @@ from ...models import AgentRequestContext, RegisteredAgentTool
 
 
 TOOL_CONTRACTS = {
-    'read_missing_elder_accounts': CapabilityContract(
-        entity_fields=(('clan_codes', 'clan_set'), ('clan_code', 'clan'), ('member_id', 'discord_member')),
-        time_fields=(),
+    "read_missing_elder_accounts": CapabilityContract(
+        entity_fields=(
+            ("clan_codes", "clan_set"), ("clan_code", "clan"), ("member_id", "discord_member"),
+        ),
     ),
-    'read_missing_elder_report': CapabilityContract(
-        entity_fields=(('report_id', 'missing_elder_report'), ('clan_code', 'clan'), ('member_id', 'discord_member')),
-        time_fields=(),
-        retained_fields=('report_id',),
+    "read_missing_elder_report": CapabilityContract(
+        entity_fields=(
+            ("report_id", "missing_elder_report"),
+            ("clan_code", "clan"),
+            ("member_id", "discord_member"),
+        ),
+        retained_fields=("report_id",),
     ),
 }
+
 
 def clan_reporting_tools() -> tuple[RegisteredAgentTool, ...]:
     clan_code = {

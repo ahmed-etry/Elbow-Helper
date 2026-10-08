@@ -17,20 +17,17 @@ from ...models import AgentRequestContext, RegisteredAgentTool
 
 
 TOOL_CONTRACTS = {
-    'read_event_schedule': CapabilityContract(
-        entity_fields=(),
-        time_fields=(),
-        filter_fields=('phase', 'event_type'),
-        required_access=frozenset({'lead'}),
+    "read_event_schedule": CapabilityContract(
+        entity_fields=(), filter_fields=("phase", "event_type"),
+        required_access=frozenset({"lead"}),
     ),
-    'read_event_schedule_report': CapabilityContract(
-        entity_fields=(('report_id', 'event_schedule_report'),),
-        time_fields=(),
-        filter_fields=('phase', 'event_type'),
-        required_access=frozenset({'lead'}),
-        retained_fields=('report_id',),
+    "read_event_schedule_report": CapabilityContract(
+        entity_fields=(("report_id", "event_schedule_report"),),
+        filter_fields=("phase", "event_type"), required_access=frozenset({"lead"}),
+        retained_fields=("report_id",),
     ),
 }
+
 
 def event_tools() -> tuple[RegisteredAgentTool, ...]:
     phase = {

@@ -26,7 +26,6 @@ from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 
 
-
 async def _unchanged():
     return True
 
@@ -172,13 +171,13 @@ class ScheduledScopeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(_fixed_display(context, "roster_id", 7), "War roster")
         self.assertEqual(_fixed_display(context, "roster", "7"), "War roster")
 
-    def test_watcher_rejects_retained_and_historical_reads(self):
+    def test_watcher_rejects_retained_and_attachment_reads(self):
         tool = RegisteredAgentTool(AgentToolDefinition(
             "synthetic", "Read state", {"type": "object", "properties": {}}), _run)
         reads = [{"capability": "synthetic", "arguments": {}}]
         for contract in (
-            CapabilityContract((), (), retained_fields=("report_id",)),
-            CapabilityContract((), (), time_window=("after", "before", "iso_utc")),
+            CapabilityContract((), retained_fields=("report_id",)),
+            CapabilityContract((), source_scope="request_attachment"),
         ):
             with patch("elbow_helper.features.agent.engine.registry.build_agent_tools",
                        return_value={"synthetic": replace(tool, contract=contract)}), self.assertRaises(ValueError):
@@ -191,7 +190,7 @@ class ScheduledScopeTests(unittest.IsolatedAsyncioTestCase):
         for effect in (AgentCapabilityEffect.READ, AgentCapabilityEffect.STATE):
             with patch("elbow_helper.features.agent.engine.registry.build_agent_tools",
                        return_value={"synthetic": RegisteredAgentTool(
-                           definition, _run, effect, contract=CapabilityContract((), ()))}):
+                           definition, _run, effect, contract=CapabilityContract(()))}):
                 if effect is AgentCapabilityEffect.READ:
                     watcher_reads(reads, registry.build_agent_tools())
                 else:

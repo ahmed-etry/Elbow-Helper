@@ -41,25 +41,22 @@ from .time_rules import next_occurrences, timezone_name
 
 
 TOOL_CONTRACTS = {
-    'save_standing_rule': CapabilityContract(
-        entity_fields=(('destination_channel_id', 'discord_channel'),),
-        time_fields=(),
-        source_scope='request_context',
-        filter_fields=('kind', 'request', 'schedule', 'timezone', 'allowed_actions', 'reads', 'condition', 'repeat', 'replace_id'),
+    "save_standing_rule": CapabilityContract(
+        entity_fields=(("destination_channel_id", "discord_channel"),),
+        source_scope="request_context",
+        filter_fields=(
+            "kind", "request", "schedule", "timezone", "allowed_actions", "reads",
+            "condition", "repeat", "replace_id",
+        ),
     ),
-    'list_standing_rules': CapabilityContract(
-        entity_fields=(),
-        time_fields=(),
-        source_scope='request_context',
-        filter_fields=('kind',),
+    "list_standing_rules": CapabilityContract(
+        entity_fields=(), source_scope="request_context", filter_fields=("kind",),
     ),
-    'manage_standing_rule': CapabilityContract(
-        entity_fields=(),
-        time_fields=(),
-        source_scope='request_context',
-        filter_fields=('kind', 'id', 'operation'),
+    "manage_standing_rule": CapabilityContract(
+        entity_fields=(), source_scope="request_context", filter_fields=("kind", "id", "operation"),
     ),
 }
+
 
 def _repository(context: AgentRequestContext):
     repository = context.action_repository
@@ -127,11 +124,6 @@ def watcher_reads(reads: Any, registry: Mapping[str, RegisteredAgentTool]) -> No
             "retained_channel_evidence", "retained_attachment", "request_attachment",
         ):
             raise ActionRefused("Watchers need fresh lookups, not earlier reports or attachments.")
-        if contract.time_window is not None:
-            raise ActionRefused("Watchers use current or latest results, not a historical window.")
-        if any(field in arguments and arguments[field] not in ("current", "latest")
-               for field in contract.time_fields):
-            raise ActionRefused("Watchers use current or latest results only.")
 
 
 def _validate_watcher(values: Mapping[str, Any], actions, registry_factory) -> None:
@@ -412,8 +404,8 @@ async def prepare_manage(context: AgentRequestContext,
             raise ActionRefused("That saved rule changed.")
         return ActionOutcome("complete", "public",
                               text=ACTION_STANDING_MANAGED.format(
-                                  kind=ACTION_STANDING_REQUEST_NAME if kind == "request"
-                                       else ACTION_STANDING_WATCHER_NAME,
+                                  kind=(ACTION_STANDING_REQUEST_NAME if kind == "request"
+                                        else ACTION_STANDING_WATCHER_NAME),
                                   result=ACTION_STANDING_RESULTS[operation]))
 
     context.state.proposed_changes.append(PreparedAction(

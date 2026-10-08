@@ -20,28 +20,23 @@ from .history import HISTORY_PAGE_LIMIT, SEARCH_RESULT_LIMIT
 
 
 TOOL_CONTRACTS = {
-    'start_discord_research_batch': CapabilityContract(
-        entity_fields=(('channel_ids', 'discord_channel_set'), ('author_id', 'discord_member')),
-        time_fields=('after', 'before'),
-        source_scope='channel_messages',
-        channel_fields=('channel_ids',),
-        result_channel_lists=(('jobs', 'source_channel_id'),),
+    "start_discord_research_batch": CapabilityContract(
+        entity_fields=(("channel_ids", "discord_channel_set"), ("author_id", "discord_member")),
+        source_scope="channel_messages",
+        channel_fields=("channel_ids",),
+        result_channel_lists=(("jobs", "source_channel_id"),),
         result_sources_within_query=True,
-        filter_fields=('kind',),
-        time_window=('after', 'before', 'iso_utc'),
+        filter_fields=("kind",),
     ),
-    'read_discord_research_jobs': CapabilityContract(
-        entity_fields=(('job_ids', 'discord_research_job_set'),),
-        time_fields=(),
-        source_scope='retained_channel_evidence',
-        result_channel_lists=(('jobs', 'source_channel_id'),),
-        retained_fields=('job_ids',),
+    "read_discord_research_jobs": CapabilityContract(
+        entity_fields=(("job_ids", "discord_research_job_set"),),
+        source_scope="retained_channel_evidence",
+        result_channel_lists=(("jobs", "source_channel_id"),),
+        retained_fields=("job_ids",),
     ),
-    'list_discord_research_jobs': CapabilityContract(
-        entity_fields=(),
-        time_fields=(),
-    ),
+    "list_discord_research_jobs": CapabilityContract(entity_fields=()),
 }
+
 
 def research_batch_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (

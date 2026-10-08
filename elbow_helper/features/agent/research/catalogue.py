@@ -10,6 +10,7 @@ from .history import (
     SEARCH_RESULT_LIMIT, INTERACTIVE_HISTORY_PAGE_LIMIT, HISTORY_PAGE_LIMIT, CONTEXT_MESSAGE_LIMIT,
 )
 
+
 def discord_tools() -> tuple[RegisteredAgentTool, ...]:
     return (
         RegisteredAgentTool(
@@ -22,13 +23,7 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             find_discord_channels,
-            contract=CapabilityContract(
-                result_paths=(('channels', 'N', 'channel_id'),),
-                result_path_kinds=((('channels', 'N', 'channel_id'), 'discord_channel'),),
-                entity_fields=(),
-                time_fields=(),
-                source_scope="channel_locator",
-            ),
+            contract=CapabilityContract(entity_fields=(), source_scope="channel_locator"),
         ),
         RegisteredAgentTool(
             AgentToolDefinition(
@@ -73,31 +68,15 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             search_discord_messages,
-            contract=CapabilityContract(
-                result_path_kinds=(
-                    (('matches', 'N', 'channel_id'), 'discord_channel'),
-                    (('matches', 'N', 'message_id'), 'discord_message'),
-                    (('matches', 'N', 'author_id'), 'discord_member'),
-                ),
-                result_paths=(
-                    ('matches', 'N', 'channel_id'),
-                    ('matches', 'N', 'message_id'),
-                    ('matches', 'N', 'author_id'),
-                    ('coverage', 'next_cursor'),
-                ),
-                entity_fields=(
+            contract=CapabilityContract(entity_fields=(
                     ("channel_id", "discord_channel"),
                     ("channel_ids", "discord_channel_set"),
                     ("author_id", "discord_member"),
                 ),
-                time_fields=("after", "before", "cursor"),
                 source_scope="channel_messages",
                 channel_fields=("channel_id", "channel_ids"),
                 result_channel_lists=(("matches", "channel_id"),),
                 result_sources_within_query=True,
-                time_window=("after", "before", "iso_utc"),
-                optional_time_window=True,
-                bounded_fields=("cursor",),
             ),
         ),
         RegisteredAgentTool(
@@ -150,25 +129,12 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
             read_discord_channel_history,
             contract=CapabilityContract(
-                result_path_kinds=(
-                    (('messages', 'N', 'channel_id'), 'discord_channel'),
-                    (('messages', 'N', 'message_id'), 'discord_message'),
-                    (('messages', 'N', 'author_id'), 'discord_member'),
+                entity_fields=(
+                    ("channel_id", "discord_channel"), ("author_id", "discord_member"),
                 ),
-                result_paths=(
-                    ('messages', 'N', 'channel_id'),
-                    ('messages', 'N', 'message_id'),
-                    ('messages', 'N', 'author_id'),
-                    ('coverage', 'next_cursor'),
-                ),
-                entity_fields=(("channel_id", "discord_channel"), ("author_id", "discord_member")),
-                time_fields=("after", "before", "cursor"),
-                source_scope="channel_messages",
-                channel_fields=("channel_id",),
+                source_scope="channel_messages", channel_fields=("channel_id",),
                 result_channel_lists=(("messages", "channel_id"),),
                 result_sources_within_query=True,
-                time_window=("after", "before", "iso_utc"),
-                bounded_fields=("cursor",),
             ),
         ),
         RegisteredAgentTool(
@@ -197,23 +163,12 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             read_message_context,
-            contract=CapabilityContract(
-                result_paths=(('channel_id',), ('messages', 'N', 'message_id'), ('messages', 'N', 'author_id')),
-                result_path_kinds=(
-                    (('channel_id',), 'discord_channel'),
-                    (('messages', 'N', 'message_id'), 'discord_message'),
-                    (('messages', 'N', 'author_id'), 'discord_member'),
-                ),
-                entity_fields=(
+            contract=CapabilityContract(entity_fields=(
                     ("channel_id", "discord_channel"),
                     ("message_id", "discord_message"),
                 ),
-                time_fields=("after", "before"),
-                source_scope="channel_messages",
-                channel_fields=("channel_id",),
-                result_channel_fields=("channel_id",),
-                result_sources_within_query=True,
-                time_window=("after", "before", "iso_utc"),
+                source_scope="channel_messages", channel_fields=("channel_id",),
+                result_channel_fields=("channel_id",), result_sources_within_query=True,
             ),
         ),
     )

@@ -37,7 +37,6 @@ def discord_role_tools() -> tuple[RegisteredAgentTool, ...]:
         ), prepare_add_roles, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
                 entity_fields=(("role_id", "discord_role"), ("member_ids", "discord_member_set")),
-                time_fields=(),
                 source_scope="request_context",
             ),
         ),
@@ -48,7 +47,6 @@ def discord_role_tools() -> tuple[RegisteredAgentTool, ...]:
         ), prepare_remove_roles, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
                 entity_fields=(("role_id", "discord_role"), ("member_ids", "discord_member_set")),
-                time_fields=(),
                 source_scope="request_context",
             ),
         ),

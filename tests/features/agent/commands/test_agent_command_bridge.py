@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.features.agent.commands.bridge import build_command_tools, check_command_plan
+from elbow_helper.features.agent.commands.bridge import build_command_tools
 from elbow_helper.features.agent.actions.contracts import ChangePreview
 from elbow_helper.features.agent.actions.outcomes import ActionOutcome, command_reply
 from elbow_helper.features.agent.commands.registry import (
@@ -112,16 +112,6 @@ class CommandBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(command_reply(context.state.outcomes), ACTION_PRIVATE_NOTE)
         self.assertEqual(context.state.outcomes[0].private_parts, (ACTION_EMPTY,))
 
-    async def test_named_sources_are_checked_before_execution(self):
-        with self.patches[0], self.patches[1]:
-            _, capabilities = build_command_tools(object(), (self.adapter,))
-        plan = {"periods": [], "steps": [{"capability": next(iter(capabilities)),
-                                           "arguments": {"target": 202}}]}
-        self.assertTrue(check_command_plan(plan, capabilities,
-                                           {"synthetic_source": frozenset({101})}))
-        plan["steps"][0]["arguments"]["target"] = 101
-        self.assertEqual(check_command_plan(plan, capabilities,
-                                            {"synthetic_source": frozenset({101})}), "")
 
     async def test_confirmed_adapter_only_prepares_before_the_button(self):
         preview = AsyncMock(return_value=ChangePreview(

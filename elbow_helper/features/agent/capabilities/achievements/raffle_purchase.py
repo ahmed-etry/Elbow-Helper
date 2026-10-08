@@ -28,11 +28,7 @@ def raffle_purchase_tools() -> tuple[RegisteredAgentTool, ...]:
                     "additionalProperties": False},
     ), prepare_raffle_purchase, AgentCapabilityEffect.COMMAND,
         ActionClass.CHANGE,
-        contract=CapabilityContract(
-            entity_fields=(),
-            time_fields=(),
-            source_scope="request_context",
-        ),
+        contract=CapabilityContract(entity_fields=(), source_scope="request_context"),
             ),)
 
 

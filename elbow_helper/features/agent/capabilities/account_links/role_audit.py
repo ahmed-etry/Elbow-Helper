@@ -54,12 +54,7 @@ def role_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             find_discord_roles,
-            contract=CapabilityContract(
-                result_paths=(('roles', 'N', 'role_id'), ('next_offset',)),
-                result_path_kinds=((('roles', 'N', 'role_id'), 'discord_role'),),
-                entity_fields=(),
-                time_fields=(),
-            ),
+            contract=CapabilityContract(entity_fields=()),
         ),
         RegisteredAgentTool(
             AgentToolDefinition(
@@ -88,10 +83,7 @@ def role_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
             audit_role_accounts,
             contract=CapabilityContract(
-                result_paths=(('report_id',),),
-                result_path_kinds=((('report_id',), 'role_account_report'),),
                 entity_fields=(("role_ids", "discord_role_set"),),
-                time_fields=(),
                 filter_fields=("refresh_locations",),
                 required_access=frozenset({ACCESS_RECRUITER_OR_CORE}),
             ),
@@ -124,15 +116,10 @@ def role_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             refresh_role_account_report,
-            contract=CapabilityContract(
-                result_paths=(('report_id',),),
-                result_path_kinds=((('report_id',), 'role_account_report'),),
-                entity_fields=(
+            contract=CapabilityContract(entity_fields=(
                     ("report_id", "role_account_report"),
                     ("player_tags", "clash_account_set"),
-                ),
-                time_fields=(),
-                retained_fields=("report_id",),
+                ), retained_fields=("report_id",),
                 required_access=frozenset({ACCESS_RECRUITER_OR_CORE}),
             ),
         ),
@@ -163,26 +150,11 @@ def role_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             read_role_account_report,
-            contract=CapabilityContract(
-                result_path_kinds=(
-                    (('report_id',), 'role_account_report'),
-                    (('members', 'N', 'member_id'), 'discord_member'),
-                    (('members', 'N', 'accounts', 'N', 'player_tag'), 'clash_account'),
-                ),
-                result_paths=(
-                    ('report_id',),
-                    ('members', 'N', 'member_id'),
-                    ('members', 'N', 'accounts', 'N', 'player_tag'),
-                    ('next_offset',),
-                ),
-                entity_fields=(
+            contract=CapabilityContract(entity_fields=(
                     ("report_id", "role_account_report"),
                     ("clan_code", "clan"),
                     ("member_id", "discord_member"),
-                ),
-                time_fields=(),
-                filter_fields=("selection",),
-                retained_fields=("report_id",),
+                ), filter_fields=("selection",), retained_fields=("report_id",),
                 required_access=frozenset({ACCESS_RECRUITER_OR_CORE}),
             ),
         ),
@@ -211,13 +183,10 @@ def role_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
             ),
             compare_role_account_reports,
-            contract=CapabilityContract(
-                entity_fields=(
+            contract=CapabilityContract(entity_fields=(
                     ("before_report_id", "role_account_report"),
                     ("after_report_id", "role_account_report"),
-                ),
-                time_fields=(),
-                retained_fields=("before_report_id", "after_report_id"),
+                ), retained_fields=("before_report_id", "after_report_id"),
                 required_access=frozenset({ACCESS_RECRUITER_OR_CORE}),
             ),
         ),

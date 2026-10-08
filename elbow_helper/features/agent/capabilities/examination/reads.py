@@ -25,25 +25,26 @@ _RESPONSE_STATUSES = {"recorded", "not_recorded"}
 
 
 TOOL_CONTRACTS = {
-    'read_accessible_examination_cases': CapabilityContract(
-        entity_fields=(('ticket_channel_id', 'examination_ticket_channel'),),
-        time_fields=(),
-        source_scope='channel_status',
-        channel_fields=('ticket_channel_id',),
-        result_channel_lists=(('cases', 'ticket_channel_id'),),
+    "read_accessible_examination_cases": CapabilityContract(
+        entity_fields=(("ticket_channel_id", "examination_ticket_channel"),),
+        source_scope="channel_status", channel_fields=("ticket_channel_id",),
+        result_channel_lists=(("cases", "ticket_channel_id"),),
         result_sources_within_query=True,
     ),
-    'read_examination_case_report': CapabilityContract(
-        entity_fields=(('report_id', 'examination_case_report'), ('ticket_channel_id', 'examination_ticket_channel'), ('applicant_member_id', 'discord_member')),
-        time_fields=(),
-        source_scope='retained_channel_evidence',
-        channel_fields=('ticket_channel_id',),
-        result_channel_lists=(('cases', 'ticket_channel_id'),),
+    "read_examination_case_report": CapabilityContract(
+        entity_fields=(
+            ("report_id", "examination_case_report"),
+            ("ticket_channel_id", "examination_ticket_channel"),
+            ("applicant_member_id", "discord_member"),
+        ),
+        source_scope="retained_channel_evidence", channel_fields=("ticket_channel_id",),
+        result_channel_lists=(("cases", "ticket_channel_id"),),
         result_sources_within_query=True,
-        filter_fields=('case_type', 'workflow_status', 'response_status'),
-        retained_fields=('report_id',),
+        filter_fields=("case_type", "workflow_status", "response_status"),
+        retained_fields=("report_id",),
     ),
 }
+
 
 def examination_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (

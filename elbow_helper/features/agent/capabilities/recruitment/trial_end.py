@@ -34,15 +34,10 @@ def trial_end_tools() -> tuple[RegisteredAgentTool, ...]:
         }, "required": ["ticket_channel_id"], "additionalProperties": False},
     ), prepare_trial_end, AgentCapabilityEffect.COMMAND,
         ActionClass.IRREVERSIBLE,
-        contract=CapabilityContract(
-            entity_fields=(
+        contract=CapabilityContract(entity_fields=(
                 ("ticket_channel_id", "recruitment_ticket_channel"),
                 ("applicant_id", "discord_member"),
-            ),
-            time_fields=(),
-            source_scope="request_context",
-            channel_fields=("ticket_channel_id",),
-        ),
+            ), source_scope="request_context", channel_fields=("ticket_channel_id",)),
             ),)
 
 

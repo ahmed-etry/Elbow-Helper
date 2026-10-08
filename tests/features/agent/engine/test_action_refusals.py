@@ -80,14 +80,13 @@ class ActionRefusalTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(context.state.proposed_changes, [])
                 run.assert_not_awaited()
                 feedback = json.loads(session.calls[-1][0][0].content)
-                self.assertFalse(session.calls[-1][1])
+                self.assertEqual(session.calls[-1][1], status != "needs_input")
                 if status == "needs_input":
                     self.assertIn("timezone", feedback["missing_hints"])
                 else:
                     self.assertEqual(feedback["instruction"],
-                        "Say briefly which changes can't be made and why, "
-                        "and offer to go ahead with the rest. "
-                        "Don't say anything ran.")
+                        "Answer now from these results. "
+                        "Submit another plan only for a remaining gap.")
                 if status == "refused":
                     self.assertEqual(feedback["results"]["202"]["error"], "Synthetic target unavailable")
 

@@ -16,22 +16,13 @@ from ...models import AgentRequestContext, RegisteredAgentTool
 
 
 TOOL_CONTRACTS = {
-    'read_active_hibernation': CapabilityContract(
-        entity_fields=(),
-        time_fields=(),
-        result_paths=(('report_id',), ('records', 'N', 'member_id')),
-        result_path_kinds=((('report_id',), 'hibernation_report'),
-                           (('records', 'N', 'member_id'), 'discord_member')),
-    ),
-    'read_active_hibernation_report': CapabilityContract(
-        entity_fields=(('report_id', 'hibernation_report'), ('member_id', 'discord_member')),
-        time_fields=(),
-        retained_fields=('report_id',),
-        result_paths=(('report_id',), ('records', 'N', 'member_id')),
-        result_path_kinds=((('report_id',), 'hibernation_report'),
-                           (('records', 'N', 'member_id'), 'discord_member')),
+    "read_active_hibernation": CapabilityContract(entity_fields=()),
+    "read_active_hibernation_report": CapabilityContract(
+        entity_fields=(("report_id", "hibernation_report"), ("member_id", "discord_member")),
+        retained_fields=("report_id",),
     ),
 }
+
 
 def hibernation_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (

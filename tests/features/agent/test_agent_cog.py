@@ -25,7 +25,6 @@ from elbow_helper.features.agent.text import message_text
 from elbow_helper.features.agent.conversation.state import ConversationTurn
 from elbow_helper.features.agent.models import AgentDelivery, AgentTurnState
 from elbow_helper.features.agent.conversation.context import compile_context
-from elbow_helper.features.agent.plan.sources import named_sources
 from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
 from elbow_helper.features.agent.conversation.instructions import WorkingState
 from elbow_helper.features.agent.conversation.transcripts import TranscriptArchive
@@ -237,7 +236,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                     calls.append(source_id)
                     context.state.source_channels.add(source_id)
                     return {"channel_id": source_id, "value": source_id}
-
                 registry = {"read_value": RegisteredAgentTool(
                     AgentToolDefinition("read_value", "Read a selected value.", {
                         "type": "object", "properties": {
@@ -246,22 +244,16 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                     }), read_value,
                 )}
                 contract = CapabilityContract(
-                    (("channel_id", "discord_channel"),), (),
-                    source_scope="channel_messages", channel_fields=("channel_id",),
-                    result_channel_fields=("channel_id",),
+                    (("channel_id", "discord_channel"),), source_scope="channel_messages",
+                    channel_fields=("channel_id",), result_channel_fields=("channel_id",),
                 )
                 plan = {
                     "goal": "Read selected values", "effort": "low", "output": "text",
-                    "periods": [], "entities": [
-                        {"kind": "discord_channel", "value": channel_id}
-                        for channel_id in (200, 300)
-                    ],
-                    "steps": [
-                        {"id": str(channel_id), "capability": "read_value",
-                         "arguments": {"channel_id": channel_id},
-                         "reason": "Read selected source", "depends_on": []}
-                        for channel_id in (200, 300)
-                    ],
+                    "steps": [{
+                        "id": str(channel_id), "capability": "read_value",
+                        "arguments": {"channel_id": channel_id},
+                        "reason": "Read selected source", "depends_on": [],
+                    } for channel_id in (200, 300)],
                 }
 
                 def response(*, content=None, tool_calls=None):
@@ -272,7 +264,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                         })],
                         usage=SimpleNamespace(prompt_tokens=1000, completion_tokens=100),
                     )
-
                 planned = response(tool_calls=[{
                     "id": "plan", "function": {
                         "name": "submit_request_plan", "arguments": json.dumps(plan),
@@ -283,8 +274,8 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 if extra_final_call:
                     responses.append(response(tool_calls=[{
                         "id": "extra", "function": {
-                            "name": "submit_request_plan", "arguments": json.dumps(plan),
-                        },
+                        "name": "submit_request_plan", "arguments": json.dumps(plan),
+                    },
                     }]))
                 responses.append(response(content=answer))
                 create = AsyncMock(side_effect=responses)
@@ -298,7 +289,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 ):
                     self.cog.service = AgentService(DeepSeekTextClient("test-key"))
                     await self.cog.on_message(message)
-
                 message.reply.assert_awaited_once()
                 self.assertEqual(message.reply.await_args.args, (answer,))
                 self.assertEqual(sorted(calls), [200, 300])
@@ -1473,9 +1463,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         message.guild.me.display_name = "Synthetic Guild Agent"
         question = self.cog._extract_question(message)
         self.assertEqual(question, "@Synthetic Guild Agent ask <@77> about <#88> and #synthetic-room")
-        sources = named_sources(question, (SimpleNamespace(id=89, name="synthetic-room"),))
-        self.assertEqual(sources["discord_member"], frozenset({77}))
-        self.assertEqual(sources["discord_channel"], frozenset({88, 89}))
 
     async def test_normalized_request_keeps_raw_transcript_and_reply_matching(self):
         member = _Member(42, (next(iter(CORE)),))

@@ -7,7 +7,6 @@ from collections.abc import Mapping
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..models import AgentCapabilityEffect, RegisteredAgentTool
-from ..reports.tools import routed_result_kinds
 from ..prompts import (
     ACTION_SYSTEM_PROMPT, SYSTEM_PROMPT, PLANNING_RULES,
     ACTION_PLANNING_RULES, STANDING_RULE_RULES,
@@ -15,29 +14,6 @@ from ..prompts import (
 
 
 PLAN_TOOL_NAME = "submit_request_plan"
-PERIOD_FIELDS = {
-    "utc_range": ("kind", "start", "end"),
-    "key": ("kind", "field", "value"),
-    "resolved": ("kind", "step", "selector", "path"),
-}
-
-
-def period_schema():
-    properties = {
-        "start": {"type": "string"}, "end": {"type": "string"},
-        "value": {"type": ["string", "integer"]}, "field": {"type": "string"},
-        "step": {"type": "string"},
-        "path": {"type": "array", "minItems": 1, "maxItems": 8,
-                 "items": {"type": ["string", "integer"]}},
-        "selector": {"type": "string", "enum": ["latest", "current"]},
-    }
-    return {"oneOf": [
-        {"type": "object", "properties": {
-            "kind": {"type": "string", "enum": [kind]},
-            **{field: properties[field] for field in fields if field != "kind"},
-        }, "required": list(fields), "additionalProperties": False}
-        for kind, fields in PERIOD_FIELDS.items()
-    ]}
 
 
 def system_instructions(
@@ -57,22 +33,26 @@ def _argument(detail: Mapping) -> str:
     if kind == "array":
         kind = "[" + _argument(detail.get("items", {})) + "]"
     elif kind == "object":
-        kind = "{" + ",".join(field + ":" + _argument(value)
-                            for field, value in detail.get("properties", {}).items()) + "}"
+        fields = detail.get("properties", {})
+        kind = "{" + ",".join(
+            f"{name}:{_argument(field)}" for name, field in fields.items()
+        ) + "}"
     if "enum" in detail:
         choices = detail["enum"]
-        kind += ("=" + "/".join(map(str, choices)) if len(choices) <= 20
-                 else f"({len(choices)} choices)")
-    bounds = [f"{key}={detail[key]}" for key in
-              ("minimum", "maximum", "minItems", "maxItems", "maxLength") if key in detail]
-    if detail.get("minLength") == 0:
-        bounds.append("minLength=0")
-    return kind + ("(" + ",".join(bounds) + ")" if bounds else "")
+        kind += (
+            "=" + "/".join(map(str, choices)) if len(choices) <= 20
+            else f"({len(choices)} choices)"
+        )
+    return kind + (
+        f"(maxItems={detail["maxItems"]})" if kind.startswith("[") and "maxItems" in detail else ""
+    )
 
 
 def output_forms(registry: Mapping[str, RegisteredAgentTool]) -> tuple[str, ...]:
-    return ("text", *(name for name, tool in registry.items()
-                      if tool.effect is AgentCapabilityEffect.ARTIFACT))
+    return (
+        "text",
+        *(name for name, tool in registry.items() if tool.effect is AgentCapabilityEffect.ARTIFACT),
+    )
 
 
 def capability_list(registry: Mapping[str, RegisteredAgentTool]) -> str:
@@ -80,52 +60,17 @@ def capability_list(registry: Mapping[str, RegisteredAgentTool]) -> str:
     entries = []
     for name in sorted(registry):
         tool = registry[name]
-        contract = tool.contract
         schema = tool.definition.parameters
         required = set(schema.get("required", ())) | set(schema.get("x-command-required", ()))
         arguments = [
             f"{field}:{_argument(detail)}{'*' if field in required else ''}"
             for field, detail in schema.get("properties", {}).items()
         ]
-        if len(arguments) > 16:
-            arguments = [
-                f"{field}:{_argument(detail)}*"
-                for field, detail in schema["properties"].items() if field in required
-            ] + [
-                "optional " + "/".join(
-                    f"{field}:{detail.get('type', 'value')}"
-                    for field, detail in schema["properties"].items()
-                    if field not in required
-                )
-            ]
-        meaning = " ".join(tool.definition.description.split(".", 1)[0].split())[:120]
-        time_fields = ",".join(contract.time_fields) if contract else ""
-        if contract and contract.optional_time_window:
-            time_fields += " (optional)"
-        latest_fields = ",".join(contract.latest_fields) if contract else ""
-        period_results = ",".join("/".join(map(str, path)) for path in contract.period_results) if contract else ""
-        result_kinds = {**(contract.referenceable_result_kinds if contract else {}),
-                        **routed_result_kinds(registry, name)}
-        result_paths = ",".join(
-            "/".join(path) + (":" + result_kinds[path] if path in result_kinds else "")
-            for path in contract.referenceable_result_paths
-        ) if contract else ""
-        entity_fields = ",".join(
-            f"{field}:{kind}" for field, kind in contract.entity_fields
-        ) if contract else ""
-        patterns = ",".join(f"{field}={pattern}" for field, pattern in contract.value_patterns) if contract else ""
-        fields = [f"class {tool.action_class.value}"]
-        for label, value in (
-            ("args", ",".join(arguments)), ("time", time_fields),
-            ("latest", latest_fields), ("periods", period_results),
-            ("results", result_paths),
-            ("entity", entity_fields), ("formats", patterns),
-        ):
-            if value:
-                fields.append(f"{label} {value}")
-        if tool.effect is AgentCapabilityEffect.ARTIFACT:
-            fields.append("output")
-        entries.append(f"{name}: {meaning} | " + " | ".join(fields))
+        meaning = " ".join(tool.definition.description.split(".", 1)[0].split())[:100]
+        line = f"{name}: {meaning} | {tool.action_class.value} | args " + ",".join(arguments)
+        if tool.returns:
+            line += " | returns " + tool.returns
+        entries.append(line)
     return "\n".join(entries)
 
 
@@ -136,25 +81,22 @@ def plan_definition(registry: Mapping[str, RegisteredAgentTool]) -> AgentToolDef
         parameters={
             "type": "object",
             "properties": {
-                "goal": {"type": "string", "maxLength": 240},
+                "goal": {"type": "string", "minLength": 1, "maxLength": 240},
                 "effort": {"type": "string", "enum": ["low", "high", "max"]},
                 "output": {"type": "string", "enum": list(output_forms(registry))},
-                "periods": {"type": "array", "maxItems": 12, "items": period_schema()},
-                "entities": {"type": "array", "maxItems": 32, "items": {
-                    "type": "object", "properties": {
-                        "kind": {"type": "string"},
-                        "value": {"type": ["string", "integer", "object", "array"],
-                                  "items": {"type": ["string", "integer", "object"]}},
-                    }, "required": ["kind", "value"],
-                }},
-                "steps": {"type": "array", "minItems": 1, "maxItems": 48,
-                          "items": {"type": "object", "properties": {
-                              "id": {"type": "string", "maxLength": 40},
-                              "capability": {"type": "string", "enum": sorted(registry)},
-                              "arguments": {"type": "object"},
-                              "reason": {"type": "string", "maxLength": 240},
-                              "depends_on": {"type": "array", "items": {"type": "string"}},
-                          }, "required": ["id", "capability", "arguments", "reason", "depends_on"]}},
+                "steps": {
+                    "type": "array", "minItems": 1, "maxItems": 48,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string", "minLength": 1, "maxLength": 40},
+                            "capability": {"type": "string", "enum": sorted(registry)},
+                            "arguments": {"type": "object"},
+                            "depends_on": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "required": ["id", "capability", "arguments", "depends_on"],
+                    },
+                },
             },
             "required": ["goal", "effort", "output", "steps"],
             "additionalProperties": False,

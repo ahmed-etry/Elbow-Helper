@@ -31,62 +31,47 @@ HEALTH_WINDOW_MAX_DAYS = 365
 
 
 TOOL_CONTRACTS = {
-    'find_clan_health_players': CapabilityContract(
-        entity_fields=(('clan_code', 'clan'),),
-        time_fields=(),
+    "find_clan_health_players": CapabilityContract(
+        entity_fields=(("clan_code", "clan"),), required_access=frozenset({ACCESS_LEAD_PLUS}),
+    ),
+    "get_player_health": CapabilityContract(
+        entity_fields=(("player_tag", "clash_account"),),
         required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),
-    'get_player_health': CapabilityContract(
-        entity_fields=(('player_tag', 'clash_account'),),
-        time_fields=('days',),
-        latest_fields=('days',),
+    "list_clan_health_reports": CapabilityContract(
+        entity_fields=(("clan_code", "clan"),), required_access=frozenset({ACCESS_LEAD_PLUS}),
+    ),
+    "get_clan_health": CapabilityContract(
+        entity_fields=(("clan_code", "clan"),), required_access=frozenset({ACCESS_LEAD_PLUS}),
+    ),
+    "read_clan_health_period": CapabilityContract(
+        entity_fields=(("clan_code", "clan"), ("run_id", "clan_health_run")),
         required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),
-    'list_clan_health_reports': CapabilityContract(
-        entity_fields=(('clan_code', 'clan'),),
-        time_fields=('before_run_id',),
-        latest_fields=('before_run_id',),
-        result_paths=(('reports', 'N', 'run_id'),),
-        result_path_kinds=((('reports', 'N', 'run_id'), 'clan_health_run'),),
-        period_results=(('reports', 0, 'run_id'),),
+    "read_clan_health_report": CapabilityContract(
+        entity_fields=(("report_id", "clan_health_report"),), retained_fields=("report_id",),
         required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),
-    'get_clan_health': CapabilityContract(
-        entity_fields=(('clan_code', 'clan'),),
-        time_fields=(),
+    "compare_clan_health_reports": CapabilityContract(
+        entity_fields=(
+            ("before_report_id", "clan_health_report"), ("after_report_id", "clan_health_report"),
+        ),
+        retained_fields=("before_report_id", "after_report_id"),
         required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),
-    'read_clan_health_period': CapabilityContract(
-        entity_fields=(('clan_code', 'clan'), ('run_id', 'clan_health_run')),
-        time_fields=(),
-        required_access=frozenset({ACCESS_LEAD_PLUS}),
+    "read_family_account_movements": CapabilityContract(
+        entity_fields=(), required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),
-    'read_clan_health_report': CapabilityContract(
-        entity_fields=(('report_id', 'clan_health_report'),),
-        time_fields=(),
-        retained_fields=('report_id',),
-        required_access=frozenset({ACCESS_LEAD_PLUS}),
-    ),
-    'compare_clan_health_reports': CapabilityContract(
-        entity_fields=(('before_report_id', 'clan_health_report'), ('after_report_id', 'clan_health_report')),
-        time_fields=(),
-        retained_fields=('before_report_id', 'after_report_id'),
-        required_access=frozenset({ACCESS_LEAD_PLUS}),
-    ),
-    'read_family_account_movements': CapabilityContract(
-        entity_fields=(),
-        time_fields=('before_run_id', 'interval_limit'),
-        latest_fields=('before_run_id', 'interval_limit'),
-        required_access=frozenset({ACCESS_LEAD_PLUS}),
-    ),
-    'read_family_account_movement_report': CapabilityContract(
-        entity_fields=(('report_id', 'family_movement_report'), ('player_tag', 'clash_account'), ('member_id', 'discord_member'), ('clan_code', 'clan')),
-        time_fields=(),
-        filter_fields=('view', 'transition'),
-        retained_fields=('report_id',),
+    "read_family_account_movement_report": CapabilityContract(
+        entity_fields=(
+            ("report_id", "family_movement_report"), ("player_tag", "clash_account"),
+            ("member_id", "discord_member"), ("clan_code", "clan"),
+        ),
+        filter_fields=("view", "transition"), retained_fields=("report_id",),
         required_access=frozenset({ACCESS_LEAD_PLUS}),
     ),
 }
+
 
 def clan_health_tools() -> tuple[RegisteredAgentTool, ...]:
     offset = {"type": "integer", "minimum": 0}

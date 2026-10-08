@@ -20,10 +20,8 @@ from .budgets import ContextBudget
 from ..reports.tools import filter_fields
 from ..plan.format import plan_definition, system_instructions
 from ..plan.planning import PlanNotSettled
-from ..plan.sources import named_sources
-from ..plan.scope import ScopeLedger
 from ..capabilities import enabled_adapters
-from ..commands.bridge import build_command_tools, check_command_plan
+from ..commands.bridge import build_command_tools
 from ..wording import AGENT_PLAN_UNFINISHED
 from . import budgets as limits
 from .rounds import AgentGracefulEnd, ModelRounds
@@ -110,12 +108,6 @@ class AgentService:
                 enabled_adapters(),
             )
             registry.update(command_tools)
-        visible_channels = (
-            *getattr(context.guild, "channels", ()),
-            *getattr(context.guild, "threads", ()),
-        )
-        sources = named_sources(question, visible_channels)
-        command_check = lambda plan: check_command_plan(plan, command_capabilities, sources)
         definition = plan_definition(registry)
         system_prompt = system_instructions(registry, actions_enabled=actions_available)
         context.state.request_text = question
@@ -150,14 +142,12 @@ class AgentService:
         )
         usage = RequestUsage()
         request_id = getattr(context.source_message, "id", None)
-        ledger = ScopeLedger(context, registry)
         rounder = ModelRounds(
             context=context,
             budget=budget,
             usage=usage,
             session=session,
             request_id=request_id,
-            ledger=ledger,
         )
 
         runner = PlanRunner(
@@ -165,9 +155,7 @@ class AgentService:
             context=context,
             registry=registry,
             command_capabilities=command_capabilities,
-            sources=sources,
             budget=budget,
-            ledger=ledger,
             rounder=rounder,
         )
 
@@ -175,8 +163,6 @@ class AgentService:
             context=context,
             session=session,
             registry=registry,
-            sources=sources,
-            command_check=command_check,
             budget=budget,
             rounder=rounder,
             runner=runner,

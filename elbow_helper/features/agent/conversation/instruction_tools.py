@@ -23,7 +23,6 @@ def working_state_tools() -> tuple[RegisteredAgentTool, ...]:
         ), remember_task_instruction, AgentCapabilityEffect.STATE,
             contract=CapabilityContract(
                 entity_fields=(("replaces_id", "task_instruction"),),
-                time_fields=(),
                 source_scope="request_context",
             ),
         ),
@@ -36,7 +35,6 @@ def working_state_tools() -> tuple[RegisteredAgentTool, ...]:
         ), retire_task_instruction, AgentCapabilityEffect.STATE,
             contract=CapabilityContract(
                 entity_fields=(("instruction_id", "task_instruction"),),
-                time_fields=(),
                 source_scope="request_context",
             ),
         ),

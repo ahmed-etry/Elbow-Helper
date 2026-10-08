@@ -39,15 +39,10 @@ def discord_message_control_tools() -> tuple[RegisteredAgentTool, ...]:
             }, "required": ["channel_id", "message_id", "operation", "emoji"],
                "additionalProperties": False},
         ), prepare_reaction, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
-            contract=CapabilityContract(
-                entity_fields=(
+            contract=CapabilityContract(entity_fields=(
                     ("channel_id", "discord_channel"),
                     ("message_id", "discord_message"),
-                ),
-                time_fields=(),
-                source_scope="request_context",
-                filter_fields=("operation", "emoji"),
-            ),
+                ), source_scope="request_context", filter_fields=("operation", "emoji")),
         ),
         RegisteredAgentTool(AgentToolDefinition(
             name="change_discord_pin",
@@ -58,15 +53,10 @@ def discord_message_control_tools() -> tuple[RegisteredAgentTool, ...]:
             }, "required": ["channel_id", "message_id", "operation"],
                "additionalProperties": False},
         ), prepare_pin, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
-            contract=CapabilityContract(
-                entity_fields=(
+            contract=CapabilityContract(entity_fields=(
                     ("channel_id", "discord_channel"),
                     ("message_id", "discord_message"),
-                ),
-                time_fields=(),
-                source_scope="request_context",
-                filter_fields=("operation",),
-            ),
+                ), source_scope="request_context", filter_fields=("operation",)),
         ),
     )
 

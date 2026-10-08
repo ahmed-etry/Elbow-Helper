@@ -56,22 +56,10 @@ def thread_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
             find_discord_threads,
             contract=CapabilityContract(
-                result_path_kinds=(
-                    (('threads', 'N', 'thread_id'), 'discord_channel'),
-                    (('threads', 'N', 'parent_channel_id'), 'discord_channel'),
-                ),
-                result_paths=(
-                    ('threads', 'N', 'thread_id'),
-                    ('threads', 'N', 'parent_channel_id'),
-                    ('coverage', 'next_cursor'),
-                ),
                 entity_fields=(("parent_channel_id", "discord_channel"),),
-                time_fields=("cursor",),
-                source_scope="channel_messages",
-                channel_fields=("parent_channel_id",),
+                source_scope="channel_messages", channel_fields=("parent_channel_id",),
                 result_channel_lists=(("threads", "thread_id"),),
                 filter_fields=("state", "visibility"),
-                latest_fields=("cursor",),
             ),
         ),
     )

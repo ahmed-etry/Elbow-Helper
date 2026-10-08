@@ -49,6 +49,7 @@ REPORT_COMPARERS = {
 READ_NAME = "read_saved_report"
 COMPARE_NAME = "compare_saved_reports"
 
+
 def original_tool(registry: Mapping[str, RegisteredAgentTool], name: str,
                   arguments: Mapping[str, Any]) -> RegisteredAgentTool | None:
     kind = arguments.get("report_kind")
@@ -63,16 +64,6 @@ def saved_report_contracts(registry):
             for name in (READ_NAME, COMPARE_NAME)
             if isinstance(router := _router(registry, name), ReportRouter)
             for tool in router.specs.values()}
-
-
-def routed_result_kinds(registry, name):
-    router = _router(registry, name)
-    kinds = {}
-    if isinstance(router, ReportRouter):
-        for tool in router.specs.values():
-            for path, kind in tool.contract.referenceable_result_kinds.items():
-                kinds.setdefault(path, set()).add(kind)
-    return {path: "/".join(sorted(values)) for path, values in kinds.items()}
 
 
 def original_arguments(arguments: Mapping[str, Any]) -> dict[str, Any]:
@@ -164,42 +155,33 @@ def _tool(name: str, specs: Mapping[str, RegisteredAgentTool]) -> RegisteredAgen
         **{field: {"type": "string", "minLength": 1, "maxLength": 32} for field in ids},
         **_properties(specs),
     }
-
     description = (
         "Compare two retained reports of the same kind using that kind's page fields."
         if comparing else
         "Read a retained report using its kind's filters and page fields."
     )
-    return RegisteredAgentTool(AgentToolDefinition(
-        name=name, description=description,
-        parameters={"type": "object", "properties": properties,
-                    "required": ["report_kind", *ids], "additionalProperties": False},
-    ), ReportRouter(name, specs), contract=CapabilityContract(
-        entity_fields=tuple((field, "saved_report") for field in ids),
-        time_fields=(),
-        filter_fields=(
-            ()
-            if comparing
-            else tuple(
-                sorted(
-                    {
-                        field
-                        for tool in specs.values()
-                        for field in (
-                            *(key for key, _ in tool.contract.entity_fields),
-                            *tool.contract.time_fields,
-                            *tool.contract.filter_fields,
-                            *tool.contract.channel_fields,
-                        )
-                        if field != "report_id"
-                    }
-                )
-            )
+    return RegisteredAgentTool(
+        AgentToolDefinition(
+            name=name, description=description,
+            parameters={
+                "type": "object", "properties": properties,
+                "required": ["report_kind", *ids], "additionalProperties": False,
+            },
         ),
-        retained_fields=ids,
-        result_paths=tuple(sorted({path for tool in specs.values()
-                                   for path in tool.contract.referenceable_result_paths})),
-    ))
+        ReportRouter(name, specs),
+        contract=CapabilityContract(
+            entity_fields=tuple((field, "saved_report") for field in ids),
+            filter_fields=() if comparing else tuple(sorted({
+                field for tool in specs.values()
+                for field in (
+                    *(key for key, _ in tool.contract.entity_fields),
+                    *tool.contract.filter_fields, *tool.contract.channel_fields,
+                )
+                if field != "report_id"
+            })),
+            retained_fields=ids,
+        ),
+    )
 
 
 def replace_report_tools(tools: Sequence[RegisteredAgentTool]) -> tuple[RegisteredAgentTool, ...]:

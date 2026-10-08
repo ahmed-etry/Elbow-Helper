@@ -19,7 +19,6 @@ class CommandAdapter:
     run: Callable[[Any, Mapping[str, Any]], Awaitable[Any]]
     options: tuple[ParameterInfo, ...] = ()
     entity_options: tuple[tuple[str, str], ...] = ()
-    check_period: Callable[[Mapping[str, Any], Mapping[str, Any]], str] | None = None
     prepare: Callable[[Any, Mapping[str, Any]], Awaitable[Any]] | None = None
     action_class: ActionClass | None = None
     option_types: tuple[tuple[str, str], ...] = ()

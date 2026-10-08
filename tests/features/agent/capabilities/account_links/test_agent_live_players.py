@@ -9,15 +9,14 @@ from unittest.mock import AsyncMock, patch
 from urllib.parse import unquote
 
 from features.agent.engine.test_agent_plan_flow import _context, _Model, _Session, _model_step, _plan
-from features.agent.result_path_helpers import assert_result_paths
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.capabilities.account_links.players import (
-    PLAYER_CONCURRENCY, player_tools, read_live_players,
+    PLAYER_CONCURRENCY, read_live_players,
 )
 from elbow_helper.features.agent.capabilities.account_links.role_report import RoleAccountReport
 from elbow_helper.features.agent.engine.registry import build_agent_tools
 from elbow_helper.features.agent.engine.service import AgentService
-from elbow_helper.features.agent.plan.checker import check_entity_references, check_plan
+from elbow_helper.features.agent.plan.checker import check_plan
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from elbow_helper.infrastructure.clash import ClashClient, ClashResponse
 
@@ -56,7 +55,6 @@ class LivePlayerTests(unittest.IsolatedAsyncioTestCase):
                     self.assertIsNotNone(datetime.fromisoformat(row["observed_at"]).utcoffset())
                     self.assertEqual(row["current_clan"],
                                      {"tag": "#Q0", "name": "Synthetic clan"} if row["player_tag"] == "#P2" else None)
-                assert_result_paths(self, "read_live_players", result)
 
     async def test_missing_transient_and_invalid_profiles_preserve_successes(self):
         responses = [_profile("#P0"), ClashResponse(404, {}, {}, 1, 1),
@@ -147,23 +145,3 @@ class LivePlayerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(get.await_count, 3)
         self.assertIn('"15": 3', session.calls[-1][0][0].content)
         self.assertTrue(self.context.state.evidence)
-
-    def test_live_tool_advertises_account_kind(self):
-        tool = player_tools()[0]
-        self.assertEqual(tool.contract.result_path_kind(["accounts", "*", "player_tag"]), "clash_account")
-        self.assertIn("Live Clash", tool.definition.description)
-
-    def test_nested_reference_keeps_entity_kind_and_scalar_checks(self):
-        registry = build_agent_tools()
-        steps = {"roles": {"capability": "read_saved_report", "arguments": {"report_kind": "role_accounts"}}}
-        reference = {"step": "roles", "path": ["members", "*", "accounts", "*", "player_tag"]}
-        checked = check_entity_references(registry["read_live_players"].contract,
-                                         {"player_tags": reference}, steps, registry)
-        self.assertTrue(checked.ok, checked.error)
-        reference["path"] = ["members", "*", "member_id"]
-        self.assertFalse(check_entity_references(registry["read_live_players"].contract,
-                                                {"player_tags": reference}, steps, registry).ok)
-        reference["path"] = ["members", "*", "accounts", "*", "player_tag"]
-        self.assertFalse(check_entity_references(registry["get_account_link"].contract,
-                                                {"player_tag": reference}, steps, registry).ok)
-

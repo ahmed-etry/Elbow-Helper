@@ -50,8 +50,7 @@ class SavedReportRoutingTests(unittest.IsolatedAsyncioTestCase):
                 "offset": {"type": "integer", "minimum": 0},
             }, "required": ["report_id"], "additionalProperties": False},
         ), handler, contract=CapabilityContract(
-            entity_fields=(("report_id", "synthetic_report"),),
-            time_fields=(), retained_fields=("report_id",),
+            entity_fields=(("report_id", "synthetic_report"),), retained_fields=("report_id",),
         ))
         surface = saved_reports._tool(saved_reports.READ_NAME, {"synthetic": original})
         state = SimpleNamespace(reports={"one": SimpleNamespace(
@@ -83,9 +82,8 @@ class SavedReportRoutingTests(unittest.IsolatedAsyncioTestCase):
                     "report_id": {"type": "string"},
                 }, "required": ["report_id"], "additionalProperties": False},
             ), handler, contract=CapabilityContract(
-                entity_fields=(("report_id", "synthetic_report"),),
-                time_fields=(), retained_fields=("report_id",),
-            ))
+            entity_fields=(("report_id", "synthetic_report"),), retained_fields=("report_id",),
+        ))
             return saved_reports._tool(saved_reports.READ_NAME, {"synthetic": tool})
         context = SimpleNamespace(state=SimpleNamespace(reports={"one": SimpleNamespace(
             manifest=lambda: {"kind": "synthetic"},

@@ -91,7 +91,7 @@ def _flag(value: Any) -> str:
 
 
 def model_result(
-    payload: Mapping[str, Any], *, coverage_dates: Mapping[str, Any] | None = None,
+    payload: Mapping[str, Any], *,
     truncated: bool = False,
 ) -> dict[str, Any]:
     data = dict(payload)
@@ -125,8 +125,6 @@ def model_result(
         flags["status"] = "failed"
     if limits:
         flags["limits"] = sorted(set(limits))
-    if coverage_dates:
-        flags["coverage_dates"] = dict(coverage_dates)
     data["flags"] = flags
     return data
 
