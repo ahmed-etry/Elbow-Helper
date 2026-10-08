@@ -9,6 +9,8 @@ from enum import StrEnum
 from typing import Any, TYPE_CHECKING
 from typing import Mapping
 
+import asyncio
+
 import discord
 from discord.ext import commands
 
@@ -79,9 +81,16 @@ class AgentDelivery:
 
 
 @dataclass(slots=True)
+class DirectMessageDelivery:
+    sent: bool = False
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+
+@dataclass(slots=True)
 class AgentTurnState:
     """Evidence provenance and reports retained independently of model text."""
 
+    direct_messages: DirectMessageDelivery = field(default_factory=DirectMessageDelivery)
     source_channels: set[int] = field(default_factory=set)
     evidence: list[str] = field(default_factory=list)
     reports: dict[str, ReportArtifact] = field(default_factory=dict)
@@ -125,6 +134,7 @@ class AgentRequestContext:
     message_search: DiscordMessageSearch
     thread_discovery: Any = None
     state: AgentTurnState = field(default_factory=AgentTurnState)
+    delivery_channel: Any = None
     history: tuple[ConversationTurn, ...] = ()
     roster_queries: RosterQueries | None = None
     cwl_queries: CwlQueries | None = None

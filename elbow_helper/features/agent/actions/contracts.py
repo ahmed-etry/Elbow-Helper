@@ -9,7 +9,7 @@ import logging
 from typing import Any
 import discord
 
-from ..wording import ACTION_AUDIT_REASON, ACTION_PREVIEW_BLANK
+from ..wording import ACTION_AUDIT_REASON, ACTION_PREVIEW_BLANK, ACTION_UNAVAILABLE
 
 LOGGER = logging.getLogger(__name__)
 
@@ -92,6 +92,17 @@ class PreparedAction:
 def check_bundle(actions: tuple[PreparedAction, ...]) -> None:
     if not actions:
         raise ValueError("No changes were prepared")
+    dm_count = sum(
+        action.preview.count for action in actions
+        if action.path == "send_direct_messages"
+        or (
+            action.path == "save_standing_rule"
+            and action.values.get("kind") == "reminder"
+            and action.values.get("dm_member_ids")
+        )
+    )
+    if dm_count > 50:
+        raise ActionRefused(ACTION_UNAVAILABLE)
     if len(actions) > 1 and any(
         action.action_class is ActionClass.IRREVERSIBLE for action in actions
     ) and not all(

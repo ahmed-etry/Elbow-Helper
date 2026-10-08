@@ -1,18 +1,16 @@
 """Collect the enabled read, output and change capabilities."""
-
 from __future__ import annotations
 from dataclasses import replace
-
 from ..capabilities import FEATURES
 from ..discord_actions import UNDO_HANDLERS as DISCORD_UNDO_HANDLERS
 from ..actions.undo import merge_undo_handlers, UndoHandler
-
 from ..files.attachment_tools import attachment_tools
 from ..actions.log_tools import action_log_tools
 from ..commands.help_tool import command_tools
 from ..research.catalogue import discord_tools
 from ..research.members import member_tools
 from ..discord_actions.roles import discord_role_tools
+from ..discord_actions.direct_messages import direct_message_tools
 from ..discord_actions.message_tools import discord_message_tools
 from ..discord_actions.threads import discord_thread_tools
 from ..discord_actions.message_controls import discord_message_control_tools
@@ -44,9 +42,10 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
         "discord_research": (
             *discord_tools(), *member_tools(), *thread_tools(), *research_tools(),
         ),
-        "discord_actions": (*discord_message_tools(), *discord_thread_tools(),
-                            *discord_message_control_tools(),
-                            *discord_nickname_tools(), *discord_role_tools()),
+        "discord_actions": (
+            *discord_message_tools(), *discord_thread_tools(), *discord_message_control_tools(),
+            *discord_nickname_tools(), *discord_role_tools(), *direct_message_tools(),
+        ),
         "files": attachment_tools(),
         "knowledge_history": (*history_tools(), *knowledge_tools(), *action_log_tools()),
         "planning_output": (*working_state_tools(), *spreadsheet_tools()),
@@ -85,6 +84,4 @@ def build_undo_handlers() -> dict[str, UndoHandler]:
         DISCORD_UNDO_HANDLERS,
         *(feature.UNDO_HANDLERS for feature in FEATURES.values()),
     )
-
-
 __all__ = ["build_agent_tool_groups", "build_agent_tools", "build_undo_handlers"]

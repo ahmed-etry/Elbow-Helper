@@ -26,6 +26,13 @@ def format_run_report(run: Mapping[str, Any]) -> str:
     permissions: dict[str, list[Mapping[str, Any]]] = {}
     for step in run["steps"]:
         status = step["status"]
+        outcome = json.loads(step.get("outcome_json") or "{}")
+        recipients = (outcome.get("result") or {}).get("direct_messages")
+        if status == "completed" and isinstance(recipients, list):
+            for recipient in recipients:
+                target = {**step, "action_label": recipient["label"]}
+                (completed if recipient["delivered"] else not_done).append(target)
+            continue
         if status == "completed":
             completed.append(step)
         elif status in ("uncertain", "interrupted", "running"):

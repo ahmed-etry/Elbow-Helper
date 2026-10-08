@@ -6,7 +6,6 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-
 from elbow_helper.features.agent.actions.contracts import (
     ActionClass, ChangePreview, PreparedAction,
 )
@@ -68,6 +67,7 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
         for action in self.context.state.proposed_changes:
             self.assertTrue(await action.preview.recheck())
             outcome = await action.run()
+            self.assertEqual(outcome.status, "complete")
             self.assertEqual(outcome.posted_in, 2)
             self.assertTrue(await action.verify())
             self.assertIsNotNone(self.repository.agent_message(
@@ -88,7 +88,8 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(edit["status"], "confirmation_required")
             change = self.context.state.proposed_changes.pop()
             self.assertTrue(await change.preview.recheck())
-            await change.run()
+            outcome = await change.run()
+            self.assertEqual(outcome.status, "complete")
             self.assertEqual(self.messages[message_id].content, "Second")
             removal = await prepare_delete(self.context, {
                 "channel_id": 2, "message_id": message_id,

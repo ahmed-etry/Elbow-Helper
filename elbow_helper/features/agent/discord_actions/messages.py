@@ -139,6 +139,27 @@ async def _find_nonce(channel: Any, nonce: int, bot_id: int) -> Any | None:
     return None
 
 
+async def resolve_post_attachment(context, arguments):
+    attachment = None
+    if "file_name" in arguments:
+        if "file_message_id" in arguments:
+            try:
+                attachment = await _conversation_file(
+                    context, arguments["file_message_id"], arguments["file_name"],
+                )
+            except DiscordActionRefused:
+                raise
+        else:
+            matches = [item for item in context.state.attachments
+                       if item.filename == arguments["file_name"]]
+            if len(matches) != 1:
+                raise DiscordActionRefused("Choose one file made in this conversation.")
+            attachment = matches[0]
+    elif "file_message_id" in arguments:
+        raise DiscordActionRefused("Choose the file name from that agent reply.")
+    return attachment
+
+
 async def prepare_post(context: AgentRequestContext,
                        arguments: Mapping[str, Any]) -> Mapping[str, Any]:
     await require_evidence_access(context)
@@ -149,23 +170,10 @@ async def prepare_post(context: AgentRequestContext,
         mentions = _mentions(context, arguments, arguments["text"])
     except DiscordActionRefused as error:
         return {"error": str(error)}
-    attachment = None
-    if "file_name" in arguments:
-        if "file_message_id" in arguments:
-            try:
-                attachment = await _conversation_file(
-                    context, arguments["file_message_id"], arguments["file_name"],
-                )
-            except DiscordActionRefused as error:
-                return {"error": str(error)}
-        else:
-            matches = [item for item in context.state.attachments
-                       if item.filename == arguments["file_name"]]
-            if len(matches) != 1:
-                return {"error": "Choose one file made in this conversation."}
-            attachment = matches[0]
-    elif "file_message_id" in arguments:
-        return {"error": "Choose the file name from that agent reply."}
+    try:
+        attachment = await resolve_post_attachment(context, arguments)
+    except DiscordActionRefused as error:
+        return {"error": str(error)}
     chunks = chunk_response(arguments["text"])
     if not chunks:
         return {"error": "The message has no text."}
