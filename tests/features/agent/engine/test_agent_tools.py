@@ -197,28 +197,21 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
 
     def test_cwl_ass_tool_preserves_selected_scope_projection(self) -> None:
         description = build_agent_tools()[
-            "read_cwl_ass_scope"
+            "cwl_ass_scores"
         ].definition.description
 
         self.assertIn("projected to seven attacks", description)
         self.assertIn("day (round)", description)
         self.assertIn("scope and sample size", description)
         self.assertIn("do not present a partial-scope result", description)
-        self.assertIn("requested spreadsheet", description)
+        self.assertIn("Return every player row", description)
 
     def test_cwl_bonus_tool_preserves_metric_and_side_effect_boundaries(self) -> None:
         tools = build_agent_tools()
-        description = tools["read_cwl_bonus_scope"].definition.description
-        from elbow_helper.features.agent.reports.tools import original_tool
-        retained = original_tool(tools, "read_saved_report", {
-            "report_kind": "cwl_bonus_scope",
-        }).definition.description
-
+        description = tools["cwl_bonus_scores"].definition.description
         self.assertIn("adjusted-delta evidence, not ASS", description)
         self.assertIn("does not poll Clash or publish", description)
-        self.assertIn("requested spreadsheet", description)
-        self.assertIn("without recalculating", retained)
-        self.assertIn("distinct from ASS", retained)
+        self.assertIn("Return every player row", description)
 
 
     def test_event_tools_preserve_role_and_read_only_boundaries(self) -> None:
@@ -233,7 +226,6 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("missing counter roles explicitly", current)
         self.assertIn("does not refresh channels or change event settings", current)
         self.assertIn("Current Lead and source access are rechecked", retained)
-
 
 
 if __name__ == "__main__":

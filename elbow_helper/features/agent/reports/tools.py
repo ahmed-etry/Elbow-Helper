@@ -12,8 +12,6 @@ REPORT_READERS = {
     "event_schedule": "read_event_schedule_report",
     "missing_elder": "read_missing_elder_report",
     "cwl_performance": "read_cwl_performance_report",
-    "cwl_ass_scope": "read_cwl_ass_scope_report",
-    "cwl_bonus_scope": "read_cwl_bonus_scope_report",
     "pending_transfer_requests": "read_pending_transfer_report",
     "member_lifecycle": "read_member_lifecycle_report",
     "active_hibernation": "read_active_hibernation_report",

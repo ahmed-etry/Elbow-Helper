@@ -3,16 +3,16 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 from unittest.mock import patch
+
 from elbow_helper.configuration.roles import CORE, CO_APPLICANT_ROLE_ID
 from elbow_helper.features.agent.capabilities.cwl.report import CwlPerformanceReport
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
 from features.agent.report_helpers import make_event_report
 from elbow_helper.features.agent.capabilities.cwl.reads import read_cwl_performance, read_cwl_performance_report, read_cwl_threads
-from elbow_helper.features.agent.capabilities.cwl.scoring import (
-    read_cwl_ass_scope, read_cwl_bonus_scope, read_cwl_bonus_scope_report,
-)
+from elbow_helper.features.agent.capabilities.cwl.scoring import cwl_ass_scores, cwl_bonus_scores
 from elbow_helper.features.agent.files.spreadsheet_tools import prepare_spreadsheet
+
 from elbow_helper.features.cwl.queries import (
     CwlAssScopeRow, CwlAssScopeSnapshot, CwlBonusAttackScore,
     CwlBonusScopeSnapshot, CwlBonusSettings, CwlClanSeasonSummary,
@@ -178,9 +178,8 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.context.state.source_channels, {100})
 
     async def test_scoped_ass_evidence_can_feed_generic_spreadsheet_output(self):
-        result = await read_cwl_ass_scope(self.context, {
-            "clan_code": "BE1", "season": "2026-08",
-            "scope_type": "war", "war_id": "CWL:#WAR",
+        result = await cwl_ass_scores(self.context, {
+            "clan_code": "BE1", "season": "2026-08", "scope_type": "war", "war_id": "CWL:#WAR",
         })
         self.context.guild.filesize_limit = 8 * 1024 * 1024
         player = result["players"][0]
@@ -201,25 +200,18 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
                     ]],
                 }],
             })
-
         self.assertEqual(spreadsheet["filename"], "be1-cwl-war-evidence.xlsx")
         self.assertEqual(spreadsheet["rows"], 1)
         self.assertEqual(len(self.context.state.attachments), 1)
 
     async def test_configured_bonus_scope_is_retained_and_distinct_from_ass(self):
-        result = await read_cwl_bonus_scope(self.context, {
-            "clan_code": "BE1", "season": "2026-08",
-            "scope_type": "war", "war_tag": "#WAR",
+        result = await cwl_bonus_scores(self.context, {
+            "clan_code": "BE1", "season": "2026-08", "scope_type": "war", "war_tag": "#WAR",
         })
-
         self.assertEqual(result["metric_name"], "Configured CWL bonus adjusted delta")
         self.assertFalse(result["ass_distinction"]["is_ass"])
         self.assertEqual(result["rows"][0]["adjusted_delta"], 1.0)
         self.assertEqual(result["settings"]["revision"], 4)
-        retained = await read_cwl_bonus_scope_report(self.context, {
-            "report_id": result["report_id"],
-        })
-        self.assertEqual(retained, result)
 
     async def test_bonus_scope_access_loss_before_retention_fails_closed(self):
         with patch(
@@ -227,11 +219,9 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
             AsyncMock(side_effect=[None, AgentAccessLost("revoked")]),
         ):
             with self.assertRaises(AgentAccessLost):
-                await read_cwl_bonus_scope(self.context, {
-                    "clan_code": "BE1", "season": "2026-08",
-                    "scope_type": "war", "war_tag": "#WAR",
+                await cwl_bonus_scores(self.context, {
+                    "clan_code": "BE1", "season": "2026-08", "scope_type": "war", "war_tag": "#WAR",
                 })
-
         self.assertEqual(self.context.state.reports, {})
 
     async def test_report_is_scoped_to_current_guild(self):

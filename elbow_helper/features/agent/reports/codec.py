@@ -6,8 +6,9 @@ from .community_codec import (
     decode_active_recruitment_trials, decode_examination_case_status, decode_discord_research,
 )
 from .clash_codec import (
-    decode_missing_elder, decode_cwl_performance, decode_cwl_ass_scope,
-    decode_cwl_bonus_scope, decode_pending_transfer_requests,
+    decode_missing_elder,
+    decode_cwl_performance,
+    decode_pending_transfer_requests,
 )
 from .attachment_codec import (
     decode_attachment,
@@ -27,8 +28,6 @@ _DECODERS = {
     "missing_elder": decode_missing_elder,
     "approved_knowledge": decode_approved_knowledge,
     "cwl_performance": decode_cwl_performance,
-    "cwl_ass_scope": decode_cwl_ass_scope,
-    "cwl_bonus_scope": decode_cwl_bonus_scope,
     "pending_transfer_requests": decode_pending_transfer_requests,
     "active_hibernation": decode_active_hibernation,
     "support_ticket_inventory": decode_support_ticket_inventory,
