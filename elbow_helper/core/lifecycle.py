@@ -14,6 +14,7 @@ from discord.ext import commands
 from elbow_helper.infrastructure.ai import AgentModel
 from elbow_helper.infrastructure.ai import TextGenerator
 from elbow_helper.infrastructure.clash import ClashClient
+from elbow_helper.infrastructure.gifs import GiphyClient
 from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
 from elbow_helper.infrastructure.exports import LocalExportStore
 from elbow_helper.infrastructure.exports import WorkbookWriter
@@ -210,6 +211,7 @@ class ElbowHelperBot(commands.Bot):
         agent_model: AgentModel,
         google_publisher: GoogleSheetsPublisher,
         workbook_writer: WorkbookWriter,
+        gif_client: GiphyClient | None = None,
         required_extensions: tuple[str, ...] = REQUIRED_EXTENSIONS,
         optional_extensions: tuple[str, ...] = OPTIONAL_EXTENSIONS,
     ):
@@ -217,6 +219,7 @@ class ElbowHelperBot(commands.Bot):
         self.paths = paths
         self.guild_id = guild_id
         self.clash_client = clash_client
+        self.gif_client = gif_client
         self.text_generator = text_generator
         self.agent_model = agent_model
         self.google_publisher = google_publisher

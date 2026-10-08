@@ -1,9 +1,12 @@
 """Collect the enabled read, output and change capabilities."""
+
 from __future__ import annotations
 from dataclasses import replace
+
 from ..capabilities import FEATURES
 from ..discord_actions import UNDO_HANDLERS as DISCORD_UNDO_HANDLERS
 from ..actions.undo import merge_undo_handlers, UndoHandler
+
 from ..files.attachment_tools import attachment_tools
 from ..actions.log_tools import action_log_tools
 from ..commands.help_tool import command_tools
@@ -12,6 +15,7 @@ from ..research.members import member_tools
 from ..discord_actions.roles import discord_role_tools
 from ..discord_actions.direct_messages import direct_message_tools
 from ..discord_actions.reactions import reaction_tools
+from ..discord_actions.gifs import gif_tools
 from ..discord_actions.message_tools import discord_message_tools
 from ..discord_actions.threads import discord_thread_tools
 from ..discord_actions.message_controls import discord_message_control_tools
@@ -34,7 +38,7 @@ from ..plan.results import result_handler
 from .result_hints import RETURN_HINTS
 
 
-def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
+def build_agent_tool_groups(gif_client=None) -> dict[str, tuple[RegisteredAgentTool, ...]]:
     """Group the registered read capabilities."""
 
     return {
@@ -45,8 +49,8 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
         ),
         "discord_actions": (
             *discord_message_tools(), *discord_thread_tools(), *discord_message_control_tools(),
-            *discord_nickname_tools(), *discord_role_tools(),
-            *direct_message_tools(), *reaction_tools(),
+            *discord_nickname_tools(), *discord_role_tools(), *direct_message_tools(),
+            *reaction_tools(), *gif_tools(gif_client),
         ),
         "files": attachment_tools(),
         "knowledge_history": (*history_tools(), *knowledge_tools(), *action_log_tools()),
@@ -56,12 +60,12 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
     }
 
 
-def build_agent_tools() -> dict[str, RegisteredAgentTool]:
+def build_agent_tools(gif_client=None) -> dict[str, RegisteredAgentTool]:
     """Build the complete catalogue without exposing arbitrary capabilities."""
 
     originals = tuple(
         tool
-        for group in build_agent_tool_groups().values()
+        for group in build_agent_tool_groups(gif_client).values()
         for tool in group
     )
     original_registry = {tool.definition.name: tool for tool in originals}
@@ -86,4 +90,6 @@ def build_undo_handlers() -> dict[str, UndoHandler]:
         DISCORD_UNDO_HANDLERS,
         *(feature.UNDO_HANDLERS for feature in FEATURES.values()),
     )
+
+
 __all__ = ["build_agent_tool_groups", "build_agent_tools", "build_undo_handlers"]

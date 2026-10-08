@@ -100,7 +100,7 @@ class AgentService:
         conversation_history: str,
         images=(),
     ):
-        registry = build_agent_tools()
+        registry = build_agent_tools(getattr(context.bot, "gif_client", None))
         command_capabilities = {}
         actions_available = getattr(context.bot, "tree", None) is not None
         if not actions_available:

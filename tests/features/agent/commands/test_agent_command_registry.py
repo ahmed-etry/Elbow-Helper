@@ -80,6 +80,8 @@ class CommandRegistryTests(unittest.TestCase):
         from features.agent.dataset_helpers import synthetic_datasets
         from elbow_helper.features.agent.datasets.guide import DataGuide
         from elbow_helper.features.agent.access import KNOWN_ACCESS_REQUIREMENTS
+        from elbow_helper.infrastructure.gifs import GiphyClient
+        registry.update(build_agent_tools(GiphyClient("synthetic")))
         with TemporaryDirectory() as directory:
             guide = DataGuide(synthetic_datasets(directory)).for_levels(KNOWN_ACCESS_REQUIREMENTS)
         prompt = system_instructions(registry, actions_enabled=True, data_guide=guide)

@@ -21,6 +21,7 @@ from .core.settings import load_runtime_settings
 from .infrastructure.ai import AIClient
 from .infrastructure.ai import DeepSeekTextClient
 from .infrastructure.clash import ClashClient
+from .infrastructure.gifs import GiphyClient
 from .infrastructure.exports import GoogleSheetsPublisher
 from .infrastructure.exports import WorkbookWriter
 
@@ -75,6 +76,7 @@ def create_bot(
     ai_client: AIClient,
     google_publisher: GoogleSheetsPublisher,
     workbook_writer: WorkbookWriter,
+    gif_client: GiphyClient | None = None,
 ) -> ElbowHelperBot:
     """Construct the Discord bot without loading settings or starting network I/O."""
 
@@ -82,6 +84,7 @@ def create_bot(
         paths=paths,
         guild_id=GUILD_ID,
         clash_client=clash_client,
+        gif_client=gif_client,
         text_generator=ai_client,
         agent_model=ai_client,
         google_publisher=google_publisher,
@@ -107,13 +110,18 @@ async def main() -> None:
     )
     workbook_writer = WorkbookWriter()
     ai_client = DeepSeekTextClient(settings.deepseek_api_key)
-    async with ai_client, ClashClient(settings.coc_api_key) as clash_client:
+    async with (
+        ai_client,
+        ClashClient(settings.coc_api_key) as clash_client,
+        GiphyClient(settings.giphy_api_key) as gif_client,
+    ):
         bot = create_bot(
             paths,
             clash_client,
             ai_client,
             google_publisher,
             workbook_writer,
+            gif_client,
         )
         async with bot:
             await bot.start(settings.require_discord_token())

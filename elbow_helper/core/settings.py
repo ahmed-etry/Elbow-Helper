@@ -31,11 +31,13 @@ class RuntimeSettings:
     google_oauth_client_secret: str | None
     google_oauth_refresh_token: str | None
     google_drive_folder_id: str | None
+    giphy_api_key: str | None = None
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, str]) -> "RuntimeSettings":
         return cls(
             discord_token=_optional_text(values.get("DISCORD_TOKEN")),
+            giphy_api_key=_optional_text(values.get("GIPHY_API_KEY")),
             coc_api_key=_optional_text(values.get("COC_API_KEY")),
             deepseek_api_key=_optional_text(values.get("DEEPSEEK_API_KEY")),
             google_oauth_client_id=_optional_text(

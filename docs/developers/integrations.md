@@ -28,6 +28,13 @@ application-owned `GoogleSheetsPublisher`. Google OAuth credentials provide
 access. `GOOGLE_DRIVE_FOLDER_ID` selects the destination; if it is empty,
 exports go to the authenticated account's default location.
 
+## GIPHY
+
+The agent's find_gif capability searches GIPHY when `GIPHY_API_KEY` is set and
+puts the GIF's GIPHY page link in its reply. Only the search text leaves the bot.
+Without the key, the capability is not offered; when GIPHY is unavailable, the
+agent replies without a GIF.
+
 ## HTML transcripts
 
 Support and hibernation use `chat-exporter` to create HTML transcripts and
