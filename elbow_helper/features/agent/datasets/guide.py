@@ -1,9 +1,12 @@
 """Cache access-specific guides from feature schemas at process setup."""
+
 from contextlib import closing
 import sqlite3
 
 from elbow_helper.configuration.clans import CLANS, CLAN_ORDER
+
 from .catalogue import SOURCES
+
 
 HEADER = """\
 SQLite dialect. Name tables alias.table. State files are state.name with one JSON column doc; \
@@ -59,10 +62,19 @@ class DataGuide:
                 text.split(":", 1)[0] for level, text in self.entries
                 if level != "none" and level not in key
             ]
-            self.variants[key] = "\n".join([HEADER, "Family clans:", self.clans, *entries,
+            self.variants[key] = "\n".join([
+                HEADER,
+                "Live Clash: read_clash kinds clan (memberList, levels, leagues), "
+                "player (profile, heroes), current_war/cwl_war (full war), "
+                "cwl_group (season, clans, rounds.warTags), "
+                "war_log (items with results, stars, destruction), "
+                "capital_raids (items without attackLog/defenseLog). "
+                "Clash timestamps: 20261008T120000.000Z, UTC.",
+                "Family clans:", self.clans, *entries,
                 *([
                     "Not available to this asker: " + ", ".join(unavailable) + "."
-                ] if unavailable else [])])
+                ] if unavailable else []),
+            ])
         return self.variants[key]
 
 

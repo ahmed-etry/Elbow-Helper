@@ -25,6 +25,7 @@ from ..research.threads import thread_tools
 from ..conversation.instruction_tools import working_state_tools
 from ..scheduled.tools import standing_tools
 from ..datasets.tools import dataset_tools
+from ..datasets.clash import clash_tools
 from ..models import RegisteredAgentTool
 from ..actions.contracts import ActionClass
 from ..models import AgentCapabilityEffect
@@ -37,7 +38,7 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
     """Group the registered read capabilities."""
 
     return {
-        "datasets": dataset_tools(),
+        "datasets": (*dataset_tools(), *clash_tools()),
         "commands": command_tools(),
         "discord_research": (*discord_tools(), *thread_tools(), *research_tools()),
         "discord_actions": (*discord_message_tools(), *discord_thread_tools(),

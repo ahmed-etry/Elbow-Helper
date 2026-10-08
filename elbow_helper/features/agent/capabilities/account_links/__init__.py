@@ -2,7 +2,6 @@
 
 from .suggestions import account_suggestion_tools
 from .reads import member_tools
-from .players import player_tools
 from .role_audit import role_tools
 from .commands import account_link_adapters
 from ...actions.undo import merge_undo_handlers
@@ -12,7 +11,6 @@ from .commands import UNDO_HANDLERS as COMMANDS_UNDO_HANDLERS
 TOOLS = (
     *account_suggestion_tools(),
     *member_tools(),
-    *player_tools(),
     *role_tools(),
 )
 
