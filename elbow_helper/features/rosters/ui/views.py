@@ -879,20 +879,6 @@ class RosterLayoutView(BaseTimeoutView):
         await self.cog.show_roster_settings(interaction, self.roster_id)
 
 
-class RosterProgressView(discord.ui.View):
-    """A single disabled control that makes an in-progress action visible."""
-
-    def __init__(self, label: str):
-        super().__init__(timeout=None)
-        self.add_item(
-            discord.ui.Button(
-                label=label,
-                style=discord.ButtonStyle.secondary,
-                disabled=True,
-            )
-        )
-
-
 class BulkRosterAddModal(discord.ui.Modal, title="Bulk add accounts"):
     player_tags = discord.ui.TextInput(
         label="Player tags",

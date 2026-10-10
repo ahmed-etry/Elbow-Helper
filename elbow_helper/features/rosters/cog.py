@@ -16,6 +16,7 @@ from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
 
+from elbow_helper.discord.application_emojis import loading_status
 from elbow_helper.discord.interactions import deny
 from elbow_helper.discord.interactions import warn
 from elbow_helper.discord.timezones import build_timezone_choices
@@ -65,7 +66,6 @@ from .ui.views import AccountPickerView
 from .ui.views import ConfirmClearView
 from .ui.views import ConfirmDeleteView
 from .ui.views import RosterLayoutView
-from .ui.views import RosterProgressView
 from .ui.views import ROSTER_LAYOUT_PROMPT
 from .ui.views import roster_layout_columns_feedback
 from .ui.views import roster_layout_lengths_feedback
@@ -795,8 +795,8 @@ class Rosters(commands.Cog):
     ) -> None:
         if edit_response:
             await interaction.response.edit_message(
-                content=None,
-                view=RosterProgressView("Loading accounts…"),
+                content=await loading_status(self.bot, "Loading accounts…"),
+                view=None,
             )
         else:
             await interaction.response.defer(ephemeral=True, thinking=True)
@@ -841,8 +841,8 @@ class Rosters(commands.Cog):
     ) -> None:
         label = "Adding accounts…" if mode == "signup" else "Removing accounts…"
         await interaction.response.edit_message(
-            content=None,
-            view=RosterProgressView(label),
+            content=await loading_status(self.bot, label),
+            view=None,
         )
         result = await self.change_roster_accounts(
             roster_id,
@@ -1107,8 +1107,8 @@ class Rosters(commands.Cog):
             await deny(interaction, action="manage this roster")
             return
         await interaction.response.edit_message(
-            content=None,
-            view=RosterProgressView("Removing accounts…"),
+            content=await loading_status(self.bot, "Removing accounts…"),
+            view=None,
         )
         result = await self.remove_roster_signup_rows(roster_id, player_tags)
         await interaction.edit_original_response(content=result.message, view=None)
@@ -1143,8 +1143,8 @@ class Rosters(commands.Cog):
             return
         if action == "export":
             await interaction.response.edit_message(
-                content=None,
-                view=RosterProgressView("Exporting signups…"),
+                content=await loading_status(self.bot, "Exporting signups…"),
+                view=None,
             )
         else:
             await interaction.response.defer()
@@ -1165,8 +1165,8 @@ class Rosters(commands.Cog):
 
     async def confirm_clear(self, interaction: discord.Interaction, roster_id: int) -> None:
         await interaction.response.edit_message(
-            content=None,
-            view=RosterProgressView("Clearing signups…"),
+            content=await loading_status(self.bot, "Clearing signups…"),
+            view=None,
         )
         result = await self.clear_roster_signups(roster_id)
         await interaction.edit_original_response(content=result.message, view=None)

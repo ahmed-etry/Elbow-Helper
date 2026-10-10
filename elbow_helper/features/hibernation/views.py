@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import discord
+from elbow_helper.discord.application_emojis import loading_status
 from elbow_helper.discord.views import BaseTimeoutView
 
 from elbow_helper.configuration.roles import CORE, LEAD, RECRUITERS
@@ -61,7 +62,10 @@ class CloseTicketConfirmView(BaseTimeoutView):
         if not _has_close_perms(interaction.user):
             await interaction.response.send_message("You don't have permission to use these controls.", ephemeral=True)
             return
-        await interaction.response.send_message("Deleting this ticket...", ephemeral=True)
+        await interaction.response.send_message(
+            await loading_status(interaction.client, "Deleting this ticket..."),
+            ephemeral=True,
+        )
         await interaction.channel.delete()
 
 

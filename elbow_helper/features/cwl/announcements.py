@@ -14,6 +14,7 @@ from typing import List
 from typing import Optional
 
 import discord
+from elbow_helper.discord.application_emojis import loading_status
 from discord import app_commands
 from discord.ext import tasks
 from elbow_helper.discord.interactions import deny
@@ -493,8 +494,13 @@ class CwlAnnouncementMixin:
         if not self._has_any_role(interaction, set(LEAD)):
             await deny(interaction)
             return
-        status_text = "Building the roster announcement preview..." if preview else "Posting roster announcement..."
-        await interaction.response.send_message(status_text, ephemeral=True)
+        status_text = (
+            "Building the roster announcement preview..."
+            if preview else "Posting roster announcement..."
+        )
+        await interaction.response.send_message(
+            await loading_status(interaction.client, status_text), ephemeral=True,
+        )
         mode_value = deadline_mode.value
         LOGGER.info(
             "roster_announcement by %s mode=%s deadline=%s delayed=%s tz=%s preview=%s",
@@ -565,7 +571,10 @@ class CwlAnnouncementMixin:
         if not self._has_any_role(interaction, (LEAD_PLUS | CWL_HELPERS)):
             await deny(interaction)
             return
-        await interaction.response.send_message("Posting CWL brief...", ephemeral=True)
+        await interaction.response.send_message(
+            await loading_status(interaction.client, "Posting CWL brief..."),
+            ephemeral=True,
+        )
         try:
             brief = await self.prepare_cwl_brief(
                 clan=clan.value, mode=mode.value, helper_cwl=helper_cwl,

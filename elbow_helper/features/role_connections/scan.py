@@ -7,6 +7,7 @@ import logging
 from typing import TYPE_CHECKING
 
 import discord
+from elbow_helper.discord.application_emojis import loading_status
 from elbow_helper.discord.interactions import deny
 from elbow_helper.discord.pagination import ADAPTIVE_JUMP_THRESHOLD
 from elbow_helper.discord.pagination import FIRST_PAGE_LABEL
@@ -163,7 +164,11 @@ class ScanConfirmView(BaseTimeoutView):
         disabled = ScanConfirmView(self.cog, current)
         for item in disabled.children:
             item.disabled = True
-        await interaction.response.edit_message(content="Applying role connections now.", view=disabled)
+        await interaction.response.edit_message(
+            content=await loading_status(
+                interaction.client, "Applying role connections now.",
+            ), view=disabled,
+        )
         task = asyncio.create_task(self.cog.run_scan(interaction.message))
         self.cog._scan_tasks.add(task)
         task.add_done_callback(self.cog._scan_tasks.discard)

@@ -14,6 +14,7 @@ from typing import Dict
 from typing import Optional
 
 import discord
+from elbow_helper.discord.application_emojis import loading_status
 from elbow_helper.discord.views import BaseTimeoutView
 
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
@@ -736,7 +737,11 @@ class ExaminationPromoIntakeMixin:
             await interaction.response.send_message("You don't have permission to use this.", ephemeral=True)
             return
         async def ready() -> None:
-            await interaction.response.edit_message(content="Updating the promotion request...", view=None)
+            await interaction.response.edit_message(
+                content=await loading_status(
+                    interaction.client, "Updating the promotion request...",
+                ), view=None,
+            )
         try:
             await self.change_promotion_route(
                 ticket_channel_id=ticket_channel_id,

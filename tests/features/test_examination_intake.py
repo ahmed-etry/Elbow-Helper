@@ -71,6 +71,7 @@ class ExaminationPromoIntakeTests(unittest.IsolatedAsyncioTestCase):
         interaction.user = MagicMock(spec=discord.Member)
         interaction.user.id = 123
         interaction.response.edit_message = AsyncMock()
+        interaction.client.fetch_application_emojis = AsyncMock(return_value=[])
         interaction.followup.send = AsyncMock()
 
         await owner._execute_leadership_promo_route_change(

@@ -60,6 +60,7 @@ class CwlSignupAnnouncementTests(unittest.IsolatedAsyncioTestCase):
         interaction = MagicMock()
         interaction.user = MagicMock()
         interaction.client.get_channel.return_value = target_channel
+        interaction.client.fetch_application_emojis = AsyncMock(return_value=[])
         interaction.response.send_message = AsyncMock()
         interaction.followup.send = AsyncMock()
 

@@ -17,6 +17,7 @@ from typing import Optional
 from typing import Tuple
 
 import discord
+from elbow_helper.discord.application_emojis import loading_status
 from discord import app_commands
 from elbow_helper.discord.pagination import format_page_footer
 from discord.ext import commands
@@ -409,14 +410,14 @@ class RoleConnections(commands.Cog):
                 processed += 1
                 if processed == total or (time.monotonic() - last_update) >= 2:
                     progress = discord.Embed(
-                        title="Applying Role Connections",
+                        title=await loading_status(self.bot, "Applying Role Connections"),
                         description=f"Checking members: {processed}/{total}",
                         color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
                         timestamp=datetime.now(timezone.utc),
                     )
                     progress.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
                     try:
-                        await message.edit(embed=progress)
+                        await message.edit(content=None, embed=progress)
                     except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                         LOGGER.debug("Failed updating scan progress message")
                     last_update = time.monotonic()
@@ -429,7 +430,7 @@ class RoleConnections(commands.Cog):
             )
             summary.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
             try:
-                await message.edit(embed=summary, view=None)
+                await message.edit(content=None, embed=summary, view=None)
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                 LOGGER.debug("Failed posting scan summary")
 

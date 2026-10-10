@@ -66,7 +66,6 @@ from elbow_helper.features.rosters.ui.views import RosterMessageView
 from elbow_helper.features.rosters.ui.views import RosterRemovalView
 from elbow_helper.features.rosters.ui.views import RosterColumnWidthsModal
 from elbow_helper.features.rosters.ui.views import RosterLayoutView
-from elbow_helper.features.rosters.ui.views import RosterProgressView
 from elbow_helper.features.rosters.ui.views import RosterSettingsView
 from elbow_helper.features.rosters.ui.views import RosterTargetMemberView
 from elbow_helper.infrastructure.time import fixed_utc_offset_name
@@ -2464,6 +2463,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         roster.id = 7
         roster.name = "CWL Sign-up"
         cog = object.__new__(Rosters)
+        cog.bot = SimpleNamespace()
         cog._locks = {}
         cog.service = MagicMock()
         cog.service.get = AsyncMock(return_value=roster)
@@ -2484,10 +2484,9 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         await cog.handle_management_action(interaction, roster.id, "export")
 
         interaction.response.edit_message.assert_awaited_once()
-        progress = interaction.response.edit_message.await_args.kwargs["view"]
-        self.assertIsInstance(progress, RosterProgressView)
-        self.assertEqual(progress.children[0].label, "Exporting signups…")
-        self.assertTrue(progress.children[0].disabled)
+        progress = interaction.response.edit_message.await_args.kwargs
+        self.assertEqual(progress["content"], "Exporting signups…")
+        self.assertIsNone(progress["view"])
         cog.publisher.export.assert_awaited_once_with(roster)
         final = interaction.edit_original_response.await_args.kwargs
         self.assertEqual(final["content"], "Exported **CWL Sign-up**.")
@@ -2554,6 +2553,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_clear_confirmation_shows_progress_and_replaces_it(self) -> None:
         cog = object.__new__(Rosters)
+        cog.bot = SimpleNamespace()
         cog.membership = MagicMock()
         cog.membership.clear = AsyncMock(
             return_value=MembershipResult(
@@ -2566,14 +2566,40 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
 
         await cog.confirm_clear(interaction, 7)
 
-        progress = interaction.response.edit_message.await_args.kwargs["view"]
-        self.assertIsInstance(progress, RosterProgressView)
-        self.assertEqual(progress.children[0].label, "Clearing signups…")
-        self.assertTrue(progress.children[0].disabled)
+        progress = interaction.response.edit_message.await_args.kwargs
+        self.assertEqual(progress["content"], "Clearing signups…")
+        self.assertIsNone(progress["view"])
         cog.membership.clear.assert_awaited_once_with(7)
         interaction.edit_original_response.assert_awaited_once_with(
             content="Cleared current signups for 2 members from **CWL Sign-up**.",
             view=None,
+        )
+
+    async def test_clear_progress_uses_loading_emoji_without_buttons(self) -> None:
+        from elbow_helper.discord.application_emojis import ApplicationEmojiCatalog
+
+        cog = object.__new__(Rosters)
+        cog.bot = MagicMock()
+        cog.bot.fetch_application_emojis = AsyncMock()
+        cog.membership = SimpleNamespace(clear=AsyncMock(return_value=MembershipResult(
+            "Cleared current signups for 2 members from **CWL Sign-up**.",
+        )))
+        interaction = MagicMock()
+        interaction.response.edit_message = AsyncMock()
+        interaction.edit_original_response = AsyncMock()
+        provider = SimpleNamespace(get=AsyncMock(return_value=ApplicationEmojiCatalog({
+            "loading": "<a:loading:123>",
+        })))
+        with patch(
+            "elbow_helper.discord.application_emojis.get_application_emoji_provider",
+            return_value=provider,
+        ):
+            await cog.confirm_clear(interaction, 7)
+        interaction.response.edit_message.assert_awaited_once_with(
+            content="<a:loading:123> Clearing signups…", view=None,
+        )
+        interaction.edit_original_response.assert_awaited_once_with(
+            content="Cleared current signups for 2 members from **CWL Sign-up**.", view=None,
         )
 
     async def test_clear_workflow_removes_signups_roles_and_refreshes_posts(self) -> None:
@@ -2856,6 +2882,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         accounts = MagicMock()
         accounts.for_member.return_value = [account]
         cog = object.__new__(Rosters)
+        cog.bot = SimpleNamespace()
         cog.membership = _membership_service(repository, accounts)[0]
         interaction = MagicMock()
         interaction.user.id = 10
@@ -2894,6 +2921,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         accounts = MagicMock()
         accounts.for_member.return_value = []
         cog = object.__new__(Rosters)
+        cog.bot = SimpleNamespace()
         cog.membership = _membership_service(repository, accounts)[0]
         interaction = MagicMock()
         interaction.response.edit_message = AsyncMock()
@@ -2909,10 +2937,9 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         )
 
         interaction.response.edit_message.assert_awaited_once()
-        progress = interaction.response.edit_message.await_args.kwargs["view"]
-        self.assertIsInstance(progress, RosterProgressView)
-        self.assertEqual(progress.children[0].label, "Loading accounts…")
-        self.assertTrue(progress.children[0].disabled)
+        progress = interaction.response.edit_message.await_args.kwargs
+        self.assertEqual(progress["content"], "Loading accounts…")
+        self.assertIsNone(progress["view"])
         interaction.edit_original_response.assert_awaited_once()
         response = interaction.edit_original_response.await_args.kwargs
         self.assertEqual(response["content"], "That member has no linked Clash accounts.")
@@ -2947,6 +2974,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         accounts.for_member.return_value = [account]
         membership, roles, _ = _membership_service(repository, accounts)
         cog = object.__new__(Rosters)
+        cog.bot = SimpleNamespace()
         cog.membership = membership
         interaction = MagicMock()
         interaction.response.edit_message = AsyncMock()
@@ -2963,9 +2991,9 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         )
 
         interaction.response.edit_message.assert_awaited_once()
-        progress = interaction.response.edit_message.await_args.kwargs["view"]
-        self.assertEqual(progress.children[0].label, "Adding accounts…")
-        self.assertTrue(progress.children[0].disabled)
+        progress = interaction.response.edit_message.await_args.kwargs
+        self.assertEqual(progress["content"], "Adding accounts…")
+        self.assertIsNone(progress["view"])
         interaction.edit_original_response.assert_awaited_once_with(
             content="Added 1 account to CWL Sign-up.",
             view=None,
@@ -3097,6 +3125,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         accounts = MagicMock()
         accounts.for_member.return_value = [account]
         cog = object.__new__(Rosters)
+        cog.bot = SimpleNamespace()
         cog.membership = _membership_service(repository, accounts)[0]
         interaction = MagicMock()
         interaction.response.edit_message = AsyncMock()
@@ -3384,6 +3413,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
             MagicMock(),
         )
         cog = object.__new__(Rosters)
+        cog.bot = SimpleNamespace()
         cog.membership = membership
         cog.is_lead = MagicMock(return_value=True)
         interaction = MagicMock()
@@ -3395,9 +3425,9 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         remaining = repository.list_members(roster.id, roster.active_cycle_id)
         self.assertEqual([member.player_tag for member in remaining], ["#B"])
         roles.sync.assert_awaited_once_with(roster, 10, should_have=False)
-        progress = interaction.response.edit_message.await_args.kwargs["view"]
-        self.assertEqual(progress.children[0].label, "Removing accounts…")
-        self.assertTrue(progress.children[0].disabled)
+        progress = interaction.response.edit_message.await_args.kwargs
+        self.assertEqual(progress["content"], "Removing accounts…")
+        self.assertIsNone(progress["view"])
         interaction.edit_original_response.assert_awaited_once_with(
             content="Removed 1 account from **CWL Sign-up**.",
             view=None,

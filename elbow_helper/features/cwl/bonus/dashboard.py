@@ -15,6 +15,7 @@ from typing import List
 from typing import Optional
 
 import discord
+from elbow_helper.discord.application_emojis import loading_status
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -1271,7 +1272,10 @@ class BonusClanSelectView(discord.ui.View):
 
     async def select_clan(self, interaction: discord.Interaction) -> None:
         clan_code = str(self.select_menu.values[0])
-        await interaction.response.edit_message(content="Checking the thread...", view=None)
+        await interaction.response.edit_message(
+            content=await loading_status(interaction.client, "Checking the thread..."),
+            view=None,
+        )
         await self.cog._handle_bonus_clan_selection(interaction, self.board_key, self.board, clan_code)
 
 
@@ -1297,7 +1301,10 @@ class BonusPreviewView(discord.ui.View):
 
     async def confirm(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        await interaction.edit_original_response(content="Sending rewards...", embed=None, view=None)
+        await interaction.edit_original_response(
+            content=await loading_status(interaction.client, "Sending rewards..."),
+            embed=None, view=None,
+        )
         await self.cog._confirm_bonus_candidate(interaction, self.board_key, self.board, self.candidate)
 
     async def use_fallback(self, interaction: discord.Interaction) -> None:

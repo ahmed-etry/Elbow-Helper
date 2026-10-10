@@ -17,6 +17,7 @@ from typing import Optional
 from typing import Set
 
 import discord
+from elbow_helper.discord.application_emojis import loading_status
 from discord import app_commands
 from elbow_helper.discord.interactions import deny
 from elbow_helper.features.rosters.config import CWL_CLAN_ROSTER_IDS
@@ -658,7 +659,8 @@ class CwlTransferMixin:
         async def progress() -> None:
             nonlocal status_message
             status_message = await interaction.followup.send(
-                "Checking CWL rosters...", ephemeral=True, wait=True,
+                await loading_status(interaction.client, "Checking CWL rosters..."),
+                ephemeral=True, wait=True,
             )
 
         prepared = await self.prepare_transfer_reminder(
