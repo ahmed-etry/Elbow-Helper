@@ -32,6 +32,18 @@ CLAN_FIELDS = (
     "tag name type description clanLevel clanPoints members warWins warLosses warTies "
     "warWinStreak isWarLogPublic requiredTownhallLevel"
 ).split()
+PLAYER_CLAN_FIELDS = ("tag", "name", "clanLevel")
+LEAGUE_FIELDS = ("name",)
+HERO_FIELDS = ("name", "level", "maxLevel", "village")
+CLAN_MEMBER_FIELDS = tuple(
+    "tag name role townHallLevel expLevel trophies donations donationsReceived clanRank".split()
+)
+CWL_GROUP_FIELDS = ("state", "season")
+CWL_CLAN_FIELDS = ("tag", "name", "clanLevel")
+CWL_MEMBER_FIELDS = ("tag", "name", "townHallLevel")
+WAR_LOG_FIELDS = ("result", "endTime", "teamSize", "attacksPerMember")
+WAR_SIDE_FIELDS = ("tag", "name", "stars", "destructionPercentage")
+WAR_CLAN_FIELDS = (*WAR_SIDE_FIELDS, "attacks", "expEarned")
 
 
 def _fields(value, names):
@@ -43,11 +55,11 @@ def summary(kind, payload):
         return payload
     if kind == "player":
         result = _fields(payload, PLAYER_FIELDS)
-        for field, names in (("clan", ["tag", "name", "clanLevel"]), ("league", ["name"])):
+        for field, names in (("clan", PLAYER_CLAN_FIELDS), ("league", LEAGUE_FIELDS)):
             if isinstance(payload.get(field), dict):
                 result[field] = _fields(payload[field], names)
         result["heroes"] = [
-            _fields(row, ["name", "level", "maxLevel", "village"])
+            _fields(row, HERO_FIELDS)
             for row in payload.get("heroes", [])
         ]
         return result
@@ -57,21 +69,19 @@ def summary(kind, payload):
             result["description"] = result["description"][:300]
         for field in ("warLeague", "capitalLeague"):
             if isinstance(payload.get(field), dict):
-                result[field] = _fields(payload[field], ["name"])
+                result[field] = _fields(payload[field], LEAGUE_FIELDS)
         result["memberList"] = [
-            _fields(row, (
-                "tag name role townHallLevel expLevel trophies donations donationsReceived clanRank"
-            ).split())
+            _fields(row, CLAN_MEMBER_FIELDS)
             for row in payload.get("memberList", [])
         ]
         return result
     if kind == "cwl_group":
-        result = _fields(payload, ["state", "season"])
+        result = _fields(payload, CWL_GROUP_FIELDS)
         result["clans"] = [
             {
-                **_fields(clan, ["tag", "name", "clanLevel"]),
+                **_fields(clan, CWL_CLAN_FIELDS),
                 "members": [
-                    _fields(row, ["tag", "name", "townHallLevel"])
+                    _fields(row, CWL_MEMBER_FIELDS)
                     for row in clan.get("members", [])
                 ],
             }
@@ -82,12 +92,11 @@ def summary(kind, payload):
     if kind == "war_log":
         return {"items": [
             {
-                **_fields(row, ["result", "endTime", "teamSize", "attacksPerMember"]),
+                **_fields(row, WAR_LOG_FIELDS),
                 **{
-                    field: _fields(row[field], [
-                        "tag", "name", "stars", "destructionPercentage",
-                        *(["attacks", "expEarned"] if field == "clan" else []),
-                    ])
+                    field: _fields(
+                        row[field], WAR_CLAN_FIELDS if field == "clan" else WAR_SIDE_FIELDS,
+                    )
                     for field in ("clan", "opponent") if field in row
                 },
             }

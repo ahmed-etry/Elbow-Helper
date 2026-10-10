@@ -211,7 +211,6 @@ def member_tools():
             contract=CapabilityContract(
                 entity_fields=(("member_ids", "discord_member_set"),), filter_fields=("sort",),
             ),
-            returns="members[].member_id,display_name,joined_at",
         ),
         RegisteredAgentTool(
             AgentToolDefinition(

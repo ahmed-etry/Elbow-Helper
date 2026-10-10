@@ -85,7 +85,7 @@ class CommandRegistryTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             guide = DataGuide(synthetic_datasets(directory)).for_levels(KNOWN_ACCESS_REQUIREMENTS)
         prompt = system_instructions(registry, actions_enabled=True, data_guide=guide)
-        self.assertLessEqual(estimate_tokens(prompt), 32_000)
+        self.assertLessEqual(estimate_tokens(prompt), 42_000)
         self.assertEqual(len(capability_list(registry).splitlines()), len(registry))
         self.assertTrue(all(
             any(

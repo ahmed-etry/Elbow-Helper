@@ -63,7 +63,6 @@ def _record_outcome(context: Any, outcome: ActionOutcome,
 def build_command_tools(
     bot: Any, adapters: Sequence[CommandAdapter],
 ) -> tuple[dict[str, RegisteredAgentTool], dict[str, CommandCapability]]:
-    from ..engine.result_hints import RETURN_HINTS
     capabilities = build_command_capabilities(bot, adapters)
     tools: dict[str, RegisteredAgentTool] = {}
     for name, capability in capabilities.items():
@@ -114,7 +113,7 @@ def build_command_tools(
                     "visibility": outcome.visibility}
         tools[name] = RegisteredAgentTool(
             capability.definition, handle, AgentCapabilityEffect.COMMAND,
-            capability.adapter.classification, returns=RETURN_HINTS.get(name),
+            capability.adapter.classification, returns="command,status,visibility?",
         )
     return tools, capabilities
 

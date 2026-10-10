@@ -74,10 +74,6 @@ def cwl_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
             handler,
             contract=TOOL_CONTRACTS[name],
-            returns=(
-                "players[].player_tag,ass_score" if name == "cwl_ass_scores"
-                else "rows[].player_tag,average_adjusted_delta"
-            ),
         )
         for name, description, properties, required, handler in definitions
     )

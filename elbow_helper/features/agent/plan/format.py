@@ -39,6 +39,12 @@ def system_instructions(
     ]
     if actions_enabled:
         parts.extend((ACTION_PLANNING_RULES, STANDING_RULE_RULES))
+    parts.append(
+        "Return hints name record fields: {...} is an object, [...] is a list, ? marks a "
+        "conditional field, and * means keys depend on the query or source. Every result also "
+        "has flags:{status,truncated,limits?}. Use these fields to plan references and spreadsheet "
+        "columns before running the steps."
+    )
     parts.append(f"<capabilities>\n{capability_list(registry)}\n</capabilities>")
     if data_guide:
         parts.append(f"<data_guide>\n{data_guide}\n</data_guide>")
