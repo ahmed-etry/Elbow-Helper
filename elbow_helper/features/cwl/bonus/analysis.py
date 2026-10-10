@@ -130,8 +130,25 @@ class BonusAnalysisService:
 
 
     def analyze_clan(
-        self, clan_code: str, season: str, config: Dict[str, Any]
-    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]], List[str], List[str]]:
+        self, clan_code: str, season: str, config: Dict[str, Any],
+    ) -> tuple[list, list, list, list[str], list[str]]:
+        warnings: List[str] = []
+        try:
+            wars = self._repository.bonus_wars(clan_code, season)
+        except sqlite3.Error:
+            LOGGER.exception("Failed loading CWL bonus data clan=%s season=%s", clan_code, season)
+            return [], [], [], warnings, [f"{clan_code}: CWL data couldn't be loaded."]
+        if not wars:
+            warnings.append(f"No completed CWL wars are available for {clan_code} in {season}.")
+        summary, ineligible, raw, scoring_warnings, errors = self.analyze_wars(
+            clan_code, wars, config,
+        )
+        return summary, ineligible, raw, warnings + scoring_warnings, errors
+
+    def analyze_wars(
+        self, clan_code: str, wars: List[Dict[str, Any]], config: Dict[str, Any],
+    ) -> tuple[list, list, list, list[str], list[str]]:
+        """Score exactly these wars together using the configured bonus calculation."""
         warnings: List[str] = []
         errors: List[str] = []
         clan_name = CLAN_NAMES.get(clan_code, clan_code)
@@ -147,13 +164,6 @@ class BonusAnalysisService:
         downhit_severe_base = float(profile.get("downhit_severe_base", 0.20))
         downhit_severe_multiplier = float(profile.get("downhit_severe_multiplier", 2.0))
 
-        try:
-            wars = self._repository.bonus_wars(clan_code, season)
-        except sqlite3.Error:
-            LOGGER.exception("Failed loading CWL bonus data clan=%s season=%s", clan_code, season)
-            return [], [], [], warnings, [f"{clan_code}: CWL data couldn't be loaded."]
-        if not wars:
-            warnings.append(f"No completed CWL wars are available for {clan_code} in {season}.")
         player_stats: Dict[str, Dict[str, Any]] = {}
         raw_rows: List[Dict[str, Any]] = []
         missing_matchups: Set[str] = set()

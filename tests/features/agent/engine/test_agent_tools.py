@@ -201,10 +201,22 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
         ].definition.description
 
         self.assertIn("projected to seven attacks", description)
-        self.assertIn("day (round)", description)
-        self.assertIn("scope and sample size", description)
-        self.assertIn("do not present a partial-scope result", description)
+        self.assertIn("a CWL day is a round", description)
+        self.assertIn("wars and sample size", description)
+        self.assertIn("do not present a partial selection", description)
+        self.assertIn("query_bot_data from health.wars", description)
         self.assertIn("Return every player row", description)
+
+    def test_cwl_scoring_catalogue_lines_name_the_calculation(self):
+        from elbow_helper.features.agent.plan import capability_list
+
+        lines = capability_list(build_agent_tools()).splitlines()
+        for name, calculation in (
+            ("cwl_ass_scores", "Calculate one combined CWL ASS result for chosen war IDs"),
+            ("cwl_bonus_scores", "Apply the clan's CWL bonus scoring to chosen war IDs"),
+        ):
+            self.assertTrue(next(line for line in lines if line.startswith(name + ":"))
+                            .startswith(name + ": " + calculation))
 
     def test_cwl_bonus_tool_preserves_metric_and_side_effect_boundaries(self) -> None:
         tools = build_agent_tools()

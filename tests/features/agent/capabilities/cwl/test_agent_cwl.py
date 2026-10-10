@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -18,16 +19,23 @@ from elbow_helper.features.agent.capabilities.cwl.scoring import cwl_ass_scores,
 from elbow_helper.features.agent.files.spreadsheet_tools import prepare_spreadsheet
 from elbow_helper.features.agent.engine.registry import build_agent_tools
 from elbow_helper.features.agent.engine.service import AgentService
+from elbow_helper.features.agent.engine.budgets import MAX_TOOL_RESULT_CHARACTERS
+from elbow_helper.features.agent.engine.tool_call import bound_tool_result
+from elbow_helper.features.agent.plan.results import model_view
+from elbow_helper.features.cwl.bonus.analysis import BonusAnalysisService
+from elbow_helper.features.cwl.queries import CwlQueries
+from elbow_helper.infrastructure.clash import ClashClient
+from features.test_cwl_queries import _History, _BonusConfig, _dataset
 from elbow_helper.infrastructure.exports import LocalExportStore, WorkbookWriter
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from openpyxl import load_workbook
 from features.agent.engine.test_agent_plan_flow import _Session, _Model, _model_step
 
 from elbow_helper.features.cwl.queries import (
-    CwlAssScopeRow, CwlAssScopeSnapshot, CwlBonusAttackScore,
-    CwlBonusScopeSnapshot, CwlBonusSettings, CwlClanSeasonSummary,
+    CwlAssScopeRow, CwlAssWarsSnapshot, CwlBonusAttackScore,
+    CwlBonusWarsSnapshot, CwlBonusSettings, CwlClanSeasonSummary,
     CwlPerformanceRow, CwlPerformanceSnapshot,
-    CwlSeasonCoverage, CwlSeasonCoverageSnapshot, CwlThreadRegistration,
+    CwlThreadRegistration,
 )
 
 
@@ -65,57 +73,64 @@ class _Queries:
     def registered_threads(self):
         return self.threads
 
-    def ass_season_coverage(self, *, clan_code):
-        self.calls.append(("ass_season_coverage", clan_code))
-        return CwlSeasonCoverageSnapshot(
-            "2026-09-17T12:00:00+00:00", clan_code,
-            (CwlSeasonCoverage("2026-09", 1, 2000, False),
-             CwlSeasonCoverage("2026-08", 7, 1007, True)),
-            "2026-08",
-        )
 
-    def ass_scope(
-        self, *, clan_code, season, scope_type, cwl_round=None, war_id=None,
-    ):
-        self.calls.append((
-            "ass_scope", clan_code, season, scope_type, cwl_round, war_id,
-        ))
-        return CwlAssScopeSnapshot(
-            "2026-09-17T12:00:00+00:00", clan_code, season, scope_type,
-            cwl_round, war_id, (war_id or "war-1",),
-            (cwl_round or 1,), 1, "Champion League II", "high_2026_06",
+    def ass_wars(self, *, clan_code, war_ids):
+        self.calls.append(("ass_wars", clan_code, war_ids))
+        return CwlAssWarsSnapshot(
+            "2026-09-17T12:00:00+00:00", clan_code, ("2026-08",),
+            tuple(war_ids), (1,), 1, "Champion League II", "high_2026_06",
             "High League Standard (Jun 2026)", 0.4, "high_linear",
-            (
-                "calculated_from_selected_scope"
-            ),
-            (
-                "selected_season_completed_wars"
-                if scope_type == "season" else "selected_completed_wars"
-            ),
+            "calculated_from_selected_scope", "selected_completed_wars",
             (CwlAssScopeRow(
                 "#P0", "Alpha", 18, 1, 1, 1, 3, 100.0,
-                1.0, 0.0, 1.0, 21.0, 1, 1,
-                21.0, 0.0, 0.0, 0.0,
-            ),),
+                1.0, 0.0, 1.0, 21.0, 1, 1, 21.0, 0.0, 0.0, 0.0,
+            ),), ({"war_id": war_ids[0], "stars": 3},),
         )
 
-    def bonus_scope(
-        self, *, clan_code, season, scope_type, cwl_round=None, war_tag=None,
-    ):
-        self.calls.append((
-            "bonus_scope", clan_code, season, scope_type, cwl_round, war_tag,
-        ))
-        return CwlBonusScopeSnapshot(
-            "2026-09-17T12:00:00+00:00", clan_code, season, scope_type,
-            cwl_round, war_tag, (cwl_round or 1,), (war_tag or "#WAR",),
+    def bonus_wars(self, *, clan_code, war_ids):
+        self.calls.append(("bonus_wars", clan_code, war_ids))
+        return CwlBonusWarsSnapshot(
+            "2026-09-17T12:00:00+00:00", clan_code, ("2026-08",),
+            (1,), tuple(war_ids),
             CwlBonusSettings(4, "2026-08-01T00:00:00+00:00", 2, 8,
                              0.15, 0.10, 0, 0.20, 2.0),
             (), (), (CwlBonusAttackScore(
-                cwl_round or 1, war_tag or "#WAR", "#P0", "Alpha", 18,
+                1, war_ids[0], "#P0", "Alpha", 18,
                 "#D", 18, 3, 100.0, 3.0, 2.0, 0, "18:18", 1.0,
                 0.0, 1.0, 3, "",
-            ),), (), "selected_scored_attacks",
+            ),), (), "selected_scored_attacks", tuple(war_ids), len(war_ids),
         )
+
+
+def _large_selection_queries():
+    sample = _dataset()
+    dataset = {"wars": [], "roster": [], "attacks": []}
+    for month in range(1, 9):
+        for round_number in range(1, 8):
+            war_id = f"CWL:#WAR{month}{round_number}"
+            dataset["wars"].append({
+                **sample["wars"][0], "war_id": war_id, "cwl_season": f"2026-{month:02d}",
+                "cwl_round": round_number, "team_size": 30, "state": "warEnded",
+            })
+            for index in range(30):
+                player = {"player_tag": f"#P{index}", "player_name": f"Synthetic {index:02d}"}
+                dataset["roster"].append({
+                    **sample["roster"][0], **player, "war_id": war_id,
+                    "map_position": index + 1, "attacks_used": 1,
+                })
+                dataset["attacks"].append({
+                    **sample["attacks"][0], **player, "war_id": war_id,
+                    "attack_order": index + 1, "defender_map_position": index + 1,
+                    "defender_tag": f"#D{index}", "stars": 2 + index % 2,
+                    "destruction": 80.5 + index % 2 * 19.5,
+                })
+    history = _History(dataset)
+    queries = CwlQueries(
+        history, lambda: {}, bonus_config=_BonusConfig(),
+        bonus_analysis=BonusAnalysisService(ClashClient(None), history),
+        clock=lambda: datetime(2026, 9, 17, 12, tzinfo=timezone.utc),
+    )
+    return queries, [war["war_id"] for war in dataset["wars"]]
 
 
 class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
@@ -127,7 +142,7 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
             "goal": "Synthetic season scores", "effort": "low", "output": "prepare_spreadsheet",
             "steps": [
                 {"id": "scores", "capability": "cwl_ass_scores", "depends_on": [],
-                 "arguments": {"clan_code": "BE1", "season": "2026-08", "scope_type": "season"}},
+                 "arguments": {"clan_code": "BE1", "war_ids": ["CWL:#WAR"]}},
                 {"id": "workbook", "capability": "prepare_spreadsheet", "depends_on": ["scores"],
                  "arguments": {"title": "Synthetic season", "sheets": [{
                      "name": "Scores", "rows_from": {"step": "scores", "path": ["players"]},
@@ -163,7 +178,7 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(workbook["Scores"]["B2"].data_type, "n")
             finally:
                 workbook.close()
-            self.assertIn(("ass_scope", "BE1", "2026-08", "season", None, None),
+            self.assertIn(("ass_wars", "BE1", ["CWL:#WAR"]),
                           self.queries.calls)
 
     def setUp(self):
@@ -182,6 +197,51 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
             account_links=None, message_search=None,
             cwl_queries=self.queries,
         )
+
+    async def _assert_large_selection_keeps_scores(self, capability, row_field):
+        queries, war_ids = _large_selection_queries()
+        self.context = replace(self.context, cwl_queries=queries)
+        plan = {"goal": "Synthetic scores", "effort": "low", "output": "text", "steps": [{
+            "id": "scores", "capability": capability, "depends_on": [],
+            "arguments": {"clan_code": "BEH", "war_ids": war_ids},
+        }]}
+        session = _Session([
+            _model_step(plan), AgentStep("Synthetic scores ready", (), AgentUsage()),
+        ], [])
+        registry = build_agent_tools()
+        with patch("elbow_helper.features.agent.engine.service.build_agent_tools",
+                   return_value={capability: registry[capability]}):
+            answer = await AgentService(_Model(session)).answer(
+                question="Synthetic chosen war scores", local_context="", context=self.context,
+            )
+        self.assertEqual(answer, "Synthetic scores ready")
+        record = json.loads(self.context.state.evidence[0])
+        payload = json.loads(record["result"])
+        self.assertEqual(next(iter(payload)), row_field)
+        self.assertEqual(payload["completed_wars"], 56)
+        self.assertEqual(set(payload["resolved_war_ids"]), set(war_ids))
+        self.assertEqual(len(payload[row_field]), 30)
+        self.assertEqual(len(payload["attack_sample"]), 56 * 30)
+        self.assertTrue(all(row["attacks" if row_field == "players" else "attack_count"] == 56
+                            for row in payload[row_field]))
+        view = model_view(payload)
+        content = json.dumps(view, ensure_ascii=False, default=str, separators=(",", ":"))
+        bounded = bound_tool_result(content, MAX_TOOL_RESULT_CHARACTERS)
+        self.assertLessEqual(len(bounded), MAX_TOOL_RESULT_CHARACTERS)
+        excerpt = json.loads(bounded)["result_excerpt"]
+        self.assertIn(json.dumps(view[row_field], ensure_ascii=False, default=str,
+                                 separators=(",", ":")), excerpt)
+        result = json.loads(session.calls[1][0][0].content)["results"]["scores"]
+        self.assertEqual(result["result_excerpt"], excerpt)
+        self.assertEqual(result["flags"]["status"], "partial")
+        self.assertTrue(result["flags"]["truncated"])
+        self.assertFalse(record["result_complete"])
+
+    async def test_ass_keeps_all_30_player_scores_when_56_wars_exceed_the_result_limit(self):
+        await self._assert_large_selection_keeps_scores("cwl_ass_scores", "players")
+
+    async def test_bonus_keeps_all_30_player_scores_when_56_wars_exceed_the_result_limit(self):
+        await self._assert_large_selection_keeps_scores("cwl_bonus_scores", "rows")
 
     async def test_complete_performance_report_is_retained_and_paged(self):
         first = await read_cwl_performance(self.context, {"history_limit": 3})
@@ -235,7 +295,7 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_scoped_ass_evidence_can_feed_generic_spreadsheet_output(self):
         result = await cwl_ass_scores(self.context, {
-            "clan_code": "BE1", "season": "2026-08", "scope_type": "war", "war_id": "CWL:#WAR",
+            "clan_code": "BE1", "war_ids": ["CWL:#WAR"],
         })
         self.context.guild.filesize_limit = 8 * 1024 * 1024
         player = result["players"][0]
@@ -262,11 +322,11 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_configured_bonus_scope_is_retained_and_distinct_from_ass(self):
         result = await cwl_bonus_scores(self.context, {
-            "clan_code": "BE1", "season": "2026-08", "scope_type": "war", "war_tag": "#WAR",
+            "clan_code": "BE1", "war_ids": ["#WAR"],
         })
         self.assertEqual(result["metric_name"], "Configured CWL bonus adjusted delta")
         self.assertFalse(result["ass_distinction"]["is_ass"])
-        self.assertEqual(result["rows"][0]["adjusted_delta"], 1.0)
+        self.assertEqual(result["attack_sample"][0]["adjusted_delta"], 1.0)
         self.assertEqual(result["settings"]["revision"], 4)
 
     async def test_bonus_scope_access_loss_before_retention_fails_closed(self):
@@ -276,7 +336,7 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.assertRaises(AgentAccessLost):
                 await cwl_bonus_scores(self.context, {
-                    "clan_code": "BE1", "season": "2026-08", "scope_type": "war", "war_tag": "#WAR",
+                    "clan_code": "BE1", "war_ids": ["#WAR"],
                 })
         self.assertEqual(self.context.state.reports, {})
 

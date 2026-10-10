@@ -5,9 +5,6 @@ import unittest
 from elbow_helper.features.cwl.config import CWL_CLAN_NAMES
 from elbow_helper.features.cwl.bonus.analysis import BonusAnalysisService
 from elbow_helper.features.cwl.queries import CwlQueries
-from elbow_helper.features.cwl.roster.analysis import (
-    build_ass_season_metrics, profiles_for_roster_history,
-)
 from elbow_helper.infrastructure.clash import ClashClient
 
 
@@ -29,19 +26,15 @@ class _History:
             if not codes or str(war["clan_code"]) in codes
         }, reverse=True)
 
-    def cwl_season_coverage(self, clan_code):
-        groups = {}
-        for war in self.dataset["wars"]:
-            if war["clan_code"] != clan_code:
-                continue
-            group = groups.setdefault(war["cwl_season"], {"ids": set(), "end_ts": 0})
-            group["ids"].add(war["war_id"])
-            group["end_ts"] = max(group["end_ts"], war["end_ts"])
-        return [
-            {"season": season, "ended_wars": len(group["ids"]),
-             "latest_end_ts": group["end_ts"]}
-            for season, group in groups.items()
-        ]
+
+    def scoring_wars(self, clan_code, war_ids):
+        selected = [war for season in self.bonus_seasons([clan_code])
+                    for war in self.bonus_wars(clan_code, season)
+                    if war["war_id"].removeprefix("CWL:") in war_ids]
+        missing = set(war_ids) - {war["war_id"].removeprefix("CWL:") for war in selected}
+        if missing:
+            raise ValueError("Unknown CWL war IDs: " + ", ".join(sorted(missing)))
+        return selected
 
     def bonus_wars(self, clan_code, season):
         result = []
@@ -127,22 +120,6 @@ class CwlQueriesTests(unittest.TestCase):
         result = CwlQueries(_History(dataset), lambda: {}).performance(season="2026-08-catchup")
         self.assertEqual(result.rows[0].season, "2026-08-catchup")
 
-    def test_season_coverage_keeps_partial_season_distinct_from_seven_war_history(self):
-        dataset = _dataset()
-        dataset["wars"].append({
-            "war_id": "new-partial", "cwl_season": "2026-09",
-            "clan_code": "BEH", "end_ts": 2000,
-        })
-        queries = self.bonus_queries(dataset)
-        snapshot = queries.ass_season_coverage(clan_code="BEH")
-        self.assertEqual([row.season for row in snapshot.seasons],
-                         ["2026-09", "2026-08"])
-        self.assertEqual([row.ended_wars for row in snapshot.seasons], [1, 7])
-        self.assertEqual([row.seven_wars_recorded for row in snapshot.seasons],
-                         [False, True])
-        self.assertEqual(snapshot.latest_seven_war_season, "2026-08")
-        self.assertEqual(queries.ass_seasons(clan_code=snapshot.clan_code),
-                         tuple(row.season for row in snapshot.seasons))
 
     def bonus_queries(self, dataset=None, *, config=None):
         history = _History(dataset or _dataset())
@@ -198,193 +175,83 @@ class CwlQueriesTests(unittest.TestCase):
         state.clear()
         self.assertEqual(queries.registered_threads(), ())
 
-    def test_ass_scope_scores_the_selected_season_wars(self):
-        queries = CwlQueries(
-            _History(_dataset()), lambda: {},
-            clock=lambda: datetime(2026, 9, 17, 12, tzinfo=timezone.utc),
-        )
-
-        result = queries.ass_scope(
-            clan_code="BEH", season="2026-08", scope_type="season",
-        )
-
-        self.assertEqual(result.scoring_status, "calculated_from_selected_scope")
-        self.assertEqual(
-            result.coverage_status, "selected_season_completed_wars",
-        )
-        self.assertEqual(result.completed_wars, 7)
-        self.assertEqual(result.profile_key, "high_2026_06")
-        self.assertEqual(result.rows[0].player_tag, "#AAA")
-        self.assertEqual(result.rows[0].ass_score, 23.8)
-        self.assertEqual(result.rows[0].rank, 1)
-
-    def test_ass_scope_calculates_round_and_war_projections(self):
-        queries = CwlQueries(_History(_dataset()), lambda: {})
-
-        round_result = queries.ass_scope(
-            clan_code="BEH", season="2026-08", scope_type="round",
-            cwl_round=3,
-        )
-        war_result = queries.ass_scope(
-            clan_code="BEH", season="2026-08", scope_type="war",
-            war_id="war-4",
-        )
-
-        self.assertEqual(round_result.resolved_war_ids, ("war-3",))
-        self.assertEqual(
-            round_result.scoring_status, "calculated_from_selected_scope",
-        )
-        self.assertEqual(round_result.rows[0].attacks, 1)
-        self.assertEqual(round_result.rows[0].projected_stars, 21.0)
-        self.assertEqual(round_result.rows[0].ass_score, 23.8)
-        self.assertEqual(war_result.resolved_rounds, (4,))
-        self.assertEqual(
-            war_result.scoring_status, "calculated_from_selected_scope",
-        )
-        self.assertEqual(war_result.rows[0].projected_stars, 21.0)
-
-    def test_ass_scope_scores_partial_season_and_reports_missing_evidence(self):
-        dataset = _dataset()
-        dataset["wars"] = dataset["wars"][:3]
-        dataset["roster"] = dataset["roster"][:3]
-        dataset["attacks"] = dataset["attacks"][:3]
-        queries = CwlQueries(_History(dataset), lambda: {})
-
-        partial = queries.ass_scope(
-            clan_code="BEH", season="2026-08", scope_type="season",
-        )
-        missing = queries.ass_scope(
-            clan_code="BEH", season="2026-08", scope_type="war",
-            war_id="unknown",
-        )
-
-        self.assertEqual(
-            partial.scoring_status, "calculated_from_selected_scope",
-        )
-        self.assertEqual(
-            partial.coverage_status, "selected_season_completed_wars",
-        )
-        self.assertTrue(all(row.ass_score is not None for row in partial.rows))
-        self.assertEqual(missing.scoring_status, "unavailable")
-        self.assertEqual(missing.coverage_status, "no_matching_completed_wars")
-        self.assertEqual(missing.rows, ())
-        for arguments in (
-            {"clan_code": "BEH", "season": "2026-08", "scope_type": "round"},
-            {"clan_code": "BEH", "season": "2026-08", "scope_type": "season", "cwl_round": 1},
-            {"clan_code": "BAD", "season": "2026-08", "scope_type": "season"},
-        ):
-            with self.subTest(arguments=arguments), self.assertRaises(ValueError):
-                queries.ass_scope(**arguments)
-
-    def test_partial_scope_scores_match_authoritative_ass_calculation(self):
-        dataset = _dataset()
-        dataset["attacks"][2].update({
-            "stars": 2, "destruction": 75,
-            "defender_map_position": 4,
-        })
-        history = _History(dataset)
-        queries = CwlQueries(history, lambda: {})
-        selected = history.bonus_wars("BEH", "2026-08")[2:3]
-        wars = [{
-            key: value for key, value in selected[0].items()
-            if key not in {"roster", "attacks"}
-        }]
-        roster = [{
-            **row, "war_id": wars[0]["war_id"], "clan_code": "BEH",
-        } for row in selected[0]["roster"]]
-        attacks = [{
-            **row, "war_id": wars[0]["war_id"], "clan_code": "BEH",
-        } for row in selected[0]["attacks"]]
-        profiles, _ = profiles_for_roster_history(wars)
-        expected = build_ass_season_metrics(
-            wars=wars, roster=roster, attacks=attacks,
-            season_order={"2026-08": 1}, profiles_by_clan=profiles,
-        )[0]
-
-        actual = queries.ass_scope(
-            clan_code="BEH", season="2026-08", scope_type="round",
-            cwl_round=3,
-        ).rows[0]
-        exact_war = queries.ass_scope(
-            clan_code="BEH", season="2026-08", scope_type="war",
-            war_id="war-3",
-        ).rows[0]
-
-        fields = {
-            "ass_score": "score", "projected_stars": "projected_stars",
-            "missed_stars": "missed_stars",
-            "missed_adjustment": "missed_adjustment",
-            "difficulty_adjustment": "difficulty_adjustment",
-            "average_destruction": "average_destruction",
-            "rank": "rank", "rank_total": "rank_total",
-        }
-        for actual_field, expected_field in fields.items():
-            with self.subTest(field=actual_field):
-                self.assertEqual(
-                    getattr(actual, actual_field),
-                    getattr(expected, expected_field),
-                )
-                self.assertEqual(
-                    getattr(exact_war, actual_field),
-                    getattr(expected, expected_field),
-                )
-
-    def test_ass_scope_resolves_a_clash_war_tag_to_stored_war_identity(self):
-        dataset = _dataset()
-        dataset["wars"][0]["war_id"] = "CWL:#WAR"
-        dataset["roster"][0]["war_id"] = "CWL:#WAR"
-        dataset["attacks"][0]["war_id"] = "CWL:#WAR"
-        queries = CwlQueries(_History(dataset), lambda: {})
-
-        result = queries.ass_scope(
-            clan_code="BEH", season="2026-08", scope_type="war",
-            war_id="#WAR",
-        )
-
-        self.assertEqual(result.requested_war_id, "#WAR")
-        self.assertEqual(result.resolved_war_ids, ("CWL:#WAR",))
-
-    def test_bonus_scope_reuses_configured_scoring_and_filters_after_analysis(self):
+    def test_full_season_war_set_matches_feature_season_scores(self):
         queries = self.bonus_queries()
-
-        season = queries.bonus_scope(
-            clan_code="BEH", season="2026-08", scope_type="season",
+        ids = [f"war-{number}" for number in range(1, 8)]
+        ass = queries.ass_wars(clan_code="BEH", war_ids=ids)
+        feature = queries.performance(season="2026-08", clan_code="BEH")
+        self.assertEqual(ass.rows[0].ass_score, feature.rows[0].score)
+        self.assertEqual(ass.rows[0].ass_score, 23.8)
+        self.assertEqual(ass.completed_wars, 7)
+        self.assertEqual(len(ass.attack_sample), 7)
+        bonus = queries.bonus_wars(clan_code="BEH", war_ids=ids)
+        summary, _, attacks, _, _ = queries._bonus_analysis.analyze_clan(
+            "BEH", "2026-08", queries._bonus_config.config,
         )
-        round_result = queries.bonus_scope(
-            clan_code="BEH", season="2026-08", scope_type="round",
-            cwl_round=3,
-        )
-        war_result = queries.bonus_scope(
-            clan_code="BEH", season="2026-08", scope_type="war",
-            war_tag="war-4",
-        )
+        self.assertEqual(bonus.summaries[0].total_adjusted_delta,
+                         summary[0]["total_adjusted_delta"])
+        self.assertEqual(len(bonus.attacks), len(attacks))
 
-        self.assertEqual(season.settings.revision, 4)
-        self.assertEqual(season.settings.max_downhit, 2)
-        self.assertEqual(season.coverage_status, "stored_season_scoring")
-        self.assertEqual(len(season.summaries), 1)
-        self.assertEqual(season.summaries[0].average_adjusted_delta, 1.0)
-        self.assertEqual(len(season.attacks), 7)
-        self.assertEqual(round_result.resolved_rounds, (3,))
-        self.assertEqual(len(round_result.attacks), 1)
-        self.assertEqual(round_result.attacks[0].adjusted_delta, 1.0)
-        self.assertEqual(round_result.summaries, ())
-        self.assertEqual(war_result.resolved_war_tags, ("war-4",))
-
-    def test_bonus_scope_reports_missing_match_and_configuration_failures(self):
+    def test_one_war_projects_to_seven_attacks_with_exact_sample(self):
         queries = self.bonus_queries()
-        missing = queries.bonus_scope(
-            clan_code="BEH", season="2026-08", scope_type="war",
-            war_tag="#NONE",
-        )
-        self.assertEqual(missing.coverage_status, "no_matching_scored_attacks")
-        self.assertEqual(missing.attacks, ())
+        result = queries.ass_wars(clan_code="BEH", war_ids=["war-3"])
+        self.assertEqual(result.resolved_rounds, (3,))
+        self.assertEqual(result.resolved_war_ids, ("war-3",))
+        self.assertEqual(result.rows[0].attacks, 1)
+        self.assertEqual(result.rows[0].projected_stars, 21.0)
+        self.assertEqual(result.attack_sample[0]["war_id"], "war-3")
+        bonus = queries.bonus_wars(clan_code="BEH", war_ids=["war-3"])
+        self.assertEqual(bonus.summaries[0].attack_count, 1)
+        self.assertEqual(bonus.attacks[0].adjusted_delta, 1.0)
 
-        unavailable = self.bonus_queries(config=_BonusConfig(config={}, errors=[
-            "missing settings",
-        ]))
-        unavailable._bonus_config.config = None
+    def test_chosen_rounds_are_scored_as_one_combined_sample(self):
+        dataset = _dataset()
+        for index, stars in ((1, 1), (3, 1), (4, 3)):
+            dataset["attacks"][index].update(stars=stars, destruction=50)
+        queries = self.bonus_queries(dataset)
+        ids = ["war-2", "war-4", "war-5"]
+        combined = queries.ass_wars(clan_code="BEH", war_ids=ids)
+        self.assertEqual(combined.resolved_rounds, (2, 4, 5))
+        self.assertEqual(combined.rows[0].attacks, 3)
+        self.assertEqual(combined.rows[0].stars, 5)
+        self.assertAlmostEqual(combined.rows[0].projected_stars, 35 / 3)
+        self.assertEqual(len(combined.attack_sample), 3)
+        bonus = queries.bonus_wars(clan_code="BEH", war_ids=ids)
+        self.assertEqual(bonus.summaries[0].attack_count, 3)
+        for key in ids:
+            single = queries.ass_wars(clan_code="BEH", war_ids=[key])
+            self.assertNotEqual(combined.rows[0].ass_score, single.rows[0].ass_score)
+            one_bonus = queries.bonus_wars(clan_code="BEH", war_ids=[key])
+            self.assertNotEqual(bonus.summaries[0].average_adjusted_delta,
+                                one_bonus.summaries[0].average_adjusted_delta)
+
+    def test_wars_from_two_seasons_produce_one_player_result(self):
+        dataset = _dataset()
+        dataset["wars"][0]["cwl_season"] = "2026-07"
+        dataset["attacks"][0].update(stars=1, destruction=50)
+        queries = self.bonus_queries(dataset)
+        ids = ["war-1", "war-2"]
+        result = queries.ass_wars(clan_code="BEH", war_ids=ids)
+        self.assertEqual(result.seasons, ("2026-07", "2026-08"))
+        self.assertEqual(len(result.rows), 1)
+        self.assertEqual(result.rows[0].projected_stars, 14.0)
+        self.assertEqual(result.rows[0].attacks, 2)
+        bonus = queries.bonus_wars(clan_code="BEH", war_ids=ids)
+        self.assertEqual(bonus.seasons, result.seasons)
+        self.assertEqual(len(bonus.summaries), 1)
+        self.assertEqual(bonus.summaries[0].attack_count, 2)
+
+    def test_chosen_war_ids_accept_prefix_and_reject_duplicates_and_caps(self):
+        queries = self.bonus_queries()
+        result = queries.ass_wars(clan_code="BEH", war_ids=["CWL:war-1"])
+        self.assertEqual(result.resolved_war_ids, ("war-1",))
+        for ids in ([], ["war-1", "CWL:war-1"], [""], list(map(str, range(57)))):
+            for method in (queries.ass_wars, queries.bonus_wars):
+                with self.subTest(ids=ids, method=method), self.assertRaises(ValueError):
+                    method(clan_code="BEH", war_ids=ids)
+
+    def test_bonus_chosen_wars_report_configuration_failures(self):
+        queries = self.bonus_queries()
+        queries._bonus_config.config = None
         with self.assertRaisesRegex(ValueError, "settings are unavailable"):
-            unavailable.bonus_scope(
-                clan_code="BEH", season="2026-08", scope_type="season",
-            )
+            queries.bonus_wars(clan_code="BEH", war_ids=["war-1"])

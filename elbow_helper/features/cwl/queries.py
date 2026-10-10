@@ -21,9 +21,10 @@ MAX_HISTORY_SEASONS = 12
 
 
 class CwlHistorySource(Protocol):
-    def cwl_season_coverage(
-        self, clan_code: str,
+    def scoring_wars(
+        self, clan_code: str, war_ids: list[str],
     ) -> list[dict[str, Any]]: ...
+
 
     def roster_history(
         self, history_limit: int | None, *, season: str | None = None,
@@ -40,8 +41,8 @@ class CwlHistorySource(Protocol):
 
 
 class CwlBonusAnalysisSource(Protocol):
-    def analyze_clan(
-        self, clan_code: str, season: str, config: dict[str, Any],
+    def analyze_wars(
+        self, clan_code: str, wars: list[dict[str, Any]], config: dict[str, Any],
     ) -> tuple[
         list[dict[str, Any]], list[dict[str, Any]],
         list[dict[str, Any]], list[str], list[str],
@@ -65,20 +66,8 @@ class CwlClanSeasonSummary:
     complete: bool
 
 
-@dataclass(frozen=True, slots=True)
-class CwlSeasonCoverage:
-    season: str
-    ended_wars: int
-    latest_end_ts: int
-    seven_wars_recorded: bool
 
 
-@dataclass(frozen=True, slots=True)
-class CwlSeasonCoverageSnapshot:
-    observed_at: str
-    clan_code: str
-    seasons: tuple[CwlSeasonCoverage, ...]
-    latest_seven_war_season: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,13 +124,10 @@ class CwlAssScopeRow:
 
 
 @dataclass(frozen=True, slots=True)
-class CwlAssScopeSnapshot:
+class CwlAssWarsSnapshot:
     observed_at: str
     clan_code: str
-    season: str
-    scope_type: str
-    requested_round: int | None
-    requested_war_id: str | None
+    seasons: tuple[str, ...]
     resolved_war_ids: tuple[str, ...]
     resolved_rounds: tuple[int, ...]
     completed_wars: int
@@ -153,6 +139,7 @@ class CwlAssScopeSnapshot:
     scoring_status: str
     coverage_status: str
     rows: tuple[CwlAssScopeRow, ...]
+    attack_sample: tuple[dict[str, Any], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,13 +203,10 @@ class CwlBonusIneligiblePlayer:
 
 
 @dataclass(frozen=True, slots=True)
-class CwlBonusScopeSnapshot:
+class CwlBonusWarsSnapshot:
     observed_at: str
     clan_code: str
-    season: str
-    scope_type: str
-    requested_round: int | None
-    requested_war_tag: str | None
+    seasons: tuple[str, ...]
     resolved_rounds: tuple[int, ...]
     resolved_war_tags: tuple[str, ...]
     settings: CwlBonusSettings
@@ -231,6 +215,8 @@ class CwlBonusScopeSnapshot:
     attacks: tuple[CwlBonusAttackScore, ...]
     warnings: tuple[str, ...]
     coverage_status: str
+    resolved_war_ids: tuple[str, ...]
+    completed_wars: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -341,260 +327,35 @@ class CwlQueries:
             clan_seasons=tuple(summaries), rows=tuple(rows),
         )
 
-    def ass_seasons(self, *, clan_code: str) -> tuple[str, ...]:
-        return tuple(row.season for row in self.ass_season_coverage(
-            clan_code=clan_code,
-        ).seasons)
 
-    def ass_season_coverage(self, *, clan_code: str) -> CwlSeasonCoverageSnapshot:
-        """Distinguish seasons with any ended war from seven-war seasons."""
+
+    def _chosen_wars(self, clan_code: str, war_ids: list[str]) -> list[dict[str, Any]]:
         if clan_code not in CWL_CLAN_NAMES:
             raise ValueError("Invalid CWL clan code")
-        rows = self._history.cwl_season_coverage(clan_code)
-        seasons = []
-        seen = set()
-        for row in rows:
-            season = row["season"]
-            ended_wars = row["ended_wars"]
-            latest_end_ts = row["latest_end_ts"]
-            if (
-                not isinstance(season, str)
-                or re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])(?:-catchup)?", season) is None
-                or season in seen
-                or type(ended_wars) is not int or ended_wars < 1
-                or type(latest_end_ts) is not int or latest_end_ts < 0
-            ):
-                raise RuntimeError("Invalid stored CWL season coverage")
-            seen.add(season)
-            seasons.append(CwlSeasonCoverage(
-                season, ended_wars, latest_end_ts, ended_wars >= 7,
-            ))
-        seasons.sort(key=lambda row: (row.latest_end_ts, row.season), reverse=True)
-        observed = self._clock()
-        if observed.tzinfo is None:
-            observed = observed.replace(tzinfo=timezone.utc)
-        return CwlSeasonCoverageSnapshot(
-            observed.astimezone(timezone.utc).isoformat(), clan_code,
-            tuple(seasons),
-            next((row.season for row in seasons if row.seven_wars_recorded), None),
-        )
+        if (not isinstance(war_ids, (list, tuple)) or not 1 <= len(war_ids) <= 56
+                or any(not isinstance(key, str) or not key.strip() or len(key) > 100
+                       for key in war_ids)):
+            raise ValueError("Choose between 1 and 56 CWL war IDs.")
+        keys = [key.strip().removeprefix("CWL:") for key in war_ids]
+        if any(not key for key in keys) or len(set(keys)) != len(keys):
+            raise ValueError("CWL war IDs must be unique and nonempty.")
+        return self._history.scoring_wars(clan_code, keys)
 
-    def ass_scope(
-        self, *, clan_code: str, season: str, scope_type: str,
-        cwl_round: int | None = None, war_id: str | None = None,
-    ) -> CwlAssScopeSnapshot:
-        """Calculate projected ASS from the exact selected stored CWL scope."""
-        if clan_code not in CWL_CLAN_NAMES:
-            raise ValueError("Invalid CWL clan code")
-        if (
-            not isinstance(season, str)
-            or re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])(?:-catchup)?", season) is None
-            or scope_type not in {"season", "round", "war"}
-            or cwl_round is not None
-            and (type(cwl_round) is not int or not 1 <= cwl_round <= 7)
-            or war_id is not None
-            and (not isinstance(war_id, str) or not war_id or len(war_id) > 100)
-            or scope_type == "season" and (cwl_round is not None or war_id is not None)
-            or scope_type == "round" and (cwl_round is None or war_id is not None)
-            or scope_type == "war" and (war_id is None or cwl_round is not None)
-        ):
-            raise ValueError("Invalid CWL ASS scope")
+    def ass_wars(self, *, clan_code: str, war_ids: list[str]) -> CwlAssWarsSnapshot:
+        selected = self._chosen_wars(clan_code, war_ids)
+        return score_ass_wars(clan_code, selected, self._clock())
 
-        season_wars = self._history.bonus_wars(clan_code, season)
-        if scope_type == "round":
-            selected = [
-                war for war in season_wars
-                if int(war.get("cwl_round") or 0) == cwl_round
-            ]
-        elif scope_type == "war":
-            selected = [
-                war for war in season_wars
-                if str(war.get("war_id") or "") == war_id
-                or str(war.get("war_id") or "").removeprefix("CWL:")
-                == war_id
-            ]
-        else:
-            selected = list(season_wars)
-
-        observed = self._clock()
-        if observed.tzinfo is None:
-            observed = observed.replace(tzinfo=timezone.utc)
-        resolved_war_ids = tuple(sorted(
-            str(war.get("war_id") or "") for war in selected
-            if str(war.get("war_id") or "")
-        ))
-        resolved_rounds = tuple(sorted({
-            int(war.get("cwl_round") or 0) for war in selected
-            if int(war.get("cwl_round") or 0) > 0
-        }))
-        if not selected:
-            return CwlAssScopeSnapshot(
-                observed.astimezone(timezone.utc).isoformat(), clan_code,
-                season, scope_type, cwl_round, war_id, (), (), 0,
-                None, None, None, None, None, "unavailable",
-                "no_matching_completed_wars", (),
-            )
-
-        wars, roster, attacks = _flatten_bonus_wars(selected, clan_code)
-        profiles, leagues = profiles_for_roster_history(wars)
-        profile = profiles.get(clan_code)
-        metrics = build_ass_season_metrics(
-            wars=wars, roster=roster, attacks=attacks,
-            season_order={season: 1}, profiles_by_clan=profiles,
-        ) if profile is not None else []
-        rows = tuple(CwlAssScopeRow(
-            player_tag=metric.player_tag,
-            player_name=metric.player_name,
-            townhall=metric.townhall,
-            wars=metric.wars,
-            attacks=metric.attacks,
-            attacks_expected=metric.attacks_expected,
-            stars=metric.stars,
-            average_destruction=metric.average_destruction,
-            average_target_position=metric.average_target_position,
-            average_target_distance=metric.average_target_distance,
-            average_defensive_position=metric.average_defensive_position,
-            ass_score=metric.score,
-            rank=metric.rank,
-            rank_total=metric.rank_total,
-            projected_stars=metric.projected_stars,
-            missed_stars=metric.missed_stars,
-            missed_adjustment=metric.missed_adjustment,
-            difficulty_adjustment=metric.difficulty_adjustment,
-        ) for metric in sorted(metrics, key=lambda item: (
-            item.rank if item.rank is not None else 999_999,
-            item.player_name.casefold(), item.player_tag,
-        )))
-        scoring_status = "calculated_from_selected_scope"
-        coverage_status = (
-            "selected_season_completed_wars"
-            if scope_type == "season" else "selected_completed_wars"
-        )
-        return CwlAssScopeSnapshot(
-            observed.astimezone(timezone.utc).isoformat(), clan_code,
-            season, scope_type, cwl_round, war_id, resolved_war_ids,
-            resolved_rounds, len(resolved_war_ids),
-            leagues.get(clan_code), profile.key if profile else None,
-            profile.label if profile else None,
-            profile.difficulty_weight if profile else None,
-            profile.missed_mode if profile else None,
-            scoring_status, coverage_status, rows,
-        )
-
-    def bonus_scope(
-        self, *, clan_code: str, season: str, scope_type: str,
-        cwl_round: int | None = None, war_tag: str | None = None,
-    ) -> CwlBonusScopeSnapshot:
-        """Apply configured bonus scoring, then select an exact stored scope."""
+    def bonus_wars(self, *, clan_code: str, war_ids: list[str]) -> CwlBonusWarsSnapshot:
         if self._bonus_analysis is None or self._bonus_config is None:
             raise RuntimeError("CWL bonus scoring is unavailable")
-        if (
-            clan_code not in CWL_CLAN_NAMES
-            or not isinstance(season, str)
-            or re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])(?:-catchup)?", season) is None
-            or scope_type not in {"season", "round", "war"}
-            or cwl_round is not None
-            and (type(cwl_round) is not int or not 1 <= cwl_round <= 7)
-            or war_tag is not None
-            and (not isinstance(war_tag, str) or not war_tag or len(war_tag) > 100)
-            or scope_type == "season" and (cwl_round is not None or war_tag is not None)
-            or scope_type == "round" and (cwl_round is None or war_tag is not None)
-            or scope_type == "war" and (war_tag is None or cwl_round is not None)
-        ):
-            raise ValueError("Invalid CWL bonus scope")
+        selected = self._chosen_wars(clan_code, war_ids)
         config, config_errors = self._bonus_config.load()
         if config is None:
             raise ValueError(
                 "CWL bonus scoring settings are unavailable: "
                 + " | ".join(config_errors[:4])
             )
-        clan_settings = (config.get("clans") or {}).get(clan_code)
-        if not isinstance(clan_settings, dict):
-            raise ValueError("CWL bonus scoring settings are unavailable")
-        summary, ineligible, raw, warnings, errors = (
-            self._bonus_analysis.analyze_clan(clan_code, season, config)
-        )
-        if errors:
-            raise ValueError("CWL bonus scoring is incomplete: " + " | ".join(errors[:4]))
-
-        def matches(row: dict[str, Any]) -> bool:
-            if scope_type == "round":
-                return int(row.get("round") or 0) == cwl_round
-            if scope_type == "war":
-                stored = str(row.get("war_tag") or "")
-                return stored == war_tag or f"CWL:{stored}" == war_tag
-            return True
-
-        selected = [row for row in raw if matches(row)]
-        resolved_rounds = tuple(sorted({int(row["round"]) for row in selected}))
-        resolved_war_tags = tuple(sorted({str(row["war_tag"]) for row in selected}))
-        settings = CwlBonusSettings(
-            revision=int(config.get("revision") or 0),
-            updated_at=str(
-                ((config.get("clan_meta") or {}).get(clan_code) or {}).get(
-                    "updated_at_utc"
-                ) or ""
-            ) or None,
-            max_downhit=int(clan_settings["max_downhit"]),
-            max_uphit=int(clan_settings["max_uphit"]),
-            downhit_penalty_per_level=float(
-                clan_settings["downhit_penalty_per_level"]
-            ),
-            uphit_bonus_per_level=float(clan_settings["uphit_bonus_per_level"]),
-            downhit_severe_after=int(clan_settings["downhit_severe_after"]),
-            downhit_severe_base=float(clan_settings["downhit_severe_base"]),
-            downhit_severe_multiplier=float(
-                clan_settings["downhit_severe_multiplier"]
-            ),
-        )
-        attacks = tuple(CwlBonusAttackScore(
-            cwl_round=int(row["round"]), war_tag=str(row["war_tag"]),
-            player_tag=str(row["player_tag"]),
-            player_name=str(row["player_name"]),
-            attacker_townhall=int(row["attacker_th"]),
-            defender_tag=str(row["defender_tag"]),
-            defender_townhall=int(row["defender_th"]),
-            stars=int(row["stars"]), destruction=float(row["destruction"]),
-            actual_score=float(row["actual_score"]),
-            expected_score=float(row["expected_score"]),
-            townhall_difference=int(row["th_gap"]),
-            expected_lookup=str(row["expected_lookup"]),
-            base_delta=float(row["base_delta"]),
-            adjustment=float(row["delta_adjustment"]),
-            adjusted_delta=float(row["adjusted_delta"]),
-            star_gain=int(row["star_gain"]), flags=str(row["flags"] or ""),
-        ) for row in selected)
-        summaries = tuple(CwlBonusPlayerSummary(
-            player_tag=str(row["player_tag"]),
-            player_name=str(row["player_name"]), rank=int(row["rank"]),
-            attack_count=int(row["attack_count"]),
-            average_adjusted_delta=float(row["avg_adjusted_delta"]),
-            total_adjusted_delta=float(row["total_adjusted_delta"]),
-            total_actual=float(row["total_actual"]),
-            total_expected=float(row["total_expected"]),
-            total_base_delta=float(row["total_base_delta"]),
-            total_adjustment=float(row["total_adjustment"]),
-            missed_attacks=int(row["missed_attacks"]),
-        ) for row in summary) if scope_type == "season" else ()
-        excluded = tuple(CwlBonusIneligiblePlayer(
-            player_tag=str(row["player_tag"]),
-            player_name=str(row["player_name"]),
-            missed_attacks=int(row["missed_attacks"]),
-            expected_attacks=int(row["expected_attacks"]),
-            used_attacks=int(row["used_attacks"]), reason=str(row["reason"]),
-        ) for row in ineligible) if scope_type == "season" else ()
-        observed = self._clock()
-        if observed.tzinfo is None:
-            observed = observed.replace(tzinfo=timezone.utc)
-        return CwlBonusScopeSnapshot(
-            observed.astimezone(timezone.utc).isoformat(), clan_code, season,
-            scope_type, cwl_round, war_tag, resolved_rounds,
-            resolved_war_tags, settings, summaries, excluded, attacks,
-            tuple(str(value) for value in warnings),
-            "stored_season_scoring" if scope_type == "season" and attacks
-            else "selected_scored_attacks" if attacks
-            else "no_matching_scored_attacks",
-        )
+        return score_bonus_wars(clan_code, selected, config, self._bonus_analysis, self._clock())
 
     def registered_threads(self) -> tuple[CwlThreadRegistration, ...]:
         registrations = []
@@ -641,3 +402,141 @@ def _flatten_bonus_wars(
             **item, "war_id": war_id, "clan_code": clan_code,
         } for item in value.get("attacks", ()))
     return wars, roster, attacks
+
+
+def _war_selection(selected: list[dict[str, Any]]):
+    return (
+        tuple(sorted({str(war["cwl_season"]) for war in selected})),
+        tuple(sorted({int(war.get("cwl_round") or 0) for war in selected})),
+        tuple(sorted({str(war["war_id"]) for war in selected})),
+    )
+
+
+def score_ass_wars(
+    clan_code: str, selected: list[dict[str, Any]], observed: datetime,
+) -> CwlAssWarsSnapshot:
+    """Calculate one ASS projection over the complete chosen attack sample."""
+    seasons, resolved_rounds, resolved_war_ids = _war_selection(selected)
+    wars, roster, attacks = _flatten_bonus_wars(selected, clan_code)
+    profiles, leagues = profiles_for_roster_history(wars)
+    profile = profiles.get(clan_code)
+    metrics = build_ass_season_metrics(
+        wars=wars, roster=roster, attacks=attacks,
+        season_order={seasons[0]: 1}, profiles_by_clan=profiles,
+        combined_season=seasons[0],
+    ) if profile is not None else []
+    rows = tuple(CwlAssScopeRow(
+        player_tag=metric.player_tag,
+        player_name=metric.player_name,
+        townhall=metric.townhall,
+        wars=metric.wars,
+        attacks=metric.attacks,
+        attacks_expected=metric.attacks_expected,
+        stars=metric.stars,
+        average_destruction=metric.average_destruction,
+        average_target_position=metric.average_target_position,
+        average_target_distance=metric.average_target_distance,
+        average_defensive_position=metric.average_defensive_position,
+        ass_score=metric.score,
+        rank=metric.rank,
+        rank_total=metric.rank_total,
+        projected_stars=metric.projected_stars,
+        missed_stars=metric.missed_stars,
+        missed_adjustment=metric.missed_adjustment,
+        difficulty_adjustment=metric.difficulty_adjustment,
+    ) for metric in sorted(metrics, key=lambda item: (
+        item.rank if item.rank is not None else 999_999,
+        item.player_name.casefold(), item.player_tag,
+    )))
+    if observed.tzinfo is None:
+        observed = observed.replace(tzinfo=timezone.utc)
+    return CwlAssWarsSnapshot(
+        observed.astimezone(timezone.utc).isoformat(), clan_code,
+        seasons, resolved_war_ids, resolved_rounds, len(resolved_war_ids),
+        leagues.get(clan_code), profile.key if profile else None,
+        profile.label if profile else None,
+        profile.difficulty_weight if profile else None,
+        profile.missed_mode if profile else None,
+        "calculated_from_selected_scope", "selected_completed_wars", rows, tuple(attacks),
+    )
+
+
+def score_bonus_wars(
+    clan_code: str, selected: list[dict[str, Any]], config: dict[str, Any],
+    analysis: CwlBonusAnalysisSource, observed: datetime,
+) -> CwlBonusWarsSnapshot:
+    """Calculate combined bonus summaries and attacks from exactly these wars."""
+    seasons, resolved_rounds, resolved_war_ids = _war_selection(selected)
+    resolved_war_tags = tuple(key.removeprefix("CWL:") for key in resolved_war_ids)
+    clan_settings = (config.get("clans") or {}).get(clan_code)
+    if not isinstance(clan_settings, dict):
+        raise ValueError("CWL bonus scoring settings are unavailable")
+    summary, ineligible, raw, warnings, errors = analysis.analyze_wars(
+        clan_code, selected, config,
+    )
+    if errors:
+        raise ValueError("CWL bonus scoring is incomplete: " + " | ".join(errors[:4]))
+    settings = CwlBonusSettings(
+        revision=int(config.get("revision") or 0),
+        updated_at=str(
+            ((config.get("clan_meta") or {}).get(clan_code) or {}).get(
+                "updated_at_utc"
+            ) or ""
+        ) or None,
+        max_downhit=int(clan_settings["max_downhit"]),
+        max_uphit=int(clan_settings["max_uphit"]),
+        downhit_penalty_per_level=float(
+            clan_settings["downhit_penalty_per_level"]
+        ),
+        uphit_bonus_per_level=float(clan_settings["uphit_bonus_per_level"]),
+        downhit_severe_after=int(clan_settings["downhit_severe_after"]),
+        downhit_severe_base=float(clan_settings["downhit_severe_base"]),
+        downhit_severe_multiplier=float(
+            clan_settings["downhit_severe_multiplier"]
+        ),
+    )
+    attacks = tuple(CwlBonusAttackScore(
+        cwl_round=int(row["round"]), war_tag=str(row["war_tag"]),
+        player_tag=str(row["player_tag"]),
+        player_name=str(row["player_name"]),
+        attacker_townhall=int(row["attacker_th"]),
+        defender_tag=str(row["defender_tag"]),
+        defender_townhall=int(row["defender_th"]),
+        stars=int(row["stars"]), destruction=float(row["destruction"]),
+        actual_score=float(row["actual_score"]),
+        expected_score=float(row["expected_score"]),
+        townhall_difference=int(row["th_gap"]),
+        expected_lookup=str(row["expected_lookup"]),
+        base_delta=float(row["base_delta"]),
+        adjustment=float(row["delta_adjustment"]),
+        adjusted_delta=float(row["adjusted_delta"]),
+        star_gain=int(row["star_gain"]), flags=str(row["flags"] or ""),
+    ) for row in raw)
+    summaries = tuple(CwlBonusPlayerSummary(
+        player_tag=str(row["player_tag"]),
+        player_name=str(row["player_name"]), rank=int(row["rank"]),
+        attack_count=int(row["attack_count"]),
+        average_adjusted_delta=float(row["avg_adjusted_delta"]),
+        total_adjusted_delta=float(row["total_adjusted_delta"]),
+        total_actual=float(row["total_actual"]),
+        total_expected=float(row["total_expected"]),
+        total_base_delta=float(row["total_base_delta"]),
+        total_adjustment=float(row["total_adjustment"]),
+        missed_attacks=int(row["missed_attacks"]),
+    ) for row in summary)
+    excluded = tuple(CwlBonusIneligiblePlayer(
+        player_tag=str(row["player_tag"]),
+        player_name=str(row["player_name"]),
+        missed_attacks=int(row["missed_attacks"]),
+        expected_attacks=int(row["expected_attacks"]),
+        used_attacks=int(row["used_attacks"]), reason=str(row["reason"]),
+    ) for row in ineligible)
+    if observed.tzinfo is None:
+        observed = observed.replace(tzinfo=timezone.utc)
+    return CwlBonusWarsSnapshot(
+        observed.astimezone(timezone.utc).isoformat(), clan_code, seasons,
+        resolved_rounds, resolved_war_tags, settings, summaries, excluded, attacks,
+        tuple(str(value) for value in warnings),
+        "selected_scored_attacks" if attacks else "no_matching_scored_attacks",
+        resolved_war_ids, len(resolved_war_ids),
+    )

@@ -51,6 +51,7 @@ def build_ass_season_metrics(
     attacks: Sequence[dict[str, Any]],
     season_order: dict[str, int],
     profiles_by_clan: dict[str, AssProfile],
+    combined_season: str | None = None,
 ) -> list[AssSeasonMetric]:
     wars_by_key = {
         (str(war.get("war_id") or ""), str(war.get("clan_code") or "")): war
@@ -69,7 +70,7 @@ def build_ass_season_metrics(
 
     metrics: dict[tuple[str, str, str], AssSeasonMetric] = {}
     for war_key, war in wars_by_key.items():
-        season = str(war.get("cwl_season") or "")
+        season = combined_season or str(war.get("cwl_season") or "")
         clan_code = str(war.get("clan_code") or "")
         if not season or clan_code not in profiles_by_clan:
             continue

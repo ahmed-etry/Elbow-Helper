@@ -28,39 +28,38 @@ TOOL_CONTRACTS = {
 
 
 def cwl_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
+    selection = {
+        "clan_code": {"type": "string", "enum": list(CWL_CLAN_CODES)},
+        "war_ids": {
+            "type": "array", "minItems": 1, "maxItems": 56, "uniqueItems": True,
+            "items": {"type": "string", "minLength": 1, "maxLength": 100},
+        },
+    }
+    pick_wars = (
+        "Choose war IDs with query_bot_data from health.wars using clan_code, "
+        "war_type = 'CWL', cwl_season (one key per league), cwl_round "
+        "(1-7; a CWL day is a round), "
+        "and state = 'warEnded'. Pass those war_ids, with or without the CWL: prefix. "
+    )
     definitions = (
         (
             "cwl_ass_scores",
-            "Calculate ASS from the exact selected stored CWL season, day (round) or war "
+            "Calculate one combined CWL ASS result for chosen war IDs. "
+            + pick_wars + "Score exactly those stored wars "
             "using the established scoring implementation. Observed attack averages are "
-            "projected to seven attacks; preserve the returned scope and sample size and "
-            "do not present a partial-scope result as a completed-season score. "
+            "projected to seven attacks; preserve the returned wars and sample size and "
+            "do not present a partial selection as a completed-season score. "
             "Return every player row.",
-            {
-                "clan_code": {"type": "string", "enum": list(CWL_CLAN_CODES)},
-                "season": {"type": "string", "pattern": "^20\\d{2}-(0[1-9]|1[0-2])(?:-catchup)?$"},
-                "scope_type": {"type": "string", "enum": ["season", "round", "war"]},
-                "cwl_round": {"type": "integer", "minimum": 1, "maximum": 7},
-                "war_id": {"type": "string", "minLength": 1, "maxLength": 100},
-            },
-            ("clan_code", "season", "scope_type"),
-            cwl_ass_scores,
+            selection, ("clan_code", "war_ids"), cwl_ass_scores,
         ),
         (
             "cwl_bonus_scores",
-            "Apply the clan's existing configured CWL bonus scoring to stored completed "
-            "attacks for one season, round or exact war. This returns adjusted-delta "
-            "evidence, not ASS, and does not poll Clash or publish a bonus recommendation. "
-            "Return every player row.",
-            {
-                "clan_code": {"type": "string", "enum": list(CWL_CLAN_CODES)},
-                "season": {"type": "string", "pattern": "^20\\d{2}-(0[1-9]|1[0-2])(?:-catchup)?$"},
-                "scope_type": {"type": "string", "enum": ["season", "round", "war"]},
-                "cwl_round": {"type": "integer", "minimum": 1, "maximum": 7},
-                "war_tag": {"type": "string", "minLength": 1, "maxLength": 100},
-            },
-            ("clan_code", "season", "scope_type"),
-            cwl_bonus_scores,
+            "Apply the clan's CWL bonus scoring to chosen war IDs. "
+            + pick_wars + "Use ONE "
+            "combined calculation over exactly those stored wars. This returns "
+            "adjusted-delta evidence, not ASS, and does not poll Clash or publish a bonus "
+            "recommendation. Return every player row and the scored attack sample.",
+            selection, ("clan_code", "war_ids"), cwl_bonus_scores,
         ),
     )
     return tuple(
@@ -77,7 +76,7 @@ def cwl_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
             contract=TOOL_CONTRACTS[name],
             returns=(
                 "players[].player_tag,ass_score" if name == "cwl_ass_scores"
-                else "rows[].player_tag,adjusted_delta"
+                else "rows[].player_tag,average_adjusted_delta"
             ),
         )
         for name, description, properties, required, handler in definitions
@@ -93,19 +92,15 @@ async def cwl_ass_scores(
         return {"error": "CWL performance data is not available."}
     try:
         snapshot = await asyncio.to_thread(
-            context.cwl_queries.ass_scope,
-            clan_code=arguments["clan_code"], season=arguments["season"],
-            scope_type=arguments["scope_type"],
-            cwl_round=arguments.get("cwl_round"),
-            war_id=arguments.get("war_id"),
+            context.cwl_queries.ass_wars,
+            clan_code=arguments["clan_code"], war_ids=arguments["war_ids"],
         )
 
     except ValueError as error:
         return {"error": str(error)}
     await require_evidence_access(context)
     result = asdict(snapshot)
-    result.pop("rows", None)
-    result["players"] = [asdict(row) for row in snapshot.rows]
+    result = {"players": list(result.pop("rows")), **result}
     return result
 
 
@@ -118,24 +113,16 @@ async def cwl_bonus_scores(
         return {"error": "CWL bonus scoring is not available."}
     try:
         snapshot = await asyncio.to_thread(
-            context.cwl_queries.bonus_scope,
-            clan_code=arguments["clan_code"], season=arguments["season"],
-            scope_type=arguments["scope_type"],
-            cwl_round=arguments.get("cwl_round"),
-            war_tag=arguments.get("war_tag"),
+            context.cwl_queries.bonus_wars,
+            clan_code=arguments["clan_code"], war_ids=arguments["war_ids"],
         )
 
     except (RuntimeError, ValueError) as error:
         return {"error": str(error)}
     await require_evidence_access(context)
     result = asdict(snapshot)
-    result.pop("rows", None)
-    result.pop("summaries", None)
-    result.pop("attacks", None)
-    result["rows"] = [
-        asdict(row)
-        for row in (snapshot.summaries if snapshot.scope_type == "season" else snapshot.attacks)
-    ]
+    result = {"rows": list(result.pop("summaries")), **result}
+    result["attack_sample"] = result.pop("attacks")
     result.update(
         metric_name="Configured CWL bonus adjusted delta",
         metric_definition=(

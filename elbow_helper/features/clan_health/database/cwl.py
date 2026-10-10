@@ -12,32 +12,6 @@ from typing import Iterable
 class ClanHealthCwlReads:
     """Expose completed CWL data without leaking the database path or SQL."""
 
-    def cwl_season_coverage(self, clan_code: str) -> list[dict[str, Any]]:
-        """Count distinct ended wars per stored season for one clan."""
-        if not self.path.exists():
-            raise RuntimeError("CWL history is unavailable")
-        try:
-            with closing(sqlite3.connect(self.path, timeout=5)) as connection:
-                rows = connection.execute(
-                    """
-                    SELECT cwl_season, COUNT(DISTINCT war_id), MAX(end_ts)
-                    FROM wars
-                    WHERE war_type = 'CWL' AND state = 'warEnded'
-                      AND clan_code = ? AND cwl_season != ''
-                    GROUP BY cwl_season
-                    ORDER BY MAX(end_ts) DESC, cwl_season DESC
-                    """,
-                    (clan_code,),
-                ).fetchall()
-        except sqlite3.Error as error:
-            raise RuntimeError("CWL season coverage could not be read") from error
-        return [
-            {
-                "season": str(season), "ended_wars": int(ended_wars),
-                "latest_end_ts": int(latest_end_ts or 0),
-            }
-            for season, ended_wars, latest_end_ts in rows
-        ]
 
     def bonus_seasons(
         self,
@@ -78,6 +52,39 @@ class ClanHealthCwlReads:
         clan_code: str,
         season: str,
     ) -> list[dict[str, Any]]:
+        return self._load_cwl_wars(
+            clan_code,
+            "war_type = 'CWL' AND clan_code = ? AND cwl_season = ? AND state = 'warEnded'",
+            [clan_code, season],
+        )
+
+    def scoring_wars(self, clan_code: str, war_ids: list[str]) -> list[dict[str, Any]]:
+        aliases = [alias for key in war_ids for alias in (key, f"CWL:{key}")]
+        placeholders = ",".join("?" for _ in aliases)
+        wars = self._load_cwl_wars(clan_code, f"war_id IN ({placeholders})", aliases)
+        found = {war["war_id"].removeprefix("CWL:") for war in wars}
+        own = [war for war in wars if war["clan_code"] == clan_code]
+        own_ids = {war["war_id"].removeprefix("CWL:") for war in own}
+        errors = []
+        missing = sorted(set(war_ids) - found)
+        if missing:
+            errors.append("Unknown CWL war IDs: " + ", ".join(missing))
+        for label, condition in (
+            (f"Wars from another clan than {clan_code}",
+             lambda war: war["war_id"].removeprefix("CWL:") not in own_ids),
+            ("Unfinished CWL wars", lambda war: war in own and war["state"] != "warEnded"),
+            ("Not CWL wars", lambda war: war in own and war["war_type"] != "CWL"),
+        ):
+            invalid = sorted({war["war_id"] for war in wars if condition(war)})
+            if invalid:
+                errors.append(label + ": " + ", ".join(invalid))
+        if errors:
+            raise ValueError("; ".join(errors) + ".")
+        return own
+
+    def _load_cwl_wars(
+        self, clan_code: str, condition: str, parameters: list[str],
+    ) -> list[dict[str, Any]]:
         if not self.path.exists():
             raise sqlite3.OperationalError(
                 "clan database does not exist"
@@ -90,19 +97,16 @@ class ClanHealthCwlReads:
             wars = [
                 dict(row)
                 for row in connection.execute(
-                    """
+                    f"""
                     SELECT
-                        war_id, clan_code, cwl_season, cwl_league,
+                        war_id, war_type, clan_code, cwl_season, cwl_league,
                         cwl_round, team_size, attacks_per_member,
                         state, end_ts
                     FROM wars
-                    WHERE war_type = 'CWL'
-                      AND clan_code = ?
-                      AND cwl_season = ?
-                      AND state = 'warEnded'
+                    WHERE {condition}
                     ORDER BY cwl_round ASC, end_ts ASC, war_id ASC
                     """,
-                    (clan_code, season),
+                    parameters,
                 ).fetchall()
             ]
             if not wars:
