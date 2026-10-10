@@ -363,6 +363,9 @@ class PlanRunner:
                 partial(self.run_one, plan_state=plan_state),
                 max_concurrency=4,
                 earlier_results=self.results,
+                argument_schema=lambda step: (
+                    self.registry[step["capability"]].definition.parameters
+                ),
                 step_errors=check_plan(
                     plan, self.registry, completed_steps=self.completed_steps,
                 ).step_errors,

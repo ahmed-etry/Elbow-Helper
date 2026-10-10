@@ -34,8 +34,12 @@ def _walk(source: Any, path: list[Any]) -> Any:
 
 def resolve_arguments(
     arguments: Mapping[str, Any], results: Mapping[str, Mapping[str, Any]],
+    *, schema: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    def resolve(value):
+    def resolve(value, detail):
+        if (detail.get("x-result-list") and isinstance(value, list) and len(value) == 1
+                and isinstance(value[0], dict) and set(value[0]) == {"step", "path"}):
+            value = value[0]
         if isinstance(value, dict) and set(value) == {"step", "path"}:
             try:
                 source = results[value["step"]]
@@ -45,17 +49,19 @@ def resolve_arguments(
             except (KeyError, IndexError, TypeError):
                 raise UnresolvedReferenceError(value["step"], value["path"]) from None
         if isinstance(value, dict):
-            return {field: resolve(item) for field, item in value.items()}
+            properties = detail.get("properties", {})
+            return {field: resolve(item, properties.get(field, {}))
+                    for field, item in value.items()}
         if isinstance(value, list):
             items = []
             for item in value:
-                resolved = resolve(item)
+                resolved = resolve(item, detail.get("items", {}))
                 expanded = (isinstance(item, dict) and set(item) == {"step", "path"}
                             and "*" in item["path"] and isinstance(resolved, list))
                 items.extend(resolved) if expanded else items.append(resolved)
             return items
         return value
-    return resolve(dict(arguments))
+    return resolve(dict(arguments), schema or {})
 
 
 async def execute_plan(
@@ -65,6 +71,7 @@ async def execute_plan(
     earlier_results: Mapping[str, Mapping[str, Any]] | None = None,
     parallel: Callable[[Mapping[str, Any]], bool] | None = None,
     step_errors: Mapping[str, str] | None = None,
+    argument_schema: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
 ) -> dict[str, Mapping[str, Any]]:
     """Run independent steps together and wait for dependencies."""
     if max_concurrency < 1:
@@ -83,7 +90,10 @@ async def execute_plan(
         if step["id"] in (step_errors or {}):
             return step["id"], {"error": step_errors[step["id"]]}
         try:
-            arguments = resolve_arguments(step["arguments"], results)
+            arguments = resolve_arguments(
+                step["arguments"], results,
+                schema=argument_schema(step) if argument_schema else None,
+            )
         except UnresolvedReferenceError as error:
             LOGGER.warning("Agent step %s has unresolved reference to step %s path %s",
                            step["id"], error.step_id, error.path)

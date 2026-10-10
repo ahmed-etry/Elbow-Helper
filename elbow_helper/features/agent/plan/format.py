@@ -48,6 +48,8 @@ def system_instructions(
 
 
 def _argument(detail: Mapping) -> str:
+    if detail.get("x-result-list"):
+        return "reference(list of records)"
     if "anyOf" in detail and "type" not in detail:
         return "/".join(_argument(choice) for choice in detail["anyOf"])
     kind = detail.get("type", "value")

@@ -136,6 +136,12 @@ def _large_selection_queries():
 class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_ass_read_and_result_sheet_build_workbook_in_one_round(self):
+        await self._ass_result_sheet_builds_workbook(wrapped=False)
+
+    async def test_wrapped_ass_reference_builds_workbook_in_one_round(self):
+        await self._ass_result_sheet_builds_workbook(wrapped=True)
+
+    async def _ass_result_sheet_builds_workbook(self, *, wrapped):
         registry = build_agent_tools()
         registry = {name: registry[name] for name in ("cwl_ass_scores", "prepare_spreadsheet")}
         plan = {
@@ -151,6 +157,9 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
                  }]}},
             ],
         }
+        if wrapped:
+            sheet = plan["steps"][1]["arguments"]["sheets"][0]
+            sheet["rows_from"] = [sheet["rows_from"]]
         session = _Session([
             _model_step(plan), AgentStep("Synthetic workbook ready", (), AgentUsage()),
         ], [])

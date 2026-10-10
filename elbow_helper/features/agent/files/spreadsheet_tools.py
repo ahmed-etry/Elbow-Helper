@@ -46,6 +46,11 @@ def spreadsheet_tools() -> tuple[RegisteredAgentTool, ...]:
             "params": {"type": "object", "additionalProperties": True},
             "rows_from": {
                 "type": "array", "items": {"type": "object", "additionalProperties": True},
+                "x-result-list": True,
+                "description": (
+                    "Reference {step, path} to an earlier step's list of records, "
+                    "also accepted inside a one-item list."
+                ),
             },
             "columns": {
                 "type": "array", "minItems": 1, "maxItems": 20,

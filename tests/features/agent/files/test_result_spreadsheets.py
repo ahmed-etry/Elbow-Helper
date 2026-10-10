@@ -11,6 +11,8 @@ from features.agent.files.test_agent_spreadsheets import _context
 from elbow_helper.features.agent.engine.registry import build_agent_tools
 from elbow_helper.features.agent.files.spreadsheet_tools import prepare_spreadsheet
 from elbow_helper.features.agent.plan import capability_list
+from elbow_helper.features.agent.plan.checker import valid_arguments
+from elbow_helper.features.agent.plan.executor import resolve_arguments
 
 
 def _arguments(records):
@@ -26,7 +28,7 @@ def _arguments(records):
 class ResultSpreadsheetTests(unittest.IsolatedAsyncioTestCase):
     def test_catalogue_shows_result_sheet_fields(self):
         catalogue = capability_list(build_agent_tools())
-        self.assertIn("rows_from:[{}]", catalogue)
+        self.assertIn("rows_from:reference(list of records)", catalogue)
         self.assertIn("columns:[string/{field:string,heading:string}]", catalogue)
 
     async def test_nested_missing_and_numeric_values_are_written_exactly(self):
@@ -58,6 +60,24 @@ class ResultSpreadsheetTests(unittest.IsolatedAsyncioTestCase):
                 with self.subTest(records=records):
                     result = await prepare_spreadsheet(context, _arguments(records))
                     self.assertEqual(result, {"error": "rows_from must be a list of objects."})
+            self.assertEqual(context.state.attachments, [])
+
+    async def test_bad_referenced_shape_keeps_specific_error_for_both_reference_forms(self):
+        schema = build_agent_tools()["prepare_spreadsheet"].definition.parameters
+        reference = {"step": "scores", "path": ["records"]}
+        with TemporaryDirectory() as directory:
+            context = _context(directory)
+            for records in (None, {}, {"score": 7}, "bad", [1], [[{}]]):
+                for source in (reference, [reference]):
+                    with self.subTest(records=records, source=source):
+                        arguments = resolve_arguments(
+                            _arguments(source), {"scores": {"records": records}}, schema=schema,
+                        )
+                        self.assertTrue(valid_arguments(arguments, schema, {"scores"}))
+                        result = await prepare_spreadsheet(context, arguments)
+                        self.assertEqual(result, {
+                            "error": "rows_from must be a list of objects.",
+                        })
             self.assertEqual(context.state.attachments, [])
 
     async def test_result_sheets_enforce_query_caps_without_truncation(self):
