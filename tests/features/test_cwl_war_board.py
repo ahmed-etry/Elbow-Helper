@@ -120,17 +120,19 @@ class CwlLeagueWarFetchTests(unittest.IsolatedAsyncioTestCase):
         manager = CwlRouterMixin()
         manager._leaguegroup_cache = {}
         manager._war_cache = {}
+        war = _cwl_war("inWar", 1)
+        war["startTime"] = "20260703T080000.000Z"
         manager._fetch_json = AsyncMock(
             side_effect=[
                 {
-                    "season": "2026-07",
+                    "season": "2026-07-01",
                     "rounds": [
                         {"warTags": ["#WAR1"]},
                         {"warTags": ["#0"]},
                         {"warTags": ["#0"]},
                     ],
                 },
-                _cwl_war("inWar", 1),
+                war,
             ]
         )
 
@@ -139,6 +141,7 @@ class CwlLeagueWarFetchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(wars), 1)
         self.assertEqual(wars[0]["_total_rounds"], 3)
         self.assertEqual(manager._leaguegroup_cache["BEH"]["total_rounds"], 3)
+        self.assertEqual(wars[0]["_season"], "2026-07")
 
 
 class CwlWarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):

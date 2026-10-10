@@ -12,6 +12,7 @@ import zipfile
 from elbow_helper.features.achievements.database import COIN_DB_INIT
 from elbow_helper.features.achievements.rewards import AchievementRewardService
 from elbow_helper.features.clan_health.database import ClanHealthRepository
+from elbow_helper.features.clan_health.database.migrations import key_stored_cwl_seasons
 from elbow_helper.features.cwl.bonus.analysis import BonusAnalysisService
 from elbow_helper.features.cwl.bonus.export import BonusWorkbookWriter
 from elbow_helper.features.cwl.bonus.service import BonusReportError
@@ -89,6 +90,7 @@ class ClanHealthCwlReadTests(unittest.TestCase):
                     attacks_per_member INTEGER,
                     state TEXT,
                     end_ts INTEGER,
+                    start_ts INTEGER,
                     war_type TEXT
                 );
                 CREATE TABLE war_roster_members (
@@ -116,9 +118,9 @@ class ClanHealthCwlReadTests(unittest.TestCase):
                     destruction REAL
                 );
                 INSERT INTO wars VALUES (
-                    'CWL:#WAR', 'BEH', '2026-07', 'Champion League II',
+                    'CWL:#WAR', 'BEH', '2026-07-01', 'Champion League II',
                     1, 15, 1,
-                    'warEnded', 1, 'CWL'
+                    'warEnded', 1, 1782950400, 'CWL'
                 );
                 INSERT INTO war_roster_members VALUES (
                     'CWL:#WAR', 'BEH', '#A', 'Ahmad', 18, 1, 1, 1,
@@ -130,6 +132,8 @@ class ClanHealthCwlReadTests(unittest.TestCase):
                 );
                 """
             )
+            key_stored_cwl_seasons(connection)
+            connection.commit()
         repository = ClanHealthRepository(path)
 
         self.assertEqual(
@@ -139,6 +143,13 @@ class ClanHealthCwlReadTests(unittest.TestCase):
         wars = repository.bonus_wars("BEH", "2026-07")
         self.assertEqual(wars[0]["roster"][0]["player_tag"], "#A")
         self.assertEqual(wars[0]["attacks"][0]["defender_tag"], "#D")
+        analysis = BonusAnalysisService(ClashClient(None), repository)
+        summary, _, raw, _, errors = analysis.analyze_clan(
+            "BEH", "2026-07", {"clans": {"BEH": {"matchup_expected": {"18:18": 2.0}}}},
+        )
+        self.assertEqual(errors, [])
+        self.assertEqual(summary[0]["total_adjusted_delta"], 1.0)
+        self.assertEqual(len(raw), 1)
 
 
 class BonusReportServiceTests(unittest.IsolatedAsyncioTestCase):

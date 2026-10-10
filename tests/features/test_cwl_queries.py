@@ -119,6 +119,14 @@ def _dataset():
 
 
 class CwlQueriesTests(unittest.TestCase):
+    def test_performance_accepts_a_catchup_league_key(self):
+        dataset = _dataset()
+        for war in dataset["wars"]:
+            war["cwl_season"] = "2026-08-catchup"
+        dataset["seasons"][0]["key"] = "2026-08-catchup"
+        result = CwlQueries(_History(dataset), lambda: {}).performance(season="2026-08-catchup")
+        self.assertEqual(result.rows[0].season, "2026-08-catchup")
+
     def test_season_coverage_keeps_partial_season_distinct_from_seven_war_history(self):
         dataset = _dataset()
         dataset["wars"].append({

@@ -37,43 +37,30 @@ class CwlTransferRosterTests(unittest.TestCase):
 
     def test_current_group_state_confirms_completed_spin(self) -> None:
         self.assertTrue(
-            CwlTransferMixin._league_group_confirms_spin(
-                {"season": "2026-08", "state": "preparation", "rounds": []},
-                "2026-08",
+            CwlTransferMixin._league_group_has_started(
+                {"season": "2026-08-01", "state": "preparation", "rounds": []},
             )
         )
 
     def test_real_war_tag_confirms_spin_when_group_state_is_unknown(self) -> None:
         self.assertTrue(
-            CwlTransferMixin._league_group_confirms_spin(
+            CwlTransferMixin._league_group_has_started(
                 {
                     "season": "2026-08",
                     "state": "unknown",
                     "rounds": [{"warTags": ["#WAR"]}],
                 },
-                "2026-08",
             )
         )
 
-    def test_searching_or_previous_season_group_does_not_confirm_spin(self) -> None:
+    def test_searching_group_has_not_started(self) -> None:
         self.assertFalse(
-            CwlTransferMixin._league_group_confirms_spin(
+            CwlTransferMixin._league_group_has_started(
                 {
                     "season": "2026-08",
                     "state": "searching",
                     "rounds": [{"warTags": ["#0"]}],
                 },
-                "2026-08",
-            )
-        )
-        self.assertFalse(
-            CwlTransferMixin._league_group_confirms_spin(
-                {
-                    "season": "2026-07",
-                    "state": "inWar",
-                    "rounds": [{"warTags": ["#OLD"]}],
-                },
-                "2026-08",
             )
         )
 

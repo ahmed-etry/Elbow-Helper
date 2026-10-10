@@ -6,6 +6,8 @@ from __future__ import annotations
 from contextlib import closing
 import sqlite3
 
+from .migrations import key_stored_cwl_seasons
+
 class ClanHealthSchema:
     def _init_db(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -15,6 +17,7 @@ class ClanHealthSchema:
             cursor.execute("PRAGMA journal_mode=WAL")
             cursor.execute("PRAGMA synchronous=NORMAL")
             cursor.execute("PRAGMA busy_timeout=30000")
+            cursor.execute("BEGIN IMMEDIATE")
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS player_snapshots (
@@ -144,6 +147,7 @@ class ClanHealthSchema:
                     opponent_tag TEXT NOT NULL DEFAULT '',
                     opponent_name TEXT NOT NULL DEFAULT '',
                     cwl_season TEXT NOT NULL DEFAULT '',
+                    cwl_season_label TEXT NOT NULL DEFAULT '',
                     cwl_league TEXT NOT NULL DEFAULT '',
                     cwl_round INTEGER DEFAULT 0,
                     team_size INTEGER DEFAULT 0,
@@ -298,4 +302,5 @@ class ClanHealthSchema:
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_chca_clan_ts ON clan_health_config_audit(clan_code, ts_utc DESC)"
             )
+            key_stored_cwl_seasons(conn)
             conn.commit()

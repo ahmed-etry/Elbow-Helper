@@ -38,7 +38,7 @@ def cwl_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
             "Return every player row.",
             {
                 "clan_code": {"type": "string", "enum": list(CWL_CLAN_CODES)},
-                "season": {"type": "string", "pattern": "^20\\d{2}-(0[1-9]|1[0-2])$"},
+                "season": {"type": "string", "pattern": "^20\\d{2}-(0[1-9]|1[0-2])(?:-catchup)?$"},
                 "scope_type": {"type": "string", "enum": ["season", "round", "war"]},
                 "cwl_round": {"type": "integer", "minimum": 1, "maximum": 7},
                 "war_id": {"type": "string", "minLength": 1, "maxLength": 100},
@@ -54,7 +54,7 @@ def cwl_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
             "Return every player row.",
             {
                 "clan_code": {"type": "string", "enum": list(CWL_CLAN_CODES)},
-                "season": {"type": "string", "pattern": "^20\\d{2}-(0[1-9]|1[0-2])$"},
+                "season": {"type": "string", "pattern": "^20\\d{2}-(0[1-9]|1[0-2])(?:-catchup)?$"},
                 "scope_type": {"type": "string", "enum": ["season", "round", "war"]},
                 "cwl_round": {"type": "integer", "minimum": 1, "maximum": 7},
                 "war_tag": {"type": "string", "minLength": 1, "maxLength": 100},

@@ -18,6 +18,7 @@ import discord
 from discord.ext import commands
 
 from elbow_helper.domain.player_tags import encode_clash_tag
+from elbow_helper.domain.cwl import cwl_season_key
 from elbow_helper.configuration.clans import CLAN_CWL_HELPER_ROLE_IDS
 from elbow_helper.configuration.clans import CLAN_NAMES
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
@@ -114,18 +115,18 @@ class CwlRouterMixin:
         now_ts = time.time()
         cached_group = self._leaguegroup_cache.get(clan_key)
         war_tags: List[tuple[int, str]] = []
-        season = None
+        season_label = ""
         total_rounds = 0
         if cached_group and cached_group.get("war_tags") and now_ts - cached_group["fetched_at"] < 300:
             war_tags = cached_group["war_tags"]
-            season = cached_group.get("season")
+            season_label = str(cached_group.get("season_label") or "")
             total_rounds = int(cached_group.get("total_rounds") or 0)
         else:
             group = await self._fetch_json(
                 f"/clans/{encode_clash_tag(tag)}/currentwar/leaguegroup",
             )
             if group and "rounds" in group:
-                season = group.get("season")
+                season_label = str(group.get("season") or "")
                 rounds = group.get("rounds", []) or []
                 total_rounds = len(rounds)
                 round_index = 1
@@ -137,13 +138,13 @@ class CwlRouterMixin:
                 if war_tags:
                     self._leaguegroup_cache[clan_key] = {
                         "war_tags": war_tags,
-                        "season": season,
+                        "season_label": season_label,
                         "total_rounds": total_rounds,
                         "fetched_at": now_ts,
                     }
             elif cached_group and cached_group.get("war_tags"):
                 war_tags = cached_group["war_tags"]
-                season = cached_group.get("season")
+                season_label = str(cached_group.get("season_label") or "")
                 total_rounds = int(cached_group.get("total_rounds") or 0)
             else:
                 return []
@@ -155,7 +156,7 @@ class CwlRouterMixin:
             cached_war = self._war_cache.get(war_tag)
             if cached_war and cached_war.get("_state") == "warEnded":
                 cached_war["_total_rounds"] = total_rounds
-                cached_war["_season"] = season
+                cached_war["_season_label"] = season_label
                 cached_war["_snapshot_stale"] = False
                 candidates.append(cached_war)
                 continue
@@ -165,7 +166,7 @@ class CwlRouterMixin:
             if not war:
                 if cached_war:
                     cached_war["_total_rounds"] = total_rounds
-                    cached_war["_season"] = season
+                    cached_war["_season_label"] = season_label
                     cached_war["_snapshot_stale"] = True
                     candidates.append(cached_war)
                 continue
@@ -182,11 +183,14 @@ class CwlRouterMixin:
             war["_state"] = state
             war["_start_dt"] = coc_time_to_dt(war.get("startTime"))
             war["_total_rounds"] = total_rounds
-            war["_season"] = season
+            war["_season_label"] = season_label
             war["_snapshot_stale"] = False
             self._war_cache[war_tag] = war
             candidates.append(war)
 
+        season = cwl_season_key(candidates)
+        for war in candidates:
+            war["_season"] = season
         return candidates
 
 

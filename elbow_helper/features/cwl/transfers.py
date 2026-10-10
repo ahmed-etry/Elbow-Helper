@@ -31,6 +31,7 @@ from elbow_helper.configuration.clans import CLAN_NAMES
 from elbow_helper.configuration.roles import CWL_HELPERS
 from elbow_helper.configuration.roles import LEAD_PLUS
 from elbow_helper.infrastructure.persistence import read_json
+from elbow_helper.domain.cwl import cwl_season_key
 from elbow_helper.infrastructure.persistence import write_json_atomic
 from .config import CLAN_LINKS
 from .config import CWL_CLAN_CODES
@@ -501,12 +502,7 @@ class CwlTransferMixin:
 
 
     @staticmethod
-    def _league_group_confirms_spin(
-        group: Dict[str, Any],
-        expected_season: str,
-    ) -> bool:
-        if str(group.get("season") or "").strip() != expected_season:
-            return False
+    def _league_group_has_started(group: Dict[str, Any]) -> bool:
         state = str(group.get("state") or "").strip()
         if state in {"preparation", "inWar", "warEnded", "ended"}:
             return True
@@ -550,7 +546,13 @@ class CwlTransferMixin:
                     response.error,
                 )
                 return clan_code, "unavailable"
-            if self._league_group_confirms_spin(group, expected_season):
+            if not self._league_group_has_started(group):
+                return clan_code, "not_started"
+            wars = await self._get_league_wars(clan_code)
+            season = cwl_season_key(wars)
+            if not season:
+                return clan_code, "unavailable"
+            if season == expected_season:
                 return clan_code, "started"
             return clan_code, "not_started"
 

@@ -246,11 +246,11 @@ class ClanHealthRecords:
                 INSERT INTO wars (
                     war_id, war_type, clan_code, clan_tag,
                     opponent_tag, opponent_name,
-                    cwl_season, cwl_league, cwl_round,
+                    cwl_season, cwl_season_label, cwl_league, cwl_round,
                     team_size, attacks_per_member, state,
                     preparation_start_ts, start_ts, end_ts,
                     last_seen_ts, source
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(war_id, clan_code) DO UPDATE SET
                     war_type = excluded.war_type,
                     clan_tag = excluded.clan_tag,
@@ -269,6 +269,10 @@ class ClanHealthRecords:
                     cwl_league = CASE
                         WHEN excluded.cwl_league != '' THEN excluded.cwl_league
                         ELSE wars.cwl_league
+                    END,
+                    cwl_season_label = CASE
+                        WHEN excluded.cwl_season_label != '' THEN excluded.cwl_season_label
+                        ELSE wars.cwl_season_label
                     END,
                     cwl_round = CASE
                         WHEN excluded.cwl_round > 0 THEN excluded.cwl_round
@@ -307,6 +311,7 @@ class ClanHealthRecords:
                         str(r.get("opponent_tag") or ""),
                         str(r.get("opponent_name") or ""),
                         str(r.get("cwl_season") or ""),
+                        str(r.get("cwl_season_label") or ""),
                         str(r.get("cwl_league") or ""),
                         int(r.get("cwl_round") or 0),
                         int(r.get("team_size") or 0),

@@ -10,7 +10,7 @@ import time
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from elbow_helper.configuration.clans import CLAN_NAMES, CLAN_ORDER, CLAN_TAGS
-from elbow_helper.domain.cwl import is_cwl_window
+from elbow_helper.domain.cwl import is_cwl_window, cwl_season_key
 from elbow_helper.domain.player_tags import encode_clash_tag
 from elbow_helper.infrastructure.clash import ClashClient
 
@@ -178,6 +178,7 @@ class ClanHealthCollector:
         war_type: str,
         source: str,
         cwl_season: str = "",
+        cwl_season_label: str = "",
         cwl_league: str = "",
         cwl_round: int = 0,
     ) -> Optional[Dict[str, Any]]:
@@ -201,6 +202,7 @@ class ClanHealthCollector:
             "opponent_tag": str(opponent.get("tag") or ""),
             "opponent_name": str(opponent.get("name") or ""),
             "cwl_season": cwl_season if war_type == "CWL" else "",
+            "cwl_season_label": cwl_season_label if war_type == "CWL" else "",
             "cwl_league": cwl_league if war_type == "CWL" else "",
             "cwl_round": int(cwl_round or 0) if war_type == "CWL" else 0,
             "team_size": team_size,
@@ -442,7 +444,7 @@ class ClanHealthCollector:
         war_refs: List[Tuple[int, str]] = []
         round_index = 1
         group_state = str((group or {}).get("state") or "").strip()
-        group_season = str((group or {}).get("season") or "").strip()
+        group_season_label = str((group or {}).get("season") or "")
         if group_state == "notInWar":
             return [], warnings
         if group:
@@ -471,11 +473,13 @@ class ClanHealthCollector:
                 return None
             war["_round"] = round_no
             war["_warTag"] = war_tag
-            war["_season"] = group_season
+            war["_season_label"] = group_season_label
             return war
 
         payloads = [w for w in await asyncio.gather(*(load_war(ref) for ref in war_refs)) if w]
+        season = cwl_season_key(payloads)
         for war in payloads:
+            war["_season"] = season
             state = str(war.get("state") or "")
             war_tag = str(war.get("_warTag") or "")
             if state in {"preparation", "inWar"} and war_tag:
@@ -517,6 +521,7 @@ class ClanHealthCollector:
                 war_type="CWL",
                 source=source,
                 cwl_season=str(war_payload.get("_season") or ""),
+                cwl_season_label=str(war_payload.get("_season_label") or ""),
                 cwl_league=league_name,
                 cwl_round=int(war_payload.get("_round") or 0),
             )

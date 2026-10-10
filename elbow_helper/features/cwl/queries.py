@@ -268,7 +268,7 @@ class CwlQueries:
             raise ValueError("Invalid CWL history limit")
         if season is not None and (
             not isinstance(season, str)
-            or re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", season) is None
+            or re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])(?:-catchup)?", season) is None
         ):
             raise ValueError("Invalid CWL season")
         if clan_code is not None and clan_code not in CWL_CLAN_NAMES:
@@ -359,7 +359,7 @@ class CwlQueries:
             latest_end_ts = row["latest_end_ts"]
             if (
                 not isinstance(season, str)
-                or re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", season) is None
+                or re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])(?:-catchup)?", season) is None
                 or season in seen
                 or type(ended_wars) is not int or ended_wars < 1
                 or type(latest_end_ts) is not int or latest_end_ts < 0
@@ -388,7 +388,7 @@ class CwlQueries:
             raise ValueError("Invalid CWL clan code")
         if (
             not isinstance(season, str)
-            or re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", season) is None
+            or re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])(?:-catchup)?", season) is None
             or scope_type not in {"season", "round", "war"}
             or cwl_round is not None
             and (type(cwl_round) is not int or not 1 <= cwl_round <= 7)
@@ -491,7 +491,7 @@ class CwlQueries:
         if (
             clan_code not in CWL_CLAN_NAMES
             or not isinstance(season, str)
-            or re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", season) is None
+            or re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])(?:-catchup)?", season) is None
             or scope_type not in {"season", "round", "war"}
             or cwl_round is not None
             and (type(cwl_round) is not int or not 1 <= cwl_round <= 7)
