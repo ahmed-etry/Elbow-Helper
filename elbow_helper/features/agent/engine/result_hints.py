@@ -17,6 +17,7 @@ from elbow_helper.features.role_connections.queries import RoleConnectionConditi
 from elbow_helper.features.support_tickets.queries import SupportTicketMetadata
 
 from ..conversation.instructions import TaskInstruction
+from ..discord_actions.polls import PollSnapshot
 from ..datasets.clash import (
     CLAN_FIELDS, CLAN_MEMBER_FIELDS, CWL_CLAN_FIELDS, CWL_GROUP_FIELDS, CWL_MEMBER_FIELDS,
     HERO_FIELDS, LEAGUE_FIELDS, PLAYER_CLAN_FIELDS, PLAYER_FIELDS, WAR_CLAN_FIELDS,
@@ -363,6 +364,7 @@ def _returned_fields(shape):
 
 RESULT_FIELDS = {name: _returned_fields(shape) for name, shape in RESULT_FIELDS.items()}
 REPORT_FIELDS = {kind: _returned_fields(shape) for kind, shape in REPORT_FIELDS.items()}
+RESULT_FIELDS["read_discord_poll"] = result_fields(PollSnapshot)
 RETURN_HINTS = {name: format_returns(shape) for name, shape in RESULT_FIELDS.items()}
 
 
