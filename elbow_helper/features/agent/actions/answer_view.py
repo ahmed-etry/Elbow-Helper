@@ -7,8 +7,10 @@ import logging
 
 import discord
 
-from ..access import AgentAccessLost, require_evidence_access
-from ..wording import ACTION_POST_HERE_BUTTON, ACTION_RESULT_EXPIRED, ACTION_RESULT_OWNER
+from ..access import ACCESS_VIEW_AUDIT_LOG, AgentAccessLost, require_evidence_access
+from ..wording import (
+    ACTION_POST_HERE_BUTTON, ACTION_RESULT_EXPIRED, ACTION_RESULT_OWNER, ACTION_UNAVAILABLE,
+)
 from .private_view import PRIVATE_RESULT_TIMEOUT, PrivateResultView
 
 LOGGER = logging.getLogger(__name__)
@@ -27,10 +29,11 @@ class PrivateAnswerView(PrivateResultView):
         self.context = context
         self.post = post
         self._lock = asyncio.Lock()
-        button = discord.ui.Button(label=ACTION_POST_HERE_BUTTON,
-                                   style=discord.ButtonStyle.secondary)
-        button.callback = self.post_here
-        self.add_item(button)
+        if ACCESS_VIEW_AUDIT_LOG not in context.state.required_access:
+            button = discord.ui.Button(label=ACTION_POST_HERE_BUTTON,
+                                       style=discord.ButtonStyle.secondary)
+            button.callback = self.post_here
+            self.add_item(button)
 
     async def _authorize(self, interaction):
         if interaction.user.id != self.owner_id:
@@ -53,6 +56,9 @@ class PrivateAnswerView(PrivateResultView):
     async def post_here(self, interaction):
         async with self._lock:
             if not await self._authorize(interaction):
+                return
+            if ACCESS_VIEW_AUDIT_LOG in self.context.state.required_access:
+                await interaction.response.send_message(ACTION_UNAVAILABLE, ephemeral=True)
                 return
             await interaction.response.defer()
             await self.post(interaction)

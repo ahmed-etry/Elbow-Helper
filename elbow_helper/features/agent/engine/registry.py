@@ -28,6 +28,7 @@ from ..discord_actions.timeouts import timeout_tools
 from ..discord_actions.polls import poll_tools
 from ..discord_actions.scheduled_events import scheduled_event_tools
 from ..discord_actions.forum_posts import forum_tools
+from ..discord_actions.audit_log import audit_tools
 from ..conversation.history_tool import history_tools
 from ..knowledge.tools import knowledge_tools
 from ..research.tools import research_tools
@@ -67,6 +68,7 @@ def build_agent_tool_groups(gif_client=None) -> dict[str, tuple[RegisteredAgentT
             *poll_tools(),
             *scheduled_event_tools(),
             *forum_tools(),
+            *audit_tools(),
         ),
         "files": attachment_tools(),
         "knowledge_history": (*history_tools(), *knowledge_tools(), *action_log_tools()),

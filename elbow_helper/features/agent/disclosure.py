@@ -8,7 +8,7 @@ from typing import Any
 import discord
 
 from .access import (
-    ACCESS_ROLE_SETS, KNOWN_ACCESS_REQUIREMENTS,
+    ACCESS_ROLE_SETS, ACCESS_VIEW_AUDIT_LOG, KNOWN_ACCESS_REQUIREMENTS,
     accessible_message_channel, has_access_requirements,
 )
 from .models import AgentRequestContext
@@ -93,6 +93,8 @@ def _destination_satisfies_role_requirements(
 ) -> bool:
     if not requirements:
         return True
+    if ACCESS_VIEW_AUDIT_LOG in requirements:
+        return False
     if not requirements <= KNOWN_ACCESS_REQUIREMENTS:
         return False
     destination = channel.parent if isinstance(channel, discord.Thread) else channel
@@ -198,6 +200,8 @@ async def can_show(
         return recipient is not None and await can_show_in_dm(
             guild, recipient.id, sources, access_levels,
         )
+    if ACCESS_VIEW_AUDIT_LOG in access_levels:
+        return False
     if (getattr(getattr(destination, "guild", None), "id", None) != guild.id
             or not access_levels <= KNOWN_ACCESS_REQUIREMENTS
             or any(getattr(getattr(source, "guild", None), "id", None) != guild.id

@@ -312,6 +312,12 @@ def fixed_results(seed):
         "read_discord_poll": {"channel_id": seed, "message_id": seed, "question": "Synthetic",
                               "answers": [{"answer_id": seed, "text": "Synthetic", "votes": seed}],
                               "multiple_choice": False, "expires_at": None, "finalized": False},
+        "read_discord_audit_log": {"entries": [{
+            "entry_id": seed, "action_type": "role_update", "member_id": seed,
+            "member_name": "Synthetic", "target_id": seed, "target_name": "Synthetic",
+            "timestamp": "2026-10-01T00:00:00+00:00", "reason": "Synthetic", "extra": {},
+            "changes": [{"field": "name", "before": "Synthetic A", "after": "Synthetic B"}],
+        }], "examined_entries": seed, "truncated": False},
     }
 
 

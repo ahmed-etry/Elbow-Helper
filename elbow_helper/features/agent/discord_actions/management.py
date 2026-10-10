@@ -24,7 +24,7 @@ def text(maximum, *, minimum=1):
 
 
 def tool(name, description, properties, required, handler, *, entities=(),
-         irreversible=False, read=False):
+         irreversible=False, read=False, required_access=frozenset()):
     return RegisteredAgentTool(
         AgentToolDefinition(name, description, {
             "type": "object", "properties": properties, "required": list(required),
@@ -37,6 +37,7 @@ def tool(name, description, properties, required, handler, *, entities=(),
         contract=CapabilityContract(
             entity_fields=entities, source_scope="request_context",
             filter_fields=tuple(key for key in properties if key not in dict(entities)),
+            required_access=required_access,
         ),
     )
 

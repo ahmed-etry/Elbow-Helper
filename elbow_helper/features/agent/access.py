@@ -45,7 +45,8 @@ ACCESS_ROLE_SETS = {
     ACCESS_RECRUITER_OR_CORE: RECRUITERS | CORE,
     ACCESS_LEAD_PLUS_OR_CWL_HELPER: LEAD_PLUS | CWL_HELPERS,
 }
-KNOWN_ACCESS_REQUIREMENTS = frozenset(ACCESS_ROLE_SETS)
+ACCESS_VIEW_AUDIT_LOG = "View Audit Log"
+KNOWN_ACCESS_REQUIREMENTS = frozenset(ACCESS_ROLE_SETS) | {ACCESS_VIEW_AUDIT_LOG}
 AGENT_ROLLOUT_ROLE_IDS = CORE | {AGENT_TESTER_ROLE_ID}
 
 
@@ -69,7 +70,14 @@ def has_access_requirements(
     if member is None:
         return False
     role_ids = {role.id for role in member.roles}
-    return all(role_ids & ACCESS_ROLE_SETS[level] for level in requirements)
+    if ACCESS_VIEW_AUDIT_LOG in requirements:
+        for actor in (member, guild.me):
+            if actor is None or not getattr(
+                getattr(actor, "guild_permissions", None), "view_audit_log", False,
+            ):
+                return False
+    return all(role_ids & ACCESS_ROLE_SETS[level]
+               for level in requirements if level != ACCESS_VIEW_AUDIT_LOG)
 
 
 def lookup_level(level: str):

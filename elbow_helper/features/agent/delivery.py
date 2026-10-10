@@ -12,7 +12,7 @@ from dataclasses import replace
 
 import discord
 
-from .access import require_evidence_access
+from .access import ACCESS_VIEW_AUDIT_LOG, require_evidence_access
 from .disclosure import can_show
 from .wording import ACTION_PRIVATE_ANSWER, ACTION_PREVIEW_HEADER, FAILURE_MESSAGE, LONG_REPLY_FILENAME
 from .conversation.state import Conversation
@@ -61,6 +61,12 @@ class AgentDeliveryMixin:
         _notice_content: str | None = None,
         _answer_disclosure: bool = False,
     ) -> None:
+        audit_private = bool(context and ACCESS_VIEW_AUDIT_LOG in context.state.required_access
+                             and not isinstance(message.channel, discord.DMChannel))
+        if audit_private:
+            _audience_override = False
+            if context.state.proposed_changes and context.state.preview_reply is None:
+                context.state.preview_reply = preview_text(context.state.proposed_changes)
         if context is not None:
             attachments = await publish_spreadsheet(context, attachments)
         if context is not None and context.state.preview_reply is not None:
@@ -71,14 +77,15 @@ class AgentDeliveryMixin:
             return
         reused_disclosure = False
         if (context is not None and not context.state.proposed_changes
-                and (not context.state.outcomes or _answer_disclosure) and not _audience_override):
+                and (not context.state.outcomes or _answer_disclosure or audit_private)
+                and not _audience_override):
             sources = await require_evidence_access(context)
-            audience_allowed = await can_show(
+            audience_allowed = False if audit_private else await can_show(
                 message.channel, sources, context.state.required_access,
                 context.guild, thread_members=context.disclosure_thread_members,
             )
             reused_disclosure = bool(
-                not audience_allowed and conversation is not None
+                not audit_private and not audience_allowed and conversation is not None
                 and conversation.can_reuse_answer_disclosure(
                     context.member.id, message.channel.id,
                     context.state.source_channels, context.state.required_access,
@@ -229,6 +236,15 @@ class AgentDeliveryMixin:
         preview_context = replace(context, state=replace(
             context.state, outcomes=[], attachments=[], preview_reply=None,
         ))
+        if ACCESS_VIEW_AUDIT_LOG in context.state.required_access:
+            preview_context = replace(preview_context, state=replace(
+                preview_context.state,
+                required_access=context.state.required_access - {ACCESS_VIEW_AUDIT_LOG},
+                proposed_changes=[replace(action, preview=replace(
+                    action.preview,
+                    detail_access=action.preview.detail_access | {ACCESS_VIEW_AUDIT_LOG},
+                )) for action in context.state.proposed_changes],
+            ))
         scheduled = getattr(message, "scheduled_run", False)
         if scheduled:
             await self._send_split_response(
@@ -236,15 +252,17 @@ class AgentDeliveryMixin:
                 preview_context, active, preview_timeout, mention_requester, preview_first=False,
             )
             return
-        await prepare_preview(context)
-        preview = preview_text(context.state.proposed_changes)
+        await prepare_preview(preview_context)
+        preview = preview_text(preview_context.state.proposed_changes)
         context.state.preview_reply = preview
         sources = await require_evidence_access(answer_context)
-        allowed = await can_show(
+        audit_private = ACCESS_VIEW_AUDIT_LOG in answer_context.state.required_access
+        allowed = False if audit_private else await can_show(
             message.channel, sources, answer_context.state.required_access, context.guild,
             thread_members=context.disclosure_thread_members,
         )
-        if not allowed and conversation is not None:
+        if (not allowed and conversation is not None
+                and ACCESS_VIEW_AUDIT_LOG not in context.state.required_access):
             allowed = conversation.can_reuse_answer_disclosure(
                 context.member.id, message.channel.id,
                 context.state.source_channels, context.state.required_access,
