@@ -110,3 +110,12 @@ def get_application_emoji_provider(client: discord.Client) -> ApplicationEmojiPr
         provider = ApplicationEmojiProvider(client)
         _PROVIDERS[client] = provider
     return provider
+
+
+async def loading_status(client: discord.Client, text: str) -> str:
+    """Prefix progress text with the application's spinner when available."""
+    if not callable(getattr(client, "fetch_application_emojis", None)):
+        return text
+    catalog = await get_application_emoji_provider(client).get(required_names=("loading",))
+    token = catalog.get("loading")
+    return f"{token} {text}" if token else text
