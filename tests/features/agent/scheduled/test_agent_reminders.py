@@ -104,7 +104,7 @@ class ReminderTests(unittest.IsolatedAsyncioTestCase):
         message = ScheduledMessage(self.member.guild, self.channel, self.member, "Question")
         context = AgentRequestContext(
             source_message=message, member=self.member, guild=self.member.guild,
-            bot=self.bot, account_links=None, clan_health=None, message_search=None,
+            bot=self.bot, account_links=None, message_search=None,
             state=AgentTurnState(),
         )
         delivery = AsyncMock()

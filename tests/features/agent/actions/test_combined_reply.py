@@ -59,7 +59,7 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
         )
         self.context = AgentRequestContext(
             bot=self.surface.bot, guild=self.guild, member=self.member, source_message=self.message,
-            account_links=None, clan_health=None, message_search=None,
+            account_links=None, message_search=None,
             state=AgentTurnState(source_channels={221}, proposed_changes=[self.action],
                                  preview_reply=preview_text([self.action])),
         )

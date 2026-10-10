@@ -668,7 +668,7 @@ class ResearchJobToolTests(unittest.IsolatedAsyncioTestCase):
                 channel=self.channel,
                 created_at=datetime(2026, 9, 17, 12, tzinfo=timezone.utc),
             ),
-            account_links=None, clan_health=None, message_search=self.search,
+            account_links=None, message_search=self.search,
             research_jobs=self.repository, conversation_root_id=500,
         )
         self.context.state.source_channels.add(100)

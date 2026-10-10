@@ -129,7 +129,7 @@ class PreviewDetailTests(unittest.IsolatedAsyncioTestCase):
         )
         self.context = AgentRequestContext(
             bot=SimpleNamespace(user=self.bot_member), guild=self.guild, member=self.member,
-            source_message=self.message, account_links=None, clan_health=None, message_search=None,
+            source_message=self.message, account_links=None, message_search=None,
         )
         self.context.state.source_channels.add(10)
         self.action = PreparedAction(

@@ -138,7 +138,6 @@ class AgentExaminationToolTests(unittest.IsolatedAsyncioTestCase):
                 created_at=datetime.now(timezone.utc),
             ),
             account_links=None,
-            clan_health=None,
             message_search=None,
             examination_queries=self.queries,
         )

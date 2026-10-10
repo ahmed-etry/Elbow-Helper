@@ -63,7 +63,7 @@ class AgentRoleConnectionTests(unittest.IsolatedAsyncioTestCase):
             source_message=SimpleNamespace(
                 channel=self.channel, created_at=datetime.now(timezone.utc),
             ),
-            account_links=None, clan_health=None, message_search=None,
+            account_links=None, message_search=None,
             role_connection_queries=RoleConnectionQueries(lambda: self.state),
         )
 
@@ -125,7 +125,7 @@ class AgentRoleConnectionTests(unittest.IsolatedAsyncioTestCase):
         context = AgentRequestContext(
             bot=SimpleNamespace(), guild=self.guild, member=core_only,
             source_message=SimpleNamespace(channel=self.channel),
-            account_links=None, clan_health=None, message_search=None,
+            account_links=None, message_search=None,
             role_connection_queries=RoleConnectionQueries(lambda: self.state),
         )
         with self.assertRaises((AgentAccessLost, LookupAccessDenied)):

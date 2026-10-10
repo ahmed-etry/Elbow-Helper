@@ -60,7 +60,7 @@ class AgentEventTests(unittest.IsolatedAsyncioTestCase):
             bot=SimpleNamespace(fetch_channel=AsyncMock(return_value=None)),
             guild=self.guild, member=self.member,
             source_message=SimpleNamespace(channel=self.channel),
-            account_links=None, clan_health=None, message_search=None,
+            account_links=None, message_search=None,
             event_queries=_Queries(),
         )
 

@@ -49,7 +49,6 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
         bot: commands.Bot,
         *,
         account_links,
-        clan_health,
         message_search,
         thread_discovery=None,
         roster_queries,
@@ -77,7 +76,6 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
     ):
         self.bot = bot
         self.account_links = account_links
-        self.clan_health = clan_health
         self.message_search = message_search
         self.thread_discovery = thread_discovery
         self.roster_queries = roster_queries

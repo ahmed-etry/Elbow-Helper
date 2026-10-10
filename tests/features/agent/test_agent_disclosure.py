@@ -163,7 +163,7 @@ class AgentDisclosureTests(unittest.IsolatedAsyncioTestCase):
                 id=1000, channel=destination,
                 created_at=datetime(2026, 9, 24, tzinfo=timezone.utc),
             ),
-            account_links=None, clan_health=None, message_search=None,
+            account_links=None, message_search=None,
         )
         context.state.source_channels.add(100)
 

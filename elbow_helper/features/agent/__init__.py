@@ -25,7 +25,6 @@ async def setup(bot) -> None:
     validate_command_names(enabled_adapters())
     account_links = bot.get_cog("AccountLinks")
     clan_health = bot.get_cog("ClanHealth")
-    clan_health_queries = getattr(clan_health, "queries", None)
     rosters = bot.get_cog("Rosters")
     cwl = bot.get_cog("CwlManagement")
     wars = bot.get_cog("WarManager")
@@ -54,7 +53,7 @@ async def setup(bot) -> None:
     clan_reporting_queries = getattr(clan_reporting, "queries", None)
     role_connection_queries = getattr(role_connections, "queries", None)
     if (
-        account_links is None or clan_health_queries is None or rosters is None
+        account_links is None or clan_health is None or rosters is None
         or cwl_queries is None or war_queries is None or transfer_queries is None
         or hibernation_queries is None or support_queries is None or recruitment_queries is None
         or examination_queries is None or record_queries is None or achievement_queries is None

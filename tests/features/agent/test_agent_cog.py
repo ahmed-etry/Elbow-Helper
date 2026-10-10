@@ -459,7 +459,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
             self.cog.persistence = ConversationPersistence(repository)
             with patch("elbow_helper.features.agent.cog.discord.Member", _Member):
                 await self.cog.on_message(make_message(member, 1, "<@999> first request"))
-            self.cog = AgentCog(self.bot, account_links=object(), clan_health=object(),
+            self.cog = AgentCog(self.bot, account_links=object(),
                                  message_search=object(), roster_queries=object(), transcript_archive=archive,
                                  persistence=ConversationPersistence(ConversationRepository(repository.path)))
             make_message = self._real_handler_scenario(member)
@@ -1398,7 +1398,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.cog = AgentCog(
             self.bot,
             account_links=object(),
-            clan_health=object(),
             message_search=object(),
             roster_queries=object(),
             cwl_queries=object(),

@@ -103,7 +103,6 @@ class AgentSupportToolTests(unittest.IsolatedAsyncioTestCase):
                 channel=self.source, created_at=datetime.now(timezone.utc),
             ),
             account_links=None,
-            clan_health=None,
             message_search=None,
             support_queries=self.queries,
         )

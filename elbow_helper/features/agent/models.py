@@ -27,7 +27,6 @@ if TYPE_CHECKING:
     from .actions.store import AgentActionRepository
     from .actions.runner import AgentActionRunner
     from .knowledge.store import KnowledgeStore
-    from elbow_helper.features.clan_health.queries import ClanHealthQueries
     from elbow_helper.features.clan_reporting.queries import ClanReportingQueries
     from elbow_helper.features.achievements.queries import AchievementQueries
     from elbow_helper.features.clan_transfers.queries import ClanTransferQueries
@@ -136,7 +135,6 @@ class AgentRequestContext:
     member: discord.Member
     source_message: discord.Message
     account_links: Any
-    clan_health: ClanHealthQueries
     message_search: DiscordMessageSearch
     thread_discovery: Any = None
     state: AgentTurnState = field(default_factory=AgentTurnState)

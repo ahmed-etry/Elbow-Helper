@@ -1,3 +1,4 @@
+import inspect
 from types import SimpleNamespace
 from pathlib import Path
 import unittest
@@ -5,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.core.lifecycle import REQUIRED_EXTENSIONS
 from elbow_helper.features.agent import setup
+from elbow_helper.features.agent.cog import AgentCog
 
 
 class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
@@ -46,7 +48,7 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.subTest(missing=missing):
                 dependencies = {
-                    "AccountLinks": object(), "ClanHealth": SimpleNamespace(queries=object()),
+                    "AccountLinks": object(), "ClanHealth": object(),
                     "WarManager": SimpleNamespace(queries=object()),
                     "Rosters": SimpleNamespace(queries=object()),
                     "CwlManagement": SimpleNamespace(queries=object()),
@@ -69,7 +71,7 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
                 bot.add_cog.assert_not_awaited()
 
     async def test_setup_injects_only_feature_read_interfaces(self):
-        queries, clan_health_queries, war_queries = object(), object(), object()
+        queries, war_queries = object(), object()
         cwl_queries, transfer_queries, hibernation_queries = object(), object(), object()
         support_queries = object()
         recruitment_queries = object()
@@ -80,7 +82,7 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
         member_lifecycle_queries = object()
         clan_reporting_queries = object()
         role_connection_queries = object()
-        dependencies = {"AccountLinks": object(), "ClanHealth": SimpleNamespace(queries=clan_health_queries),
+        dependencies = {"AccountLinks": object(), "ClanHealth": object(),
                         "WarManager": SimpleNamespace(queries=war_queries),
                         "Rosters": SimpleNamespace(queries=queries),
                         "CwlManagement": SimpleNamespace(queries=cwl_queries),
@@ -113,6 +115,7 @@ class AgentSetupTests(unittest.IsolatedAsyncioTestCase):
               patch("elbow_helper.features.agent.ResearchJobRepository") as jobs,
               patch("elbow_helper.features.agent.AgentActionRepository") as actions):
             await setup(bot)
+        inspect.signature(AgentCog).bind(*factory.call_args.args, **factory.call_args.kwargs)
         self.assertIs(factory.call_args.kwargs["transcript_archive"], archive.return_value)
         self.assertIs(factory.call_args.kwargs["persistence"].repository, repository.return_value)
         self.assertIs(factory.call_args.kwargs["research_jobs"], jobs.return_value)

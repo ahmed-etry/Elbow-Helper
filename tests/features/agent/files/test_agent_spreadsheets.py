@@ -48,7 +48,7 @@ def _context(export_directory: str):
         ),
         guild=guild, member=member,
         source_message=SimpleNamespace(channel=channel),
-        account_links=None, clan_health=None, message_search=None,
+        account_links=None, message_search=None,
     )
 
 

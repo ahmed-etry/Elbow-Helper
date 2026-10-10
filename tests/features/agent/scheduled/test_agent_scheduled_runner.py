@@ -428,7 +428,7 @@ class SavedRequestScopeTests(unittest.IsolatedAsyncioTestCase):
         state = AgentTurnState(proposed_changes=[proposal], preview_reply="Synthetic preview")
         context = AgentRequestContext(
             bot=None, guild=None, member=SimpleNamespace(id=121), source_message=object(),
-            account_links=None, clan_health=None, message_search=None, state=state,
+            account_links=None, message_search=None, state=state,
         )
         service = SimpleNamespace(answer=AsyncMock(return_value="Synthetic lookup answer"))
         runner = SimpleNamespace(submit=AsyncMock(return_value="synthetic-run"),
@@ -468,7 +468,6 @@ class SavedRequestScopeTests(unittest.IsolatedAsyncioTestCase):
             member=SimpleNamespace(id=2),
             source_message=object(),
             account_links=None,
-            clan_health=None,
             message_search=None,
             state=state,
         )

@@ -313,7 +313,7 @@ class AgentAttachmentToolTests(unittest.IsolatedAsyncioTestCase):
         self.reconciler = None
         self.context = AgentRequestContext(
             bot=SimpleNamespace(fetch_channel=AsyncMock(return_value=None)), guild=guild,
-            member=member, source_message=request, account_links=None, clan_health=None,
+            member=member, source_message=request, account_links=None,
             message_search=None, attachment_sources=(request, replied),
             cwl_queries=self.reconciler,
         )

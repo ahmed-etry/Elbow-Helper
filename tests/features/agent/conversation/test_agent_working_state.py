@@ -79,7 +79,7 @@ class WorkingInstructionIntegrationTests(unittest.IsolatedAsyncioTestCase):
         return AgentRequestContext(
             bot=None, guild=guild, member=member,
             source_message=SimpleNamespace(id=1, channel=channel, created_at=datetime.now(timezone.utc)),
-            account_links=None, clan_health=None, message_search=None,
+            account_links=None, message_search=None,
         )
 
     async def test_model_loop_remembers_exact_instruction_without_authorizing_actions(self):

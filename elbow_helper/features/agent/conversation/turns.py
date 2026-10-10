@@ -52,7 +52,6 @@ class AgentTurnMixin:
             member=member,
             source_message=message,
             account_links=self.account_links,
-            clan_health=self.clan_health,
             message_search=self.message_search,
             thread_discovery=self.thread_discovery,
             state=AgentTurnState(

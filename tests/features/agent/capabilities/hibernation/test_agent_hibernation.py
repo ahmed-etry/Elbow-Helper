@@ -66,7 +66,7 @@ class AgentHibernationToolTests(unittest.IsolatedAsyncioTestCase):
             source_message=SimpleNamespace(
                 channel=self.source, created_at=datetime.now(timezone.utc),
             ),
-            account_links=None, clan_health=None, message_search=None,
+            account_links=None, message_search=None,
             hibernation_queries=self.queries,
         )
 

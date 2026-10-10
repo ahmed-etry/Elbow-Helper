@@ -47,7 +47,7 @@ def _context(*turns):
     context = AgentRequestContext(
         bot=bot, guild=guild, member=member,
         source_message=SimpleNamespace(id=999, channel=channels[100], created_at=datetime.now(timezone.utc)),
-        account_links=None, clan_health=None, message_search=None, history=tuple(turns),
+        account_links=None, message_search=None, history=tuple(turns),
     )
     return context, allowed
 

@@ -58,7 +58,7 @@ def _context():
                               created_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
     return AgentRequestContext(
         bot=None, guild=guild, member=actor, source_message=message,
-        account_links=None, clan_health=None, message_search=None,
+        account_links=None, message_search=None,
     )
 
 

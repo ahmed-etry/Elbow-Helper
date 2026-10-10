@@ -85,7 +85,7 @@ def _context():
     channel.guild = guild
     guild.get_channel_or_thread = lambda channel_id: channel if channel_id == 100 else None
     return AgentRequestContext(
-        bot=None, account_links=None, clan_health=None, message_search=None,
+        bot=None, account_links=None, message_search=None,
         member=member,
         source_message=message,
         guild=guild,

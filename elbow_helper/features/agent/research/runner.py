@@ -130,7 +130,7 @@ class ResearchJobRunner:
         return AgentRequestContext(
             bot=self.bot, guild=guild, member=member,
             source_message=source_message, account_links=None,
-            clan_health=None, message_search=self.message_search,
+            message_search=self.message_search,
             thread_discovery=None,
             research_jobs=self.repository,
             conversation_root_id=scope.conversation_root_id,

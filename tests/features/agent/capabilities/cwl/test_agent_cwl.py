@@ -123,7 +123,7 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
             source_message=SimpleNamespace(
                 id=500, channel=channel, created_at=datetime.now(timezone.utc),
             ),
-            account_links=None, clan_health=None, message_search=None,
+            account_links=None, message_search=None,
             cwl_queries=self.queries,
         )
 
