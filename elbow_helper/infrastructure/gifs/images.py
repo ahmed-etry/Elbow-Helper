@@ -31,3 +31,33 @@ def still_sheet(images):
                 raise ValueError("Image is too large")
             frames.append(image.copy())
     return contact_sheet(frames)
+
+
+def animation_sheet(data):
+    with Image.open(io.BytesIO(data)) as image:
+        if image.width * image.height > 16_000_000:
+            raise ValueError("Image is too large")
+        count = min(4, image.n_frames)
+        if image.n_frames <= 512:
+            durations = []
+            for index in range(image.n_frames):
+                image.seek(index)
+                durations.append(max(1, image.info.get("duration", 100)))
+            total = sum(durations)
+            indices = []
+            for sample in range(count):
+                target, elapsed = total * sample / count, 0
+                for index, duration in enumerate(durations):
+                    elapsed += duration
+                    if elapsed > target:
+                        indices.append(index)
+                        break
+        else:
+            indices = [image.n_frames * index // count for index in range(count)]
+        frames = []
+        for index in indices:
+            image.seek(index)
+            frame = image.copy()
+            frame.thumbnail((240, 180))
+            frames.append(frame)
+        return contact_sheet(frames, labels=[f"Frame {index + 1}" for index in range(count)])
