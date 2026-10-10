@@ -12,6 +12,7 @@ from xml.sax.saxutils import escape as xml_escape
 
 NEUTRAL_ACCENT = "64748B"
 HEADER_FILL = "374151"
+MAX_COLUMN_WIDTH = 60
 
 
 def xlsx_column_name(index: int) -> str:
@@ -62,7 +63,7 @@ def _sheet_xml(
         "<cols>",
     ]
     for column_index in range(1, max_columns + 1):
-        width = min(60, max(10, widths.get(column_index, 10) + 2))
+        width = min(MAX_COLUMN_WIDTH, max(10, widths.get(column_index, 10) + 2))
         parts.append(
             f'<col min="{column_index}" max="{column_index}" '
             f'width="{width}" customWidth="1"/>'

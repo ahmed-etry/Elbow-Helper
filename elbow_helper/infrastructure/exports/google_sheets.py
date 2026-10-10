@@ -13,6 +13,7 @@ from typing import Any
 from typing import Sequence
 
 from .models import ExportSheet
+from .workbook import MAX_COLUMN_WIDTH
 
 
 LOGGER = logging.getLogger(__name__)
@@ -30,6 +31,8 @@ GOOGLE_EXPORT_OWNER_VALUE = "elbow-helper"
 HEADER_FILL = "374151"
 HEADER_HEIGHT_PX = 44
 ZEBRA_FILL = "E6E6E6"
+# XLSX width units use Calibri 11's seven-pixel digit width, plus five pixels of padding.
+MAX_WORKBOOK_COLUMN_PIXELS = MAX_COLUMN_WIDTH * 7 + 5
 
 
 def _folder_id(value: str | None) -> str:
@@ -133,6 +136,51 @@ class GoogleSheetsPublisher:
             if not page_token:
                 return deleted
 
+    @staticmethod
+    def _fit_workbook_columns(sheets_api: Any, spreadsheet_id: str) -> None:
+        spreadsheet = sheets_api.spreadsheets()
+        sheets = spreadsheet.get(
+            spreadsheetId=spreadsheet_id,
+            fields="sheets(properties(sheetId,gridProperties(columnCount,rowCount)))",
+        ).execute().get("sheets", [])
+        requests = [{"autoResizeDimensions": {"dimensions": {
+            "sheetId": sheet["properties"]["sheetId"], "dimension": "COLUMNS",
+            "startIndex": 0,
+            "endIndex": sheet["properties"]["gridProperties"]["columnCount"],
+        }}} for sheet in sheets if sheet["properties"]["gridProperties"]["columnCount"]]
+        if not requests:
+            return
+        spreadsheet.batchUpdate(
+            spreadsheetId=spreadsheet_id, body={"requests": requests},
+        ).execute()
+        fitted = spreadsheet.get(
+            spreadsheetId=spreadsheet_id,
+            fields="sheets(properties(sheetId),data(startColumn,columnMetadata(pixelSize)))",
+        ).execute()
+        clamps = []
+        for sheet in fitted.get("sheets", []):
+            for grid in sheet.get("data", []):
+                start = grid.get("startColumn", 0)
+                for index, column in enumerate(grid.get("columnMetadata", []), start):
+                    if column.get("pixelSize", 0) > MAX_WORKBOOK_COLUMN_PIXELS:
+                        clamps.append({"updateDimensionProperties": {
+                            "range": {
+                                "sheetId": sheet["properties"]["sheetId"],
+                                "dimension": "COLUMNS", "startIndex": index, "endIndex": index + 1,
+                            },
+                            "properties": {"pixelSize": MAX_WORKBOOK_COLUMN_PIXELS},
+                            "fields": "pixelSize",
+                        }})
+        # Rows grew while text wrapped at the narrower imported widths; the header keeps its height.
+        rows = [{"autoResizeDimensions": {"dimensions": {
+            "sheetId": sheet["properties"]["sheetId"], "dimension": "ROWS",
+            "startIndex": 1, "endIndex": sheet["properties"]["gridProperties"]["rowCount"],
+        }}} for sheet in sheets if sheet["properties"]["gridProperties"].get("rowCount", 0) > 1]
+        if clamps or rows:
+            spreadsheet.batchUpdate(
+                spreadsheetId=spreadsheet_id, body={"requests": clamps + rows},
+            ).execute()
+
     def upload_workbook_sync(
         self,
         workbook_path: Path,
@@ -184,6 +232,13 @@ class GoogleSheetsPublisher:
             file_id = created.get("id")
             if not file_id:
                 return None, "I couldn't get a link for the new Google Sheet."
+            sheets_api = build(
+                "sheets", "v4", credentials=credentials, cache_discovery=False,
+            )
+            try:
+                self._fit_workbook_columns(sheets_api, file_id)
+            except (HttpError, RuntimeError, TypeError, ValueError) as error:
+                LOGGER.warning("Google Sheet column fitting failed: %s", error)
             try:
                 deleted = self._cleanup_exports(
                     drive,
