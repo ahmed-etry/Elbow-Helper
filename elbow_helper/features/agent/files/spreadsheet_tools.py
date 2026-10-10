@@ -44,6 +44,9 @@ def spreadsheet_tools() -> tuple[RegisteredAgentTool, ...]:
             "sheet_name": {"type": "string", "minLength": 1, "maxLength": 31},
             "sql": {"type": "string", "minLength": 1, "maxLength": 4000},
             "params": {"type": "object", "additionalProperties": True},
+            "rows_from": {
+                "type": "array", "items": {"type": "object", "additionalProperties": True},
+            },
             "columns": {
                 "type": "array", "minItems": 1, "maxItems": 20,
                 "uniqueItems": True, "items": {"anyOf": [heading, source_column]},
@@ -68,7 +71,9 @@ def spreadsheet_tools() -> tuple[RegisteredAgentTool, ...]:
                 "the request. Query sheets use sql and params; saved report sheets "
                 "use report_id, collection and field/heading columns. Optional "
                 "sheet_name selects an imported XLSX sheet, whose fields are "
-                "zero-based column indexes written as strings. Never truncate "
+                "zero-based column indexes written as strings. Result sheets use "
+                "rows_from referencing an earlier step's records and field/heading "
+                "columns, with dotted fields for nested values. Never truncate "
                 "evidence to fit this tool."
             ),
             parameters={
@@ -110,10 +115,14 @@ async def prepare_spreadsheet(
                 or not valid_sheet_name(specification.get("name"))
             ):
                 raise ValueError("A spreadsheet sheet is invalid")
-            kinds = {"sql", "report_id", "rows"}.intersection(specification)
+            kinds = {"sql", "report_id", "rows", "rows_from"}.intersection(specification)
             if len(kinds) != 1:
                 raise ValueError("Choose exactly one kind per sheet.")
-            if "report_id" in specification:
+            if "rows_from" in specification:
+                if set(specification) != {"name", "rows_from", "columns"}:
+                    raise ValueError("Choose exactly one kind per sheet.")
+                sheets.append(_result_sheet(specification))
+            elif "report_id" in specification:
                 if set(specification) - {
                     "name", "report_id", "collection", "sheet_name", "columns",
                 }:
@@ -144,7 +153,7 @@ async def prepare_spreadsheet(
             raise ValueError("A spreadsheet sheet name is repeated")
         cells = sum(len(sheet.columns) * (len(sheet.rows) + 1) for sheet in sheets)
         characters = sum(
-            len(value) for sheet in sheets for row in (sheet.columns, *sheet.rows)
+            len(str(value)) for sheet in sheets for row in (sheet.columns, *sheet.rows)
             for value in row
         )
         has_reports = any("report_id" in item for item in specifications)
@@ -199,6 +208,38 @@ async def _report_sheet(context, specification) -> AgentSpreadsheetSheet:
         materialize_report_table, report, name=name,
         collection=collection, columns=columns,
         page_options={"sheet_name": source_sheet} if source_sheet else None,
+    )
+
+
+def _result_sheet(specification) -> AgentSpreadsheetSheet:
+    records = specification["rows_from"]
+    if not isinstance(records, list) or any(not isinstance(row, dict) for row in records):
+        raise ValueError("rows_from must be a list of objects.")
+    columns = specification["columns"]
+    if (
+        not isinstance(columns, list) or not 1 <= len(columns) <= 20
+        or any(
+            not isinstance(column, dict) or set(column) != {"field", "heading"}
+            or not valid_text(column.get("field"), maximum=100)
+            or not valid_text(column.get("heading"))
+            for column in columns
+        )
+        or len({column["heading"].casefold() for column in columns}) != len(columns)
+    ):
+        raise ValueError("A result sheet's columns are invalid.")
+
+    def value(record, field):
+        for part in field.split("."):
+            if not isinstance(record, dict):
+                return ""
+            record = record.get(part)
+        if record is None:
+            return ""
+        return record if type(record) in (int, float) else str(record)
+
+    return AgentSpreadsheetSheet(
+        specification["name"], tuple(column["heading"] for column in columns),
+        tuple(tuple(value(record, column["field"]) for column in columns) for record in records),
     )
 
 

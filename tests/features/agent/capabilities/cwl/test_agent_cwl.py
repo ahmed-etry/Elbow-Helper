@@ -1,4 +1,8 @@
 from datetime import datetime, timezone
+from io import BytesIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
@@ -12,6 +16,12 @@ from features.agent.report_helpers import make_event_report
 from elbow_helper.features.agent.capabilities.cwl.reads import read_cwl_performance, read_cwl_performance_report, read_cwl_threads
 from elbow_helper.features.agent.capabilities.cwl.scoring import cwl_ass_scores, cwl_bonus_scores
 from elbow_helper.features.agent.files.spreadsheet_tools import prepare_spreadsheet
+from elbow_helper.features.agent.engine.registry import build_agent_tools
+from elbow_helper.features.agent.engine.service import AgentService
+from elbow_helper.infrastructure.exports import LocalExportStore, WorkbookWriter
+from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
+from openpyxl import load_workbook
+from features.agent.engine.test_agent_plan_flow import _Session, _Model, _model_step
 
 from elbow_helper.features.cwl.queries import (
     CwlAssScopeRow, CwlAssScopeSnapshot, CwlBonusAttackScore,
@@ -109,6 +119,52 @@ class _Queries:
 
 
 class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
+
+    async def test_ass_read_and_result_sheet_build_workbook_in_one_round(self):
+        registry = build_agent_tools()
+        registry = {name: registry[name] for name in ("cwl_ass_scores", "prepare_spreadsheet")}
+        plan = {
+            "goal": "Synthetic season scores", "effort": "low", "output": "prepare_spreadsheet",
+            "steps": [
+                {"id": "scores", "capability": "cwl_ass_scores", "depends_on": [],
+                 "arguments": {"clan_code": "BE1", "season": "2026-08", "scope_type": "season"}},
+                {"id": "workbook", "capability": "prepare_spreadsheet", "depends_on": ["scores"],
+                 "arguments": {"title": "Synthetic season", "sheets": [{
+                     "name": "Scores", "rows_from": {"step": "scores", "path": ["players"]},
+                     "columns": [{"field": "player_name", "heading": "Account"},
+                                 {"field": "ass_score", "heading": "ASS"}],
+                 }]}},
+            ],
+        }
+        session = _Session([
+            _model_step(plan), AgentStep("Synthetic workbook ready", (), AgentUsage()),
+        ], [])
+        with TemporaryDirectory() as directory:
+            self.context.bot.local_exports = LocalExportStore(Path(directory))
+            self.context.bot.workbook_writer = WorkbookWriter()
+            self.context.guild.filesize_limit = 8 * 1024 * 1024
+            with patch(
+                "elbow_helper.features.agent.engine.service.build_agent_tools",
+                return_value=registry,
+            ):
+                answer = await AgentService(_Model(session)).answer(
+                    question="Synthetic scores as a spreadsheet", local_context="",
+                    context=self.context,
+                )
+            self.assertEqual(answer, "Synthetic workbook ready")
+            self.assertEqual(len(session.calls), 2)
+            results = json.loads(session.calls[1][0][0].content)["results"]
+            player = results["scores"]["players"][0]
+            self.assertTrue(results["workbook"]["attachment_prepared"])
+            workbook = load_workbook(BytesIO(self.context.state.attachments[0].data))
+            try:
+                self.assertEqual(workbook["Scores"]["A2"].value, player["player_name"])
+                self.assertEqual(workbook["Scores"]["B2"].value, player["ass_score"])
+                self.assertEqual(workbook["Scores"]["B2"].data_type, "n")
+            finally:
+                workbook.close()
+            self.assertIn(("ass_scope", "BE1", "2026-08", "season", None, None),
+                          self.queries.calls)
 
     def setUp(self):
         member = SimpleNamespace(id=42, display_name="Tester", roles=[SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=CO_APPLICANT_ROLE_ID)])

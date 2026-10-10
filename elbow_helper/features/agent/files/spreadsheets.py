@@ -23,7 +23,7 @@ MAX_SPREADSHEET_CHARACTERS = 100_000
 class AgentSpreadsheetSheet:
     name: str
     columns: tuple[str, ...]
-    rows: tuple[tuple[str, ...], ...]
+    rows: tuple[tuple[Any, ...], ...]
 
 
 @dataclass(frozen=True, slots=True)
