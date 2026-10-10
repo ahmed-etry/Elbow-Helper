@@ -12,7 +12,8 @@ from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentAttachment, AgentRequestContext
 from elbow_helper.features.agent.files.spreadsheets import parse_agent_spreadsheet
 from elbow_helper.features.agent.engine.registry import build_agent_tools
-from elbow_helper.features.agent.files.spreadsheet_tools import prepare_report_spreadsheet, prepare_spreadsheet
+from elbow_helper.features.agent.plan.checker import valid_arguments
+from elbow_helper.features.agent.files.spreadsheet_tools import prepare_spreadsheet
 from elbow_helper.infrastructure.exports import LocalExportStore, WorkbookWriter
 
 
@@ -79,12 +80,60 @@ class AgentSpreadsheetContractTests(unittest.TestCase):
                 parse_agent_spreadsheet(arguments)
 
     def test_tool_schema_is_registered_with_bounded_literal_cells(self):
-        tool = build_agent_tools()["prepare_spreadsheet"].definition
+        registry = build_agent_tools()
+        self.assertNotIn("prepare_report_spreadsheet", registry)
+        tool = registry["prepare_spreadsheet"].definition
         self.assertEqual(tool.parameters["properties"]["sheets"]["maxItems"], 4)
         self.assertIn("literal text rows", tool.description)
+        sheet = tool.parameters["properties"]["sheets"]["items"]
+        self.assertEqual(sheet["type"], "object")
+        self.assertEqual(sheet["required"], ["name"])
+        arguments = {"title": "Synthetic", "sheets": [
+            _arguments()["sheets"][0],
+            {"name": "Query", "sql": "SELECT :value", "params": {"value": 7}},
+            {"name": "Report", "report_id": "synthetic", "collection": "accounts",
+             "columns": [{"field": "tag", "heading": "Account"}]},
+        ]}
+        self.assertTrue(valid_arguments(arguments, tool.parameters))
 
 
 class AgentSpreadsheetToolTests(unittest.IsolatedAsyncioTestCase):
+    async def test_query_report_and_written_sheets_share_one_workbook(self):
+        class Report:
+            def page(self, *, offset=0, limit=25):
+                return {"accounts": [{"tag": "#P0"}], "next_offset": None}
+
+        with TemporaryDirectory() as directory:
+            context = _context(directory)
+            context.state.reports["report"] = Report()
+            context.state.report_sources["report"] = frozenset()
+            context.state.report_access_requirements["report"] = frozenset()
+            arguments = {"title": "Synthetic", "sheets": [
+                {"name": "Query", "sql": "SELECT 7 AS Score"},
+                {"name": "Report", "report_id": "report", "collection": "accounts",
+                 "columns": [{"field": "tag", "heading": "Account"}]},
+                {"name": "Notes", "columns": ["Finding"], "rows": [["Synthetic"]]},
+            ]}
+            with patch(
+                "elbow_helper.features.agent.files.spreadsheet_tools.query_context",
+                AsyncMock(return_value={"rows": [{"Score": 7}]}),
+            ):
+                result = await prepare_spreadsheet(context, arguments)
+            self.assertEqual(result["sheets"], 3)
+            workbook = load_workbook(BytesIO(context.state.attachments[0].data))
+            try:
+                self.assertEqual(workbook.sheetnames, ["Query", "Report", "Notes"])
+                self.assertEqual(workbook["Report"]["A2"].value, "#P0")
+            finally:
+                workbook.close()
+            for field, value in (("sql", "SELECT 1"), ("rows", [])):
+                with self.subTest(field=field):
+                    mixed = {**arguments["sheets"][1], field: value}
+                    rejected = await prepare_spreadsheet(context, {
+                        "title": "Synthetic", "sheets": [mixed],
+                    })
+                    self.assertEqual(rejected, {"error": "Choose exactly one kind per sheet."})
+
     async def test_imported_table_uses_column_positions_without_losing_duplicates(self):
         class ImportReport:
             def page(self, *, sheet_name=None, offset=0, limit=25):
@@ -103,9 +152,9 @@ class AgentSpreadsheetToolTests(unittest.IsolatedAsyncioTestCase):
             context.state.report_sources["import"] = frozenset({100})
             context.state.report_access_requirements["import"] = frozenset()
             context.state.source_channels.add(100)
-            result = await prepare_report_spreadsheet(context, {
+            result = await prepare_spreadsheet(context, {
                 "title": "Imported comparison",
-                "report_sheets": [{
+                "sheets": [{
                     "name": "Selected", "report_id": "import",
                     "collection": "data", "sheet_name": "Input",
                     "columns": [
@@ -140,20 +189,19 @@ class AgentSpreadsheetToolTests(unittest.IsolatedAsyncioTestCase):
             context.state.source_channels.add(100)
             arguments = {
                 "title": "Account review",
-                "report_sheets": [{
+                "sheets": [{
                     "name": "Accounts", "report_id": "report",
                     "collection": "accounts", "columns": [
                         {"field": "tag", "heading": "Account"},
                         {"field": "score", "heading": "Score"},
                     ],
-                }],
-                "written_sheets": [{
+                }, {
                     "name": "Notes", "columns": ["Finding"],
                     "rows": [["Provisional"]],
                 }],
             }
 
-            result = await prepare_report_spreadsheet(context, arguments)
+            result = await prepare_spreadsheet(context, arguments)
             workbook = load_workbook(
                 BytesIO(context.state.attachments[0].data), read_only=True,
             )
@@ -167,16 +215,16 @@ class AgentSpreadsheetToolTests(unittest.IsolatedAsyncioTestCase):
                 workbook.close()
 
             incomplete = dict(arguments)
-            incomplete["report_sheets"] = [{
-                **arguments["report_sheets"][0], "collection": "summary",
+            incomplete["sheets"] = [{
+                **arguments["sheets"][0], "collection": "summary",
                 "columns": [{"field": "count", "heading": "Count"}],
             }]
-            self.assertIn("cursor", (await prepare_report_spreadsheet(
+            self.assertIn("cursor", (await prepare_spreadsheet(
                 context, incomplete,
             ))["error"])
 
             context.state.report_sources.clear()
-            self.assertIn("not authorized", (await prepare_report_spreadsheet(
+            self.assertIn("not authorized", (await prepare_spreadsheet(
                 context, arguments,
             ))["error"])
 

@@ -17,8 +17,7 @@ class CapabilityBindError(ValueError):
 
 MECHANICAL_FIELDS = frozenset({
     "offset", "limit", "cursor", "page_size", "expected_version",
-    "expected_state_fingerprint", "title", "sheets", "report_sheets",
-    "written_sheets", "label", "quote", "section_offset",
+    "expected_state_fingerprint", "title", "sheets", "label", "quote", "section_offset",
     "section_limit", "content_offset", "content_limit", "ticket_offset",
     "winner_offset", "query", "report_kind",
 })

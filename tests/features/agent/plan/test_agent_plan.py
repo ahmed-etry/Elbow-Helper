@@ -21,6 +21,8 @@ SAVED_REPORT_CONTRACTS = saved_report_contracts(REGISTRY)
 
 
 def _sample(schema):
+    if "anyOf" in schema and "type" not in schema:
+        return _sample(schema["anyOf"][0])
     if "enum" in schema:
         return schema["enum"][0]
     kind = schema.get("type")

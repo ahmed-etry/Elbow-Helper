@@ -42,6 +42,8 @@ def _valid_value(
 ) -> bool:
     if dependencies is not None and isinstance(value, dict) and set(value) == {"step", "path"}:
         return _reference(value, dependencies)
+    if "anyOf" in schema and "type" not in schema:
+        return any(_valid_value(value, choice, dependencies) for choice in schema["anyOf"])
     if "enum" in schema and value not in schema["enum"]:
         return False
     kind = schema.get("type")
