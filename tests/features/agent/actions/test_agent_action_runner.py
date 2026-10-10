@@ -24,6 +24,24 @@ from elbow_helper.features.agent.text import chunk_response
 
 
 class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_confirmed_run_logs_start_and_each_step_status_without_content(self):
+        actions = [self.action(name, outcome=ActionOutcome("complete"))[0]
+                   for name in ("first", "second")]
+        actions.append(self.action("third", allowed=False)[0])
+        with self.assertLogs(
+            "elbow_helper.features.agent.actions.runner", level="INFO",
+        ) as logs:
+            run = await self.run_actions(*actions)
+        run_id = run["run_id"]
+        info = [record.getMessage() for record in logs.records if record.levelname == "INFO"]
+        self.assertEqual(info, [
+            f"Agent action run started: run={run_id} requester=4 steps=3",
+            f"Agent action step finished: run={run_id} step=0 action=first status=completed",
+            f"Agent action step finished: run={run_id} step=1 action=second status=completed",
+            f"Agent action step finished: run={run_id} step=2 action=third status=failed",
+        ])
+        self.assertTrue(all("preview" not in message.casefold() for message in info))
+
     async def test_dm_delivery_keeps_access_checks_in_the_home_channel(self):
         destination = SimpleNamespace(id=9, send=AsyncMock(return_value=self.progress))
         self.context.delivery_channel = destination

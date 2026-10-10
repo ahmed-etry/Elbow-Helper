@@ -97,6 +97,7 @@ async def _deliver_dms(context, identifiers, text, attachment, delivery):
                         file.close()
         except discord.HTTPException as error:
             delivered = False
+            LOGGER.info("Agent DM was not delivered: member=%s code=%s", member.id, error.code)
             if error.code not in (50007, 50278):
                 LOGGER.warning(
                     "Agent DM was not delivered: member=%s code=%s", member.id, error.code,

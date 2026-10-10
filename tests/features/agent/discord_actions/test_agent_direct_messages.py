@@ -151,7 +151,13 @@ class DirectMessageTests(unittest.IsolatedAsyncioTestCase):
                 SimpleNamespace(status=403, reason="Forbidden"),
                 {"code": code, "message": "Synthetic"},
             )
-            outcomes = await deliver_dms(self.context, [1], "Synthetic")
+            with self.assertLogs(
+                "elbow_helper.features.agent.discord_actions.direct_messages", level="INFO",
+            ) as logs:
+                outcomes = await deliver_dms(self.context, [1], "Synthetic")
+            self.assertEqual(len(logs.records), 1)
+            self.assertIn(f"member=1 code={code}", logs.output[0])
+            self.assertNotIn("Synthetic", logs.output[0])
             self.assertFalse(outcomes[0]["delivered"])
             report = format_run_report({
                 "status": "completed",
@@ -161,6 +167,7 @@ class DirectMessageTests(unittest.IsolatedAsyncioTestCase):
                 }],
             })
             self.assertIn("DM to Synthetic 1", report)
+            self.assertIn("Not done", report)
 
     async def test_multiple_actions_share_cap_and_delivery_pacing(self):
         for identifier in range(3, 52):

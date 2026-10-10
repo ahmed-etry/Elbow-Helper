@@ -153,6 +153,8 @@ class AgentActionRunner:
         owner = uuid4().hex
         if not await asyncio.to_thread(self.repository.claim, run_id, owner=owner):
             return
+        LOGGER.info("Agent action run started: run=%s requester=%s steps=%s",
+                    run_id, context.member.id, len(actions))
         channel = getattr(context, "delivery_channel", None) or context.source_message.channel
         view = StopActionRunView(self.repository, run_id, context.member.id)
         progress = None
@@ -174,6 +176,8 @@ class AgentActionRunner:
                     run_id, index, owner, context, action, channel, progress, view, output,
                     total=len(actions),
                 )
+                LOGGER.info("Agent action step finished: run=%s step=%s action=%s status=%s",
+                            run_id, index, action.path, step_status)
                 if step_status != "completed":
                     outcome_status = "failed"
                     break
