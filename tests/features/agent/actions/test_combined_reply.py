@@ -14,7 +14,9 @@ from elbow_helper.features.agent.actions.preview import ConfirmationView, previe
 from elbow_helper.features.agent.access import AgentAccessLost, ACCESS_LEAD
 from elbow_helper.features.agent.conversation.state import ConversationRecord, ConversationStore, ConversationTurn
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin, AgentDeliveryUnknown, _delivery_nonce
-from elbow_helper.features.agent.models import AgentDelivery, AgentRequestContext, AgentTurnState
+from elbow_helper.features.agent.models import (
+    AgentAttachment, AgentDelivery, AgentRequestContext, AgentTurnState,
+)
 from elbow_helper.features.agent.wording import (
     ACTION_CANCELLED, ACTION_PRIVATE_ANSWER, ACTION_PREVIEW_EXPIRED,
     ACTION_CONFIRM_BUTTON, ACTION_CANCEL_BUTTON, ACTION_PRIVATE_BUTTON, ACTION_POST_HERE_BUTTON,
@@ -113,6 +115,29 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(delivery.complete)
                 self.assertIs(self.surface._conversations.find(321, 221, sent.id), self.conversation)
                 self.surface._archive_reply.assert_any_await(421, sent.id, sent.content)
+
+    async def test_four_published_workbooks_keep_links_when_the_preview_changes(self):
+        attachments = [AgentAttachment(
+            f"synthetic-{index}.xlsx", b"Synthetic workbook",
+            google_link=f"https://docs.google.com/spreadsheets/d/synthetic-{index}/edit",
+            spreadsheet_title=f"Synthetic export {index}",
+        ) for index in range(4)]
+        await self.surface.send_response(
+            self.message, "Synthetic workbooks ready", None, attachments, context=self.context,
+        )
+        combined = self.sent[0].view
+        self.addCleanup(combined.stop)
+        self.assertNotIn("files", self.message.reply.await_args.kwargs)
+        links = [item for item in combined.children if getattr(item, "url", None)]
+        self.assertEqual(len(links), 8)
+        self.assertEqual([item.label for item in links], [
+            label for index in range(4) for label in (f"Synthetic export {index}", "Download")
+        ])
+        self.assertEqual([item.row for item in links], [1, 1, 2, 2, 3, 3, 4, 4])
+        await combined.views["preview"].cancel(self.interaction())
+        remaining = [item for item in self.sent[0].view.children if getattr(item, "url", None)]
+        self.assertEqual(remaining, links)
+        self.assertTrue(all(not item.disabled for item in remaining))
 
     async def test_cancel_and_expiry_replace_only_the_preview_in_either_order(self):
         for first in (True, False):

@@ -25,6 +25,7 @@ from .actions.preview import CONFIRMATION_TIMEOUT, ConfirmationView
 from .actions.preview import preview_text
 from .actions.details import prepare_preview
 from .actions.combined_reply import CombinedReplyView
+from .files.delivery import attachment_files, spreadsheet_links, spreadsheet_response
 from .text import DISCORD_MESSAGE_LIMIT
 from .text import chunk_response as _chunk_response
 
@@ -149,6 +150,7 @@ class AgentDeliveryMixin:
             await prepare_preview(context)
             if response.startswith(previous_preview):
                 response = preview_text(context.state.proposed_changes) + response[len(previous_preview):]
+        response = spreadsheet_response(response, attachments)
         has_preview = bool(context and context.state.proposed_changes)
         # A preview must not ping the people it names before the change is confirmed.
         allowed_users: dict[int, discord.abc.User] = {} if has_preview else {
@@ -174,13 +176,13 @@ class AgentDeliveryMixin:
             users=list(allowed_users.values()),
             replied_user=False,
         )
-        files = [discord.File(io.BytesIO(item.data), filename=item.filename) for item in attachments]
+        files = attachment_files(attachments)
         if not has_preview and _needs_file(response):
             files.append(discord.File(io.BytesIO(response.encode("utf-8")), filename=LONG_REPLY_FILENAME))
             chunks = [None]
         else:
             chunks = _chunk_response(response)
-        if not chunks and not files:
+        if not chunks and not files and not any(item.google_link for item in attachments):
             raise AgentUnavailableError("The agent returned an empty answer")
         active_delivery = delivery or AgentDelivery()
         active_delivery.generated_parts.extend(
@@ -200,6 +202,7 @@ class AgentDeliveryMixin:
                 nonce_seed=_nonce_seed,
                 notice_message=_notice_message,
                 notice_content=_notice_content,
+                attachments=attachments,
             )
             if reused_disclosure:
                 LOGGER.info(
@@ -215,6 +218,7 @@ class AgentDeliveryMixin:
         self, message, response, referenced, attachments, conversation, context,
         active, preview_timeout, mention_requester,
     ) -> None:
+        response = spreadsheet_response(response, attachments)
         answer_context = replace(context, state=replace(
             context.state, proposed_changes=[], preview_reply=None,
         ))
@@ -260,9 +264,12 @@ class AgentDeliveryMixin:
                 fits = (len(combined.render(answer=response)) <= DISCORD_MESSAGE_LIMIT
                         and not _answer_needs_ping(message, response, referenced, self.bot))
                 if fits:
-                    files = [discord.File(io.BytesIO(item.data), filename=item.filename) for item in attachments]
+                    files = attachment_files(attachments)
                     try:
-                        await combined.edit_part_locked("answer", content=response, view=private_view, attachments=files)
+                        await combined.edit_part_locked(
+                            "answer", content=response,
+                            view=spreadsheet_links(private_view, attachments), attachments=files,
+                        )
                     finally:
                         for file in files:
                             file.close()
@@ -291,8 +298,10 @@ class AgentDeliveryMixin:
                     )
                     await self._save_reply_conversation(conversation, message.id)
 
-        answer_view = private_view if allowed else PrivateAnswerView(
-            answer_context, response, attachments, post, private_view=private_view,
+        answer_view = (
+            spreadsheet_links(private_view, attachments) if allowed else PrivateAnswerView(
+                answer_context, response, attachments, post, private_view=private_view,
+            )
         )
         combined = CombinedReplyView(
             preview, answer, confirm_view, answer_view,
@@ -308,8 +317,7 @@ class AgentDeliveryMixin:
                 preview_first=context.state.preview_first,
             )
             return
-        files = [discord.File(io.BytesIO(item.data), filename=item.filename)
-                 for item in (attachments if allowed else ())]
+        files = attachment_files(attachments if allowed else ())
         content = combined.render()
         active.generated_parts.append(content)
         try:
@@ -372,12 +380,15 @@ class AgentDeliveryMixin:
     async def _send_response_parts(
         self, message, response, chunks, options, private_view, confirm_view,
         allowed_mentions, active_delivery, delivery, context, conversation,
-        *, nonce_seed=None, notice_message=None, notice_content=None,
+        *, nonce_seed=None, notice_message=None, notice_content=None, attachments=(),
     ) -> None:
         if private_view is not None and confirm_view is None:
             options["view"] = private_view
         if confirm_view is not None and len(chunks) <= 1:
             options["view"] = confirm_view
+        view = spreadsheet_links(options.get("view"), attachments)
+        if view is not None:
+            options["view"] = view
         nonce = _delivery_nonce(nonce_seed or message.id, 0)
         if notice_message is not None and not allowed_mentions.users:
             active_delivery.attempt(nonce)

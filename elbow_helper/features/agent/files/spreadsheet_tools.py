@@ -10,7 +10,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ..engine.capability_contract import CapabilityContract
 from ..access import require_evidence_access
 from ..datasets.query import query_context
-from .workbooks import render_workbook_bytes
+from .workbooks import publish_workbook_bytes, render_workbook_bytes
 from .report_tables import materialize_report_table
 from ..models import AgentAttachment, AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from .spreadsheets import (
@@ -80,16 +80,21 @@ def spreadsheet_tools() -> tuple[RegisteredAgentTool, ...]:
         AgentToolDefinition(
             name="prepare_spreadsheet",
             description=(
-                "Prepare an XLSX requested by the asker from authorized evidence "
-                "and clearly labelled recommendations or assumptions. Choose a "
+                "Prepare a spreadsheet with Google Sheet and Download buttons "
+                "or an XLSX attachment. Use authorized evidence and clearly "
+                "labelled recommendations or assumptions. Choose a "
                 "descriptive title, sheets, columns and literal text rows that fit "
-                "the request. Query sheets use sql and params; saved report sheets "
+                "the request. Put tables that belong together into one spreadsheet "
+                "as separate sheets; make separate spreadsheets only when the asker "
+                "wants separate files. Query sheets use sql and params; saved report sheets "
                 "use report_id, collection and field/heading columns. Optional "
                 "sheet_name selects an imported XLSX sheet, whose fields are "
                 "zero-based column indexes written as strings. Result sheets use "
                 "rows_from referencing an earlier step's records and field/heading "
                 "columns, with dotted fields for nested values. Never truncate "
-                "evidence to fit this tool."
+                "evidence to fit this tool. Use google_sheet_published to describe "
+                "delivery; do not paste "
+                "or invent spreadsheet links."
             ),
             parameters={
                 "type": "object", "additionalProperties": False,
@@ -267,7 +272,7 @@ async def _store_spreadsheet(
         if item.report_id == attachment_key
     ), None)
     if prepared is not None:
-        return _result(prepared.filename, spreadsheet)
+        return _result(prepared, spreadsheet)
     if len(context.state.attachments) >= 4:
         return {"error": "Four report files are already prepared for this reply."}
 
@@ -284,15 +289,19 @@ async def _store_spreadsheet(
     await require_evidence_access(context)
     if data is None:
         return {"error": "The spreadsheet exceeds this server's attachment size limit."}
-    context.state.attachments.append(AgentAttachment(
-        filename, data, attachment_key,
-    ))
-    return _result(filename, spreadsheet)
+    google_link, google_warning = await publish_workbook_bytes(context.bot, data, spreadsheet.title)
+    await require_evidence_access(context)
+    prepared = AgentAttachment(
+        filename, data, attachment_key, google_link, google_warning, spreadsheet.title,
+    )
+    context.state.attachments.append(prepared)
+    return _result(prepared, spreadsheet)
 
 
-def _result(filename: str, spreadsheet: AgentSpreadsheet) -> dict[str, Any]:
+def _result(prepared: AgentAttachment, spreadsheet: AgentSpreadsheet) -> dict[str, Any]:
     return {
-        "filename": filename, "sheets": len(spreadsheet.sheets),
+        "filename": prepared.filename, "sheets": len(spreadsheet.sheets),
         "rows": sum(len(sheet.rows) for sheet in spreadsheet.sheets),
-        "attachment_prepared": True,
+        "attachment_prepared": not bool(prepared.google_link),
+        "google_sheet_published": bool(prepared.google_link),
     }

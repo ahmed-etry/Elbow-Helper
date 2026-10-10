@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import io
 from collections.abc import Awaitable, Callable
 
 import discord
@@ -14,6 +13,7 @@ from ..wording import (
     ACTION_RESULT_OWNER,
 )
 from ..models import AgentAttachment
+from ..files.delivery import attachment_files, spreadsheet_links, spreadsheet_warnings
 from ..text import chunk_response
 
 
@@ -55,6 +55,7 @@ class PrivateResultView(discord.ui.View):
                  panel_labels: tuple[str, ...] = ()):
         super().__init__(timeout=PRIVATE_RESULT_TIMEOUT)
         self.owner_id = owner_id
+        parts = (*parts, *spreadsheet_warnings(attachments, parts))
         self.parts = tuple(chunk for part in parts for chunk in chunk_response(part))
         self.attachments = attachments
         self.panels = panels or ((panel,) if panel is not None else ())
@@ -73,8 +74,9 @@ class PrivateResultView(discord.ui.View):
         if self.expired:
             await interaction.response.send_message(ACTION_RESULT_EXPIRED, ephemeral=True)
             return
-        files = [discord.File(io.BytesIO(item.data), filename=item.filename)
-                 for item in self.attachments]
+        files = attachment_files(self.attachments)
+        links = spreadsheet_links(None, self.attachments)
+        options = {"view": links} if links is not None else {}
         try:
             if self.panels:
                 if len(self.panels) == 1:
@@ -85,10 +87,10 @@ class PrivateResultView(discord.ui.View):
                                                 self.panel_labels),
                         ephemeral=True,
                     )
-                if files or self.parts:
+                if files or self.parts or links is not None:
                     await interaction.followup.send(
                         self.parts[0] if self.parts else None,
-                        files=files, ephemeral=True,
+                        files=files, ephemeral=True, **options,
                     )
                     for part in self.parts[1:]:
                         await interaction.followup.send(part, ephemeral=True)
@@ -96,8 +98,10 @@ class PrivateResultView(discord.ui.View):
             for index, part in enumerate(self.parts or ("",)):
                 if index == 0:
                     if files:
+                        options["files"] = files
+                    if options:
                         await interaction.response.send_message(
-                            part or None, files=files, ephemeral=True,
+                            part or None, ephemeral=True, **options,
                         )
                     else:
                         await interaction.response.send_message(part, ephemeral=True)

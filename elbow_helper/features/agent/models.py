@@ -48,6 +48,9 @@ class AgentAttachment:
     filename: str
     data: bytes
     report_id: str | None = None
+    google_link: str | None = None
+    google_warning: str | None = None
+    spreadsheet_title: str = ""
 
 
 @dataclass(slots=True)

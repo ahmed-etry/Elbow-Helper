@@ -37,7 +37,8 @@ class CombinedReplyView(discord.ui.View):
             view = self.views[key]
             if view is not None:
                 for item in view.children:
-                    item.row = 0
+                    if not isinstance(item, discord.ui.Button) or item.url is None:
+                        item.row = 0
                     self.add_item(item)
 
     def start(self, message) -> None:

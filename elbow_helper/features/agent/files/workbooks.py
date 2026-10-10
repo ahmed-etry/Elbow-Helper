@@ -24,3 +24,18 @@ async def render_workbook_bytes(
             bot.local_exports.delete(path)
 
     return await asyncio.to_thread(build)
+
+
+async def publish_workbook_bytes(
+    bot: Any, data: bytes, title: str,
+) -> tuple[str | None, str | None]:
+    """Publish the rendered bytes through the application-owned Google publisher."""
+    publisher = getattr(bot, "google_publisher", None)
+    if publisher is None:
+        return None, None
+    path = bot.local_exports.temporary_path("agent_google_spreadsheet")
+    try:
+        await asyncio.to_thread(path.write_bytes, data)
+        return await publisher.upload_workbook(path, title)
+    finally:
+        await asyncio.to_thread(bot.local_exports.delete, path)
