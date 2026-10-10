@@ -8,6 +8,7 @@ from .message_controls import UNDO_HANDLERS as MESSAGE_CONTROLS_UNDO_HANDLERS
 from .nicknames import UNDO_HANDLERS as NICKNAMES_UNDO_HANDLERS
 from .channel_permissions import UNDO_HANDLERS as PERMISSION_UNDO_HANDLERS
 from .channels import UNDO_HANDLERS as CHANNEL_UNDO_HANDLERS
+from .role_settings import UNDO_HANDLERS as ROLE_SETTINGS_UNDO_HANDLERS
 
 UNDO_HANDLERS = merge_undo_handlers(
     ROLES_UNDO_HANDLERS,
@@ -17,6 +18,7 @@ UNDO_HANDLERS = merge_undo_handlers(
     NICKNAMES_UNDO_HANDLERS,
     PERMISSION_UNDO_HANDLERS,
     CHANNEL_UNDO_HANDLERS,
+    ROLE_SETTINGS_UNDO_HANDLERS,
 )
 
 __all__ = ["UNDO_HANDLERS"]
