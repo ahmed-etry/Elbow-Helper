@@ -7,6 +7,8 @@ import logging
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
+from .checker import _valid_value
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -37,6 +39,9 @@ def resolve_arguments(
     *, schema: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     def resolve(value, detail):
+        if "anyOf" in detail and "type" not in detail:
+            detail = next((choice for choice in detail["anyOf"]
+                           if _valid_value(value, choice, set(results))), {})
         if (detail.get("x-result-list") and isinstance(value, list) and len(value) == 1
                 and isinstance(value[0], dict) and set(value[0]) == {"step", "path"}):
             value = value[0]

@@ -25,7 +25,7 @@ MAX_DATA_BACKED_CHARACTERS = 1_000_000
 
 
 def spreadsheet_tools() -> tuple[RegisteredAgentTool, ...]:
-    cell = {"type": "string", "maxLength": 2_000}
+    cell = {"type": "string", "minLength": 0, "maxLength": 2_000}
     heading = {"type": "string", "minLength": 1, "maxLength": 2_000}
     source_column = {
         "type": "object", "additionalProperties": False,
@@ -35,15 +35,36 @@ def spreadsheet_tools() -> tuple[RegisteredAgentTool, ...]:
         },
         "required": ["field", "heading"],
     }
-    sheet = {
-        "type": "object", "additionalProperties": False,
-        "properties": {
-            "name": {"type": "string", "minLength": 1, "maxLength": 31},
+    columns = {"type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": True}
+
+    def sheet(properties, required):
+        return {
+            "type": "object", "additionalProperties": False,
+            "properties": {
+                "name": {"type": "string", "minLength": 1, "maxLength": 31}, **properties,
+            },
+            "required": ["name", *required],
+        }
+
+    sheets = {"anyOf": [
+        sheet({
+            "columns": {**columns, "items": heading},
+            "rows": {
+                "type": "array", "maxItems": 100,
+                "items": {"type": "array", "minItems": 1, "maxItems": 20, "items": cell},
+            },
+        }, ["columns", "rows"]),
+        sheet({
+            "sql": {"type": "string", "minLength": 1, "maxLength": 4000},
+            "params": {"type": "object", "additionalProperties": True},
+        }, ["sql"]),
+        sheet({
             "report_id": {"type": "string", "minLength": 1, "maxLength": 32},
             "collection": {"type": "string", "minLength": 1, "maxLength": 100},
             "sheet_name": {"type": "string", "minLength": 1, "maxLength": 31},
-            "sql": {"type": "string", "minLength": 1, "maxLength": 4000},
-            "params": {"type": "object", "additionalProperties": True},
+            "columns": {**columns, "items": source_column},
+        }, ["report_id", "collection", "columns"]),
+        sheet({
             "rows_from": {
                 "type": "array", "items": {"type": "object", "additionalProperties": True},
                 "x-result-list": True,
@@ -52,20 +73,9 @@ def spreadsheet_tools() -> tuple[RegisteredAgentTool, ...]:
                     "also accepted inside a one-item list."
                 ),
             },
-            "columns": {
-                "type": "array", "minItems": 1, "maxItems": 20,
-                "uniqueItems": True, "items": {"anyOf": [heading, source_column]},
-            },
-            "rows": {
-                "type": "array", "maxItems": 100,
-                "items": {
-                    "type": "array", "minItems": 1, "maxItems": 20,
-                    "items": cell,
-                },
-            },
-        },
-        "required": ["name"],
-    }
+            "columns": {**columns, "items": source_column},
+        }, ["rows_from", "columns"]),
+    ]}
     return (RegisteredAgentTool(
         AgentToolDefinition(
             name="prepare_spreadsheet",
@@ -89,7 +99,7 @@ def spreadsheet_tools() -> tuple[RegisteredAgentTool, ...]:
                     },
                     "sheets": {
                         "type": "array", "minItems": 1, "maxItems": 4,
-                        "items": sheet,
+                        "items": sheets,
                     },
                 },
                 "required": ["title", "sheets"],

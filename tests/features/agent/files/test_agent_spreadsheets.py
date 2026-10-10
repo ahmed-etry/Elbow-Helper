@@ -86,8 +86,9 @@ class AgentSpreadsheetContractTests(unittest.TestCase):
         self.assertEqual(tool.parameters["properties"]["sheets"]["maxItems"], 4)
         self.assertIn("literal text rows", tool.description)
         sheet = tool.parameters["properties"]["sheets"]["items"]
-        self.assertEqual(sheet["type"], "object")
-        self.assertEqual(sheet["required"], ["name"])
+        self.assertEqual(len(sheet["anyOf"]), 4)
+        self.assertTrue(all(kind["type"] == "object" for kind in sheet["anyOf"]))
+        self.assertTrue(all("name" in kind["required"] for kind in sheet["anyOf"]))
         arguments = {"title": "Synthetic", "sheets": [
             _arguments()["sheets"][0],
             {"name": "Query", "sql": "SELECT :value", "params": {"value": 7}},

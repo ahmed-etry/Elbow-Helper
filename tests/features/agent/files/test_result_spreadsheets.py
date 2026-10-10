@@ -1,18 +1,23 @@
 """Earlier result records become complete, typed workbook rows."""
 
 from io import BytesIO
+from dataclasses import replace
 from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from openpyxl import load_workbook
 
 from features.agent.files.test_agent_spreadsheets import _context
 from elbow_helper.features.agent.engine.registry import build_agent_tools
-from elbow_helper.features.agent.files.spreadsheet_tools import prepare_spreadsheet
+from elbow_helper.features.agent.files.spreadsheet_tools import (
+    prepare_spreadsheet, spreadsheet_tools,
+)
+from elbow_helper.features.agent.models import RegisteredAgentTool
+from elbow_helper.infrastructure.ai import AgentToolDefinition
 from elbow_helper.features.agent.plan import capability_list
-from elbow_helper.features.agent.plan.checker import valid_arguments
-from elbow_helper.features.agent.plan.executor import resolve_arguments
+from elbow_helper.features.agent.plan.checker import check_plan, valid_arguments
+from elbow_helper.features.agent.plan.executor import execute_plan, resolve_arguments
 
 
 def _arguments(records):
@@ -29,7 +34,80 @@ class ResultSpreadsheetTests(unittest.IsolatedAsyncioTestCase):
     def test_catalogue_shows_result_sheet_fields(self):
         catalogue = capability_list(build_agent_tools())
         self.assertIn("rows_from:reference(list of records)", catalogue)
-        self.assertIn("columns:[string/{field:string,heading:string}]", catalogue)
+        self.assertIn("columns:[string]", catalogue)
+        self.assertIn("columns:[{field:string,heading:string}]", catalogue)
+        self.assertNotIn("columns:[string/{field:string,heading:string}]", catalogue)
+
+    async def test_wrong_result_columns_are_refused_before_the_handler_runs(self):
+        read = AsyncMock(return_value={"items": [{"value": 7}]})
+        write = AsyncMock()
+        spreadsheet = spreadsheet_tools()[0]
+        registry = {
+            "read_items": RegisteredAgentTool(AgentToolDefinition(
+                "read_items", "Read synthetic items.",
+                {"type": "object", "properties": {}, "additionalProperties": False},
+            ), read),
+            "write_table": replace(spreadsheet, handler=write, definition=replace(
+                spreadsheet.definition, name="write_table",
+            )),
+        }
+        reference = {"step": "read", "path": ["items"]}
+        plan = {"goal": "Synthetic table", "effort": "low", "output": "write_table", "steps": [
+            {"id": "read", "capability": "read_items", "arguments": {}, "depends_on": []},
+            {"id": "write", "capability": "write_table", "depends_on": ["read"],
+             "arguments": {"title": "Synthetic", "sheets": [{
+                 "name": "Items", "rows_from": reference, "columns": ["Value"],
+             }]}},
+        ]}
+        check = check_plan(plan, registry)
+        self.assertTrue(check.ok)
+        self.assertEqual(set(check.step_errors), {"write"})
+        self.assertIn("Invalid arguments", check.step_errors["write"])
+        read.assert_not_called()
+        write.assert_not_called()
+
+        async def run(step, arguments, results):
+            return await registry[step["capability"]].handler(None, arguments)
+
+        results = await execute_plan(plan, run, step_errors=check.step_errors)
+        self.assertEqual(results["write"], {"error": check.step_errors["write"]})
+        read.assert_awaited_once()
+        write.assert_not_called()
+
+    def test_sheet_kinds_require_their_own_fields_and_column_shapes(self):
+        schema = spreadsheet_tools()[0].definition.parameters
+        field_columns = [{"field": "value", "heading": "Value"}]
+        sheets = [
+            {"name": "Written", "rows": [[""]], "columns": ["Value"]},
+            {"name": "Query", "sql": "SELECT :value", "params": {"value": 7}},
+            {"name": "Report", "report_id": "synthetic", "collection": "items",
+             "columns": field_columns, "sheet_name": "Source"},
+            {"name": "Result", "rows_from": {"step": "read", "path": ["items"]},
+             "columns": field_columns},
+        ]
+        required_fields = (
+            ("name", "rows", "columns"), ("name", "sql"),
+            ("name", "report_id", "collection", "columns"), ("name", "rows_from", "columns"),
+        )
+        for sheet, required_fields in zip(sheets, required_fields):
+            with self.subTest(sheet=sheet):
+                arguments = {"title": "Synthetic", "sheets": [sheet]}
+                self.assertTrue(valid_arguments(arguments, schema, {"read"}))
+                for required in required_fields:
+                    missing = {key: value for key, value in sheet.items() if key != required}
+                    self.assertFalse(valid_arguments(
+                        {"title": "Synthetic", "sheets": [missing]}, schema, {"read"},
+                    ))
+                mixed = {**sheet, "sql" if "sql" not in sheet else "rows": "synthetic"}
+                self.assertFalse(valid_arguments(
+                    {"title": "Synthetic", "sheets": [mixed]}, schema, {"read"},
+                ))
+                if "columns" in sheet:
+                    wrong = {**sheet, "columns": (field_columns if "rows" in sheet
+                                                  else ["Value"])}
+                    self.assertFalse(valid_arguments(
+                        {"title": "Synthetic", "sheets": [wrong]}, schema, {"read"},
+                    ))
 
     async def test_nested_missing_and_numeric_values_are_written_exactly(self):
         records = [{"account": {"name": f"Synthetic {i}"}, "score": i + 0.125}
