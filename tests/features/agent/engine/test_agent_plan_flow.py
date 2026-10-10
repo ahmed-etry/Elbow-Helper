@@ -120,7 +120,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             }, ["invalid"]),
             _step("indirect", {}, ["dependent"]),
         ])
-        corrected = _plan([_step("corrected", {"value": 17})])
+        corrected = _plan([_step("invalid", {"value": 17})])
         session = _Session([
             _model_step(plan), _model_step(corrected),
             AgentStep("Synthetic answer", (), AgentUsage()),
@@ -135,6 +135,28 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                          "Step invalid failed, so this step could not run.")
         self.assertEqual(results["indirect"]["error"],
                          "Step dependent failed, so this step could not run.")
+        corrected = json.loads(session.calls[2][0][0].content)["results"]
+        self.assertEqual(corrected["invalid"]["value"], 17)
+
+    async def test_revision_replaces_failed_steps_before_their_dependents_run(self):
+        dependent = _step("dependent", {
+            "value": {"step": "first", "path": ["value"]},
+        }, ["first"])
+        first = _plan([_step("first", {"value": "invalid"}), dependent])
+        revised = _plan([_step("first", {"value": 17}), dependent])
+        session = _Session([
+            _model_step(first), _model_step(revised),
+            AgentStep("Synthetic answer", (), AgentUsage()),
+        ], self.events)
+        answer, _ = await self._answer(session)
+        self.assertEqual(answer, "Synthetic answer")
+        failed = json.loads(session.calls[1][0][0].content)["results"]
+        self.assertIn("error", failed["first"])
+        self.assertIn("error", failed["dependent"])
+        replaced = json.loads(session.calls[2][0][0].content)["results"]
+        self.assertEqual(replaced["first"]["value"], 17)
+        self.assertEqual(replaced["dependent"]["value"], 17)
+        self.assertEqual(len(session.calls), 3)
 
     async def test_bad_reference_structure_uses_plan_correction(self):
         invalid = _plan([_step("first"), _step("second", {
@@ -625,14 +647,14 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             return {"value": arguments.get("value")}
         self.registry["read_value"] = replace(original, handler=read)
         session = _Session([_model_step(_plan([_step("first", {"value":1})])),
-            _model_step(_plan([_step("second", {"value":2})])),
+            _model_step(_plan([_step("first", {"value":2})])),
             AgentStep("Corrected.", (), AgentUsage())], self.events)
         with self.assertLogs("elbow_helper.features.agent.engine.tool_call", level="ERROR"):
             answer, _ = await self._answer(session)
         self.assertEqual(answer, "Corrected.")
         self.assertIn("error", json.loads(session.calls[1][0][0].content)["results"]["first"])
         self.assertEqual(
-            json.loads(session.calls[2][0][0].content)["results"]["second"]["value"], 2,
+            json.loads(session.calls[2][0][0].content)["results"]["first"]["value"], 2,
         )
 
     async def test_identical_outputs_are_not_deduplicated(self):
@@ -644,13 +666,22 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         await self._answer(session)
         self.assertEqual(self.events.count("read"), 2)
 
-    async def test_revised_plan_requires_new_step_id(self):
-        first = _plan([_step("first", {"value": 7})])
-        session = _Session([_model_step(first), _model_step(first),
-                            AgentStep("Done.", (), AgentUsage())], self.events)
-        await self._answer(session)
-        self.assertIn("Use a new step ID.", session.calls[-1][0][0].content)
-        self.assertEqual(self.events.count("read"), 1)
+    async def test_revision_keeps_successful_step_ids_reserved(self):
+        for payload in ({"value": 7}, {}, {"value": 7, "flags": {"status": "partial"}}):
+            with self.subTest(payload=payload):
+                self.events.clear()
+
+                async def read(context, arguments):
+                    self.events.append("read")
+                    return payload
+
+                self.registry["read_value"] = replace(self.registry["read_value"], handler=read)
+                first = _plan([_step("first", {"value": 7})])
+                session = _Session([_model_step(first), _model_step(first),
+                                    AgentStep("Done.", (), AgentUsage())], self.events)
+                await self._answer(session)
+                self.assertIn("Use a new step ID.", session.calls[-1][0][0].content)
+                self.assertEqual(self.events.count("read"), 1)
 
     async def test_request_deadline_blocks_lookup_and_reserves_answer(self):
         plan = _plan([_step("first")])

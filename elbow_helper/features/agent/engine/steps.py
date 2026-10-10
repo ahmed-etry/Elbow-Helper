@@ -378,7 +378,11 @@ class PlanRunner:
             }
             await require_evidence_access(self.context)
             self.results.update(result)
-            self.completed_steps.update({step["id"]: step for step in plan["steps"]})
+            self.completed_steps.update({
+                step["id"]: step for step in plan["steps"]
+                if "error" not in result[step["id"]]
+                and result[step["id"]].get("flags", {}).get("status") != "failed"
+            })
             self.rounder.unpublished = plan_state.original
             return result
         except AgentAccessLost:

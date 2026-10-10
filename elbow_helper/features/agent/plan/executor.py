@@ -83,7 +83,10 @@ async def execute_plan(
         raise ValueError("Concurrency must be positive")
     steps = {step["id"]: step for step in plan["steps"]}
     pending = set(steps)
-    results: dict[str, Mapping[str, Any]] = dict(earlier_results or {})
+    results: dict[str, Mapping[str, Any]] = {
+        step_id: result for step_id, result in (earlier_results or {}).items()
+        if step_id not in steps
+    }
     semaphore = asyncio.Semaphore(max_concurrency)
 
     async def run_step(step: Mapping[str, Any]) -> tuple[str, Mapping[str, Any]]:
