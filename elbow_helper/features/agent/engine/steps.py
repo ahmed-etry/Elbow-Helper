@@ -19,7 +19,7 @@ from ..access import AgentAccessLost
 from ..access import require_access, accessible_message_channel, has_access_requirements
 from ..access import require_evidence_access
 from ..reports.tools import original_tool
-from ..plan.checker import check_step
+from ..plan.checker import check_plan, check_step
 from ..plan.executor import execute_plan
 from ..plan.results import model_result, model_view
 from . import budgets as limits
@@ -363,6 +363,9 @@ class PlanRunner:
                 partial(self.run_one, plan_state=plan_state),
                 max_concurrency=4,
                 earlier_results=self.results,
+                step_errors=check_plan(
+                    plan, self.registry, completed_steps=self.completed_steps,
+                ).step_errors,
                 parallel=lambda step: self.registry[step["capability"]].effect
                 is AgentCapabilityEffect.READ,
             )

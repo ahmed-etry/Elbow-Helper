@@ -206,9 +206,9 @@ class PlanContractTests(unittest.TestCase):
         plan["steps"][0]["capability"] = name
         plan["steps"][0]["arguments"].update(report_kind=kind, unsupported_filter="value")
         check = check_plan(plan, self.registry)
-        self.assertFalse(check.ok)
-        self.assertIn("unsupported_filter", check.error)
-        self.assertIn("Supported filters:", check.error)
+        self.assertTrue(check.ok)
+        self.assertIn("unsupported_filter", check.step_errors["first"])
+        self.assertIn("Supported filters:", check.step_errors["first"])
 
     def test_malformed_plans_return_errors(self):
         generator = random.Random(7162)
@@ -243,6 +243,10 @@ class PlanContractTests(unittest.TestCase):
             value = generator.choice(atoms)
             step[field] = value
             check = check_plan(plan, self.registry)
-            self.assertEqual(check.ok, value == base["steps"][0][field])
+            reference = isinstance(value, dict) and set(value) == {"step", "path"}
+            expected = value == base["steps"][0][field] or (
+                field == "arguments" and not reference
+            )
+            self.assertEqual(check.ok, expected)
             if not check.ok:
                 self.assertTrue(check.error)

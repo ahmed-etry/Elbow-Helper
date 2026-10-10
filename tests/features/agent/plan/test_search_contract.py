@@ -38,7 +38,8 @@ class SearchContractTests(unittest.IsolatedAsyncioTestCase):
     def test_feedback_identifies_each_invalid_argument_without_echoing_values(self):
         plan = author_plan({"limit": 0, "query": 123})
         result = check_plan(plan, self.registry)
-        feedback = plan_feedback(result.error, step_id=result.step_id)
+        self.assertTrue(result.ok)
+        feedback = plan_feedback(result.step_errors["history"], step_id="history")
         self.assertIn("limit must match", feedback["error"])
         self.assertIn("query must match", feedback["error"])
         self.assertNotIn("123", feedback["error"])

@@ -68,6 +68,8 @@ async def read_request(
                     check = type(check)(False, issue)
             if check.ok and validate_step is not None:
                 for planned_step in plan["steps"]:
+                    if planned_step["id"] in check.step_errors:
+                        continue
                     issue = await validate_step(planned_step)
                     if issue:
                         check = type(check)(False, issue, planned_step["id"])

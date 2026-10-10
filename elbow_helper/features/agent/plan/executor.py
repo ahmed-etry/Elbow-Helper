@@ -64,6 +64,7 @@ async def execute_plan(
     *, max_concurrency: int = 4,
     earlier_results: Mapping[str, Mapping[str, Any]] | None = None,
     parallel: Callable[[Mapping[str, Any]], bool] | None = None,
+    step_errors: Mapping[str, str] | None = None,
 ) -> dict[str, Mapping[str, Any]]:
     """Run independent steps together and wait for dependencies."""
     if max_concurrency < 1:
@@ -74,6 +75,13 @@ async def execute_plan(
     semaphore = asyncio.Semaphore(max_concurrency)
 
     async def run_step(step: Mapping[str, Any]) -> tuple[str, Mapping[str, Any]]:
+        for dependency in step["depends_on"]:
+            if "error" in results[dependency]:
+                return step["id"], {
+                    "error": f"Step {dependency} failed, so this step could not run.",
+                }
+        if step["id"] in (step_errors or {}):
+            return step["id"], {"error": step_errors[step["id"]]}
         try:
             arguments = resolve_arguments(step["arguments"], results)
         except UnresolvedReferenceError as error:

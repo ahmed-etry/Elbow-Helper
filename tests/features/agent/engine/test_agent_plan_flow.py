@@ -111,6 +111,44 @@ class _Model:
 
 class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
 
+    async def test_invalid_step_keeps_valid_results_and_can_be_corrected(self):
+        plan = _plan([
+            _step("valid", {"value": 13}),
+            _step("invalid", {"value": "wrong"}),
+            _step("dependent", {
+                "value": {"step": "invalid", "path": ["value"]},
+            }, ["invalid"]),
+            _step("indirect", {}, ["dependent"]),
+        ])
+        corrected = _plan([_step("corrected", {"value": 17})])
+        session = _Session([
+            _model_step(plan), _model_step(corrected),
+            AgentStep("Synthetic answer", (), AgentUsage()),
+        ], self.events)
+        answer, _ = await self._answer(session)
+        self.assertEqual(answer, "Synthetic answer")
+        self.assertEqual(self.events, ["model", "read", "model", "read", "model"])
+        results = json.loads(session.calls[1][0][0].content)["results"]
+        self.assertEqual(results["valid"]["value"], 13)
+        self.assertIn("value must match", results["invalid"]["error"])
+        self.assertEqual(results["dependent"]["error"],
+                         "Step invalid failed, so this step could not run.")
+        self.assertEqual(results["indirect"]["error"],
+                         "Step dependent failed, so this step could not run.")
+
+    async def test_bad_reference_structure_uses_plan_correction(self):
+        invalid = _plan([_step("first"), _step("second", {
+            "value": {"step": "first", "path": []},
+        }, ["first"])])
+        session = _Session([
+            _model_step(invalid), _model_step(_plan([_step("corrected")])),
+            AgentStep("Synthetic answer", (), AgentUsage()),
+        ], self.events)
+        answer, _ = await self._answer(session)
+        self.assertEqual(answer, "Synthetic answer")
+        self.assertEqual(self.events, ["model", "model", "read", "model"])
+        self.assertIn("rule", session.calls[1][0][0].content)
+
     async def test_reply_order_tracks_plan_order_while_reads_still_execute_first(self):
         async def prepare(context, arguments):
             self.events.append("change")
@@ -414,9 +452,9 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         second_revision = _plan([_step("revision_two", {"value": 3})])
         session = _Session([
             _model_step(invalid_initial), _model_step(initial),
-            _model_step(_plan([_step("revision_one", {"value": "invalid"})])),
+            _model_step({**first_revision, "output": "unavailable"}),
             _model_step(first_revision),
-            _model_step(_plan([_step("revision_two", {"value": "invalid"})])),
+            _model_step({**second_revision, "output": "unavailable"}),
             _model_step(second_revision),
             AgentStep("Synthetic request complete.", (), AgentUsage()),
         ], self.events)
@@ -430,7 +468,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_invalid_revision_correction_does_not_get_another_attempt(self):
         initial = _plan([_step("initial")])
-        invalid = _plan([_step("revision", {"value": "invalid"})])
+        invalid = {**_plan([_step("revision")]), "output": "unavailable"}
         for broken in (_model_step(invalid), AgentStep("", (
                 AgentToolCall("synthetic-broken", "submit_request_plan", "{"),), AgentUsage())):
             with self.subTest(arguments=broken.tool_calls[0].arguments):
@@ -1006,7 +1044,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(session.calls[1][1])
         self.assertTrue(json.loads(session.calls[1][0][0].content)["results"]["output"]["artifact_prepared"])
 
-    async def test_artifact_preparation_can_follow_completed_research(self):
+    async def test_artifact_preparation_cannot_depend_on_failed_research(self):
         async def read(_, arguments):
             return {"error": "The source is unavailable."}
         self.registry["read_value"] = replace(self.registry["read_value"], handler=read)
@@ -1019,10 +1057,11 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         plan["output"] = "write_value"
         session = _Session([_model_step(plan), AgentStep("Ready.", (), AgentUsage())], self.events)
         await self._answer(session)
-        artifact.assert_awaited_once()
+        artifact.assert_not_awaited()
         data = json.loads(session.calls[1][0][0].content)["results"]
         self.assertEqual(data["first"]["flags"]["status"], "failed")
-        self.assertTrue(data["output"]["artifact_prepared"])
+        self.assertEqual(data["output"]["error"],
+                         "Step first failed, so this step could not run.")
 
     async def test_finite_context_can_keep_tools_available_for_first_round(self):
         session = _Session([AgentStep("Ready.", (), AgentUsage())], self.events)

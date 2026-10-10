@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from collections.abc import Callable, Mapping
 from typing import Any
 import logging
@@ -30,6 +30,7 @@ class PlanCheck:
     error: str = ""
     step_id: str = ""
     offered: tuple[str, ...] = ()
+    step_errors: Mapping[str, str] = field(default_factory=dict)
 
 
 def _error(message, step_id="", offered=()):
@@ -204,6 +205,7 @@ def check_plan(raw, registry, *, completed_steps=None):
             return _error("List between 1 and 48 steps.")
         completed = completed_steps or {}
         earlier = set(completed)
+        step_errors = {}
         after_change = {key for key, step in completed.items()
                         if registry[step["capability"]].action_class in (
                             ActionClass.CHANGE, ActionClass.IRREVERSIBLE,
@@ -226,6 +228,11 @@ def check_plan(raw, registry, *, completed_steps=None):
                 not isinstance(dep, str) or dep not in earlier for dep in dependencies
             ):
                 return _error("Depend only on earlier or completed steps.", identity)
+            for reference in result_references(step["arguments"]):
+                if not _reference(reference, set(dependencies)):
+                    return _error(
+                        "Use a valid result reference to a step listed in depends_on.", identity,
+                    )
             classification = registry[name].action_class
             depends_on_change = bool(after_change.intersection(dependencies))
             if classification is ActionClass.READ and depends_on_change:
@@ -238,7 +245,7 @@ def check_plan(raw, registry, *, completed_steps=None):
                 after_change.add(identity)
             checked = check_step(step, registry)
             if not checked.ok:
-                return checked
+                step_errors[identity] = checked.error
             earlier.add(identity)
         if _mixes_irreversible_changes(raw["steps"], registry):
             return _error("Only irreversible changes of the same kind may share a preview.")
@@ -246,7 +253,7 @@ def check_plan(raw, registry, *, completed_steps=None):
             step["capability"] == raw["output"] for step in raw["steps"]
         ):
             return _error("Include the selected output capability in the steps.")
-        return PlanCheck(True)
+        return PlanCheck(True, step_errors=step_errors)
     except Exception:
         LOGGER.exception("Agent plan check failed unexpectedly")
         return _error("Correct the plan fields and values.")
