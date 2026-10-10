@@ -34,7 +34,9 @@ def prepared_paths(module):
         for node in ast.walk(function):
             if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
                 continue
-            if node.func.id == "PreparedAction" or (
+            if node.func.id == "state_action":
+                paths.update(possible_paths(node.args[1], assignments))
+            elif node.func.id == "PreparedAction" or (
                 node.func.id == "CommandAdapter"
                 and any(keyword.arg == "prepare" for keyword in node.keywords)
             ):

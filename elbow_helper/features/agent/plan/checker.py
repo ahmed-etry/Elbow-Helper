@@ -50,6 +50,10 @@ def _valid_value(
     if "enum" in schema and value not in schema["enum"]:
         return False
     kind = schema.get("type")
+    if isinstance(kind, list):
+        return any(_valid_value(value, {**schema, "type": choice}, dependencies) for choice in kind)
+    if kind == "null":
+        return value is None
     if kind == "string":
         return (isinstance(value, str) and (bool(value.strip()) or schema.get("minLength") == 0)
                 and ("pattern" not in schema or re.search(schema["pattern"], value) is not None)
@@ -84,13 +88,16 @@ def valid_arguments(
     properties = schema.get("properties", {})
     if not isinstance(properties, Mapping):
         return False
+    additional = schema.get("additionalProperties", False)
     if (
-        set(arguments) - set(properties) and schema.get("additionalProperties") is not True
+        set(arguments) - set(properties) and additional is not True
+        and not isinstance(additional, Mapping)
     ) or set(schema.get("required", ())) - set(arguments):
         return False
     return all(
-        _valid_value(value, properties[field], dependencies)
-        for field, value in arguments.items() if field in properties
+        _valid_value(value, properties.get(field, additional), dependencies)
+        for field, value in arguments.items()
+        if field in properties or isinstance(additional, Mapping)
     )
 
 

@@ -68,6 +68,8 @@ def _argument(detail: Mapping) -> str:
         kind = "{" + ",".join(
             f"{name}:{_argument(field)}" for name, field in fields.items()
         ) + "}"
+        if not fields and isinstance(detail.get("additionalProperties"), Mapping):
+            kind = "{*:" + _argument(detail["additionalProperties"]) + "}"
     if "enum" in detail:
         choices = detail["enum"]
         kind += (
