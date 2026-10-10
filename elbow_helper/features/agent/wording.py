@@ -79,8 +79,26 @@ ACTION_PREVIEW_SUMMARY = "{index}. {name}: {count} {unit}"
 ACTION_PREVIEW_UNIT_ONE = "change"
 ACTION_PREVIEW_UNIT_MANY = "changes"
 ACTION_CANNOT_UNDO = "This can't be undone."
-ACTION_RUNNING = "Running {count} {unit}..."
-ACTION_PROGRESS = "{done} of {total} done..."
+ACTION_PROGRESS_VERBS = {
+    "Accept": "Accepting", "Add": "Adding", "Apply": "Applying", "Award": "Awarding",
+    "Buy": "Buying", "Cancel": "Cancelling", "Change": "Changing", "Clear": "Clearing",
+    "Clone": "Cloning", "Close": "Closing", "Create": "Creating", "Decline": "Declining",
+    "Delete": "Deleting", "Dismiss": "Dismissing", "Draw": "Drawing", "Edit": "Editing",
+    "End": "Ending", "Export": "Exporting", "Finalize": "Finalizing", "Give": "Giving",
+    "Ignore": "Ignoring", "Leave": "Leaving", "Link": "Linking", "Move": "Moving",
+    "Open": "Opening", "Post": "Posting", "Publish": "Publishing", "Reactivate": "Reactivating",
+    "Redraw": "Redrawing", "Refresh": "Refreshing", "Register": "Registering",
+    "Remove": "Removing", "Reopen": "Reopening", "Request": "Requesting", "Review": "Reviewing",
+    "Save": "Saving", "Schedule": "Scheduling", "Send": "Sending", "Set": "Setting",
+    "Start": "Starting", "Undo": "Undoing", "Unlink": "Unlinking", "Update": "Updating",
+}
+
+
+def action_progress_status(label: str) -> str:
+    verb, separator, rest = label.partition(" ")
+    return ACTION_PROGRESS_VERBS[verb] + separator + rest
+
+
 ACTION_RUN_DONE = "Done: {finished}."
 ACTION_STOP_BUTTON = "Stop"
 ACTION_STOP_OWNER = "Only the member who confirmed can stop this."

@@ -21,9 +21,96 @@ from elbow_helper.features.agent.actions.private_view import PrivateResultView
 from elbow_helper.features.agent.actions.combined_reply import CombinedReplyView
 from elbow_helper.features.agent.actions.preview import ConfirmationView
 from elbow_helper.features.agent.text import chunk_response
+from elbow_helper.features.agent import wording
 
 
 class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
+    def test_every_registered_action_label_has_an_explicit_progress_verb(self):
+        labels = []
+        for name, value in vars(wording).items():
+            if name.startswith("ACTION_") and name.endswith("_LABELS"):
+                labels.extend(value.values())
+            elif name.startswith("ACTION_") and name.endswith("_LABEL"):
+                if name != "ACTION_THREAD_NEW_LABEL":
+                    labels.append(value)
+        self.assertGreater(len(labels), 70)
+        for label in labels:
+            with self.subTest(label=label):
+                self.assertIn(label.split()[0], wording.ACTION_PROGRESS_VERBS)
+                self.assertTrue(wording.action_progress_status(label).split()[0].endswith("ing"))
+        with self.assertRaises(KeyError):
+            wording.action_progress_status("Unknown action")
+
+    async def test_quick_run_shows_action_status_without_stop_or_disabled_buttons(self):
+        action = self.action("reminder", outcome=ActionOutcome("complete"))[0]
+        action = replace(action, preview=replace(action.preview, summary="Set reminder"))
+        edits = []
+        preview = SimpleNamespace(edit=AsyncMock())
+        preview.edit.side_effect = lambda **values: edits.append((
+            values.get("content"), [child.label for child in values["view"].children]
+            if values.get("view") else [],
+        ))
+        with patch(
+            "elbow_helper.features.agent.actions.runner.loading_status",
+            AsyncMock(side_effect=lambda _, text: "<a:loading:123> " + text),
+        ):
+            await self.run_actions(action, progress_message=preview)
+        self.assertEqual(edits, [
+            ("<a:loading:123> Setting reminder", []), ("Done: Set reminder.", []),
+        ])
+
+    async def test_slow_run_adds_stop_after_five_seconds(self):
+        action_started = asyncio.Event()
+        release_action = asyncio.Event()
+        delay_started = asyncio.Event()
+        release_delay = asyncio.Event()
+        stop_shown = asyncio.Event()
+        snapshots = []
+
+        async def change():
+            action_started.set()
+            await release_action.wait()
+            return ActionOutcome("complete")
+
+        async def delay(seconds):
+            self.assertEqual(seconds, 5)
+            delay_started.set()
+            await release_delay.wait()
+
+        async def edit(**values):
+            labels = [child.label for child in values["view"].children]
+            snapshots.append(labels)
+            if labels == ["Stop"]:
+                stop_shown.set()
+
+        action = self.action("dm", outcome=ActionOutcome("complete"))[0]
+        action = replace(action, run=change,
+                         preview=replace(action.preview, summary="Send DM"))
+        preview = SimpleNamespace(edit=AsyncMock(side_effect=edit))
+        with patch("elbow_helper.features.agent.actions.runner.asyncio.sleep", delay):
+            task = asyncio.create_task(self.run_actions(action, progress_message=preview))
+            await action_started.wait()
+            await delay_started.wait()
+            self.assertEqual(snapshots, [[]])
+            release_delay.set()
+            await stop_shown.wait()
+            self.assertEqual(snapshots, [[], ["Stop"]])
+            preview.edit.side_effect = None
+            release_action.set()
+            await task
+        self.assertEqual(preview.edit.await_args.kwargs["content"], "Done: Send DM.")
+
+    async def test_multiple_actions_show_each_start_and_plain_status_without_emoji(self):
+        actions = []
+        for name, label in (("first", "Add role"), ("second", "Post message")):
+            action = self.action(name, outcome=ActionOutcome("complete"))[0]
+            actions.append(replace(action, preview=replace(action.preview, summary=label)))
+        preview = SimpleNamespace(edit=AsyncMock())
+        await self.run_actions(*actions, progress_message=preview)
+        self.assertEqual([call.kwargs["content"] for call in preview.edit.await_args_list], [
+            "Adding role (1 of 2)", "Posting message (2 of 2)", "Done: Add role, Post message.",
+        ])
+
     async def test_confirmed_run_logs_start_and_each_step_status_without_content(self):
         actions = [self.action(name, outcome=ActionOutcome("complete"))[0]
                    for name in ("first", "second")]
@@ -98,7 +185,7 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
         await self.run_actions(*actions, progress_message=preview._progress_message())
         contents = [call.kwargs["content"] for call in message.edit.await_args_list]
         self.assertEqual(contents, [f"1. {text}\n\n2. Synthetic answer" for text in (
-            "Running 2 changes...", "1 of 2 done...", "Done: first, second.",
+            "first (1 of 2)", "second (2 of 2)", "Done: first, second.",
         )])
         self.assertIs(combined.views["answer"], private)
         self.assertFalse(private.expired)
@@ -122,7 +209,7 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_long_combined_run_report_uses_remaining_room_without_losing_text(self):
         action = self.action("long", allowed=False)[0]
-        action = replace(action, preview=replace(action.preview, summary="Synthetic " + "x" * 2500))
+        action = replace(action, preview=replace(action.preview, summary="Set " + "x" * 2500))
         # The initial preview was short; a later run report can grow beyond its part.
         preview = ConfirmationView(4, (self.action("long")[0],), self.context)
         combined = CombinedReplyView("Synthetic preview", "Synthetic answer " + "y" * 1800,
@@ -314,7 +401,7 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
         preview = SimpleNamespace(edit=AsyncMock())
         await self.run_actions(first, second, progress_message=preview)
         self.assertEqual([call.kwargs["content"] for call in preview.edit.await_args_list],
-                         ["Running 2 changes...", "1 of 2 done...", "Done: first, second."])
+                         ["first (1 of 2)", "second (2 of 2)", "Done: first, second."])
         self.channel.send.assert_not_awaited()
 
     async def test_progress_gets_its_own_message_when_the_preview_cannot_change(self):
@@ -324,7 +411,7 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
         )))
         with self.assertLogs("elbow_helper.features.agent.actions.runner", level="WARNING"):
             await self.run_actions(action, progress_message=preview)
-        self.assertEqual(self.channel.send.await_args.args[0], "Running 1 change...")
+        self.assertEqual(self.channel.send.await_args.args[0], "first")
         self.assertEqual(self.progress.edit.await_args.kwargs["content"], "Done: first.")
 
     async def test_posts_in_the_run_channel_leave_no_report(self):
@@ -336,7 +423,7 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
         await self.run_actions(*actions, progress_message=preview)
         preview.delete.assert_awaited_once()
         self.assertEqual([call.kwargs["content"] for call in preview.edit.await_args_list],
-                         ["Running 2 changes...", "1 of 2 done..."])
+                         ["first (1 of 2)", "second (2 of 2)"])
         self.channel.send.assert_not_awaited()
         self.assertIsNone(self.runner.on_finish.await_args.args[2])
 
@@ -376,7 +463,7 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_long_remaining_lines_split_after_replacing_progress(self):
         action, _, _ = self.action("long", allowed=False)
         action = replace(action, preview=replace(
-            action.preview, summary="Not done: " + "x" * 2500,
+            action.preview, summary="Set " + "x" * 2500,
         ))
         await self.run_actions(action)
         self.assertLessEqual(len(self.progress.edit.await_args.kwargs["content"]), 2000)

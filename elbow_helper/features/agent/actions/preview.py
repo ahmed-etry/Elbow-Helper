@@ -173,11 +173,6 @@ class ConfirmationView(discord.ui.View):
             if not await self._claim(interaction):
                 return
             await interaction.response.defer()
-            if self.message is not None:
-                try:
-                    await self.message.edit(view=self)
-                except discord.DiscordException:
-                    LOGGER.warning("Agent preview could not be disabled")
             progress_message = self._progress_message()
             try:
                 if self.runner is None:
@@ -185,6 +180,9 @@ class ConfirmationView(discord.ui.View):
                 await self.runner.submit(
                     self.context, self.proposals, confirmer_id=interaction.user.id,
                     progress_message=progress_message,
+                    **({"private_result": self.private_result}
+                       if self.private_result is not None
+                       and not getattr(progress_message, "preserves_other_text", False) else {}),
                 )
                 LOGGER.info("Agent preview confirmed: requester=%s", self.owner_id)
             except Exception:
@@ -204,8 +202,7 @@ class ConfirmationView(discord.ui.View):
         """Hand the run an edit target that owns only the preview's content."""
         if getattr(self.message, "preserves_other_text", False):
             return self.message
-        if (self.private_result is None
-                and getattr(self.message, "content", None) == preview_text(self.proposals)):
+        if getattr(self.message, "content", None) == preview_text(self.proposals):
             return self.message
         return None
 

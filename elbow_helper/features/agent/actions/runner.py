@@ -11,6 +11,7 @@ from typing import Any
 from uuid import uuid4
 
 import discord
+from elbow_helper.discord.application_emojis import loading_status
 
 from ..access import require_access, require_access_requirements, accessible_message_channel, AgentAccessLost, require_evidence_access
 from ..disclosure import can_disclose_provenance
@@ -18,8 +19,7 @@ from .outcomes import ActionOutcome
 from .private_view import PrivateResultView
 from ..text import chunk_response
 from ..wording import (
-    ACTION_PREVIEW_UNIT_MANY, ACTION_PREVIEW_UNIT_ONE,
-    ACTION_PROGRESS, ACTION_RUNNING,
+    action_progress_status,
     ACTION_STOP_BUTTON, ACTION_STOP_OWNER,
 )
 from .contracts import ActionClass, PreparedAction, check_bundle
@@ -29,6 +29,7 @@ from .report import format_run_report
 
 LOGGER = logging.getLogger(__name__)
 ACTION_TIMEOUT_SECONDS = 180
+STOP_BUTTON_DELAY_SECONDS = 5
 
 
 class ActionPreconditionChanged(ValueError):
@@ -43,6 +44,7 @@ class StopActionRunView(discord.ui.View):
         self.owner_id = owner_id
         button = discord.ui.Button(label=ACTION_STOP_BUTTON, style=discord.ButtonStyle.secondary)
         button.callback = self.stop_run
+        self.button = button
         self.add_item(button)
 
     async def stop_run(self, interaction: discord.Interaction) -> None:
@@ -67,6 +69,7 @@ class ActionRunOutput:
     results: dict[str, Mapping[str, Any]] = field(default_factory=dict)
     step_outcomes: dict[int, tuple[str, Mapping[str, Any]]] = field(default_factory=dict)
     posted_here: int = 0
+    private_result: PrivateResultView | None = None
 
 
 class AgentActionRunner:
@@ -95,7 +98,8 @@ class AgentActionRunner:
             task.cancel()
 
     async def submit(self, context: Any, actions: tuple[PreparedAction, ...],
-                     *, confirmer_id: int, progress_message: Any = None) -> str:
+                     *, confirmer_id: int, progress_message: Any = None,
+                     private_result: PrivateResultView | None = None) -> str:
         if confirmer_id != context.member.id:
             raise ValueError("Only the requester may confirm")
         await self._ready.wait()
@@ -115,7 +119,9 @@ class AgentActionRunner:
                 "before": action.preview.before,
             } for action in actions),
         )
-        task = asyncio.create_task(self._execute(run_id, context, actions, progress_message))
+        task = asyncio.create_task(self._execute(
+            run_id, context, actions, progress_message, private_result,
+        ))
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
         self._runs[run_id] = task
@@ -149,7 +155,8 @@ class AgentActionRunner:
 
     async def _execute(self, run_id: str, context: Any,
                        actions: tuple[PreparedAction, ...],
-                       progress_message: Any = None) -> None:
+                       progress_message: Any = None,
+                       private_result: PrivateResultView | None = None) -> None:
         owner = uuid4().hex
         if not await asyncio.to_thread(self.repository.claim, run_id, owner=owner):
             return
@@ -157,11 +164,17 @@ class AgentActionRunner:
                     run_id, context.member.id, len(actions))
         channel = getattr(context, "delivery_channel", None) or context.source_message.channel
         view = StopActionRunView(self.repository, run_id, context.member.id)
+        view.clear_items()
         progress = None
-        output = ActionRunOutput()
+        stop_task = None
+        output = ActionRunOutput(private_result=private_result)
         outcome_status = "completed"
         try:
-            progress = await self._show_progress(channel, progress_message, view, len(actions))
+            progress = await self._show_progress(
+                channel, progress_message, view,
+                await self._progress_text(actions[0], 0, len(actions)),
+            )
+            stop_task = asyncio.create_task(self._show_stop_later(progress, view, run_id))
             for index, action in enumerate(actions):
                 run = await asyncio.to_thread(self.repository.run, run_id)
                 if run["stop_requested"]:
@@ -172,6 +185,14 @@ class AgentActionRunner:
                 ):
                     outcome_status = "stopped"
                     break
+                if index:
+                    try:
+                        await progress.edit(
+                            content=await self._progress_text(action, index, len(actions)),
+                            view=view,
+                        )
+                    except discord.DiscordException:
+                        LOGGER.warning("Agent action progress could not be posted: run=%s", run_id)
                 step_status = await self._run_step(
                     run_id, index, owner, context, action, channel, progress, view, output,
                     total=len(actions),
@@ -192,23 +213,40 @@ class AgentActionRunner:
                 self.repository.finish_run, run_id, owner=owner, status="failed",
             )
         finally:
+            if stop_task is not None:
+                stop_task.cancel()
+                await asyncio.gather(stop_task, return_exceptions=True)
             view.disable()
             await self._post_report(run_id, context, channel, progress, output)
+            view.stop()
 
     @staticmethod
     async def _show_progress(channel: Any, progress_message: Any, view: discord.ui.View,
-                             count: int):
-        running = ACTION_RUNNING.format(
-            count=count, unit=ACTION_PREVIEW_UNIT_ONE if count == 1 else ACTION_PREVIEW_UNIT_MANY,
-        )
+                             status: str):
         if progress_message is not None:
             try:
-                await progress_message.edit(content=running, view=view)
+                await progress_message.edit(content=status, view=view)
                 return progress_message
             except discord.DiscordException:
                 LOGGER.warning("Agent preview could not show run progress")
-        return await channel.send(running, view=view,
+        return await channel.send(status, view=view,
                                   allowed_mentions=discord.AllowedMentions.none())
+
+    async def _progress_text(self, action, index, total):
+        label = action.preview.summary
+        status = action_progress_status(label) if label else action.path
+        if total > 1:
+            status += f" ({index + 1} of {total})"
+        return await loading_status(self.bot, status)
+
+    @staticmethod
+    async def _show_stop_later(progress, view, run_id):
+        await asyncio.sleep(STOP_BUTTON_DELAY_SECONDS)
+        view.add_item(view.button)
+        try:
+            await progress.edit(view=view)
+        except discord.DiscordException:
+            LOGGER.warning("Agent action Stop button could not be posted: run=%s", run_id)
 
     async def _run_step(
         self, run_id, index, owner, context, action, channel, progress, view,
@@ -254,14 +292,6 @@ class AgentActionRunner:
                 output.posted_here += 1
             if action.step_id and result.result is not None:
                 output.results[action.step_id] = dict(result.result)
-            if progress is not None and index + 1 < total:
-                try:
-                    await progress.edit(
-                        content=ACTION_PROGRESS.format(done=index + 1, total=total),
-                        view=view,
-                    )
-                except discord.DiscordException:
-                    LOGGER.warning("Agent action progress could not be posted: run=%s", run_id)
             return "completed"
         except asyncio.CancelledError:
             raise
@@ -345,9 +375,15 @@ class AgentActionRunner:
                 return
         report = self._report(run)
         chunks = chunk_response(report) or [report]
-        private_view = (PrivateResultView(context.member.id,
-                                           tuple(output.private_parts), tuple(output.private_files))
-                        if output.private_parts or output.private_files else None)
+        previous = output.private_result
+        private_view = (PrivateResultView(
+            context.member.id,
+            (*previous.parts, *output.private_parts) if previous else tuple(output.private_parts),
+            (*previous.attachments, *output.private_files)
+            if previous else tuple(output.private_files),
+            panels=previous.panels if previous else (),
+            panel_labels=previous.panel_labels if previous else (),
+        ) if previous or output.private_parts or output.private_files else None)
         reported = None
         try:
             if progress is not None:
@@ -380,7 +416,7 @@ class AgentActionRunner:
     @staticmethod
     def _only_posted_here(run, output: ActionRunOutput) -> bool:
         """Posts in the run's own channel already show that every step finished."""
-        return (not output.private_parts and not output.private_files
+        return (not output.private_parts and not output.private_files and not output.private_result
                 and output.posted_here == len(run["steps"])
                 and all(step["status"] == "completed" for step in run["steps"]))
 

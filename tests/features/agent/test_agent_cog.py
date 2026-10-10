@@ -213,7 +213,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 progress = self.cog.action_runner.submit.await_args.kwargs["progress_message"]
                 self.assertTrue(progress.preserves_other_text)
                 self.assertEqual(progress.id, 1501)
-                answer_message.edit.assert_awaited_once()
+                answer_message.edit.assert_not_awaited()
                 if not allowed:
                     interaction.id = 601
                     await answer_view.post_here(interaction)

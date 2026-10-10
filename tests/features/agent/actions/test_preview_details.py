@@ -308,6 +308,10 @@ class PreviewDetailTests(unittest.IsolatedAsyncioTestCase):
         )
         await runner.recover()
         await prepare_preview(self.context)
+        self.context.state.proposed_changes = [
+            replace(action, preview=replace(action.preview, summary="Set synthetic value"))
+            for action in self.context.state.proposed_changes
+        ]
         identifier = await runner.submit(
             self.context, tuple(self.context.state.proposed_changes), confirmer_id=2,
         )

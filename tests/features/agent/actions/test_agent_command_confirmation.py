@@ -41,7 +41,7 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         view.runner.submit.assert_awaited_once_with(
             view.context, view.proposals, confirmer_id=101, progress_message=view.message,
         )
-        self.assertEqual(order, ["disabled", "queued"])
+        self.assertEqual(order, ["queued"])
         self.assertTrue(view.is_finished())
 
     async def test_preview_with_a_private_result_keeps_its_message(self):
@@ -53,8 +53,9 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         )
         view.message = SimpleNamespace(edit=AsyncMock(), content=view.preview)
         await view.confirm(self.interaction(101))
-        self.assertIsNone(view.runner.submit.await_args.kwargs["progress_message"])
-        self.assertFalse(view.is_finished())
+        self.assertIs(view.runner.submit.await_args.kwargs["progress_message"], view.message)
+        self.assertIs(view.runner.submit.await_args.kwargs["private_result"], view.private_result)
+        self.assertTrue(view.is_finished())
 
     async def test_cancel_then_timeout_keeps_cancelled_text(self):
         proposal, _, _ = self.proposal(1)
@@ -192,7 +193,7 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         member.followup.send.assert_not_awaited()
         self.assertTrue(view.used)
         self.assertTrue(all(item.disabled for item in view.children))
-        view.message.edit.assert_awaited_once_with(view=view)
+        view.message.edit.assert_not_awaited()
 
     async def test_long_preview_is_complete(self):
         proposal, _, _ = self.proposal("x" * 2000)
