@@ -27,7 +27,6 @@ from elbow_helper.features.agent.files.attachments import (
 from elbow_helper.features.agent.models import AgentRequestContext
 from elbow_helper.features.agent.files.attachment_tools import (
     import_csv_attachment, import_text_attachment, import_xlsx_attachment,
-    list_csv_attachments,
     list_supported_attachments, read_csv_import, read_text_import,
     read_xlsx_import,
 )
@@ -318,10 +317,6 @@ class AgentAttachmentToolTests(unittest.IsolatedAsyncioTestCase):
             cwl_queries=self.reconciler,
         )
 
-    async def test_discovery_lists_only_csv_from_authorized_messages(self):
-        result = await list_csv_attachments(self.context, {})
-        self.assertEqual([row["attachment_id"] for row in result["attachments"]], [7, 9])
-        self.assertEqual([row["source"] for row in result["attachments"]], ["request", "replied_message"])
 
     async def test_supported_discovery_labels_csv_and_xlsx(self):
         result = await list_supported_attachments(self.context, {})

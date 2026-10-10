@@ -42,11 +42,6 @@ def original_tool(registry: Mapping[str, RegisteredAgentTool], name: str,
     return handler.specs.get(kind)
 
 
-def saved_report_contracts(registry):
-    return {tool.definition.name: tool.contract
-            for name in (READ_NAME, COMPARE_NAME)
-            if isinstance(router := _router(registry, name), ReportRouter)
-            for tool in router.specs.values()}
 
 
 def original_arguments(arguments: Mapping[str, Any]) -> dict[str, Any]:

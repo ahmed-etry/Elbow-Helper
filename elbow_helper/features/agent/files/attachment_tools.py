@@ -108,27 +108,6 @@ def attachment_tools() -> tuple[RegisteredAgentTool, ...]:
     ) for name, description, properties, required, handler in definitions)
 
 
-async def list_csv_attachments(
-    context: AgentRequestContext, arguments: Mapping[str, Any],
-) -> Mapping[str, Any]:
-    await require_evidence_access(context)
-    candidates = []
-    for index, message in enumerate(context.attachment_sources):
-        if getattr(getattr(message, "guild", None), "id", None) != context.guild.id:
-            continue
-        if await accessible_message_channel(context, message.channel.id) is None:
-            continue
-        context.state.source_channels.add(message.channel.id)
-        source = "request" if index == 0 else "replied_message"
-        for metadata in attachment_metadata(message):
-            if not metadata["filename"].casefold().endswith(".csv"):
-                continue
-            candidates.append({
-                **metadata, "source": source, "message_id": message.id,
-                "channel_id": message.channel.id,
-            })
-    await require_evidence_access(context)
-    return {"attachments": candidates, "count": len(candidates)}
 
 
 async def list_supported_attachments(

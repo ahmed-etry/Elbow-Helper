@@ -204,22 +204,6 @@ class RoleConnectionPersistenceTests(unittest.IsolatedAsyncioTestCase):
                 _connection("role-b", 20)
             ),
             "remove connection": lambda cog: cog.remove_connection("role-a"),
-            "change target": lambda cog: cog.update_connection_target(
-                "role-a",
-                20,
-            ),
-            "add condition": lambda cog: cog.add_connection_roles(
-                "role-a",
-                "all",
-                "has",
-                [20],
-            ),
-            "remove condition": lambda cog: cog.remove_connection_roles(
-                "role-a",
-                "all",
-                "has",
-                [30],
-            ),
         }
 
         for name, operation in operations.items():

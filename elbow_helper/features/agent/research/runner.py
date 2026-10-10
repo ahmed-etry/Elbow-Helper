@@ -37,15 +37,12 @@ class ResearchJobRunner:
         self.guild_id = guild_id
         self.poll_seconds = poll_seconds
         self._task: asyncio.Task | None = None
-        self._wake = asyncio.Event()
         self._scan_after_job_id: str | None = None
 
     def start(self) -> None:
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._run())
 
-    def wake(self) -> None:
-        self._wake.set()
 
     def cancel(self) -> None:
         if self._task is not None:
@@ -59,13 +56,7 @@ class ResearchJobRunner:
                 raise
             except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error):
                 LOGGER.exception("Agent research worker poll failed")
-            self._wake.clear()
-            try:
-                await asyncio.wait_for(
-                    self._wake.wait(), timeout=self.poll_seconds,
-                )
-            except TimeoutError:
-                pass
+            await asyncio.sleep(self.poll_seconds)
 
     async def run_once(self) -> int:
         scopes = await asyncio.to_thread(

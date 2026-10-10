@@ -11,12 +11,10 @@ from elbow_helper.features.agent.engine.capability_contract import validate_cont
 from elbow_helper.features.agent.engine.registry import build_agent_tools
 
 from elbow_helper.features.agent.engine.capability_contract import contract_catalogue
-from elbow_helper.features.agent.reports.tools import saved_report_contracts
 from features.agent.engine.helpers import patch_contracts
 
 REGISTRY = build_agent_tools()
 CONTRACTS = contract_catalogue(REGISTRY)
-SAVED_REPORT_CONTRACTS = saved_report_contracts(REGISTRY)
 
 
 class AgentCapabilityTests(unittest.TestCase):

@@ -50,9 +50,6 @@ class CapabilityContract:
     required_access: frozenset[str] = frozenset()
     retained_fields: tuple[str, ...] = ()
 
-    def catalogue_entry(self):
-        from dataclasses import asdict
-        return asdict(self)
 
 
 def contract_catalogue(registry: Mapping[str, CapabilityTool]) -> dict[str, CapabilityContract]:

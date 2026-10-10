@@ -161,38 +161,12 @@ class RoleConnections(commands.Cog):
                 return True
         return False
 
-    def update_connection_target(self, conn_id: str, role_id: int) -> bool:
-        connection = self.role_connection_state(conn_id)
-        if connection is None:
-            return False
-        connection["target_role_id"] = role_id
-        return self.replace_connection(conn_id, connection)
 
     def get_connection_list_ids(self, connection: Dict[str, Any], list_name: str, kind: str) -> List[int]:
         key = "has" if kind == "has" else "not"
         return [cond[key] for cond in connection.get(list_name, []) if key in cond]
 
-    def add_connection_roles(self, conn_id: str, list_name: str, kind: str, role_ids: List[int]) -> bool:
-        connection = self.role_connection_state(conn_id)
-        if connection is None:
-            return False
-        key = "has" if kind == "has" else "not"
-        target = connection.get(list_name, [])
-        for role_id in role_ids:
-            entry = {key: role_id}
-            if entry not in target:
-                target.append(entry)
-        connection[list_name] = target
-        return self.replace_connection(conn_id, connection)
 
-    def remove_connection_roles(self, conn_id: str, list_name: str, kind: str, role_ids: List[int]) -> bool:
-        connection = self.role_connection_state(conn_id)
-        if connection is None:
-            return False
-        key = "has" if kind == "has" else "not"
-        target = connection.get(list_name, [])
-        connection[list_name] = [cond for cond in target if cond.get(key) not in role_ids]
-        return self.replace_connection(conn_id, connection)
 
     def _connection_matches(self, member: discord.Member, connection: Dict[str, Any]) -> bool:
         # `all` must fully match; `any` acts as an optional OR gate.

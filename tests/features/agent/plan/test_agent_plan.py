@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from elbow_helper.features.agent.plan import capability_list, check_plan, plan_definition
 from elbow_helper.features.agent.engine.registry import build_agent_tools
-from elbow_helper.features.agent.reports.tools import original_tool, saved_report_contracts
+from elbow_helper.features.agent.reports.tools import original_tool
 from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.agent.models import RegisteredAgentTool
 from elbow_helper.infrastructure.ai import AgentToolDefinition
@@ -17,7 +17,6 @@ from elbow_helper.features.agent.engine.capability_contract import contract_cata
 
 REGISTRY = build_agent_tools()
 CONTRACTS = contract_catalogue(REGISTRY)
-SAVED_REPORT_CONTRACTS = saved_report_contracts(REGISTRY)
 
 
 def _sample(schema):
@@ -203,7 +202,7 @@ class PlanContractTests(unittest.TestCase):
         name = "read_saved_report"
         kind = self.registry[name].definition.parameters["properties"]["report_kind"]["enum"][0]
         selected = original_tool(self.registry, name, {"report_kind": kind})
-        contract = SAVED_REPORT_CONTRACTS[selected.definition.name]
+        contract = selected.contract
         plan = _plan_for(selected.definition.name, selected, contract)
         plan["steps"][0]["capability"] = name
         plan["steps"][0]["arguments"].update(report_kind=kind, unsupported_filter="value")
