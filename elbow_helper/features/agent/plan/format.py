@@ -99,7 +99,9 @@ def capability_list(registry: Mapping[str, RegisteredAgentTool]) -> str:
             f"{field}:{_argument(detail)}{'*' if field in required else ''}"
             for field, detail in schema.get("properties", {}).items()
         ]
-        meaning = " ".join(tool.definition.description.split(".", 1)[0].split())[:100]
+        meaning = " ".join(tool.definition.description.split(".", 1)[0].split())
+        # Confirmation is already defined by the action class and shared planning rules.
+        meaning = meaning.replace(" after confirmation", "")[:100]
         line = f"{name}: {meaning} | {tool.action_class.value} | args " + ",".join(arguments)
         if tool.returns:
             line += " | returns " + tool.returns

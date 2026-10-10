@@ -12,6 +12,7 @@ from .role_settings import UNDO_HANDLERS as ROLE_SETTINGS_UNDO_HANDLERS
 from .timeouts import UNDO_HANDLERS as TIMEOUT_UNDO_HANDLERS
 from .polls import UNDO_HANDLERS as POLL_UNDO_HANDLERS
 from .scheduled_events import UNDO_HANDLERS as EVENT_UNDO_HANDLERS
+from .forum_posts import UNDO_HANDLERS as FORUM_UNDO_HANDLERS
 
 UNDO_HANDLERS = merge_undo_handlers(
     ROLES_UNDO_HANDLERS,
@@ -25,6 +26,7 @@ UNDO_HANDLERS = merge_undo_handlers(
     TIMEOUT_UNDO_HANDLERS,
     POLL_UNDO_HANDLERS,
     EVENT_UNDO_HANDLERS,
+    FORUM_UNDO_HANDLERS,
 )
 
 __all__ = ["UNDO_HANDLERS"]
