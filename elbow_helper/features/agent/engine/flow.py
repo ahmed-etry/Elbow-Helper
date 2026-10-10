@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from dataclasses import replace
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 import json
 import time
 from typing import Any
@@ -64,9 +64,11 @@ class AnswerFlow:
         self.request_id = request_id
         self.completed_results = {}
 
-    async def run(self) -> str:
+    async def run(
+        self, *, on_plan: Callable[[Mapping[str, Any]], Awaitable[None]] | None = None,
+    ) -> str:
         try:
-            return await self._run()
+            return await self._run(on_plan)
         except AgentLimitReached as error:
             if not self.completed_results:
                 raise
@@ -93,7 +95,7 @@ class AnswerFlow:
         await require_evidence_access(self.context)
         return reply.content
 
-    async def _run(self) -> str:
+    async def _run(self, on_plan) -> str:
         self.context = replace(
             self.context,
             member=require_access(
@@ -117,6 +119,8 @@ class AnswerFlow:
         self.revisions = 0
         self._reserve_answer()
         while self.rounder.rounds < limits.MAX_MODEL_ROUNDS:
+            if on_plan is not None:
+                await on_plan(self.plan)
             results = await self.runner.run(self.plan)
             self.completed_results.update(results)
             self.rounder.results_available = bool(results)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
-from contextlib import nullcontext
+from contextlib import asynccontextmanager, nullcontext
 import asyncio
 import json
 from pathlib import Path
@@ -75,6 +75,76 @@ def _message(*, author: _Member, bot_id: int, content: str):
 
 
 class AgentCogTests(unittest.IsolatedAsyncioTestCase):
+    async def test_direct_answer_is_delivered_without_typing(self):
+        from features.agent.engine.test_agent_plan_flow import _Model, _Session
+        from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
+
+        member = _Member(121, (next(iter(CORE)),))
+        message = self._real_handler_scenario(member)(member, 501, "<@999> synthetic question")
+        message.channel.typing = MagicMock(return_value=nullcontext())
+        session = _Session([AgentStep("Synthetic answer", (), AgentUsage())], [])
+        self.cog.service = AgentService(_Model(session))
+        with (
+            patch("elbow_helper.features.agent.cog.discord.Member", _Member),
+            patch("elbow_helper.features.agent.engine.service.build_agent_tools", return_value={}),
+        ):
+            await self.cog.on_message(message)
+        message.channel.typing.assert_not_called()
+        message.reply.assert_awaited_once()
+        self.assertEqual(message.reply.await_args.args[0], "Synthetic answer")
+        self.assertEqual(len(session.calls), 1)
+
+    async def test_lookup_plan_starts_typing_after_first_round_and_keeps_it_through_delivery(self):
+        from features.agent.engine.test_agent_plan_flow import (
+            _Model, _Session, _model_step, _plan, _step,
+        )
+        from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
+
+        events = []
+
+        @asynccontextmanager
+        async def typing():
+            events.append("typing")
+            try:
+                yield
+            finally:
+                events.append("typing ended")
+
+        async def read(context, arguments):
+            events.append("lookup")
+            return {"value": 13}
+
+        member = _Member(121, (next(iter(CORE)),))
+        message = self._real_handler_scenario(member)(member, 501, "<@999> synthetic question")
+        message.channel.typing = MagicMock(side_effect=typing)
+        sent = message.reply.return_value
+
+        async def deliver(*args, **kwargs):
+            events.append("delivery")
+            return sent
+
+        message.reply.side_effect = deliver
+        registry = {"read_value": RegisteredAgentTool(
+            AgentToolDefinition("read_value", "Read synthetic data.", {
+                "type": "object", "properties": {}, "required": [],
+            }), read, contract=CapabilityContract(()),
+        )}
+        session = _Session([
+            _model_step(_plan([_step("lookup")])),
+            AgentStep("Synthetic answer", (), AgentUsage()),
+        ], events)
+        self.cog.service = AgentService(_Model(session))
+        with (
+            patch("elbow_helper.features.agent.cog.discord.Member", _Member),
+            patch("elbow_helper.features.agent.engine.service.build_agent_tools",
+                  return_value=registry),
+        ):
+            await self.cog.on_message(message)
+        self.assertEqual(events, [
+            "model", "typing", "lookup", "model", "delivery", "typing ended",
+        ])
+        message.channel.typing.assert_called_once()
+
     async def test_reaction_plans_deliver_and_record_only_the_reply_needed(self):
         from features.agent.engine.test_agent_plan_flow import (
             _Model, _Session, _model_step, _plan, _step,
@@ -121,6 +191,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 if fallback:
                     rounds.append(AgentStep("Normal answer.", (), AgentUsage()))
                 session = _Session(rounds, [])
+                message.channel.typing = MagicMock(return_value=nullcontext())
                 self.cog.service = AgentService(_Model(session))
                 with (
                     patch("elbow_helper.features.agent.cog.discord.Member", _Member),
@@ -128,6 +199,10 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                           return_value=registry),
                 ):
                     await self.cog.on_message(message)
+                if mode == "mixed":
+                    message.channel.typing.assert_called_once()
+                else:
+                    message.channel.typing.assert_not_called()
                 self.assertEqual(len(session.calls), 2 if fallback else 1)
                 self.assertEqual(message.add_reaction.await_args_list[0].args, ("👍",))
                 self.assertEqual(message.add_reaction.await_count, 2 if mode == "partial" else 1)

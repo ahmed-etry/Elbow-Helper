@@ -381,14 +381,26 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
         local_context = await self._build_local_context(message, referenced, conversation)
         history = await self._conversation_history(conversation, context)
 
+        reply_activity = AsyncExitStack()
+        typing_started = False
+
+        async def start_typing(plan):
+            nonlocal typing_started
+            if typing_started or all(
+                step["capability"] == "react_to_request" for step in plan["steps"]
+            ):
+                return
+            await reply_activity.enter_async_context(message.channel.typing())
+            typing_started = True
+
         try:
-            async with message.channel.typing():
-                response = await self.service.answer(
-                    question=question,
-                    local_context=local_context,
-                    context=context,
-                    conversation_history=history,
-                )
+            response = await self.service.answer(
+                question=question,
+                local_context=local_context,
+                context=context,
+                conversation_history=history,
+                on_plan=start_typing,
+            )
             require_access(message.guild, member.id, message.channel)
             await self._check_sources(context)
             delivery = AgentDelivery()
@@ -416,6 +428,8 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
                 error,
             )
             await self._send_failure(message)
+        finally:
+            await reply_activity.aclose()
 
     @staticmethod
     async def _check_sources(context: AgentRequestContext) -> None:
