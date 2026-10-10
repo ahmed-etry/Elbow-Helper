@@ -194,18 +194,21 @@ class DeepSeekTextClient:
         tools: Sequence[AgentToolDefinition],
         max_output_tokens: int | None = None,
         images: Sequence[AgentImage] = (),
+        image_failure_fallback: bool = True,
     ) -> AgentSession | None:
         """Create a tool-capable session without exposing provider messages."""
 
         if self._client is None:
             return None
         return _DeepSeekAgentSession(
-            client=self._client,
+            client=(self._client if image_failure_fallback else
+                    self._client.with_options(max_retries=0)),
             system_prompt=system_prompt,
             prompt=prompt,
             tools=tools,
             max_output_tokens=max_output_tokens,
             images=images,
+            image_failure_fallback=image_failure_fallback,
         )
 
     async def close(self) -> None:
@@ -255,11 +258,12 @@ class _DeepSeekAgentSession:
         tools: Sequence[AgentToolDefinition],
         max_output_tokens: int | None,
         images: Sequence[AgentImage] = (),
+        image_failure_fallback: bool = True,
     ):
         self._client = client
         self._system_prompt, self._prompt = system_prompt, prompt
         self._replacement = None
-        self._image_fallback_available = bool(images)
+        self._image_fallback_available = bool(images) and image_failure_fallback
         self._first_round = True
         content = prompt if not images else [{"type": "text", "text": prompt}]
         for item in images:

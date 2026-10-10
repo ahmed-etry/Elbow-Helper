@@ -42,7 +42,7 @@ class GifTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("When a GIF fits", system_instructions(disabled))
         self.assertIn("When a GIF fits", system_instructions(enabled))
         context = SimpleNamespace(bot=SimpleNamespace(
-            gif_client=SimpleNamespace(search=AsyncMock(return_value=None)),
+            gif_client=SimpleNamespace(search_candidates=AsyncMock(return_value=[])),
         ))
         self.assertEqual(await find_gif(context, {"query":"empty"}), {"error":"No GIF found."})
         self.assertEqual(

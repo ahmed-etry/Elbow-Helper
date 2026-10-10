@@ -1,12 +1,19 @@
-"""Return GIPHY page links without downloading GIF media."""
+"""Search GIPHY and download bounded candidate still images."""
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 import aiohttp
 
 LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class GifCandidate:
+    url: str
+    still_url: str | None
 
 
 class GiphyClient:
@@ -38,8 +45,12 @@ class GiphyClient:
             return self._session
 
     async def search(self, query) -> str | None:
+        candidates = await self.search_candidates(query, limit=1)
+        return candidates[0].url if candidates else None
+
+    async def search_candidates(self, query, *, limit=6) -> list[GifCandidate]:
         if not self.configured or not isinstance(query, str) or not query.strip():
-            return None
+            return []
         try:
             session = await self._get_session()
             async with session.get(
@@ -47,24 +58,44 @@ class GiphyClient:
                 params={
                     "api_key": self._api_key,
                     "q": query,
-                    "limit": 1,
+                    "limit": limit,
                     "rating": "pg-13",
                     "lang": "en",
                 },
             ) as response:
                 if response.status != 200:
-                    return None
+                    return []
                 payload = await response.json()
             data = payload.get("data") if isinstance(payload, dict) else None
-            url = (
-                data[0].get("url")
-                if isinstance(data, list) and data and isinstance(data[0], dict) else None
-            )
-            if (
-                isinstance(url, str) and urlsplit(url).scheme == "https"
-                and urlsplit(url).hostname in {"giphy.com", "www.giphy.com"}
-            ):
-                return url
+            candidates = []
+            for item in data[:limit] if isinstance(data, list) else ():
+                if not isinstance(item, dict):
+                    continue
+                url = item.get("url")
+                if (not isinstance(url, str) or urlsplit(url).scheme != "https"
+                        or urlsplit(url).hostname not in {"giphy.com", "www.giphy.com"}):
+                    continue
+                images = item.get("images") or {}
+                still = (images.get("original_still") or {}).get("url")
+                candidates.append(GifCandidate(url, still))
+            return candidates
         except (aiohttp.ClientError, TimeoutError, ValueError):
             LOGGER.warning("GIF search is unavailable")
-        return None
+        return []
+
+    async def download_still(self, url):
+        if not isinstance(url, str):
+            return None
+        host = urlsplit(url).hostname or ""
+        if urlsplit(url).scheme != "https" or not host.endswith(".giphy.com"):
+            return None
+        session = await self._get_session()
+        async with session.get(url, allow_redirects=False) as response:
+            if response.status != 200:
+                return None
+            data = bytearray()
+            async for part in response.content.iter_chunked(64 * 1024):
+                data.extend(part)
+                if len(data) > 8 * 1024 * 1024:
+                    return None
+            return bytes(data)

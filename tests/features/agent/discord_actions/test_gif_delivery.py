@@ -12,14 +12,24 @@ from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.features.agent.engine.registry import build_agent_tools
 from elbow_helper.features.agent.models import AgentDelivery
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
+from elbow_helper.infrastructure.gifs.giphy import GifCandidate
 from features.agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
 from tests.features.agent_plan_helpers import plan_call
+
+
+def candidate_client(search):
+    async def candidates(query):
+        url = await search(query)
+        return [GifCandidate(url, None)] if url else []
+    return SimpleNamespace(configured=True, search=search,
+                           search_candidates=AsyncMock(side_effect=candidates),
+                           download_still=AsyncMock(return_value=None))
 
 
 class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_later_search_replaces_the_retained_gif(self):
         context = _context()
-        client = SimpleNamespace(search=AsyncMock(side_effect=["first", "second"]))
+        client = candidate_client(AsyncMock(side_effect=["first", "second"]))
         context = replace(context, bot=SimpleNamespace(gif_client=client))
         await find_gif(context, {"query": "synthetic first"})
         await find_gif(context, {"query": "synthetic second"})
@@ -60,7 +70,7 @@ class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
         context = _context()
         context.source_message.id = 300
         context.source_message.add_reaction = AsyncMock()
-        client = SimpleNamespace(configured=True, search=AsyncMock(return_value="synthetic-link"))
+        client = candidate_client(AsyncMock(return_value="synthetic-link"))
         context = replace(context, bot=SimpleNamespace(gif_client=client))
         registry = build_agent_tools(client)
         step = AgentStep("", (plan_call(
@@ -79,8 +89,7 @@ class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_plan_searches_replace_in_step_order(self):
         context = _context()
-        client = SimpleNamespace(configured=True,
-                                 search=AsyncMock(side_effect=["first", "second"]))
+        client = candidate_client(AsyncMock(side_effect=["first", "second"]))
         context = replace(context, bot=SimpleNamespace(gif_client=client))
         session = _AgentSession([
             AgentStep("", (plan_call(

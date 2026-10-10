@@ -107,4 +107,5 @@ class AgentModel(Protocol):
         tools: Sequence[AgentToolDefinition],
         max_output_tokens: int | None = None,
         images: Sequence[AgentImage] = (),
+        image_failure_fallback: bool = True,
     ) -> AgentSession | None: ...
