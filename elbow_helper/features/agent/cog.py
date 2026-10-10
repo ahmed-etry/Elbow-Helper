@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import AsyncExitStack
-from datetime import datetime, timezone
 import logging
 import re
 import sqlite3
@@ -464,31 +463,36 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
 
         identity = agent_identity(self.bot, getattr(message, "guild", None))
 
-        def render(item: discord.Message) -> str:
+        def include(item: discord.Message) -> bool:
             guild = getattr(message, "guild", None)
             owner = (self._conversations.find_message(guild.id, message.channel.id, item.id)
                      if guild is not None else None)
+            if owner is not None:
+                return owner is conversation
             bot_id = getattr(getattr(self.bot, "user", None), "id", None)
             is_request = bot_id is not None and bot_id in getattr(item, "raw_mentions", ())
             is_agent_reply = bot_id is not None and item.author.id == bot_id
-            other = ((owner is not None and owner is not conversation)
-                     or (owner is None and (is_request or is_agent_reply)))
-            if not other:
-                return _render_local_message(item, identity=identity)
-            now = getattr(message, "created_at", None) or datetime.now(timezone.utc)
-            age = max(0, int((now - item.created_at).total_seconds()))
-            return _render_local_message(item, identity=identity,
-                                         context_note=f"other agent conversation, {age}s old")
+            reference = getattr(item, "reference", None)
+            reply_owner = (
+                self._conversations.find(guild.id, message.channel.id, reference.message_id)
+                if guild is not None and reference is not None
+                and reference.channel_id in (None, message.channel.id) else None
+            )
+            if reply_owner is not None:
+                return reply_owner is conversation
+            resolved_author = getattr(getattr(reference, "resolved", None), "author", None)
+            replies_to_agent = bot_id is not None and getattr(resolved_author, "id", None) == bot_id
+            return not (is_request or is_agent_reply or replies_to_agent)
 
         lines = [
             "Immediate channel conversation (oldest to newest):",
-            *(render(item) for item in recent),
+            *(_render_local_message(item, identity=identity) for item in recent if include(item)),
         ]
         if referenced is not None:
             lines.extend(
                 (
                     "Message directly replied to by the asker:",
-                    render(referenced),
+                    _render_local_message(referenced, identity=identity),
                 )
             )
         targets = [
@@ -531,7 +535,7 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
 
 
 def _render_local_message(
-    message: discord.Message, *, identity: AgentIdentity | None = None, context_note: str = "",
+    message: discord.Message, *, identity: AgentIdentity | None = None,
 ) -> str:
     content = render_member_mentions(message_text(message), message, identity=identity)
     if len(content) > LOCAL_MESSAGE_CHARACTER_LIMIT:
@@ -541,6 +545,5 @@ def _render_local_message(
     return (
         f"- {message.author.display_name} ({author_type}, member_id={message.author.id}, "
         f"message_id={message.id}, timestamp={message.created_at.isoformat()}, "
-        f"source={message.jump_url}"
-        f"{', ' + context_note if context_note else ''}): {content or '[no text]'}"
+        f"source={message.jump_url}): {content or '[no text]'}"
     )

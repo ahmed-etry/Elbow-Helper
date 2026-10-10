@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager, nullcontext
 import asyncio
 import json
@@ -1408,7 +1408,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("relevant context", result)
         self.assertIn("original point", result)
 
-    async def test_nearby_agent_messages_from_other_conversations_show_their_age(self):
+    async def test_local_context_excludes_other_agent_conversations(self):
         current = self.cog._conversations.create(GUILD_ID, 100, 10)
         other = self.cog._conversations.create(GUILD_ID, 100, 20)
         self.cog._conversations.register_reply(current, 11)
@@ -1417,15 +1417,20 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         author = SimpleNamespace(id=42, bot=False, display_name="Member")
         bot = SimpleNamespace(id=999, bot=True, display_name="Elbow Helper")
 
-        def nearby(message_id, sender, *, mentions=()):
+        def nearby(message_id, sender, *, mentions=(), reply_to=None, resolved=None):
             return SimpleNamespace(
                 id=message_id, content=f"text-{message_id}", attachments=[], embeds=[],
                 author=sender, raw_mentions=mentions,
-                created_at=now - timedelta(seconds=60), jump_url=f"source/{message_id}",
+                reference=(SimpleNamespace(message_id=reply_to, channel_id=100, resolved=resolved)
+                           if reply_to is not None else None),
+                created_at=now, jump_url=f"source/{message_id}",
             )
 
-        items = [nearby(11, bot), nearby(20, author, mentions=(999,)),
-                 nearby(21, bot), nearby(22, bot)]
+        items = [nearby(10, author, mentions=(999,)), nearby(11, bot),
+                 nearby(20, author, mentions=(999,)), nearby(21, bot), nearby(22, bot),
+                 nearby(23, author, mentions=(999,)), nearby(24, author, reply_to=21),
+                 nearby(25, author), nearby(26, author, reply_to=11),
+                 nearby(27, author, reply_to=90, resolved=SimpleNamespace(author=bot))]
 
         async def history(*, limit, before, oldest_first):
             for item in reversed(items):
@@ -1437,12 +1442,26 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         )
         result = await self.cog._build_local_context(message, None, current)
 
-        self.assertIn("message_id=11", result)
-        own_line = next(line for line in result.splitlines() if "message_id=11" in line)
-        self.assertNotIn("other agent conversation", own_line)
-        for message_id in (20, 21, 22):
-            line = next(line for line in result.splitlines() if f"message_id={message_id}" in line)
-            self.assertIn("other agent conversation, 60s old", line)
+        for message_id in (10, 11, 25, 26):
+            self.assertIn(f"text-{message_id}", result)
+        for message_id in (20, 21, 22, 23, 24, 27):
+            self.assertNotIn(f"text-{message_id}", result)
+        self.assertLess(result.index("text-11"), result.index("text-25"))
+
+        excluded = [*items[2:7], items[-1]]
+        for referenced in excluded:
+            with self.subTest(referenced=referenced.id):
+                result = await self.cog._build_local_context(message, referenced, current)
+                self.assertIn("Message directly replied to by the asker:", result)
+                self.assertEqual(result.count(f"text-{referenced.id}"), 1)
+                for item in excluded:
+                    if item is not referenced:
+                        self.assertNotIn(f"text-{item.id}", result)
+
+        result = await self.cog._build_local_context(message, None)
+        for message_id in (10, 11, 20, 21, 22, 23, 24, 26, 27):
+            self.assertNotIn(f"text-{message_id}", result)
+        self.assertIn("text-25", result)
 
     async def test_long_reply_preserves_complete_answer_as_attachment(self):
         message = SimpleNamespace(id=1, mentions=[], reply=AsyncMock())
@@ -1611,7 +1630,9 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         guild = SimpleNamespace(id=GUILD_ID, me=agent, get_member=lambda _: None)
         request = SimpleNamespace(guild=guild, created_at=now, mentions=[],
                                   channel=SimpleNamespace(id=100, history=history))
-        result = await self.cog._build_local_context(request, None)
+        conversation = self.cog._conversations.create(GUILD_ID, 100, 3)
+        self.cog._conversations.register_reply(conversation, 1)
+        result = await self.cog._build_local_context(request, None, conversation)
         self.assertIn("Synthetic Agent (you, member_id=999", result)
         self.assertIn("Synthetic Other Bot (bot, member_id=998", result)
         self.assertIn("@Synthetic Agent (you, member_id=999) and @Synthetic Agent (you, member_id=999)", result)

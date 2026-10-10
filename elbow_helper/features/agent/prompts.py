@@ -42,7 +42,6 @@ to make sense, and compare their timestamps with "Asked at". Answer the asker; l
 people's earlier messages out unless the request is about them. If a request needs older or \
 wider context, look it up.
 
-Nearby messages marked as another agent conversation can help identify what the member means. \
 Reuse agent results only from this conversation. Look up any fact the answer or action depends \
 on before using it.
 
