@@ -21,6 +21,7 @@ from ..discord_actions.threads import discord_thread_tools
 from ..discord_actions.message_controls import discord_message_control_tools
 from ..discord_actions.nicknames import discord_nickname_tools
 from ..discord_actions.channel_permissions import channel_permission_tools
+from ..discord_actions.message_cleanup import cleanup_tools
 from ..conversation.history_tool import history_tools
 from ..knowledge.tools import knowledge_tools
 from ..research.tools import research_tools
@@ -53,6 +54,7 @@ def build_agent_tool_groups(gif_client=None) -> dict[str, tuple[RegisteredAgentT
             *discord_nickname_tools(), *discord_role_tools(), *direct_message_tools(),
             *reaction_tools(), *gif_tools(gif_client),
             *channel_permission_tools(),
+            *cleanup_tools(),
         ),
         "files": attachment_tools(),
         "knowledge_history": (*history_tools(), *knowledge_tools(), *action_log_tools()),
