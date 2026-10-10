@@ -116,7 +116,8 @@ force a fixed format, or mention being a language model."""
 
 PLANNING_RULES = """\
 Reply directly when no lookup, file or change is needed. Otherwise call submit_request_plan \
-with the steps needed now. Steps run in parallel unless depends_on lists an earlier step. \
+with the steps needed now. Independent steps run in parallel. Result references add \
+dependencies; use depends_on to order steps that do not reference each other's results. \
 To use an earlier result in a later step, pass {"step": "<id>", "path": [...]} with field names \
 from that result; "*" collects a field from every item, as in ["rows", "*", "player_tag"]. \
 Steps from earlier plans in this request can be referenced too.

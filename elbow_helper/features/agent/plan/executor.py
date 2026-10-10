@@ -7,7 +7,7 @@ import logging
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
-from .checker import _valid_value
+from .checker import _valid_value, step_dependencies
 
 
 LOGGER = logging.getLogger(__name__)
@@ -90,7 +90,7 @@ async def execute_plan(
     semaphore = asyncio.Semaphore(max_concurrency)
 
     async def run_step(step: Mapping[str, Any]) -> tuple[str, Mapping[str, Any]]:
-        for dependency in step["depends_on"]:
+        for dependency in step_dependencies(step):
             if "error" in results[dependency]:
                 return step["id"], {
                     "error": f"Step {dependency} failed, so this step could not run.",
@@ -111,7 +111,7 @@ async def execute_plan(
 
     while pending:
         ready = [steps[step_id] for step_id in steps if step_id in pending
-                 and set(steps[step_id]["depends_on"]) <= results.keys()]
+                 and set(step_dependencies(steps[step_id])) <= results.keys()]
         if not ready:
             raise ValueError("Step dependencies cannot be resolved")
         if parallel is not None:

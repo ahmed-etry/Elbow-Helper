@@ -158,6 +158,55 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(replaced["dependent"]["value"], 17)
         self.assertEqual(len(session.calls), 3)
 
+    async def test_result_references_supply_dependencies_in_plans_and_revisions(self):
+        for revision in (False, True):
+            with self.subTest(revision=revision):
+                self.events.clear()
+                source = _step("source")
+                consumer = _step("consumer", {
+                    "value": {"step": "source", "path": ["value"]},
+                })
+                plans = ([_plan([source]), _plan([consumer])] if revision
+                         else [_plan([source, consumer])])
+                session = _Session([
+                    *(_model_step(plan) for plan in plans),
+                    AgentStep("Synthetic answer", (), AgentUsage()),
+                ], self.events)
+                answer, _ = await self._answer(session)
+                self.assertEqual(answer, "Synthetic answer")
+                self.assertEqual(len(session.calls), 3 if revision else 2)
+                results = json.loads(session.calls[-1][0][0].content)["results"]
+                self.assertEqual(results["consumer"]["value"], 7)
+                self.assertEqual(self.events.count("read"), 2)
+
+    async def test_implicit_change_target_dependencies_are_shown_only_in_the_preview(self):
+        async def prepare(context, arguments):
+            self.assertEqual(arguments, {"value": 7})
+            context.state.proposed_changes.append(PreparedAction(
+                "synthetic_change", dict(arguments),
+                ChangePreview(("Change a synthetic value",), AsyncMock(return_value=True)),
+                AsyncMock(),
+            ))
+            return {"status": "confirmation_required"}
+
+        self.registry["synthetic_change"] = RegisteredAgentTool(AgentToolDefinition(
+            "synthetic_change", "Change a synthetic value.",
+            {"type": "object", "properties": {"value": {"type": "integer"}}},
+        ), prepare, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
+            contract=CapabilityContract(()))
+        plan = _plan([_step("source"), {
+            **_step("change", {"value": {"step": "source", "path": ["value"]}}),
+            "capability": "synthetic_change",
+        }])
+        session = _Session([_model_step(plan)], self.events)
+        context = replace(_context(), bot=SimpleNamespace(tree=object()))
+        with patch("elbow_helper.features.agent.engine.service.build_command_tools",
+                   return_value=({}, {})):
+            answer, _ = await self._answer(session, context)
+        self.assertIn("Change a synthetic value", answer)
+        self.assertEqual(len(session.calls), 1)
+        self.assertEqual(len(context.state.proposed_changes), 1)
+
     async def test_bad_reference_structure_uses_plan_correction(self):
         invalid = _plan([_step("first"), _step("second", {
             "value": {"step": "first", "path": []},

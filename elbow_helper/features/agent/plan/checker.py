@@ -112,6 +112,13 @@ def result_references(value: Any):
             yield from result_references(item)
 
 
+def step_dependencies(step: Mapping[str, Any]) -> tuple[str, ...]:
+    """Keep explicit ordering and derive every result reference's dependency."""
+    referenced = (reference["step"] for reference in result_references(step["arguments"])
+                  if isinstance(reference["step"], str))
+    return tuple(dict.fromkeys([*step["depends_on"], *referenced]))
+
+
 def _reference(value: Any, earlier: set[str]) -> bool:
     return (isinstance(value, dict) and set(value) == {"step", "path"}
             and isinstance(value["step"], str) and value["step"] in earlier
@@ -136,7 +143,7 @@ def check_step(
     """Check step arguments and evidence scope before binding a capability call."""
     capability = step["capability"]
     step_id = step["id"]
-    dependencies = step["depends_on"]
+    dependencies = step_dependencies(step)
     scope = None
     tool = registry[capability]
     arguments = step["arguments"]
@@ -152,11 +159,8 @@ def check_step(
     if selected is not None and unsupported_fields(selected, arguments):
         return _error(unsupported_field_error(selected, arguments), step_id)
     for reference in result_references(arguments):
-        if not isinstance(reference.get("step"), str) or reference["step"] not in set(dependencies):
-            return _error(
-                f"Step {step_id} uses results of step {reference.get('step')!r}, which must be an "
-                "completed step listed in depends_on.", step_id,
-            )
+        if not _reference(reference, set(dependencies)):
+            return _error("Use a valid result reference to an earlier or completed step.", step_id)
     if not valid_arguments(arguments, schema, set(dependencies)):
         issues = argument_errors(arguments, schema, set(dependencies), _valid_value)
         return _error("Invalid arguments: " + "; ".join(issues), step_id)
@@ -211,10 +215,12 @@ def check_plan(raw, registry, *, completed_steps=None):
         completed = completed_steps or {}
         earlier = set(completed)
         step_errors = {}
-        after_change = {key for key, step in completed.items()
-                        if registry[step["capability"]].action_class in (
-                            ActionClass.CHANGE, ActionClass.IRREVERSIBLE,
-                        )}
+        after_change = set()
+        for key, step in completed.items():
+            if registry[step["capability"]].action_class in (
+                ActionClass.CHANGE, ActionClass.IRREVERSIBLE,
+            ) or after_change.intersection(step_dependencies(step)):
+                after_change.add(key)
         for step in raw["steps"]:
             if not isinstance(step, dict) or not {
                 "id", "capability", "arguments", "depends_on",
@@ -234,10 +240,11 @@ def check_plan(raw, registry, *, completed_steps=None):
             ):
                 return _error("Depend only on earlier or completed steps.", identity)
             for reference in result_references(step["arguments"]):
-                if not _reference(reference, set(dependencies)):
+                if not _reference(reference, earlier):
                     return _error(
-                        "Use a valid result reference to a step listed in depends_on.", identity,
+                        "Use a valid result reference to an earlier or completed step.", identity,
                     )
+            dependencies = step_dependencies(step)
             classification = registry[name].action_class
             depends_on_change = bool(after_change.intersection(dependencies))
             if classification is ActionClass.READ and depends_on_change:

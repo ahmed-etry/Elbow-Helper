@@ -14,7 +14,7 @@ from elbow_helper.infrastructure.ai import AgentToolResult
 from elbow_helper.infrastructure.ai import TextGenerationError
 from ..actions.contracts import ActionClass
 from ..access import require_access, require_evidence_access
-from ..plan.checker import check_plan
+from ..plan.checker import check_plan, step_dependencies
 from ..plan.format import PLAN_TOOL_NAME
 from ..plan.planning import read_request
 from ..plan.results import plan_feedback
@@ -183,13 +183,13 @@ class AnswerFlow:
             # Lookups that only resolve change targets are shown by the preview itself.
             steps_by_id = {step["id"]: step for step in self.plan["steps"]}
             feeds_change: set[str] = set()
-            pending = [owner for step in changes for owner in step["depends_on"]]
+            pending = [owner for step in changes for owner in step_dependencies(step)]
             while pending:
                 step_id = pending.pop()
                 if step_id in feeds_change or step_id not in steps_by_id:
                     continue
                 feeds_change.add(step_id)
-                pending.extend(steps_by_id[step_id]["depends_on"])
+                pending.extend(step_dependencies(steps_by_id[step_id]))
             answered = [step for step in self.plan["steps"]
                         if self.registry[step["capability"]].action_class is ActionClass.READ
                         and step["id"] in results and step["id"] not in feeds_change]
