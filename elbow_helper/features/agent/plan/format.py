@@ -29,12 +29,11 @@ def system_instructions(
     data_guide: str = "",
     community_knowledge: str = "",
 ) -> str:
-    data_rules = DATA_RULES if "find_gif" in registry else DATA_RULES.rsplit("\n", 1)[0]
     parts = [
         BEHAVIOR_RULES,
         ACTION_CAPABILITY_PARAGRAPH if actions_enabled else READ_ONLY_CAPABILITY_PARAGRAPH,
         RESPONSE_RULES,
-        data_rules,
+        DATA_RULES,
         PLANNING_RULES,
     ]
     if actions_enabled:
