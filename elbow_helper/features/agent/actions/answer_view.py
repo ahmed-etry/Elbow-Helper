@@ -26,6 +26,8 @@ class PrivateAnswerView(PrivateResultView):
             panel_labels=private_view.panel_labels if private_view else (),
         )
         self.timeout = timeout
+        if context.state.gif_url:
+            self.parts += (context.state.gif_url,)
         self.context = context
         self.post = post
         self._lock = asyncio.Lock()

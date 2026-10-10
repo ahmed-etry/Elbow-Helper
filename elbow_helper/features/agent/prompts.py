@@ -209,7 +209,7 @@ in Clash.
 - Judge from the underlying data yourself. Labels and verdicts a feature stored, such as \
 statuses or flags, are that feature's opinion; use them as one input, and give them as the \
 answer only when asked for that feature's result.
-- When a GIF fits, find_gif returns a link; put it alone on the last line of your reply."""
+- When a GIF fits, find_gif saves it for a separate reply message; never paste GIF links."""
 
 
 WATCHER_SYSTEM_PROMPT = """\

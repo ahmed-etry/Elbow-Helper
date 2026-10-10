@@ -124,9 +124,13 @@ class AnswerFlow:
             results = await self.runner.run(self.plan)
             self.completed_results.update(results)
             self.rounder.results_available = bool(results)
-            if self.plan["steps"] and all(
-                step["capability"] == "react_to_request"
-                and results.get(step["id"], {}).get("reacted") is True
+            if self.plan["steps"] and sum(
+                step["capability"] == "find_gif" for step in self.plan["steps"]
+            ) <= 1 and all(
+                (step["capability"] == "react_to_request"
+                 and results.get(step["id"], {}).get("reacted") is True
+                 or step["capability"] == "find_gif"
+                 and bool(results.get(step["id"], {}).get("url")))
                 and not results[step["id"]].get("error")
                 for step in self.plan["steps"]
             ):

@@ -43,7 +43,58 @@ class AgentDeliveryUnknown(RuntimeError):
 class AgentDeliveryMixin:
     """Agent delivery; owns no conversation or provider lifecycle."""
 
-    async def send_response(
+    async def send_response(self, message, response, referenced, attachments=(), conversation=None,
+                            *, delivery=None, context=None, **options):
+        active = delivery or AgentDelivery()
+        gif = context.state.gif_url if context is not None else None
+        if response or attachments or not gif:
+            await self._send_response(
+                message, response, referenced, attachments, conversation,
+                delivery=active, context=context, **options,
+            )
+        if gif:
+            active.complete = False
+            sources = await require_evidence_access(context)
+            audit_private = (ACCESS_VIEW_AUDIT_LOG in context.state.required_access
+                             and not isinstance(message.channel, discord.DMChannel))
+            allowed = not audit_private and (options.get("_audience_override", False)
+                                            or await can_show(
+                message.channel, sources, context.state.required_access, context.guild,
+                thread_members=context.disclosure_thread_members,
+            ))
+            if not allowed and not audit_private and conversation is not None:
+                allowed = conversation.can_reuse_answer_disclosure(
+                    context.member.id, message.channel.id,
+                    context.state.source_channels, context.state.required_access,
+                )
+            if allowed:
+                await self._send_gif(message, gif, context, conversation, active,
+                                     nonce_seed=options.get("_nonce_seed"))
+            elif not response and not attachments:
+                await self._send_response(
+                    message, response, referenced, attachments, conversation,
+                    delivery=active, context=context, **options,
+                )
+            else:
+                active.complete = True
+
+    async def _send_gif(self, message, url, context, conversation, delivery, *, nonce_seed=None):
+        await require_evidence_access(context)
+        delivery.complete = False
+        delivery.generated_parts.append(url)
+        sender = message.channel.send if delivery.message_ids else message.reply
+        sent = await self._send_delivery_part(
+            sender, message.channel, _delivery_nonce(nonce_seed or message.id, 2_000_001),
+            delivery, url, allowed_mentions=discord.AllowedMentions.none(),
+        )
+        delivery.record(sent.id, url)
+        if conversation is not None:
+            self._conversations.register_reply(conversation, sent.id)
+        if getattr(message, "archive_reply", True):
+            await self._archive_reply(message.id, sent.id, url)
+        delivery.complete = True
+
+    async def _send_response(
         self,
         message: discord.Message,
         response: str,
@@ -234,7 +285,7 @@ class AgentDeliveryMixin:
             context.state, proposed_changes=[], preview_reply=None,
         ))
         preview_context = replace(context, state=replace(
-            context.state, outcomes=[], attachments=[], preview_reply=None,
+            context.state, outcomes=[], attachments=[], preview_reply=None, gif_url=None,
         ))
         if ACCESS_VIEW_AUDIT_LOG in context.state.required_access:
             preview_context = replace(preview_context, state=replace(
@@ -312,6 +363,17 @@ class AgentDeliveryMixin:
                                 posted.uncertain_nonce, tuple(posted.generated_parts),
                             )
                             await self._save_reply_conversation(conversation, message.id)
+            elif answer_context.state.gif_url:
+                posted = AgentDelivery()
+                await self._send_gif(message, answer_context.state.gif_url, answer_context,
+                                     conversation, posted, nonce_seed=interaction.id)
+                if conversation is not None:
+                    async with conversation.lock:
+                        conversation.record_additional_delivery(
+                            message.id, "\n".join(posted.text_parts), tuple(posted.message_ids),
+                            posted.complete, posted.unknown, tuple(posted.attempted_nonces),
+                            posted.uncertain_nonce, tuple(posted.generated_parts),
+                        )
             if conversation is not None:
                 async with conversation.lock:
                     conversation.remember_answer_disclosure(
@@ -376,7 +438,7 @@ class AgentDeliveryMixin:
         for index, (content, selected, files, answer) in enumerate(parts):
             active.complete = False
             try:
-                await self.send_response(
+                await self._send_response(
                     message, content, referenced, files, conversation, delivery=active, context=selected,
                     preview_timeout=preview_timeout, mention_requester=mention_requester,
                     _answer_disclosure=answer,

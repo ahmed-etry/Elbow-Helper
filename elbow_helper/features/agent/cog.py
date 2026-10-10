@@ -404,7 +404,7 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
             await self._check_sources(context)
             delivery = AgentDelivery()
             try:
-                if response or not context.state.reactions.emojis:
+                if response or context.state.gif_url or not context.state.reactions.emojis:
                     await self.send_response(
                         message, response, referenced, context.state.attachments, conversation,
                         delivery=delivery, context=context,

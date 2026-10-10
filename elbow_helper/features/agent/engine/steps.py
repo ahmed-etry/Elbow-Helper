@@ -370,7 +370,8 @@ class PlanRunner:
                     plan, self.registry, completed_steps=self.completed_steps,
                 ).step_errors,
                 parallel=lambda step: self.registry[step["capability"]].effect
-                is AgentCapabilityEffect.READ,
+                is AgentCapabilityEffect.READ and self.registry[step["capability"]].action_class
+                is ActionClass.READ,
             )
             result = {
                 step_id: value if "flags" in value else model_result(value)
