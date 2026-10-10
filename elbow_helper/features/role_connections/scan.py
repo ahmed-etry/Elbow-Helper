@@ -157,18 +157,12 @@ class ScanConfirmView(BaseTimeoutView):
         if not self.cog._can_manage(interaction.user):
             await deny(interaction)
             return
-        current, _ = parse_page_from_footer(
-            interaction.message.embeds[0] if interaction.message and interaction.message.embeds else None,
-            self.cog.get_scan_preview_page_count(),
-        )
-        disabled = ScanConfirmView(self.cog, current)
-        for item in disabled.children:
-            item.disabled = True
         await interaction.response.edit_message(
             content=await loading_status(
                 interaction.client, "Applying role connections now.",
-            ), view=disabled,
+            ), view=None,
         )
+        self.stop()
         task = asyncio.create_task(self.cog.run_scan(interaction.message))
         self.cog._scan_tasks.add(task)
         task.add_done_callback(self.cog._scan_tasks.discard)

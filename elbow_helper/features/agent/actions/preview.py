@@ -174,6 +174,12 @@ class ConfirmationView(discord.ui.View):
                 return
             await interaction.response.defer()
             progress_message = self._progress_message()
+            if progress_message is None and self.message is not None:
+                try:
+                    await self.message.edit(view=None)
+                except discord.DiscordException:
+                    LOGGER.warning("Agent preview buttons could not be removed")
+                self.stop()
             try:
                 if self.runner is None:
                     raise RuntimeError("Action runner is unavailable")
@@ -219,6 +225,8 @@ class ConfirmationView(discord.ui.View):
                     LOGGER.warning("Agent preview could not be invalidated")
 
     async def on_timeout(self) -> None:
+        if self.is_finished():
+            return
         self.expired = True
         for item in self.children:
             item.disabled = True

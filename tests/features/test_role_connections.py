@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
@@ -14,6 +15,7 @@ from elbow_helper.features.role_connections.edit import RemoveConnectionSelect
 from elbow_helper.features.role_connections.edit import RoleListAddSelect
 from elbow_helper.features.role_connections.edit import RoleListRemoveSelect
 from elbow_helper.features.role_connections.edit import TargetRoleEditSelect
+from elbow_helper.features.role_connections.scan import ScanConfirmView
 
 
 def _connection(
@@ -385,6 +387,62 @@ class RoleConnectionPersistenceTests(unittest.IsolatedAsyncioTestCase):
                     ephemeral=True,
                 )
                 interaction.response.edit_message.assert_not_awaited()
+
+class RoleConnectionProgressTests(unittest.IsolatedAsyncioTestCase):
+    async def test_apply_removes_preview_buttons_before_running_scan(self) -> None:
+        cog = SimpleNamespace(
+            _can_manage=MagicMock(return_value=True),
+            get_scan_preview_page_count=MagicMock(return_value=1),
+            _scan_tasks=set(),
+            run_scan=AsyncMock(),
+        )
+        message = SimpleNamespace(edit=AsyncMock())
+        interaction = SimpleNamespace(
+            user=SimpleNamespace(id=101), client=SimpleNamespace(), message=message,
+            response=SimpleNamespace(edit_message=AsyncMock()),
+        )
+        view = ScanConfirmView(cog).bind_message(message)
+        await view.start(interaction)
+        interaction.response.edit_message.assert_awaited_once_with(
+            content="Applying role connections now.", view=None,
+        )
+        self.assertTrue(view.is_finished())
+        await asyncio.gather(*cog._scan_tasks)
+        cog.run_scan.assert_awaited_once_with(message)
+        message.edit.assert_not_awaited()
+
+    async def test_scan_spinner_is_in_description_and_progress_has_no_buttons(self) -> None:
+        for token in ("<a:loading:123456789>", ""):
+            with self.subTest(emoji=bool(token)):
+                bot = MagicMock()
+                emoji = MagicMock()
+                emoji.name = "loading"
+                emoji.__str__.return_value = token
+                bot.fetch_application_emojis = AsyncMock(return_value=[emoji] if token else [])
+                cog = object.__new__(RoleConnections)
+                cog.bot = bot
+                cog._scan_lock = asyncio.Lock()
+                member, role = SimpleNamespace(id=101), SimpleNamespace(id=202)
+                cog.role_connection_scan_plan = AsyncMock(return_value=[
+                    (member, [(role, True)]),
+                ])
+                cog.apply_role_connection_change = AsyncMock(return_value=True)
+                message = SimpleNamespace(guild=object(), edit=AsyncMock())
+                await cog.run_scan(message)
+                progress, summary = message.edit.await_args_list
+                embed = progress.kwargs["embed"]
+                self.assertEqual(embed.title, "Applying Role Connections")
+                self.assertEqual(
+                    embed.description,
+                    f"{token} Checking members: 1/1" if token else "Checking members: 1/1",
+                )
+                self.assertIsNone(progress.kwargs["view"])
+                self.assertIsNone(summary.kwargs["view"])
+                self.assertEqual(summary.kwargs["embed"].title, "Role Updates Complete")
+                self.assertEqual(
+                    summary.kwargs["embed"].description, "Added roles: 1\nRemoved roles: 0",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

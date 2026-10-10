@@ -20,15 +20,18 @@ from elbow_helper.features.agent.wording import (
 
 
 class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
-    async def test_confirm_then_timeout_keeps_confirmed_preview_text(self):
+    async def test_confirm_removes_unreusable_preview_buttons_and_stops_its_timeout(self):
         proposal, _, _ = self.proposal(1)
         view = self.view((proposal,))
         view.message.content = view.preview + "\n\nSynthetic read result"
         await view.confirm(self.interaction(101))
+        view.message.edit.assert_awaited_once_with(view=None)
+        self.assertTrue(view.is_finished())
+        self.assertEqual(view.message.content, view.preview + "\n\nSynthetic read result")
+        self.assertIsNone(view.runner.submit.await_args.kwargs["progress_message"])
         view.message.edit.reset_mock()
         await view.on_timeout()
-        view.message.edit.assert_awaited_once_with(view=view)
-        self.assertTrue(all(item.disabled for item in view.children))
+        view.message.edit.assert_not_awaited()
 
     async def test_confirm_hands_a_preview_only_message_to_the_run(self):
         proposal, _, _ = self.proposal(1)
@@ -193,7 +196,7 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         member.followup.send.assert_not_awaited()
         self.assertTrue(view.used)
         self.assertTrue(all(item.disabled for item in view.children))
-        view.message.edit.assert_not_awaited()
+        view.message.edit.assert_awaited_once_with(view=None)
 
     async def test_long_preview_is_complete(self):
         proposal, _, _ = self.proposal("x" * 2000)

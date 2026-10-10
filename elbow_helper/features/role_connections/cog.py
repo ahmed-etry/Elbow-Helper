@@ -410,14 +410,16 @@ class RoleConnections(commands.Cog):
                 processed += 1
                 if processed == total or (time.monotonic() - last_update) >= 2:
                     progress = discord.Embed(
-                        title=await loading_status(self.bot, "Applying Role Connections"),
-                        description=f"Checking members: {processed}/{total}",
+                        title="Applying Role Connections",
+                        description=await loading_status(
+                            self.bot, f"Checking members: {processed}/{total}",
+                        ),
                         color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
                         timestamp=datetime.now(timezone.utc),
                     )
                     progress.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
                     try:
-                        await message.edit(content=None, embed=progress)
+                        await message.edit(content=None, embed=progress, view=None)
                     except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                         LOGGER.debug("Failed updating scan progress message")
                     last_update = time.monotonic()
