@@ -13,6 +13,9 @@ from openpyxl import load_workbook
 
 from features.agent.files.test_agent_spreadsheets import _context
 from elbow_helper.features.agent.access import AgentAccessLost
+from elbow_helper.features.agent.engine.tool_call import (
+    clone_tool_state, merge_tool_state, tool_state_snapshot,
+)
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin
 from elbow_helper.features.agent.files.spreadsheet_tools import (
     prepare_spreadsheet, spreadsheet_tools,
@@ -53,56 +56,65 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
         surface.bot = context.bot
         return surface, message, sent, replace(context, source_message=message)
 
-    def test_catalogue_names_the_actual_delivery_and_warns_against_inventing_links(self):
+    def test_catalogue_requires_one_spreadsheet_and_no_invented_links(self):
         tool = spreadsheet_tools()[0]
         catalogue = capability_list({tool.definition.name: tool})
-        self.assertIn("Google Sheet and Download buttons or an XLSX attachment", catalogue)
-        self.assertIn("do not paste or invent spreadsheet links", tool.definition.description)
-        self.assertIn("Put tables that belong together into one spreadsheet as separate sheets",
-                      tool.definition.description)
-        self.assertIn("make separate spreadsheets only when the asker wants separate files",
-                      tool.definition.description)
+        self.assertIn("one spreadsheet per reply", catalogue)
+        self.assertIn("every table as a separate sheet", tool.definition.description)
+        self.assertIn("Never paste or invent spreadsheet links", tool.definition.description)
+        self.assertNotIn("Google Sheet", tool.definition.description)
 
-    async def test_multiple_published_workbooks_use_exact_titles_beside_downloads(self):
-        titles = ("Synthetic grouped export", "S" * 80)
-        for published_count in (1, 2):
-            with self.subTest(published_count=published_count), TemporaryDirectory() as directory:
-                context = _context(directory)
-                links = [
-                    f"https://docs.google.com/spreadsheets/d/synthetic-{index}/edit"
-                    for index in range(published_count)
-                ]
-                context.bot.google_publisher = SimpleNamespace(upload_workbook=AsyncMock(
-                    side_effect=[*((link, None) for link in links), (None, "Synthetic warning")],
-                ))
-                for title in (*titles[:published_count], "Synthetic unavailable export"):
-                    await prepare_spreadsheet(context, {**_arguments(), "title": title})
-                self.assertEqual(
-                    [item.spreadsheet_title for item in context.state.attachments[:-1]],
-                    list(titles[:published_count]),
-                )
-                surface, message, _, context = self.surface(context)
-                with patch("elbow_helper.features.agent.delivery.can_show",
-                           AsyncMock(return_value=True)):
-                    await surface.send_response(message, "Synthetic exports", None,
-                                                context.state.attachments, context=context)
-                buttons = message.reply.await_args.kwargs["view"].children
-                self.assertEqual([(button.label, button.url) for button in buttons], [
-                    pair for index, link in enumerate(links) for pair in (
-                        (titles[index] if published_count > 1 else "Google Sheet", link),
-                        ("Download", (
-                            f"https://docs.google.com/spreadsheets/d/synthetic-{index}"
-                            "/export?format=xlsx"
-                        )),
-                    )
-                ])
-                self.assertEqual([button.row for button in buttons],
-                                 [row for row in range(1, published_count + 1) for _ in range(2)])
-                files = message.reply.await_args.kwargs["files"]
-                self.assertEqual(len(files), 1)
-                self.assertIn("Synthetic warning", message.reply.await_args.args[0])
-                for file in files:
-                    file.close()
+    async def test_revisions_replace_workbooks_without_publishing_drafts(self):
+        with TemporaryDirectory() as directory:
+            context = _context(directory)
+            context.bot.google_publisher = SimpleNamespace(
+                upload_workbook=AsyncMock(return_value=(GOOGLE_LINK, None)),
+            )
+            from elbow_helper.features.agent.models import AgentAttachment
+            feature_file = AgentAttachment("synthetic-feature.txt", b"Synthetic feature result")
+            context.state.attachments.append(feature_file)
+            for index in range(3):
+                arguments = {**_arguments(), "title": f"Synthetic revision {index}"}
+                previous = tool_state_snapshot(context)
+                stale_read = replace(context, state=clone_tool_state(context.state))
+                local = replace(context, state=clone_tool_state(context.state))
+                result = await prepare_spreadsheet(local, arguments)
+                merge_tool_state(context, local, previous)
+                merge_tool_state(context, stale_read, previous)
+                self.assertEqual(result["replaced_previous"], index > 0)
+                self.assertEqual(len(context.state.attachments), 2)
+                self.assertIs(context.state.attachments[0], feature_file)
+                context.bot.google_publisher.upload_workbook.assert_not_called()
+            uploaded = []
+
+            async def upload(path, title):
+                uploaded.append((title, path.read_bytes()))
+                return GOOGLE_LINK, None
+
+            context.bot.google_publisher.upload_workbook.side_effect = upload
+            surface, message, _, context = self.surface(context)
+            with patch("elbow_helper.features.agent.delivery.can_show",
+                       AsyncMock(return_value=True)):
+                await surface.send_response(message, "Synthetic export", None,
+                                            context.state.attachments, context=context)
+            self.assertEqual(
+                uploaded, [("Synthetic revision 2", context.state.attachments[1].data)],
+            )
+            self.assert_links(message.reply.await_args.kwargs["view"])
+            files = message.reply.await_args.kwargs["files"]
+            self.assertEqual([file.filename for file in files], [feature_file.filename])
+
+    async def test_ten_sheets_fit_and_eleven_are_refused(self):
+        with TemporaryDirectory() as directory:
+            context = _context(directory)
+            arguments = {"title": "Synthetic tables", "sheets": [
+                {"name": f"Table {index}", "columns": ["Value"], "rows": [["Synthetic"]]}
+                for index in range(10)
+            ]}
+            result = await prepare_spreadsheet(context, arguments)
+            self.assertEqual(result["sheets"], 10)
+            arguments["sheets"].append({"name": "Excess", "columns": ["Value"], "rows": []})
+            self.assertIn("error", await prepare_spreadsheet(context, arguments))
 
     async def test_publish_uploads_exact_bytes_once_and_delivers_only_link_buttons(self):
         with TemporaryDirectory() as directory:
@@ -127,21 +139,23 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
             result = await prepare_spreadsheet(context, _arguments())
             repeated = await prepare_spreadsheet(context, _arguments())
             self.assertEqual(result, repeated)
-            self.assertTrue(result["google_sheet_published"])
-            self.assertFalse(result["attachment_prepared"])
+            self.assertFalse(result["replaced_previous"])
+            self.assertTrue(result["attachment_prepared"])
             self.assertNotIn(GOOGLE_LINK, json.dumps(result))
             self.assertNotIn(DOWNLOAD_LINK, json.dumps(result))
             self.assertEqual(len(context.state.attachments), 1)
-            self.assertEqual(uploaded[0][1], context.state.attachments[0].data)
-            self.assertFalse(uploaded[0][0].exists())
-            self.assertEqual(list(Path(directory).iterdir()), [])
-            context.bot.google_publisher.upload_workbook.assert_awaited_once()
+            context.bot.google_publisher.upload_workbook.assert_not_called()
 
             surface, message, _, context = self.surface(context)
             with patch("elbow_helper.features.agent.delivery.can_show",
                        AsyncMock(return_value=True)):
                 await surface.send_response(message, "Synthetic workbook ready", None,
                                             context.state.attachments, context=context)
+            self.assertEqual(uploaded[0][1], context.state.attachments[0].data)
+            self.assertFalse(uploaded[0][0].exists())
+            self.assertEqual(list(Path(directory).iterdir()), [])
+            context.bot.google_publisher.upload_workbook.assert_awaited_once()
+
             call = message.reply.await_args
             self.assertEqual(call.args[0], "Synthetic workbook ready")
             self.assertNotIn("files", call.kwargs)
@@ -163,10 +177,10 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
                 upload_workbook=AsyncMock(return_value=(None, warning)),
             )
             result = await prepare_spreadsheet(context, _arguments())
-            self.assertFalse(result["google_sheet_published"])
+            self.assertFalse(result["replaced_previous"])
             self.assertTrue(result["attachment_prepared"])
             self.assertEqual(await prepare_spreadsheet(context, _arguments()), result)
-            context.bot.google_publisher.upload_workbook.assert_awaited_once()
+            context.bot.google_publisher.upload_workbook.assert_not_called()
             self.assertEqual(list(Path(directory).iterdir()), [])
             surface, message, _, context = self.surface(context)
             with patch("elbow_helper.features.agent.delivery.can_show",
@@ -247,8 +261,11 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
             context.bot.google_publisher = SimpleNamespace(
                 upload_workbook=AsyncMock(side_effect=upload),
             )
+            await prepare_spreadsheet(context, _arguments())
+            surface, message, _, context = self.surface(context)
             with self.assertRaises(AgentAccessLost):
-                await prepare_spreadsheet(context, _arguments())
+                await surface.send_response(message, "Synthetic result", None,
+                                            context.state.attachments, context=context)
             context.bot.google_publisher.upload_workbook.assert_awaited_once()
-            self.assertEqual(context.state.attachments, [])
+            message.reply.assert_not_called()
             self.assertEqual(list(Path(directory).iterdir()), [])

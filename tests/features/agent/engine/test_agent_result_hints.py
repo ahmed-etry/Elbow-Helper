@@ -307,7 +307,7 @@ def fixed_results(seed):
         "retire_task_instruction": {"instruction_id": "synthetic", "active": False,
                                     "working_state_version": seed, "action_authorized": False},
         "prepare_spreadsheet": {"filename": "synthetic.xlsx", "sheets": 1, "rows": seed,
-                                "attachment_prepared": False, "google_sheet_published": True},
+                                "attachment_prepared": False, "replaced_previous": True},
         "react_to_request": {"reacted": True}, "find_gif": {"url": "https://synthetic.invalid"},
     }
 

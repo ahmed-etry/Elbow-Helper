@@ -2,10 +2,35 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import io
 import re
 
 import discord
+
+from ..access import require_evidence_access
+from .workbooks import publish_workbook_bytes
+
+
+async def publish_spreadsheet(context, attachments):
+    """Publish the retained agent workbook once, immediately before assembling its reply."""
+    prepared = []
+    for item in attachments:
+        if ((item.report_id or "").startswith("spreadsheet:")
+                and not item.publication_attempted):
+            await require_evidence_access(context)
+            link, warning = await publish_workbook_bytes(
+                context.bot, item.data, item.spreadsheet_title,
+            )
+            updated = replace(item, google_link=link, google_warning=warning,
+                              publication_attempted=True)
+            for index, stored in enumerate(context.state.attachments):
+                if stored is item:
+                    context.state.attachments[index] = updated
+            await require_evidence_access(context)
+            item = updated
+        prepared.append(item)
+    return prepared
 
 
 class SpreadsheetLinksView(discord.ui.View):
@@ -41,7 +66,7 @@ def spreadsheet_links(view, attachments):
     view = view if view is not None else SpreadsheetLinksView()
     for index, item in enumerate(published, 1):
         match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", item.google_link)
-        label = item.spreadsheet_title if len(published) > 1 else "Google Sheet"
+        label = "Google Sheet"
         links = [(label, item.google_link)]
         if match:
             links.append(("Download", (

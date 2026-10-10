@@ -12,7 +12,7 @@ from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentAttachment, AgentRequestContext
 from elbow_helper.features.agent.files.spreadsheets import parse_agent_spreadsheet
 from elbow_helper.features.agent.engine.registry import build_agent_tools
-from elbow_helper.features.agent.plan.checker import valid_arguments
+from elbow_helper.features.agent.plan.checker import check_plan, valid_arguments
 from elbow_helper.features.agent.files.spreadsheet_tools import prepare_spreadsheet
 from elbow_helper.infrastructure.exports import LocalExportStore, WorkbookWriter
 
@@ -83,7 +83,7 @@ class AgentSpreadsheetContractTests(unittest.TestCase):
         registry = build_agent_tools()
         self.assertNotIn("prepare_report_spreadsheet", registry)
         tool = registry["prepare_spreadsheet"].definition
-        self.assertEqual(tool.parameters["properties"]["sheets"]["maxItems"], 4)
+        self.assertEqual(tool.parameters["properties"]["sheets"]["maxItems"], 10)
         self.assertIn("literal text rows", tool.description)
         sheet = tool.parameters["properties"]["sheets"]["items"]
         self.assertEqual(len(sheet["anyOf"]), 4)
@@ -96,6 +96,21 @@ class AgentSpreadsheetContractTests(unittest.TestCase):
              "columns": [{"field": "tag", "heading": "Account"}]},
         ]}
         self.assertTrue(valid_arguments(arguments, tool.parameters))
+
+
+    def test_plan_builds_at_most_one_spreadsheet(self):
+        def sheet(step_id):
+            return {"id": step_id, "capability": "prepare_spreadsheet", "depends_on": [],
+                    "arguments": {"title": "Synthetic", "sheets": [
+                        {"name": "Values", "columns": ["Value"], "rows": [["1"]]},
+                    ]}}
+        plan = {"goal": "Synthetic", "effort": "low", "output": "prepare_spreadsheet",
+                "steps": [sheet("first")]}
+        registry = build_agent_tools()
+        self.assertTrue(check_plan(plan, registry).ok)
+        check = check_plan({**plan, "steps": [sheet("first"), sheet("second")]}, registry)
+        self.assertFalse(check.ok)
+        self.assertEqual(check.error, "Put every table in one spreadsheet as separate sheets.")
 
 
 class AgentSpreadsheetToolTests(unittest.IsolatedAsyncioTestCase):
@@ -253,17 +268,16 @@ class AgentSpreadsheetToolTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(repeated, first)
             self.assertEqual(len(context.state.attachments), 1)
 
-    async def test_same_title_with_different_content_gets_content_suffix(self):
+    async def test_same_title_with_different_content_replaces_the_workbook(self):
         with TemporaryDirectory() as directory:
             context = _context(directory)
             await prepare_spreadsheet(context, _arguments())
             changed = _arguments()
             changed["sheets"][0]["rows"][0][2] = "Different"
             result = await prepare_spreadsheet(context, changed)
-            self.assertRegex(
-                result["filename"], r"^leadership-review-[0-9a-f]{8}\.xlsx$",
-            )
-            self.assertEqual(len(context.state.attachments), 2)
+            self.assertEqual(result["filename"], "leadership-review.xlsx")
+            self.assertTrue(result["replaced_previous"])
+            self.assertEqual(len(context.state.attachments), 1)
 
     async def test_access_loss_after_render_queues_nothing(self):
         with TemporaryDirectory() as directory:

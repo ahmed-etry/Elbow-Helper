@@ -317,7 +317,7 @@ RESULT_FIELDS = {
     },
     "retire_task_instruction": names("instruction_id,active,working_state_version,"
                                      "action_authorized"),
-    "prepare_spreadsheet": names("filename,sheets,rows,attachment_prepared,google_sheet_published"),
+    "prepare_spreadsheet": names("filename,sheets,rows,attachment_prepared,replaced_previous"),
     "react_to_request": names("reacted"), "find_gif": names("url"),
 }
 for name in ("start_discord_research_job", "start_discord_history_job",

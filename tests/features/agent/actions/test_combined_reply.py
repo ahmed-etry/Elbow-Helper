@@ -116,12 +116,12 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIs(self.surface._conversations.find(321, 221, sent.id), self.conversation)
                 self.surface._archive_reply.assert_any_await(421, sent.id, sent.content)
 
-    async def test_four_published_workbooks_keep_links_when_the_preview_changes(self):
+    async def test_published_workbook_keep_links_when_the_preview_changes(self):
         attachments = [AgentAttachment(
             f"synthetic-{index}.xlsx", b"Synthetic workbook",
             google_link=f"https://docs.google.com/spreadsheets/d/synthetic-{index}/edit",
             spreadsheet_title=f"Synthetic export {index}",
-        ) for index in range(4)]
+        ) for index in range(1)]
         await self.surface.send_response(
             self.message, "Synthetic workbooks ready", None, attachments, context=self.context,
         )
@@ -129,11 +129,11 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(combined.stop)
         self.assertNotIn("files", self.message.reply.await_args.kwargs)
         links = [item for item in combined.children if getattr(item, "url", None)]
-        self.assertEqual(len(links), 8)
+        self.assertEqual(len(links), 2)
         self.assertEqual([item.label for item in links], [
-            label for index in range(4) for label in (f"Synthetic export {index}", "Download")
+            "Google Sheet", "Download",
         ])
-        self.assertEqual([item.row for item in links], [1, 1, 2, 2, 3, 3, 4, 4])
+        self.assertEqual([item.row for item in links], [1, 1])
         await combined.views["preview"].cancel(self.interaction())
         remaining = [item for item in self.sent[0].view.children if getattr(item, "url", None)]
         self.assertEqual(remaining, links)

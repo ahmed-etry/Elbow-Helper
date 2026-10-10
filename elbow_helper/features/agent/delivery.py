@@ -25,7 +25,9 @@ from .actions.preview import CONFIRMATION_TIMEOUT, ConfirmationView
 from .actions.preview import preview_text
 from .actions.details import prepare_preview
 from .actions.combined_reply import CombinedReplyView
-from .files.delivery import attachment_files, spreadsheet_links, spreadsheet_response
+from .files.delivery import (
+    attachment_files, publish_spreadsheet, spreadsheet_links, spreadsheet_response,
+)
 from .text import DISCORD_MESSAGE_LIMIT
 from .text import chunk_response as _chunk_response
 
@@ -59,6 +61,8 @@ class AgentDeliveryMixin:
         _notice_content: str | None = None,
         _answer_disclosure: bool = False,
     ) -> None:
+        if context is not None:
+            attachments = await publish_spreadsheet(context, attachments)
         if context is not None and context.state.preview_reply is not None:
             await self._send_mixed_response(
                 message, response, referenced, attachments, conversation, context,

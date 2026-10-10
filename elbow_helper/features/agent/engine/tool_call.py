@@ -264,7 +264,15 @@ def merge_tool_state(
         local.state.preserved_report_access_requirements
     )
     for attachment in local.state.attachments:
+        if ((attachment.report_id or "").startswith("spreadsheet:")
+                and attachment in previous["attachments"]):
+            continue
         if attachment not in target.state.attachments:
+            if (attachment.report_id or "").startswith("spreadsheet:"):
+                target.state.attachments[:] = [
+                    item for item in target.state.attachments
+                    if not (item.report_id or "").startswith("spreadsheet:")
+                ]
             target.state.attachments.append(attachment)
     target.state.history_status.update(local.state.history_status)
     if local.state.authorized_history is not None:

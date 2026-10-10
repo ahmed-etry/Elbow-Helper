@@ -265,6 +265,8 @@ def check_plan(raw, registry, *, completed_steps=None):
             step["capability"] == raw["output"] for step in raw["steps"]
         ):
             return _error("Include the selected output capability in the steps.")
+        if sum(step["capability"] == "prepare_spreadsheet" for step in raw["steps"]) > 1:
+            return _error("Put every table in one spreadsheet as separate sheets.")
         return PlanCheck(True, step_errors=step_errors)
     except Exception:
         LOGGER.exception("Agent plan check failed unexpectedly")

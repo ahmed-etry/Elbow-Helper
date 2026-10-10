@@ -11,7 +11,7 @@ from typing import Any, Mapping, Sequence
 from ..wording import SPREADSHEET_FILENAME_STEM
 
 
-MAX_SPREADSHEET_SHEETS = 4
+MAX_SPREADSHEET_SHEETS = 10
 MAX_SPREADSHEET_COLUMNS = 20
 MAX_SPREADSHEET_ROWS_PER_SHEET = 100
 MAX_SPREADSHEET_CELLS = 8_000
@@ -69,7 +69,7 @@ def parse_agent_spreadsheet(arguments: Mapping[str, Any]) -> AgentSpreadsheet:
     if not valid_text(title, maximum=80) or not isinstance(raw_sheets, list):
         raise ValueError("The spreadsheet title or sheets are invalid")
     if not 1 <= len(raw_sheets) <= MAX_SPREADSHEET_SHEETS:
-        raise ValueError("The spreadsheet must contain between one and four sheets")
+        raise ValueError("The spreadsheet must contain between one and ten sheets")
 
     sheets = []
     total_cells = 0
