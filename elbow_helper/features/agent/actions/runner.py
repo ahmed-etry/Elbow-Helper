@@ -70,6 +70,7 @@ class ActionRunOutput:
     step_outcomes: dict[int, tuple[str, Mapping[str, Any]]] = field(default_factory=dict)
     posted_here: int = 0
     private_result: PrivateResultView | None = None
+    public_details: bool = False
 
 
 class AgentActionRunner:
@@ -285,7 +286,7 @@ class AgentActionRunner:
                 output.private_parts.extend(result.private_parts)
                 output.private_files.extend(result.attachments)
             elif result.text:
-                await self._send_parts(channel, result.text)
+                output.public_details = True
             if not await self._record_completed(run_id, index, owner, result, output):
                 return "uncertain"
             if result.posted_in == channel.id:
@@ -305,7 +306,9 @@ class AgentActionRunner:
             recorded = await asyncio.to_thread(
                 self.repository.finish_step, run_id, index, owner=owner, status="completed",
                 outcome={"status": result.status, "visibility": result.visibility,
-                         "result": result.result}, after=result.after,
+                         "result": result.result,
+                         "text": result.text if result.visibility == "public" else ""},
+                after=result.after,
             )
         except Exception:
             LOGGER.exception("Agent action result could not be recorded: run=%s step=%s",
@@ -417,6 +420,7 @@ class AgentActionRunner:
     def _only_posted_here(run, output: ActionRunOutput) -> bool:
         """Posts in the run's own channel already show that every step finished."""
         return (not output.private_parts and not output.private_files and not output.private_result
+                and not output.public_details
                 and output.posted_here == len(run["steps"])
                 and all(step["status"] == "completed" for step in run["steps"]))
 

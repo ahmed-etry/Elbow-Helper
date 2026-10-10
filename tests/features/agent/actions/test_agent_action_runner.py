@@ -340,7 +340,7 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
     def action(self, name, *, outcome=None, allowed=True,
                action_class=ActionClass.CHANGE, verify=None):
         check = AsyncMock(return_value=allowed)
-        run = AsyncMock(return_value=outcome or ActionOutcome("complete", text=name))
+        run = AsyncMock(return_value=outcome or ActionOutcome("complete"))
         return PreparedAction(
             name, {"target": name},
             ChangePreview((f"Change {name}",), check, before={"value": "old"}),
@@ -361,6 +361,50 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("Done: first, second.",
                          self.progress.edit.await_args.kwargs["content"])
         self.assertEqual(len(self.repository.recent_log(requester_id=4)), 2)
+
+    async def test_extra_public_information_is_under_its_action_in_the_report(self):
+        action = self.action("review", outcome=ActionOutcome(
+            "complete", text="Synthetic count: 17\nSynthetic total: 42",
+        ))[0]
+        await self.run_actions(action)
+        self.channel.send.assert_awaited_once()
+        self.assertEqual(self.progress.edit.await_args.kwargs["content"],
+                         "Done: review.\nSynthetic count: 17\nSynthetic total: 42")
+
+    async def test_reminder_save_and_pause_each_use_only_the_run_message(self):
+        from elbow_helper.features.agent.models import AgentTurnState
+        from elbow_helper.features.agent.scheduled.tools import prepare_save, prepare_manage
+
+        self.channel.mention = "<#2>"
+        self.context.action_repository = self.repository
+        self.context.state = AgentTurnState()
+        self.guild.me = self.context.member
+        with (
+            patch("elbow_helper.features.agent.scheduled.tools.resolve_channel",
+                  AsyncMock(return_value=self.channel)),
+            patch("elbow_helper.features.agent.scheduled.tools.check_post_access"),
+        ):
+            await prepare_save(self.context, {
+                "kind": "reminder", "text": "Synthetic reminder", "destination_channel_id": 2,
+                "schedule": {"kind": "once", "at_utc": "2099-01-01T00:00:00Z"},
+            }, registry_factory=lambda: {})
+            action = self.context.state.proposed_changes.pop()
+            with patch.object(self.runner, "_detail_visibility", AsyncMock(return_value=False)):
+                await self.run_actions(action)
+        self.channel.send.assert_awaited_once()
+        self.assertEqual(self.progress.edit.await_args.kwargs["content"], "Done: Set reminder.")
+        identifier = self.repository.list_standing(requester_id=4)[0]["request_id"]
+        self.channel.send.reset_mock()
+        self.progress.edit.reset_mock()
+        await prepare_manage(self.context, {
+            "kind": "reminder", "id": identifier, "operation": "pause",
+        })
+        with patch.object(self.runner, "_detail_visibility", AsyncMock(return_value=False)):
+            await self.run_actions(self.context.state.proposed_changes.pop())
+        self.channel.send.assert_awaited_once()
+        self.assertEqual(self.progress.edit.await_args.kwargs["content"], "Done: Change reminder.")
+        self.assertEqual(self.repository.standing(kind="reminder", identifier=identifier)["status"],
+                         "paused")
 
     async def test_wait_run_returns_the_finished_action_record(self):
         action, _, _ = self.action("first")

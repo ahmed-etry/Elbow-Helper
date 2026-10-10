@@ -20,14 +20,14 @@ from ..disclosure import can_show
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
     ACTION_STANDING_DESTINATION, ACTION_STANDING_MANAGE,
-    ACTION_STANDING_MANAGED, ACTION_STANDING_ONCE, ACTION_STANDING_REPEAT,
-    ACTION_STANDING_SAVE, ACTION_STANDING_SAVED, ACTION_STANDING_SCOPE,
+    ACTION_STANDING_ONCE, ACTION_STANDING_REPEAT,
+    ACTION_STANDING_SAVE, ACTION_STANDING_SCOPE,
     ACTION_STANDING_NO_CHANGES, ACTION_STANDING_FIXED, ACTION_STANDING_ACTION,
     ACTION_STANDING_TIME, ACTION_STANDING_WATCHER,
     ACTION_STANDING_REQUEST_NAME, ACTION_STANDING_WATCHER_NAME,
     ACTION_STANDING_REQUEST_NOUN, ACTION_STANDING_WATCHER_NOUN,
     ACTION_STANDING_SAVE_LABELS, ACTION_STANDING_MANAGE_LABELS,
-    ACTION_STANDING_OPERATIONS, ACTION_STANDING_RESULTS,
+    ACTION_STANDING_OPERATIONS,
     ACTION_STANDING_TARGET_ONE, ACTION_STANDING_TARGET_MANY,
     ACTION_VALUE_YES, ACTION_VALUE_NO,
     ACTION_STANDING_REMINDER_NAME, ACTION_STANDING_REMINDER_NOUN, ACTION_STANDING_POST_DESTINATION,
@@ -388,8 +388,7 @@ async def prepare_save(
             )
         if zone:
             repository.set_member_timezone(context.member.id, zone)
-        return ActionOutcome("complete", "public",
-                              text=ACTION_STANDING_SAVED.format(kind=kind))
+        return ActionOutcome("complete")
 
     context.state.proposed_changes.append(PreparedAction(
         "save_standing_rule", rule,
@@ -449,12 +448,7 @@ async def prepare_manage(context: AgentRequestContext,
         if not repository.set_standing_status(kind=kind, identifier=identifier,
                                               requester_id=context.member.id, status=target):
             raise ActionRefused("That saved rule changed.")
-        return ActionOutcome("complete", "public",
-                              text=ACTION_STANDING_MANAGED.format(
-                                  kind=ACTION_STANDING_REQUEST_NAME if kind == "request"
-                                       else ACTION_STANDING_REMINDER_NAME if kind == "reminder"
-                                       else ACTION_STANDING_WATCHER_NAME,
-                                  result=ACTION_STANDING_RESULTS[operation]))
+        return ActionOutcome("complete")
 
     context.state.proposed_changes.append(PreparedAction(
         "manage_standing_rule", dict(values),

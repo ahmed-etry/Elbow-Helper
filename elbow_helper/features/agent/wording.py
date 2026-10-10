@@ -21,9 +21,7 @@ ACTION_STANDING_NO_CHANGES = "Allowed changes: none."
 ACTION_STANDING_WATCHER = "Alert when: {condition}. {repeat}"
 ACTION_STANDING_REPEAT = "Keep watching after an alert."
 ACTION_STANDING_ONCE = "Stop after the first alert."
-ACTION_STANDING_SAVED = "Saved {kind}."
 ACTION_STANDING_MANAGE = "{operation} the {kind}: {request}"
-ACTION_STANDING_MANAGED = "{kind} {result}."
 ACTION_STANDING_REQUEST_NAME = "Saved request"
 ACTION_STANDING_REMINDER_NAME = "Reminder"
 ACTION_STANDING_WATCHER_NAME = "Watcher"
@@ -41,7 +39,6 @@ ACTION_STANDING_MANAGE_LABELS = {
     "reminder": "Change reminder",
 }
 ACTION_STANDING_OPERATIONS = {"pause": "Pause", "resume": "Resume", "cancel": "Cancel"}
-ACTION_STANDING_RESULTS = {"pause": "paused", "resume": "resumed", "cancel": "cancelled"}
 ACTION_STANDING_TARGET_ONE = "target"
 ACTION_STANDING_TARGET_MANY = "targets"
 ACTION_STANDING_ACCESS_PAUSED = "{kind} paused because you or I lost access here. Ask me to resume it once that's sorted."
@@ -71,6 +68,7 @@ ACTION_PREVIEW_EXPIRED = "This preview has expired. Ask me again."
 ACTION_PREVIEW_OWNER = "Only the member who asked can confirm this."
 ACTION_PREVIEW_USED = "This was already confirmed or cancelled."
 ACTION_RUN_PARTIAL = "Done: {finished}.\nNot done: {labels}."
+ACTION_RUN_NOT_DONE = "Not done: {labels}."
 ACTION_RUN_NONE = "Nothing changed. Not done: {labels}."
 ACTION_RUN_UNCONFIRMED = "Couldn't confirm: {labels}. Check before asking me to retry."
 ACTION_RUN_PERMISSION = "I'm missing the {permission} permission for: {labels}."

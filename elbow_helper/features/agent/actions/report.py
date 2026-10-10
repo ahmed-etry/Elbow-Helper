@@ -7,6 +7,7 @@ from typing import Any
 from ..wording import (
     ACTION_RUN_DONE, ACTION_RUN_NONE, ACTION_RUN_PARTIAL, ACTION_RUN_PERMISSION,
     ACTION_RUN_RESTARTED, ACTION_RUN_UNCONFIRMED,
+    ACTION_RUN_NOT_DONE,
 )
 
 
@@ -47,7 +48,19 @@ def format_run_report(run: Mapping[str, Any]) -> str:
         else:
             not_done.append(step)
     lines = [ACTION_RUN_RESTARTED] if run.get("status") == "interrupted" else []
-    if not_done:
+    details = any(
+        outcome.get("visibility") == "public" and outcome.get("text")
+        for step in completed for outcome in [json.loads(step.get("outcome_json") or "{}")]
+    )
+    if details:
+        for step in completed:
+            lines.append(ACTION_RUN_DONE.format(finished=_labels([step])))
+            outcome = json.loads(step.get("outcome_json") or "{}")
+            if outcome.get("visibility") == "public" and outcome.get("text"):
+                lines.append(outcome["text"])
+        if not_done:
+            lines.append(ACTION_RUN_NOT_DONE.format(labels=_labels(not_done)))
+    elif not_done:
         lines.append((ACTION_RUN_PARTIAL if completed else ACTION_RUN_NONE).format(
             finished=_labels(completed), labels=_labels(not_done),
         ))
