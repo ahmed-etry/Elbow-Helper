@@ -6,9 +6,54 @@ import unittest
 from elbow_helper.features.agent.plan.executor import (
     UnresolvedReferenceError, execute_plan, resolve_arguments,
 )
+from elbow_helper.features.agent.plan.results import compact_result
 
 
 class PlanExecutorTests(unittest.IsolatedAsyncioTestCase):
+    def test_compacted_rows_paths_resolve_to_original_records_and_values(self):
+        records = [{"name": f"Synthetic {index}", "value": index + 0.125, "rows": [index]}
+                   for index in range(12)]
+        payload = {"items": records, "rows": records}
+        view = compact_result(payload)
+        self.assertEqual(view["items"]["columns"], ["name", "value", "rows"])
+        self.assertEqual(view["items"]["rows"][0], ["Synthetic 0", 0.125, [0]])
+        paths = {
+            "records": ["items", "rows"], "names": ["items", "rows", "*", "name"],
+            "last": ["items", "rows", 11, "value"],
+            "original": ["items", "*", "name"],
+            "nested_rows": ["items", "rows", "*", "rows"],
+            "named_rows": ["rows", "rows", "*", "name"],
+        }
+        result = resolve_arguments({field: {"step": "source", "path": path}
+                                    for field, path in paths.items()}, {"source": payload})
+        names = [row["name"] for row in records]
+        self.assertIs(result["records"], records)
+        self.assertEqual(result["names"], names)
+        self.assertEqual(result["original"], names)
+        self.assertEqual(result["named_rows"], names)
+        self.assertEqual(result["last"], 11.125)
+        self.assertEqual(result["nested_rows"], [[index] for index in range(12)])
+
+    def test_rows_aliases_preserve_nested_wildcard_expansion(self):
+        groups = [{"items": [{"name": f"Synthetic {group}:{index}"} for index in range(10)]}
+                  for group in range(2)]
+        result = resolve_arguments({"names": {"step": "source", "path": [
+            "groups", "*", "items", "rows", "*", "name",
+        ]}}, {"source": {"groups": groups}})
+        expected = [row["name"] for group in groups for row in group["items"]]
+        self.assertEqual(result["names"], expected)
+
+    def test_rows_aliases_do_not_change_lists_that_the_model_does_not_compact(self):
+        lists = ([{"name": index} for index in range(9)],
+                 [{"name": index} for index in range(9)] + [{"other": 9}], list(range(12)))
+        for items in lists:
+            with self.subTest(items=items), self.assertRaises(UnresolvedReferenceError):
+                resolve_arguments({"value": {"step": "source", "path": ["items", "rows"]}},
+                                  {"source": {"items": items}})
+        result = resolve_arguments({"value": {"step": "source", "path": ["items", "rows", 0]}},
+                                   {"source": {"items": {"columns": ["Value"], "rows": [[7]]}}})
+        self.assertEqual(result, {"value": [7]})
+
     def test_nested_wildcards_flatten_only_expanded_indexes(self):
         source = {"groups": [{"members": [{"accounts": [{"tag": "#P0"}, {"tag": "#P2"}]}]},
                              {"members": []},

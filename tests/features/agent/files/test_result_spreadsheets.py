@@ -2,6 +2,8 @@
 
 from io import BytesIO
 from dataclasses import replace
+from datetime import datetime, timezone
+import json
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -9,12 +11,15 @@ from unittest.mock import AsyncMock, patch
 from openpyxl import load_workbook
 
 from features.agent.files.test_agent_spreadsheets import _context
+from features.agent.engine.test_agent_plan_flow import _Session, _Model, _model_step
 from elbow_helper.features.agent.engine.registry import build_agent_tools
+from elbow_helper.features.agent.engine.service import AgentService
+from elbow_helper.features.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.features.agent.files.spreadsheet_tools import (
     prepare_spreadsheet, spreadsheet_tools,
 )
 from elbow_helper.features.agent.models import RegisteredAgentTool
-from elbow_helper.infrastructure.ai import AgentToolDefinition
+from elbow_helper.infrastructure.ai import AgentToolDefinition, AgentStep, AgentUsage
 from elbow_helper.features.agent.plan import capability_list
 from elbow_helper.features.agent.plan.checker import check_plan, valid_arguments
 from elbow_helper.features.agent.plan.executor import execute_plan, resolve_arguments
@@ -108,6 +113,64 @@ class ResultSpreadsheetTests(unittest.IsolatedAsyncioTestCase):
                     self.assertFalse(valid_arguments(
                         {"title": "Synthetic", "sheets": [wrong]}, schema, {"read"},
                     ))
+
+    async def test_fake_read_and_file_capabilities_write_compacted_rows_paths_exactly(self):
+        records = [{"name": f"Synthetic {index}", "value": index if index % 2 else index + 0.125}
+                   for index in range(12)]
+        reference = {"step": "read", "path": ["items", "rows"]}
+        for wrapped in (False, True):
+            with self.subTest(wrapped=wrapped), TemporaryDirectory() as directory:
+                context = _context(directory)
+                context.source_message.id = 500
+                context.source_message.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+                context.member.display_name = "Synthetic member"
+                context.guild.name = "Synthetic guild"
+                read = AsyncMock(return_value={"items": records})
+                spreadsheet = spreadsheet_tools()[0]
+                registry = {
+                    "read_items": RegisteredAgentTool(AgentToolDefinition(
+                        "read_items", "Read synthetic items.",
+                        {"type": "object", "properties": {}, "additionalProperties": False},
+                    ), read, contract=CapabilityContract(())),
+                    "write_table": replace(spreadsheet, definition=replace(
+                        spreadsheet.definition, name="write_table",
+                    )),
+                }
+                plan = {"goal": "Synthetic table", "effort": "low", "output": "write_table",
+                        "steps": [
+                    {"id": "read", "capability": "read_items", "arguments": {}, "depends_on": []},
+                    {"id": "file", "capability": "write_table", "depends_on": [],
+                     "arguments": {"title": "Synthetic", "sheets": [{
+                         "name": "Items", "rows_from": [reference] if wrapped else reference,
+                         "columns": [{"field": "name", "heading": "Name"},
+                                     {"field": "value", "heading": "Value"}],
+                     }]}},
+                ]}
+                session = _Session([
+                    _model_step(plan), AgentStep("Synthetic workbook ready", (), AgentUsage()),
+                ], [])
+                with patch("elbow_helper.features.agent.engine.service.build_agent_tools",
+                           return_value=registry):
+                    answer = await AgentService(_Model(session)).answer(
+                        question="Synthetic table", local_context="", context=context,
+                    )
+                self.assertEqual(answer, "Synthetic workbook ready")
+                self.assertEqual(len(session.calls), 2)
+                read.assert_awaited_once()
+                results = json.loads(session.calls[1][0][0].content)["results"]
+                self.assertEqual(results["read"]["items"]["columns"], ["name", "value"])
+                self.assertEqual(len(results["read"]["items"]["rows"]), 12)
+                self.assertTrue(results["file"]["attachment_prepared"])
+                workbook = load_workbook(BytesIO(context.state.attachments[0].data))
+                try:
+                    sheet = workbook["Items"]
+                    self.assertEqual(sheet.max_row, 13)
+                    for index, record in enumerate(records, 2):
+                        self.assertEqual(sheet.cell(index, 1).value, record["name"])
+                        self.assertEqual(sheet.cell(index, 2).value, record["value"])
+                        self.assertEqual(sheet.cell(index, 2).data_type, "n")
+                finally:
+                    workbook.close()
 
     async def test_nested_missing_and_numeric_values_are_written_exactly(self):
         records = [{"account": {"name": f"Synthetic {i}"}, "score": i + 0.125}

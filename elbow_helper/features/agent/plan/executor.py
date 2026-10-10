@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
 from .checker import _valid_value, step_dependencies
+from .results import is_record_table
 
 
 LOGGER = logging.getLogger(__name__)
@@ -24,6 +25,8 @@ class UnresolvedReferenceError(KeyError):
 
 def _walk(source: Any, path: list[Any]) -> Any:
     for index, part in enumerate(path):
+        if part == "rows" and is_record_table(source):
+            continue
         if part == "*":
             if not isinstance(source, list):
                 raise TypeError("Only a list can be expanded")

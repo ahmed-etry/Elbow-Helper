@@ -23,16 +23,24 @@ PAGING_FIELDS = frozenset({
 })
 
 
+def is_record_table(value: Any) -> bool:
+    """Identify the homogeneous record lists shown as columns and rows to the model."""
+    return (
+        isinstance(value, list) and len(value) >= 10
+        and all(isinstance(item, Mapping) for item in value)
+        and all(item.keys() == value[0].keys() for item in value)
+    )
+
+
 def compact_result(value: Any) -> Any:
     """Encode homogeneous records as a table only in the model's JSON view."""
     if isinstance(value, Mapping):
         return {key: compact_result(item) for key, item in value.items()}
     if isinstance(value, list):
-        if len(value) >= 10 and all(isinstance(item, Mapping) for item in value):
+        if is_record_table(value):
             columns = list(value[0])
-            if all(item.keys() == value[0].keys() for item in value):
-                return {"columns": columns, "rows": [[item[column] for column in columns]
-                                                      for item in value]}
+            return {"columns": columns, "rows": [[item[column] for column in columns]
+                                                  for item in value]}
         return [compact_result(item) for item in value]
     return value
 
