@@ -24,7 +24,7 @@ from ..wording import (
     ACTION_STANDING_WATCHER_NAME,
     ACTION_STANDING_AI_UNAVAILABLE, ACTION_STANDING_REMINDER_NAME, ACTION_STANDING_DM_PAUSED,
 )
-from .time_rules import next_occurrences
+from .time_rules import next_occurrences, schedule_expired
 from .requests import (
     ScheduledMessage,
     ContextFactory,
@@ -112,6 +112,9 @@ class ScheduledRunner:
 
     async def tick(self) -> None:
         for kind in ("request", "watcher"):
+            await asyncio.to_thread(
+                self.repository.expire_standing, kind=kind, guild_id=self.guild_id,
+            )
             due = await asyncio.to_thread(
                 self.repository.due_standing,
                 kind=kind,
@@ -196,6 +199,10 @@ class ScheduledRunner:
 
     async def _execute_rule(self, kind: str, rule: dict[str, Any], owner: str) -> None:
         identifier = self._identifier(kind, rule)
+        if schedule_expired(rule["rule"]["schedule"], datetime.now(timezone.utc),
+                            rule["rule"].get("runs_completed", 0)):
+            await self._finish(kind, rule, owner, status="completed")
+            return
         try:
             channel = await self._destination(rule)
         except (TimeoutError, discord.HTTPException) as error:
@@ -234,6 +241,10 @@ class ScheduledRunner:
 
     async def _run_with_access(self, kind, rule, owner, channel, member):
         identifier = self._identifier(kind, rule)
+        if schedule_expired(rule["rule"]["schedule"], datetime.now(timezone.utc),
+                            rule["rule"].get("runs_completed", 0)):
+            await self._finish(kind, rule, owner, status="completed")
+            return
         message = ScheduledMessage(
             member.guild, channel, member, rule["rule"].get("request", rule["rule"].get("text", ""))
         )
@@ -302,6 +313,7 @@ class ScheduledRunner:
                 last_result=result.last_result,
                 holding=result.holding,
                 notice_sent=False,
+                run_completed=True,
             )
         else:
             await self._finish(kind, rule, owner, notice_sent=False)
@@ -316,16 +328,21 @@ class ScheduledRunner:
         last_result=None,
         holding: bool | None = None,
         notice_sent: bool | None = None,
+        run_completed: bool = False,
     ) -> None:
         now = datetime.now(timezone.utc)
         upcoming = next_occurrences(
-            rule["rule"]["schedule"], after=now, count=1, watcher=kind == "watcher"
+            rule["rule"]["schedule"], after=now, count=1, watcher=kind == "watcher",
+            runs_completed=rule["rule"].get("runs_completed", 0) + int(run_completed),
         )
         next_at = upcoming[0].timestamp() if upcoming else None
         if status == "active" and next_at is None:
             next_at = rule["next_run_at" if kind != "watcher" else "next_check_at"]
         if status is None:
             status = "active" if next_at is not None else "completed"
+        if schedule_expired(rule["rule"]["schedule"], now,
+                            rule["rule"].get("runs_completed", 0) + int(run_completed)):
+            status, next_at = "completed", None
         if kind == "watcher":
             if last_result is None:
                 last_result = rule.get("last_result")
@@ -341,4 +358,5 @@ class ScheduledRunner:
             last_result=last_result,
             holding=holding,
             notice_sent=notice_sent,
+            run_completed=run_completed,
         )

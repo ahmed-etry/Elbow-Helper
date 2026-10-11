@@ -269,7 +269,9 @@ RESULT_FIELDS = {
         "next_offset": "", "actions": [names("log_id,action_name,action_label,action_class,"
                                              "target_links,outcome,executed_at")],
     },
-    "list_standing_rules": {"rules": [names("id,kind,request,status,next_at")]},
+    "list_standing_rules": {
+        "rules": [names("id,kind,request,status,next_at,end_utc,runs,runs_left")],
+    },
     "read_clan_health_settings": {
         "clan_code": "", "sections": [{"name": "", "fields": [
             names("name,key,description,value,unit")

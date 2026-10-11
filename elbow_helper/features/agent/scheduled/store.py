@@ -7,11 +7,13 @@ import json
 from pathlib import Path
 import sqlite3
 import time
+from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
 from elbow_helper.infrastructure.persistence import sqlite_connection, sqlite_transaction
 from ..actions.codec import encode_record
+from .time_rules import schedule_expired
 
 
 class ScheduledStore:
@@ -200,6 +202,26 @@ class ScheduledStore:
             ).fetchall()
         return [self._standing_record(row) for row in rows]
 
+    def expire_standing(self, *, kind: str, guild_id: int, now: float | None = None) -> None:
+        table, key, due = self._standing_columns(kind)
+        current = time.time() if now is None else now
+        instant = datetime.fromtimestamp(current, timezone.utc)
+        with self.connect() as connection, sqlite_transaction(connection, immediate=True):
+            rows = connection.execute(
+                f"SELECT {key}, rule_json FROM {table} WHERE guild_id=? "
+                "AND status IN ('active', 'paused') AND lease_owner IS NULL",
+                (guild_id,),
+            ).fetchall()
+            for row in rows:
+                rule = json.loads(row["rule_json"])
+                if schedule_expired(rule.get("schedule", {}), instant,
+                                    rule.get("runs_completed", 0)):
+                    connection.execute(
+                        f"UPDATE {table} SET status='completed', {due}=NULL, "
+                        f"version=version+1, updated_at=? WHERE {key}=?",
+                        (current, row[key]),
+                    )
+
     def recover_standing_leases(
         self, *, guild_id: int, now: float | None = None
     ) -> list[dict[str, Any]]:
@@ -255,6 +277,7 @@ class ScheduledStore:
         last_result: Any = None,
         holding: bool | None = None,
         notice_sent: bool | None = None,
+        run_completed: bool = False,
         now: float | None = None,
     ) -> bool:
         if status not in {"active", "paused", "cancelled", "completed"}:
@@ -275,6 +298,17 @@ class ScheduledStore:
             ]
         values += [identifier, owner]
         with self.connect() as connection, sqlite_transaction(connection, immediate=True):
+            if run_completed:
+                row = connection.execute(
+                    f"SELECT rule_json FROM {table} WHERE {key}=? AND lease_owner=?",
+                    (identifier, owner),
+                ).fetchone()
+                if row is None:
+                    return False
+                rule = json.loads(row[0])
+                rule["runs_completed"] = rule.get("runs_completed", 0) + 1
+                parts.append("rule_json=?")
+                values.insert(-2, encode_record(rule))
             changed = connection.execute(
                 f"UPDATE {table} SET {', '.join(parts)} WHERE {key}=? AND lease_owner=?",
                 values,

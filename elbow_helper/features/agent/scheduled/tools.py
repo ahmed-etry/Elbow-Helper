@@ -32,6 +32,7 @@ from ..wording import (
     ACTION_VALUE_YES, ACTION_VALUE_NO,
     ACTION_STANDING_REMINDER_NAME, ACTION_STANDING_REMINDER_NOUN, ACTION_STANDING_POST_DESTINATION,
     ACTION_STANDING_DM_DESTINATION, ACTION_STANDING_DM_SELF, ACTION_UNAVAILABLE,
+    ACTION_SCHEDULE_END, ACTION_SCHEDULE_RUNS_ONE, ACTION_SCHEDULE_RUNS_MANY,
 )
 from ..discord_actions.safety import check_post_access, resolve_channel
 from ..discord_actions.messages import content_options, post_mentions
@@ -41,7 +42,7 @@ from ..commands.bridge import build_command_tools
 from ..plan.checker import valid_arguments
 
 from .scope import has_raw_id, validate_scope
-from .time_rules import next_occurrences, timezone_name
+from .time_rules import schedule_preview, remaining_runs, timezone_name
 
 
 TOOL_CONTRACTS = {
@@ -79,7 +80,7 @@ def _schedule(values: Mapping[str, Any], *, watcher: bool, zone: str) -> tuple[d
     rule = values.get("schedule")
     if not isinstance(rule, Mapping):
         raise ActionRefused("Choose a run time.")
-    times = next_occurrences(rule, after=datetime.now(timezone.utc), watcher=watcher)
+    times = schedule_preview(rule, after=datetime.now(timezone.utc), watcher=watcher)
     if not times:
         raise ActionRefused("Choose a future run time.")
     return times
@@ -251,6 +252,13 @@ def _preview_lines(values: Mapping[str, Any], *, kind: str, request: str,
          else ACTION_STANDING_DESTINATION.format(channel=channel.mention)),
         ACTION_STANDING_SCOPE if actions else ACTION_STANDING_NO_CHANGES,
     ]
+    schedule = values["schedule"]
+    if "end_utc" in schedule:
+        end = datetime.fromisoformat(schedule["end_utc"].replace("Z", "+00:00"))
+        lines.append(ACTION_SCHEDULE_END.format(time=f"<t:{int(end.timestamp())}:f>"))
+    elif "runs" in schedule:
+        lines.append(ACTION_SCHEDULE_RUNS_ONE if schedule["runs"] == 1
+                     else ACTION_SCHEDULE_RUNS_MANY.format(count=schedule["runs"]))
     for action in actions:
         lines.append(ACTION_STANDING_ACTION.format(
             action=action["scope_text"].rstrip(". "), targets=action["max_targets"],
@@ -413,6 +421,13 @@ async def list_standing(context: AgentRequestContext,
         "kind": item["kind"], "request": item["rule"].get("request", item["rule"].get("text", "")),
         "status": item["status"],
         "next_at": item.get("next_run_at") or item.get("next_check_at"),
+        "end_utc": item["rule"].get("schedule", {}).get("end_utc"),
+        "runs": item["rule"].get("schedule", {}).get("runs"),
+        "runs_left": 0 if item["status"] == "completed" else remaining_runs(
+            item["rule"].get("schedule", {}),
+            next_at=item.get("next_run_at") or item.get("next_check_at"),
+            runs_completed=item["rule"].get("runs_completed", 0), now=datetime.now(timezone.utc),
+        ),
     } for item in records]}
 
 
@@ -465,7 +480,9 @@ def standing_tools(
 ) -> tuple[RegisteredAgentTool, ...]:
     save = AgentToolDefinition(
         "save_standing_rule",
-        "Save or change a scheduled request or watcher after confirmation. Give exact UTC once/interval times or weekly/monthly local times, destination, fixed action values, changing target/content fields and target limits. Name every fixed value in scope_text. Watchers need current/latest reads, condition and repeat choice.",
+        "Save/change a reminder, request or watcher after confirmation. Give timing, destination "
+        "and any end. Requests need fixed values named in scope_text, variable fields and target "
+        "limits; watchers need fresh reads, condition and repeat choice.",
         {"type": "object", "properties": {
             "kind": {"type": "string", "enum": ["request", "watcher", "reminder"]},
             **content_options(),
@@ -479,6 +496,7 @@ def standing_tools(
                 "kind": {"type": "string", "enum": ["once", "interval", "weekly", "monthly"]},
                 "at_utc": {"type": "string"}, "anchor_utc": {"type": "string"},
                 "seconds": {"type": "integer"}, "timezone": {"type": "string"},
+                "end_utc": {"type": "string"}, "runs": {"type": "integer", "minimum": 1},
                 "time": {"type": "string"}, "days": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 31}},
             }, "anyOf": [
                 {"properties": {"kind": {"enum": ["weekly"]},
