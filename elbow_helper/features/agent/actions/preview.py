@@ -161,11 +161,12 @@ class ConfirmationView(discord.ui.View):
                 return
             if getattr(self.message, "preserves_other_text", False):
                 await interaction.response.defer()
-                await self.message.edit(content=ACTION_CANCELLED, view=self)
+                await self.message.edit(content=ACTION_CANCELLED, view=None)
             else:
                 await interaction.response.edit_message(
-                    content=self._replacement(ACTION_CANCELLED), view=self,
+                    content=self._replacement(ACTION_CANCELLED), view=None,
                 )
+            self.stop()
             LOGGER.info("Agent command preview cancelled: requester=%s", self.owner_id)
 
     async def confirm(self, interaction: discord.Interaction) -> None:
@@ -193,6 +194,12 @@ class ConfirmationView(discord.ui.View):
                 LOGGER.info("Agent preview confirmed: requester=%s", self.owner_id)
             except Exception:
                 LOGGER.exception("Agent preview could not be queued: requester=%s", self.owner_id)
+                if self.message is not None and progress_message is not None:
+                    try:
+                        await self.message.edit(view=None)
+                    except discord.DiscordException:
+                        LOGGER.warning("Agent preview buttons could not be removed")
+                self.stop()
                 await (
                     getattr(self.context, "delivery_channel", None)
                     or self.context.source_message.channel
@@ -220,9 +227,10 @@ class ConfirmationView(discord.ui.View):
             self._disable()
             if self.message is not None:
                 try:
-                    await self.message.edit(view=self)
+                    await self.message.edit(view=None)
                 except discord.DiscordException:
                     LOGGER.warning("Agent preview could not be invalidated")
+            self.stop()
 
     async def on_timeout(self) -> None:
         if self.is_finished():
@@ -234,7 +242,8 @@ class ConfirmationView(discord.ui.View):
             try:
                 await self.message.edit(
                     **({} if self.used else {"content": self._replacement(ACTION_PREVIEW_EXPIRED)}),
-                    view=self,
+                    view=None,
                 )
             except discord.DiscordException:
                 LOGGER.warning("Agent command preview could not expire")
+        self.stop()

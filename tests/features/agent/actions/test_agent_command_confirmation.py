@@ -66,8 +66,34 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         await view.cancel(self.interaction(101))
         view.message.content = ACTION_CANCELLED
         await view.on_timeout()
-        view.message.edit.assert_awaited_once_with(view=view)
+        view.message.edit.assert_not_awaited()
+        self.assertTrue(view.is_finished())
         self.assertTrue(all(item.disabled for item in view.children))
+
+    async def test_cancel_removes_controls_from_a_combined_preview_part(self):
+        proposal, _, _ = self.proposal(1)
+        view = self.view((proposal,))
+        view.message.preserves_other_text = True
+        interaction = self.interaction(101)
+        await view.cancel(interaction)
+        interaction.response.defer.assert_awaited_once()
+        view.message.edit.assert_awaited_once_with(content=ACTION_CANCELLED, view=None)
+        self.assertTrue(view.is_finished())
+
+    async def test_failed_queue_removes_controls_from_a_reusable_card(self):
+        proposal, _, run = self.proposal(1)
+        view = self.view((proposal,))
+        view.message.content = view.preview
+        view.context.delivery_channel = SimpleNamespace(send=AsyncMock())
+        view.runner.submit.side_effect = RuntimeError("Synthetic queue failure")
+        with self.assertLogs("elbow_helper.features.agent.actions.preview", level="ERROR"):
+            await view.confirm(self.interaction(101))
+        view.message.edit.assert_awaited_once_with(view=None)
+        self.assertTrue(view.is_finished())
+        run.assert_not_awaited()
+        view.message.edit.reset_mock()
+        await view.on_timeout()
+        view.message.edit.assert_not_awaited()
 
     def proposal(self, value, *, allowed=True):
         check = AsyncMock(return_value=allowed)
@@ -155,14 +181,14 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         view = self.view((proposal,))
         member = self.interaction(101)
         await view.cancel(member)
-        member.response.edit_message.assert_awaited_once_with(content=ACTION_CANCELLED, view=view)
+        member.response.edit_message.assert_awaited_once_with(content=ACTION_CANCELLED, view=None)
         self.assertTrue(all(item.disabled for item in view.children))
         await view.confirm(self.interaction(101))
         check.assert_not_awaited()
         run.assert_not_awaited()
         expired = self.view((proposal,))
         await expired.on_timeout()
-        expired.message.edit.assert_awaited_once_with(content=ACTION_PREVIEW_EXPIRED, view=expired)
+        expired.message.edit.assert_awaited_once_with(content=ACTION_PREVIEW_EXPIRED, view=None)
         await expired.confirm(self.interaction(101))
         run.assert_not_awaited()
 
@@ -225,6 +251,8 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         run.assert_not_awaited()
         view.runner.submit.assert_not_awaited()
         self.assertTrue(all(item.disabled for item in view.children[:2]))
+        view.message.edit.assert_awaited_once_with(view=None)
+        self.assertTrue(view.is_finished())
 
     async def test_irreversible_preview_warns_and_groups_same_kind(self):
         proposal, _, _ = self.proposal(1)
@@ -434,5 +462,5 @@ class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
         member = self.interaction(101)
         await view.cancel(member)
         member.response.edit_message.assert_awaited_once_with(
-            content=ACTION_CANCELLED + "\n\nSynthetic read result", view=view,
+            content=ACTION_CANCELLED + "\n\nSynthetic read result", view=None,
         )
