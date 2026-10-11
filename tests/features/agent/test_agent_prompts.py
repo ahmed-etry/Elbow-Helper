@@ -14,6 +14,13 @@ class RequestPromptTests(unittest.TestCase):
             self.assertIn("With no message to reply to, use <@member_id>.", prompt)
             self.assertNotIn("say it to them with <@member_id>", prompt)
 
+    def test_ambiguous_member_names_are_resolved_before_asking(self):
+        for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
+            self.assertIn(
+                "Look up ambiguous member names and use the full display name match; ask "
+                "if still unclear.", prompt,
+            )
+
     def test_conversation_answers_are_posted_where_the_conversation_is(self):
         for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
             self.assertIn(
