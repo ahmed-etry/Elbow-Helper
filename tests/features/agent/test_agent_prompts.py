@@ -5,6 +5,23 @@ from elbow_helper.features.agent.prompts import ACTION_SYSTEM_PROMPT, SYSTEM_PRO
 
 
 class RequestPromptTests(unittest.TestCase):
+    def test_reply_author_is_pinged_only_when_requested(self):
+        for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
+            self.assertIn(
+                "When replying, omit their mention; set ping_author only when asked to ping.",
+                prompt,
+            )
+            self.assertIn("With no message to reply to, use <@member_id>.", prompt)
+            self.assertNotIn("say it to them with <@member_id>", prompt)
+
+    def test_conversation_answers_are_posted_where_the_conversation_is(self):
+        for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
+            self.assertIn(
+                "Asked to answer, roast or tell someone something about a conversation in "
+                "another channel, post there, replying to the target's message when found; "
+                "do not answer in the asker's channel.", prompt,
+            )
+
     def test_partial_completion_is_explicit_in_both_modes(self):
         for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
             self.assertIn(
