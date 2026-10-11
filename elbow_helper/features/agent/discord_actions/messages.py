@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+from dataclasses import replace
 from collections.abc import Mapping
 from types import SimpleNamespace
 from typing import Any
@@ -19,7 +20,6 @@ from ..actions.contracts import (
     ActionClass, ChangePreview, PreparedAction, earlier_result_label,
 )
 from ..actions.outcomes import ActionOutcome
-from ..text import chunk_response
 from ..models import AgentAttachment, AgentRequestContext
 from ..wording import (
     ACTION_ATTACH_LINE,
@@ -31,6 +31,7 @@ from ..wording import (
 )
 from .safety import (DiscordActionRefused, check_post_access,
                              check_view_access, resolve_channel)
+from .message_parts import outgoing_parts
 
 
 def content_options() -> dict[str, Any]:
@@ -205,8 +206,8 @@ async def prepare_post(context: AgentRequestContext,
         attachment = await resolve_post_attachment(context, arguments)
     except DiscordActionRefused as error:
         return {"error": str(error)}
-    chunks = chunk_response(arguments["text"])
-    if not chunks:
+    parts = outgoing_parts(arguments["text"])
+    if not parts:
         return {"error": "The message has no text."}
     if deferred:
         try:
@@ -214,16 +215,57 @@ async def prepare_post(context: AgentRequestContext,
         except ValueError as error:
             return {"error": str(error)}
     await require_evidence_access(context)
-    for index, chunk in enumerate(chunks):
+    actions = []
+    for index, (chunk, is_gif) in enumerate(parts):
         make = _deferred_post_part if deferred else _post_part
-        context.state.proposed_changes.append(make(
-            context, channel_value if deferred else channel.id, chunk, mentions,
+        actions.append(make(
+            context, channel_value if deferred else channel.id, chunk,
+            discord.AllowedMentions.none() if is_gif else mentions,
             attachment=attachment if index == 0 else None,
             ping_line=_ping_line(context, arguments),
             **({"reply": reply} if not deferred and index == 0 else {}),
             **({"target_label": target_label} if deferred else {}),
         ))
+    if any(is_gif for _, is_gif in parts) and len(actions) > 1:
+        context.state.proposed_changes.append(_post_sequence(actions))
+    else:
+        context.state.proposed_changes.extend(actions)
     return {"status": "confirmation_required"}
+
+
+def _post_sequence(actions: list[PreparedAction]) -> PreparedAction:
+    finished = []
+
+    async def recheck() -> bool:
+        return all([await action.preview.recheck() for action in actions])
+
+    async def run() -> ActionOutcome:
+        for action in actions:
+            finished.append(await action.run())
+        identifiers = [item.result["message_id"] for item in finished]
+        return ActionOutcome(
+            "complete", after={"message_ids": identifiers},
+            result={**finished[0].result, "message_ids": identifiers},
+            posted_in=finished[0].posted_in,
+        )
+
+    async def verify() -> bool:
+        return len(finished) == len(actions) and all([
+            await action.verify() for action in actions
+        ])
+
+    async def bind(results: Mapping[str, Mapping[str, Any]]) -> PreparedAction:
+        return _post_sequence([
+            await action.bind(results) if action.bind else action for action in actions
+        ])
+
+    first = actions[0]
+    preview = replace(
+        first.preview, recheck=recheck,
+        details=tuple(line for action in actions for line in action.preview.details),
+    )
+    return replace(first, preview=preview, run=run, verify=verify,
+                   bind=bind if any(action.bind for action in actions) else None)
 
 
 def _deferred_post_part(context: AgentRequestContext, reference: Mapping[str, Any],
@@ -374,6 +416,8 @@ async def prepare_edit(context: AgentRequestContext,
             context, arguments["channel_id"], arguments["message_id"],
         )
         post_mentions(context, arguments, arguments["text"])
+        if len(outgoing_parts(arguments["text"])) > 1:
+            await _channel_for_post(context, channel.id)
     except DiscordActionRefused as error:
         return {"error": str(error)}
     if len(arguments["text"]) > 2000:
@@ -388,21 +432,55 @@ async def prepare_edit(context: AgentRequestContext,
 def _edit_action(context: AgentRequestContext, channel_id: int, message_id: int,
                  *, new_text: str, old_text: str,
                  mention_values: Mapping[str, Any], undo: bool = False,
-                 changed: bool = False) -> PreparedAction:
+                 changed: bool = False, remove_gifs: Mapping[str, str] | None = None,
+                 ) -> PreparedAction:
+    parts = outgoing_parts(new_text) or (("", False),)
+    primary, primary_is_gif = parts[0]
+    companions = [
+        _post_part(context, channel_id, text, discord.AllowedMentions.none())
+        for text, _ in parts[1:]
+    ]
+    posted_gifs = {}
+    removed_gifs = set()
+
+    async def check_gifs() -> None:
+        for identifier, expected in (remove_gifs or {}).items():
+            if identifier in removed_gifs:
+                continue
+            _, message = await _owned_message(context, channel_id, int(identifier))
+            if message.content != expected:
+                raise DiscordActionRefused("That message is unavailable.")
+
     async def recheck() -> bool:
         try:
             _, message = await _owned_message(context, channel_id, message_id)
+            await check_gifs()
         except DiscordActionRefused:
             return False
-        return message.content == old_text
+        return message.content == old_text and all([
+            await companion.preview.recheck() for companion in companions
+        ])
 
     async def run() -> ActionOutcome:
         channel, message = await _owned_message(context, channel_id, message_id)
-        await message.edit(content=new_text,
-                           allowed_mentions=post_mentions(context, mention_values, new_text))
+        await check_gifs()
+        mentions = (discord.AllowedMentions.none() if primary_is_gif
+                    else post_mentions(context, mention_values, new_text))
+        await message.edit(content=primary, allowed_mentions=mentions)
+        for identifier in remove_gifs or {}:
+            _, companion = await _owned_message(context, channel_id, int(identifier))
+            await companion.delete()
+            removed_gifs.add(identifier)
+            await asyncio.to_thread(
+                context.action_repository.mark_message_deleted,
+                message_id=int(identifier), guild_id=context.guild.id, channel_id=channel_id,
+            )
+        for companion in companions:
+            outcome = await companion.run()
+            posted_gifs[str(outcome.result["message_id"])] = companion.values["text"]
         return ActionOutcome(
             "complete",
-            after={"content": new_text},
+            after={"content": primary, "gif_messages": posted_gifs},
             result={"message_id": message_id, "channel_id": channel_id},
         )
 
@@ -411,7 +489,9 @@ def _edit_action(context: AgentRequestContext, channel_id: int, message_id: int,
             _, message = await _owned_message(context, channel_id, message_id)
         except DiscordActionRefused:
             return False
-        return message.content == new_text
+        return (message.content == primary and len(posted_gifs) == len(companions)
+                and len(removed_gifs) == len(remove_gifs or {})
+                and all([await companion.verify() for companion in companions]))
 
     channel = context.guild.get_channel_or_thread(channel_id)
     label = channel.mention if channel is not None else f"<#{channel_id}>"
@@ -440,6 +520,7 @@ async def prepare_edit_undo(context: AgentRequestContext,
         context, channel.id, message.id, new_text=previous,
         old_text=expected, mention_values={}, undo=True,
         changed=message.content != expected,
+        remove_gifs=log["after"].get("gif_messages", {}),
     )
 
 

@@ -26,6 +26,7 @@ from ..models import RegisteredAgentTool, AgentCapabilityEffect
 from ..text import chunk_response
 from ..wording import ACTION_DM_LINE, ACTION_DM_LABEL, ACTION_DM_TARGET, DM_SENT_FOR
 from .messages import resolve_post_attachment
+from .message_parts import outgoing_parts
 
 LOGGER = logging.getLogger(__name__)
 
@@ -78,8 +79,15 @@ async def _deliver_dms(context, identifiers, text, attachment, delivery):
             if member.id != context.member.id else ""
         )
         delivered = True
+        parts = outgoing_parts(text)
+        if footer and any(is_gif for _, is_gif in parts):
+            body = "\n".join(part for part, is_gif in parts if not is_gif)
+            parts = (*((part, False) for part in chunk_response(body + footer)),
+                     *((part, True) for part, is_gif in parts if is_gif))
+        elif footer:
+            parts = tuple((part, False) for part in chunk_response(text + footer))
         try:
-            for part_index, part in enumerate(chunk_response(text + footer)):
+            for part_index, (part, is_gif) in enumerate(parts):
                 file = (
                     discord.File(io.BytesIO(attachment.data), filename=attachment.filename)
                     if attachment and part_index == 0 else None
@@ -87,7 +95,8 @@ async def _deliver_dms(context, identifiers, text, attachment, delivery):
                 try:
                     await member.send(
                         part,
-                        allowed_mentions=discord.AllowedMentions(
+                        allowed_mentions=discord.AllowedMentions.none() if is_gif
+                        else discord.AllowedMentions(
                             everyone=False, roles=False, users=True,
                         ),
                         **({"file": file} if file else {}),
