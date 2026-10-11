@@ -45,7 +45,8 @@ class OutgoingGifTests(unittest.IsolatedAsyncioTestCase):
             view_channel=True, send_messages=True, read_message_history=True,
         )
         self.messages[55] = SimpleNamespace(
-            id=55, channel=self.channel, author=SimpleNamespace(id=7, display_name="Example"),
+            id=55, channel=self.channel,
+            author=SimpleNamespace(id=7, display_name="Example", name="example.7"),
             content="Question", jump_url="https://discord.com/channels/3/2/55",
         )
         for text in ("Answer\n" + GIF, GIF):

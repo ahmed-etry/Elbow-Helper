@@ -52,6 +52,13 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
             state=AgentTurnState(), action_repository=repository,
             history=(), source_message=SimpleNamespace(channel=channel),
         )
+        targets = {
+            identifier: SimpleNamespace(
+                id=identifier, display_name="Example", name=f"example.{identifier}",
+            ) for identifier in (7, 8)
+        }
+        targets[4] = self.context.member
+        self.context.guild.get_member = targets.get
         self.channel = channel
         self.messages = messages
         self.repository = repository

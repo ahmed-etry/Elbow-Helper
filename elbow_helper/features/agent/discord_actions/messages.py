@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import re
 from dataclasses import replace
 from collections.abc import Mapping
 from types import SimpleNamespace
@@ -32,6 +33,7 @@ from ..wording import (
 from .safety import (DiscordActionRefused, check_post_access,
                              check_view_access, resolve_channel)
 from .message_parts import outgoing_parts
+from .member_labels import member_label, mentioned_member_labels
 
 
 def content_options() -> dict[str, Any]:
@@ -115,14 +117,24 @@ def post_mentions(context: Any, arguments: Mapping[str, Any], text: str) -> disc
     )
 
 
-def _ping_line(context: Any, arguments: Mapping[str, Any]) -> tuple[str, ...]:
+def _ping_line(context: Any, arguments: Mapping[str, Any], *,
+               text: str | None = None, reply: Any = None,
+               member_labels: Mapping[int, str]) -> tuple[str, ...]:
+    text = arguments.get("text", "") if text is None else text
     targets = []
-    if arguments.get("ping_everyone"):
+    if arguments.get("ping_everyone") and ("@everyone" in text or "@here" in text):
         targets.append("@everyone or @here")
     for role_id in arguments.get("ping_role_ids", ()):
         role = context.guild.get_role(role_id)
-        if role is not None:
+        if role is not None and f"<@&{role_id}>" in text:
             targets.append(role.mention)
+    members = dict.fromkeys(int(value) for value in re.findall(r"<@!?([0-9]+)>", text))
+    if reply is not None and arguments.get("ping_author"):
+        members[reply.author.id] = None
+    targets.extend(
+        member_label(reply.author) if reply is not None and member_id == reply.author.id
+        else member_labels[member_id] for member_id in members
+    )
     return (ACTION_PINGS_LINE.format(targets=", ".join(targets)),) if targets else ()
 
 
@@ -145,7 +157,7 @@ async def _reply_target(context: AgentRequestContext, channel: Any, message_id: 
 
 
 def _reply_line(message: Any) -> str:
-    author = discord.utils.escape_markdown(message.author.display_name)
+    author = member_label(message.author)
     excerpt = " ".join(message.content.split())[:120] or ACTION_PREVIEW_BLANK
     excerpt = discord.utils.escape_markdown(excerpt).replace("]", "\\]")
     return f"Reply to {author}: [{excerpt}]({message.jump_url})"
@@ -192,6 +204,7 @@ async def prepare_post(context: AgentRequestContext,
     try:
         channel = None if deferred else await _channel_for_post(context, channel_value)
         mentions = post_mentions(context, arguments, arguments["text"])
+        member_labels = await mentioned_member_labels(context.guild, arguments["text"])
         reply = None
         if "reply_to" in arguments:
             if channel is None:
@@ -222,7 +235,10 @@ async def prepare_post(context: AgentRequestContext,
             context, channel_value if deferred else channel.id, chunk,
             discord.AllowedMentions.none() if is_gif else mentions,
             attachment=attachment if index == 0 else None,
-            ping_line=_ping_line(context, arguments),
+            ping_line=() if is_gif else _ping_line(
+                context, arguments, text=chunk, reply=reply if index == 0 else None,
+                member_labels=member_labels,
+            ),
             **({"reply": reply} if not deferred and index == 0 else {}),
             **({"target_label": target_label} if deferred else {}),
         ))
@@ -416,6 +432,7 @@ async def prepare_edit(context: AgentRequestContext,
             context, arguments["channel_id"], arguments["message_id"],
         )
         post_mentions(context, arguments, arguments["text"])
+        member_labels = await mentioned_member_labels(context.guild, arguments["text"])
         if len(outgoing_parts(arguments["text"])) > 1:
             await _channel_for_post(context, channel.id)
     except DiscordActionRefused as error:
@@ -425,6 +442,7 @@ async def prepare_edit(context: AgentRequestContext,
     context.state.proposed_changes.append(_edit_action(
         context, channel.id, message.id, new_text=arguments["text"],
         old_text=message.content, mention_values=arguments,
+        member_labels=member_labels,
     ))
     return {"status": "confirmation_required"}
 
@@ -433,6 +451,7 @@ def _edit_action(context: AgentRequestContext, channel_id: int, message_id: int,
                  *, new_text: str, old_text: str,
                  mention_values: Mapping[str, Any], undo: bool = False,
                  changed: bool = False, remove_gifs: Mapping[str, str] | None = None,
+                 member_labels: Mapping[int, str],
                  ) -> PreparedAction:
     parts = outgoing_parts(new_text) or (("", False),)
     primary, primary_is_gif = parts[0]
@@ -496,7 +515,9 @@ def _edit_action(context: AgentRequestContext, channel_id: int, message_id: int,
     channel = context.guild.get_channel_or_thread(channel_id)
     label = channel.mention if channel is not None else f"<#{channel_id}>"
     lines = (ACTION_EDIT_LINE.format(channel=label),
-             *_ping_line(context, mention_values),
+             *(() if primary_is_gif else _ping_line(
+                 context, mention_values, text=primary, member_labels=member_labels,
+             )),
              *((ACTION_UNDO_CHANGED,) if changed else ()))
     return PreparedAction(
         "undo_agent_message_edit" if undo else "edit_agent_message",
@@ -521,6 +542,7 @@ async def prepare_edit_undo(context: AgentRequestContext,
         old_text=expected, mention_values={}, undo=True,
         changed=message.content != expected,
         remove_gifs=log["after"].get("gif_messages", {}),
+        member_labels=await mentioned_member_labels(context.guild, previous),
     )
 
 

@@ -24,9 +24,12 @@ from ..actions.outcomes import ActionOutcome
 from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool, AgentCapabilityEffect
 from ..text import chunk_response
-from ..wording import ACTION_DM_LINE, ACTION_DM_LABEL, ACTION_DM_TARGET, DM_SENT_FOR
+from ..wording import (
+    ACTION_DM_LINE, ACTION_DM_LABEL, ACTION_DM_TARGET, ACTION_PINGS_LINE, DM_SENT_FOR,
+)
 from .messages import resolve_post_attachment
 from .message_parts import outgoing_parts
+from .member_labels import member_label, mentioned_member_labels
 
 LOGGER = logging.getLogger(__name__)
 
@@ -132,6 +135,7 @@ async def prepare_direct_messages(context, arguments):
     if not isinstance(text, str) or not 1 <= len(text) <= 4000:
         raise ActionRefused("The DM text must be 1 to 4,000 characters.")
     attachment = await resolve_post_attachment(context, arguments)
+    labels = await mentioned_member_labels(context.guild, text)
     if any(member.id != context.member.id for member in members):
         context.state.required_access.add(ACCESS_LEAD)
 
@@ -149,7 +153,8 @@ async def prepare_direct_messages(context, arguments):
         "send_direct_messages",
         dict(arguments),
         ChangePreview(
-            (ACTION_DM_LINE.format(members=", ".join(member.mention for member in members)),),
+            (ACTION_DM_LINE.format(members=", ".join(member_label(member) for member in members)),
+             *((ACTION_PINGS_LINE.format(targets=", ".join(labels.values())),) if labels else ())),
             recheck,
             summary=ACTION_DM_LABEL,
             count=len(members),

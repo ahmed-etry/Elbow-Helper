@@ -16,7 +16,8 @@ class PostReplyTests(unittest.IsolatedAsyncioTestCase):
             view_channel=True, send_messages=True, read_message_history=True,
         )
         self.target = SimpleNamespace(
-            id=55, channel=self.channel, author=SimpleNamespace(id=7, display_name="Example"),
+            id=55, channel=self.channel,
+            author=SimpleNamespace(id=7, display_name="Example", name="example.7"),
             content="Synthetic question", jump_url="https://discord.com/channels/3/2/55",
         )
         self.messages[55] = self.target
@@ -31,7 +32,7 @@ class PostReplyTests(unittest.IsolatedAsyncioTestCase):
         await prepare_post(self.context, {"channel_id": 2, "text": "Answer", "reply_to": 55})
         action = self.context.state.proposed_changes.pop()
         self.assertEqual(action.preview.details[0],
-                         "Reply to Example: [Synthetic question]"
+                         "Reply to Example (@example.7): [Synthetic question]"
                          "(https://discord.com/channels/3/2/55)")
         self.assertEqual(action.preview.detail_sources, frozenset({2}))
         await action.run()

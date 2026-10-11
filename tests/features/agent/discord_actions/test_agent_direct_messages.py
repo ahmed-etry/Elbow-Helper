@@ -18,6 +18,27 @@ from elbow_helper.features.agent.actions.report import format_run_report
 
 
 class DirectMessageTests(unittest.IsolatedAsyncioTestCase):
+    async def test_preview_identifies_recipients_and_addressed_members(self):
+        self.members[1].display_name = "Example"
+        self.members[2].display_name = "Example"
+        with (
+            patch(
+                "elbow_helper.features.agent.discord_actions.direct_messages."
+                "require_evidence_access", AsyncMock(),
+            ),
+            patch(
+                "elbow_helper.features.agent.discord_actions.direct_messages."
+                "resolve_post_attachment", AsyncMock(return_value=None),
+            ),
+        ):
+            await prepare_direct_messages(self.context, {
+                "member_ids": [1], "text": "About <@2>",
+            })
+        preview = self.context.state.proposed_changes.pop().preview
+        self.assertEqual(preview.lines, (
+            "DM Example (@synthetic.1):", "Pings: Example (@synthetic.2)",
+        ))
+
     async def test_refusals_return_specific_messages_and_access_to_the_model(self):
         from elbow_helper.features.agent.engine.tool_call import execute_tool
 
@@ -82,6 +103,7 @@ class DirectMessageTests(unittest.IsolatedAsyncioTestCase):
         self.members = {
             identifier: SimpleNamespace(
                 id=identifier, display_name=f"Synthetic {identifier}",
+                name=f"synthetic.{identifier}",
                 mention=f"<@{identifier}>", bot=False, send=AsyncMock(),
             )
             for identifier in (1, 2)
@@ -117,7 +139,9 @@ class DirectMessageTests(unittest.IsolatedAsyncioTestCase):
                 self.context, {"member_ids": [1, 2], "text": "Synthetic message"},
             )
             action = self.context.state.proposed_changes[0]
-            self.assertEqual(action.preview.lines, ("DM <@1>, <@2>:",))
+            self.assertEqual(action.preview.lines, (
+                "DM Synthetic 1 (@synthetic.1), Synthetic 2 (@synthetic.2):",
+            ))
             self.assertEqual(action.preview.details, ("Synthetic message",))
             self.assertEqual(action.preview.count, 2)
             self.members[1].send.assert_not_awaited()
@@ -173,6 +197,7 @@ class DirectMessageTests(unittest.IsolatedAsyncioTestCase):
         for identifier in range(3, 52):
             self.members[identifier] = SimpleNamespace(
                 id=identifier, display_name=f"Synthetic {identifier}",
+                name=f"synthetic.{identifier}",
                 mention=f"<@{identifier}>", bot=False, send=AsyncMock(),
             )
         with (
