@@ -36,10 +36,14 @@ class PostPingPreviewTests(unittest.IsolatedAsyncioTestCase):
     async def test_author_is_listed_only_when_pinged_and_never_duplicated(self):
         plain = await self.preview(text="Answer", reply_to=55)
         self.assertFalse(any(line.startswith("Pings:") for line in plain.lines))
-        self.assertIn("Reply to Example (@example.7): [Synthetic question]"
+        self.assertIn("Reply to Example (@example.7), no ping: [Synthetic question]"
                       "(https://discord.com/channels/3/2/55)", plain.details)
         pinged = await self.preview(text="Answer", reply_to=55, ping_author=True)
         self.assertIn("Pings: Example (@example.7)", pinged.lines)
+        self.assertIn(
+            "Reply to Example (@example.7), with ping: [Synthetic question]"
+            "(https://discord.com/channels/3/2/55)", pinged.details,
+        )
         duplicate = await self.preview(text="Answer <@!7>", reply_to=55, ping_author=True)
         self.assertIn("Pings: Example (@example.7)", duplicate.lines)
 
@@ -59,6 +63,8 @@ class PostPingPreviewTests(unittest.IsolatedAsyncioTestCase):
             text="https://tenor.com/view/synthetic", reply_to=55, ping_author=True,
         )
         self.assertFalse(any(line.startswith("Pings:") for line in preview.lines))
+        self.assertIn("Reply to Example (@example.7), no ping: [Synthetic question]"
+                      "(https://discord.com/channels/3/2/55)", preview.details)
 
     async def test_edit_previews_both_members_with_the_same_display_name(self):
         await prepare_post(self.context, {"channel_id": 2, "text": "Before"})

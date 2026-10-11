@@ -29,6 +29,7 @@ from ..wording import (
     ACTION_PINGS_LINE, ACTION_POST_FUTURE_LINE,
     ACTION_POST_LABEL, ACTION_POST_LINE,
     ACTION_UNDO_CHANGED, ACTION_PREVIEW_BLANK,
+    ACTION_REPLY_NO_PING, ACTION_REPLY_WITH_PING,
 )
 from .safety import (DiscordActionRefused, check_post_access,
                              check_view_access, resolve_channel)
@@ -156,11 +157,12 @@ async def _reply_target(context: AgentRequestContext, channel: Any, message_id: 
     return message
 
 
-def _reply_line(message: Any) -> str:
+def _reply_line(message: Any, *, ping_author: bool) -> str:
     author = member_label(message.author)
     excerpt = " ".join(message.content.split())[:120] or ACTION_PREVIEW_BLANK
     excerpt = discord.utils.escape_markdown(excerpt).replace("]", "\\]")
-    return f"Reply to {author}: [{excerpt}]({message.jump_url})"
+    wording = ACTION_REPLY_WITH_PING if ping_author else ACTION_REPLY_NO_PING
+    return wording.format(member=author, excerpt=excerpt, url=message.jump_url)
 
 
 async def _find_nonce(channel: Any, nonce: int, bot_id: int) -> Any | None:
@@ -393,7 +395,7 @@ def _post_part(context: AgentRequestContext, channel_id: int, text: str,
     lines = (ACTION_POST_LINE.format(channel=label), *ping_line)
     details = tuple(text.splitlines())
     if reply is not None:
-        details = (_reply_line(reply), *details)
+        details = (_reply_line(reply, ping_author=mentions.replied_user), *details)
     if attachment is not None:
         details += (ACTION_ATTACH_LINE.format(filename=attachment.filename),)
     return PreparedAction(

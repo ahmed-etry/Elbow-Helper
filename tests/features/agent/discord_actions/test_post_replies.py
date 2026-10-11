@@ -32,7 +32,7 @@ class PostReplyTests(unittest.IsolatedAsyncioTestCase):
         await prepare_post(self.context, {"channel_id": 2, "text": "Answer", "reply_to": 55})
         action = self.context.state.proposed_changes.pop()
         self.assertEqual(action.preview.details[0],
-                         "Reply to Example (@example.7): [Synthetic question]"
+                         "Reply to Example (@example.7), no ping: [Synthetic question]"
                          "(https://discord.com/channels/3/2/55)")
         self.assertEqual(action.preview.detail_sources, frozenset({2}))
         await action.run()
@@ -46,6 +46,11 @@ class PostReplyTests(unittest.IsolatedAsyncioTestCase):
         })
         for action in self.context.state.proposed_changes:
             await action.run()
+        self.assertIn(
+            "Reply to Example (@example.7), with ping: [Synthetic question]"
+            "(https://discord.com/channels/3/2/55)",
+            self.context.state.proposed_changes[0].preview.details,
+        )
         first, second = self.channel.send.await_args_list
         self.assertTrue(first.kwargs["allowed_mentions"].replied_user)
         self.assertNotIn("reference", second.kwargs)
