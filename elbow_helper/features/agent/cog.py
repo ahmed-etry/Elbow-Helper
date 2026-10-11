@@ -22,7 +22,7 @@ from .access import AgentAccessLost, require_evidence_access
 from .access import has_agent_entry_access
 from .access import require_access
 from .conversation.state import Conversation, ConversationStore
-from .text import message_text, render_member_mentions
+from .text import message_text
 from .models import AgentDelivery, AgentRequestContext, AgentIdentity
 from .identity import agent_identity, member_identity
 from .engine.service import AgentUnavailableError
@@ -540,7 +540,7 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
 def _render_local_message(
     message: discord.Message, *, identity: AgentIdentity | None = None,
 ) -> str:
-    content = render_member_mentions(message_text(message), message, identity=identity)
+    content = message_text(message, identity=identity)
     if len(content) > LOCAL_MESSAGE_CHARACTER_LIMIT:
         content = f"{content[: LOCAL_MESSAGE_CHARACTER_LIMIT - 3]}..."
     author_type = ("you" if identity is not None and message.author.id == identity.member_id

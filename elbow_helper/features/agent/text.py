@@ -8,12 +8,20 @@ from .identity import member_identity
 from .models import AgentIdentity
 
 
-def message_text(message: discord.Message) -> str:
+def message_text(
+    message: discord.Message, *, identity: AgentIdentity | None = None,
+) -> str:
     parts = [str(message.content or "").strip()]
     for embed in getattr(message, "embeds", ()):
+        author = getattr(getattr(embed, "author", None), "name", None)
+        if author:
+            parts.append(str(author))
         parts.extend(str(value) for value in (embed.title, embed.description) if value)
         for field in embed.fields:
             parts.append(f"{field.name}: {field.value}")
+        footer = getattr(getattr(embed, "footer", None), "text", None)
+        if footer:
+            parts.append(str(footer))
     if message.attachments:
         names = ", ".join(item.filename for item in message.attachments)
         parts.append(f"[attachments, contents not read: {names}]")
@@ -34,7 +42,9 @@ def message_text(message: discord.Message) -> str:
         for embed in getattr(message, "embeds", ())
     ):
         parts.append("[image]")
-    return "\n".join(part for part in parts if part)
+    return render_member_mentions(
+        "\n".join(part for part in parts if part), message, identity=identity,
+    )
 
 
 def render_member_mentions(
