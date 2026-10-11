@@ -7,9 +7,14 @@ from typing import Any
 
 import discord
 
-from ..wording import ACTION_UNAVAILABLE
+from ..wording import ACTION_ROLE_HIBERNATING, ACTION_ROLE_OPEN_TRIAL, ACTION_UNAVAILABLE
 
-from elbow_helper.features.hibernation.config import managed_role_ids as hibernation_roles
+from elbow_helper.configuration.clans import CLAN_MEMBER_ROLE_IDS
+from elbow_helper.configuration.roles import ALLIANCE_MEMBER_ROLE_ID, MEMBER_ROLE_ID
+from elbow_helper.features.hibernation.config import (
+    HIBERNATE_REMOVE_ROLE_IDS, RESTORE_ROLE_IDS, SNAPSHOT_ONLY_ROLE_IDS,
+    managed_role_ids as hibernation_roles,
+)
 from elbow_helper.features.recruitment.config import managed_role_ids as recruitment_roles
 from elbow_helper.features.wars.roles import managed_role_ids as war_roles
 from ..actions.contracts import ActionRefused
@@ -24,6 +29,35 @@ POWERFUL_PERMISSIONS = (
 
 class DiscordActionRefused(ActionRefused):
     """A Discord target is outside the agent's action boundary."""
+
+
+def member_role_owner(context: Any, role_id: int, member_id: int) -> str | None:
+    """Roles saved or changed by a flow belong to it while the member is in it."""
+    membership_roles = {
+        MEMBER_ROLE_ID, ALLIANCE_MEMBER_ROLE_ID, *CLAN_MEMBER_ROLE_IDS.values(),
+    }
+    if role_id in membership_roles:
+        if context.recruitment_queries is None:
+            raise DiscordActionRefused(ACTION_UNAVAILABLE)
+        if context.recruitment_queries.has_open_trial(member_id):
+            return "trial"
+    saved_roles = {
+        *membership_roles, *HIBERNATE_REMOVE_ROLE_IDS,
+        *RESTORE_ROLE_IDS, *SNAPSHOT_ONLY_ROLE_IDS,
+    }
+    if role_id in saved_roles:
+        if context.hibernation_queries is None:
+            raise DiscordActionRefused(ACTION_UNAVAILABLE)
+        if context.hibernation_queries.is_hibernating(member_id):
+            return "hibernation"
+    return None
+
+
+def check_member_role_ownership(context: Any, role: Any, member: Any) -> None:
+    owner = member_role_owner(context, role.id, member.id)
+    if owner is not None:
+        template = ACTION_ROLE_OPEN_TRIAL if owner == "trial" else ACTION_ROLE_HIBERNATING
+        raise DiscordActionRefused(template.format(member=member.display_name))
 
 
 async def managed_role_commands(context: Any) -> dict[int, str]:

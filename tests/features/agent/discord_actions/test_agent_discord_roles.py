@@ -1,6 +1,7 @@
 """Role actions preview each changed member and keep undo reversible."""
 
 from types import SimpleNamespace
+from contextlib import ExitStack
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -9,9 +10,173 @@ from elbow_helper.features.agent.discord_actions.roles import (
     prepare_add_roles, prepare_remove_roles, prepare_role_undo,
 )
 from features.agent.discord_actions.helpers import register_requester
+from elbow_helper.features.hibernation.queries import HibernationQueries
+from elbow_helper.features.recruitment.queries import RecruitmentQueries
 
 
 class DiscordRoleActionTests(unittest.IsolatedAsyncioTestCase):
+    def membership_context(self):
+        context, role, members = self.context()
+        trials, hibernation = {}, {}
+        context.recruitment_queries = RecruitmentQueries(lambda: trials)
+        context.hibernation_queries = HibernationQueries(lambda: hibernation)
+        stack = ExitStack()
+        self.addCleanup(stack.close)
+        stack.enter_context(patch(
+            "elbow_helper.features.agent.discord_actions.roles.require_evidence_access",
+            new_callable=AsyncMock,
+        ))
+        stack.enter_context(patch(
+            "elbow_helper.features.agent.discord_actions.safety.CLAN_MEMBER_ROLE_IDS",
+            {"FAKE": 13},
+        ))
+        stack.enter_context(patch(
+            "elbow_helper.features.agent.discord_actions.safety.MEMBER_ROLE_ID", 11,
+        ))
+        stack.enter_context(patch(
+            "elbow_helper.features.agent.discord_actions.safety.ALLIANCE_MEMBER_ROLE_ID", 12,
+        ))
+        for name, values in (
+            ("HIBERNATE_REMOVE_ROLE_IDS", {11, 61}),
+            ("RESTORE_ROLE_IDS", (62,)), ("SNAPSHOT_ONLY_ROLE_IDS", (63,)),
+        ):
+            stack.enter_context(patch(
+                "elbow_helper.features.agent.discord_actions.safety." + name, values,
+            ))
+        return context, role, members, trials, hibernation
+
+    async def test_saved_roles_refuse_hibernating_members_and_allow_returned_members(self):
+        context, role, members, trials, hibernation = self.membership_context()
+        for role_id in (61, 62, 63, 13):
+            for prepare, member_id in ((prepare_add_roles, 4), (prepare_remove_roles, 5)):
+                with self.subTest(role_id=role_id, member_id=member_id):
+                    role.id = role_id
+                    context.state.proposed_changes.clear()
+                    hibernation[str(member_id)] = {}
+                    result = await prepare(context, {
+                        "role_id": role_id, "member_ids": [member_id],
+                    })
+                    self.assertEqual(result["error"], (
+                        f"{members[member_id].display_name} is hibernating, "
+                        "so their roles come back when they return."
+                    ))
+                    self.assertEqual(context.state.proposed_changes, [])
+                    hibernation.clear()
+                    result = await prepare(context, {
+                        "role_id": role_id, "member_ids": [member_id],
+                    })
+                    self.assertEqual(result["status"], "confirmation_required")
+                    action = context.state.proposed_changes[0]
+                    self.assertTrue(await action.preview.recheck())
+                    hibernation[str(member_id)] = {}
+                    self.assertFalse(await action.preview.recheck())
+                    with self.assertRaises(ValueError):
+                        await action.run()
+                    with self.assertRaises(ValueError):
+                        await prepare_role_undo(context, {
+                            "targets": action.values, "before": action.preview.before,
+                            "after": {"has_role": member_id == 4},
+                        })
+                    hibernation.clear()
+
+    async def test_membership_roles_use_confirm_and_undo_for_existing_members(self):
+        context, role, members, trials, hibernation = self.membership_context()
+        for role_id in (11, 12, 13):
+            with self.subTest(role_id=role_id):
+                role.id = role_id
+                context.state.proposed_changes.clear()
+                result = await prepare_add_roles(context, {"role_id": role_id, "member_ids": [4]})
+                self.assertEqual(result["status"], "confirmation_required")
+                members[4].add_roles.assert_not_awaited()
+                action = context.state.proposed_changes[0]
+                self.assertTrue(await action.preview.recheck())
+                outcome = await action.run()
+                undo = await prepare_role_undo(context, {
+                    "targets": action.values, "before": action.preview.before,
+                    "after": outcome.after,
+                })
+                await undo.run()
+                self.assertNotIn(role, members[4].roles)
+                members[4].add_roles.reset_mock()
+
+    async def test_each_membership_role_refuses_only_the_member_in_the_flow(self):
+        context, role, members, trials, hibernation = self.membership_context()
+        for role_id in (11, 12, 13):
+            role.id = role_id
+            for flow in (trials, hibernation):
+                for prepare, member_id in ((prepare_add_roles, 4), (prepare_remove_roles, 5)):
+                    with self.subTest(role_id=role_id, flow=flow, member_id=member_id):
+                        flow.clear()
+                        if flow is trials:
+                            flow["100"] = {"applicant_id": member_id}
+                        else:
+                            flow[str(member_id)] = {}
+                        context.state.proposed_changes.clear()
+                        result = await prepare(context, {
+                            "role_id": role_id, "member_ids": [member_id],
+                        })
+                        self.assertIn("error", result)
+                        name = members[member_id].display_name
+                        expected = (
+                            f"{name} is in an open trial, "
+                            "so their roles change when the trial ends."
+                            if flow is trials else
+                            f"{name} is hibernating, so their roles come back when they return."
+                        )
+                        self.assertEqual(result["error"], expected)
+                        self.assertNotIn(members[member_id].mention, result["error"])
+                        self.assertEqual(context.state.proposed_changes, [])
+                        other = 5 if member_id == 4 else 4
+                        prepare_other = prepare_remove_roles if other == 5 else prepare_add_roles
+                        result = await prepare_other(context, {
+                            "role_id": role_id, "member_ids": [other],
+                        })
+                        self.assertEqual(result["status"], "confirmation_required")
+                        flow.clear()
+
+    async def test_flow_started_after_preview_blocks_run_and_undo(self):
+        context, role, members, trials, hibernation = self.membership_context()
+        role.id = 11
+        await prepare_add_roles(context, {"role_id": 11, "member_ids": [4]})
+        action = context.state.proposed_changes[0]
+        for flow in (trials, hibernation):
+            if flow is trials:
+                flow["100"] = {"applicant_id": 4}
+            else:
+                flow["4"] = {}
+            self.assertFalse(await action.preview.recheck())
+            with self.assertRaises(ValueError):
+                await action.run()
+            members[4].add_roles.assert_not_awaited()
+            with self.assertRaises(ValueError):
+                await prepare_role_undo(context, {
+                    "targets": action.values, "before": {"has_role": False},
+                    "after": {"has_role": True},
+                })
+            flow.clear()
+
+    async def test_mixed_member_selection_does_not_leave_partial_previews(self):
+        context, role, members, trials, hibernation = self.membership_context()
+        role.id = 11
+        members[5].roles.clear()
+        trials["100"] = {"applicant_id": 5}
+        result = await prepare_add_roles(context, {"role_id": 11, "member_ids": [4, 5]})
+        self.assertIn("error", result)
+        self.assertEqual(context.state.proposed_changes, [])
+        for member in members.values():
+            member.add_roles.assert_not_awaited()
+
+    async def test_no_change_and_unrelated_roles_do_not_refuse_active_members(self):
+        context, role, members, trials, hibernation = self.membership_context()
+        trials["100"] = {"applicant_id": 5}
+        role.id = 11
+        result = await prepare_add_roles(context, {"role_id": 11, "member_ids": [5]})
+        self.assertEqual(result["status"], "no_change")
+        role.id = 99
+        result = await prepare_remove_roles(context, {"role_id": 99, "member_ids": [5]})
+        self.assertEqual(result["status"], "confirmation_required")
+        self.assertTrue(await context.state.proposed_changes[0].preview.recheck())
+
     async def test_requester_hierarchy_is_rechecked_against_the_cached_member(self):
         context, role, members = self.context()
         with (patch("elbow_helper.features.agent.discord_actions.roles.require_evidence_access",
@@ -61,6 +226,7 @@ class DiscordRoleActionTests(unittest.IsolatedAsyncioTestCase):
         for member_id, roles in ((4, []), (5, [role])):
             member = SimpleNamespace(
                 id=member_id, mention=f"@member{member_id}", roles=roles,
+                display_name=f"Synthetic Member {member_id}",
                 top_role=SimpleNamespace(position=1),
             )
             async def add(selected_role, *, reason, member=member):

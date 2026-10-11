@@ -122,9 +122,5 @@ HIBERNATION_CLAN_NAMES = {
 
 def managed_role_ids() -> frozenset[int]:
     return frozenset({
-        *HIBERNATE_REMOVE_ROLE_IDS,
-        *RESTORE_ROLE_IDS,
-        *SNAPSHOT_ONLY_ROLE_IDS,
         HIBERNATING_ROLE_ID, SLEEPING_CO_ROLE_ID, SLEEPING_CROSS_ROLE_ID,
-        *CLAN_MEMBER_ROLE_IDS.values(),
     })

@@ -14,6 +14,14 @@ class HibernationQueryTests(unittest.TestCase):
     def setUp(self):
         self.now = datetime(2026, 9, 17, 12, tzinfo=timezone.utc)
 
+    def test_hibernation_membership_uses_the_persisted_marker_not_the_date(self):
+        state = {"42": {}, FALLBACK_THREADS_KEY: {"84": {"thread_id": 123}}}
+        queries = HibernationQueries(lambda: state)
+        self.assertTrue(queries.is_hibernating(42))
+        self.assertFalse(queries.is_hibernating(84))
+        del state["42"]
+        self.assertFalse(queries.is_hibernating(42))
+
     def test_snapshot_exposes_status_and_date_without_private_state(self):
         state = {
             "42": {

@@ -18,8 +18,8 @@ from ..wording import (
     ACTION_ROLE_UNDO_LABEL, ACTION_UNDO_CHANGED,
 )
 from .safety import (
-    DiscordActionRefused, check_member, check_raw_role, managed_role_commands,
-    resolve_member,
+    DiscordActionRefused, check_member, check_member_role_ownership, check_raw_role,
+    managed_role_commands, resolve_member,
 )
 
 
@@ -75,6 +75,7 @@ async def _prepare_roles(context: AgentRequestContext, arguments: Mapping[str, A
             member = await resolve_member(context.guild, member_id)
             check_member(member, context.guild.me, requester=context.member, guild=context.guild)
             if (role in member.roles) != add:
+                check_member_role_ownership(context, role, member)
                 selected.append(member)
     except DiscordActionRefused as error:
         return {"error": str(error)}
@@ -106,6 +107,7 @@ def _role_action(
         check_raw_role(role, context.guild, context.guild.me, owners, requester=context.member)
         member = await resolve_member(context.guild, member_id, fresh=True)
         check_member(member, context.guild.me, requester=context.member, guild=context.guild)
+        check_member_role_ownership(context, role, member)
         return role, member
 
     async def recheck() -> bool:
@@ -151,6 +153,7 @@ async def prepare_role_undo(context: AgentRequestContext,
     owners = await managed_role_commands(context)
     check_raw_role(role, context.guild, context.guild.me, owners, requester=context.member)
     check_member(member, context.guild.me, requester=context.member, guild=context.guild)
+    check_member_role_ownership(context, role, member)
     expected = log["after"]["has_role"]
     before = log["before"]["has_role"]
     return _role_action(

@@ -45,6 +45,13 @@ class RecruitmentQueryTests(unittest.TestCase):
         self.assertNotIn("private_note", repr(registrations))
         self.assertNotIn("999", repr(registrations))
 
+    def test_open_trial_membership_ends_only_when_the_record_is_removed(self):
+        for member_id in (42, 84, 126, 168):
+            self.assertTrue(self.queries.has_open_trial(member_id))
+        self.assertFalse(self.queries.has_open_trial(777))
+        del self.state["200"]
+        self.assertFalse(self.queries.has_open_trial(84))
+
     def test_snapshot_projects_and_accounts_for_selected_entries_only(self):
         original = deepcopy(self.state)
         snapshot = self.queries.active_trial_snapshot(

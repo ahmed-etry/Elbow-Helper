@@ -52,6 +52,14 @@ class RecruitmentQueries:
         self._trial_loader = trial_loader
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
+    def has_open_trial(self, member_id: int) -> bool:
+        """An unclosed trial owns membership roles even after its expected end."""
+        return any(
+            isinstance(value, Mapping)
+            and _positive_int(value.get("applicant_id")) == member_id
+            for value in self._load().values()
+        )
+
     def active_trial_registrations(
         self,
     ) -> tuple[RecruitmentTrialRegistration, ...]:

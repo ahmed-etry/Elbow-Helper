@@ -42,6 +42,13 @@ class HibernationQueries:
         self._state = state
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
+    def is_hibernating(self, member_id: int) -> bool:
+        """Check the same persisted membership marker as the hibernation commands."""
+        state = self._state()
+        if not isinstance(state, Mapping):
+            raise ValueError("Invalid hibernation state")
+        return str(member_id) in state
+
     def active_snapshot(self) -> ActiveHibernationSnapshot:
         observed = self._clock()
         if not isinstance(observed, datetime):
