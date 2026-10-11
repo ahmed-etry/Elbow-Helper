@@ -5,6 +5,13 @@ from elbow_helper.features.agent.prompts import ACTION_SYSTEM_PROMPT, SYSTEM_PRO
 
 
 class RequestPromptTests(unittest.TestCase):
+    def test_partial_completion_is_explicit_in_both_modes(self):
+        for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
+            self.assertIn(
+                "Do what you can and say plainly what you couldn't do; "
+                "never report it all as done.", prompt,
+            )
+
     def test_action_switch_changes_only_action_authority_text(self):
         self.assertIn("or change anything.", SYSTEM_PROMPT)
         self.assertIn("Reuse established subjects and earlier results", SYSTEM_PROMPT)
