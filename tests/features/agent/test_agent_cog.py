@@ -94,6 +94,25 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(message.reply.await_args.args[0], "Synthetic answer")
         self.assertEqual(len(session.calls), 1)
 
+    async def test_sent_post_reply_replaces_the_answer_and_is_recorded_in_the_conversation(self):
+        member = _Member(121, (next(iter(CORE)),))
+        message = self._real_handler_scenario(member)(member, 501, "<@999> synthetic request")
+
+        async def answer(**kwargs):
+            context = kwargs["context"]
+            outcome = await context.send_reply(context, "Synthetic posted answer")
+            context.state.reply_delivery.posts.append({"status": "complete", **outcome})
+            return "Synthetic duplicate answer"
+
+        self.cog.service.answer.side_effect = answer
+        with patch("elbow_helper.features.agent.cog.discord.Member", _Member):
+            await self.cog.on_message(message)
+        message.reply.assert_awaited_once()
+        self.assertEqual(message.reply.await_args.args[0], "Synthetic posted answer")
+        conversation = self.cog._conversations.get(501)
+        self.assertEqual(conversation.turns[-1].record.delivered_answer, "Synthetic posted answer")
+        self.assertTrue(conversation.turns[-1].record.delivery_complete)
+
     async def test_lookup_plan_starts_typing_after_first_round_and_keeps_it_through_delivery(self):
         from features.agent.engine.test_agent_plan_flow import (
             _Model, _Session, _model_step, _plan, _step,

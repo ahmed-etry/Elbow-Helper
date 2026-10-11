@@ -75,6 +75,8 @@ class AnswerFlow:
             return await self._limit_reply(error)
 
     async def _limit_reply(self, error: AgentLimitReached) -> str:
+        if self.context.state.reply_delivery.posts:
+            return ""
         pending = self.rounder.pending_results or tuple(
             AgentToolResult(call.call_id, json.dumps({
                 "results": self.runner.model_results_for(self.completed_results),
@@ -159,6 +161,8 @@ class AnswerFlow:
         missing = [item for item in state.outcomes if item.status == "needs_input"]
         if missing or lookup_missing:
             state.proposed_changes.clear()
+            if state.reply_delivery.posts:
+                return ""
             options = list({option["name"]: option for item in missing
                             for option in item.missing_options}.values())
             hints = list(dict.fromkeys(
@@ -173,17 +177,21 @@ class AnswerFlow:
         prepared_steps = {action.step_id for action in state.proposed_changes}
         changes = [step for step in self.plan["steps"]
                    if self.registry[step["capability"]].action_class in (
-                       ActionClass.CHANGE, ActionClass.IRREVERSIBLE)]
+                       ActionClass.CHANGE, ActionClass.IRREVERSIBLE)
+                   and not results[step["id"]].get("delivered_as_reply")]
         if any(step["id"] not in prepared_steps
                or results[step["id"]].get("error") is not None
                or results[step["id"]].get("status") == "no_change"
                or results[step["id"]].get("flags", {}).get("status") in ("failed", "refused")
                for step in changes):
             state.proposed_changes.clear()
-            return None
+            return "" if state.reply_delivery.posts else None
         if state.proposed_changes:
             await prepare_preview(self.context)
             response = preview_text(state.proposed_changes)
+            if state.reply_delivery.posts:
+                await require_evidence_access(self.context)
+                return response
             # Lookups that only resolve change targets are shown by the preview itself.
             steps_by_id = {step["id"]: step for step in self.plan["steps"]}
             feeds_change: set[str] = set()
@@ -219,6 +227,9 @@ class AnswerFlow:
             if answer:
                 return answer
             return response
+        if state.reply_delivery.posts:
+            await require_evidence_access(self.context)
+            return ""
         if state.outcomes:
             await require_evidence_access(self.context)
             return command_reply(state.outcomes)

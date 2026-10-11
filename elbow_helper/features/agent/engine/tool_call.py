@@ -277,6 +277,9 @@ def merge_tool_state(
     target.state.history_status.update(local.state.history_status)
     if local.state.gif_url != previous["gif_url"]:
         target.state.gif_url = local.state.gif_url
+    for name in ("reply_to", "ping_author"):
+        if getattr(local.state, name) != previous[name]:
+            setattr(target.state, name, getattr(local.state, name))
     if local.state.authorized_history is not None:
         target.state.authorized_history = local.state.authorized_history
     if local.state.authorized_checkpoint is not None:

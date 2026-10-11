@@ -50,7 +50,9 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
         self.context = SimpleNamespace(
             guild=guild, bot=SimpleNamespace(), member=SimpleNamespace(id=4),
             state=AgentTurnState(), action_repository=repository,
-            history=(), source_message=SimpleNamespace(channel=channel),
+            history=(), source_message=SimpleNamespace(
+                channel=SimpleNamespace(**{**vars(channel), "id": 999}),
+            ),
         )
         targets = {
             identifier: SimpleNamespace(

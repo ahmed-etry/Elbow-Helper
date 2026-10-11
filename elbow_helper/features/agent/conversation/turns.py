@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from dataclasses import replace
 
 from .state import ConversationRecord, ConversationTurn
 from .instructions import WorkingState
@@ -82,7 +83,10 @@ class AgentTurnMixin:
             deadline_monotonic=deadline_monotonic,
             application_owner=self.application_owner,
         )
-        return context, root_id
+        async def send_reply(local, text):
+            return await self.send_post_reply(message, text, referenced, local, conversation)
+
+        return replace(context, send_reply=send_reply), root_id
 
     async def _record_turn(self, message, member, question, response,
                            local_context, context, delivery, conversation):

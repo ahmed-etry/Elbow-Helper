@@ -323,6 +323,7 @@ RESULT_FIELDS = {
                                      "action_authorized"),
     "prepare_spreadsheet": names("filename,sheets,rows,attachment_prepared,replaced_previous"),
     "react_to_request": names("reacted"), "find_gif": names("url"),
+    "set_discord_reply_target": names("reply_to,ping_author"),
 }
 for name in ("start_discord_research_job", "start_discord_history_job",
              "continue_discord_research_job", "cancel_discord_research_job"):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import logging
 import re
 from dataclasses import replace
 from collections.abc import Mapping
@@ -35,6 +36,8 @@ from .safety import (DiscordActionRefused, check_post_access,
                              check_view_access, resolve_channel)
 from .message_parts import outgoing_parts
 from .member_labels import member_label, mentioned_member_labels
+
+LOGGER = logging.getLogger(__name__)
 
 
 def content_options() -> dict[str, Any]:
@@ -230,6 +233,28 @@ async def prepare_post(context: AgentRequestContext,
         except ValueError as error:
             return {"error": str(error)}
     await require_evidence_access(context)
+    current = getattr(context, "delivery_channel", None) or context.source_message.channel
+    sender = getattr(context, "send_reply", None)
+    if (sender is not None and channel is not None and channel.id == current.id
+            and "file_name" not in arguments and "file_message_id" not in arguments
+            and not arguments.get("ping_everyone") and not arguments.get("ping_role_ids")
+            and "@everyone" not in arguments["text"] and "@here" not in arguments["text"]
+            and not re.search(r"<@&\d+>", arguments["text"])):
+        async with context.state.reply_delivery.lock:
+            context.state.reply_to = arguments.get("reply_to")
+            context.state.ping_author = arguments.get("ping_author", False)
+            context.state.source_channels.add(channel.id)
+            result = await sender(context, arguments["text"])
+            outcome = {"status": "complete", "delivered_as_reply": True, **result}
+            context.state.reply_delivery.posts.append(outcome)
+            for part, is_gif in parts:
+                if is_gif:
+                    context.state.used_gif_urls.add(part)
+                    if context.state.gif_url == part:
+                        context.state.gif_url = None
+            LOGGER.info("Agent reply posted: requester=%s channel=%s messages=%s",
+                        context.member.id, channel.id, result["message_ids"])
+            return outcome
     actions = []
     for index, (chunk, is_gif) in enumerate(parts):
         make = _deferred_post_part if deferred else _post_part

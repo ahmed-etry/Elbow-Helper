@@ -37,7 +37,7 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
                 "ping_author": {"type": "boolean"},
             }, "required": ["channel_id", "text"], "additionalProperties": False},
             usage_note=(
-                "Attach files from this conversation. Preview pings explicitly."
+                "Use set_discord_reply_target for answers here; Confirm posts elsewhere."
             ),
         ), prepare_post, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(entity_fields=(

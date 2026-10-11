@@ -29,6 +29,8 @@ from .files.delivery import (
     attachment_files, publish_spreadsheet, spreadsheet_links, spreadsheet_response,
 )
 from .files.gif_media import URLS
+from .discord_actions.reply_targets import answer_reply_target
+from .discord_actions.message_parts import outgoing_parts
 from .text import DISCORD_MESSAGE_LIMIT
 from .text import chunk_response as _chunk_response
 
@@ -43,6 +45,49 @@ class AgentDeliveryUnknown(RuntimeError):
 
 class AgentDeliveryMixin:
     """Agent delivery; owns no conversation or provider lifecycle."""
+
+    async def send_post_reply(self, message, text, referenced, context, conversation):
+        delivery = context.state.reply_delivery.delivery
+        answer_context = replace(context, state=replace(
+            context.state, proposed_changes=[], preview_reply=None, outcomes=[],
+        ))
+        first = len(delivery.message_ids)
+        parts = outgoing_parts(text)
+        words = "\n".join(part for part, is_gif in parts if not is_gif)
+        seed = message.id + 1_000_000 + len(context.state.reply_delivery.posts)
+        sources = await require_evidence_access(context)
+        audit_private = (ACCESS_VIEW_AUDIT_LOG in context.state.required_access
+                         and not isinstance(message.channel, discord.DMChannel))
+        audience_allowed = not audit_private and await can_show(
+            message.channel, sources, context.state.required_access, context.guild,
+            thread_members=context.disclosure_thread_members,
+        )
+        if not audience_allowed:
+            await self._send_response(
+                message, text, referenced, conversation=conversation,
+                delivery=delivery, context=answer_context,
+                _nonce_seed=seed, _suppress_mentions=True,
+            )
+        elif words:
+            await self._send_response(
+                message, words, referenced, conversation=conversation,
+                delivery=delivery, context=answer_context,
+                _nonce_seed=seed, _suppress_mentions=True,
+            )
+        for index, (part, is_gif) in enumerate(parts):
+            if is_gif and audience_allowed:
+                await self._send_gif(
+                    message, part, context, conversation, delivery, nonce_seed=seed + index,
+                )
+        identifiers = delivery.message_ids[first:]
+        if context.action_repository is not None:
+            for identifier in identifiers:
+                await asyncio.to_thread(
+                    context.action_repository.record_message,
+                    message_id=identifier, guild_id=context.guild.id,
+                    channel_id=message.channel.id, requester_id=context.member.id,
+                )
+        return {"message_ids": identifiers, "channel_id": message.channel.id}
 
     async def send_response(self, message, response, referenced, attachments=(), conversation=None,
                             *, delivery=None, context=None, **options):
@@ -85,7 +130,11 @@ class AgentDeliveryMixin:
         await require_evidence_access(context)
         delivery.complete = False
         delivery.generated_parts.append(url)
-        sender = message.channel.send if delivery.message_ids else message.reply
+        target = (
+            await answer_reply_target(context, message.channel)
+            if not delivery.message_ids else None
+        )
+        sender = message.channel.send if delivery.message_ids else (target or message).reply
         sent = await self._send_delivery_part(
             sender, message.channel, _delivery_nonce(nonce_seed or message.id, 2_000_001),
             delivery, url, allowed_mentions=discord.AllowedMentions.none(),
@@ -114,6 +163,7 @@ class AgentDeliveryMixin:
         _notice_message: discord.Message | None = None,
         _notice_content: str | None = None,
         _answer_disclosure: bool = False,
+        _suppress_mentions: bool = False,
     ) -> None:
         audit_private = bool(context and ACCESS_VIEW_AUDIT_LOG in context.state.required_access
                              and not isinstance(message.channel, discord.DMChannel))
@@ -241,6 +291,8 @@ class AgentDeliveryMixin:
             users=list(allowed_users.values()),
             replied_user=False,
         )
+        if _suppress_mentions:
+            allowed_mentions = discord.AllowedMentions.none()
         files = attachment_files(attachments)
         if not has_preview and _needs_file(response):
             files.append(discord.File(io.BytesIO(response.encode("utf-8")), filename=LONG_REPLY_FILENAME))
@@ -476,6 +528,15 @@ class AgentDeliveryMixin:
         view = spreadsheet_links(options.get("view"), attachments)
         if view is not None:
             options["view"] = view
+        target = (
+            await answer_reply_target(context, getattr(message, "channel", None))
+            if confirm_view is None else None
+        )
+        ping_author = bool(target is not None and context.state.ping_author)
+        if target is not None:
+            allowed_mentions = allowed_mentions.merge(discord.AllowedMentions(
+                replied_user=ping_author,
+            ))
         nonce = _delivery_nonce(nonce_seed or message.id, 0)
         if notice_message is not None and not allowed_mentions.users:
             active_delivery.attempt(nonce)
@@ -486,10 +547,10 @@ class AgentDeliveryMixin:
             )
         else:
             sent = await self._send_delivery_part(
-                message.reply, getattr(message, "channel", None), nonce,
+                (target or message).reply, getattr(message, "channel", None), nonce,
                 active_delivery,
                 chunks[0] if chunks else None,
-                mention_author=False, allowed_mentions=allowed_mentions,
+                mention_author=ping_author, allowed_mentions=allowed_mentions,
                 **options,
             )
         if private_view is not None:
@@ -510,6 +571,8 @@ class AgentDeliveryMixin:
             )
         if notice_message is not None and allowed_mentions.users:
             await notice_message.delete()
+        if target is not None:
+            allowed_mentions = allowed_mentions.merge(discord.AllowedMentions(replied_user=False))
         for index, chunk in enumerate(chunks[1:], start=1):
             if context is not None:
                 await require_evidence_access(context)

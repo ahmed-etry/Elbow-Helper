@@ -362,6 +362,18 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
                          self.progress.edit.await_args.kwargs["content"])
         self.assertEqual(len(self.repository.recent_log(requester_id=4)), 2)
 
+    async def test_run_report_includes_a_reply_already_sent_before_confirm(self):
+        from elbow_helper.features.agent.models import AgentTurnState
+        self.context.state = AgentTurnState()
+        self.context.state.reply_delivery.posts.append({
+            "status": "complete", "channel_id": 2, "message_ids": [700, 701],
+        })
+        action = self.action("role", outcome=ActionOutcome("complete"))[0]
+        action = replace(action, preview=replace(action.preview, summary="Add role"))
+        await self.run_actions(action, progress_message=self.progress)
+        self.assertEqual(self.progress.edit.await_args.kwargs["content"],
+                         "Done: Post message, Add role.")
+
     async def test_extra_public_information_is_under_its_action_in_the_report(self):
         action = self.action("review", outcome=ActionOutcome(
             "complete", text="Synthetic count: 17\nSynthetic total: 42",

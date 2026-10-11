@@ -23,7 +23,7 @@ from .access import has_agent_entry_access
 from .access import require_access
 from .conversation.state import Conversation, ConversationStore
 from .text import message_text
-from .models import AgentDelivery, AgentRequestContext, AgentIdentity
+from .models import AgentRequestContext, AgentIdentity
 from .identity import agent_identity, member_identity
 from .engine.service import AgentUnavailableError
 from .engine.service import AgentService
@@ -405,9 +405,11 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
             )
             require_access(message.guild, member.id, message.channel)
             await self._check_sources(context)
-            delivery = AgentDelivery()
+            delivery = context.state.reply_delivery.delivery
             try:
-                if response or context.state.gif_url or not context.state.reactions.emojis:
+                if delivery.message_ids and not context.state.proposed_changes:
+                    pass
+                elif response or context.state.gif_url or not context.state.reactions.emojis:
                     await self.send_response(
                         message, response, referenced, context.state.attachments, conversation,
                         delivery=delivery, context=context,

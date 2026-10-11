@@ -97,11 +97,19 @@ class DirectMessageDelivery:
 
 
 @dataclass(slots=True)
+class RequestReplyDelivery:
+    delivery: AgentDelivery = field(default_factory=AgentDelivery)
+    posts: list[Mapping[str, Any]] = field(default_factory=list)
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+
+@dataclass(slots=True)
 class AgentTurnState:
     """Evidence provenance and reports retained independently of model text."""
 
     reactions: RequestReactions = field(default_factory=RequestReactions)
     direct_messages: DirectMessageDelivery = field(default_factory=DirectMessageDelivery)
+    reply_delivery: RequestReplyDelivery = field(default_factory=RequestReplyDelivery)
     source_channels: set[int] = field(default_factory=set)
     evidence: list[str] = field(default_factory=list)
     reports: dict[str, ReportArtifact] = field(default_factory=dict)
@@ -119,6 +127,8 @@ class AgentTurnState:
     authorized_instructions: tuple[TaskInstruction, ...] = ()
     request_text: str = ""
     gif_url: str | None = None
+    reply_to: int | None = None
+    ping_author: bool = False
     used_gif_urls: set[str] = field(default_factory=set)
     outcomes: list[Any] = field(default_factory=list)
     proposed_changes: list[Any] = field(default_factory=list)
@@ -145,6 +155,7 @@ class AgentRequestContext:
     thread_discovery: Any = None
     state: AgentTurnState = field(default_factory=AgentTurnState)
     delivery_channel: Any = None
+    send_reply: Callable[["AgentRequestContext", str], Awaitable[Mapping[str, Any]]] | None = None
     history: tuple[ConversationTurn, ...] = ()
     roster_queries: RosterQueries | None = None
     cwl_queries: CwlQueries | None = None

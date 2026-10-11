@@ -312,6 +312,7 @@ def fixed_results(seed):
         "prepare_spreadsheet": {"filename": "synthetic.xlsx", "sheets": 1, "rows": seed,
                                 "attachment_prepared": False, "replaced_previous": True},
         "react_to_request": {"reacted": True}, "find_gif": {"url": "https://synthetic.invalid"},
+        "set_discord_reply_target": {"reply_to": seed, "ping_author": False},
         "read_discord_poll": {"channel_id": seed, "message_id": seed, "question": "Synthetic",
                               "answers": [{"answer_id": seed, "text": "Synthetic", "votes": seed}],
                               "multiple_choice": False, "expires_at": None, "finalized": False},

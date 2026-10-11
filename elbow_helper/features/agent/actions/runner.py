@@ -21,6 +21,7 @@ from ..text import chunk_response
 from ..wording import (
     action_progress_status,
     ACTION_STOP_BUTTON, ACTION_STOP_OWNER,
+    ACTION_POST_LABEL,
 )
 from .contracts import ActionClass, PreparedAction, check_bundle
 from .store import AgentActionRepository
@@ -376,6 +377,16 @@ class AgentActionRunner:
             else:
                 await self._call_on_finish(context, run, None, run_id)
                 return
+        tracker = getattr(getattr(context, "state", None), "reply_delivery", None)
+        replies = getattr(tracker, "posts", ())
+        run["steps"] = [*({
+            "action_name": "post_discord_message", "action_label": ACTION_POST_LABEL,
+            "action_class": ActionClass.OUTPUT.value, "status": "completed",
+            "values_json": json.dumps({
+                "channel_id": post["channel_id"], "message_ids": post["message_ids"],
+            }),
+            "outcome_json": json.dumps({"status": "complete", "result": post}),
+        } for post in replies), *run["steps"]]
         report = self._report(run)
         chunks = chunk_response(report) or [report]
         previous = output.private_result

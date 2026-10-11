@@ -15,6 +15,7 @@ from ..research.members import member_tools
 from ..discord_actions.roles import discord_role_tools
 from ..discord_actions.direct_messages import direct_message_tools
 from ..discord_actions.reactions import reaction_tools
+from ..discord_actions.reply_targets import reply_target_tools
 from ..discord_actions.gifs import gif_tools
 from ..discord_actions.message_tools import discord_message_tools
 from ..discord_actions.threads import discord_thread_tools
@@ -60,7 +61,7 @@ def build_agent_tool_groups(gif_client=None) -> dict[str, tuple[RegisteredAgentT
         "discord_actions": (
             *discord_message_tools(), *discord_thread_tools(), *discord_message_control_tools(),
             *discord_nickname_tools(), *discord_role_tools(), *direct_message_tools(),
-            *reaction_tools(), *gif_tools(gif_client),
+            *reaction_tools(), *reply_target_tools(), *gif_tools(gif_client),
             *channel_permission_tools(),
             *cleanup_tools(),
             *channel_tools(),
