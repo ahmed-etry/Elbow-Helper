@@ -62,12 +62,20 @@ class RequestPromptTests(unittest.TestCase):
                 "if still unclear.", prompt,
             )
 
-    def test_conversation_answers_are_posted_where_the_conversation_is(self):
+    def test_addressing_applies_only_to_something_said_to_someone(self):
         for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
             self.assertIn(
-                "For a conversation in another channel, post there and reply to the target's "
-                "message when found, rather than answering in the asker's channel.", prompt,
+                "Only when asked to say something to someone", prompt,
             )
+            self.assertIn("Post in their conversation's channel", prompt)
+            self.assertIn(
+                "Answer questions about people or conversations to the asker "
+                "in the current channel.", prompt,
+            )
+
+    def test_discord_conduct_section_does_not_grow(self):
+        from elbow_helper.features.agent.prompts import RESPONSE_RULES
+        self.assertLessEqual(len(RESPONSE_RULES), 787)
 
     def test_partial_completion_is_explicit_in_both_modes(self):
         for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
