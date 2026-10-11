@@ -146,15 +146,13 @@ agent posted."""
 
 
 STANDING_RULE_RULES = """\
-For later or repeated work, use save_standing_rule:
-- reminder: a fixed message posted in a channel or sent as DMs at the scheduled times, \
-with no lookups.
-- request: reruns a saved request at the scheduled times; any changes stay within the actions \
-and fixed values confirmed now.
-- watcher: checks current reads on a schedule and alerts when the condition holds.
-Write one-off times in UTC and repeats as interval, weekly or monthly rules (weekly days: \
-0 Monday to 6 Sunday). Ask for a timezone when one is needed and none is known. Results go to \
-a channel, or to the asker's DMs when they ask."""
+Use save_standing_rule for later/repeated work:
+- reminder: fixed text, no reads; channel or dm_member_ids (asker or chosen members; others need \
+Lead). Repeating DMs use one reminder with interval and end.
+- request: rerun within confirmed actions and fixed values.
+- watcher: check current reads; alert when its condition holds.
+Requests/watchers: channel or asker's DMs. Times: UTC once/interval; local weekly/monthly \
+(0 Monday to 6 Sunday). Ask for a needed, unknown timezone."""
 
 
 CHANGE_REFUSAL_INSTRUCTION = (

@@ -5,6 +5,14 @@ from elbow_helper.features.agent.prompts import ACTION_SYSTEM_PROMPT, SYSTEM_PRO
 
 
 class RequestPromptTests(unittest.TestCase):
+    def test_reminders_can_dm_selected_members_in_one_repeating_rule(self):
+        from elbow_helper.features.agent.prompts import STANDING_RULE_RULES
+
+        self.assertIn("dm_member_ids (asker or chosen members; others need Lead)",
+                      STANDING_RULE_RULES)
+        self.assertIn("Repeating DMs use one reminder with interval and end.", STANDING_RULE_RULES)
+        self.assertIn("Requests/watchers: channel or asker's DMs.", STANDING_RULE_RULES)
+
     def test_reply_author_is_pinged_only_when_requested(self):
         for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
             self.assertIn(
