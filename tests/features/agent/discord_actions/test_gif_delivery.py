@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from elbow_helper.features.agent.delivery import AgentDeliveryMixin
+from elbow_helper.features.agent.delivery import AgentDeliveryMixin, _without_reply_gif
 from elbow_helper.features.agent.discord_actions.gifs import find_gif
 from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.features.agent.engine.registry import build_agent_tools
@@ -27,6 +27,68 @@ def candidate_client(search):
 
 
 class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
+    def test_link_removal_preserves_labels_and_other_urls(self):
+        url = "https://giphy.com/gifs/synthetic"
+        for text, expected in (
+            (f"Synthetic answer\n{url}", "Synthetic answer"),
+            (f"Synthetic answer\n<{url}>", "Synthetic answer"),
+            (f"[Synthetic label]({url})", "Synthetic label"),
+            (f"{url}\n{url}", ""),
+            (url + "-other", url + "-other"),
+            (url + "?other=1", url + "?other=1"),
+            ("https://tenor.com/view/synthetic-other", "https://tenor.com/view/synthetic-other"),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(_without_reply_gif(text, url), expected)
+
+    async def test_pasted_reply_link_is_removed_before_text_delivery(self):
+        url = "https://giphy.com/gifs/synthetic"
+        for response, expected in (
+            (f"Synthetic answer\n{url}", "Synthetic answer"),
+            (url, ""), (f"<{url}>", ""),
+        ):
+            with self.subTest(response=response):
+                context = _context()
+                context.state.gif_url = url
+                channel = context.source_message.channel
+                channel.send = AsyncMock(return_value=SimpleNamespace(id=800))
+                message = SimpleNamespace(
+                    id=300, channel=channel, archive_reply=False,
+                    reply=AsyncMock(return_value=SimpleNamespace(id=800)),
+                )
+                delivery = AgentDelivery()
+                surface = AgentDeliveryMixin()
+
+                async def record_text(message, text, *args, **kwargs):
+                    delivery.record(700, text)
+
+                surface._send_response = AsyncMock(side_effect=record_text)
+                with (
+                    patch("elbow_helper.features.agent.delivery.require_evidence_access",
+                          AsyncMock()),
+                    patch("elbow_helper.features.agent.delivery.can_show",
+                          AsyncMock(return_value=True)),
+                ):
+                    await surface.send_response(message, response, None, context=context,
+                                                delivery=delivery)
+                if expected:
+                    self.assertEqual(surface._send_response.await_args.args[1], expected)
+                    channel.send.assert_awaited_once()
+                    self.assertEqual(delivery.text_parts, [expected, url])
+                else:
+                    surface._send_response.assert_not_awaited()
+                    message.reply.assert_awaited_once()
+                    self.assertEqual(delivery.text_parts, [url])
+                self.assertTrue(delivery.complete)
+
+    async def test_link_is_kept_when_no_separate_gif_is_pending(self):
+        context = _context()
+        response = "Synthetic answer\nhttps://giphy.com/gifs/synthetic"
+        surface = AgentDeliveryMixin()
+        surface._send_response = AsyncMock()
+        await surface.send_response(object(), response, None, context=context)
+        self.assertEqual(surface._send_response.await_args.args[1], response)
+
     async def test_later_search_replaces_the_retained_gif(self):
         context = _context()
         client = candidate_client(AsyncMock(side_effect=["first", "second"]))

@@ -28,6 +28,7 @@ from .actions.combined_reply import CombinedReplyView
 from .files.delivery import (
     attachment_files, publish_spreadsheet, spreadsheet_links, spreadsheet_response,
 )
+from .files.gif_media import URLS
 from .text import DISCORD_MESSAGE_LIMIT
 from .text import chunk_response as _chunk_response
 
@@ -47,6 +48,8 @@ class AgentDeliveryMixin:
                             *, delivery=None, context=None, **options):
         active = delivery or AgentDelivery()
         gif = context.state.gif_url if context is not None else None
+        if gif:
+            response = _without_reply_gif(response, gif)
         if response or attachments or not gif:
             await self._send_response(
                 message, response, referenced, attachments, conversation,
@@ -658,6 +661,17 @@ def _delivery_part(response: str, part_index: int) -> tuple[str, int]:
     if part_index >= len(chunks):
         raise ValueError("Delivery part is outside the generated response")
     return chunks[part_index], len(chunks)
+
+
+def _without_reply_gif(text: str, url: str) -> str:
+    text = re.sub(r"\[([^\]]*)\]\(" + re.escape(url) + r"\)", r"\1", text)
+    text = text.replace("<" + url + ">", "")
+
+    def remove(match):
+        value = match.group(0)
+        return value[len(url):] if value.rstrip(").,>") == url else value
+
+    return URLS.sub(remove, text).strip()
 
 
 def _answer_needs_ping(message, response, referenced, bot) -> bool:
