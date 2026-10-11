@@ -157,7 +157,8 @@ class AgentRoleConnectionTests(unittest.IsolatedAsyncioTestCase):
 
     def test_tool_is_discoverable_in_members_and_roles_group(self):
         tool = build_agent_tools()["read_role_connections"].definition
-        self.assertIn("Requires current Lead access", tool.description)
+        self.assertEqual(build_agent_tools()["read_role_connections"].contract.required_access,
+                         frozenset({"lead"}))
         self.assertIn("expected_state_fingerprint", tool.parameters["properties"])
 
 

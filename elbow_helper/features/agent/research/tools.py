@@ -78,7 +78,7 @@ def research_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
         (
             "start_discord_research_job",
-            "Queue a bounded, six-hour research job for one currently accessible Discord channel. A read-only worker advances authorized pages without background model work or Discord writes; status and exact evidence remain conversation scoped.",
+            "Queue a bounded Discord search job in one channel.",
             {
                 "channel_id": {"type": "integer", "minimum": 1},
                 "query": {"type": "string", "maxLength": 1024},
@@ -95,7 +95,7 @@ def research_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         (
             "start_discord_history_job",
-            "Queue a bounded, six-hour job that traverses currently available messages in one accessible Discord channel or thread over an explicit period, independent of keyword indexing. A read-only worker rechecks access between pages and performs no model work or Discord writes.",
+            "Queue a bounded channel history job over an explicit period.",
             {
                 "channel_id": {"type": "integer", "minimum": 1},
                 "after": {"type": "string", "maxLength": 40},
@@ -111,7 +111,7 @@ def research_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         (
             "continue_discord_research_job",
-            "Request one immediate authorized page of a retained Discord search or channel-history job instead of waiting for its worker. Progress uses the same leases and restart-persistent checkpoints; this performs no model work or Discord write action.",
+            "Read the next authorized page of a retained Discord research job.",
             {
                 "job_id": {"type": "string", "maxLength": 32},
                 "expected_version": {"type": "integer", "minimum": 0},
@@ -121,7 +121,7 @@ def research_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         (
             "read_discord_research_job",
-            "Read status or a bounded page of retained results from a research job in this conversation after rechecking current source access.",
+            "Read a research job status or retained evidence page.",
             {
                 "job_id": {"type": "string", "maxLength": 32},
                 "offset": {"type": "integer", "minimum": 0},
@@ -132,18 +132,14 @@ def research_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         (
             "retain_discord_research_report",
-            "Turn a completed or terminal partial Discord research job into a "
-            "restart-persistent evidence report with exact messages, scope and "
-            "coverage. Continuing, cancelled or failed jobs cannot become reports. "
-            "This performs no Discord write action.",
+            "Retain a terminal research job as an evidence report.",
             {"job_id": {"type": "string", "maxLength": 32}},
             ("job_id",),
             retain_discord_research_report,
         ),
         (
             "read_discord_research_report",
-            "Read a bounded page from a retained Discord research report after "
-            "current source access is rechecked, without rerunning the research job.",
+            "Read a page of the retained discord research report.",
             {
                 "report_id": {"type": "string", "maxLength": 32},
                 "offset": {"type": "integer", "minimum": 0},
@@ -154,7 +150,7 @@ def research_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         (
             "cancel_discord_research_job",
-            "Cancel a research job created by the current requester in this conversation. Cancellation does not expose retained results or affect Discord.",
+            "Cancel this asker's conversation research job.",
             {"job_id": {"type": "string", "maxLength": 32}},
             ("job_id",),
             cancel_discord_research_job,

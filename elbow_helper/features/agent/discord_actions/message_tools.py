@@ -12,7 +12,7 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
     return (
         RegisteredAgentTool(AgentToolDefinition(
             name="find_agent_files",
-            description="List files the agent delivered earlier in this conversation. Returns their filename and reply message ID for posting a selected file.",
+            description="List files the agent delivered earlier in this conversation.",
             parameters={"type": "object", "properties": {
                 "offset": {"type": "integer", "minimum": 0},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 25},
@@ -25,7 +25,9 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         RegisteredAgentTool(AgentToolDefinition(
             name="post_discord_message",
-            description="Post text in a channel visible and writable by both the asker and bot; long text is split. Can attach a file made in this conversation. Pings require explicit preview values. Returns each posted message ID.",
+            description=(
+                "Post text and optional files in an accessible channel."
+            ),
             parameters={"type": "object", "properties": {
                 "channel_id": {"type": "integer", "minimum": 1},
             **content_options(),
@@ -34,6 +36,9 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
                 "reply_to": {"type": "integer", "minimum": 1},
                 "ping_author": {"type": "boolean"},
             }, "required": ["channel_id", "text"], "additionalProperties": False},
+            usage_note=(
+                "Attach files from this conversation. Preview pings explicitly."
+            ),
         ), prepare_post, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(entity_fields=(
                     ("channel_id", "discord_channel"),
@@ -47,13 +52,14 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         RegisteredAgentTool(AgentToolDefinition(
             name="edit_agent_message",
-            description="Edit text in a message posted by post_discord_message. Pings require explicit preview values.",
+            description="Edit text in a message posted by post_discord_message.",
             parameters={"type": "object", "properties": {
                 "channel_id": {"type": "integer", "minimum": 1},
                 "message_id": {"type": "integer", "minimum": 1},
             **content_options(),
             }, "required": ["channel_id", "message_id", "text"],
                "additionalProperties": False},
+            usage_note="Edit only this agent's messages. Pings need explicit preview values.",
         ), prepare_edit, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(entity_fields=(
                     ("channel_id", "discord_channel"),
@@ -63,7 +69,7 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         RegisteredAgentTool(AgentToolDefinition(
             name="delete_agent_message",
-            description="Delete one message posted by post_discord_message. This cannot be undone.",
+            description="Delete one message posted by post_discord_message.",
             parameters={"type": "object", "properties": {
                 "channel_id": {"type": "integer", "minimum": 1},
                 "message_id": {"type": "integer", "minimum": 1},

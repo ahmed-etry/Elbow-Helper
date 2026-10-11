@@ -25,7 +25,7 @@ from ...discord_actions.safety import check_post_access, resolve_channel
 def cwl_cc_status_tools() -> tuple[RegisteredAgentTool, ...]:
     return (RegisteredAgentTool(AgentToolDefinition(
         name="set_cwl_cc_status",
-        description="Mark a clan's active CWL preparation Clan Castles filled, partial or empty after confirmation.",
+        description="Set prep Clan Castles to filled, partial or empty.",
         parameters={"type": "object", "properties": {
             "clan_code": {"type": "string", "enum": list(CWL_CLAN_TAGS)},
             "status": {"type": "string", "enum": ["filled", "partial", "empty"]},

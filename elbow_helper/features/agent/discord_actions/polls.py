@@ -31,7 +31,7 @@ class PollSnapshot:
 
 def poll_tools():
     return (
-        tool("post_discord_poll", "Post a native Discord poll after confirmation.",
+        tool("post_discord_poll", "Post a native Discord poll.",
              {"channel_id": ID, "question": text(300), "answers": {
                  "type": "array", "items": text(55), "minItems": 2, "maxItems": 10,
              }, "duration_hours": {"type": "integer", "minimum": 1, "maximum": 768},

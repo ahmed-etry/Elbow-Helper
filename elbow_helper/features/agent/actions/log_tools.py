@@ -30,7 +30,7 @@ def action_log_tools() -> tuple[RegisteredAgentTool, ...]:
             ), RegisteredAgentTool(
         AgentToolDefinition(
             name="undo_agent_action",
-            description="Preview an undo of one completed reversible action from this member's log.",
+            description="Preview an undo of this member's reversible action.",
             parameters={"type": "object", "properties": {
                 "log_id": {"type": "string", "minLength": 1, "maxLength": 32},
             }, "required": ["log_id"], "additionalProperties": False},

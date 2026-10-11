@@ -34,7 +34,7 @@ def reactivation_ticket_tools() -> tuple[RegisteredAgentTool, ...]:
     return (
         RegisteredAgentTool(AgentToolDefinition(
             name="reopen_reactivation_ticket",
-            description="Restore the owner's messaging access to a closed reactivation ticket after confirmation.",
+            description="Restore messaging access to a reactivation ticket.",
             parameters=schema,
         ), prepare_reactivation_reopen, AgentCapabilityEffect.COMMAND,
             ActionClass.CHANGE,
@@ -46,7 +46,7 @@ def reactivation_ticket_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         RegisteredAgentTool(AgentToolDefinition(
             name="close_reactivation_ticket",
-            description="Close a reactivation ticket and save its transcript after confirmation.",
+            description="Close a reactivation ticket and save its transcript.",
             parameters=schema,
         ), prepare_reactivation_close, AgentCapabilityEffect.COMMAND,
             ActionClass.CHANGE,

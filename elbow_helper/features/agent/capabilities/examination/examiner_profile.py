@@ -48,7 +48,7 @@ def examiner_profile_tools() -> tuple[RegisteredAgentTool, ...]:
     return (
         RegisteredAgentTool(AgentToolDefinition(
             name="read_my_examiner_profile",
-            description="Read your examiner Town Hall coverage, status, timezone and availability.",
+            description="Read your examiner coverage, status, timezone and availability.",
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
         ), read_examiner_profile,
             contract=CapabilityContract(
@@ -74,7 +74,7 @@ def examiner_profile_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         RegisteredAgentTool(AgentToolDefinition(
             name="set_examiner_profile",
-            description="Set your examiner Town Hall coverage, status, timezone or availability after confirmation.",
+            description="Set your examiner coverage, status, timezone or availability.",
             parameters=schema,
         ), prepare_examiner_profile, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
@@ -85,7 +85,7 @@ def examiner_profile_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         RegisteredAgentTool(AgentToolDefinition(
             name="leave_examiner_roster",
-            description="Remove yourself from the examiner roster after confirmation.",
+            description="Remove yourself from the examiner roster.",
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
         ), prepare_examiner_leave, AgentCapabilityEffect.COMMAND, ActionClass.IRREVERSIBLE,
             contract=CapabilityContract(entity_fields=(), source_scope="request_context"),

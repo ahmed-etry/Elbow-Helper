@@ -11,7 +11,7 @@ def dataset_tools():
     return (RegisteredAgentTool(
         AgentToolDefinition(
             "query_bot_data",
-            "Query stored bot data with read-only SQLite at the asker's access level.",
+            "Query stored data with read-only SQL.",
             {
                 "type": "object",
                 "properties": {
@@ -23,6 +23,10 @@ def dataset_tools():
                 },
                 "required": ["sql"], "additionalProperties": False,
             },
+            usage_note=(
+                "Prefer one SQL query for the whole question. Let SQL count, group, join, "
+                "filter and sort; never count long lists yourself."
+            ),
         ),
         query_bot_data,
         contract=CapabilityContract(), returns="rows[] with the selected columns",

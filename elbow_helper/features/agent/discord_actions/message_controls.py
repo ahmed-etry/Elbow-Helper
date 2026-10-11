@@ -31,7 +31,7 @@ def discord_message_control_tools() -> tuple[RegisteredAgentTool, ...]:
     return (
         RegisteredAgentTool(AgentToolDefinition(
             name="change_bot_reaction",
-            description="Add or remove the bot's reaction on a visible message. Remove never touches another member's reaction.",
+            description="Add or remove the bot's reaction on a visible message.",
             parameters={"type": "object", "properties": {
                 **identity,
                 "operation": {"type": "string", "enum": ["add", "remove"]},
@@ -46,7 +46,7 @@ def discord_message_control_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         RegisteredAgentTool(AgentToolDefinition(
             name="change_discord_pin",
-            description="Pin or unpin a visible message after confirmation.",
+            description="Pin or unpin a visible message.",
             parameters={"type": "object", "properties": {
                 **identity,
                 "operation": {"type": "string", "enum": ["pin", "unpin"]},

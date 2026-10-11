@@ -27,7 +27,7 @@ from ...wording import (
 def cwl_bonus_review_tools() -> tuple[RegisteredAgentTool, ...]:
     return (RegisteredAgentTool(AgentToolDefinition(
         name="review_cwl_bonus",
-        description="Complete, skip or hold a clan's existing CWL bonus review after confirmation.",
+        description="Complete, skip or hold a clan's existing CWL bonus review.",
         parameters={"type": "object", "properties": {
             "clan_code": {"type": "string"},
             "mode": {"type": "string", "enum": ["review", "final"]},

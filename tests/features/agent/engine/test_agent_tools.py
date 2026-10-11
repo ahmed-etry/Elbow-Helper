@@ -196,16 +196,15 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
 
 
     def test_cwl_ass_tool_preserves_selected_scope_projection(self) -> None:
-        description = build_agent_tools()[
-            "cwl_ass_scores"
-        ].definition.description
+        from elbow_helper.features.agent.plan import capability_list
 
-        self.assertIn("projected to seven attacks", description)
-        self.assertIn("a CWL day is a round", description)
-        self.assertIn("wars and sample size", description)
-        self.assertIn("do not present a partial selection", description)
-        self.assertIn("query_bot_data from health.wars", description)
-        self.assertIn("Return every player row", description)
+        line = next(line for line in capability_list(build_agent_tools()).splitlines()
+                    if line.startswith("cwl_ass_scores:"))
+        for guidance in ("query_bot_data", "health.wars", "cwl_round (days 1-7)",
+                         "Sample projects to seven attacks", "state=warEnded"):
+            self.assertIn(guidance, line)
+        self.assertIn("players:[{", line)
+        self.assertIn("attack_sample", line)
 
     def test_cwl_scoring_catalogue_lines_name_the_calculation(self):
         from elbow_helper.features.agent.plan import capability_list
@@ -219,25 +218,28 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
                             .startswith(name + ": " + calculation))
 
     def test_cwl_bonus_tool_preserves_metric_and_side_effect_boundaries(self) -> None:
-        tools = build_agent_tools()
-        description = tools["cwl_bonus_scores"].definition.description
-        self.assertIn("adjusted-delta evidence, not ASS", description)
-        self.assertIn("does not poll Clash or publish", description)
-        self.assertIn("Return every player row", description)
+        from elbow_helper.features.agent.plan import capability_list
 
+        line = next(line for line in capability_list(build_agent_tools()).splitlines()
+                    if line.startswith("cwl_bonus_scores:"))
+        self.assertIn("Adjusted delta is not ASS", line)
+        self.assertIn("query_bot_data", line)
+        self.assertIn("rows:[{", line)
+        self.assertIn("attack_sample", line)
+        self.assertEqual(build_agent_tools()["cwl_bonus_scores"].action_class.value, "read")
 
     def test_event_tools_preserve_role_and_read_only_boundaries(self) -> None:
         tools = build_agent_tools()
-        current = tools["read_event_schedule"].definition.description
+        current = tools["read_event_schedule"]
         from elbow_helper.features.agent.reports.tools import original_tool
         retained = original_tool(tools, "read_saved_report", {
             "report_kind": "event_schedule",
-        }).definition.description
+        })
 
-        self.assertIn("Requires current Lead access", current)
-        self.assertIn("missing counter roles explicitly", current)
-        self.assertIn("does not refresh channels or change event settings", current)
-        self.assertIn("Current Lead and source access are rechecked", retained)
+        self.assertEqual(current.contract.required_access, frozenset({"lead"}))
+        self.assertEqual(current.action_class.value, "read")
+        self.assertIn("does not refresh event channels", current.definition.usage_note)
+        self.assertEqual(retained.contract.required_access, frozenset({"lead"}))
 
 
 if __name__ == "__main__":

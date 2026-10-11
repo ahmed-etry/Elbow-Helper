@@ -29,7 +29,7 @@ def support_reopen_tools() -> tuple[RegisteredAgentTool, ...]:
     return (
         RegisteredAgentTool(AgentToolDefinition(
         name="reopen_support_ticket",
-        description="Restore the owner's messaging access to a closed support ticket after confirmation.",
+        description="Restore the owner's messaging access to a closed support ticket.",
         parameters=schema,
     ), prepare_support_reopen, AgentCapabilityEffect.COMMAND,
         ActionClass.CHANGE,

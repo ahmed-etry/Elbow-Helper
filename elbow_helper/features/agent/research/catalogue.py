@@ -16,7 +16,7 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
         RegisteredAgentTool(
             AgentToolDefinition(
                 name="find_discord_channels",
-                description="Find accessible Discord channels by name or ID. Use the result to identify the channel requested by the asker.",
+                description="Find accessible Discord channels by name or ID.",
                 parameters={
                     "type": "object", "properties": {"query": {"type": "string", "maxLength": 100}},
                     "required": ["query"], "additionalProperties": False,
@@ -29,17 +29,14 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
             AgentToolDefinition(
                 name="search_discord_messages",
                 description=(
-                    "Search accessible Discord history by author, words, channels or dates; omit query for author history. "
-                    "Honour the scope requested by the asker. "
-                    "For one explicit channel, continue with the returned cursor when broader coverage "
-                    "is needed. Results are not proof of absence; read surrounding messages when needed."
+                    "Search accessible Discord messages by author, words, channels or "
+                    "dates."
                 ),
                 parameters={
                     "type": "object",
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "Narrow words or phrase to search for.",
                             "minLength": 0,
                             "maxLength": 1024,
                         },
@@ -54,18 +51,20 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                             "type": "array", "minItems": 1, "maxItems": 20,
                             "uniqueItems": True,
                             "items": {"type": "integer", "minimum": 1},
-                            "description": "Explicit accessible channels to search together.",
                         },
                         "cursor": {
                             "type": "string", "maxLength": 64,
-                            "description": "Continuation cursor returned by the same channel search and filters.",
                         },
                         "author_id": {"type": "integer", "minimum": 1},
-                        "after": {"type": "string", "maxLength": 40, "description": "Inclusive ISO 8601 date or timestamp. Use UTC when no offset is supplied."},
-                        "before": {"type": "string", "maxLength": 40, "description": "Exclusive ISO 8601 date or timestamp. Use UTC when no offset is supplied."},
+                        "after": {"type": "string", "maxLength": 40},
+                        "before": {"type": "string", "maxLength": 40},
                     },
                     "additionalProperties": False,
                 },
+                usage_note=(
+                    "Omit query for author history. Respect scope; continue cursors for "
+                    "coverage. Dates are ISO 8601 UTC, after inclusive and before exclusive."
+                ),
             ),
             search_discord_messages,
             contract=CapabilityContract(entity_fields=(
@@ -83,13 +82,7 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
             AgentToolDefinition(
                 name="read_discord_channel_history",
                 description=(
-                    "Read one bounded page of every currently available message "
-                    "in one accessible Discord channel or thread from an inclusive "
-                    "start through an exclusive end (or the current request). This "
-                    "does not depend on keyword search indexing; continue with the "
-                    "returned cursor for broader coverage. Up to 100 messages fit "
-                    "in a call; long pages stop earlier with a continuation cursor. "
-                    "Use this for a period review, then search for specific gaps."
+                    "Read a page of channel or thread history over a period."
                 ),
                 parameters={
                     "type": "object",
@@ -97,25 +90,13 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                         "channel_id": {"type": "integer", "minimum": 1},
                         "after": {
                             "type": "string", "maxLength": 40,
-                            "description": (
-                                "Inclusive ISO 8601 start date or timestamp. "
-                                "Use UTC when no offset is supplied."
-                            ),
                         },
                         "before": {
                             "type": "string", "maxLength": 40,
-                            "description": (
-                                "Exclusive ISO 8601 end date or timestamp. "
-                                "Omit to stop at the current request."
-                            ),
                         },
                         "author_id": {"type": "integer", "minimum": 1},
                         "cursor": {
                             "type": "string", "maxLength": 64,
-                            "description": (
-                                "Continuation cursor returned for this same "
-                                "channel, period and author filter."
-                            ),
                         },
                         "limit": {
                             "type": "integer", "minimum": 1,
@@ -126,6 +107,10 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                     "required": ["channel_id", "after"],
                     "additionalProperties": False,
                 },
+                usage_note=(
+                    "Review periods, search gaps and continue cursors. ISO 8601: after inclusive, "
+                    "before exclusive; default UTC."
+                ),
             ),
             read_discord_channel_history,
             contract=CapabilityContract(
@@ -141,8 +126,7 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
             AgentToolDefinition(
                 name="read_message_context",
                 description=(
-                    "Read messages surrounding an accessible Discord message identified by a search "
-                    "result or message link, so its meaning can be assessed in context."
+                    "Read messages around a visible Discord message."
                 ),
                 parameters={
                     "type": "object",

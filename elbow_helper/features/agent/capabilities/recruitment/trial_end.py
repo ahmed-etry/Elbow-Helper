@@ -27,7 +27,7 @@ from ...discord_actions.safety import check_member, check_post_access, resolve_c
 def trial_end_tools() -> tuple[RegisteredAgentTool, ...]:
     return (RegisteredAgentTool(AgentToolDefinition(
         name="end_recruitment_trial",
-        description="End a recruit's active or expired trial and post the follow-up after confirmation.",
+        description="End a recruit's active or expired trial and post the follow-up.",
         parameters={"type": "object", "properties": {
             "ticket_channel_id": {"type": "integer", "minimum": 1},
             "applicant_id": {"type": "integer", "minimum": 1},

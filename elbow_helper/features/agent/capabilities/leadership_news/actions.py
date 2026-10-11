@@ -31,7 +31,7 @@ from ...discord_actions.safety import check_post_access, check_view_access, reso
 def leadership_news_tools() -> tuple[RegisteredAgentTool, ...]:
     return (RegisteredAgentTool(AgentToolDefinition(
         name="publish_lead_news",
-        description="Publish an existing lead update to the public news channel after confirmation.",
+        description="Publish an existing lead update to the public news channel.",
         parameters={"type": "object", "properties": {
             "message_id": {"type": "integer", "minimum": 1},
         }, "required": ["message_id"], "additionalProperties": False},
@@ -44,7 +44,7 @@ def leadership_news_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
         RegisteredAgentTool(AgentToolDefinition(
             name="dismiss_lead_news_prompt",
-            description="Dismiss a lead update's publication prompt without publishing it.",
+            description="Dismiss a lead news publication prompt.",
             parameters={"type": "object", "properties": {
                 "prompt_message_id": {"type": "integer", "minimum": 1},
             }, "required": ["prompt_message_id"], "additionalProperties": False},

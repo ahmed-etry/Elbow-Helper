@@ -18,6 +18,14 @@ from ...models import AgentRequestContext, RegisteredAgentTool
 from .scoring import cwl_scoring_tools
 
 
+USAGE_NOTES = {
+    "read_cwl_performance": (
+        "Season/clan filters precede scoring; account filtering retains season ranks. A single "
+        "season has no multi-season score. Page via read_saved_report."
+    ),
+}
+
+
 TOOL_CONTRACTS = {
     "read_cwl_performance": CapabilityContract(
         entity_fields=(("clan_code", "clan"), ("player_tag", "clash_account")),
@@ -45,17 +53,18 @@ def cwl_tools() -> tuple[RegisteredAgentTool, ...]:
         "offset": offset, "limit": limit,
     }
     definitions = (
-        ("read_cwl_performance", "Read completed historical CWL performance using the established ASS profiles. Season and clan filters narrow the source read before scoring; account filtering keeps the full selected season for ranking. Exact season can be older than the history limit. A single-season read has no multi-season score. Results retain one complete dated snapshot; use read_cwl_performance_report for more pages or filters. Missing attacks and missing data are different.",
+        ("read_cwl_performance", "Read historical CWL performance using established ASS profiles.",
          {"history_limit": {"type": "integer", "minimum": 1, "maximum": 12}, **filters}, (), read_cwl_performance),
-        ("read_cwl_performance_report", "Read another page or filter of a retained CWL performance report from this conversation without repeating the database lookup.",
+        ("read_cwl_performance_report", "Read a page of the retained cwl performance report.",
          {"report_id": {"type": "string", "maxLength": 32}, **filters}, ("report_id",), read_cwl_performance_report),
-        ("read_cwl_threads", "List registered CWL discussion threads the requester and bot can currently access. These are owner-registered targets, not threads inferred from names.",
+        ("read_cwl_threads", "List accessible registered CWL discussion threads.",
          {}, (), read_cwl_threads),
     )
     return tuple(RegisteredAgentTool(AgentToolDefinition(
         name=name, description=description,
         parameters={"type": "object", "properties": properties,
                     "required": list(required), "additionalProperties": False},
+        usage_note=USAGE_NOTES.get(name, ""),
     ), handler,
         contract=TOOL_CONTRACTS[name],
     ) for name, description, properties, required, handler in definitions) + cwl_scoring_tools()

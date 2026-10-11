@@ -16,6 +16,13 @@ from .report import EventScheduleReport
 from ...models import AgentRequestContext, RegisteredAgentTool
 
 
+USAGE_NOTES = {
+    "read_event_schedule": (
+        "Read configured counters; this does not refresh event channels."
+    ),
+}
+
+
 TOOL_CONTRACTS = {
     "read_event_schedule": CapabilityContract(
         entity_fields=(), filter_fields=("phase", "event_type"),
@@ -41,7 +48,7 @@ def event_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
         (
             "read_event_schedule",
-            "Read and retain the configured event trackers, exact current/next schedule windows and covered member counters. Requires current Lead access, reports missing counter roles explicitly, and does not refresh channels or change event settings.",
+            "Read event trackers, schedule windows and member counters.",
             {
                 "phase": phase, "event_type": event_type,
                 "limit": {"type": "integer", "minimum": 1, "maximum": 25},
@@ -50,7 +57,7 @@ def event_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         (
             "read_event_schedule_report",
-            "Read another filtered page from one retained event-schedule snapshot. Current Lead and source access are rechecked; mutable event state is not reread.",
+            "Read another filtered page from one retained event-schedule snapshot.",
             {
                 "report_id": {
                     "type": "string", "minLength": 1, "maxLength": 32,
@@ -69,6 +76,7 @@ def event_tools() -> tuple[RegisteredAgentTool, ...]:
                 "type": "object", "properties": properties,
                 "required": list(required), "additionalProperties": False,
             },
+            usage_note=USAGE_NOTES.get(name, ""),
         ), handler,
         contract=TOOL_CONTRACTS[name],
     ) for name, description, properties, required, handler in definitions)

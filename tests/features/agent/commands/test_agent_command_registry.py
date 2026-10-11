@@ -87,6 +87,15 @@ class CommandRegistryTests(unittest.TestCase):
         prompt = system_instructions(registry, actions_enabled=True, data_guide=guide)
         self.assertLessEqual(estimate_tokens(prompt), 42_000)
         self.assertEqual(len(capability_list(registry).splitlines()), len(registry))
+        lines = capability_list(registry).splitlines()
+        for name, tool in registry.items():
+            definition = tool.definition
+            line = next(line for line in lines if line.startswith(name + ": "))
+            self.assertTrue(line.startswith(name + ": " + definition.description + " | "))
+            self.assertLessEqual(len(definition.description), 100)
+            self.assertLessEqual(len(definition.usage_note), 160)
+            if definition.usage_note:
+                self.assertIn(" | use " + definition.usage_note, line)
         self.assertTrue(all(
             any(
                 " | " + kind + " | " in line
@@ -140,8 +149,10 @@ class CommandRegistryTests(unittest.TestCase):
                          "Inspect a target.")
         self.assertEqual(capability.definition.parameters["properties"]["mode"]["enum"],
                          ["first", "second"])
-        self.assertIn("First (first)",
-                      capability.definition.parameters["properties"]["mode"]["description"])
+        self.assertNotIn("description",
+                         capability.definition.parameters["properties"]["mode"])
+        self.assertEqual(capability.option_info[1].choices, ("First", "Second"))
+        self.assertEqual(capability.option_info[1].description, "Choose a mode.")
 
     def test_agent_option_can_use_a_resolved_numeric_key(self):
         path = "/synthetic inspect"

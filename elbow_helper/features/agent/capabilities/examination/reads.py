@@ -50,14 +50,14 @@ def examination_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
         (
             "read_accessible_examination_cases",
-            "Read and retain status-only promotion examination cases when the requester and bot can access the examination room and each included ticket. An optional ticket channel ID narrows the source read. Returns workflow flags without message content, application answers, availability, examiner matches or outcomes. This does not change examinations.",
+            "Read accessible promotion examination status records.",
             {"ticket_channel_id": {"type": "integer", "minimum": 1}},
             (),
             read_accessible_examination_cases,
         ),
         (
             "read_examination_case_report",
-            "Read another filtered page from a retained status-only examination case report without rereading private state.",
+            "Read a page of the retained examination case report.",
             {
                 "report_id": {"type": "string", "maxLength": 32},
                 "offset": {"type": "integer", "minimum": 0},

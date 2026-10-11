@@ -22,19 +22,14 @@ def achievement_economy_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
         (
             "read_achievement_economy_rules",
-            "Read the configured coin, ticket, salary, manual-award cap and achievement-reward "
-            "rules from the owning feature. This returns current rules, not a member balance, "
-            "raffle result or permission to grant rewards.",
+            "Read coin, ticket, salary and achievement reward rules.",
             {},
             (),
             read_achievement_economy_rules,
         ),
         (
             "read_member_inventory",
-            "Read one current member's coin balance and current-month raffle-ticket status "
-            "using the existing inventory rules. A requester may read their own inventory; "
-            "viewing another member requires current Lead access. This performs no economy "
-            "or raffle action.",
+            "Read one member's coin balance and raffle ticket status.",
             {"member_id": {"type": "integer", "minimum": 1}},
             ("member_id",),
             read_member_inventory,

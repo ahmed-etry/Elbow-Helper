@@ -45,14 +45,14 @@ def recruitment_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
         (
             "read_active_recruitment_trials",
-            "Read and retain status-only active recruitment trials from ticket channels the requester and bot can access. An optional ticket channel ID narrows the source read. Returns applicant and configured trial dates; ticket content, reminders, recruiter notes and outcomes are excluded. This does not change recruitment.",
+            "Read accessible recruitment trials and their configured dates.",
             {"ticket_channel_id": {"type": "integer", "minimum": 1}},
             (),
             read_active_recruitment_trials,
         ),
         (
             "read_active_recruitment_trial_report",
-            "Read another filtered page from a retained status-only active recruitment trial report without rereading private state.",
+            "Read a page of the retained active recruitment trial report.",
             {
                 "report_id": {"type": "string", "maxLength": 32},
                 "offset": {"type": "integer", "minimum": 0},

@@ -23,7 +23,7 @@ from ...discord_actions.safety import check_member, check_role, resolve_member
 def role_connection_scan_tools() -> tuple[RegisteredAgentTool, ...]:
     return (RegisteredAgentTool(AgentToolDefinition(
         name="apply_role_connections",
-        description="Apply all current role connection rules after previewing each member change.",
+        description="Preview and apply all role connection rules.",
         parameters={"type": "object", "properties": {},
                     "required": [], "additionalProperties": False},
     ), prepare_role_connection_scan, AgentCapabilityEffect.COMMAND,

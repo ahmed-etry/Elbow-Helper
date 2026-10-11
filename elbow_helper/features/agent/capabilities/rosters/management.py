@@ -109,7 +109,7 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
 
     tools = [RegisteredAgentTool(AgentToolDefinition(
         name="set_roster_state",
-        description="Open or close a roster, or show or hide its signup controls after confirmation.",
+        description="Open or close a roster, or show or hide its signup controls.",
         parameters={"type": "object", "properties": {
             "roster_id": {"type": "integer", "minimum": 1},
             "operation": {"type": "string", "enum": ["open", "close", "show", "hide"]},
@@ -125,14 +125,14 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
                             values: Mapping[str, Any]) -> Mapping[str, Any]:
         return await _prepare(context, values, name, operation, classification, label)
     tools.append(RegisteredAgentTool(
-        AgentToolDefinition(name=name, description="Clear a roster's signups after confirmation.",
+        AgentToolDefinition(name=name, description="Clear a roster's signups.",
                             parameters=schema),
         prepare_clear, AgentCapabilityEffect.COMMAND, classification,
                             contract=TOOL_CONTRACTS[name],
     ))
     tools.append(RegisteredAgentTool(AgentToolDefinition(
         name="refresh_roster",
-        description="Refresh a roster's account details, signup roles and post after confirmation.",
+        description="Refresh a roster's account details, signup roles and post.",
         parameters=schema,
     ), prepare_roster_refresh, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
         contract=CapabilityContract(
@@ -142,7 +142,7 @@ def roster_management_tools() -> tuple[RegisteredAgentTool, ...]:
                  ))
     tools.append(RegisteredAgentTool(AgentToolDefinition(
         name="set_roster_layout",
-        description="Set roster columns or displayed name lengths after confirmation.",
+        description="Set roster columns or displayed name lengths.",
         parameters={"type": "object", "properties": {
             "roster_id": {"type": "integer", "minimum": 1},
             "show_townhall": {"type": "boolean"},

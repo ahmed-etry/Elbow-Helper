@@ -84,7 +84,7 @@ class AgentSpreadsheetContractTests(unittest.TestCase):
         self.assertNotIn("prepare_report_spreadsheet", registry)
         tool = registry["prepare_spreadsheet"].definition
         self.assertEqual(tool.parameters["properties"]["sheets"]["maxItems"], 10)
-        self.assertIn("literal text rows", tool.description)
+        self.assertIn("literal rows only for proposals or summaries", tool.usage_note)
         sheet = tool.parameters["properties"]["sheets"]["items"]
         self.assertEqual(len(sheet["anyOf"]), 4)
         self.assertTrue(all(kind["type"] == "object" for kind in sheet["anyOf"]))

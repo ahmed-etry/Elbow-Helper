@@ -21,11 +21,11 @@ SETTINGS = {
 def channel_tools():
     overwrites = channel_permission_tools()[0].definition.parameters["properties"]["targets"]
     return (
-        tool("create_discord_channel", "Create a text channel or category after confirmation.",
+        tool("create_discord_channel", "Create a text channel or category.",
              {"kind": {"type": "string", "enum": ["text", "category"]}, **SETTINGS,
               "overwrites": overwrites}, ("kind", "name"), prepare_create,
              entities=(("category_id", "discord_channel"),)),
-        tool("edit_discord_channel", "Rename, move or change topic and slowmode after confirmation.",
+        tool("edit_discord_channel", "Rename, move or change topic and slowmode.",
              {"channel_id": ID, **SETTINGS}, ("channel_id",), prepare_edit,
              entities=(("channel_id", "discord_channel"),
                        ("category_id", "discord_channel"))),

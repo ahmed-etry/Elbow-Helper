@@ -21,10 +21,10 @@ def scheduled_event_tools():
         tool("create_discord_event", "Create a voice, stage or external scheduled event.",
              FIELDS, ("name", "kind", "start_time"), prepare_create,
              entities=(("channel_id", "discord_channel"),)),
-        tool("edit_discord_event", "Change an existing scheduled event after confirmation.",
+        tool("edit_discord_event", "Change an existing scheduled event.",
              {"event_id": ID, **FIELDS}, ("event_id",), prepare_edit,
              entities=(("event_id", "discord_event"), ("channel_id", "discord_channel"))),
-        tool("cancel_discord_event", "Cancel a scheduled event permanently after confirmation.",
+        tool("cancel_discord_event", "Cancel a scheduled event permanently.",
              {"event_id": ID}, ("event_id",), prepare_cancel, irreversible=True,
              entities=(("event_id", "discord_event"),)),
     )

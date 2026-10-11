@@ -42,14 +42,14 @@ def support_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
         (
             "read_accessible_support_tickets",
-            "Read and retain metadata for current support-ticket channels the requester and bot can access. An optional channel ID narrows the read to one ticket. This includes owner/send and channel activity timestamps, but does not read messages or decide whether a question was answered.",
+            "Read accessible support ticket metadata and activity timestamps.",
             {"channel_id": {"type": "integer", "minimum": 1}},
             (),
             read_accessible_support_tickets,
         ),
         (
             "read_support_ticket_report",
-            "Read another filtered page from a retained support-ticket metadata report without reading ticket messages.",
+            "Read a page of the retained support ticket report.",
             {
                 "report_id": {"type": "string", "maxLength": 32},
                 "offset": {"type": "integer", "minimum": 0},

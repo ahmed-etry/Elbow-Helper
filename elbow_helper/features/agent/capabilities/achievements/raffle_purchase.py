@@ -23,7 +23,7 @@ from ...wording import (
 def raffle_purchase_tools() -> tuple[RegisteredAgentTool, ...]:
     return (RegisteredAgentTool(AgentToolDefinition(
         name="buy_raffle_ticket",
-        description="Buy this month's raffle ticket with the requester's own coins after confirmation.",
+        description="Buy this month's raffle ticket with the requester's own coins.",
         parameters={"type": "object", "properties": {}, "required": [],
                     "additionalProperties": False},
     ), prepare_raffle_purchase, AgentCapabilityEffect.COMMAND,

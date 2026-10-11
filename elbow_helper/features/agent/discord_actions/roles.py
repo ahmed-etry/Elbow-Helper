@@ -32,7 +32,7 @@ def discord_role_tools() -> tuple[RegisteredAgentTool, ...]:
     return (
         RegisteredAgentTool(AgentToolDefinition(
             name="add_discord_roles",
-            description="Add one safe Discord role to the selected members after confirmation.",
+            description="Add one safe Discord role to the selected members.",
             parameters=schema,
         ), prepare_add_roles, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
@@ -42,7 +42,7 @@ def discord_role_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         RegisteredAgentTool(AgentToolDefinition(
             name="remove_discord_roles",
-            description="Remove one safe Discord role from the selected members after confirmation.",
+            description="Remove one safe Discord role from the selected members.",
             parameters=schema,
         ), prepare_remove_roles, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(

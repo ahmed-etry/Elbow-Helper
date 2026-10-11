@@ -23,7 +23,7 @@ from ...discord_actions.safety import check_post_access, resolve_channel
 def cwl_prep_refresh_tools() -> tuple[RegisteredAgentTool, ...]:
     return (RegisteredAgentTool(AgentToolDefinition(
         name="refresh_cwl_prep_board",
-        description="Refresh one clan's CWL prep board after confirmation.",
+        description="Refresh one clan's CWL prep board.",
         parameters={"type": "object", "properties": {
             "clan_code": {"type": "string", "enum": list(DASHBOARD_THREADS)},
         }, "required": ["clan_code"], "additionalProperties": False},

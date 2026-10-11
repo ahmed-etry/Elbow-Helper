@@ -39,7 +39,7 @@ def clan_reporting_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
         (
             "read_missing_elder_accounts",
-            "Read and retain the existing Missing Elder calculation for selected family clans whose leadership channels the requester and bot can access. It uses current linked-account, Discord-role and cached in-game-role evidence; inaccessible clans and malformed rows are explicit. This does not refresh data, change roles or update boards.",
+            "Read the Missing Elder calculation for accessible family clans.",
             {
                 "clan_codes": {
                     "type": "array", "items": clan_code,
@@ -54,7 +54,7 @@ def clan_reporting_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         (
             "read_missing_elder_report",
-            "Read another filtered page from one retained Missing Elder snapshot. Current access to every included clan leadership channel is rechecked; member roles, links and cached clan evidence are not recalculated.",
+            "Read another filtered page from one retained Missing Elder snapshot.",
             {
                 "report_id": {
                     "type": "string", "minLength": 1, "maxLength": 32,

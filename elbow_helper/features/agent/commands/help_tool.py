@@ -18,10 +18,7 @@ def command_tools() -> tuple[RegisteredAgentTool, ...]:
     return (RegisteredAgentTool(AgentToolDefinition(
         name="read_bot_command_help",
         description=(
-            "Find current public /help entries and registered command options by "
-            "path or purpose. Restricted help entries are excluded because this "
-            "conversation may be visible to others. This explains commands; it "
-            "does not execute them."
+            "Read public command help and registered options."
         ),
         parameters={
             "type": "object",

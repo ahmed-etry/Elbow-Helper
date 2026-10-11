@@ -46,7 +46,7 @@ def promotion_route_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
         RegisteredAgentTool(AgentToolDefinition(
         name="change_promotion_route",
-        description="Change the current clan and target for a promotion review after confirmation.",
+        description="Change the current clan and target for a promotion review.",
         parameters={"type": "object", "properties": {
             "ticket_channel_id": {"type": "integer", "minimum": 1},
             "from_clan": {"type": "string", "enum": list(PROMO_SOURCES)},

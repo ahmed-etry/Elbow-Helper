@@ -30,7 +30,9 @@ def spreadsheet_tools() -> tuple[RegisteredAgentTool, ...]:
     source_column = {
         "type": "object", "additionalProperties": False,
         "properties": {
-            "field": {"type": "string", "minLength": 1, "maxLength": 100},
+            "field": {
+                "type": "string", "minLength": 1, "maxLength": 100, "x-field-path": True,
+            },
             "heading": heading,
         },
         "required": ["field", "heading"],
@@ -68,10 +70,6 @@ def spreadsheet_tools() -> tuple[RegisteredAgentTool, ...]:
             "rows_from": {
                 "type": "array", "items": {"type": "object", "additionalProperties": True},
                 "x-result-list": True,
-                "description": (
-                    "Reference {step, path} to an earlier step's list of records, "
-                    "also accepted inside a one-item list."
-                ),
             },
             "columns": {**columns, "items": source_column},
         }, ["rows_from", "columns"]),
@@ -80,17 +78,7 @@ def spreadsheet_tools() -> tuple[RegisteredAgentTool, ...]:
         AgentToolDefinition(
             name="prepare_spreadsheet",
             description=(
-                "Prepare one spreadsheet per reply, with every table as a separate sheet. "
-                "Each new spreadsheet replaces the previous one. Use authorized evidence "
-                "and clearly labelled recommendations or assumptions. Choose a descriptive "
-                "title, sheets, columns and literal text rows that fit the request. "
-                "Query sheets use sql and params; "
-                "saved report sheets use report_id, collection and field/heading columns. "
-                "Optional sheet_name selects an imported XLSX sheet, whose fields are "
-                "zero-based column indexes written as strings. Result sheets use rows_from "
-                "referencing an earlier step's records and field/heading columns, with dotted "
-                "fields for nested values. Never truncate evidence to fit this tool. "
-                "Never paste or invent spreadsheet links."
+                "Prepare one spreadsheet per reply, with every table as a separate sheet."
             ),
             parameters={
                 "type": "object", "additionalProperties": False,
@@ -105,6 +93,10 @@ def spreadsheet_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
                 "required": ["title", "sheets"],
             },
+            usage_note=(
+                "Each replaces the last. Queries/result references write exact data; literal rows "
+                "only for proposals or summaries. Never paste or invent spreadsheet links."
+            ),
         ),
         prepare_spreadsheet,
         AgentCapabilityEffect.ARTIFACT,

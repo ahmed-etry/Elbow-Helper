@@ -43,8 +43,9 @@ def reaction_tools():
     return (RegisteredAgentTool(
         AgentToolDefinition(
             "react_to_request",
-            "React to the request message with a Unicode or usable server emoji, "
-            "up to three times.",
+            (
+                "Add up to three usable emoji reactions to the request."
+            ),
             {
                 "type": "object", "properties": {"emoji": {"type": "string"}},
                 "required": ["emoji"], "additionalProperties": False,

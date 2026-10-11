@@ -25,7 +25,7 @@ from ...discord_actions.safety import check_post_access, resolve_channel
 def missing_elder_board_tools() -> tuple[RegisteredAgentTool, ...]:
     return (RegisteredAgentTool(AgentToolDefinition(
         name="refresh_missing_elder_board",
-        description="Refresh linked accounts and the Missing Elder board for one clan after confirmation.",
+        description="Refresh linked accounts and the Missing Elder board for one clan.",
         parameters={"type": "object", "properties": {
             "clan_code": {"type": "string", "enum": list(CLAN_LEADERSHIP_CHANNELS)},
         }, "required": ["clan_code"], "additionalProperties": False},

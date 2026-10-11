@@ -35,7 +35,7 @@ _ADJUSTMENTS = (
 def cwl_bonus_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
     return (RegisteredAgentTool(AgentToolDefinition(
         name="set_cwl_bonus_scoring",
-        description="Set a CWL Expected Score, TH Adjustments, or copy a clan scoring setup after confirmation.",
+        description="Set or copy CWL Expected Score and TH Adjustments.",
         parameters={"type": "object", "properties": {
             "clan_code": {"type": "string"},
             "operation": {"type": "string", "enum": ["score", "adjustments", "copy"]},

@@ -15,6 +15,13 @@ from .report import MemberLifecycleReport
 from ...models import AgentRequestContext, RegisteredAgentTool
 
 
+USAGE_NOTES = {
+    "read_member_lifecycle": (
+        "Tracked observations are not complete history or an inactivity verdict."
+    ),
+}
+
+
 TOOL_CONTRACTS = {
     "read_member_lifecycle": CapabilityContract(
         entity_fields=(), filter_fields=("platform", "activity", "overdue_only"),
@@ -34,7 +41,7 @@ def member_lifecycle_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
         (
             "read_member_lifecycle",
-            "Read and retain the lifecycle feature's tracked current joins, recruitment-source counters, overdue-applicant scan results, and last message observations from channels the requester and bot can still access. Coverage is explicit: this is not complete server history, ticket content, or an inactivity verdict, and it changes nothing.",
+            "Read tracked joins, recruitment sources and activity.",
             {
                 "platform": {"type": "string", "minLength": 1, "maxLength": 100},
                 "activity": activity,
@@ -45,7 +52,7 @@ def member_lifecycle_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         (
             "read_member_lifecycle_report",
-            "Read another filtered page from one retained member-lifecycle snapshot. Current access to the overseeing source and every included activity channel is rechecked; mutable lifecycle state is not reread.",
+            "Read another filtered page from one retained member-lifecycle snapshot.",
             {
                 "report_id": {"type": "string", "minLength": 1, "maxLength": 32},
                 "platform": {"type": "string", "minLength": 1, "maxLength": 100},
@@ -64,6 +71,7 @@ def member_lifecycle_tools() -> tuple[RegisteredAgentTool, ...]:
                 "type": "object", "properties": properties,
                 "required": list(required), "additionalProperties": False,
             },
+            usage_note=USAGE_NOTES.get(name, ""),
         ), handler,
         contract=TOOL_CONTRACTS[name],
     ) for name, description, properties, required, handler in definitions)

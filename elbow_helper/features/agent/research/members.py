@@ -162,8 +162,7 @@ def member_tools():
             AgentToolDefinition(
                 name="find_discord_members",
                 description=(
-                    "Resolve a member name, mention, or Discord ID when the request does not "
-                    "already identify the member unambiguously."
+                    "Find Discord members by name, mention or ID."
                 ),
                 parameters={
                     "type": "object",
@@ -185,10 +184,7 @@ def member_tools():
             AgentToolDefinition(
                 name="read_discord_members",
                 description=(
-                    "Read member details. Return display names, usernames, UTC server join times "
-                    "and roles for up to 1000 exact member IDs, in pages of up to 1000. "
-                    "Sort by joined_at oldest_first or newest_first before "
-                    "paging; unknown join times come last. Omit sort to preserve the ID order."
+                    "Read member details."
                 ),
                 parameters={
                     "type": "object", "properties": {
@@ -206,6 +202,10 @@ def member_tools():
                         "limit": {"type": "integer", "minimum": 1, "maximum": MEMBER_DETAILS_LIMIT},
                     }, "required": [], "additionalProperties": False,
                 },
+                usage_note=(
+                    "Sort by joined_at before paging; unknown joins come last. No sort "
+                    "preserves ID order."
+                ),
             ),
             read_discord_members,
             contract=CapabilityContract(
@@ -216,9 +216,7 @@ def member_tools():
             AgentToolDefinition(
                 name="find_discord_roles",
                 description=(
-                    "Find server roles by name or ID and inspect their membership counts "
-                    "and configured clan purpose. Distinguish similarly named roles before "
-                    "selecting members for a report."
+                    "Find Discord roles and their membership counts and clan purpose."
                 ),
                 parameters={
                     "type": "object",

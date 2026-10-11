@@ -444,7 +444,7 @@ def record_adapters() -> tuple[CommandAdapter, ...]:
                 ParameterInfo("type", ACTION_RECORD_EDIT_TYPE_OPTION, False, "string"),
                 ParameterInfo("note", ACTION_RECORD_EDIT_NOTE_OPTION, False, "string"),
             ),
-            agent_details=(
+            usage_note=(
                 "Choose a record and the values to change. The agent shows the old and "
                 "new values before applying the edit."
             ),

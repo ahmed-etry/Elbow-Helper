@@ -26,7 +26,7 @@ def cwl_member_hub_tools() -> tuple[RegisteredAgentTool, ...]:
     ), handler,
         contract=TOOL_CONTRACTS[name],
     ) for name, description, handler in (
-        ("read_my_cwl_placement", "Show where the requester's accounts are placed for the announced CWL rosters.",
+        ("read_my_cwl_placement", "Show the asker's announced CWL account placements.",
          read_my_cwl_placement),
         ("read_my_cwl_channels", "Show the requester's CWL info and war discussion channels.",
          read_my_cwl_channels),

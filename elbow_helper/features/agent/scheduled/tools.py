@@ -481,9 +481,7 @@ def standing_tools(
 ) -> tuple[RegisteredAgentTool, ...]:
     save = AgentToolDefinition(
         "save_standing_rule",
-        "Save/change a reminder, request or watcher after confirmation. Give timing, destination "
-        "and any end. Requests need fixed values named in scope_text, variable fields and target "
-        "limits; watchers need fresh reads, condition and repeat choice.",
+        "Save/change a reminder, request or watcher.",
         {"type": "object", "properties": {
             "kind": {"type": "string", "enum": ["request", "watcher", "reminder"]},
             **content_options(),
@@ -522,6 +520,10 @@ def standing_tools(
             "repeat": {"type": "boolean"},
             "replace_id": {"type": "string"},
         }, "required": ["kind", "schedule"]},
+        usage_note=(
+            "Requests need fixed values in scope_text, variable fields and target limits. "
+            "Watchers need fresh reads, condition and repeat choice."
+        ),
     )
     listing = AgentToolDefinition(
         "list_standing_rules", "List this member's saved requests and watchers.",
@@ -530,7 +532,7 @@ def standing_tools(
         }},
     )
     manage = AgentToolDefinition(
-        "manage_standing_rule", "Pause, resume or cancel a member's saved request or watcher after confirmation.",
+        "manage_standing_rule", "Pause, resume or cancel a member's saved request or watcher.",
         {"type": "object", "properties": {
             "kind": {"type": "string", "enum": ["request", "watcher", "reminder"]},
             "id": {"type": "string"},

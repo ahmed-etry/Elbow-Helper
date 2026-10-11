@@ -22,7 +22,7 @@ from .safety import DiscordActionRefused, check_raw_nickname, resolve_member
 def discord_nickname_tools() -> tuple[RegisteredAgentTool, ...]:
     return (RegisteredAgentTool(AgentToolDefinition(
         name="change_discord_nickname",
-        description="Set or reset a member's nickname after confirmation. Omit nickname to reset it.",
+        description="Set or reset a member's nickname.",
         parameters={"type": "object", "properties": {
             "member_id": {"type": "integer", "minimum": 1},
             "nickname": {"type": "string", "minLength": 1, "maxLength": 32},

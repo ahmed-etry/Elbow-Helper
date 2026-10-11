@@ -187,7 +187,7 @@ def clash_tools():
     return (RegisteredAgentTool(
         AgentToolDefinition(
             "read_clash",
-            "Read current clans, wars, CWL, raids and player profiles from Clash.",
+            "Read current Clash clan, war, CWL, raid or player data.",
             {
                 "type": "object",
                 "properties": {
@@ -201,6 +201,7 @@ def clash_tools():
                 },
                 "required": ["kind", "tags"], "additionalProperties": False,
             },
+            usage_note="Use for current Clash state; stored tables are historical snapshots.",
         ),
         read_clash,
         contract=CapabilityContract(), returns="items[].tag,status,data; observed_at",

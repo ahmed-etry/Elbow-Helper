@@ -36,29 +36,22 @@ def cwl_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
         },
     }
     pick_wars = (
-        "Choose war IDs with query_bot_data from health.wars using clan_code, "
-        "war_type = 'CWL', cwl_season (one key per league), cwl_round "
-        "(1-7; a CWL day is a round), "
-        "and state = 'warEnded'. Pass those war_ids, with or without the CWL: prefix. "
+        "query_bot_data selects health.wars IDs: clan_code, war_type=CWL, cwl_season, "
+        "cwl_round (days 1-7), state=warEnded. "
     )
+    # Both feature scorers calculate exactly the selected wars as one result.
+    # ASS projects observed averages to seven attacks; a partial sample is not a full season.
     definitions = (
         (
             "cwl_ass_scores",
-            "Calculate one combined CWL ASS result for chosen war IDs. "
-            + pick_wars + "Score exactly those stored wars "
-            "using the established scoring implementation. Observed attack averages are "
-            "projected to seven attacks; preserve the returned wars and sample size and "
-            "do not present a partial selection as a completed-season score. "
-            "Return every player row.",
+            "Calculate one combined CWL ASS result for chosen war IDs.",
+            pick_wars + "Sample projects to seven attacks.",
             selection, ("clan_code", "war_ids"), cwl_ass_scores,
         ),
         (
             "cwl_bonus_scores",
-            "Apply the clan's CWL bonus scoring to chosen war IDs. "
-            + pick_wars + "Use ONE "
-            "combined calculation over exactly those stored wars. This returns "
-            "adjusted-delta evidence, not ASS, and does not poll Clash or publish a bonus "
-            "recommendation. Return every player row and the scored attack sample.",
+            "Apply the clan's CWL bonus scoring to chosen war IDs.",
+            pick_wars + "Adjusted delta is not ASS.",
             selection, ("clan_code", "war_ids"), cwl_bonus_scores,
         ),
     )
@@ -66,7 +59,7 @@ def cwl_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
         RegisteredAgentTool(
             AgentToolDefinition(
                 name=name,
-                description=description,
+                description=description, usage_note=note,
                 parameters={
                     "type": "object", "properties": properties,
                     "required": list(required), "additionalProperties": False,
@@ -75,7 +68,7 @@ def cwl_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
             handler,
             contract=TOOL_CONTRACTS[name],
         )
-        for name, description, properties, required, handler in definitions
+        for name, description, note, properties, required, handler in definitions
     )
 
 

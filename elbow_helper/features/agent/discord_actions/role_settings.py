@@ -19,9 +19,9 @@ FIELDS = {
 
 def role_settings_tools():
     return (
-        tool("create_discord_role", "Create a role below both actors after confirmation.",
+        tool("create_discord_role", "Create a role below both actors.",
              FIELDS, ("name",), prepare_create),
-        tool("edit_discord_role", "Change a role's settings and permissions after confirmation.",
+        tool("edit_discord_role", "Change a role's settings and permissions.",
              {"role_id": ID, **FIELDS}, ("role_id",), prepare_edit,
              entities=(("role_id", "discord_role"),)),
     )

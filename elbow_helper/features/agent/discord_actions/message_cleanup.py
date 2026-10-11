@@ -17,7 +17,7 @@ MESSAGE_IDS = {"type": "array", "items": ID, "minItems": 1, "maxItems": 100,
 
 def cleanup_tools():
     return (tool(
-        "delete_discord_messages", "Delete exactly the selected messages after confirmation.",
+        "delete_discord_messages", "Delete exactly the selected messages.",
         {"channel_id": ID, "message_ids": MESSAGE_IDS}, ("channel_id", "message_ids"),
         prepare_cleanup, irreversible=True,
         entities=(("channel_id", "discord_channel"), ("message_ids", "discord_message_set")),

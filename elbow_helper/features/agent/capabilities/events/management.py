@@ -121,7 +121,7 @@ def event_management_tools() -> tuple[RegisteredAgentTool, ...]:
         ))
     tools.append(RegisteredAgentTool(AgentToolDefinition(
         name="edit_preset_event",
-        description="Change a preset event tracker name and grace period after confirmation.",
+        description="Change a preset event tracker name and grace period.",
         parameters={"type": "object", "properties": {
             "event": {"type": "string"}, "name": {"type": "string", "minLength": 1},
             "grace_hours": {"type": "integer", "minimum": 0},
@@ -134,7 +134,7 @@ def event_management_tools() -> tuple[RegisteredAgentTool, ...]:
                  ))
     tools.append(RegisteredAgentTool(AgentToolDefinition(
         name="refresh_event_trackers",
-        description="Refresh all event tracker voice channels after confirmation.",
+        description="Refresh all event tracker voice channels.",
         parameters={"type": "object", "properties": {}, "additionalProperties": False},
     ), prepare_event_refresh, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
         contract=CapabilityContract(

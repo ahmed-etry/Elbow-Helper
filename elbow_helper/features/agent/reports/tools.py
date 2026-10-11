@@ -129,7 +129,7 @@ def _tool(name: str, specs: Mapping[str, RegisteredAgentTool]) -> RegisteredAgen
     ids = ("before_report_id", "after_report_id") if comparing else ("report_id",)
     properties = {
         "report_kind": {"type": "string", "enum": sorted(specs),
-                        "description": "Kind from the retained report manifest."},
+        },
         **{field: {"type": "string", "minLength": 1, "maxLength": 32} for field in ids},
         **_properties(specs),
     }
@@ -141,6 +141,10 @@ def _tool(name: str, specs: Mapping[str, RegisteredAgentTool]) -> RegisteredAgen
     return RegisteredAgentTool(
         AgentToolDefinition(
             name=name, description=description,
+            usage_note=(
+                "Use manifest kind/ID. XLSX needs exact sheet_name; fields are zero-based "
+                "column indexes as strings."
+            ),
             parameters={
                 "type": "object", "properties": properties,
                 "required": ["report_kind", *ids], "additionalProperties": False,

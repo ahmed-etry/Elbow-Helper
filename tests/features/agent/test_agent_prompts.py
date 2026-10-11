@@ -67,11 +67,25 @@ class RequestPromptTests(unittest.TestCase):
             "When nothing defines what was asked, work it out from the data and say briefly how.",
             "ask only when missing information would change the result",
             "A generated file is presentation, not new evidence or approval.",
-            "For a spreadsheet, use prepare_spreadsheet",
             "Never inspect a member's records just to make a joke",
-            "Prefer one query that answers the whole question over several narrow ones",
         ):
             self.assertIn(rule, SYSTEM_PROMPT)
+
+    def test_capability_specific_rules_are_visible_in_the_catalogue(self):
+        from elbow_helper.features.agent.engine.registry import build_agent_tools
+        from elbow_helper.features.agent.plan.format import capability_list
+
+        catalogue = capability_list(build_agent_tools())
+        for rule in (
+            "prepare_spreadsheet: Prepare one spreadsheet per reply",
+            "Queries/result references write exact data",
+            "literal rows only for proposals or summaries",
+            "Prefer one SQL query for the whole question",
+            "Let SQL count, group, join, filter and sort",
+            "Retrieve missing or truncated instructions and decisions; ask if unavailable",
+            "Quote important explicit task instructions exactly, not banter or inferred facts",
+        ):
+            self.assertIn(rule, catalogue)
 
     def test_approved_voice_is_present(self):
         for rule in (

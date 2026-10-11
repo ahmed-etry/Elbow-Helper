@@ -55,6 +55,8 @@ def system_instructions(
 def _argument(detail: Mapping) -> str:
     if detail.get("x-result-list"):
         return "reference(list of records)"
+    if detail.get("x-field-path"):
+        return "string(dotted field)"
     if "anyOf" in detail and "type" not in detail:
         return "/".join(_argument(choice) for choice in detail["anyOf"])
     kind = detail.get("type", "value")
@@ -98,10 +100,19 @@ def capability_list(registry: Mapping[str, RegisteredAgentTool]) -> str:
             f"{field}:{_argument(detail)}{'*' if field in required else ''}"
             for field, detail in schema.get("properties", {}).items()
         ]
-        meaning = " ".join(tool.definition.description.split(".", 1)[0].split())
-        # Confirmation is already defined by the action class and shared planning rules.
-        meaning = meaning.replace(" after confirmation", "")[:100]
+        meaning = tool.definition.description
+        note = tool.definition.usage_note
+        if not meaning or len(meaning) > 100 or "\n" in meaning:
+            raise ValueError(
+                f"Capability {name} needs a whole one-line summary within 100 characters"
+            )
+        if len(note) > 160 or "\n" in note:
+            raise ValueError(
+                f"Capability {name} usage note must fit one line within 160 characters"
+            )
         line = f"{name}: {meaning} | {tool.action_class.value} | args " + ",".join(arguments)
+        if note:
+            line += " | use " + note
         if tool.returns:
             line += " | returns " + tool.returns
         entries.append(line)

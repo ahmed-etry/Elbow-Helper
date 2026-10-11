@@ -27,10 +27,10 @@ TOOL_CONTRACTS = {
 def hibernation_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
         ("read_active_hibernation",
-         "Read status-only active hibernation records when the requester and bot can access the hibernation log. Returns member IDs and recorded start times only, 25 records unless limit asks for more (up to 500, enough to pass every member ID to a later step); saved roles and private ticket content are excluded. This does not change hibernation.",
+         "Read active hibernation member IDs and start times.",
          {"limit": {"type": "integer", "minimum": 1, "maximum": 500}}, (), read_active_hibernation),
         ("read_active_hibernation_report",
-         "Read another page or exact-member filter from a retained status-only hibernation report without rereading private state.",
+         "Read a page of the retained active hibernation report.",
          {"report_id": {"type": "string", "maxLength": 32},
           "offset": {"type": "integer", "minimum": 0},
           "limit": {"type": "integer", "minimum": 1, "maximum": 500},

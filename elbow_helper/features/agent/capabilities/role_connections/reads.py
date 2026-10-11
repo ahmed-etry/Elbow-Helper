@@ -21,11 +21,7 @@ def role_connection_tools() -> tuple[RegisteredAgentTool, ...]:
             AgentToolDefinition(
                 name="read_role_connections",
                 description=(
-                    "Read the configured rules that automatically add or remove "
-                    "Discord roles. Optionally evaluate each returned rule against one "
-                    "current member's roles. Requires current Lead access; malformed "
-                    "and cyclic rules remain explicit, and this never runs a scan or "
-                    "changes roles."
+                    "Read rules that automatically add or remove roles."
                 ),
                 parameters={
                     "type": "object",

@@ -24,7 +24,7 @@ from ...wording import (
 def transfer_management_tools() -> tuple[RegisteredAgentTool, ...]:
     return (RegisteredAgentTool(AgentToolDefinition(
         name="clear_transfer_queue",
-        description="Clear all pending requests from a clan transfer queue after confirmation.",
+        description="Clear all pending requests from a clan transfer queue.",
         parameters={"type": "object", "properties": {
             "clan_code": {"type": "string"},
         }, "required": ["clan_code"], "additionalProperties": False},

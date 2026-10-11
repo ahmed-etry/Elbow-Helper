@@ -43,7 +43,7 @@ class RecordCommandPatternTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(capabilities["record_edit"].required,
                          ("record",))
         self.assertIn("old and new values",
-                      capabilities["record_edit"].definition.description)
+                      capabilities["record_edit"].definition.usage_note)
         self.assertNotIn("Opens controls",
                          capabilities["record_edit"].definition.description)
 

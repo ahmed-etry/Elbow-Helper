@@ -32,10 +32,7 @@ def achievement_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
         (
             "read_member_achievements",
-            "Read and retain complete achievement progress for one current Discord member "
-            "using the existing achievement rules. Completion-only achievements are not "
-            "presented as measurable counters. This does not expose coin transactions or "
-            "change achievements.",
+            "Read one member's achievement progress using the existing rules.",
             {
                 "member_id": {"type": "integer", "minimum": 1},
                 "status": {"type": "string", "enum": ["all", "completed", "in_progress"]},
@@ -46,8 +43,7 @@ def achievement_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         (
             "read_member_achievement_report",
-            "Read another filtered page from one retained member achievement snapshot "
-            "without rereading mutable progress.",
+            "Read a page of the retained member achievement report.",
             {
                 "report_id": report_id,
                 "status": {"type": "string", "enum": ["all", "completed", "in_progress"]},

@@ -15,6 +15,13 @@ from ...models import AgentRequestContext, RegisteredAgentTool
 from .report import TransferQueueReport
 
 
+USAGE_NOTES = {
+    "read_pending_transfer_requests": (
+        "Requests are destination claims, not approvals or completed transfers."
+    ),
+}
+
+
 TOOL_CONTRACTS = {
     "read_pending_transfer_requests": CapabilityContract(
         entity_fields=(("clan_code", "destination_clan"),),
@@ -33,16 +40,16 @@ TOOL_CONTRACTS = {
 def transfer_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
         ("read_pending_transfer_requests",
-         "Read unresolved clan transfer requests from registered queue threads the requester and bot can currently access. An optional clan code narrows the source read to one queue. Requests are destination claims, not approvals or completed transfers; expired stored rows are counted but omitted. This does not change queues.",
+         "Read unresolved requests from accessible clan transfer queues.",
          {"clan_code": {"type": "string", "enum": sorted(CLAN_TRANSFER_QUEUES)}},
          (), read_pending_transfer_requests),
         ("read_pending_transfer_report",
-         "Read another filtered page from a retained pending transfer report without rereading or changing queue state.",
+         "Read a page of the retained pending transfer report.",
          {"report_id": {"type": "string", "maxLength": 32},
           "offset": {"type": "integer", "minimum": 0},
           "limit": {"type": "integer", "minimum": 1, "maximum": 25},
           "clan_code": {"type": "string",
-                        "description": "Brown Elbow clan code such as BEH or BE4."},
+          },
           "member_id": {"type": "integer", "minimum": 1}},
          ("report_id",), read_pending_transfer_report),
     )
@@ -50,6 +57,7 @@ def transfer_tools() -> tuple[RegisteredAgentTool, ...]:
         name=name, description=description,
         parameters={"type": "object", "properties": properties,
                     "required": list(required), "additionalProperties": False},
+        usage_note=USAGE_NOTES.get(name, ""),
     ), handler,
         contract=TOOL_CONTRACTS[name],
     ) for name, description, properties, required, handler in definitions)

@@ -22,10 +22,7 @@ def history_tools() -> tuple[RegisteredAgentTool, ...]:
         AgentToolDefinition(
             name="read_conversation_history",
             description=(
-                "Read earlier turns in this conversation when the supplied history is insufficient. "
-                "Search by keyword or retrieve a request message ID. Only turns whose source "
-                "channels you can still access are returned. Results are paginated; retained "
-                "history may be incomplete."
+                "Read earlier turns in this conversation."
             ),
             parameters={
                 "type": "object",
@@ -38,6 +35,9 @@ def history_tools() -> tuple[RegisteredAgentTool, ...]:
                 },
                 "additionalProperties": False,
             },
+            usage_note=(
+                "Retrieve missing or truncated instructions and decisions; ask if unavailable."
+            ),
         ),
         read_conversation_history,
         contract=CapabilityContract(entity_fields=(("request_message_id", "discord_message"),)),

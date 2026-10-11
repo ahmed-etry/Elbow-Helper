@@ -32,7 +32,7 @@ def clan_health_settings_tools() -> tuple[RegisteredAgentTool, ...]:
              for key, spec in PLAYER_LABELS[block].items() if not key.startswith("_")}
     return (RegisteredAgentTool(AgentToolDefinition(
         name="read_clan_health_settings",
-        description="Read a clan's current member health expectations and field descriptions.",
+        description="Read clan health expectations and field meanings.",
         parameters={"type": "object", "properties": {
             "clan_code": {"type": "string", "enum": list(CLAN_ORDER)},
             "block": {"type": "string", "enum": PLAYER_BLOCK_ORDER},
@@ -47,7 +47,7 @@ def clan_health_settings_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
         RegisteredAgentTool(AgentToolDefinition(
         name="set_clan_health_settings",
-        description="Set one section of a clan's member health expectations after confirmation.",
+        description="Set one section of a clan's member health expectations.",
         parameters={"type": "object", "properties": {
             "clan_code": {"type": "string", "enum": list(CLAN_ORDER)},
             "block": {"type": "string", "enum": PLAYER_BLOCK_ORDER},

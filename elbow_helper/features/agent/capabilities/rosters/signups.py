@@ -43,7 +43,7 @@ def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
     return (
         RegisteredAgentTool(AgentToolDefinition(
             name="signup_roster_accounts",
-            description="Sign up selected linked Clash accounts for an open roster after confirmation.",
+            description="Sign up selected linked Clash accounts for an open roster.",
             parameters=schema,
         ), prepare_roster_signup, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(entity_fields=(
@@ -54,7 +54,7 @@ def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         RegisteredAgentTool(AgentToolDefinition(
             name="remove_roster_accounts",
-            description="Remove selected Clash accounts from an open roster after confirmation.",
+            description="Remove selected Clash accounts from an open roster.",
             parameters=schema,
         ), prepare_roster_removal, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(entity_fields=(
@@ -65,7 +65,7 @@ def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         RegisteredAgentTool(AgentToolDefinition(
             name="bulk_add_roster_accounts",
-            description="Add several linked Clash accounts to one open roster from player tags after confirmation.",
+            description="Add linked Clash accounts to an open roster by player tag.",
             parameters={"type": "object", "properties": {
                 "roster_id": {"type": "integer", "minimum": 1},
                 "player_tags": {"type": "array", "items": {"type": "string"},
@@ -80,7 +80,7 @@ def roster_account_management_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         RegisteredAgentTool(AgentToolDefinition(
             name="remove_roster_signup_rows",
-            description="Remove any selected current signup rows from a roster after confirmation.",
+            description="Remove any selected current signup rows from a roster.",
             parameters={"type": "object", "properties": {
                 "roster_id": {"type": "integer", "minimum": 1},
                 "accounts": {"type": "array", "items": {"type": "string"},

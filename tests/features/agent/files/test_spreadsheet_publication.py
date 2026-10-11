@@ -61,7 +61,7 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
         catalogue = capability_list({tool.definition.name: tool})
         self.assertIn("one spreadsheet per reply", catalogue)
         self.assertIn("every table as a separate sheet", tool.definition.description)
-        self.assertIn("Never paste or invent spreadsheet links", tool.definition.description)
+        self.assertIn("Never paste or invent spreadsheet links", catalogue)
         self.assertNotIn("Google Sheet", tool.definition.description)
 
     async def test_revisions_replace_workbooks_without_publishing_drafts(self):

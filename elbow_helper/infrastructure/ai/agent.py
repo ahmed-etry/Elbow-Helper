@@ -24,6 +24,7 @@ class AgentToolDefinition:
     name: str
     description: str
     parameters: Mapping[str, Any]
+    usage_note: str = ""
 
 
 @dataclass(frozen=True, slots=True)

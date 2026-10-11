@@ -39,7 +39,7 @@ def account_suggestion_tools() -> tuple[RegisteredAgentTool, ...]:
         RegisteredAgentTool(
             AgentToolDefinition(
                 name="link_account_suggestion",
-                description="Confirm or correct a pending account match after confirmation.",
+                description="Confirm or correct a pending account match.",
                 parameters=tag_schema,
             ),
             prepare_suggestion_link,
@@ -53,7 +53,7 @@ def account_suggestion_tools() -> tuple[RegisteredAgentTool, ...]:
         RegisteredAgentTool(
             AgentToolDefinition(
                 name="ignore_account_suggestion",
-                description="Permanently ignore a pending account match after confirmation.",
+                description="Permanently ignore a pending account match.",
                 parameters={
                     "type": "object",
                     "properties": {"player_tag": {"type": "string"}},

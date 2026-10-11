@@ -32,7 +32,7 @@ def role_connection_management_tools() -> tuple[RegisteredAgentTool, ...]:
     }, "additionalProperties": False}
     manage = RegisteredAgentTool(AgentToolDefinition(
         name="manage_role_connection",
-        description="Create or change a role connection by its desired rule after confirmation.",
+        description="Create or change a role connection by its desired rule.",
         parameters={"type": "object", "properties": {
             "operation": {"type": "string", "enum": ["create", "update"]},
             "connection_id": {"type": "string"},

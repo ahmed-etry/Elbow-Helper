@@ -27,11 +27,7 @@ def thread_tools() -> tuple[RegisteredAgentTool, ...]:
             AgentToolDefinition(
                 name="find_discord_threads",
                 description=(
-                    "Discover currently accessible active or archived threads under "
-                    "one exact Discord channel. Public and private discovery are "
-                    "separate; private results require current membership. This never "
-                    "joins or unarchives a thread, and incomplete private scans are "
-                    "reported honestly."
+                    "Find accessible active or archived threads under one channel."
                 ),
                 parameters={
                     "type": "object",

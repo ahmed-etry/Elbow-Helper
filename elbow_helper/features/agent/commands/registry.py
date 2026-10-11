@@ -22,7 +22,7 @@ class CommandAdapter:
     prepare: Callable[[Any, Mapping[str, Any]], Awaitable[Any]] | None = None
     action_class: ActionClass | None = None
     option_types: tuple[tuple[str, str], ...] = ()
-    agent_details: str = ""
+    usage_note: str = ""
     capability_name: str | None = None
 
     def __post_init__(self) -> None:
@@ -72,16 +72,8 @@ _TYPES = {
 
 def _option_schema(option: ParameterInfo) -> dict[str, Any]:
     schema: dict[str, Any] = {"type": _TYPES.get(option.type_name, "string")}
-    if option.description:
-        schema["description"] = option.description
     if option.choice_values:
         schema["enum"] = list(option.choice_values)
-        schema["description"] = (
-            (option.description + " " if option.description else "")
-            + "Choices: " + ", ".join(
-                f"{label} ({value})" for label, value in zip(option.choices, option.choice_values)
-            )
-        )
     return schema
 
 
@@ -138,8 +130,11 @@ def build_command_capabilities(
             raise ValueError(f"Command capability already exists: {name}")
         definition = AgentToolDefinition(
             name=name,
-            description=(f"{help_entry.summary} {adapter.agent_details} "
-                         + ("Private result." if adapter.delivery == "private" else "")).strip(),
+            description=help_entry.summary,
+            usage_note=" ".join(filter(None, (
+                adapter.usage_note,
+                "Private result." if adapter.delivery == "private" else "",
+            ))),
             parameters={
                 "type": "object",
                 "properties": {option.name: _option_schema(option) for option in options},

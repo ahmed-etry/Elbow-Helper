@@ -8,7 +8,7 @@ from .safety import DiscordActionRefused, resolve_channel
 
 def forum_tools():
     return (tool(
-        "create_discord_forum_post", "Create a forum post with existing tags after confirmation.",
+        "create_discord_forum_post", "Create a forum post with existing tags.",
         {"channel_id": ID, "title": text(100), "content": text(2000), "tag_ids": {
             "type": "array", "items": ID, "maxItems": 5, "uniqueItems": True,
         }}, ("channel_id", "title", "content"), prepare_post,

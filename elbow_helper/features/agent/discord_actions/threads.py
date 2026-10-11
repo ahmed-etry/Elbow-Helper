@@ -38,13 +38,17 @@ def discord_thread_tools() -> tuple[RegisteredAgentTool, ...]:
     return (
         RegisteredAgentTool(AgentToolDefinition(
             name="create_discord_thread",
-            description="Create a public or private thread in a channel. Forum threads need initial_message; for text channels, plan a later post for the opening message. Returns thread_id for later actions.",
+            description="Create a public or private Discord thread.",
             parameters={"type": "object", "properties": {
                 "parent_channel_id": {"type": "integer", "minimum": 1},
                 "name": {"type": "string", "minLength": 1, "maxLength": 100},
                 "private": {"type": "boolean"},
                 "initial_message": {"type": "string", "minLength": 1, "maxLength": 2000},
             }, "required": ["parent_channel_id", "name"], "additionalProperties": False},
+            usage_note=(
+                "Forum threads need initial_message; text threads need a later post. thread_id "
+                "identifies the new thread."
+            ),
         ), prepare_create_thread, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
                 entity_fields=(("parent_channel_id", "parent_discord_channel"),),
@@ -54,7 +58,7 @@ def discord_thread_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         RegisteredAgentTool(AgentToolDefinition(
             name="update_discord_thread",
-            description="Rename, archive, unarchive, lock or unlock a thread after confirmation.",
+            description="Rename, archive, unarchive, lock or unlock a thread.",
             parameters={"type": "object", "properties": {
                 "thread_id": {"type": "integer", "minimum": 1},
                 "operation": {"type": "string", "enum": list(THREAD_OPERATIONS)},
@@ -68,7 +72,7 @@ def discord_thread_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         RegisteredAgentTool(AgentToolDefinition(
             name="change_discord_thread_members",
-            description="Add or remove selected members of a thread after confirmation.",
+            description="Add or remove selected members of a thread.",
             parameters={"type": "object", "properties": {
                 "thread_id": {"type": "integer", "minimum": 1},
                 "operation": {"type": "string", "enum": list(MEMBER_OPERATIONS)},

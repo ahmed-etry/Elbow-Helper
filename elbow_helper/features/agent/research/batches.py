@@ -42,7 +42,7 @@ def research_batch_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
         (
             "start_discord_research_batch",
-            "Queue the same bounded Discord search or explicit-period history research across two or three currently accessible channels. Jobs remain independent, restart-persistent and permission-rechecked; creation is all-or-none and performs no Discord write.",
+            "Queue Discord search or period history jobs across two or three channels.",
             {
                 "channel_ids": {
                     "type": "array",
@@ -63,7 +63,7 @@ def research_batch_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         (
             "read_discord_research_jobs",
-            "Read grouped status manifests for up to three retained Discord research jobs after rechecking every current source permission. This returns no message content; use the individual reader for evidence pages.",
+            "Read grouped status manifests for up to three research jobs.",
             {
                 "job_ids": {
                     "type": "array",
@@ -78,7 +78,7 @@ def research_batch_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         (
             "list_discord_research_jobs",
-            "List bounded unexpired Discord research job identities and statuses in this conversation after rechecking each source. Inaccessible jobs are omitted, no message content is loaded, and listing does not extend six-hour idle expiry.",
+            "List accessible, unexpired research jobs in this conversation.",
             {
                 "limit": {
                     "type": "integer", "minimum": 1, "maximum": 25,
