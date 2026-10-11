@@ -62,18 +62,28 @@ def dm_recipients(context, identifiers):
     return members
 
 
-async def deliver_dms(context, identifiers, text, attachment=None):
+async def deliver_dms(context, identifiers, text, attachment=None, *,
+                      view_factory=None, recipient_allowed=None):
     delivery = context.state.direct_messages
     async with delivery.lock:
-        return await _deliver_dms(context, identifiers, text, attachment, delivery)
+        return await _deliver_dms(context, identifiers, text, attachment, delivery,
+                                 view_factory, recipient_allowed)
 
 
-async def _deliver_dms(context, identifiers, text, attachment, delivery):
+async def _deliver_dms(context, identifiers, text, attachment, delivery,
+                       view_factory, recipient_allowed):
+    if recipient_allowed is not None:
+        identifiers = [identifier for identifier in identifiers
+                       if await recipient_allowed(identifier)]
+        if not identifiers:
+            return []
     members = dm_recipients(context, identifiers)
     results = []
     for index, member in enumerate(members):
         if delivery.sent:
             await asyncio.sleep(1)
+        if recipient_allowed is not None and not await recipient_allowed(member.id):
+            continue
         delivery.sent = True
         dm_recipients(context, identifiers)
         asker = context.guild.get_member(context.member.id) or context.member
@@ -91,6 +101,9 @@ async def _deliver_dms(context, identifiers, text, attachment, delivery):
             parts = tuple((part, False) for part in chunk_response(text + footer))
         try:
             for part_index, (part, is_gif) in enumerate(parts):
+                if recipient_allowed is not None and not await recipient_allowed(member.id):
+                    break
+                view = view_factory(member.id) if view_factory is not None else None
                 file = (
                     discord.File(io.BytesIO(attachment.data), filename=attachment.filename)
                     if attachment and part_index == 0 else None
@@ -103,6 +116,7 @@ async def _deliver_dms(context, identifiers, text, attachment, delivery):
                             everyone=False, roles=False, users=True,
                         ),
                         **({"file": file} if file else {}),
+                        **({"view": view} if view is not None else {}),
                     )
                 finally:
                     if file:

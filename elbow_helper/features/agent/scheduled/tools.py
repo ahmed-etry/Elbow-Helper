@@ -423,6 +423,7 @@ async def list_standing(context: AgentRequestContext,
         "next_at": item.get("next_run_at") or item.get("next_check_at"),
         "end_utc": item["rule"].get("schedule", {}).get("end_utc"),
         "runs": item["rule"].get("schedule", {}).get("runs"),
+        "dm_member_ids": item["rule"].get("dm_member_ids", []),
         "runs_left": 0 if item["status"] == "completed" else remaining_runs(
             item["rule"].get("schedule", {}),
             next_at=item.get("next_run_at") or item.get("next_check_at"),

@@ -25,6 +25,7 @@ from ..wording import (
     ACTION_STANDING_AI_UNAVAILABLE, ACTION_STANDING_REMINDER_NAME, ACTION_STANDING_DM_PAUSED,
 )
 from .time_rules import next_occurrences, schedule_expired
+from .dm_controls import ReminderStopButton, reminder_stop_view
 from .requests import (
     ScheduledMessage,
     ContextFactory,
@@ -67,6 +68,7 @@ class ScheduledRunner:
         self._member_locks: dict[int, asyncio.Lock] = {}
 
     def start(self) -> None:
+        self.bot.add_dynamic_items(ReminderStopButton)
         task = asyncio.create_task(self._main())
         self._track(task)
 
@@ -258,15 +260,43 @@ class ScheduledRunner:
                 await require_evidence_access(context)
             if kind == "reminder":
                 content = rule["rule"]["text"]
-                if rule["rule"].get("dm_member_ids"):
-                    outcomes = await deliver_dms(context, rule["rule"]["dm_member_ids"], content)
-                    if not any(row["delivered"] for row in outcomes):
+                if "dm_member_ids" in rule["rule"]:
+                    async def recipient_allowed(member_id):
+                        current = await asyncio.to_thread(
+                            self.repository.standing, kind="reminder", identifier=identifier,
+                        )
+                        return (current is not None and current["status"] == "active"
+                                and member_id in current["rule"].get("dm_member_ids", ())
+                                and not schedule_expired(current["rule"]["schedule"],
+                                    datetime.now(timezone.utc),
+                                    current["rule"].get("runs_completed", 0)))
+
+                    def view_factory(member_id):
+                        if (member_id == member.id
+                                or rule["rule"]["schedule"]["kind"] == "once"):
+                            return None
+                        return reminder_stop_view(self.repository, identifier, member_id)
+
+                    outcomes = await deliver_dms(
+                        context, rule["rule"]["dm_member_ids"], content,
+                        view_factory=view_factory, recipient_allowed=recipient_allowed,
+                    )
+                    current = await asyncio.to_thread(
+                        self.repository.standing, kind="reminder", identifier=identifier,
+                    )
+                    stopped = (current is None or current["status"] != "active"
+                               or not current["rule"].get("dm_member_ids")
+                               or schedule_expired(current["rule"]["schedule"],
+                                   datetime.now(timezone.utc),
+                                   current["rule"].get("runs_completed", 0)))
+                    if not stopped and not any(row["delivered"] for row in outcomes):
                         raise ValueError("No reminder recipient received the message")
+                    result = ScheduledResult(completed=stopped)
                 else:
                     mentions = post_mentions(context, rule["rule"], content)
                     for part in chunk_response(content):
                         await channel.send(part, allowed_mentions=mentions)
-                result = ScheduledResult()
+                    result = ScheduledResult()
             elif kind == "request":
                 result = await run_saved_request(
                     context,
@@ -340,6 +370,8 @@ class ScheduledRunner:
             next_at = rule["next_run_at" if kind != "watcher" else "next_check_at"]
         if status is None:
             status = "active" if next_at is not None else "completed"
+        if status == "completed":
+            next_at = None
         if schedule_expired(rule["rule"]["schedule"], now,
                             rule["rule"].get("runs_completed", 0) + int(run_completed)):
             status, next_at = "completed", None

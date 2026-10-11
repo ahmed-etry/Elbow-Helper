@@ -283,7 +283,9 @@ class ScheduledStore:
         if status not in {"active", "paused", "cancelled", "completed"}:
             raise ValueError("Invalid standing rule status")
         table, key, due = self._standing_columns(kind)
-        parts = [f"{due}=?", "status=CASE WHEN status IN ('paused', 'cancelled') THEN status ELSE ? END",
+        parts = [f"{due}=CASE WHEN status='completed' THEN NULL ELSE ? END",
+                 "status=CASE WHEN status IN ('paused', 'cancelled', 'completed') "
+                 "THEN status ELSE ? END",
                  "lease_owner=NULL", "version=version+1", "updated_at=?"]
         current = time.time() if now is None else now
         values: list[Any] = [next_at, status, current]
@@ -332,6 +334,28 @@ class ScheduledStore:
                 (member_id,),
             ).fetchone()
         return row[0] if row is not None else None
+
+    def stop_reminder_recipient(self, *, identifier: str, member_id: int) -> bool:
+        with self.connect() as connection, sqlite_transaction(connection, immediate=True):
+            row = connection.execute(
+                "SELECT requester_id, rule_json FROM saved_requests WHERE request_id=?",
+                (identifier,),
+            ).fetchone()
+            if row is None or row["requester_id"] == member_id:
+                return False
+            rule = json.loads(row["rule_json"])
+            if (rule.get("kind") != "reminder" or rule["schedule"]["kind"] == "once"
+                    or member_id not in rule.get("dm_member_ids", ())):
+                return False
+            rule["dm_member_ids"].remove(member_id)
+            empty = not rule["dm_member_ids"]
+            connection.execute(
+                "UPDATE saved_requests SET rule_json=?, version=version+1, updated_at=?, "
+                "status=CASE WHEN ? THEN 'completed' ELSE status END, "
+                "next_run_at=CASE WHEN ? THEN NULL ELSE next_run_at END WHERE request_id=?",
+                (encode_record(rule), time.time(), empty, empty, identifier),
+            )
+            return True
 
     def set_member_timezone(self, member_id: int, name: str) -> None:
         with self.connect() as connection, sqlite_transaction(connection, immediate=True):
