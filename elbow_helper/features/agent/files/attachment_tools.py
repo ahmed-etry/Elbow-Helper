@@ -93,7 +93,7 @@ def attachment_tools() -> tuple[RegisteredAgentTool, ...]:
           "limit": {"type": "integer", "minimum": 1, "maximum": 25}},
          ("report_id",), read_xlsx_import),
         ("import_text_attachment",
-         "Import a listed TXT or Markdown attachment into a report.",
+         "Import a listed TXT, Markdown or HTML attachment into a report.",
          {"attachment_id": {"type": "integer", "minimum": 1}},
          ("attachment_id",), import_text_attachment),
         ("read_text_import",
@@ -138,6 +138,8 @@ async def list_supported_attachments(
                 kind = "text"
             elif filename.endswith((".md", ".markdown")):
                 kind = "markdown"
+            elif filename.endswith((".html", ".htm")):
+                kind = "html"
             else:
                 continue
             candidates.append({

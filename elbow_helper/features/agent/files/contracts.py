@@ -39,11 +39,12 @@ SUPPORTED_XLSX_CONTENT_TYPES = frozenset({
     "application/octet-stream", "application/zip",
 })
 SUPPORTED_TEXT_CONTENT_TYPES = frozenset({
-    "text/plain", "text/markdown", "text/x-markdown",
+    "text/plain", "text/markdown", "text/x-markdown", "text/html",
     "application/octet-stream",
 })
 TEXT_EXTENSIONS = {
     ".txt": "text", ".md": "markdown", ".markdown": "markdown",
+    ".html": "html", ".htm": "html",
 }
 REQUIRED_XLSX_PARTS = frozenset({"[content_types].xml", "xl/workbook.xml"})
 UNSUPPORTED_XLSX_PATH_PARTS = (

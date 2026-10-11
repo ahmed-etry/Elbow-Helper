@@ -17,6 +17,8 @@ from zipfile import BadZipFile, ZIP_DEFLATED, ZIP_STORED, ZipFile
 
 from openpyxl import load_workbook
 
+from .html_text import visible_html_text
+
 from .contracts import (
     MAX_CSV_BYTES,
     MAX_CSV_ROWS,
@@ -170,7 +172,7 @@ async def acquire_text_attachment(
     suffix = PurePosixPath(filename.casefold()).suffix
     if not safe_filename(filename) or suffix not in TEXT_EXTENSIONS:
         raise AttachmentValidationError(
-            "The attachment must have a safe .txt, .md, or .markdown filename"
+            "The attachment must have a safe .txt, .md, .markdown, .html, or .htm filename"
         )
     content_type = getattr(attachment, "content_type", None)
     if content_type:
@@ -200,7 +202,9 @@ async def acquire_text_attachment(
         raise AttachmentValidationError(
             "The downloaded attachment size does not match its metadata"
         )
-    text, line_count = await asyncio.to_thread(parse_text, data)
+    text, line_count = await asyncio.to_thread(
+        parse_text, data, html=TEXT_EXTENSIONS[suffix] == "html",
+    )
     now = imported_at or datetime.now(timezone.utc)
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
@@ -216,7 +220,7 @@ async def acquire_text_attachment(
     )
 
 
-def parse_text(data: bytes) -> tuple[str, int]:
+def parse_text(data: bytes, *, html: bool = False) -> tuple[str, int]:
     if not data or len(data) > MAX_TEXT_BYTES:
         raise AttachmentValidationError("Text is empty or exceeds the byte limit")
     if b"\x00" in data:
@@ -225,6 +229,8 @@ def parse_text(data: bytes) -> tuple[str, int]:
         text = data.decode("utf-8-sig")
     except UnicodeDecodeError as error:
         raise AttachmentValidationError("Text must use UTF-8 encoding") from error
+    if html:
+        text = visible_html_text(text)
     if not text or len(text) > MAX_TEXT_CHARACTERS:
         raise AttachmentValidationError(
             "Text is empty or exceeds the character limit"
