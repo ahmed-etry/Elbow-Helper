@@ -28,6 +28,7 @@ from .rounds import ModelRounds
 from .budgets import ContextBudget
 from .capability_contract import CapabilityBindError, compile_capability_call
 from ..models import RegisteredAgentTool
+from ..discord_actions.gif_ownership import consume_gifs
 from ..commands.registry import CommandCapability
 from typing import TYPE_CHECKING
 
@@ -384,6 +385,7 @@ class PlanRunner:
                 if "error" not in result[step["id"]]
                 and result[step["id"]].get("flags", {}).get("status") != "failed"
             })
+            consume_gifs(self.context.state, self.completed_steps, self.results)
             self.rounder.unpublished = plan_state.original
             return result
         except AgentAccessLost:
