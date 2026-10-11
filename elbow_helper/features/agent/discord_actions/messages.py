@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 from collections.abc import Mapping
+from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
@@ -13,7 +14,7 @@ import discord
 from ..plan.executor import resolve_arguments
 
 
-from ..access import require_evidence_access
+from ..access import can_access_message_channel, require_evidence_access
 from ..actions.contracts import (
     ActionClass, ChangePreview, PreparedAction, earlier_result_label,
 )
@@ -107,7 +108,10 @@ def post_mentions(context: Any, arguments: Mapping[str, Any], text: str) -> disc
     everyone = bool(arguments.get("ping_everyone", False))
     if everyone and "@everyone" not in text and "@here" not in text:
         raise DiscordActionRefused("The selected everyone ping is missing from the message.")
-    return discord.AllowedMentions(everyone=everyone, roles=roles, users=True)
+    return discord.AllowedMentions(
+        everyone=everyone, roles=roles, users=True,
+        replied_user=bool(arguments.get("ping_author", False)),
+    )
 
 
 def _ping_line(context: Any, arguments: Mapping[str, Any]) -> tuple[str, ...]:
@@ -125,6 +129,25 @@ async def _channel_for_post(context: AgentRequestContext, channel_id: int) -> An
     channel = await resolve_channel(context, channel_id)
     check_post_access(channel, context.member, context.guild.me)
     return channel
+
+
+async def _reply_target(context: AgentRequestContext, channel: Any, message_id: int) -> Any:
+    if not await can_access_message_channel(context, channel):
+        raise DiscordActionRefused("That message is unavailable.")
+    try:
+        message = await channel.fetch_message(message_id)
+    except (discord.NotFound, discord.Forbidden) as error:
+        raise DiscordActionRefused("That message is unavailable.") from error
+    if message.channel.id != channel.id:
+        raise DiscordActionRefused("That message is unavailable.")
+    return message
+
+
+def _reply_line(message: Any) -> str:
+    author = discord.utils.escape_markdown(message.author.display_name)
+    excerpt = " ".join(message.content.split())[:120] or ACTION_PREVIEW_BLANK
+    excerpt = discord.utils.escape_markdown(excerpt).replace("]", "\\]")
+    return f"Reply to {author}: [{excerpt}]({message.jump_url})"
 
 
 async def _find_nonce(channel: Any, nonce: int, bot_id: int) -> Any | None:
@@ -168,6 +191,14 @@ async def prepare_post(context: AgentRequestContext,
     try:
         channel = None if deferred else await _channel_for_post(context, channel_value)
         mentions = post_mentions(context, arguments, arguments["text"])
+        reply = None
+        if "reply_to" in arguments:
+            if channel is None:
+                raise DiscordActionRefused("That message is unavailable.")
+            reply = await _reply_target(context, channel, arguments["reply_to"])
+            reply = SimpleNamespace(
+                id=reply.id, author=reply.author, content=reply.content, jump_url=reply.jump_url,
+            )
     except DiscordActionRefused as error:
         return {"error": str(error)}
     try:
@@ -189,6 +220,7 @@ async def prepare_post(context: AgentRequestContext,
             context, channel_value if deferred else channel.id, chunk, mentions,
             attachment=attachment if index == 0 else None,
             ping_line=_ping_line(context, arguments),
+            **({"reply": reply} if not deferred and index == 0 else {}),
             **({"target_label": target_label} if deferred else {}),
         ))
     return {"status": "confirmation_required"}
@@ -229,13 +261,20 @@ def _deferred_post_part(context: AgentRequestContext, reference: Mapping[str, An
 
 def _post_part(context: AgentRequestContext, channel_id: int, text: str,
                mentions: discord.AllowedMentions, *, attachment: Any = None,
-               ping_line: tuple[str, ...] = ()) -> PreparedAction:
+               ping_line: tuple[str, ...] = (), reply: Any = None) -> PreparedAction:
     nonce = uuid4().int & ((1 << 63) - 1)
     sent_id: int | None = None
 
+    async def check_reply(channel: Any) -> None:
+        if reply is not None:
+            current = await _reply_target(context, channel, reply.id)
+            if current.author.id != reply.author.id or current.content != reply.content:
+                raise DiscordActionRefused("That message is unavailable.")
+
     async def recheck() -> bool:
         try:
-            await _channel_for_post(context, channel_id)
+            channel = await _channel_for_post(context, channel_id)
+            await check_reply(channel)
         except DiscordActionRefused:
             return False
         return True
@@ -250,7 +289,13 @@ def _post_part(context: AgentRequestContext, channel_id: int, text: str,
     async def run() -> ActionOutcome:
         nonlocal sent_id
         channel = await _channel_for_post(context, channel_id)
+        await check_reply(channel)
         options = {"allowed_mentions": mentions, "nonce": nonce}
+        if reply is not None:
+            options["reference"] = discord.MessageReference(
+                message_id=reply.id, channel_id=channel_id, guild_id=context.guild.id,
+                fail_if_not_exists=True,
+            )
         file = (discord.File(io.BytesIO(attachment.data), filename=attachment.filename)
                 if attachment is not None else None)
         try:
@@ -289,12 +334,15 @@ def _post_part(context: AgentRequestContext, channel_id: int, text: str,
     label = channel.mention if channel is not None else f"<#{channel_id}>"
     lines = (ACTION_POST_LINE.format(channel=label), *ping_line)
     details = tuple(text.splitlines())
+    if reply is not None:
+        details = (_reply_line(reply), *details)
     if attachment is not None:
         details += (ACTION_ATTACH_LINE.format(filename=attachment.filename),)
     return PreparedAction(
         "post_discord_message", {"channel_id": channel_id, "text": text, "nonce": nonce},
         ChangePreview(lines, recheck, summary=ACTION_POST_LABEL,
-                      details=details, result_label=label),
+                      details=details, result_label=label,
+                      detail_sources=frozenset({channel_id}) if reply is not None else frozenset()),
         run, verify=verify, permission="Send Messages",
     )
 
