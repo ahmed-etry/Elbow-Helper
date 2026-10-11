@@ -1193,7 +1193,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             _, model = await self._answer(session)
         commands.assert_not_called()
         self.assertIn(
-            "You cannot browse the internet, remember other conversations unless they are "
+            "You cannot browse the internet, remember other conversations unless "
             "supplied, or change anything", model.request["system_prompt"],
         )
 
@@ -1234,7 +1234,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             "name": "value", "description": "A required value.", "choices": [],
         }])
         self.assertIn(command_name, model.request["system_prompt"])
-        self.assertIn("Do the task yourself with your capabilities", model.request["system_prompt"])
+        self.assertIn("Do the task with your capabilities", model.request["system_prompt"])
         run.assert_not_awaited()
         complete = _plan([{**_step("command", {"value": 7}), "capability": command_name}])
         response, session, context, _ = await answer(complete, history=question)

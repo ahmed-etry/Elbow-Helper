@@ -7,16 +7,7 @@ from collections.abc import Mapping
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..models import AgentCapabilityEffect, RegisteredAgentTool
-from ..prompts import (
-    BEHAVIOR_RULES,
-    ACTION_CAPABILITY_PARAGRAPH,
-    READ_ONLY_CAPABILITY_PARAGRAPH,
-    RESPONSE_RULES,
-    DATA_RULES,
-    PLANNING_RULES,
-    ACTION_PLANNING_RULES,
-    STANDING_RULE_RULES,
-)
+from ..prompts import ACTION_SYSTEM_PROMPT, SYSTEM_PROMPT
 
 
 PLAN_TOOL_NAME = "submit_request_plan"
@@ -29,21 +20,7 @@ def system_instructions(
     data_guide: str = "",
     community_knowledge: str = "",
 ) -> str:
-    parts = [
-        BEHAVIOR_RULES,
-        ACTION_CAPABILITY_PARAGRAPH if actions_enabled else READ_ONLY_CAPABILITY_PARAGRAPH,
-        RESPONSE_RULES,
-        DATA_RULES,
-        PLANNING_RULES,
-    ]
-    if actions_enabled:
-        parts.extend((ACTION_PLANNING_RULES, STANDING_RULE_RULES))
-    parts.append(
-        "Return hints name record fields: {...} is an object, [...] is a list, ? marks a "
-        "conditional field, and * means keys depend on the query or source. Every result also "
-        "has flags:{status,truncated,limits?}. Use these fields to plan references and spreadsheet "
-        "columns before running the steps."
-    )
+    parts = [ACTION_SYSTEM_PROMPT if actions_enabled else SYSTEM_PROMPT]
     parts.append(f"<capabilities>\n{capability_list(registry)}\n</capabilities>")
     if data_guide:
         parts.append(f"<data_guide>\n{data_guide}\n</data_guide>")

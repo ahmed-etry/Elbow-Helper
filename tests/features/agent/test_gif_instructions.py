@@ -2,7 +2,7 @@
 
 import unittest
 
-from elbow_helper.features.agent.prompts import BEHAVIOR_RULES, DATA_RULES
+from elbow_helper.features.agent.prompts import PERSONA_RULES, DATA_RULES
 from elbow_helper.features.agent.engine.registry import build_agent_tools
 from elbow_helper.features.agent.plan.format import system_instructions
 
@@ -20,5 +20,5 @@ class GifInstructionTests(unittest.TestCase):
         self.assertEqual(instructions.count(policy), 1)
         self.assertNotIn("put it alone on the last line", instructions)
         self.assertNotIn("find_gif", DATA_RULES)
-        self.assertIn("Use emoji in text rarely, never decoratively", BEHAVIOR_RULES)
-        self.assertNotIn("reaction emoji", BEHAVIOR_RULES)
+        self.assertIn("Use emoji in text rarely, never decoratively", PERSONA_RULES)
+        self.assertNotIn("reaction emoji", PERSONA_RULES)
