@@ -74,6 +74,8 @@ async def advance_discord_research_job(
             page = await search_discord_messages(context, page_arguments)
             page_messages = page.get("matches")
         else:
+            if claimed.query:
+                page_arguments["text_filter"] = claimed.query
             page = await read_discord_channel_history(context, page_arguments)
             page_messages = page.get("messages")
         if "error" in page:

@@ -62,8 +62,9 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                     "additionalProperties": False,
                 },
                 usage_note=(
-                    "Omit query for author history. Respect scope; continue cursors for "
-                    "coverage. Dates are ISO 8601 UTC, after inclusive and before exclusive."
+                    "Search misses embeds; filter history for bot logs. Omit query for author "
+                    "history; respect scope, continue cursors. ISO dates: after inclusive, "
+                    "before exclusive."
                 ),
             ),
             search_discord_messages,
@@ -95,6 +96,7 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                             "type": "string", "maxLength": 40,
                         },
                         "author_id": {"type": "integer", "minimum": 1},
+                        "text_filter": {"type": "string", "minLength": 1, "maxLength": 1024},
                         "cursor": {
                             "type": "string", "maxLength": 64,
                         },
@@ -108,8 +110,8 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                     "additionalProperties": False,
                 },
                 usage_note=(
-                    "Review periods, search gaps and continue cursors. ISO 8601: after inclusive, "
-                    "before exclusive; default UTC."
+                    "text_filter matches full text (content, embeds, attachment names), "
+                    "case-insensitively. For bot logs, continue cursors. Dates default to UTC."
                 ),
             ),
             read_discord_channel_history,

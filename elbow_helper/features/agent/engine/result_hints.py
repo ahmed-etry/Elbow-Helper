@@ -47,7 +47,7 @@ CLASH_SUMMARIES = {
 HISTORY_COVERAGE = names(
     "requested_after,requested_before,window_after_message_id,snapshot_before_message_id,"
     "page_before_message_id,scanned_messages_in_window,returned_messages,next_cursor,"
-    "reached_requested_start,covers_currently_available_messages_only"
+    "reached_requested_start,covers_currently_available_messages_only,scanned_count,matched_count"
 )
 SEARCH_COVERAGE = names(
     "offset,requested_page_size,returned_indexed_matches,returned_accessible_matches,"

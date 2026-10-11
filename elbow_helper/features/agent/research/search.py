@@ -18,6 +18,7 @@ from .history import (
     request_message_boundary,
     searchable_channel_ids,
     jump_url,
+    search_message_text,
 )
 
 async def search_discord_messages(
@@ -170,7 +171,7 @@ async def _search_matches(context, arguments, scope, raw_results):
             "channel": getattr(channel, "name", str(result.channel_id)),
             "author_id": result.author_id, "author": result.author_name,
             "timestamp": result.timestamp,
-            "content": bounded_text(result.content, 1_600),
+            "content": bounded_text(search_message_text(result, context.guild), 1_600),
             "source": jump_url(context.guild.id, result.channel_id, result.message_id),
         })
         if len(matches) >= scope["limit"]:

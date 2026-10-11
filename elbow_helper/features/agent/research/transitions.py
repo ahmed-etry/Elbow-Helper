@@ -129,6 +129,20 @@ class ResearchTransitionStore:
                     >= previous["page_before_message_id"]
                 ):
                     raise ValueError("History checkpoint did not advance its window")
+            if claimed.kind == "history":
+                previous = current_job.coverage or {}
+                if current_job.pages_completed == 0 or "scanned_count" in previous:
+                    validated_coverage["scanned_count"] = (
+                        previous.get("scanned_count", 0)
+                        + validated_coverage["scanned_messages_in_window"]
+                    )
+                    validated_coverage["matched_count"] = (
+                        previous.get("matched_count", 0) + validated_coverage["returned_messages"]
+                    )
+                else:
+                    # Older multi-page jobs have no cumulative scan count to recover.
+                    validated_coverage.pop("scanned_count", None)
+                    validated_coverage.pop("matched_count", None)
             existing = list(current_job.messages)
             if (
                 claimed.kind == "history"

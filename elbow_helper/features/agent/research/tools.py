@@ -18,7 +18,7 @@ from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgent
 from .execution import advance_discord_research_job
 from .report import DiscordResearchReport
 from .history import (
-    HISTORY_PAGE_LIMIT, SEARCH_RESULT_LIMIT,
+    HISTORY_PAGE_LIMIT, SEARCH_RESULT_LIMIT, history_text_filter,
 )
 from .batches import research_batch_tools
 
@@ -101,6 +101,7 @@ def research_tools() -> tuple[RegisteredAgentTool, ...]:
                 "after": {"type": "string", "maxLength": 40},
                 "before": {"type": "string", "maxLength": 40},
                 "author_id": {"type": "integer", "minimum": 1},
+                "text_filter": {"type": "string", "minLength": 1, "maxLength": 1024},
                 "page_size": {
                     "type": "integer", "minimum": 1,
                     "maximum": HISTORY_PAGE_LIMIT,
@@ -161,6 +162,10 @@ def research_tools() -> tuple[RegisteredAgentTool, ...]:
             AgentToolDefinition(
                 name=name,
                 description=description,
+                usage_note=(
+                    "For bot logs, text_filter matches full message text case-insensitively."
+                    if name == "start_discord_history_job" else ""
+                ),
                 parameters={
                     "type": "object", "properties": properties,
                     "required": list(required), "additionalProperties": False,
@@ -253,6 +258,10 @@ async def start_discord_history_job(
         return {"error": "Durable research jobs are not available."}
     channel_id = arguments.get("channel_id")
     author_id = arguments.get("author_id")
+    try:
+        text_filter = history_text_filter(arguments.get("text_filter"))
+    except ValueError as error:
+        return {"error": str(error)}
     if type(channel_id) is not int or channel_id <= 0:
         return {"error": "A valid channel ID is required."}
     if author_id is not None and (type(author_id) is not int or author_id <= 0):
@@ -281,7 +290,8 @@ async def start_discord_history_job(
         conversation_root_id=context.conversation_root_id,
         requester_id=context.member.id,
         source_channel_id=channel_id,
-        query="",
+        # The existing query column stores the history filter for history jobs.
+        query=text_filter,
         author_id=author_id,
         after=after.isoformat(),
         before=before.isoformat(),

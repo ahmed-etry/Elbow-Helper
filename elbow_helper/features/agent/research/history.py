@@ -7,6 +7,7 @@ from typing import Mapping
 from datetime import datetime, timezone
 import hashlib
 import json
+from types import SimpleNamespace
 
 import discord
 
@@ -24,6 +25,24 @@ CONTEXT_MESSAGE_LIMIT = 50
 HISTORY_PAGE_LIMIT = 25
 INTERACTIVE_HISTORY_PAGE_LIMIT = 100
 HISTORY_MESSAGE_CHARACTER_BUDGET = 44_000
+HISTORY_FILTER_ERROR = "Use a non-empty text filter of up to 1,024 characters."
+
+
+def history_text_filter(value: Any) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, str) or not value.strip() or len(value) > 1024:
+        raise ValueError(HISTORY_FILTER_ERROR)
+    return value.strip()
+
+
+def search_message_text(message, guild) -> str:
+    return message_text(SimpleNamespace(
+        content=message.content,
+        embeds=[discord.Embed.from_dict(item) for item in message.embeds],
+        attachments=[SimpleNamespace(filename=name) for name in message.attachment_names],
+        guild=guild,
+    ))
 
 
 async def read_discord_channel_history(
@@ -32,6 +51,10 @@ async def read_discord_channel_history(
 ) -> Mapping[str, Any]:
     channel_id = positive_int(arguments.get("channel_id"))
     author_id = arguments.get("author_id")
+    try:
+        text_filter = history_text_filter(arguments.get("text_filter"))
+    except ValueError as error:
+        return {"error": str(error)}
     if channel_id is None or (
         author_id is not None and positive_int(author_id) is None
     ):
@@ -66,6 +89,8 @@ async def read_discord_channel_history(
         "after_id": after_id,
         "requested_before_id": requested_before_id,
     }
+    if text_filter:
+        base_scope["text_filter"] = text_filter.casefold()
     try:
         page_before_id, cursor_scope = _historycursor_state(
             arguments.get("cursor"), base_scope,
@@ -114,6 +139,10 @@ async def read_discord_channel_history(
         if author_id is not None and message.author_id != author_id:
             scanned_messages += 1
             continue
+        content = search_message_text(message, context.guild)
+        if text_filter and text_filter.casefold() not in content.casefold():
+            scanned_messages += 1
+            continue
         entry = {
             "message_id": message.message_id,
             "channel_id": channel_id,
@@ -121,7 +150,7 @@ async def read_discord_channel_history(
             "author_id": message.author_id,
             "author": message.author_name,
             "timestamp": message.timestamp,
-            "content": bounded_text(message.content, 1_600),
+            "content": bounded_text(content, 1_600),
             "source": jump_url(context.guild.id, channel_id, message.message_id),
         }
         entry_characters = len(json.dumps(entry, ensure_ascii=False, separators=(",", ":"))) + 1
@@ -147,6 +176,8 @@ async def read_discord_channel_history(
             "page_before_message_id": page.before_id,
             "scanned_messages_in_window": scanned_messages,
             "returned_messages": len(messages),
+            "scanned_count": scanned_messages,
+            "matched_count": len(messages),
             "next_cursor": (
                 _history_cursor(next_before_id, cursor_scope)
                 if next_before_id is not None else None

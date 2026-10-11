@@ -45,7 +45,7 @@ class ResearchJobDefinition:
             or self.kind not in JOB_KINDS
             or (
                 self.kind == "history"
-                and (self.query or self.after is None or self.before is None)
+                and (self.after is None or self.before is None)
             )
             or type(self.page_size) is not int
             or not 1 <= self.page_size <= (
@@ -167,8 +167,7 @@ def decode_research_job(row: sqlite3.Row) -> DiscordResearchJob:
         or (
             kind == "history"
             and (
-                bool(row["query"])
-                or row["after_value"] is None
+                row["after_value"] is None
                 or row["before_value"] is None
                 or total is not None
             )
@@ -355,7 +354,8 @@ def _validate_history_coverage(value: dict[str, Any]) -> dict[str, Any]:
         "retained_storage_limit_reached", "retained_message_limit_reached",
         "repeated_cursor_detected",
     }
-    if not required <= value.keys() or not value.keys() <= required | optional:
+    counts = {"scanned_count", "matched_count"}
+    if not required <= value.keys() or not value.keys() <= required | optional | counts:
         raise ValueError("Invalid research job history coverage")
     cursor = value["next_cursor"]
     requested_after = value["requested_after"]
@@ -387,6 +387,14 @@ def _validate_history_coverage(value: dict[str, Any]) -> dict[str, Any]:
     for key in optional:
         if key in value and type(value[key]) is not bool:
             raise ValueError("Invalid research job history coverage")
+    if counts & value.keys():
+        scanned_count, matched_count = value.get("scanned_count"), value.get("matched_count")
+        if (
+            type(scanned_count) is not int or type(matched_count) is not int
+            or not scanned <= scanned_count <= MAX_JOB_PAGES * MAX_JOB_PAGE_SIZE
+            or not returned <= matched_count <= scanned_count
+        ):
+            raise ValueError("Invalid research job history counts")
     return dict(value)
 
 

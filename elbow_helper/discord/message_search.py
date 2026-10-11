@@ -36,6 +36,8 @@ class DiscordSearchMessage:
     author_name: str
     content: str
     timestamp: str
+    embeds: tuple[dict[str, Any], ...] = ()
+    attachment_names: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -401,4 +403,14 @@ def _parse_search_message(raw: object) -> DiscordSearchMessage | None:
         author_name=author_name,
         content=content,
         timestamp=timestamp,
+        embeds=tuple(
+            item for item in (raw["embeds"] if isinstance(raw.get("embeds"), list) else ())
+            if isinstance(item, dict)
+        ),
+        attachment_names=tuple(
+            item["filename"] for item in (
+                raw["attachments"] if isinstance(raw.get("attachments"), list) else ()
+            )
+            if isinstance(item, dict) and isinstance(item.get("filename"), str)
+        ),
     )
