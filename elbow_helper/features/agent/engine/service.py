@@ -21,7 +21,6 @@ from ..access import (
     KNOWN_ACCESS_REQUIREMENTS,
     has_access_requirements,
 )
-from ..prompts import SYSTEM_PROMPT
 from ..conversation.context import compile_context, estimate_tokens
 from .registry import build_agent_tools
 from .usage import RequestUsage
@@ -141,6 +140,7 @@ class AgentService:
             tools=(definition,),
             conversation_history=conversation_history,
             report_filter_fields=filter_fields(registry),
+            system_prompt=system_prompt,
         )
         request_prompt = (
             compiled.prompt.replace(
@@ -162,8 +162,6 @@ class AgentService:
             context_window_tokens=getattr(session, "context_window_tokens", None),
             output_reserve=limits.INITIAL_MAX_OUTPUT_TOKENS,
             next_input_estimate=compiled.estimated_input_tokens
-            + estimate_tokens(system_prompt)
-            - estimate_tokens(SYSTEM_PROMPT)
             + estimate_tokens(request_prompt)
             - estimate_tokens(compiled.prompt),
             final_answer_reserve=limits.FINAL_MAX_OUTPUT_TOKENS,

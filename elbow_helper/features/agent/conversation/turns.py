@@ -107,7 +107,6 @@ class AgentTurnMixin:
                     "question": question, "answer": delivered_answer[:16_000],
                     "answer_truncated": len(delivered_answer) > 16_000,
                     "local_context": local_context[:12_000],
-                    "lookup_excerpts": [item[:5_000] for item in context.state.evidence[-4:]],
                     "report_ids": list(context.state.reports),
                 }, ensure_ascii=False),
                 source_channels=frozenset(context.state.source_channels).union(

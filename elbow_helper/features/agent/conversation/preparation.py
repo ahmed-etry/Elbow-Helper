@@ -8,6 +8,7 @@ from ..access import has_access_requirements
 from ..models import AgentRequestContext, AgentTurnState
 from ..reports.base import retain_report
 from .state import Conversation
+from .history_tool import _document
 from .context import CHECKPOINT_MIN_GROWTH, CHECKPOINT_MIN_OMITTED_TURNS, build_history_checkpoint
 
 LOGGER = logging.getLogger("elbow_helper.features.agent.cog")
@@ -62,7 +63,7 @@ class ConversationContextMixin:
         }
         # Compilation selects whole records using all request components. Keep
         # this authorized transcript available to alternate service callers.
-        return "\n".join(turn.text for turn in retained)
+        return "\n".join(_document(turn) for turn in retained)
 
     @staticmethod
     def _refresh_history_checkpoint(

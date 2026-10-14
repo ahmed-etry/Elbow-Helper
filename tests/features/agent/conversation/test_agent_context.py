@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from dataclasses import replace
 import json
 from types import SimpleNamespace
 import unittest
@@ -49,6 +50,71 @@ def _compile(context, **changes):
 
 
 class AgentContextTests(unittest.TestCase):
+
+    def test_complete_lookup_records_survive_followups_beyond_old_excerpt_limits(self):
+        records = tuple(json.dumps({"call_id": f"lookup-{index}", "tool": "synthetic_read",
+                                    "result": "x" * 6000 + f"Evidence tail {index}"})
+                        for index in range(7))
+        turn = _turn(1, channel=200)
+        turn = replace(turn, record=replace(turn.record, evidence=records),
+                       required_access=frozenset({"lead"}))
+        context = _context((turn,))
+        context.guild.name = "Synthetic server"
+        compiled = _compile(context)
+        carried = json.loads(compiled.prompt.split("<carried_evidence>\n")[1].split("\n</carried_evidence>")[0])
+        self.assertEqual([item["record"] for item in carried], list(records))
+        self.assertEqual(context.state.source_channels, {200})
+        self.assertEqual(context.state.required_access, {"lead"})
+        self.assertFalse(compiled.exceeds_target)
+
+    def test_evidence_budget_drops_oldest_whole_records_and_marks_recovery(self):
+        records = tuple(json.dumps({"call_id": f"lookup-{index}", "result": "x" * 800,
+                                    "marker": f"Synthetic result {index}"}) for index in range(5))
+        turn = _turn(1)
+        turn = replace(turn, record=replace(turn.record, evidence=records))
+        context = _context((turn,))
+        baseline = _compile(_context((replace(turn, record=replace(turn.record, evidence=())),)))
+        compiled = _compile(context, target_tokens=baseline.estimated_input_tokens + 1500)
+        carried = json.loads(compiled.prompt.split("<carried_evidence>\n")[1].split("\n</carried_evidence>")[0])
+        self.assertGreater(len(carried), 0)
+        self.assertLess(len(carried), len(records))
+        self.assertEqual([item["record"] for item in carried], list(records[-len(carried):]))
+        status = json.loads(compiled.prompt.split("<history_status>\n")[1].split("\n</history_status>")[0])
+        self.assertEqual(status["omitted_evidence_records"], len(records) - len(carried))
+        self.assertEqual(status["evidence_omitted_from_requests"], [1])
+        self.assertIn("Re-read", status["evidence_recovery"])
+        self.assertFalse(compiled.exceeds_target)
+        self.assertEqual(context.state.authorized_history[0].record.evidence, records)
+
+    def test_legacy_excerpts_are_replaced_by_full_retained_evidence(self):
+        turn = _turn(1)
+        turn = replace(turn, text=json.dumps({"answer": "Synthetic answer", "lookup_excerpts": ["cut record"]}),
+                       record=replace(turn.record, evidence=("Complete synthetic evidence",)))
+        context = _context((turn,))
+        compiled = _compile(context)
+        self.assertNotIn("lookup_excerpts", compiled.prompt)
+        self.assertNotIn("cut record", compiled.prompt)
+        self.assertIn("Complete synthetic evidence", compiled.prompt)
+
+    def test_complete_evidence_is_kept_when_it_exactly_fits_the_context_target(self):
+        for records in (("Synthetic evidence " + "x" * 1000,), ("Synthetic", "Evidence")):
+            with self.subTest(records=len(records)):
+                turn = _turn(1)
+                turn = replace(turn, record=replace(turn.record, evidence=records))
+                roomy = _compile(_context((turn,)))
+                exact = _compile(_context((turn,)), target_tokens=roomy.estimated_input_tokens)
+                carried = json.loads(exact.prompt.split("<carried_evidence>\n")[1].split("\n</carried_evidence>")[0])
+                self.assertEqual([item["record"] for item in carried], list(records))
+                self.assertFalse(exact.exceeds_target)
+
+    def test_actual_system_instructions_reduce_evidence_allowance(self):
+        turn = _turn(1)
+        turn = replace(turn, record=replace(turn.record, evidence=("x" * 10_000,)))
+        context = _context((turn,))
+        baseline = _compile(context, target_tokens=20_000)
+        larger = _compile(_context((turn,)), target_tokens=20_000, system_prompt="x" * 35_000)
+        self.assertGreater(larger.estimated_input_tokens - baseline.estimated_input_tokens, 0)
+        self.assertEqual(larger.prompt.split("<carried_evidence>\n")[1].split("\n</carried_evidence>")[0], "[]")
 
     def test_available_report_names_its_supported_filters(self):
         context = _context()

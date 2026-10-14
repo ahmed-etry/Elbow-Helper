@@ -51,12 +51,26 @@ def select_recent_turns(turns: Sequence[ConversationTurn], *, token_budget: int)
     selected = []
     remaining = token_budget
     for turn in reversed(turns):
-        cost = estimate_tokens(turn.text) + 1
+        cost = estimate_tokens(_history_text(turn)) + 1
         if cost > remaining:
             break
         selected.append(turn)
         remaining -= cost
     return tuple(reversed(selected))
+
+
+def _history_text(turn):
+    """Old snapshots' sliced excerpts cannot stand in for complete lookup records."""
+    if "lookup_excerpts" not in turn.text:
+        return turn.text
+    try:
+        payload = json.loads(turn.text)
+    except ValueError:
+        return turn.text
+    if not isinstance(payload, dict) or "lookup_excerpts" not in payload:
+        return turn.text
+    del payload["lookup_excerpts"]
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def build_history_checkpoint(
@@ -134,6 +148,7 @@ def compile_context(
     tools: Sequence[AgentToolDefinition], conversation_history: str = "",
     target_tokens: int = INPUT_TARGET_TOKENS,
     report_filter_fields: Mapping[str, Sequence[str]] | None = None,
+    system_prompt: str = SYSTEM_PROMPT,
 ) -> CompiledContext:
     """Preserve mandatory input and choose whole authorized recent records.
 
@@ -161,9 +176,20 @@ def compile_context(
     for instruction in context.state.authorized_instructions:
         context.state.source_channels.add(instruction.source_channel_id)
 
+    evidence = [(turn, encoded) for turn in candidates or () if turn.record is not None
+                for encoded in turn.record.evidence]
+    carried = []
+
     def render(history: str, included: int, omitted: int, checkpoint_text: str = "") -> str:
         status = {"included_turns": included, "older_retained_turns_available": omitted,
                   "history_may_be_incomplete": True}
+        dropped = len(evidence) - len(carried)
+        if evidence:
+            status.update(included_evidence_records=len(carried), omitted_evidence_records=dropped)
+        if dropped:
+            status["evidence_omitted_from_requests"] = list(dict.fromkeys(
+                turn.record.request_message_id for turn, _ in evidence[:dropped]))
+            status["evidence_recovery"] = "Whole lookup records were omitted. Re-read them before making claims."
         return build_request_prompt(
             question=question, local_context=local_context, guild_name=context.guild.name,
             asker_name=context.member.display_name, asker_id=context.member.id,
@@ -172,6 +198,7 @@ def compile_context(
             task_instructions=instructions, history_checkpoint=checkpoint_text,
             agent_identity=asdict(own_identity) if own_identity is not None else None,
             application_owner=asdict(owner) if owner is not None else None,
+            carried_evidence=carried,
         )
 
     selected = []
@@ -181,7 +208,7 @@ def compile_context(
         omitted = 0
     else:
         prompt = render("", 0, len(candidates))
-        base = estimate_tokens(SYSTEM_PROMPT) + estimate_tokens(tool_json) + REQUEST_OVERHEAD_ESTIMATE
+        base = estimate_tokens(system_prompt) + estimate_tokens(tool_json) + REQUEST_OVERHEAD_ESTIMATE
         remaining = max(0, target_tokens - base - estimate_tokens(prompt))
         selected = list(select_recent_turns(candidates, token_budget=remaining))
         omitted = len(candidates) - len(selected)
@@ -189,13 +216,13 @@ def compile_context(
         if checkpoint is not None and checkpoint.covered_turn_count <= omitted:
             checkpoint_text = checkpoint.summary
         prompt = render(
-            "\n".join(turn.text for turn in selected), len(selected), omitted,
+            "\n".join(_history_text(turn) for turn in selected), len(selected), omitted,
             checkpoint_text,
         )
         if checkpoint_text and base + estimate_tokens(prompt) > target_tokens:
             checkpoint_text = ""
             prompt = render(
-                "\n".join(turn.text for turn in selected), len(selected), omitted,
+                "\n".join(_history_text(turn) for turn in selected), len(selected), omitted,
                 checkpoint_text,
             )
         elif checkpoint_text:
@@ -206,11 +233,51 @@ def compile_context(
         for turn in selected:
             context.state.source_channels.update(turn.source_channels)
             context.state.required_access.update(turn.required_access)
-    estimated = (estimate_tokens(SYSTEM_PROMPT) + estimate_tokens(tool_json)
+        remaining = max(0, target_tokens - base - estimate_tokens(prompt) - 128)
+        for turn, encoded in reversed(evidence):
+            item = {"request_message_id": turn.record.request_message_id, "record": encoded}
+            cost = estimate_tokens(json.dumps(item, ensure_ascii=False, separators=(",", ":"))) + 1
+            if cost > remaining:
+                break
+            carried.insert(0, item)
+            remaining -= cost
+        prompt = render("\n".join(_history_text(turn) for turn in selected),
+                        len(selected), omitted, checkpoint_text)
+        if len(carried) < len(evidence):
+            partial = list(carried)
+            carried[:] = [{"request_message_id": turn.record.request_message_id, "record": encoded}
+                          for turn, encoded in evidence]
+            complete = render("\n".join(_history_text(turn) for turn in selected),
+                              len(selected), omitted, checkpoint_text)
+            if base + estimate_tokens(complete) <= target_tokens:
+                prompt = complete
+            else:
+                carried[:] = partial
+        # The first pass reserves framing space. Reclaim it using the rendered
+        # prompt so a complete record that fits at the boundary is not omitted.
+        while len(carried) < len(evidence):
+            turn, encoded = evidence[len(evidence) - len(carried) - 1]
+            carried.insert(0, {"request_message_id": turn.record.request_message_id, "record": encoded})
+            candidate = render("\n".join(_history_text(turn) for turn in selected),
+                               len(selected), omitted, checkpoint_text)
+            if base + estimate_tokens(candidate) > target_tokens:
+                carried.pop(0)
+                break
+            prompt = candidate
+        while carried and base + estimate_tokens(prompt) > target_tokens:
+            carried.pop(0)
+            prompt = render("\n".join(_history_text(turn) for turn in selected),
+                            len(selected), omitted, checkpoint_text)
+        for turn, _ in evidence[len(evidence) - len(carried):] if carried else ():
+            context.state.source_channels.update(turn.source_channels)
+            context.state.required_access.update(turn.required_access)
+        context.state.history_status.update(included_evidence_records=len(carried),
+                                           omitted_evidence_records=len(evidence) - len(carried))
+    estimated = (estimate_tokens(system_prompt) + estimate_tokens(tool_json)
                  + estimate_tokens(prompt) + REQUEST_OVERHEAD_ESTIMATE)
     return CompiledContext(
         prompt=prompt, estimated_input_tokens=estimated,
-        input_content_bytes=len((SYSTEM_PROMPT + tool_json + prompt).encode("utf-8")),
+        input_content_bytes=len((system_prompt + tool_json + prompt).encode("utf-8")),
         selected_request_ids=tuple(turn.record.request_message_id for turn in selected if turn.record),
         omitted_turns=omitted, exceeds_target=estimated > target_tokens,
     )

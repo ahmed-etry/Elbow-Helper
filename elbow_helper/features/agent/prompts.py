@@ -216,6 +216,7 @@ def build_request_prompt(
     agent_identity: Mapping[str, Any] | None = None,
     application_owner: Mapping[str, Any] | None = None,
     image_labels: Sequence[str] = (),
+    carried_evidence: Sequence[Mapping[str, Any]] = (),
 ) -> str:
     """Build one untrusted request block around trusted runtime metadata."""
 
@@ -248,6 +249,10 @@ def build_request_prompt(
 <history_status>
 {json.dumps(dict(history_status or {}), sort_keys=True)}
 </history_status>
+
+<carried_evidence>
+{json.dumps(list(carried_evidence), ensure_ascii=False, separators=(",", ":"))}
+</carried_evidence>
 
 <available_reports>
 {json.dumps(list(report_manifest), ensure_ascii=False, sort_keys=True)}
