@@ -30,7 +30,7 @@ class RequestPromptTests(unittest.TestCase):
             "never send members to commands or panels for things you can do",
             "only after the asker confirms their preview",
             "never say a change finished before its outcome is reported",
-            "Edit or delete only messages this agent posted",
+            "Edit only messages this agent posted",
         ):
             with self.subTest(rule=rule):
                 self.assertIn(rule, ACTION_SYSTEM_PROMPT)

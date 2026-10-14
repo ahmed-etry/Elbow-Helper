@@ -7,7 +7,7 @@ import discord
 from ..actions.values import display_value
 from .management import ID, complete, guard, queue, state_action, tool
 from .message_cleanup import (
-    MESSAGE_IDS, delete_selection, message_lines, message_state, selected_messages,
+    MESSAGE_IDS, delete_selection, message_lines, message_links, message_state, selected_messages,
 )
 from .safety import DiscordActionRefused, resolve_channel
 
@@ -55,20 +55,21 @@ async def prepare_move(context, arguments):
     target = await move_access(context, source, arguments["target_channel_id"], messages)
     before = [message_state(message) for message in messages]
     previous = {row["id"]: row for row in before}
+    loaded = None
 
     async def load():
+        nonlocal loaded
         current, selected, missing = await selected_messages(
             context, source.id, arguments["message_ids"], allow_missing=True,
         )
         await move_access(context, current, target.id, selected)
+        loaded = (current, selected)
         states = {message.id: message_state(message) for message in selected}
         states.update({identifier: previous[identifier] for identifier in missing})
         return [states[identifier] for identifier in arguments["message_ids"]]
 
     async def apply(reason):
-        current, selected, _ = await selected_messages(
-            context, source.id, arguments["message_ids"], allow_missing=True,
-        )
+        current, selected = loaded
         copied, reposted, posted_ids = [], set(), []
         for message in selected:
             files = []
@@ -109,10 +110,10 @@ async def prepare_move(context, arguments):
         failed = [identifier for identifier in arguments["message_ids"] if identifier not in moved]
         retained = [identifier for identifier in failed if identifier in reposted]
         lines = []
-        for label, identifiers in (("Moved", moved), ("Not moved", failed),
+        for label, identifiers in (("Not moved", failed),
                                    ("Reposted but not deleted", retained)):
             if identifiers:
-                lines.append(f"{label}: {', '.join(map(str, identifiers))}")
+                lines.append(f"{label}: {message_links(context, source.id, identifiers)}")
         result = {"moved_ids": moved, "not_moved_ids": failed,
                   "reposted_but_not_deleted_ids": retained, "posted_message_ids": posted_ids}
         return complete(result, text="\n".join(lines), result=result)

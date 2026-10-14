@@ -1,4 +1,4 @@
-"""Synthetic message moves preserve content and attachments and report each selected ID."""
+"""Synthetic message moves preserve content and attachments and link unfinished messages."""
 
 from io import BytesIO
 import unittest
@@ -59,6 +59,9 @@ class MessageMoveTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(contents[0].endswith(messages[1].content))
         self.assertEqual(files, [b"synthetic"])
         self.assertEqual(result.result["moved_ids"], [1, 2])
+        self.assertEqual(result.text, "")
+        self.assertEqual(source.history.call_count, 2)
+        source.fetch_message.assert_not_awaited()
         self.assertEqual(source.delete_messages.await_args.args[0], list(messages.values()))
 
     async def test_a_failed_repost_preserves_that_original_and_reports_partial_results(self):
@@ -69,7 +72,7 @@ class MessageMoveTests(unittest.IsolatedAsyncioTestCase):
         await prepare_move(context, arguments)
         result = await context.state.proposed_changes[0].run()
         self.assertEqual(result.result["moved_ids"], [1])
-        self.assertIn("Not moved: 2", result.text)
+        self.assertEqual("Not moved: " + messages[2].jump_url, result.text)
         self.assertEqual(source.delete_messages.await_args.args[0], [messages[1]])
         self.assertEqual(target.send.await_count, 2)
 
@@ -81,7 +84,8 @@ class MessageMoveTests(unittest.IsolatedAsyncioTestCase):
         await prepare_move(context, arguments)
         result = await context.state.proposed_changes[0].run()
         self.assertEqual(result.result["moved_ids"], [])
-        self.assertIn("Reposted but not deleted: 1, 2", result.text)
+        links = ", ".join(f"https://discord.com/channels/1/200/{identifier}" for identifier in (1, 2))
+        self.assertEqual(result.text, f"Not moved: {links}\nReposted but not deleted: {links}")
 
     async def test_source_target_permissions_and_same_channel_refuse_before_preview(self):
         for failure in ("source", "target", "same"):

@@ -5,7 +5,6 @@ import logging
 
 import discord
 
-from ..actions.values import display_value
 from .management import ID, complete, guard, queue, state_action, tool
 from .safety import DiscordActionRefused, resolve_channel
 
@@ -34,10 +33,16 @@ def message_lines(message):
     excerpt = " ".join(message.content.split())[:120] or "No text"
     pinned = " (pinned)" if message.pinned else ""
     author = discord.utils.escape_markdown(message.author.display_name)
-    lines = [f"{message.jump_url}: {author}, {display_value(message.created_at)}: {excerpt}{pinned}"]
+    timestamp = int(message.created_at.timestamp())
+    lines = [f"[{author}]({message.jump_url}), <t:{timestamp}:R>: {excerpt}{pinned}"]
     if message.attachments:
         lines.append("Attachments: " + ", ".join(item.filename for item in message.attachments))
     return lines
+
+
+def message_links(context, channel_id, identifiers):
+    return ", ".join(f"https://discord.com/channels/{context.guild.id}/{channel_id}/{identifier}"
+                     for identifier in identifiers)
 
 
 async def selected_messages(context, channel_id, message_ids, *, allow_missing=False):
@@ -46,8 +51,24 @@ async def selected_messages(context, channel_id, message_ids, *, allow_missing=F
         raise DiscordActionRefused("Choose between 1 and 100 unique messages from one channel.")
     channel = await resolve_channel(context, channel_id)
     guard(context, "view_channel", "read_message_history", channel=channel)
+    found = {}
+    covered_after = None
+    if len(message_ids) > 1:
+        # One bounded Discord page covers nearby selections, including absent IDs.
+        page = [message async for message in channel.history(
+            limit=100, after=discord.Object(min(message_ids) - 1),
+            before=discord.Object(max(message_ids) + 1), oldest_first=False,
+        )]
+        found = {message.id: message for message in page}
+        covered_after = min(found) if len(page) == 100 else min(message_ids)
     messages, missing = [], []
     for identifier in message_ids:
+        if identifier in found:
+            messages.append(found[identifier])
+            continue
+        if covered_after is not None and identifier >= covered_after:
+            missing.append(identifier)
+            continue
         try:
             message = await channel.fetch_message(identifier)
         except discord.NotFound:
@@ -55,8 +76,8 @@ async def selected_messages(context, channel_id, message_ids, *, allow_missing=F
             continue
         messages.append(message)
     if missing and not allow_missing:
-        ids = ", ".join(map(str, missing))
-        raise DiscordActionRefused(f"These messages are unavailable in {channel.mention}: {ids}.")
+        links = message_links(context, channel.id, missing)
+        raise DiscordActionRefused(f"These messages are unavailable in {channel.mention}: {links}.")
     return channel, messages, missing
 
 
@@ -98,27 +119,26 @@ async def prepare_cleanup(context, arguments):
     cleanup_access(context, channel, messages)
     before = [message_state(message) for message in messages]
     previous = {message["id"]: message for message in before}
+    loaded = None
 
     async def load():
+        nonlocal loaded
         current, selected, missing = await selected_messages(
             context, channel.id, arguments["message_ids"], allow_missing=True,
         )
         cleanup_access(context, current, selected)
+        loaded = (current, selected, missing)
         states = {message.id: message_state(message) for message in selected}
         states.update({identifier: previous[identifier] for identifier in missing})
         return [states[identifier] for identifier in arguments["message_ids"]]
 
     async def apply(reason):
-        current, selected, _ = await selected_messages(
-            context, channel.id, arguments["message_ids"], allow_missing=True,
-        )
+        current, selected, missing = loaded
         deleted = await delete_selection(context, current, selected, reason)
+        deleted.extend(missing)
         failed = [identifier for identifier in arguments["message_ids"] if identifier not in deleted]
-        lines = []
-        for label, identifiers in (("Deleted", deleted), ("Not deleted", failed)):
-            if identifiers:
-                lines.append(f"{label}: {', '.join(map(str, identifiers))}")
-        return complete({"deleted": deleted}, text="\n".join(lines),
+        text = f"Not deleted: {message_links(context, channel.id, failed)}" if failed else ""
+        return complete({"deleted": deleted}, text=text,
                         result={"deleted_ids": deleted, "not_deleted_ids": failed})
 
     return await queue(context, state_action(

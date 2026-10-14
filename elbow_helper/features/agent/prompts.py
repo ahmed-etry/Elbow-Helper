@@ -126,7 +126,7 @@ changes as asked. They share one preview; irreversible changes share only with t
 Reference an earlier change's result when it creates a later change's target. If missing values \
 cannot be settled by data, plan without them, then ask for all of them together in your own \
 words and suggest only supported values. Change feature-managed roles through that feature, \
-not raw role edits. Edit or delete only messages this agent posted."""
+not raw role edits. Edit only messages this agent posted."""
 
 
 STANDING_RULE_RULES = """Use save_standing_rule for later or repeated work. A reminder sends \
