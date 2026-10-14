@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -156,15 +157,19 @@ class BattleParsingTests(unittest.TestCase):
         self.assertEqual([record["battle_at"][:10] for record in records], ["2026-09-01"] * 2)
 
     def test_poll_interval_uses_returned_log_count_and_all_modes_turnover(self):
-        short, _ = parse_log([battle(minute=value, mode="HOME_VILLAGE") for value in range(4)], observation(), lambda *_: None)
-        long, _ = parse_log([battle(minute=value, mode="HOME_VILLAGE") for value in range(8)], observation(), lambda *_: None)
-        self.assertEqual(short["poll_interval_seconds"], 60)
-        self.assertEqual(long["poll_interval_seconds"], 120)
+        short, _ = parse_log([battle(minute=value * 10, mode="HOME_VILLAGE") for value in range(4)], observation(), lambda *_: None)
+        long, _ = parse_log([battle(minute=value * 10, mode="HOME_VILLAGE") for value in range(8)], observation(), lambda *_: None)
+        self.assertEqual(short["poll_interval_seconds"], 600)
+        self.assertEqual(long["poll_interval_seconds"], 1200)
         self.assertEqual(short["total_entries"], 4)
         burst, _ = parse_log([battle(minute=0), battle(minute=0)], observation(), lambda *_: None)
-        self.assertEqual(burst["poll_interval_seconds"], 15)
-        slow, _ = parse_log([battle(minute=0), battle(minute=60)], observation(), lambda *_: None)
-        self.assertEqual(slow["poll_interval_seconds"], 300)
+        self.assertEqual(burst["poll_interval_seconds"], 300)
+        slow, _ = parse_log([battle(minute=0), battle(minute=300)], observation(), lambda *_: None)
+        self.assertEqual(slow["poll_interval_seconds"], 3600)
+        for items in ([], [battle()], [dict(battle(), battleTimestamp=None)]):
+            with self.subTest(items=items):
+                poll, _ = parse_log(items, observation(), lambda *_: None)
+                self.assertEqual(poll["poll_interval_seconds"], 300)
 
 
 class RankedCollectorTests(unittest.IsolatedAsyncioTestCase):
@@ -172,14 +177,47 @@ class RankedCollectorTests(unittest.IsolatedAsyncioTestCase):
         self.temp = TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.client = SimpleNamespace(configured=True, get=AsyncMock())
-        links = SimpleNamespace(get_all_links=lambda: {
-            "#P0": {"discord_user_id": 42}, "#P2": {"discord_user_id": 43}})
+        self.links = {"#P0": {"discord_user_id": 42}, "#P2": {"discord_user_id": 43}}
+        links = SimpleNamespace(get_all_links=lambda: self.links)
         self.bot = SimpleNamespace(clash_client=self.client, paths=SimpleNamespace(data_root=Path(self.temp.name)))
         self.cog = RankedStats(self.bot, links)
         self.cog.store.initialize()
+        self.seconds = 0
         clock = patch("elbow_helper.features.ranked_stats.cog.datetime")
         self.addCleanup(clock.stop)
-        clock.start().now.return_value = datetime(2026, 9, 1, tzinfo=timezone.utc)
+        clock.start().now.side_effect = lambda *_: datetime(2026, 9, 1, tzinfo=timezone.utc) + timedelta(seconds=self.seconds)
+        timer = patch("elbow_helper.features.ranked_stats.cog.monotonic", side_effect=lambda: self.seconds)
+        self.addCleanup(timer.stop)
+        timer.start()
+        real_sleep = asyncio.sleep
+
+        async def sleep(delay):
+            self.seconds += delay
+            await real_sleep(0)
+
+        sleeper = patch("elbow_helper.features.ranked_stats.cog.asyncio.sleep", side_effect=sleep)
+        self.addCleanup(sleeper.stop)
+        sleeper.start()
+
+    def response(self, path, **kwargs):
+        if path.endswith("/battlelog"):
+            spacing = 10 if "P0/" in path else 40
+            return SimpleNamespace(ok=True, status=200,
+                payload={"items": [battle(minute=0), battle(minute=spacing)]})
+        return SimpleNamespace(ok=True, status=200, payload={
+            "tag": path.rsplit("/", 1)[-1].replace("%23", "#"), "name": "Synthetic account",
+            "clan": {"tag": "#Q0"}, "trophies": 100, "bestTrophies": 100,
+            "attackWins": 0, "defenseWins": 0, "league": {"id": 1, "name": "Synthetic league"},
+            "leagueTier": {"id": 1, "name": "Synthetic league"},
+            "legendStatistics": {"legendTrophies": 0, **{
+                season: {"id": "sample", "rank": 1, "trophies": 100}
+                for season in ("currentSeason", "previousSeason", "bestSeason")}}})
+
+    async def collect_at(self, seconds):
+        self.seconds = seconds
+        self.client.get.reset_mock()
+        await self.cog.collect_once()
+        return [call.args[0] for call in self.client.get.await_args_list]
 
     async def test_all_linked_accounts_use_the_owned_client_and_partial_fields_are_logged(self):
         profile = SimpleNamespace(ok=True, status=200,
@@ -201,17 +239,153 @@ class RankedCollectorTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(row["ranking"]["leagueTier"]["name"], "Synthetic league")
             self.assertEqual(row["attacks_used"], 1)
 
-    async def test_polling_adapts_to_the_shortest_returned_log_window(self):
+    async def test_accounts_follow_their_own_adaptive_deadlines(self):
+        self.client.get.side_effect = self.response
+        self.assertEqual(len(await self.collect_at(0)), 4)
+        self.assertEqual(await self.collect_at(299), [])
+        for seconds in (300, 600, 900):
+            self.assertEqual(await self.collect_at(seconds), ["/players/%23P0/battlelog"])
+        self.assertCountEqual(await self.collect_at(1200),
+                              ["/players/%23P0/battlelog", "/players/%23P2/battlelog"])
+
+    async def test_profiles_are_hourly_and_can_be_due_without_battle_logs(self):
+        self.client.get.side_effect = self.response
+        await self.collect_at(0)
+        self.assertTrue(all(path.endswith("/battlelog") for path in await self.collect_at(3599)))
+        self.assertCountEqual(await self.collect_at(3600), ["/players/%23P0", "/players/%23P2"])
+        self.assertEqual(await self.collect_at(3601), [])
+        rows, _ = self.cog.store.read_window(after="2000", before="2100", selector="member_ids", values=(42, 43))
+        self.assertEqual(len(rows), 4)
+        self.assertTrue(all(rows[index + 1]["observed_at"] == stamp(minute=60)
+                            for index in (0, 2)))
+
+    async def test_battle_only_polls_reuse_profile_metadata_without_new_snapshots(self):
+        self.client.get.side_effect = self.response
+        await self.collect_at(0)
+        self.client.get.side_effect = lambda *_args, **_kwargs: SimpleNamespace(
+            ok=True, status=200, payload={"items": [battle(minute=5)]})
+        self.assertEqual(await self.collect_at(300), ["/players/%23P0/battlelog"])
+        result = self.cog.queries.window(after=stamp(), before=stamp(4), selector="clan_tags", values=("#Q0",))
+        row = next(row for row in result["accounts"] if row["player_tag"] == "#P0")
+        self.assertEqual(row["sample_count"], 1)
+        self.assertEqual(row["battle_records"], 3)
+        self.assertEqual(row["player_name"], "Synthetic account")
+
+    async def test_restart_restores_hourly_and_battle_cooldowns(self):
+        self.client.get.side_effect = self.response
+        await self.collect_at(0)
+        self.cog = RankedStats(self.bot, self.cog.account_links)
+        self.assertEqual(await self.collect_at(299), [])
+        self.assertEqual(await self.collect_at(300), ["/players/%23P0/battlelog"])
+        self.assertCountEqual(await self.collect_at(3600), ["/players/%23P0", "/players/%23P2",
+            "/players/%23P0/battlelog", "/players/%23P2/battlelog"])
+
+    async def test_restored_legacy_intervals_are_clamped_to_new_bounds(self):
+        for tag, interval in (("#P0", 15), ("#P2", 7200)):
+            row = observation(tag)
+            poll, _ = parse_log([], row, lambda *_: None)
+            poll["poll_interval_seconds"] = interval
+            self.cog.store.append([row], polls=[poll])
+        self.client.get.side_effect = self.response
+        self.assertEqual(await self.collect_at(299), [])
+        self.assertEqual(await self.collect_at(300), ["/players/%23P0/battlelog"])
+        self.assertCountEqual(await self.collect_at(3600), ["/players/%23P0", "/players/%23P2",
+            "/players/%23P0/battlelog", "/players/%23P2/battlelog"])
+
+    async def test_adaptive_changes_and_failed_logs_keep_account_deadlines_independent(self):
+        self.client.get.side_effect = self.response
+        await self.collect_at(0)
+        self.client.get.side_effect = lambda *_args, **_kwargs: SimpleNamespace(
+            ok=True, status=200, payload={"items": [battle(minute=0), battle(minute=40)]})
+        self.assertEqual(await self.collect_at(300), ["/players/%23P0/battlelog"])
+        self.assertEqual(await self.collect_at(600), [])
+        self.assertEqual(await self.collect_at(1200), ["/players/%23P2/battlelog"])
+        self.client.get.side_effect = lambda *_args, **_kwargs: SimpleNamespace(
+            ok=False, status=503, payload=None)
+        with self.assertLogs("elbow_helper.features.ranked_stats.cog"):
+            self.assertEqual(await self.collect_at(1500), ["/players/%23P0/battlelog"])
+        self.assertEqual(await self.collect_at(1800), [])
+        with self.assertLogs("elbow_helper.features.ranked_stats.cog"):
+            self.assertEqual(await self.collect_at(2400), ["/players/%23P2/battlelog"])
+            self.assertEqual(await self.collect_at(2700), ["/players/%23P0/battlelog"])
+
+    async def test_failed_profiles_are_not_retried_by_more_frequent_battle_polls(self):
         def response(path, **kwargs):
-            if path.endswith("/battlelog"):
-                count = 4 if "P0/" in path else 8
-                return SimpleNamespace(ok=True, status=200, payload={"items": [battle(minute=value) for value in range(count)]})
-            return SimpleNamespace(ok=True, status=200, payload={"trophies": 100})
+            if not path.endswith("/battlelog"):
+                raise RuntimeError("synthetic failure")
+            return SimpleNamespace(ok=True, status=200, payload={"items": [battle()]})
+
+        self.client.get.side_effect = response
+        with self.assertLogs("elbow_helper.features.ranked_stats.cog"):
+            self.assertEqual(len(await self.collect_at(0)), 4)
+        self.assertTrue(all(path.endswith("/battlelog") for path in await self.collect_at(300)))
+        self.assertTrue(all(path.endswith("/battlelog") for path in await self.collect_at(3599)))
+        with self.assertLogs("elbow_helper.features.ranked_stats.cog"):
+            self.assertCountEqual(await self.collect_at(3600), ["/players/%23P0", "/players/%23P2"])
+
+    async def test_relinking_preserves_account_cooldown_and_new_accounts_run_immediately(self):
+        self.client.get.side_effect = self.response
+        await self.collect_at(0)
+        del self.links["#P0"]
+        self.assertEqual(await self.collect_at(60), [])
+        self.assertNotIn("#P0", self.cog._schedules)
+        self.links["#P0"] = {"discord_user_id": 44}
+        self.links["#P8"] = {"discord_user_id": 45}
+        self.assertCountEqual(await self.collect_at(120), ["/players/%23P8", "/players/%23P8/battlelog"])
+        self.assertEqual(await self.collect_at(300), ["/players/%23P0/battlelog"])
+        _, polls, _ = self.cog.store.read_battle_window(after=stamp(), before=stamp(4), selector="member_ids", values=(44,))
+        self.assertEqual(len(polls), 1)
+
+    async def test_request_budget_is_shared_across_accounts_and_both_endpoints(self):
+        self.links = {f"#P{first}{second}": {"discord_user_id": index + 1}
+                      for index, (first, second) in enumerate(
+                          (first, second) for first in "028" for second in "0289")}
+        starts = []
+
+        def response(path, **kwargs):
+            starts.append((self.seconds, path, kwargs))
+            # Failed requests consume the same budget as successful responses.
+            if len(starts) % 3 == 0:
+                return SimpleNamespace(ok=False, status=503, payload=None)
+            return self.response(path, **kwargs)
+
         self.client.get.side_effect = response
         with self.assertLogs("elbow_helper.features.ranked_stats.cog"):
             await self.cog.collect_once()
-        self.assertEqual(self.cog.snapshot_loop.seconds, 60)
-        self.assertEqual(self.cog._poll_intervals, {"#P0": 60, "#P2": 120})
+        self.assertEqual(len(starts), 24)
+        self.assertEqual(sum(path.endswith("/battlelog") for _, path, _ in starts), 12)
+        self.assertTrue(all(kwargs == {"attempts": 1} for _, _, kwargs in starts))
+        for time, _, _ in starts:
+            self.assertLessEqual(sum(time <= other < time + 1 for other, _, _ in starts), 5)
+        self.assertGreaterEqual(starts[-1][0] - starts[0][0], 4)
+
+    async def test_request_budget_carries_across_batches_and_second_boundaries(self):
+        starts = []
+
+        def response(path, **kwargs):
+            starts.append(self.seconds)
+            return self.response(path, **kwargs)
+
+        self.client.get.side_effect = response
+        await self.cog.collect_once()
+        self.seconds = 0.9
+        await asyncio.gather(*(self.cog._get("/players/%23P0") for _ in range(8)))
+        self.assertEqual(len(starts), 12)
+        for time in starts:
+            self.assertLessEqual(sum(time <= other < time + 1 for other in starts), 5)
+
+    async def test_cancelled_rate_limit_wait_does_not_make_a_request(self):
+        self.client.get.side_effect = self.response
+        await self.cog.collect_once()
+        await self.cog._get("/players/%23P0")
+        self.assertEqual(self.client.get.await_count, 5)
+        with patch("elbow_helper.features.ranked_stats.cog.asyncio.sleep", side_effect=asyncio.CancelledError):
+            with self.assertRaises(asyncio.CancelledError):
+                await self.cog._get("/players/%23P0")
+        self.assertEqual(self.client.get.await_count, 5)
+        self.seconds = 1
+        await self.cog._get("/players/%23P0")
+        self.assertEqual(self.client.get.await_count, 6)
 
     async def test_failed_log_preserves_stored_battles_and_reports_failed_coverage(self):
         def response(path, **kwargs):

@@ -84,6 +84,19 @@ class RankedStore:
         return ([dict(row) for row in battles[:250000]], [dict(row) for row in polls[:250000]],
                 len(battles) > 250000 or len(polls) > 250000)
 
+    def latest_collection(self, tags):
+        """Restore per-account cooldowns without reading the full history."""
+        with closing(sqlite3.connect(self.path, timeout=30)) as conn:
+            conn.row_factory = sqlite3.Row
+            latest = {}
+            for tag in tags:
+                profile = conn.execute("""SELECT * FROM snapshots WHERE player_tag = ?
+                    ORDER BY observed_at DESC LIMIT 1""", (tag,)).fetchone()
+                poll = conn.execute("""SELECT * FROM battle_log_polls WHERE player_tag = ?
+                    ORDER BY observed_at DESC LIMIT 1""", (tag,)).fetchone()
+                latest[tag] = (dict(profile) if profile else None, dict(poll) if poll else None)
+        return latest
+
     def read_window(self, *, after, before, selector, values):
         # Selectors are internal constants; every member-supplied value is bound.
         column = {"member_ids": "member_id", "account_tags": "player_tag", "clan_tags": "clan_tag"}[selector]

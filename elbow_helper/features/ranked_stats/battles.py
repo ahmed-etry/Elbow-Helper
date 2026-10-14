@@ -7,9 +7,9 @@ import json
 from elbow_helper.domain.player_tags import normalize_player_tag
 
 
-INITIAL_POLL_SECONDS = 60
-MIN_POLL_SECONDS = 15
-MAX_POLL_SECONDS = 300
+INITIAL_POLL_SECONDS = 300
+MIN_POLL_SECONDS = 300
+MAX_POLL_SECONDS = 3600
 RANKED_MODES = frozenset({"RANKED", "LEGEND"})
 
 

@@ -25,15 +25,31 @@ confirms support:
   has no player battle-log wrapper in the inspected master revision. That older
   client's omission does not contradict the newer route.
 
-No inspected source promises a fixed number of retained battles. Polling starts
-at sixty seconds, then uses each response's **total** entry count `N` and time span
-`S`: estimated turnover window `S * N / (N - 1)`, divided by four, bounded to
-15–300 seconds. Farming and defenses count toward turnover because they can
+No inspected source promises a fixed number of retained battles. Each account's
+battle-log interval starts at five minutes, then uses its response's **total**
+entry count `N` and time span `S`: estimated turnover window `S * N / (N - 1)`,
+divided by four, bounded to
+5–60 minutes. Farming and defenses count toward turnover because they can
 displace ranked entries. Empty logs retain the startup interval; a single entry
-or missing timestamps use fifteen seconds. The loop uses the shortest interval
-among linked accounts. This adapts to the observed rolling log, without inventing
+or missing timestamps use five minutes. Only accounts whose own deadlines have
+arrived are polled. This adapts to the observed rolling log, without inventing
 a fixed capacity or promising capture of an unseen burst. Each poll stores its
 count, oldest/newest timestamps, chosen interval, failures and skipped entries.
+
+Profile requests and snapshots have separate hourly deadlines per account.
+Battle-log polls reuse cached profile names and clans between snapshots, so
+clan membership is only as recent as the cached profile. Failed
+requests also advance their endpoint's deadline, avoiding rapid retries. On
+restart or relinking, saved snapshots and polls restore the remaining cooldowns,
+with old battle intervals clamped to the new bounds. New accounts are due
+immediately. The scheduler checks for link changes at least once a minute while
+idle and removes schedules for unlinked accounts.
+
+All requests from this collector share a limit of five starts in any rolling
+one-second window, including profiles, logs and failures. Each call uses one
+attempt through the shared client. Four account workers limit concurrency;
+accounts waiting for capacity run later without catch-up requests. These limits
+apply only to this collector, preserving the rest of the bot's API headroom.
 
 The `ranked_battles` table retains every valid `RANKED` and `LEGEND` entry, including
 defenses. A unique key combines account, UTC battle timestamp, mode, direction
