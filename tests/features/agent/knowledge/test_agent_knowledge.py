@@ -66,7 +66,7 @@ Hidden""")
     def test_prompt_threshold(self):
         self.write("large.md", "+++\nalways_loaded=true\n+++\n# Facts\n" + "x" * 20000)
         with self.assertLogs("elbow_helper.features.agent.knowledge.store", level="WARNING") as logs:
-            self.assertEqual(self.store.load().prompt().text, "")
+            self.assertEqual(self.store.load().prompt().core, "")
         self.assertIn("large.md: Facts", " ".join(logs.output))
         with patch(
             "elbow_helper.features.agent.knowledge.store.time.monotonic", return_value=10**12,
@@ -106,6 +106,47 @@ Hidden""")
         with self.assertLogs("elbow_helper.features.agent.knowledge.store", level="ERROR"):
             self.assertEqual(self.store.load().active_sections, ())
 
+    def test_topic_index_groups_only_approved_visible_titles_by_file(self):
+        self.write("b.md", "# Second topic\nSecond body\n# Third topic\nThird body")
+        self.write("a.md", "# First topic\nFirst body")
+        self.write("draft.md", '+++\nstatus="draft"\n+++\n# Draft title\nBody')
+        for level in ("lead", "lead_plus", "core"):
+            self.write(level + ".md", f'+++\nvisibility="{level}"\n+++\n# Restricted {level}\nBody')
+        catalog = self.store.load()
+        prompt = catalog.prompt()
+        self.assertEqual(prompt.core, "")
+        self.assertIn("a.md:\n- First topic\nb.md:\n- Second topic\n- Third topic", prompt.index)
+        self.assertNotIn("Draft title", prompt.text)
+        self.assertNotIn("Restricted", prompt.text)
+        self.assertNotIn("lead.md", prompt.text)
+        self.assertNotIn("First body", prompt.text)
+        self.assertEqual(prompt.required_access, set())
+        for level in ("lead", "lead_plus", "core"):
+            prompt = catalog.prompt({level})
+            self.assertIn("Restricted " + level, prompt.index)
+            self.assertEqual(prompt.required_access, {level})
+            self.assertLessEqual(estimate_tokens(prompt.index), 1000)
+
+    def test_large_topic_index_falls_back_to_visible_file_counts(self):
+        self.write("topics.md", "".join(f"# Topic {index}\nBody\n" for index in range(300)))
+        self.write("private.md", '+++\nvisibility="lead"\n+++\n# Restricted title\nBody')
+        with self.assertLogs("elbow_helper.features.agent.knowledge.store", level="WARNING") as logs:
+            prompt = self.store.load().prompt()
+        self.assertEqual(prompt.index.splitlines()[-1], "topics.md: 300 sections")
+        self.assertNotIn("Topic 1", prompt.index)
+        self.assertNotIn("private.md", prompt.index)
+        self.assertIn("using file counts", " ".join(logs.output))
+        self.assertLessEqual(estimate_tokens(prompt.index), 1000)
+
+    def test_file_count_fallback_stays_bounded_with_many_files(self):
+        for index in range(150):
+            self.write(f"topic-{index:03}.md", "# Generic topic\nGeneric body")
+        with self.assertLogs("elbow_helper.features.agent.knowledge.store", level="WARNING") as logs:
+            prompt = self.store.load().prompt()
+        self.assertIn("Additional files omitted", prompt.index)
+        self.assertIn("omitted files", " ".join(logs.output))
+        self.assertLessEqual(estimate_tokens(prompt.index), 1000)
+
     async def test_service_loads_visible_core_and_rechecks_retained_access(self):
         self.write("core.md", '+++\nalways_loaded=true\nvisibility="lead"\n+++\n# Restricted topic\nRestricted body')
         self.write("public.md", "# Search topic\nSearch-only body")
@@ -129,6 +170,7 @@ Hidden""")
                                 conversation_history="")
             self.assertEqual("Restricted body" in requests[-1]["system_prompt"], allowed)
             self.assertNotIn("Search-only body", requests[-1]["system_prompt"])
+            self.assertIn("public.md:\n- Search topic", requests[-1]["system_prompt"])
             self.assertEqual(context.state.required_access, {"lead"} if allowed else set())
             if allowed:
                 member.roles.pop()

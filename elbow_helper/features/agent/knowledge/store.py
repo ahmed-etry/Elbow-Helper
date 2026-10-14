@@ -31,10 +31,15 @@ class KnowledgePrompt:
     required_access: frozenset[str]
     core_tokens: int
     omitted: tuple[str, ...] = ()
+    index: str = ""
+    index_tokens: int = 0
+    index_title_tokens: int = 0
+    index_fallback: bool = False
+    index_omitted: tuple[str, ...] = ()
 
     @property
     def text(self):
-        return self.core
+        return "\n\n".join(part for part in (self.core, self.index) if part)
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,7 +63,8 @@ class KnowledgeCatalog:
 
     def prompt(self, levels=()):
         included, omitted, access = [], [], set()
-        for section in self.visible_sections(levels):
+        visible = self.visible_sections(levels)
+        for section in visible:
             if not section.always_loaded:
                 continue
             text = f"### {section.title}\n{section.body}"
@@ -72,7 +78,44 @@ class KnowledgeCatalog:
         if omitted:
             LOGGER.warning("Community knowledge core exceeds 4000 tokens; omitted sections: %s",
                            "; ".join(omitted))
-        return KnowledgePrompt(core, frozenset(access), estimate_tokens(core), tuple(omitted))
+        index, title_tokens, fallback, index_omitted = _topic_index(visible)
+        if index:
+            access.update(section.visibility for section in visible if section.visibility != "public")
+        if fallback:
+            LOGGER.warning("Community knowledge topic index exceeds 1000 tokens (%s); using file counts",
+                           title_tokens)
+        if index_omitted:
+            LOGGER.warning("Community knowledge file index exceeds 1000 tokens; omitted files: %s",
+                           "; ".join(index_omitted))
+        return KnowledgePrompt(core, frozenset(access), estimate_tokens(core), tuple(omitted),
+                               index, estimate_tokens(index), title_tokens, fallback, index_omitted)
+
+
+def _topic_index(sections):
+    files = {}
+    for section in sections:
+        files.setdefault(section.file_name, []).append(section.title)
+    if not files:
+        return "", 0, False, ()
+    heading = "Knowledge topics (search_approved_knowledge for details):"
+    text = "\n".join([heading, *(f"{name}:\n" + "\n".join(f"- {title}" for title in titles)
+                                  for name, titles in files.items())])
+    title_tokens = estimate_tokens(text)
+    if title_tokens <= 1000:
+        return text, title_tokens, False, ()
+    counts = [f"{name}: {len(titles)} sections" for name, titles in files.items()]
+    text = "\n".join([heading, *counts])
+    if estimate_tokens(text) <= 1000:
+        return text, title_tokens, True, ()
+    # Even file names can exceed the cap in very large directories.
+    note = "Additional files omitted; search for details."
+    included, omitted = [heading], []
+    for name, line in zip(files, counts):
+        if estimate_tokens("\n".join([*included, line, note])) <= 1000:
+            included.append(line)
+        else:
+            omitted.append(name)
+    return "\n".join([*included, note]), title_tokens, True, tuple(omitted)
 
 
 class KnowledgeStore:
