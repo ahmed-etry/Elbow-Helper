@@ -59,7 +59,7 @@ async def read_ranked_stats(context, arguments):
 def ranked_tools():
     return (RegisteredAgentTool(
         AgentToolDefinition(
-            "read_ranked_stats", "Read ranked snapshots and observed wins for members, accounts or clans.",
+            "read_ranked_stats", "Read ranked battle counts and snapshots for members, accounts or clans.",
             {"type": "object", "properties": {
                 "member_ids": {"type": "array", "minItems": 1, "maxItems": 200,
                                "items": {"type": "integer", "minimum": 1}},
@@ -72,7 +72,7 @@ def ranked_tools():
                 "offset": {"type": "integer", "minimum": 0},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 25},
             }, "required": ["after"], "additionalProperties": False},
-            usage_note="Choose one selector; max 90 days. Wins are not ranked attempts; unavailable attack counts/quotas stay null. Selection rank uses observed trophies.",
+            usage_note="Choose one selector; max 90 days. Attacks count stored ranked/Legend records, including losses; check coverage. Quotas stay null; dates are UTC.",
         ), read_ranked_stats,
         contract=CapabilityContract(entity_fields=(("member_ids", "discord_member_set"),
             ("account_tags", "clash_account_set"), ("clan_tags", "clan_set"))),

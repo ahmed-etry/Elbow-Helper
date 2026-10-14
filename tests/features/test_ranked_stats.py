@@ -1,3 +1,4 @@
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -8,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.features.ranked_stats.cog import RankedStats
 from elbow_helper.features.ranked_stats.queries import RankedQueries
 from elbow_helper.features.ranked_stats.store import RankedStore
+from elbow_helper.features.ranked_stats.battles import parse_log
 
 
 def stamp(day=1, minute=0):
@@ -25,6 +27,19 @@ def observation(tag="#P0", *, wins=10, day=1, minute=0, trophies=100,
             "clan_tag": clan, "player_name": "Synthetic account", "status": status, "fields": fields}
 
 
+def battle(*, day=1, minute=1, mode="RANKED", attack=True, opponent="#Q2", stars=0):
+    return {"battleType": mode, "attack": attack, "battleTimestamp": stamp(day, minute),
+            "opponentPlayerTag": opponent, "stars": stars, "destructionPercentage": 10,
+            "opponentName": "Synthetic opponent"}
+
+
+def save_log(store, items, row=None):
+    row = row or observation()
+    poll, records = parse_log({"items": items}, row, lambda *_: None)
+    store.append([row], battles=records, polls=[poll])
+    return poll, records
+
+
 class RankedWindowTests(unittest.TestCase):
     def setUp(self):
         self.temp = TemporaryDirectory()
@@ -37,58 +52,62 @@ class RankedWindowTests(unittest.TestCase):
     def read(self, selector="member_ids", values=(42,), **arguments):
         return self.queries.window(after=stamp(), before=stamp(4), selector=selector, values=values, **arguments)
 
-    def test_persisted_daily_deltas_do_not_become_attack_usage_or_quotas(self):
-        self.store.append([observation(wins=10), observation(wins=13, minute=5),
-                           observation(wins=14, day=2), observation(wins=16, day=2, minute=5)])
-        # A new store instance sees the observations after a restart.
-        result = RankedQueries(RankedStore(self.path)).window(
-            after=stamp(), before=stamp(4), selector="member_ids", values=(42,))
-        row = result["accounts"][0]
-        self.assertEqual(row["attack_wins_observed"], 6)
-        self.assertEqual([day["attack_wins_observed"] for day in row["daily"]], [3, 2])
+    def test_existing_snapshot_database_is_migrated_without_inferring_attempts(self):
+        self.store.append([observation(wins=10), observation(wins=20, minute=5)])
+        import sqlite3
+        with closing(sqlite3.connect(self.path)) as conn:
+            conn.execute("DROP TABLE ranked_battles")
+            conn.execute("DROP TABLE battle_log_polls")
+            conn.commit()
+        self.store.initialize()
+        row = self.read()["accounts"][0]
+        self.assertEqual(row["sample_count"], 2)
+        self.assertEqual(row["ranking"]["attackWins"], 20)
         self.assertIsNone(row["attacks_used"])
+        self.assertEqual(row["daily"], [])
         self.assertIsNone(row["attacks_available"])
-        self.assertFalse(result["coverage_complete"])
 
-    def test_resets_and_missing_counter_samples_break_intervals(self):
-        self.store.append([observation(wins=20), observation(wins=2, minute=5),
-                           observation(wins=4, minute=10), observation(wins=None, minute=15),
-                           observation(wins=8, minute=20), observation(wins=10, minute=25)])
+    def test_ranked_losses_legend_attacks_and_defenses_have_distinct_counts(self):
+        save_log(self.store, [battle(stars=0), battle(minute=2, stars=3),
+            battle(minute=3, mode="LEGEND"), battle(minute=4, attack=False),
+            battle(minute=5, mode="HOME_VILLAGE")])
         row = self.read()["accounts"][0]
-        self.assertEqual(row["counter_resets"], 1)
-        self.assertEqual(row["attack_wins_observed"], 4)
+        self.assertEqual(row["attacks_used"], 3)
+        self.assertEqual(row["battle_records"], 4)
+        self.assertEqual(row["daily"], [{"date": "2026-09-01", "attacks_used": 3, "defenses": 1}])
+        self.assertFalse(row["counts_complete"])
+        self.assertIsNone(row["attacks_available"])
 
-    def test_failed_requests_never_count_as_zero_and_mark_stale_ranking(self):
-        self.store.append([observation(wins=20), observation(wins=None, minute=5, status="unavailable"),
-                           observation(wins=25, minute=10), observation(wins=None, minute=15, status="unavailable")])
+    def test_overlapping_logs_restarts_and_corrected_results_do_not_duplicate_battles(self):
+        entry = battle()
+        save_log(self.store, [entry, entry])
+        # Results/names are mutable; identities and first-observed ownership are stable.
+        changed = {**entry, "stars": 3, "opponentName": "Updated opponent"}
+        restarted = RankedStore(self.path)
+        restarted.initialize()
+        save_log(restarted, [changed, battle(minute=2)], observation(minute=5, member=43))
+        result = RankedQueries(restarted).window(after=stamp(), before=stamp(4), selector="account_tags", values=("#P0",))
+        self.assertEqual(result["accounts"][0]["attacks_used"], 2)
+        records, _, _ = restarted.read_battle_window(after=stamp(), before=stamp(4), selector="member_ids", values=(42,))
+        self.assertEqual(len(records), 1)
+        import json
+        self.assertEqual(json.loads(records[0]["payload_json"])["stars"], 3)
+
+    def test_battle_time_controls_day_and_window_even_when_backfilled_later(self):
+        save_log(self.store, [battle(minute=1439), battle(day=2, minute=0), battle(day=4, minute=0)],
+                 observation(day=5))
         row = self.read()["accounts"][0]
-        self.assertIsNone(row["attack_wins_observed"])
-        self.assertEqual(row["failed_samples"], 2)
-        self.assertEqual(row["status"], "stale")
-        self.assertEqual(row["ranking_observed_at"], stamp(minute=10))
+        self.assertEqual(row["attacks_used"], 2)
+        self.assertEqual([day["date"] for day in row["daily"]], ["2026-09-01", "2026-09-02"])
+        self.assertEqual(row["sample_count"], 0)
+        self.assertIsNone(row["ranking_observed_at"])
 
-    def test_daily_attribution_omits_intervals_crossing_utc_midnight(self):
-        self.store.append([observation(wins=10, minute=1439), observation(wins=15, day=2, minute=4)])
-        row = self.read()["accounts"][0]
-        self.assertEqual(row["attack_wins_observed"], 5)
-        self.assertTrue(all(day["attack_wins_observed"] is None for day in row["daily"]))
-
-    def test_season_change_rejects_a_delta_even_if_new_total_is_higher(self):
-        self.store.append([observation(wins=10, season="old"), observation(wins=20, minute=5, season="new")])
-        row = self.read()["accounts"][0]
-        self.assertEqual(row["counter_resets"], 1)
-        self.assertIsNone(row["attack_wins_observed"])
-
-    def test_clan_and_owner_filters_do_not_bridge_time_outside_the_selection(self):
-        for selector, middle in (("clan_tags", {"clan": "#Q2"}), ("member_ids", {"member": 43})):
+    def test_first_observed_associations_are_used_for_member_and_clan_filters(self):
+        save_log(self.store, [battle()], observation(member=42, clan="#Q0"))
+        save_log(self.store, [battle(), battle(minute=2)], observation(minute=5, member=43, clan="#Q2"))
+        for selector, value in (("member_ids", 42), ("clan_tags", "#Q0")):
             with self.subTest(selector=selector):
-                tag = "#P0" if selector == "clan_tags" else "#P2"
-                self.store.append([observation(tag, wins=10), observation(tag, wins=20, minute=5, **middle),
-                                   observation(tag, wins=30, minute=10)])
-                values = ("#Q0",) if selector == "clan_tags" else (42,)
-                result = self.read(selector, values)
-                row = next(row for row in result["accounts"] if row["player_tag"] == tag)
-                self.assertIsNone(row["attack_wins_observed"])
+                self.assertEqual(self.read(selector, (value,))["accounts"][0]["attacks_used"], 1)
 
     def test_ranks_ties_paging_unobserved_accounts_and_half_open_window(self):
         self.store.append([observation("#P0", trophies=200), observation("#P2", trophies=200),
@@ -97,8 +116,14 @@ class RankedWindowTests(unittest.TestCase):
         self.assertEqual([row["selection_rank"] for row in first["accounts"]], [1, 1])
         self.assertEqual(first["next_offset"], 2)
         self.assertEqual(first["unobserved_selections"], ["#P9"])
-        second = self.read(limit=2, offset=2)
-        self.assertEqual(second["accounts"][0]["selection_rank"], 3)
+        self.assertEqual(self.read(limit=2, offset=2)["accounts"][0]["selection_rank"], 3)
+
+    def test_failed_profile_snapshots_keep_stale_ranking(self):
+        self.store.append([observation(), observation(minute=5, status="unavailable")])
+        row = self.read()["accounts"][0]
+        self.assertEqual(row["failed_samples"], 1)
+        self.assertEqual(row["status"], "stale")
+        self.assertIsNone(row["attacks_used"])
 
     def test_row_limit_can_stop_before_the_selected_ownership_observation(self):
         import json
@@ -109,6 +134,37 @@ class RankedWindowTests(unittest.TestCase):
         self.assertEqual(result["accounts"], [])
         self.assertFalse(result["complete"])
         self.assertIn("snapshot_row_limit_reached", result["limitations"])
+
+
+class BattleParsingTests(unittest.TestCase):
+    def test_missing_fields_unknown_modes_and_bad_dates_do_not_drop_valid_records(self):
+        bad = [dict(battle(), battleTimestamp=None), dict(battle(), attack=1),
+               dict(battle(), opponentPlayerTag=None), dict(battle(), battleType={}),
+               dict(battle(), battleTimestamp="2026-09-01T00:00:00"), None]
+        missing = []
+        poll, records = parse_log({"items": [battle(), *bad]}, observation(),
+                                  lambda field, invalid: missing.append((field, invalid)))
+        self.assertEqual(len(records), 1)
+        self.assertEqual(poll["status"], "partial")
+        self.assertEqual(poll["skipped_entries"], len(bad))
+        self.assertIn(("battlelog.battleTimestamp", True), missing)
+
+    def test_api_compact_times_and_offsets_are_normalized_to_utc(self):
+        items = [dict(battle(), battleTimestamp="20260901T235900.000Z"),
+                 dict(battle(minute=2), battleTimestamp="2026-09-02T01:00:00+02:00")]
+        _, records = parse_log(items, observation(), lambda *_: None)
+        self.assertEqual([record["battle_at"][:10] for record in records], ["2026-09-01"] * 2)
+
+    def test_poll_interval_uses_returned_log_count_and_all_modes_turnover(self):
+        short, _ = parse_log([battle(minute=value, mode="HOME_VILLAGE") for value in range(4)], observation(), lambda *_: None)
+        long, _ = parse_log([battle(minute=value, mode="HOME_VILLAGE") for value in range(8)], observation(), lambda *_: None)
+        self.assertEqual(short["poll_interval_seconds"], 60)
+        self.assertEqual(long["poll_interval_seconds"], 120)
+        self.assertEqual(short["total_entries"], 4)
+        burst, _ = parse_log([battle(minute=0), battle(minute=0)], observation(), lambda *_: None)
+        self.assertEqual(burst["poll_interval_seconds"], 15)
+        slow, _ = parse_log([battle(minute=0), battle(minute=60)], observation(), lambda *_: None)
+        self.assertEqual(slow["poll_interval_seconds"], 300)
 
 
 class RankedCollectorTests(unittest.IsolatedAsyncioTestCase):
@@ -126,30 +182,68 @@ class RankedCollectorTests(unittest.IsolatedAsyncioTestCase):
         clock.start().now.return_value = datetime(2026, 9, 1, tzinfo=timezone.utc)
 
     async def test_all_linked_accounts_use_the_owned_client_and_partial_fields_are_logged(self):
-        self.client.get.return_value = SimpleNamespace(ok=True, status=200,
+        profile = SimpleNamespace(ok=True, status=200,
             payload={"trophies": 100, "attackWinsRenamed": 20,
                      "leagueTier": {"id": 1, "name": "Synthetic league"},
                      "legendStatistics": {"currentSeason": {"rank": 1, "trophies": 100, "id": "sample"}}})
+        self.client.get.side_effect = lambda path, **_: (
+            SimpleNamespace(ok=True, status=200, payload={"items": [battle()]})
+            if path.endswith("/battlelog") else profile)
         with self.assertLogs("elbow_helper.features.ranked_stats.cog", level="WARNING") as logs:
             await self.cog.collect_once()
         self.assertTrue(any("attackWins" in line for line in logs.output))
-        self.assertEqual({call.args[0] for call in self.client.get.await_args_list}, {"/players/%23P0", "/players/%23P2"})
+        self.assertEqual({call.args[0] for call in self.client.get.await_args_list}, {"/players/%23P0", "/players/%23P2", "/players/%23P0/battlelog", "/players/%23P2/battlelog"})
         result = self.cog.queries.window(after="2026-01-01T00:00:00.000000+00:00",
             before="2027-01-01T00:00:00.000000+00:00", selector="member_ids", values=(42, 43))
         self.assertEqual(len(result["accounts"]), 2)
         for row in result["accounts"]:
             self.assertNotIn("attackWins", row["ranking"])
             self.assertEqual(row["ranking"]["leagueTier"]["name"], "Synthetic league")
-            self.assertIsNone(row["attack_wins_observed"])
+            self.assertEqual(row["attacks_used"], 1)
+
+    async def test_polling_adapts_to_the_shortest_returned_log_window(self):
+        def response(path, **kwargs):
+            if path.endswith("/battlelog"):
+                count = 4 if "P0/" in path else 8
+                return SimpleNamespace(ok=True, status=200, payload={"items": [battle(minute=value) for value in range(count)]})
+            return SimpleNamespace(ok=True, status=200, payload={"trophies": 100})
+        self.client.get.side_effect = response
+        with self.assertLogs("elbow_helper.features.ranked_stats.cog"):
+            await self.cog.collect_once()
+        self.assertEqual(self.cog.snapshot_loop.seconds, 60)
+        self.assertEqual(self.cog._poll_intervals, {"#P0": 60, "#P2": 120})
+
+    async def test_failed_log_preserves_stored_battles_and_reports_failed_coverage(self):
+        def response(path, **kwargs):
+            if path.endswith("/battlelog"):
+                return SimpleNamespace(ok=False, status=503, payload=None)
+            return SimpleNamespace(ok=True, status=200, payload={"trophies": 100})
+        save_log(self.cog.store, [battle()], observation(minute=-5))
+        self.client.get.side_effect = response
+        with self.assertLogs("elbow_helper.features.ranked_stats.cog"):
+            await self.cog.collect_once()
+        result = self.cog.queries.window(after=stamp(), before=stamp(4), selector="member_ids", values=(42, 43))
+        rows = {row["member_id"]: row for row in result["accounts"]}
+        self.assertEqual(rows[42]["attacks_used"], 1)
+        self.assertEqual(rows[42]["failed_battle_log_polls"], 1)
+        self.assertIsNone(rows[43]["attacks_used"])
+        self.assertFalse(result["coverage_complete"])
 
     async def test_one_failed_account_does_not_stop_other_snapshots(self):
-        self.client.get.side_effect = [RuntimeError("synthetic failure"),
-            SimpleNamespace(ok=True, status=200, payload={"trophies": 100, "attackWins": 0})]
+        def response(path, **kwargs):
+            if path.endswith("/battlelog"):
+                return SimpleNamespace(ok=True, status=200, payload={"items": [battle()]})
+            if path.endswith("P0"):
+                raise RuntimeError("synthetic failure")
+            return SimpleNamespace(ok=True, status=200, payload={"trophies": 100, "attackWins": 0})
+        self.client.get.side_effect = response
         with self.assertLogs("elbow_helper.features.ranked_stats.cog"):
             await self.cog.collect_once()
         rows, truncated = self.cog.store.read_window(after="2000", before="2100", selector="member_ids", values=(42, 43))
         self.assertFalse(truncated)
         self.assertEqual(sorted(row["status"] for row in rows), ["ok", "unavailable"])
+        records, _, _ = self.cog.store.read_battle_window(after="2000", before="2100", selector="member_ids", values=(42, 43))
+        self.assertEqual(len(records), 2)
 
     async def test_missing_key_skips_collection_without_fabricating_observations(self):
         self.client.configured = False

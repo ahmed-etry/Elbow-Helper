@@ -5,7 +5,7 @@ from unittest.mock import Mock
 import unittest
 
 from features.agent.capabilities.member_lifecycle.test_agent_member_lifecycle import AgentMemberLifecycleTests
-from features.test_ranked_stats import observation, stamp
+from features.test_ranked_stats import observation, battle, save_log
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.datasets.ranked import read_ranked_stats
@@ -26,10 +26,10 @@ class AgentRankedTests(unittest.IsolatedAsyncioTestCase):
         self.arguments = {"member_ids": [42], "after": "2026-09-01", "before": "2026-09-02"}
 
     async def test_historical_read_works_without_current_clash_configuration(self):
-        self.store.append([observation(wins=10), observation(wins=15, minute=5)])
+        save_log(self.store, [battle(), battle(minute=2)])
         result = await read_ranked_stats(self.context, self.arguments)
-        self.assertEqual(result["accounts"][0]["attack_wins_observed"], 5)
-        self.assertIsNone(result["accounts"][0]["attacks_used"])
+        self.assertEqual(result["accounts"][0]["attacks_used"], 2)
+        self.assertEqual(result["accounts"][0]["daily"][0]["attacks_used"], 2)
 
     async def test_clan_codes_account_normalization_and_exclusive_end(self):
         code, clan = next(iter(CLANS.items()))

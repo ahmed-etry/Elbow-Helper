@@ -1,4 +1,4 @@
-"""Five-minute snapshots of every linked account using the shared Clash client."""
+"""Ranked snapshots and rolling battle logs through the shared Clash client."""
 
 import asyncio
 from datetime import datetime, timezone
@@ -11,10 +11,10 @@ from elbow_helper.domain.player_tags import encode_clash_tag, normalize_player_t
 from .fields import project_player
 from .queries import RankedQueries
 from .store import RankedStore
+from .battles import INITIAL_POLL_SECONDS, parse_log
 
 
 LOGGER = logging.getLogger(__name__)
-POLL_MINUTES = 5
 
 
 class RankedStats(commands.Cog):
@@ -26,6 +26,7 @@ class RankedStats(commands.Cog):
         self.queries = RankedQueries(self.store)
         self._missing_fields = set()
         self._collect_lock = asyncio.Lock()
+        self._poll_intervals = {}
 
     async def cog_load(self):
         await asyncio.to_thread(self.store.initialize)
@@ -49,6 +50,7 @@ class RankedStats(commands.Cog):
             links = await asyncio.to_thread(self.account_links.get_all_links)
             tags = {tag for value in links if (tag := normalize_player_tag(value))}
             self._missing_fields = {key for key in self._missing_fields if key[0] in tags}
+            self._poll_intervals = {tag: interval for tag, interval in self._poll_intervals.items() if tag in tags}
             semaphore = asyncio.Semaphore(4)
 
             async def collect(raw_tag, link):
@@ -83,12 +85,40 @@ class RankedStats(commands.Cog):
                     except Exception:
                         LOGGER.exception("Ranked player snapshot failed for %s", tag)
                     row["observed_at"] = datetime.now(timezone.utc).isoformat(timespec="microseconds")
-                    return row
+                    # The log remains useful when the player profile request fails.
+                    poll, battles = await self._collect_battles(row)
+                    return row, poll, battles
 
             rows = await asyncio.gather(*(collect(tag, link) for tag, link in links.items()))
-            await asyncio.to_thread(self.store.append, [row for row in rows if row is not None])
+            completed = [result for result in rows if result is not None]
+            await asyncio.to_thread(self.store.append,
+                [row for row, _, _ in completed], polls=[poll for _, poll, _ in completed],
+                battles=[battle for _, _, battles in completed for battle in battles])
+            interval = min((self._poll_intervals.get(tag, INITIAL_POLL_SECONDS) for tag in tags),
+                           default=INITIAL_POLL_SECONDS)
+            self.snapshot_loop.change_interval(seconds=interval)
 
-    @tasks.loop(minutes=POLL_MINUTES)
+    async def _collect_battles(self, row):
+        tag = row["player_tag"]
+        poll = {**{field: row[field] for field in ("player_tag", "observed_at", "member_id", "clan_tag")},
+                "status": "unavailable", "total_entries": None, "oldest_battle_at": None,
+                "newest_battle_at": None, "skipped_entries": 0,
+                "poll_interval_seconds": self._poll_intervals.get(tag, INITIAL_POLL_SECONDS)}
+        try:
+            response = await self.client.get("/players/" + encode_clash_tag(tag) + "/battlelog", attempts=1)
+            if response.ok:
+                poll["observed_at"] = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+                poll, battles = parse_log(response.payload, {**row, "observed_at": poll["observed_at"]},
+                    lambda field, missing: self._report_field(tag, field, missing))
+                self._poll_intervals[tag] = poll["poll_interval_seconds"]
+                return poll, battles
+            LOGGER.warning("Ranked battle log unavailable for %s (status %s)", tag, response.status)
+        except Exception:
+            LOGGER.exception("Ranked battle log failed for %s", tag)
+        poll["observed_at"] = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+        return poll, []
+
+    @tasks.loop(seconds=INITIAL_POLL_SECONDS)
     async def snapshot_loop(self):
         await self.collect_once()
 

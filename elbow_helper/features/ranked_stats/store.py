@@ -23,9 +23,27 @@ class RankedStore:
             conn.execute("CREATE INDEX IF NOT EXISTS snapshots_member ON snapshots(member_id, observed_at)")
             conn.execute("CREATE INDEX IF NOT EXISTS snapshots_clan ON snapshots(clan_tag, observed_at)")
             conn.execute("CREATE INDEX IF NOT EXISTS snapshots_time ON snapshots(observed_at)")
+            conn.execute("""CREATE TABLE IF NOT EXISTS ranked_battles (
+                battle_key TEXT PRIMARY KEY, player_tag TEXT NOT NULL, battle_at TEXT NOT NULL,
+                battle_type TEXT NOT NULL, attack INTEGER NOT NULL, opponent_tag TEXT NOT NULL,
+                member_id INTEGER NOT NULL, clan_tag TEXT, player_name TEXT,
+                first_observed_at TEXT NOT NULL, last_observed_at TEXT NOT NULL,
+                payload_json TEXT NOT NULL
+            )""")
+            conn.execute("CREATE INDEX IF NOT EXISTS battles_time ON ranked_battles(battle_at, player_tag)")
+            conn.execute("CREATE INDEX IF NOT EXISTS battles_member ON ranked_battles(member_id, battle_at)")
+            conn.execute("CREATE INDEX IF NOT EXISTS battles_clan ON ranked_battles(clan_tag, battle_at)")
+            conn.execute("""CREATE TABLE IF NOT EXISTS battle_log_polls (
+                player_tag TEXT NOT NULL, observed_at TEXT NOT NULL, member_id INTEGER NOT NULL,
+                clan_tag TEXT, status TEXT NOT NULL, total_entries INTEGER,
+                oldest_battle_at TEXT, newest_battle_at TEXT, skipped_entries INTEGER NOT NULL,
+                poll_interval_seconds REAL NOT NULL, PRIMARY KEY (player_tag, observed_at)
+            )""")
+            conn.execute("CREATE INDEX IF NOT EXISTS polls_member ON battle_log_polls(member_id, observed_at)")
+            conn.execute("CREATE INDEX IF NOT EXISTS polls_clan ON battle_log_polls(clan_tag, observed_at)")
             conn.commit()
 
-    def append(self, observations):
+    def append(self, observations, *, battles=(), polls=()):
         with closing(sqlite3.connect(self.path, timeout=30)) as conn:
             conn.executemany("""INSERT OR IGNORE INTO snapshots
                 (player_tag, observed_at, member_id, clan_tag, player_name, status, fields_json)
@@ -34,7 +52,37 @@ class RankedStore:
                  row["player_name"], row["status"], json.dumps(row["fields"], separators=(",", ":")))
                 for row in observations
             ])
+            conn.executemany("""INSERT INTO ranked_battles VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(battle_key) DO UPDATE SET
+                    payload_json=excluded.payload_json,
+                    last_observed_at=MAX(ranked_battles.last_observed_at, excluded.last_observed_at)""", [
+                (row["battle_key"], row["player_tag"], row["battle_at"], row["battle_type"],
+                 row["attack"], row["opponent_tag"], row["member_id"], row["clan_tag"], row["player_name"],
+                 row["observed_at"], row["observed_at"], json.dumps(row["payload"], separators=(",", ":")))
+                for row in battles
+            ])
+            conn.executemany("""INSERT OR IGNORE INTO battle_log_polls
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", [
+                (row["player_tag"], row["observed_at"], row["member_id"], row["clan_tag"], row["status"],
+                 row["total_entries"], row["oldest_battle_at"], row["newest_battle_at"],
+                 row["skipped_entries"], row["poll_interval_seconds"])
+                for row in polls
+            ])
             conn.commit()
+
+    def read_battle_window(self, *, after, before, selector, values):
+        column = {"member_ids": "member_id", "account_tags": "player_tag", "clan_tags": "clan_tag"}[selector]
+        placeholders = ",".join("?" for _ in values)
+        with closing(sqlite3.connect(self.path, timeout=30)) as conn:
+            conn.row_factory = sqlite3.Row
+            battles = conn.execute(f"""SELECT * FROM ranked_battles
+                WHERE battle_at >= ? AND battle_at < ? AND {column} IN ({placeholders})
+                ORDER BY player_tag, battle_at LIMIT 250001""", (after, before, *values)).fetchall()
+            polls = conn.execute(f"""SELECT * FROM battle_log_polls
+                WHERE observed_at >= ? AND observed_at < ? AND {column} IN ({placeholders})
+                ORDER BY player_tag, observed_at LIMIT 250001""", (after, before, *values)).fetchall()
+        return ([dict(row) for row in battles[:250000]], [dict(row) for row in polls[:250000]],
+                len(battles) > 250000 or len(polls) > 250000)
 
     def read_window(self, *, after, before, selector, values):
         # Selectors are internal constants; every member-supplied value is bound.
