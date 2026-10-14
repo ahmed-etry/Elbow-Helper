@@ -539,3 +539,7 @@ ACTION_NEWS_PUBLISH_PROMPT = "Remove the publication prompt in {channel}."
 ACTION_ROSTER_REMOVE_LINE = "Remove these accounts from **{name}**."
 ACTION_ROSTER_REMOVE_ROW = "{name} (`{tag}`) signed up by {member}."
 ACTION_ROSTER_REMOVE_LABEL = "Remove roster signups"
+ACTION_SCHEDULE_DESTINATION_LIMIT = (
+    "You can schedule at most one message a minute to the same member's DMs or channel, "
+    "across all your reminders, requests and watchers."
+)

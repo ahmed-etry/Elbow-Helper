@@ -94,7 +94,8 @@ class ActionRefusalTests(unittest.IsolatedAsyncioTestCase):
         for kind in ("weekly", "monthly", "once", "interval"):
             with self.subTest(kind=kind):
                 repository = SimpleNamespace(member_timezone=lambda _: None,
-                    create_standing=MagicMock(), set_member_timezone=MagicMock())
+                    create_standing=MagicMock(), set_member_timezone=MagicMock(),
+                    validate_destination_spacing=MagicMock())
                 context = replace(_context(), action_repository=repository)
                 future = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
                 schedule = {"kind": kind, "time": "12:00", "days": [1],

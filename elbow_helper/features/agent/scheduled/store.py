@@ -14,6 +14,7 @@ from uuid import uuid4
 from elbow_helper.infrastructure.persistence import sqlite_connection, sqlite_transaction
 from ..actions.codec import encode_record
 from .time_rules import schedule_expired
+from .destination_limits import require_destination_spacing
 
 
 class ScheduledStore:
@@ -27,6 +28,26 @@ class ScheduledStore:
             busy_timeout_ms=30_000,
             synchronous="FULL",
         )
+
+    def validate_destination_spacing(self, *, guild_id, requester_id, destination_channel_id,
+                                     rule, next_at, exclude_id=None):
+        with self.connect() as connection:
+            self._require_destination_spacing(connection, guild_id=guild_id,
+                requester_id=requester_id, destination_channel_id=destination_channel_id,
+                rule=rule, next_at=next_at, exclude_id=exclude_id)
+
+    def _require_destination_spacing(self, connection, *, guild_id, requester_id,
+                                     destination_channel_id, rule, next_at, exclude_id=None):
+        existing = []
+        for kind in ("request", "watcher"):
+            table, key, _ = self._standing_columns(kind)
+            rows = connection.execute(
+                f"SELECT * FROM {table} WHERE guild_id=? AND requester_id=? AND status='active'",
+                (guild_id, requester_id),
+            ).fetchall()
+            existing.extend(self._standing_record(row) for row in rows if row[key] != exclude_id)
+        require_destination_spacing(rule, next_at, requester_id=requester_id,
+                                    channel_id=destination_channel_id, existing=existing)
 
     def create_standing(
         self,
@@ -55,6 +76,9 @@ class ScheduledStore:
         identifier = uuid4().hex
         current = time.time() if now is None else now
         with self.connect() as connection, sqlite_transaction(connection, immediate=True):
+            self._require_destination_spacing(connection, guild_id=guild_id,
+                requester_id=requester_id, destination_channel_id=destination_channel_id,
+                rule=rule, next_at=next_at)
             connection.execute(
                 f"""
                 INSERT INTO {table} ({key}, guild_id, requester_id,
@@ -144,6 +168,15 @@ class ScheduledStore:
             raise ValueError("Invalid standing rule status")
         table, key, _ = self._standing_columns(kind)
         with self.connect() as connection, sqlite_transaction(connection, immediate=True):
+            if status == "active":
+                row = connection.execute(f"SELECT * FROM {table} WHERE {key}=? AND requester_id=?",
+                                         (identifier, requester_id)).fetchone()
+                if row is not None and row["status"] in ("active", "paused"):
+                    current = self._standing_record(row)
+                    self._require_destination_spacing(connection, guild_id=current["guild_id"],
+                        requester_id=requester_id, destination_channel_id=current["destination_channel_id"],
+                        rule=current["rule"], next_at=current.get("next_run_at", current.get("next_check_at")),
+                        exclude_id=identifier)
             changed = connection.execute(
                 f"""
                 UPDATE {table} SET status=?, version=version+1, updated_at=?
@@ -167,6 +200,14 @@ class ScheduledStore:
     ) -> bool:
         table, key, due = self._standing_columns(kind)
         with self.connect() as connection, sqlite_transaction(connection, immediate=True):
+            row = connection.execute(f"SELECT * FROM {table} WHERE {key}=? AND requester_id=?",
+                                     (identifier, requester_id)).fetchone()
+            if (row is None or row["version"] != expected_version
+                    or row["status"] == "cancelled" or row["lease_owner"] is not None):
+                return False
+            self._require_destination_spacing(connection, guild_id=row["guild_id"],
+                requester_id=requester_id, destination_channel_id=destination_channel_id,
+                rule=rule, next_at=next_at, exclude_id=identifier)
             changed = connection.execute(
                 f"""
                 UPDATE {table} SET rule_json=?, destination_channel_id=?,

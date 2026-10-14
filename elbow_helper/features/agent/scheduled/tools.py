@@ -43,6 +43,7 @@ from ..plan.checker import valid_arguments
 
 from .scope import has_raw_id, validate_scope
 from .time_rules import schedule_preview, remaining_runs, timezone_name
+from .destination_limits import require_destination_spacing
 
 
 TOOL_CONTRACTS = {
@@ -84,6 +85,31 @@ def _schedule(values: Mapping[str, Any], *, watcher: bool, zone: str) -> tuple[d
     if not times:
         raise ActionRefused("Choose a future run time.")
     return times
+
+
+def _check_spacing(context, rule, next_at):
+    repository = _repository(context)
+    repository.validate_destination_spacing(
+        guild_id=context.guild.id, requester_id=context.member.id,
+        destination_channel_id=rule["destination_channel_id"], rule=rule,
+        next_at=next_at, exclude_id=rule.get("replace_id"),
+    )
+    pending = []
+    for action in context.state.proposed_changes:
+        if action.path == "save_standing_rule":
+            values = action.values
+            times = schedule_preview(values["schedule"], after=datetime.now(timezone.utc),
+                                     watcher=values["kind"] == "watcher")
+            if times:
+                pending.append({"rule": values, "destination_channel_id": values["destination_channel_id"],
+                                "next_run_at": times[0].timestamp()})
+        elif action.path == "manage_standing_rule" and action.values["operation"] == "resume":
+            saved = repository.standing(kind=action.values["kind"], identifier=action.values["id"],
+                                        requester_id=context.member.id)
+            if saved is not None:
+                pending.append(saved)
+    require_destination_spacing(rule, next_at, requester_id=context.member.id,
+                                channel_id=rule["destination_channel_id"], existing=pending)
 
 
 def _allowed_capabilities(
@@ -340,6 +366,7 @@ async def prepare_save(
     if kind == "watcher":
         _validate_watcher(values, actions, registry_factory)
         await _watcher_destination(context, values, channel, registry_factory)
+    _check_spacing(context, values, times[0].timestamp())
     lines = _preview_lines(values, kind=kind, request=request, zone=zone,
                            times=times, channel=channel, actions=actions,
                            context=context)
@@ -370,6 +397,11 @@ async def prepare_save(
                 dm_recipients(context, values["dm_member_ids"])
             if kind == "watcher":
                 await _watcher_destination(context, values, refreshed, registry_factory)
+            repository.validate_destination_spacing(
+                guild_id=context.guild.id, requester_id=context.member.id,
+                destination_channel_id=channel.id, rule=rule, next_at=times[0].timestamp(),
+                exclude_id=identifier,
+            )
             if not identifier:
                 return True
             updated = repository.standing(
@@ -445,6 +477,10 @@ async def prepare_manage(context: AgentRequestContext,
     if current is None or current["status"] not in ("active", "paused"):
         raise ActionRefused("That saved rule is unavailable.")
     target = "active" if operation == "resume" else ("paused" if operation == "pause" else "cancelled")
+    if operation == "resume":
+        _check_spacing(context, {**current["rule"], "replace_id": identifier,
+                                 "destination_channel_id": current["destination_channel_id"]},
+                       current.get("next_run_at", current.get("next_check_at")))
     line = ACTION_STANDING_MANAGE.format(
         operation=ACTION_STANDING_OPERATIONS[operation],
         kind=(ACTION_STANDING_REQUEST_NOUN if kind == "request"

@@ -91,7 +91,8 @@ class PreviewDetailTests(unittest.IsolatedAsyncioTestCase):
             self.context = replace(self.context, action_repository=repository)
             self.context.state.proposed_changes.clear()
             values = {"kind": "watcher", "request": "Synthetic", "timezone": "UTC",
-                      "schedule": {"kind": "interval", "minutes": 30},
+                      "schedule": {"kind": "interval", "seconds": 1800,
+                                   "anchor_utc": "2099-01-01T00:00:00Z"},
                       "destination_channel_id": 10, "condition": "Synthetic condition",
                       "reads": [{"capability": "synthetic_read", "arguments": {"channel_id": 20}}]}
             run_at = datetime.now(timezone.utc) + timedelta(hours=1)

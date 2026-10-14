@@ -37,7 +37,7 @@ class ReminderDMControlTests(unittest.IsolatedAsyncioTestCase):
             handle.start()
             self.addCleanup(handle.stop)
 
-    def save(self, *, recipients=(2, 3, 4), kind="interval"):
+    def save(self, *, recipients=(2, 3, 4), kind="interval", next_at=1):
         schedule = ({"kind": "once", "at_utc": "2020-01-01T00:00:00Z"} if kind == "once"
                     else {"kind": "interval", "anchor_utc": "2099-01-01T00:00:00Z",
                           "seconds": 60, "runs": 3})
@@ -45,7 +45,7 @@ class ReminderDMControlTests(unittest.IsolatedAsyncioTestCase):
             kind="reminder", guild_id=1, requester_id=2, destination_channel_id=3,
             rule={"kind": "reminder", "text": "Synthetic reminder",
                   "dm_member_ids": list(recipients),
-                  "schedule": schedule}, next_at=1,
+                  "schedule": schedule}, next_at=next_at,
         )
 
     def interaction(self, member_id, repository=None):
@@ -78,7 +78,7 @@ class ReminderDMControlTests(unittest.IsolatedAsyncioTestCase):
     async def test_stop_removes_only_the_recipient_and_the_askers_list_updates(self):
         self.configure()
         identity = self.save()
-        unrelated = self.save(recipients=(3,))
+        unrelated = self.save(recipients=(3,), next_at=1000)
         button = reminder_stop_view(self.repository, identity, 3).children[0]
         press = self.interaction(3)
         await button.callback(press)

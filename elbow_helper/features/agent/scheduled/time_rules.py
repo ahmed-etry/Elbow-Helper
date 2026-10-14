@@ -6,6 +6,7 @@ from ..actions.contracts import ActionRefused
 from ..wording import (
     ACTION_SCHEDULE_END_AFTER_FIRST, ACTION_SCHEDULE_END_CHOICE,
     ACTION_SCHEDULE_RUN_COUNT, ACTION_SCHEDULE_ONCE_END,
+    ACTION_SCHEDULE_DESTINATION_LIMIT,
 )
 
 import calendar
@@ -15,6 +16,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 WATCHER_MIN_INTERVAL_SECONDS = 15 * 60
+MIN_MESSAGE_INTERVAL_SECONDS = 60
 
 
 def timezone_name(value: str) -> str:
@@ -69,8 +71,10 @@ def _unbounded_occurrences(rule: Mapping[str, Any], *, after: datetime,
         return (instant,) if instant > after else ()
     if kind == "interval":
         seconds = rule.get("seconds")
-        minimum = WATCHER_MIN_INTERVAL_SECONDS if watcher else 60
+        minimum = WATCHER_MIN_INTERVAL_SECONDS if watcher else MIN_MESSAGE_INTERVAL_SECONDS
         if type(seconds) is not int or seconds < minimum:
+            if not watcher:
+                raise ActionRefused(ACTION_SCHEDULE_DESTINATION_LIMIT)
             raise ActionRefused(f"Interval must be at least {minimum} seconds.")
         anchor = _utc(rule.get("anchor_utc"))
         elapsed = (after - anchor).total_seconds()

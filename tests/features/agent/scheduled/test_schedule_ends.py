@@ -130,6 +130,9 @@ class ScheduleEndRunnerTests(unittest.IsolatedAsyncioTestCase):
                         f"Ends: <t:{int((START + timedelta(minutes=1)).timestamp())}:f>")
             self.assertIn(expected, action.preview.details)
             await action.run()
+            identity = self.repository.list_standing(requester_id=self.member.id)[0]["request_id"]
+            self.repository.set_standing_status(kind="reminder", identifier=identity,
+                                                requester_id=self.member.id, status="paused")
         records = (await list_standing(context, {}))["rules"]
         self.assertEqual([row["runs_left"] for row in records], [2, 2])
         self.assertEqual({row["runs"] for row in records}, {2, None})
