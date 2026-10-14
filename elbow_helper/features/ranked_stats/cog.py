@@ -14,7 +14,7 @@ from elbow_helper.domain.player_tags import encode_clash_tag, normalize_player_t
 from .fields import project_player
 from .queries import RankedQueries
 from .store import RankedStore
-from .battles import INITIAL_POLL_SECONDS, MAX_POLL_SECONDS, MIN_POLL_SECONDS, battle_time, parse_log
+from .battles import INITIAL_POLL_SECONDS, MAX_POLL_SECONDS, MIN_POLL_SECONDS, battle_time, log_identities, parse_log
 
 
 LOGGER = logging.getLogger(__name__)
@@ -30,6 +30,7 @@ class AccountSchedule:
     battle_interval: float = INITIAL_POLL_SECONDS
     clan_tag: str | None = None
     player_name: str | None = None
+    previous_battles: set[str] | None = None
 
 
 class RankedStats(commands.Cog):
@@ -185,6 +186,14 @@ class RankedStats(commands.Cog):
                 poll["observed_at"] = datetime.now(timezone.utc).isoformat(timespec="microseconds")
                 poll, battles = parse_log(response.payload, {**row, "observed_at": poll["observed_at"]},
                     lambda field, missing: self._report_field(tag, field, missing))
+                identities = log_identities(response.payload)
+                schedule = self._schedules[tag]
+                if identities and schedule.previous_battles and identities.isdisjoint(schedule.previous_battles):
+                    LOGGER.warning(
+                        "Ranked battle log for %s shares no battles with the previous poll; "
+                        "battles may have been missed between polls", tag,
+                    )
+                schedule.previous_battles = identities
                 return poll, battles
             LOGGER.warning("Ranked battle log unavailable for %s (status %s)", tag, response.status)
         except Exception:

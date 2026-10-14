@@ -22,6 +22,24 @@ def battle_time(value):
     return parsed.astimezone(timezone.utc)
 
 
+def log_identities(payload):
+    """Compare all log modes using stable fields, including farming battles."""
+    items = payload.get("items") if isinstance(payload, dict) else payload
+    identities = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        try:
+            timestamp = battle_time(item.get("battleTimestamp")).isoformat()
+        except ValueError:
+            continue
+        identities.add(json.dumps([
+            timestamp, item.get("battleType"), item.get("attack"),
+            normalize_player_tag(item.get("opponentPlayerTag")),
+        ]))
+    return identities
+
+
 def parse_log(payload, observation, report_missing):
     items = payload.get("items") if isinstance(payload, dict) else payload
     if not isinstance(items, list):

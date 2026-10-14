@@ -248,6 +248,44 @@ class RankedCollectorTests(unittest.IsolatedAsyncioTestCase):
         self.assertCountEqual(await self.collect_at(1200),
                               ["/players/%23P0/battlelog", "/players/%23P2/battlelog"])
 
+    async def test_warns_only_for_nonempty_disjoint_logs_of_the_same_account(self):
+        items = [battle(mode="HOME_VILLAGE")]
+        self.client.get.side_effect = lambda path, **kwargs: (
+            SimpleNamespace(ok=True, status=200, payload={
+                "items": [battle(minute=2)] if "P2/" in path else items})
+            if path.endswith("/battlelog") else self.response(path, **kwargs))
+        logger = "elbow_helper.features.ranked_stats.cog"
+        with self.assertNoLogs(logger, level="WARNING"):
+            await self.collect_at(0)
+            items = [{**battle(mode="HOME_VILLAGE"), "stars": 3}]
+            await self.collect_at(300)
+        # This battle exists in another account's log, but not this account's last poll.
+        self.cog._schedules["#P2"].battle_due = 10**6
+        items = [battle(minute=2)]
+        with self.assertLogs(logger, level="WARNING") as logs:
+            await self.collect_at(600)
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("#P0", logs.output[0])
+        self.assertIn("may have been missed", logs.output[0])
+        with self.assertNoLogs(logger, level="WARNING"):
+            items = []
+            await self.collect_at(900)
+            items = [battle(minute=3)]
+            await self.collect_at(1200)
+
+    async def test_failed_log_keeps_previous_successful_log_for_gap_warning(self):
+        self.client.get.side_effect = self.response
+        await self.collect_at(0)
+        self.client.get.side_effect = lambda *_args, **_kwargs: SimpleNamespace(
+            ok=False, status=503, payload=None)
+        with self.assertLogs("elbow_helper.features.ranked_stats.cog", level="WARNING"):
+            await self.collect_at(300)
+        self.client.get.side_effect = lambda *_args, **_kwargs: SimpleNamespace(
+            ok=True, status=200, payload={"items": [battle(minute=30)]})
+        with self.assertLogs("elbow_helper.features.ranked_stats.cog", level="WARNING") as logs:
+            await self.collect_at(600)
+        self.assertTrue(any("shares no battles" in line for line in logs.output))
+
     async def test_profiles_are_hourly_and_can_be_due_without_battle_logs(self):
         self.client.get.side_effect = self.response
         await self.collect_at(0)
