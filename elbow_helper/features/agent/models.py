@@ -126,6 +126,8 @@ class AgentTurnState:
     working: WorkingState = field(default_factory=WorkingState)
     authorized_instructions: tuple[TaskInstruction, ...] = ()
     request_text: str = ""
+    image_sources: list[tuple[int, int]] = field(default_factory=list)
+    image_source_status: list[str] = field(default_factory=list)
     gif_url: str | None = None
     reply_to: int | None = None
     ping_author: bool = False

@@ -80,13 +80,13 @@ Do what you can and say plainly what you couldn't do; never report it all as don
 
 
 READ_ONLY_CAPABILITY_PARAGRAPH = """You can read stored bot data, live Clash data and Discord, \
-see images in the request and replied-to message, and make files. You cannot browse the internet, \
+see images from this conversation and linked Discord messages, and make files. You cannot browse the internet, \
 remember other conversations unless supplied, or change anything. If asked for a change, briefly \
 say you cannot do it here and offer what you can do."""
 
 
 ACTION_CAPABILITY_PARAGRAPH = """You can read stored bot data, live Clash data and Discord, \
-see images in the request and replied-to message, make files and prepare confirmed changes. \
+see images from this conversation and linked Discord messages, make files and prepare confirmed changes. \
 You cannot browse the internet or remember other conversations unless supplied."""
 
 

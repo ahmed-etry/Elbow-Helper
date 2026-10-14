@@ -42,6 +42,7 @@ class ConversationRecord:
     attempted_nonces: tuple[int, ...] = ()
     uncertain_nonce: int | None = None
     generated_parts: tuple[str, ...] = ()
+    image_sources: tuple[tuple[int, int], ...] = ()
     retained_bytes: int = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -53,6 +54,11 @@ class ConversationRecord:
             or type(self.delivery_unknown) is not bool
             or not isinstance(self.generated_parts, tuple)
             or any(not isinstance(value, str) for value in self.generated_parts)
+            or not isinstance(self.image_sources, tuple)
+            or any(not isinstance(source, tuple) or len(source) != 2
+                   or any(type(value) is not int or value <= 0 for value in source)
+                   for source in self.image_sources)
+            or len(self.image_sources) != len(set(self.image_sources))
             or self.delivery_complete and self.delivery_unknown
             or not isinstance(self.reply_ids, tuple)
             or len(self.reply_ids) != len(set(self.reply_ids))
@@ -75,7 +81,7 @@ class ConversationRecord:
             self.local_context, *self.evidence, *self.report_ids, *self.generated_parts,
         )
         size = sum(len(value.encode("utf-8")) for value in values) + 8 * (
-            2 + len(self.reply_ids) + len(self.attempted_nonces)
+            2 + len(self.reply_ids) + len(self.attempted_nonces) + 2 * len(self.image_sources)
         )
         object.__setattr__(self, "retained_bytes", size)
 

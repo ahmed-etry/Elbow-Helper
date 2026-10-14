@@ -145,7 +145,9 @@ class AgentService:
         request_prompt = (
             compiled.prompt.replace(
                 "<images>\nNo images.\n</images>",
-                "<images>\n" + ("\n".join(image.label for image in images) or "No images.")
+                "<images>\n" + ("\n".join(
+                    [image.label for image in images] + context.state.image_source_status
+                ) or "No images.")
                 + "\n</images>",
             ) + "\nCurrent UTC: " + datetime.now(timezone.utc).isoformat()
         )
@@ -238,8 +240,9 @@ class AgentService:
         on_plan: Callable[[Mapping[str, Any]], Awaitable[None]] | None = None,
     ) -> str:
         from ..files.images import request_images
-        images = await request_images(context) if getattr(context, "attachment_sources", ()) else ()
-        context.operator_debug.image_labels = [image.label for image in images]
+        context.state.request_text = question
+        images = await request_images(context)
+        context.operator_debug.image_labels = [image.label for image in images] + context.state.image_source_status
         flow, usage = self._start_flow(
             question=question,
             local_context=local_context,

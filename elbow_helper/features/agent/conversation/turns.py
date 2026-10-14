@@ -132,6 +132,7 @@ class AgentTurnMixin:
                     attempted_nonces=tuple(delivery.attempted_nonces),
                     uncertain_nonce=delivery.uncertain_nonce,
                     generated_parts=tuple(delivery.generated_parts),
+                    image_sources=tuple(context.state.image_sources),
                 ),
             ))
             self._refresh_history_checkpoint(
