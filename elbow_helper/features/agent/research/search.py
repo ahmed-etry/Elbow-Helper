@@ -49,7 +49,7 @@ async def search_discord_messages(
 async def _search_scope(context, arguments):
     query = str(arguments.get("query") or "").strip()
     if not query and not any(arguments.get(key) for key in (
-        "channel_id", "channel_ids", "author_id", "after", "before",
+        "channel_id", "channel_ids", "author_id", "mentions", "after", "before",
     )):
         return {"error": "Supply search words, a channel, an author, or a date range."}
     limit = bounded_int(arguments.get("limit"), default=5, minimum=1,
@@ -90,11 +90,17 @@ async def _search_scope(context, arguments):
         return {"error": "The search start must be earlier than its end."}
     min_id = discord.utils.time_snowflake(after) - 1 if after is not None else None
     requested_max_id = discord.utils.time_snowflake(before) if before is not None else None
+    mentions = arguments.get("mentions", [])
+    if (not isinstance(mentions, (list, tuple)) or len(mentions) > 20
+            or any(type(value) is not int or value <= 0 for value in mentions)):
+        return {"error": "Supply valid mentioned member IDs."}
     base_scope = {
         "guild_id": context.guild.id, "query": query, "channel_id": paged_channel,
         "author_id": arguments.get("author_id"), "min_id": min_id,
         "requested_max_id": requested_max_id,
     }
+    if mentions:
+        base_scope["mentions"] = sorted(set(mentions))
     offset, max_id, cursor_scope = 0, requested_max_id, None
     if paged_channel is not None:
         try:
@@ -122,6 +128,7 @@ async def _search_raw(context, arguments, scope):
             limit=scope["limit"], offset=scope["offset"],
             channel_ids=channel_ids, author_id=arguments.get("author_id"),
             min_id=scope["min_id"], max_id=scope["max_id"],
+            **({"mentions": arguments["mentions"]} if arguments.get("mentions") else {}),
         )
         if await accessible_message_channel(context, paged) is None:
             return {"error": "The asker cannot access that conversation."}
@@ -140,6 +147,7 @@ async def _search_raw(context, arguments, scope):
         guild_id=context.guild.id, content=scope["query"], limit=scope["limit"],
         channel_ids=channel_ids, author_id=arguments.get("author_id"),
         min_id=scope["min_id"], max_id=scope["max_id"],
+            **({"mentions": arguments["mentions"]} if arguments.get("mentions") else {}),
     )
     if scope["explicit_ids"]:
         for channel_id in scope["explicit_ids"]:

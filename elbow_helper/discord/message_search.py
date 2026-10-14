@@ -38,6 +38,7 @@ class DiscordSearchMessage:
     timestamp: str
     embeds: tuple[dict[str, Any], ...] = ()
     attachment_names: tuple[str, ...] = ()
+    author_is_bot: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,20 +80,21 @@ class DiscordMessageSearch:
         limit: int,
         channel_ids: Sequence[int] = (),
         author_id: int | None = None,
+        mentions: Sequence[int] = (),
         min_id: int | None = None,
         max_id: int | None = None,
     ) -> tuple[DiscordSearchMessage, ...]:
         bounded_limit = max(1, min(25, int(limit)))
         batches = _search_channel_batches(
             content=content, limit=bounded_limit, offset=0,
-            channel_ids=channel_ids, author_id=author_id,
+            channel_ids=channel_ids, author_id=author_id, mentions=mentions,
             min_id=min_id, max_id=max_id,
         )
         results: dict[int, DiscordSearchMessage] = {}
         for batch in batches:
             page = await self.search_page(
                 guild_id=guild_id, content=content, limit=bounded_limit,
-                channel_ids=batch, author_id=author_id,
+                channel_ids=batch, author_id=author_id, mentions=mentions,
                 min_id=min_id, max_id=max_id,
             )
             for message in page.messages:
@@ -112,11 +114,12 @@ class DiscordMessageSearch:
         offset: int = 0,
         channel_ids: Sequence[int] = (),
         author_id: int | None = None,
+        mentions: Sequence[int] = (),
         min_id: int | None = None,
         max_id: int | None = None,
     ) -> DiscordSearchPage:
         query = str(content or "").strip()
-        if not query and not (channel_ids or author_id or min_id or max_id):
+        if not query and not (channel_ids or author_id or mentions or min_id or max_id):
             return DiscordSearchPage((), 0, 0, 0, None, False, False)
 
         if type(offset) is not int or not 0 <= offset <= MAX_SEARCH_OFFSET:
@@ -132,7 +135,7 @@ class DiscordMessageSearch:
         for attempt in range(SEARCH_ATTEMPTS):
             params = _search_params(
                 content=query, limit=bounded_limit, offset=offset,
-                channel_ids=channel_ids, author_id=author_id,
+                channel_ids=channel_ids, author_id=author_id, mentions=mentions,
                 min_id=min_id, max_id=max_id,
             )
             if len(urlencode(params).encode("ascii")) > MAX_SEARCH_QUERY_STRING_BYTES:
@@ -285,7 +288,7 @@ class DiscordMessageSearch:
 def _search_params(
     *, content: str, limit: int, offset: int,
     channel_ids: Sequence[int], author_id: int | None,
-    min_id: int | None, max_id: int | None,
+    min_id: int | None, max_id: int | None, mentions: Sequence[int] = (),
 ) -> list[tuple[str, str | int]]:
     params: list[tuple[str, str | int]] = [("limit", limit), ("offset", offset)]
     query = str(content or "").strip()
@@ -301,13 +304,14 @@ def _search_params(
         for channel_id in channel_ids
         if type(channel_id) is int and channel_id > 0
     )
+    params.extend(("mentions", str(member_id)) for member_id in mentions)
     return params
 
 
 def _search_channel_batches(
     *, content: str, limit: int, offset: int,
     channel_ids: Sequence[int], author_id: int | None,
-    min_id: int | None, max_id: int | None,
+    min_id: int | None, max_id: int | None, mentions: Sequence[int] = (),
 ) -> tuple[tuple[int, ...], ...]:
     valid_ids = tuple(dict.fromkeys(
         channel_id for channel_id in channel_ids
@@ -316,7 +320,7 @@ def _search_channel_batches(
     if not valid_ids:
         params = _search_params(
             content=content, limit=limit, offset=offset, channel_ids=(),
-            author_id=author_id, min_id=min_id, max_id=max_id,
+            author_id=author_id, min_id=min_id, max_id=max_id, mentions=mentions,
         )
         if len(urlencode(params).encode("ascii")) > MAX_SEARCH_QUERY_STRING_BYTES:
             raise DiscordMessageSearchError(
@@ -330,7 +334,7 @@ def _search_channel_batches(
         candidate = (*current, channel_id)
         params = _search_params(
             content=content, limit=limit, offset=offset,
-            channel_ids=candidate, author_id=author_id,
+            channel_ids=candidate, author_id=author_id, mentions=mentions,
             min_id=min_id, max_id=max_id,
         )
         if len(urlencode(params).encode("ascii")) <= MAX_SEARCH_QUERY_STRING_BYTES:
@@ -401,6 +405,7 @@ def _parse_search_message(raw: object) -> DiscordSearchMessage | None:
         channel_id=channel_id,
         author_id=author_id,
         author_name=author_name,
+        author_is_bot=author.get("bot") is True,
         content=content,
         timestamp=timestamp,
         embeds=tuple(

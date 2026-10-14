@@ -12,10 +12,12 @@ from ...engine.capability_contract import CapabilityContract
 from ...access import accessible_message_channel, can_access_message_channel, require_evidence_access
 from ...reports.base import ArtifactCapacityError, retain_report
 from .report import MemberLifecycleReport
+from .history import read_member_history
 from ...models import AgentRequestContext, RegisteredAgentTool
 
 
 USAGE_NOTES = {
+    "read_member_history": "ID-verified mentions plus name searches and embed history. Continue cursors; check search_is_exhaustive. Deleted logs are unavailable.",
     "read_member_lifecycle": (
         "Tracked observations are not complete history or an inactivity verdict."
     ),
@@ -23,6 +25,7 @@ USAGE_NOTES = {
 
 
 TOOL_CONTRACTS = {
+    "read_member_history": CapabilityContract(entity_fields=(("member_id", "discord_member"),)),
     "read_member_lifecycle": CapabilityContract(
         entity_fields=(), filter_fields=("platform", "activity", "overdue_only"),
     ),
@@ -40,8 +43,15 @@ def member_lifecycle_tools() -> tuple[RegisteredAgentTool, ...]:
     }
     definitions = (
         (
+            "read_member_history",
+            "Read a member's join/leave logs from every bot, oldest first.",
+            {"member_id": {"type": "integer", "minimum": 1},
+             "cursor": {"type": "string", "maxLength": 64}},
+            ("member_id",), read_member_history,
+        ),
+        (
             "read_member_lifecycle",
-            "Read tracked joins, recruitment sources and activity.",
+            "Read joins, recruitment sources and activity for the current stay only.",
             {
                 "platform": {"type": "string", "minLength": 1, "maxLength": 100},
                 "activity": activity,

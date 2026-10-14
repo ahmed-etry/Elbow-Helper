@@ -161,6 +161,9 @@ def fixed_results(seed):
     return {
         "query_bot_data": {"rows": [{"synthetic_number": seed}], "row_count": 1,
                            "truncated": False},
+        "read_member_history": {"entries": [{"message_id": 1, "channel_id": 2, "event": "join",
+            "timestamp": "2026-01-01T00:00:00+00:00", "author_id": 3, "author": "Log bot",
+            "content": "Synthetic member joined", "source": "https://discord.com/channels/1/2/3"}]},
         "read_clash": {"items": [{"tag": "#P0", "status": "ok", "data": {"name": "Synthetic"}}],
                        "observed_at": "2026-01-01T00:00:00+00:00"},
         "find_discord_channels": {"channels": [{"channel_id": 100, "name": "Synthetic"}],

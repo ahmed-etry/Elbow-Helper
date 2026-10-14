@@ -366,6 +366,9 @@ def _returned_fields(shape):
     return {key: value for key, value in shape.items() if key in records or key in identities}
 
 
+RESULT_FIELDS["read_member_history"] = {**names("member_id,channel_id,search_is_exhaustive,next_cursor,coverage"),
+                                      "entries": [names("message_id,channel_id,event,timestamp,author_id,author,content,source")]}
+
 RESULT_FIELDS = {name: _returned_fields(shape) for name, shape in RESULT_FIELDS.items()}
 REPORT_FIELDS = {kind: _returned_fields(shape) for kind, shape in REPORT_FIELDS.items()}
 RESULT_FIELDS["read_discord_poll"] = result_fields(PollSnapshot)

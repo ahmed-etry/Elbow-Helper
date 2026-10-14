@@ -12,6 +12,21 @@ from elbow_helper.discord.message_search import MAX_SEARCH_QUERY_STRING_BYTES
 
 
 class DiscordMessageSearchTests(unittest.IsolatedAsyncioTestCase):
+    async def test_mentions_only_filter_is_sent_in_every_channel_batch(self):
+        http = AsyncMock()
+        http.request.return_value = {"messages": [], "total_results": 0}
+        await DiscordMessageSearch(http).search(
+            guild_id=1, content="", limit=5, mentions=(42, 43),
+            channel_ids=tuple(10_000_000_000_000_000 + value for value in range(500)),
+        )
+        self.assertGreater(http.request.await_count, 1)
+        for call in http.request.await_args_list:
+            self.assertIn(("mentions", "42"), call.kwargs["params"])
+            self.assertIn(("mentions", "43"), call.kwargs["params"])
+        http.request.reset_mock()
+        await DiscordMessageSearch(http).search_page(guild_id=1, content="", limit=5, mentions=(42,))
+        http.request.assert_awaited_once()
+
     @staticmethod
     def history_message(message_id, *, channel_id=34):
         return {

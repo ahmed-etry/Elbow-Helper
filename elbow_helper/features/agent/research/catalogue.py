@@ -29,7 +29,7 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
             AgentToolDefinition(
                 name="search_discord_messages",
                 description=(
-                    "Search accessible Discord messages by author, words, channels or "
+                    "Search accessible Discord messages by author, mentions, words, channels or "
                     "dates."
                 ),
                 parameters={
@@ -56,6 +56,8 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                             "type": "string", "maxLength": 64,
                         },
                         "author_id": {"type": "integer", "minimum": 1},
+                        "mentions": {"type": "array", "minItems": 1, "maxItems": 20,
+                                     "items": {"type": "integer", "minimum": 1}},
                         "after": {"type": "string", "maxLength": 40},
                         "before": {"type": "string", "maxLength": 40},
                     },
@@ -72,6 +74,7 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                     ("channel_id", "discord_channel"),
                     ("channel_ids", "discord_channel_set"),
                     ("author_id", "discord_member"),
+                    ("mentions", "discord_member_set"),
                 ),
                 source_scope="channel_messages",
                 channel_fields=("channel_id", "channel_ids"),

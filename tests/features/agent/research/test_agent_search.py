@@ -50,6 +50,25 @@ def _context():
     )
 
 
+class MentionSearchTests(unittest.IsolatedAsyncioTestCase):
+    async def test_mentions_reach_transport_and_bind_continuation_scope(self):
+        context = _context()
+        context.message_search.search_page.return_value = DiscordSearchPage((), 0, 5, 10, 5, False, False)
+        first = await search_discord_messages(context, {"channel_id": 100, "mentions": [42]})
+        self.assertEqual(context.message_search.search_page.await_args.kwargs["mentions"], [42])
+        mismatch = await search_discord_messages(context, {
+            "channel_id": 100, "mentions": [43], "cursor": first["coverage"]["next_cursor"],
+        })
+        self.assertIn("error", mismatch)
+        context.message_search.search_page.assert_awaited_once()
+
+    async def test_mentions_only_search_is_valid(self):
+        context = _context()
+        result = await search_discord_messages(context, {"mentions": [42]})
+        self.assertNotIn("error", result)
+        self.assertEqual(context.message_search.search.await_args.kwargs["mentions"], [42])
+
+
 def _thread(context, thread_id, *, name, private=False, archived=True):
     return SimpleNamespace(
         id=thread_id, name=name, parent_id=100, guild=context.guild,
