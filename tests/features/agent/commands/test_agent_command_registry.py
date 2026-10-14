@@ -95,8 +95,16 @@ class CommandRegistryTests(unittest.TestCase):
         registry.update(build_agent_tools(GiphyClient("synthetic")))
         with TemporaryDirectory() as directory:
             guide = DataGuide(synthetic_datasets(directory)).for_levels(KNOWN_ACCESS_REQUIREMENTS)
-        prompt = system_instructions(registry, actions_enabled=True, data_guide=guide)
-        self.assertLessEqual(estimate_tokens(prompt), 42_000)
+        # Fill both knowledge budgets, independent of the deployed knowledge files.
+        core = "k" * 8_000
+        index = "t" * 2_000
+        self.assertEqual(estimate_tokens(core), 4_000)
+        self.assertEqual(estimate_tokens(index), 1_000)
+        prompt = system_instructions(
+            registry, actions_enabled=True, data_guide=guide,
+            community_knowledge="\n\n".join((core, index)),
+        )
+        self.assertLessEqual(estimate_tokens(prompt), 50_000)
         self.assertEqual(len(capability_list(registry).splitlines()), len(registry))
         lines = capability_list(registry).splitlines()
         for name, tool in registry.items():
