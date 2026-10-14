@@ -134,10 +134,10 @@ class KnowledgeCatalog:
             LOGGER.warning("Community knowledge core exceeds 4000 tokens; omitted sections: %s",
                            "; ".join(sorted(omitted)))
         if fallback:
-            LOGGER.warning("Community knowledge topic index exceeds 1000 tokens; using file counts "
+            LOGGER.warning("Community knowledge topic index exceeds 2500 tokens; using file counts "
                            "for visibility profiles: %s", "; ".join(fallback))
         if index_omitted:
-            LOGGER.warning("Community knowledge file index exceeds 1000 tokens; omitted files: %s",
+            LOGGER.warning("Community knowledge file index exceeds 2500 tokens; omitted files: %s",
                            "; ".join(sorted(index_omitted)))
 
 
@@ -151,17 +151,17 @@ def _topic_index(sections):
     text = "\n".join([heading, *(f"{name}:\n" + "\n".join(f"- {title}" for title in titles)
                                   for name, titles in files.items())])
     title_tokens = estimate_tokens(text)
-    if title_tokens <= 1000:
+    if title_tokens <= 2500:
         return text, title_tokens, False, ()
     counts = [f"{name}: {len(titles)} sections" for name, titles in files.items()]
     text = "\n".join([heading, *counts])
-    if estimate_tokens(text) <= 1000:
+    if estimate_tokens(text) <= 2500:
         return text, title_tokens, True, ()
     # Even file names can exceed the cap in very large directories.
     note = "Additional files omitted; search for details."
     included, omitted = [heading], []
     for name, line in zip(files, counts):
-        if estimate_tokens("\n".join([*included, line, note])) <= 1000:
+        if estimate_tokens("\n".join([*included, line, note])) <= 2500:
             included.append(line)
         else:
             omitted.append(name)

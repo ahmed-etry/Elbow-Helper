@@ -125,27 +125,36 @@ Hidden""")
             prompt = catalog.prompt({level})
             self.assertIn("Restricted " + level, prompt.index)
             self.assertEqual(prompt.required_access, {level})
-            self.assertLessEqual(estimate_tokens(prompt.index), 1000)
+            self.assertLessEqual(estimate_tokens(prompt.index), 2500)
+
+    def test_topic_index_keeps_one_hundred_section_titles(self):
+        titles = [f"Community knowledge section title {index}" for index in range(100)]
+        self.write("topics.md", "".join(f"# {title}\nBody\n" for title in titles))
+        prompt = self.store.load().prompt()
+        self.assertFalse(prompt.index_fallback)
+        self.assertGreater(estimate_tokens(prompt.index), 1000)
+        self.assertLessEqual(estimate_tokens(prompt.index), 2500)
+        self.assertEqual(prompt.index.splitlines()[2:], [f"- {title}" for title in titles])
 
     def test_large_topic_index_falls_back_to_visible_file_counts(self):
-        self.write("topics.md", "".join(f"# Topic {index}\nBody\n" for index in range(300)))
+        self.write("topics.md", "".join(f"# Topic {index}\nBody\n" for index in range(600)))
         self.write("private.md", '+++\nvisibility="lead"\n+++\n# Restricted title\nBody')
         with self.assertLogs("elbow_helper.features.agent.knowledge.store", level="WARNING") as logs:
             prompt = self.store.load().prompt()
-        self.assertEqual(prompt.index.splitlines()[-1], "topics.md: 300 sections")
+        self.assertEqual(prompt.index.splitlines()[-1], "topics.md: 600 sections")
         self.assertNotIn("Topic 1", prompt.index)
         self.assertNotIn("private.md", prompt.index)
         self.assertIn("using file counts", " ".join(logs.output))
-        self.assertLessEqual(estimate_tokens(prompt.index), 1000)
+        self.assertLessEqual(estimate_tokens(prompt.index), 2500)
 
     def test_file_count_fallback_stays_bounded_with_many_files(self):
-        for index in range(150):
+        for index in range(300):
             self.write(f"topic-{index:03}.md", "# Generic topic\nGeneric body")
         with self.assertLogs("elbow_helper.features.agent.knowledge.store", level="WARNING") as logs:
             prompt = self.store.load().prompt()
         self.assertIn("Additional files omitted", prompt.index)
         self.assertIn("omitted files", " ".join(logs.output))
-        self.assertLessEqual(estimate_tokens(prompt.index), 1000)
+        self.assertLessEqual(estimate_tokens(prompt.index), 2500)
 
     def test_search_counts_words_and_repeats_with_title_weight_and_exact_priority(self):
         self.write("topics.md", "# Repeated body\n" + "policy " * 20

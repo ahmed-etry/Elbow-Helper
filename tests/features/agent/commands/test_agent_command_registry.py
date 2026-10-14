@@ -97,9 +97,9 @@ class CommandRegistryTests(unittest.TestCase):
             guide = DataGuide(synthetic_datasets(directory)).for_levels(KNOWN_ACCESS_REQUIREMENTS)
         # Fill both knowledge budgets, independent of the deployed knowledge files.
         core = "k" * 8_000
-        index = "t" * 2_000
+        index = "t" * 5_000
         self.assertEqual(estimate_tokens(core), 4_000)
-        self.assertEqual(estimate_tokens(index), 1_000)
+        self.assertEqual(estimate_tokens(index), 2_500)
         prompt = system_instructions(
             registry, actions_enabled=True, data_guide=guide,
             community_knowledge="\n\n".join((core, index)),
