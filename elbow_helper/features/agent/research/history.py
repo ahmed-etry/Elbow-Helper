@@ -367,7 +367,8 @@ async def read_message_context(
         "channel": getattr(channel, "name", str(channel_id)),
         "requested_message_id": message_id,
         "messages": [
-            discord_message_evidence(context.guild.id, message)
+            {**discord_message_evidence(context.guild.id, message),
+             "is_requested_message": message.id == message_id}
             for message in messages
         ],
     }

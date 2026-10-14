@@ -215,8 +215,8 @@ def fixed_results(seed):
         },
         "read_message_context": {
             "channel_id": 100, "channel": "Synthetic", "requested_message_id": seed,
-            "messages": [{key: value for key, value in message(seed).items()
-                          if key not in {"channel_id", "channel"}}],
+            "messages": [{**{key: value for key, value in message(seed).items()
+                             if key not in {"channel_id", "channel"}}, "is_requested_message": True}],
         },
         "read_bot_command_help": {
             "matching_count": 1, "next_offset": None, "source": "/help", "visibility": "public",

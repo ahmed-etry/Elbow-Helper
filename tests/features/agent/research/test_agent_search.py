@@ -545,15 +545,21 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
 
 
 class MessageContextResultContractTests(unittest.IsolatedAsyncioTestCase):
-    async def test_surrounding_messages_expose_declared_identities(self):
+    async def test_requested_record_is_marked_and_neighbours_are_only_context(self):
         from elbow_helper.features.agent.research.history import read_message_context
-        message = SimpleNamespace(id=301, author=SimpleNamespace(id=101, display_name="Synthetic member"),
+        messages = [SimpleNamespace(id=identifier, author=SimpleNamespace(id=101, display_name="Synthetic member"),
                                   created_at=datetime(2026, 9, 15, tzinfo=timezone.utc), content="Synthetic message",
-                                  attachments=[], channel=SimpleNamespace(id=100))
+                                  attachments=[], channel=SimpleNamespace(id=100)) for identifier in (300, 301, 302)]
         async def history(**kwargs):
-            yield message
+            for message in messages:
+                yield message
         channel = SimpleNamespace(id=100, name="synthetic", history=history)
         context = SimpleNamespace(guild=SimpleNamespace(id=1), state=SimpleNamespace(source_channels=set()))
         with patch("elbow_helper.features.agent.research.history.accessible_message_channel", return_value=channel):
             result = await read_message_context(context, {"channel_id": 100, "message_id": 301})
-        self.assertEqual(result["messages"][0]["message_id"], 301)
+        self.assertEqual([item["message_id"] for item in result["messages"]], [300, 301, 302])
+        self.assertEqual([item["is_requested_message"] for item in result["messages"]], [False, True, False])
+        messages.pop(1)
+        with patch("elbow_helper.features.agent.research.history.accessible_message_channel", return_value=channel):
+            result = await read_message_context(context, {"channel_id": 100, "message_id": 301})
+        self.assertFalse(any(item["is_requested_message"] for item in result["messages"]))

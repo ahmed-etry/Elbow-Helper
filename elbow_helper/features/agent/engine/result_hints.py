@@ -29,7 +29,7 @@ from .result_fields import format_returns, names, result_fields
 
 
 MESSAGE = names("message_id,channel_id,channel,author_id,author,timestamp,content,source")
-CONTEXT_MESSAGE = names("message_id,author_id,author,timestamp,content,source")
+CONTEXT_MESSAGE = names("message_id,author_id,author,timestamp,content,source,is_requested_message")
 CLASH_SUMMARIES = {
     "player": {**dict.fromkeys(PLAYER_FIELDS, ""), "clan": dict.fromkeys(PLAYER_CLAN_FIELDS, ""),
                "league": dict.fromkeys(LEAGUE_FIELDS, ""),
