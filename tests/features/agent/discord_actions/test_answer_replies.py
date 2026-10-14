@@ -122,7 +122,9 @@ class AnswerReplyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, {"channel_id": 2, "message_ids": [70, 71]})
         options = self.target.reply.await_args.kwargs
         self.assertTrue(options["mention_author"])
-        self.assertFalse(options["allowed_mentions"].users)
+        self.assertTrue(options["allowed_mentions"].users)
+        self.assertFalse(options["allowed_mentions"].everyone)
+        self.assertFalse(options["allowed_mentions"].roles)
         self.assertEqual(self.target.reply.await_args.args[0], "Synthetic answer <@7>")
         self.assertEqual(self.channel.send.await_args.args[0], url)
         self.assertEqual(self.channel.send.await_args.kwargs["allowed_mentions"].to_dict(),
@@ -160,4 +162,23 @@ class AnswerReplyTests(unittest.IsolatedAsyncioTestCase):
             result = await self.surface.send_post_reply(self.request, text, None, context, None)
         self.assertEqual(result["message_ids"], [72])
         self.assertEqual(self.surface._send_response.await_args.args[1], text)
+        self.assertTrue(self.surface._send_response.await_args.kwargs["_suppress_mentions"])
         self.surface._send_gif.assert_not_awaited()
+
+    async def test_same_channel_post_mentions_uncached_members_without_reply_ping(self):
+        self.request.mentions = []
+        self.request.guild = self.context.guild
+        self.surface.bot = SimpleNamespace(user=None)
+        context = AgentRequestContext(
+            bot=self.surface.bot, guild=self.context.guild, member=self.context.member,
+            source_message=self.request, account_links=None, message_search=None,
+        )
+        context.state.reply_to = 55
+        with patch("elbow_helper.features.agent.delivery.can_show", new_callable=AsyncMock,
+                   return_value=True):
+            await self.surface.send_post_reply(
+                self.request, "Synthetic answer <@12345> <@!54321>", None, context, None,
+            )
+        options = self.target.reply.await_args.kwargs
+        self.assertFalse(options["mention_author"])
+        self.assertEqual(options["allowed_mentions"].to_dict(), {"parse": ["users"], "roles": []})

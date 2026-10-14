@@ -31,6 +31,7 @@ from .files.delivery import (
 from .files.gif_media import URLS
 from .discord_actions.reply_targets import answer_reply_target
 from .discord_actions.message_parts import outgoing_parts
+from .discord_actions.messages import post_mentions
 from .text import DISCORD_MESSAGE_LIMIT
 from .text import chunk_response as _chunk_response
 
@@ -72,7 +73,7 @@ class AgentDeliveryMixin:
             await self._send_response(
                 message, words, referenced, conversation=conversation,
                 delivery=delivery, context=answer_context,
-                _nonce_seed=seed, _suppress_mentions=True,
+                _nonce_seed=seed, _post_mentions=True,
             )
         for index, (part, is_gif) in enumerate(parts):
             if is_gif and audience_allowed:
@@ -164,6 +165,7 @@ class AgentDeliveryMixin:
         _notice_content: str | None = None,
         _answer_disclosure: bool = False,
         _suppress_mentions: bool = False,
+        _post_mentions: bool = False,
     ) -> None:
         audit_private = bool(context and ACCESS_VIEW_AUDIT_LOG in context.state.required_access
                              and not isinstance(message.channel, discord.DMChannel))
@@ -291,6 +293,8 @@ class AgentDeliveryMixin:
             users=list(allowed_users.values()),
             replied_user=False,
         )
+        if _post_mentions:
+            allowed_mentions = post_mentions(context, {}, response)
         if _suppress_mentions:
             allowed_mentions = discord.AllowedMentions.none()
         files = attachment_files(attachments)
