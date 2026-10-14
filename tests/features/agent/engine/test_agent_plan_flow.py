@@ -448,12 +448,12 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             )
         return answer, model
 
-    async def test_direct_reply_uses_one_low_effort_call_and_only_the_plan_tool(self):
+    async def test_direct_reply_uses_one_high_effort_call_and_only_the_plan_tool(self):
         session = _Session([AgentStep("Ready.", (), AgentUsage())], self.events)
         answer, model = await self._answer(session)
         self.assertEqual(answer, "Ready.")
         self.assertEqual(len(session.calls), 1)
-        self.assertEqual(session.calls[0][2], AgentReasoningEffort.LOW)
+        self.assertEqual(session.calls[0][2], AgentReasoningEffort.HIGH)
         self.assertEqual([tool.name for tool in model.request["tools"]],
                          ["submit_request_plan"])
 
@@ -559,7 +559,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         answer, _ = await self._answer(session)
         self.assertEqual(answer, "Seven.")
         self.assertEqual([call[2] for call in session.calls],
-                         [AgentReasoningEffort.LOW, AgentReasoningEffort.MAX])
+                         [AgentReasoningEffort.HIGH, AgentReasoningEffort.MAX])
 
     async def test_answer_output_limit_grows_with_effort(self):
         for effort, expected in (("low", 16_000), ("high", 32_000),
@@ -578,7 +578,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
 
                 session.advance = capture
                 await self._answer(session)
-                self.assertEqual(limits, [8_000, expected])
+                self.assertEqual(limits, [32_000, expected])
                 self.events.clear()
 
     async def test_answer_output_limit_stays_inside_context(self):
@@ -1154,7 +1154,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         session.advance = observe
         _, model = await self._answer(session)
         self.assertTrue(session.calls[0][1])
-        self.assertEqual(limits, [8_000])
+        self.assertEqual(limits, [32_000])
         self.assertEqual(model.request["max_output_tokens"], 64_000)
 
     async def test_finite_context_executes_bounded_read_and_reserves_answer(self):
@@ -1168,7 +1168,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         session.advance = observe
         await self._answer(session)
         self.assertEqual(self.events.count("read"), 1)
-        self.assertEqual(limits, [8_000, 16_000])
+        self.assertEqual(limits, [32_000, 16_000])
 
     async def test_deadline_rechecked_after_model_round_before_tool_runs(self):
         now = time.monotonic()

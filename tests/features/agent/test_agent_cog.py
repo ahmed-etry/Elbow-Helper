@@ -460,7 +460,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(message.reply.await_args.args, (answer,))
                 self.assertEqual(sorted(calls), [200, 300])
                 self.assertEqual(create.await_count, 3 if extra_final_call else 2)
-                self.assertEqual(create.await_args_list[0].kwargs["reasoning_effort"], "low")
+                self.assertEqual(create.await_args_list[0].kwargs["reasoning_effort"], "high")
                 self.assertEqual([
                     item["function"]["name"]
                     for item in create.await_args_list[0].kwargs["tools"]

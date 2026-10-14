@@ -12,6 +12,7 @@ from elbow_helper.infrastructure.ai import AgentToolResult
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort, AgentSession
 
 from ..models import RegisteredAgentTool
+from ..engine.budgets import INITIAL_MAX_OUTPUT_TOKENS
 from .checker import PlanCheck, check_plan
 from .format import PLAN_TOOL_NAME
 from .results import plan_feedback
@@ -46,8 +47,8 @@ async def read_request(
     pending: tuple[AgentToolResult, ...] = ()
     for attempt in range(2):
         step = await (advance or session.advance)(
-            pending, reasoning_effort=AgentReasoningEffort.LOW,
-            max_output_tokens=8000,
+            pending, reasoning_effort=AgentReasoningEffort.HIGH,
+            max_output_tokens=INITIAL_MAX_OUTPUT_TOKENS,
         )
         rounds.append(step)
         if not step.tool_calls:

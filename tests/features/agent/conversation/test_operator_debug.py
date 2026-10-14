@@ -66,7 +66,7 @@ class OperatorDebugTests(unittest.IsolatedAsyncioTestCase):
         call, = record["tool_calls"]
         self.assertEqual(call["arguments"], {"value": 7})
         self.assertEqual(call["result"]["evidence"], "Synthetic restricted evidence")
-        self.assertEqual([round_["effort"] for round_ in record["rounds"]], ["low", "low", "high"])
+        self.assertEqual([round_["effort"] for round_ in record["rounds"]], ["high", "high", "high"])
         self.assertEqual(record["rounds"][-1]["usage"], {
             "prompt_tokens": 100, "completion_tokens": 20,
             "prompt_cache_hit_tokens": 30, "prompt_cache_miss_tokens": 70})

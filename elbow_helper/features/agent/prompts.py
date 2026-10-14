@@ -92,8 +92,10 @@ earlier results, including earlier plans in this request. Paths use result field
 collects a field from every item, as in ["rows", "*", "player_tag"].
 
 After results, answer or plan only what is still missing. Read a failed step's error, fix its \
-call and carry on. Identical lookups return earlier results. Use low effort for most requests, \
-high for analysis across sources and max only for the hardest synthesis.
+call and carry on. Identical lookups return earlier results. Effort is how hard to think, not \
+how long to answer: low only for pure banter and single direct lookups; high for judging a \
+person, explaining a metric or data, combining sources or re-checking an earlier claim; \
+max for the hardest synthesis.
 
 Return hints name record fields: {...} is an object, [...] is a list, ? marks a conditional \
 field, and * means keys depend on the query or source. Every result also has \
