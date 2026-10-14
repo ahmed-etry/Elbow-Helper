@@ -124,13 +124,14 @@ class AgentService:
             level for level in KNOWN_ACCESS_REQUIREMENTS
             if has_access_requirements(context.guild, context.member.id, {level})
         }
+        knowledge = context.knowledge_store.load().prompt(levels) if context.knowledge_store else None
+        if knowledge:
+            context.state.required_access.update(knowledge.required_access)
         system_prompt = system_instructions(
             registry,
             actions_enabled=actions_available,
             data_guide=guide.for_levels(levels) if guide else "",
-            community_knowledge=(
-                context.knowledge_store.load().public_prompt() if context.knowledge_store else ""
-            ),
+            community_knowledge=knowledge.text if knowledge else "",
         )
         context.state.request_text = question
         compiled = compile_context(

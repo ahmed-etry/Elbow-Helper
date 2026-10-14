@@ -7,6 +7,7 @@ from ..access import has_access_requirements, require_lookup_access, require_evi
 
 from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool
+from .store import VISIBILITIES
 
 
 def knowledge_tools():
@@ -22,9 +23,9 @@ async def search_approved_knowledge(context, arguments):
     if context.knowledge_store is None:
         return {"sections": []}
     catalog = await asyncio.to_thread(context.knowledge_store.load)
-    visible = tuple(section for section in catalog.active_sections
-        if section.visibility == "public" or has_access_requirements(
-            context.guild, context.member.id, {section.visibility}))
+    levels = {level for level in VISIBILITIES - {"public"}
+              if has_access_requirements(context.guild, context.member.id, {level})}
+    visible = catalog.visible_sections(levels)
     sections = catalog.search(visible, query=arguments["query"])
     levels = {section.visibility for section in sections if section.visibility != "public"}
     if levels:

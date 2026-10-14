@@ -1,12 +1,17 @@
 """Markdown knowledge defaults, access, ranking and prompt bounds."""
 from pathlib import Path
+from datetime import datetime, timezone
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 from elbow_helper.features.agent.knowledge.store import KnowledgeStore
 from elbow_helper.features.agent.knowledge.tools import search_approved_knowledge
-from elbow_helper.features.agent.models import AgentTurnState
+from elbow_helper.features.agent.models import AgentRequestContext, AgentTurnState
+from elbow_helper.features.agent.conversation.context import estimate_tokens
+from elbow_helper.features.agent.engine.service import AgentService
+from elbow_helper.features.agent.access import AgentAccessLost, require_evidence_access
+from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID, LEAD
 
 
 class KnowledgeTests(unittest.IsolatedAsyncioTestCase):
@@ -45,7 +50,7 @@ Hidden""")
         self.assertEqual([s.title for s in sections], ["Leads", "plain", "War", "Raids"])
         self.assertEqual(sections[0].visibility, "lead")
         self.assertEqual(sections[1].body, "Introduction")
-        self.assertNotIn("Review wars", self.store.load().public_prompt())
+        self.assertNotIn("Review wars", self.store.load().prompt().text)
 
     def test_rank_and_reload_interval(self):
         self.write("facts.md", "# War\nOther facts\n# Other\nwar war war")
@@ -59,13 +64,76 @@ Hidden""")
             self.assertEqual(self.store.load().active_sections[0].body, "New facts")
 
     def test_prompt_threshold(self):
-        self.write("large.md", "# Facts\n" + "x" * 20000)
-        self.assertEqual(self.store.load().public_prompt(), "")
+        self.write("large.md", "+++\nalways_loaded=true\n+++\n# Facts\n" + "x" * 20000)
+        with self.assertLogs("elbow_helper.features.agent.knowledge.store", level="WARNING") as logs:
+            self.assertEqual(self.store.load().prompt().text, "")
+        self.assertIn("large.md: Facts", " ".join(logs.output))
         with patch(
             "elbow_helper.features.agent.knowledge.store.time.monotonic", return_value=10**12,
         ):
-            self.write("large.md", "# Facts\nA fact")
-            self.assertIn("A fact", self.store.load().public_prompt())
+            self.write("large.md", "+++\nalways_loaded=true\n+++\n# Facts\nA fact")
+            self.assertIn("A fact", self.store.load().prompt().text)
+
+    def test_core_is_opt_in_approved_visible_and_ordered(self):
+        self.write("b.md", "+++\nalways_loaded=true\n+++\n# Second\nSecond body\n# Third\nThird body")
+        self.write("a.md", "+++\nalways_loaded=true\n+++\n# First\nFirst body")
+        self.write("plain.md", "# Searchable\nSearch-only body")
+        for level in ("lead", "lead_plus", "core"):
+            self.write(level + ".md", f'+++\nalways_loaded=true\nvisibility="{level}"\n+++\n# Private {level}\nPrivate body')
+        self.write("draft.md", '+++\nalways_loaded=true\nstatus="draft"\n+++\n# Draft\nDraft body')
+        catalog = self.store.load()
+        self.assertEqual(catalog.prompt().core, "### First\nFirst body\n\n### Second\nSecond body\n\n### Third\nThird body")
+        for level in ("lead", "lead_plus", "core"):
+            prompt = catalog.prompt({level})
+            self.assertIn("Private " + level, prompt.text)
+            self.assertEqual(prompt.required_access, {level})
+        self.assertEqual(catalog.search(catalog.active_sections, query="searchable")[0].body,
+                         "Search-only body")
+
+    def test_core_keeps_what_fits_and_skips_oversized_sections(self):
+        self.write("core.md", "+++\nalways_loaded=true\n+++\n# First\n" + "a" * 7900
+                   + "\n# Oversized\n" + "b" * 8000 + "\n# Last\nSmall body")
+        with self.assertLogs("elbow_helper.features.agent.knowledge.store", level="WARNING") as logs:
+            prompt = self.store.load().prompt()
+        self.assertIn("### First", prompt.core)
+        self.assertIn("### Last", prompt.core)
+        self.assertNotIn("### Oversized", prompt.core)
+        self.assertIn("core.md: Oversized", " ".join(logs.output))
+        self.assertLessEqual(estimate_tokens(prompt.core), 4000)
+
+    def test_invalid_always_loaded_does_not_load_file(self):
+        self.write("bad.md", '+++\nalways_loaded="true"\n+++\n# Invalid\nBody')
+        with self.assertLogs("elbow_helper.features.agent.knowledge.store", level="ERROR"):
+            self.assertEqual(self.store.load().active_sections, ())
+
+    async def test_service_loads_visible_core_and_rechecks_retained_access(self):
+        self.write("core.md", '+++\nalways_loaded=true\nvisibility="lead"\n+++\n# Restricted topic\nRestricted body')
+        self.write("public.md", "# Search topic\nSearch-only body")
+        member = SimpleNamespace(id=1, display_name="Synthetic member", roles=[
+            SimpleNamespace(id=AGENT_TESTER_ROLE_ID), SimpleNamespace(id=next(iter(LEAD)))])
+        channel = SimpleNamespace(id=2, permissions_for=lambda _: SimpleNamespace(
+            view_channel=True, read_message_history=True))
+        guild = SimpleNamespace(id=3, name="Synthetic guild", me=member, get_member=lambda _: member)
+        source = SimpleNamespace(channel=channel, created_at=datetime.now(timezone.utc))
+        requests = []
+
+        def session(**kwargs):
+            requests.append(kwargs)
+            return SimpleNamespace()
+
+        service = AgentService(SimpleNamespace(create_agent_session=session))
+        for allowed in (True, False):
+            context = AgentRequestContext(bot=SimpleNamespace(), guild=guild, member=member,
+                source_message=source, account_links=None, message_search=None, knowledge_store=self.store)
+            service._start_flow(question="Synthetic question", local_context="", context=context,
+                                conversation_history="")
+            self.assertEqual("Restricted body" in requests[-1]["system_prompt"], allowed)
+            self.assertNotIn("Search-only body", requests[-1]["system_prompt"])
+            self.assertEqual(context.state.required_access, {"lead"} if allowed else set())
+            if allowed:
+                member.roles.pop()
+                with self.assertRaises(AgentAccessLost):
+                    await require_evidence_access(context)
 
     async def test_visibility_and_result_bounds(self):
         self.write("public.md", "".join(

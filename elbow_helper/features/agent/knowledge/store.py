@@ -8,6 +8,8 @@ import re
 import time
 import tomllib
 
+from ..conversation.context import estimate_tokens
+
 
 LOGGER = logging.getLogger(__name__)
 VISIBILITIES = frozenset({"public", "lead", "lead_plus", "core"})
@@ -19,6 +21,20 @@ class KnowledgeSection:
     title: str
     body: str
     visibility: str = "public"
+    file_name: str = ""
+    always_loaded: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgePrompt:
+    core: str
+    required_access: frozenset[str]
+    core_tokens: int
+    omitted: tuple[str, ...] = ()
+
+    @property
+    def text(self):
+        return self.core
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,11 +52,27 @@ class KnowledgeCatalog:
                 ranked.append((-title, -body, index, section))
         return tuple(item[3] for item in sorted(ranked)[:8])
 
-    def public_prompt(self):
-        from ..conversation.context import estimate_tokens
-        text = "\n\n".join(f"### {section.title}\n{section.body}"
-                             for section in self.active_sections if section.visibility == "public")
-        return text if estimate_tokens(text) <= 4000 else ""
+    def visible_sections(self, levels=()):
+        return tuple(section for section in self.active_sections
+                     if section.visibility == "public" or section.visibility in levels)
+
+    def prompt(self, levels=()):
+        included, omitted, access = [], [], set()
+        for section in self.visible_sections(levels):
+            if not section.always_loaded:
+                continue
+            text = f"### {section.title}\n{section.body}"
+            if estimate_tokens("\n\n".join((*included, text))) > 4000:
+                omitted.append(f"{section.file_name}: {section.title}")
+                continue
+            included.append(text)
+            if section.visibility != "public":
+                access.add(section.visibility)
+        core = "\n\n".join(included)
+        if omitted:
+            LOGGER.warning("Community knowledge core exceeds 4000 tokens; omitted sections: %s",
+                           "; ".join(omitted))
+        return KnowledgePrompt(core, frozenset(access), estimate_tokens(core), tuple(omitted))
 
 
 class KnowledgeStore:
@@ -89,8 +121,11 @@ def _parse(path):
         text = text[4 + marker.end():].lstrip("\n")
     visibility = metadata.get("visibility", "public")
     status = metadata.get("status", "approved")
+    always_loaded = metadata.get("always_loaded", False)
     if visibility not in VISIBILITIES or status not in STATUSES:
         raise ValueError("Invalid knowledge visibility or status")
+    if type(always_loaded) is not bool:
+        raise ValueError("Knowledge always_loaded must be a boolean")
     if status != "approved":
         return ()
     sections = []
@@ -103,10 +138,12 @@ def _parse(path):
         heading = re.match(r"^#{1,3}\s+(.+?)\s*#*\s*$", line) if not fenced else None
         if heading:
             if body or title != path.stem:
-                sections.append(KnowledgeSection(title, "\n".join(body).strip(), visibility))
+                sections.append(KnowledgeSection(title, "\n".join(body).strip(), visibility,
+                                                 path.name, always_loaded))
             title, body = heading[1], []
         else:
             body.append(line)
     if body or title != path.stem:
-        sections.append(KnowledgeSection(title, "\n".join(body).strip(), visibility))
+        sections.append(KnowledgeSection(title, "\n".join(body).strip(), visibility,
+                                         path.name, always_loaded))
     return tuple(section for section in sections if section.body or section.title != path.stem)
