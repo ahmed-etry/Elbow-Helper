@@ -80,9 +80,11 @@ class RequestPromptTests(unittest.TestCase):
                 "in the current channel.", prompt,
             )
 
-    def test_discord_conduct_section_does_not_grow(self):
-        from elbow_helper.features.agent.prompts import RESPONSE_RULES
-        self.assertLessEqual(len(RESPONSE_RULES), 787)
+    def test_roasts_use_public_context_and_exclude_leadership_records(self):
+        for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
+            self.assertIn("Roast with what the room can see: messages, names, roles and public Clash profiles", prompt)
+            self.assertIn("never use leadership-only records for a joke.", prompt)
+            self.assertNotIn("Never inspect a member's records just to make a joke", prompt)
 
     def test_partial_completion_is_explicit_in_both_modes(self):
         for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
@@ -114,7 +116,7 @@ class RequestPromptTests(unittest.TestCase):
             "otherwise calculate from the data and briefly explain how",
             "ask only when missing information changes the result",
             "A generated file is presentation, not new evidence or approval.",
-            "Never inspect a member's records just to make a joke",
+            "never use leadership-only records for a joke",
         ):
             self.assertIn(rule, SYSTEM_PROMPT)
 

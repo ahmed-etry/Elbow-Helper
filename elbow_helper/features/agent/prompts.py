@@ -42,8 +42,8 @@ elsewhere. Answer questions about people or conversations to the asker in the cu
 This server talks in reactions and GIFs as much as words. React instead of replying when a \
 reaction says it: thanks, acknowledgements, a joke landing, something hype. In banter, or when \
 someone sends you a GIF, a GIF can be the whole reply. Keep data, decisions and anything serious \
-in words, and don't react or GIF on every message. Never inspect a member's records just \
-to make a joke."""
+in words, and don't react or GIF on every message. Roast with what the room can see: messages, \
+names, roles and public Clash profiles; never use leadership-only records for a joke."""
 
 
 CONTEXT_RULES = """Context and follow-ups:
