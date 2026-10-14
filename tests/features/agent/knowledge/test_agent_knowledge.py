@@ -180,6 +180,43 @@ Hidden""")
                              ["a.md", "b.md"])
         self.assertEqual(catalog.search(catalog.active_sections, query=""), catalog.active_sections)
 
+    def test_reload_logs_counts_estimates_and_warnings_once(self):
+        self.write("core.md", "+++\nalways_loaded=true\n+++\n# Oversized core\n" + "x" * 9000)
+        self.write("topics.md", "".join(f"# Generic topic {index}\nBody\n" for index in range(300)))
+        self.write("draft.md", '+++\nstatus="draft"\n+++\n# Draft title\nBody')
+        self.write("invalid.md", '+++\nalways_loaded="invalid"\n+++\nBody')
+        logger = "elbow_helper.features.agent.knowledge.store"
+        with (patch(logger + ".time.monotonic", return_value=0),
+              self.assertLogs(logger, level="INFO") as logs):
+            catalog = self.store.load()
+            for levels in ((), {"lead"}, {"core", "lead", "lead_plus"}):
+                self.assertIs(catalog.prompt(levels), catalog.prompt(levels))
+        info = [line for line in logs.output if line.startswith("INFO:")]
+        warnings = [line for line in logs.output if line.startswith("WARNING:")]
+        self.assertEqual(len(info), 1)
+        self.assertEqual(len(warnings), 2)
+        self.assertIn("'core.md': 1", info[0])
+        self.assertIn("'topics.md': 300", info[0])
+        self.assertIn("'draft.md': 0", info[0])
+        self.assertIn("'invalid.md': 0", info[0])
+        self.assertIn("core_tokens", info[0])
+        self.assertIn("index_tokens", info[0])
+        self.assertIn("Oversized core", " ".join(warnings))
+        self.assertIn("using file counts", " ".join(warnings))
+        with self.assertNoLogs(logger, level="INFO"):
+            for now in (59, 60, 120):
+                with patch(logger + ".time.monotonic", return_value=now):
+                    self.assertIs(self.store.load(), catalog)
+                    catalog.prompt({"lead"})
+        self.write("core.md", "+++\nalways_loaded=true\n+++\n# Small core\nGeneric body")
+        with (patch(logger + ".time.monotonic", return_value=180),
+              self.assertLogs(logger, level="INFO") as logs):
+            reloaded = self.store.load()
+        self.assertIsNot(reloaded, catalog)
+        self.assertIn("Generic body", reloaded.prompt().core)
+        self.assertEqual(sum(line.startswith("INFO:") for line in logs.output), 1)
+        self.assertFalse(any("Oversized core" in line for line in logs.output))
+
     async def test_service_loads_visible_core_and_rechecks_retained_access(self):
         self.write("core.md", '+++\nalways_loaded=true\nvisibility="lead"\n+++\n# Restricted topic\nRestricted body')
         self.write("public.md", "# Search topic\nSearch-only body")

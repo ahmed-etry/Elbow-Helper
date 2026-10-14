@@ -1,13 +1,16 @@
 """Approved Markdown sections, reloaded when files change."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from collections import Counter
+from collections.abc import Mapping
 from datetime import datetime, timezone
+from itertools import combinations
 import logging
 from pathlib import Path
 import re
 import time
 import tomllib
+from types import MappingProxyType
 
 from ..conversation.context import estimate_tokens
 
@@ -61,6 +64,8 @@ class KnowledgePrompt:
 class KnowledgeCatalog:
     observed_at: str
     active_sections: tuple[KnowledgeSection, ...]
+    _prompts: Mapping[frozenset[str], KnowledgePrompt] = field(default_factory=dict, repr=False,
+                                                            compare=False)
 
     def search(self, sections, *, query=""):
         phrase = _words(query)
@@ -81,6 +86,12 @@ class KnowledgeCatalog:
                      if section.visibility == "public" or section.visibility in levels)
 
     def prompt(self, levels=()):
+        key = frozenset(levels) & (VISIBILITIES - {"public"})
+        if key in self._prompts:
+            return self._prompts[key]
+        return self._build_prompt(key)
+
+    def _build_prompt(self, levels):
         included, omitted, access = [], [], set()
         visible = self.visible_sections(levels)
         for section in visible:
@@ -94,20 +105,40 @@ class KnowledgeCatalog:
             if section.visibility != "public":
                 access.add(section.visibility)
         core = "\n\n".join(included)
-        if omitted:
-            LOGGER.warning("Community knowledge core exceeds 4000 tokens; omitted sections: %s",
-                           "; ".join(omitted))
         index, title_tokens, fallback, index_omitted = _topic_index(visible)
         if index:
             access.update(section.visibility for section in visible if section.visibility != "public")
-        if fallback:
-            LOGGER.warning("Community knowledge topic index exceeds 1000 tokens (%s); using file counts",
-                           title_tokens)
-        if index_omitted:
-            LOGGER.warning("Community knowledge file index exceeds 1000 tokens; omitted files: %s",
-                           "; ".join(index_omitted))
         return KnowledgePrompt(core, frozenset(access), estimate_tokens(core), tuple(omitted),
                                index, estimate_tokens(index), title_tokens, fallback, index_omitted)
+
+    def prepare_prompts(self):
+        levels = sorted(VISIBILITIES - {"public"})
+        prompts = {frozenset(profile): self._build_prompt(profile)
+                   for size in range(len(levels) + 1) for profile in combinations(levels, size)}
+        return replace(self, _prompts=MappingProxyType(prompts))
+
+    def log_reload(self, counts):
+        """Report each reload once, including every supported visibility profile."""
+        estimates, omitted, fallback, index_omitted = {}, set(), [], set()
+        for levels, prompt in self._prompts.items():
+            profile = ",".join(("public", *sorted(levels)))
+            estimates[profile] = {"core_tokens": prompt.core_tokens, "index_tokens": prompt.index_tokens,
+                                  "index_title_tokens": prompt.index_title_tokens}
+            omitted.update(prompt.omitted)
+            index_omitted.update(prompt.index_omitted)
+            if prompt.index_fallback:
+                fallback.append(profile)
+        LOGGER.info("Community knowledge reloaded: sections_per_file=%s prompt_estimates=%s",
+                    counts, estimates)
+        if omitted:
+            LOGGER.warning("Community knowledge core exceeds 4000 tokens; omitted sections: %s",
+                           "; ".join(sorted(omitted)))
+        if fallback:
+            LOGGER.warning("Community knowledge topic index exceeds 1000 tokens; using file counts "
+                           "for visibility profiles: %s", "; ".join(fallback))
+        if index_omitted:
+            LOGGER.warning("Community knowledge file index exceeds 1000 tokens; omitted files: %s",
+                           "; ".join(sorted(index_omitted)))
 
 
 def _topic_index(sections):
@@ -159,16 +190,21 @@ class KnowledgeStore:
             return self._catalog
         if signature == self._signature:
             return self._catalog
-        sections = []
+        sections, counts = [], {}
         for path in paths:
+            counts[path.name] = 0
             try:
                 if path.is_symlink() or path.stat().st_size > 1024 * 1024:
                     raise ValueError("Knowledge file exceeds its size bound or is a symlink")
-                sections.extend(_parse(path))
+                parsed = _parse(path)
+                sections.extend(parsed)
+                counts[path.name] = len(parsed)
             except (OSError, UnicodeError, ValueError):
                 LOGGER.exception("Cannot read community knowledge: %s", path.name)
+        catalog = KnowledgeCatalog(datetime.now(timezone.utc).isoformat(), tuple(sections)).prepare_prompts()
+        catalog.log_reload(counts)
         self._signature = signature
-        self._catalog = KnowledgeCatalog(datetime.now(timezone.utc).isoformat(), tuple(sections))
+        self._catalog = catalog
         return self._catalog
 
 
