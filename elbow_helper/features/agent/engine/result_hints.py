@@ -21,7 +21,7 @@ from ..conversation.instructions import TaskInstruction
 from ..discord_actions.polls import PollSnapshot
 from ..discord_actions.audit_log import AuditSnapshot
 from ..datasets.clash import (
-    CLAN_FIELDS, CLAN_MEMBER_FIELDS, CWL_CLAN_FIELDS, CWL_GROUP_FIELDS, CWL_MEMBER_FIELDS,
+    BATTLE_LOG_FIELDS, CLAN_FIELDS, CLAN_MEMBER_FIELDS, CWL_CLAN_FIELDS, CWL_GROUP_FIELDS, CWL_MEMBER_FIELDS,
     HERO_FIELDS, LEAGUE_FIELDS, PLAYER_CLAN_FIELDS, PLAYER_FIELDS, WAR_CLAN_FIELDS,
     WAR_LOG_FIELDS, WAR_SIDE_FIELDS,
 )
@@ -44,6 +44,7 @@ CLASH_SUMMARIES = {
     "war_log": {"items": [{**dict.fromkeys(WAR_LOG_FIELDS, ""),
                            "clan": dict.fromkeys(WAR_CLAN_FIELDS, ""),
                            "opponent": dict.fromkeys(WAR_SIDE_FIELDS, "")}]},
+    "battle_log": {"items": [dict.fromkeys(BATTLE_LOG_FIELDS, "")]},
 }
 HISTORY_COVERAGE = names(
     "requested_after,requested_before,window_after_message_id,snapshot_before_message_id,"

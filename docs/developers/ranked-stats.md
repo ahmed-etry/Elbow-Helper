@@ -7,6 +7,13 @@ accounts outside the family clans. It starts after boot and writes
 settings. Profile and log requests fail independently. Missing or invalid battle
 identities are skipped and logged, and their polls are marked partial.
 
+For latest battles on demand, `read_clash` accepts `kind: "battle_log"` with
+account tags and the existing live Clash access checks. Summary results include
+mode, timestamp, attack/defense direction, opponent and result; `detail: "full"`
+keeps all returned entry fields. `limit` selects the first returned entries
+locally (default ten, maximum fifty), including farming battles and defenses.
+The live read uses the existing twenty-account batch cap, or five for full detail.
+
 ## Battle-log evidence and retention
 
 The [official Swagger UI](https://developer.clashofclans.com/api-docs/index.html)

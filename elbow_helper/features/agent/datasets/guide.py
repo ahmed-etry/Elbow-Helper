@@ -68,6 +68,7 @@ class DataGuide:
                 "player (profile, heroes), current_war/cwl_war (full war), "
                 "cwl_group (season, clans, rounds.warTags), "
                 "war_log (items with results, stars, destruction), "
+                "battle_log (latest player attacks/defenses), "
                 "capital_raids (items without attackLog/defenseLog). "
                 "Clash timestamps: 20261008T120000.000Z, UTC.",
                 "CWL: cwl_season is one key per league: YYYY-MM for the month's normal CWL, "

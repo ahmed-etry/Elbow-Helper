@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.features.agent.datasets.clash import ENDPOINTS, read_clash, summary
+from elbow_helper.features.agent.datasets.clash import ENDPOINTS, clash_tools, read_clash, summary
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.domain.player_tags import encode_clash_tag
 
@@ -14,7 +14,7 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
         self.access = patch(
             "elbow_helper.features.agent.datasets.clash.require_evidence_access", AsyncMock(),
         )
-        self.access.start()
+        self.require_access = self.access.start()
         self.addCleanup(self.access.stop)
         self.client = SimpleNamespace(configured=True, get=AsyncMock(return_value=SimpleNamespace(
             ok=True, status=200, payload={"tag": "#P0", "name": "Synthetic"},
@@ -63,14 +63,76 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_timeout_preserves_completed_results(self):
         async def get(path, **kwargs):
-            if path.endswith("%23P2"):
+            if "/%23P2" in path:
                 await asyncio.Event().wait()
             return SimpleNamespace(ok=True, status=200, payload={"name": "Synthetic"})
 
         self.client.get.side_effect = get
-        with patch("elbow_helper.features.agent.datasets.clash.budgets.TOOL_TIMEOUT_SECONDS", 1.02):
-            result = await read_clash(self.context, {"kind": "player", "tags": ["#P0", "#P2"]})
-        self.assertEqual([item["status"] for item in result["items"]], ["ok", "unavailable"])
+        for kind in ("player", "battle_log"):
+            with self.subTest(kind=kind), patch(
+                "elbow_helper.features.agent.datasets.clash.budgets.TOOL_TIMEOUT_SECONDS", 1.02,
+            ):
+                result = await read_clash(self.context, {"kind": kind, "tags": ["#P0", "#P2"]})
+                self.assertEqual([item["status"] for item in result["items"]], ["ok", "unavailable"])
+
+    async def test_battle_log_is_registered_and_uses_account_tags_without_clan_aliases(self):
+        kinds = clash_tools()[0].definition.parameters["properties"]["kind"]["enum"]
+        self.assertIn("battle_log", kinds)
+        with patch("elbow_helper.features.agent.datasets.clash.CLANS", {"P0": SimpleNamespace(tag="#Q0")}):
+            result = await read_clash(self.context, {"kind": "battle_log", "tags": ["p0"]})
+        self.assertEqual(self.client.get.await_args.args[0], "/players/%23P0/battlelog")
+        self.assertEqual(self.client.get.await_args.kwargs["attempts"], 1)
+        self.assertEqual(result["items"][0]["tag"], "#P0")
+        self.assertEqual(self.require_access.await_count, 2)
+
+    async def test_battle_log_summary_preserves_modes_directions_losses_and_timestamps(self):
+        entries = [{"battleType": mode, "attack": attack, "stars": 0,
+                    "battleTimestamp": "20261008T120000.000Z", "battleTime": 120,
+                    "opponentPlayerTag": "#Q0", "opponentName": "Synthetic opponent",
+                    "destructionPercentage": 10, "army": [{"synthetic": True}]}
+                   for mode, attack in (("RANKED", True), ("LEGEND", False), ("HOME_VILLAGE", True))]
+        self.client.get.return_value.payload = {"items": entries}
+        result = await read_clash(self.context, {"kind": "battle_log", "tags": ["#P0"]})
+        self.assertEqual(result["items"][0]["status"], "ok")
+        self.assertEqual(result["items"][0]["data"]["items"],
+                         [{key: value for key, value in entry.items() if key != "army"} for entry in entries])
+        self.assertIn("observed_at", result)
+
+    async def test_battle_log_limits_are_applied_locally_for_summary_and_full_detail(self):
+        entries = [{"battleType": "RANKED", "attack": True,
+                    "opponentPlayerTag": "#Q0", "stars": index % 4, "army": [index]}
+                   for index in range(12)]
+        payload = {"items": entries}
+        self.client.get.return_value.payload = payload
+        for detail, limit in (("summary", None), ("summary", 3), ("full", 2)):
+            with self.subTest(detail=detail, limit=limit):
+                arguments = {"kind": "battle_log", "tags": ["#P0"], "detail": detail}
+                if limit is not None:
+                    arguments["limit"] = limit
+                result = await read_clash(self.context, arguments)
+                returned = result["items"][0]["data"]["items"]
+                self.assertEqual(len(returned), 10 if limit is None else limit)
+                self.assertEqual(self.client.get.await_args.args[0], "/players/%23P0/battlelog")
+                if detail == "full":
+                    self.assertEqual(returned, entries[:limit])
+                else:
+                    self.assertTrue(all("army" not in entry for entry in returned))
+        self.assertEqual(payload["items"], entries)
+        self.assertEqual(len(payload["items"]), 12)
+
+    async def test_battle_log_empty_and_partial_entries_keep_available_data(self):
+        for entries in ([], [{"battleType": "RANKED", "attackRenamed": True}]):
+            with self.subTest(entries=entries):
+                self.client.get.return_value.payload = {"items": entries}
+                result = await read_clash(self.context, {"kind": "battle_log", "tags": ["#P0"]})
+                self.assertEqual(result["items"][0]["data"]["items"],
+                                 [] if not entries else [{"battleType": "RANKED"}])
+
+    async def test_battle_log_access_denial_stops_the_request(self):
+        self.require_access.side_effect = RuntimeError("synthetic access denied")
+        with self.assertRaisesRegex(RuntimeError, "synthetic access denied"):
+            await read_clash(self.context, {"kind": "battle_log", "tags": ["#P0"]})
+        self.client.get.assert_not_awaited()
 
     def test_projection_drops_unrequested_data(self):
         result = summary("clan", {

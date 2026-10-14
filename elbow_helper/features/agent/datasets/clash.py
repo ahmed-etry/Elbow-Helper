@@ -22,6 +22,7 @@ ENDPOINTS = {
     "war_log": "/clans/{tag}/warlog",
     "capital_raids": "/clans/{tag}/capitalraidseasons",
     "player": "/players/{tag}",
+    "battle_log": "/players/{tag}/battlelog",
 }
 PLAYER_FIELDS = (
     "tag name townHallLevel townHallWeaponLevel expLevel trophies bestTrophies warStars "
@@ -44,6 +45,10 @@ CWL_MEMBER_FIELDS = ("tag", "name", "townHallLevel")
 WAR_LOG_FIELDS = ("result", "endTime", "teamSize", "attacksPerMember")
 WAR_SIDE_FIELDS = ("tag", "name", "stars", "destructionPercentage")
 WAR_CLAN_FIELDS = (*WAR_SIDE_FIELDS, "attacks", "expEarned")
+BATTLE_LOG_FIELDS = (
+    "battleType", "battleTimestamp", "attack", "opponentPlayerTag", "opponentName",
+    "stars", "destructionPercentage", "battleTime",
+)
 
 
 def _fields(value, names):
@@ -102,6 +107,8 @@ def summary(kind, payload):
             }
             for row in payload.get("items", [])
         ]}
+    if kind == "battle_log":
+        return {"items": [_fields(row, BATTLE_LOG_FIELDS) for row in payload.get("items", [])]}
     return {"items": [
         {key: value for key, value in row.items() if key not in ("attackLog", "defenseLog")}
         for row in payload.get("items", [])
@@ -124,7 +131,7 @@ async def read_clash(context, arguments):
     for value in tags:
         clan = (
             CLANS.get(value.upper())
-            if isinstance(value, str) and kind not in ("player", "cwl_war") else None
+            if isinstance(value, str) and kind not in ("player", "battle_log", "cwl_war") else None
         )
         tag = normalize_player_tag(clan.tag if clan else value)
         if tag is None and kind == "cwl_war" and value == "#0":
@@ -153,11 +160,15 @@ async def read_clash(context, arguments):
                 path, attempts=1, timeout_seconds=max(0.1, deadline - time.monotonic()),
             )
             if response.ok and isinstance(response.payload, dict):
+                payload = response.payload
+                if kind == "battle_log":
+                    # The battle-log route has no verified server-side limit parameter.
+                    payload = {**payload, "items": payload.get("items", [])[:limit]}
                 items[index] = {
                     "tag": tag, "status": "ok",
                     "data": (
-                        response.payload if arguments.get("detail") == "full"
-                        else summary(kind, response.payload)
+                        payload if arguments.get("detail") == "full"
+                        else summary(kind, payload)
                     ),
                 }
             else:
@@ -187,7 +198,7 @@ def clash_tools():
     return (RegisteredAgentTool(
         AgentToolDefinition(
             "read_clash",
-            "Read current Clash clan, war, CWL, raid or player data.",
+            "Read current Clash clan, war, CWL, raid, player or battle log data.",
             {
                 "type": "object",
                 "properties": {
@@ -201,7 +212,7 @@ def clash_tools():
                 },
                 "required": ["kind", "tags"], "additionalProperties": False,
             },
-            usage_note="Use for current Clash state; stored tables are historical snapshots.",
+            usage_note="Use for current Clash state and latest battles; stored tables are historical snapshots.",
         ),
         read_clash,
         contract=CapabilityContract(), returns="items[].tag,status,data; observed_at",
