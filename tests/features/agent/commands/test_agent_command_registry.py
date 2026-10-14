@@ -67,6 +67,17 @@ def _registered_command_catalogue():
 
 
 class CommandRegistryTests(unittest.TestCase):
+    def test_catalogue_references_only_identical_present_result_shapes(self):
+        from elbow_helper.features.agent.plan.format import _catalogue_returns
+        registry = build_agent_tools()
+        router = registry["read_saved_report"]
+        compact = _catalogue_returns(router, registry)
+        self.assertLess(len(compact), len(router.returns))
+        self.assertIn("achievement_progress:same as read_member_achievements", compact)
+        self.assertEqual(_catalogue_returns(router, {"read_saved_report": router}), router.returns)
+        self.assertEqual(_catalogue_returns(registry["read_member_achievements"], registry),
+                         registry["read_member_achievements"].returns)
+
     def test_full_action_catalogue_fits_the_system_prompt_budget(self):
         adapters = enabled_adapters()
         discovered = _registered_command_catalogue()

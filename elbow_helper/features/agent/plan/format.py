@@ -91,9 +91,25 @@ def capability_list(registry: Mapping[str, RegisteredAgentTool]) -> str:
         if note:
             line += " | use " + note
         if tool.returns:
-            line += " | returns " + tool.returns
+            line += " | returns " + _catalogue_returns(tool, registry)
         entries.append(line)
     return "\n".join(entries)
+
+
+def _catalogue_returns(tool, registry):
+    """Reference identical record shapes already present in this catalogue."""
+    hint = tool.returns
+    if tool.definition.name == "read_saved_report":
+        from ..engine.result_hints import REPORT_FIELDS
+        from ..engine.result_fields import format_returns
+
+        for kind, shape in REPORT_FIELDS.items():
+            fields = format_returns(shape)
+            original = next((name for name, candidate in sorted(registry.items())
+                             if name != "read_saved_report" and candidate.returns == fields), None)
+            if original:
+                hint = hint.replace(kind + ":{" + fields + "}", kind + ":same as " + original)
+    return hint
 
 
 def plan_definition(registry: Mapping[str, RegisteredAgentTool]) -> AgentToolDefinition:
