@@ -5,6 +5,13 @@ from elbow_helper.features.agent.prompts import ACTION_SYSTEM_PROMPT, SYSTEM_PRO
 
 
 class RequestPromptTests(unittest.TestCase):
+    def test_claims_and_opinions_require_read_evidence_and_unsupported_claims_are_withdrawn(self):
+        for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
+            self.assertIn("an opinion about a real person rests on what you have read", prompt)
+            self.assertIn("Your own earlier replies are not evidence; only what you looked up is", prompt)
+            self.assertIn("say so and withdraw it, and never attribute it to the asker", prompt)
+            self.assertNotIn("skip lookups for banter, opinions and writing help", prompt)
+
     def test_shared_topics_render_once_in_order(self):
         from elbow_helper.features.agent.plan.format import system_instructions
 
