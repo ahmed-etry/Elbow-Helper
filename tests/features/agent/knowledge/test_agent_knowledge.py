@@ -147,6 +147,39 @@ Hidden""")
         self.assertIn("omitted files", " ".join(logs.output))
         self.assertLessEqual(estimate_tokens(prompt.index), 1000)
 
+    def test_search_counts_words_and_repeats_with_title_weight_and_exact_priority(self):
+        self.write("topics.md", "# Repeated body\n" + "policy " * 20
+                   + "\n# Policy guide\nGeneric body"
+                   + "\n# Sparse body\npolicy policy"
+                   + "\n# Policies\nGeneric body"
+                   + "\n# Policy policy guide\nGeneric body"
+                   + "\n# POLICY checklist\npolicy")
+        catalog = self.store.load()
+        titles = [s.title for s in catalog.search(catalog.active_sections, query="POLICY")]
+        self.assertEqual(titles, ["Policies", "Repeated body", "Policy policy guide", "POLICY checklist",
+                                  "Policy guide", "Sparse body"])
+        self.assertEqual(titles, [s.title for s in catalog.search(catalog.active_sections, query="policies")])
+
+    def test_search_prefers_query_coverage_and_matches_words_not_substrings(self):
+        self.write("topics.md", "# Single topic\n" + "war " * 30
+                   + "\n# Combined topic\nwar policy"
+                   + "\n# Irrelevant topic\nreward policies")
+        catalog = self.store.load()
+        results = catalog.search(catalog.active_sections, query="wars policies")
+        self.assertEqual([s.title for s in results], ["Combined topic", "Single topic", "Irrelevant topic"])
+        self.assertEqual([s.title for s in catalog.search(catalog.active_sections, query="WAR")],
+                         ["Single topic", "Combined topic"])
+        self.assertEqual(catalog.search(catalog.active_sections, query="missing"), ())
+
+    def test_search_normalizes_regular_plurals_and_keeps_stable_ties(self):
+        self.write("a.md", "# Generic topic\nbox class match raid status analysis")
+        self.write("b.md", "# Another topic\nbox class match raid status analysis")
+        catalog = self.store.load()
+        for query in ("BOXES", "classes", "matches", "raids", "STATUS", "analysis"):
+            self.assertEqual([s.file_name for s in catalog.search(catalog.active_sections, query=query)],
+                             ["a.md", "b.md"])
+        self.assertEqual(catalog.search(catalog.active_sections, query=""), catalog.active_sections)
+
     async def test_service_loads_visible_core_and_rechecks_retained_access(self):
         self.write("core.md", '+++\nalways_loaded=true\nvisibility="lead"\n+++\n# Restricted topic\nRestricted body')
         self.write("public.md", "# Search topic\nSearch-only body")

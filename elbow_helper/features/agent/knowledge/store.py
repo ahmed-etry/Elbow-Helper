@@ -1,6 +1,7 @@
 """Approved Markdown sections, reloaded when files change."""
 
 from dataclasses import dataclass
+from collections import Counter
 from datetime import datetime, timezone
 import logging
 from pathlib import Path
@@ -14,6 +15,20 @@ from ..conversation.context import estimate_tokens
 LOGGER = logging.getLogger(__name__)
 VISIBILITIES = frozenset({"public", "lead", "lead_plus", "core"})
 STATUSES = frozenset({"approved", "draft", "retired"})
+
+
+def _words(text):
+    """Normalize whole words and regular English plurals without dependencies."""
+    words = []
+    for word in re.findall(r"\w+", text.casefold()):
+        if len(word) > 4 and word.endswith("ies"):
+            word = word[:-3] + "y"
+        elif len(word) > 4 and word.endswith(("sses", "shes", "ches", "xes", "zes")):
+            word = word[:-2]
+        elif len(word) > 3 and word.endswith("s") and not word.endswith(("ss", "us", "is")):
+            word = word[:-1]
+        words.append(word)
+    return tuple(words)
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,14 +63,18 @@ class KnowledgeCatalog:
     active_sections: tuple[KnowledgeSection, ...]
 
     def search(self, sections, *, query=""):
-        words = tuple(set(re.findall(r"\w+", query.casefold())))
+        phrase = _words(query)
+        words = set(phrase)
         ranked = []
         for index, section in enumerate(sections):
-            title = sum(word in section.title.casefold() for word in words)
-            body = sum(word in section.body.casefold() for word in words)
-            if not words or title or body:
-                ranked.append((-title, -body, index, section))
-        return tuple(item[3] for item in sorted(ranked)[:8])
+            title_words = _words(section.title)
+            title, body = Counter(title_words), Counter(_words(section.body))
+            coverage = sum(word in title or word in body for word in words)
+            score = sum(3 * title[word] + body[word] for word in words)
+            if not words or coverage:
+                exact = bool(phrase) and phrase == title_words
+                ranked.append((-exact, -coverage, -score, index, section))
+        return tuple(item[-1] for item in sorted(ranked)[:8])
 
     def visible_sections(self, levels=()):
         return tuple(section for section in self.active_sections
