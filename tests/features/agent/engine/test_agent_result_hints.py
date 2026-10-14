@@ -26,6 +26,7 @@ from elbow_helper.features.agent.plan.checker import check_plan
 from elbow_helper.features.agent.plan.executor import execute_plan
 from elbow_helper.features.agent.plan.results import model_result
 from elbow_helper.features.agent.models import AgentCapabilityEffect
+from elbow_helper.features.ranked_stats.queries import RankedAccount
 from elbow_helper.features.agent.capabilities.achievements.report import AchievementProgressReport
 from elbow_helper.features.agent.capabilities.clan_reporting.report import MissingElderReport
 from elbow_helper.features.agent.capabilities.clan_transfers.report import TransferQueueReport
@@ -161,6 +162,7 @@ def fixed_results(seed):
     return {
         "query_bot_data": {"rows": [{"synthetic_number": seed}], "row_count": 1,
                            "truncated": False},
+        "read_ranked_stats": {"accounts": [asdict(synthetic_value(RankedAccount, seed))]},
         "read_member_history": {"entries": [{"message_id": 1, "channel_id": 2, "event": "join",
             "timestamp": "2026-01-01T00:00:00+00:00", "author_id": 3, "author": "Log bot",
             "content": "Synthetic member joined", "source": "https://discord.com/channels/1/2/3"}]},

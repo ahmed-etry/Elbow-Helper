@@ -24,6 +24,7 @@ async def setup(bot) -> None:
     from .commands.registry import validate_command_names
     validate_command_names(enabled_adapters())
     account_links = bot.get_cog("AccountLinks")
+    ranked_stats = bot.get_cog("RankedStats")
     clan_health = bot.get_cog("ClanHealth")
     rosters = bot.get_cog("Rosters")
     cwl = bot.get_cog("CwlManagement")
@@ -50,6 +51,7 @@ async def setup(bot) -> None:
     achievement_queries = getattr(achievements, "queries", None)
     event_queries = getattr(event_stats, "queries", None)
     member_lifecycle_queries = getattr(member_lifecycle, "queries", None)
+    ranked_queries = getattr(ranked_stats, "queries", None)
     clan_reporting_queries = getattr(clan_reporting, "queries", None)
     role_connection_queries = getattr(role_connections, "queries", None)
     if (
@@ -58,14 +60,14 @@ async def setup(bot) -> None:
         or hibernation_queries is None or support_queries is None or recruitment_queries is None
         or examination_queries is None or record_queries is None or achievement_queries is None
         or event_queries is None
-        or member_lifecycle_queries is None
+        or member_lifecycle_queries is None or ranked_queries is None
         or clan_reporting_queries is None
         or role_connection_queries is None
     ):
         raise RuntimeError(
             "Agent requires AccountLinks, ClanHealth, Wars, Rosters, CWL, ClanTransfers, "
             "Hibernation, SupportActions, Recruitment, Examination, Records, Achievements, "
-            "EventStats, MemberLifecycle, ClanReporting and RoleConnections"
+            "EventStats, MemberLifecycle, RankedStats, ClanReporting and RoleConnections"
         )
     archive = await asyncio.to_thread(
         TranscriptArchive, bot.paths.data_root / "agent" / "transcripts.sqlite3",
@@ -108,6 +110,7 @@ async def setup(bot) -> None:
         "achievement_queries": achievement_queries,
         "event_queries": event_queries,
         "member_lifecycle_queries": member_lifecycle_queries,
+        "ranked_queries": ranked_queries,
         "clan_reporting_queries": clan_reporting_queries,
         "role_connection_queries": role_connection_queries,
         "knowledge_store": knowledge_store,

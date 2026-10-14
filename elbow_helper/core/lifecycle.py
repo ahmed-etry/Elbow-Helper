@@ -41,6 +41,7 @@ REQUIRED_EXTENSIONS = (
     "elbow_helper.features.message_automation",
     "elbow_helper.features.role_connections",
     "elbow_helper.features.account_links",
+    "elbow_helper.features.ranked_stats",
     "elbow_helper.features.recruitment",
     "elbow_helper.features.clan_health",
     "elbow_helper.features.attack_plans",

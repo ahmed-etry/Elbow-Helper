@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from elbow_helper.features.examination.queries import ExaminationQueries
     from elbow_helper.features.event_stats.queries import EventStatsQueries
     from elbow_helper.features.member_lifecycle.queries import MemberLifecycleQueries
+    from elbow_helper.features.ranked_stats.queries import RankedQueries
     from elbow_helper.features.records.queries import LeadershipRecordQueries
     from elbow_helper.features.role_connections.queries import RoleConnectionQueries
     from elbow_helper.features.cwl.queries import CwlQueries
@@ -171,6 +172,7 @@ class AgentRequestContext:
     achievement_queries: AchievementQueries | None = None
     event_queries: EventStatsQueries | None = None
     member_lifecycle_queries: MemberLifecycleQueries | None = None
+    ranked_queries: RankedQueries | None = None
     clan_reporting_queries: ClanReportingQueries | None = None
     role_connection_queries: RoleConnectionQueries | None = None
     knowledge_store: KnowledgeStore | None = None

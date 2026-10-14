@@ -72,6 +72,7 @@ class AgentTurnMixin:
             achievement_queries=self.achievement_queries,
             event_queries=self.event_queries,
             member_lifecycle_queries=self.member_lifecycle_queries,
+            ranked_queries=self.ranked_queries,
             clan_reporting_queries=self.clan_reporting_queries,
             role_connection_queries=self.role_connection_queries,
             knowledge_store=self.knowledge_store,

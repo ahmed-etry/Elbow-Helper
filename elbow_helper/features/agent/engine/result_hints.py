@@ -12,6 +12,7 @@ from elbow_helper.features.examination.queries import ExaminationCaseStatus
 from elbow_helper.features.hibernation.queries import ActiveHibernationRecord
 from elbow_helper.features.help.discovery import ParameterInfo
 from elbow_helper.features.member_lifecycle.queries import MemberLifecycleRow, OverdueApplicant
+from elbow_helper.features.ranked_stats.queries import RankedAccount
 from elbow_helper.features.recruitment.queries import ActiveRecruitmentTrial
 from elbow_helper.features.role_connections.queries import RoleConnectionCondition
 from elbow_helper.features.support_tickets.queries import SupportTicketMetadata
@@ -368,6 +369,8 @@ def _returned_fields(shape):
 
 RESULT_FIELDS["read_member_history"] = {**names("member_id,channel_id,search_is_exhaustive,next_cursor,coverage"),
                                       "entries": [names("message_id,channel_id,event,timestamp,author_id,author,content,source")]}
+
+RESULT_FIELDS["read_ranked_stats"] = {"accounts": [result_fields(RankedAccount)]}
 
 RESULT_FIELDS = {name: _returned_fields(shape) for name, shape in RESULT_FIELDS.items()}
 REPORT_FIELDS = {kind: _returned_fields(shape) for kind, shape in REPORT_FIELDS.items()}
