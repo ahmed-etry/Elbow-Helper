@@ -113,6 +113,8 @@ class AnswerFlow:
             self.registry,
             self.request_id,
             advance=self.rounder.advance,
+            on_check=(self.context.operator_debug.checked
+                      if self.context.operator_debug is not None else None),
         )
         if self.decision.answer is not None:
             await require_evidence_access(self.context)
@@ -332,6 +334,8 @@ class AnswerFlow:
         except (TypeError, ValueError):
             next_plan = None
         check = check_plan(next_plan, self.registry, completed_steps=self.runner.completed_steps)
+        if self.context.operator_debug is not None:
+            self.context.operator_debug.checked(model_step.tool_calls[0].call_id, check)
         LOGGER.info(
             "Agent plan: request=%s revision=%s plan=%s",
             self.request_id,
@@ -369,6 +373,8 @@ class AnswerFlow:
             check = check_plan(
                 next_plan, self.registry, completed_steps=self.runner.completed_steps,
             )
+            if self.context.operator_debug is not None:
+                self.context.operator_debug.checked(corrected.tool_calls[0].call_id, check)
             LOGGER.info(
                 "Agent plan correction: request=%s ok=%s plan=%s error=%s",
                 self.request_id,

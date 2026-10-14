@@ -181,6 +181,8 @@ class AgentRequestContext:
     dm_delivery: bool = False
     disclosure_thread_members: dict[int, frozenset[int] | None] = field(default_factory=dict)
     application_owner: AgentIdentity | None = None
+    transcript_archive: Any = None
+    operator_debug: Any = None
 
 
 AgentToolHandler = Callable[

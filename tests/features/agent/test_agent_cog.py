@@ -564,6 +564,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 request = self.cog.service.answer.await_args.kwargs
                 self.assertIn("first request", request["conversation_history"])
                 self.assertEqual(request["context"].history[0].record.request_message_id, 1)
+                await archive.drain()
                 rows = archive.read_page(guild_id=GUILD_ID, channel_id=100, root_message_id=1)
                 self.assertEqual([row["content"] for row in rows], ["<@999> first request", "continue"])
                 self.assertEqual([row["replies"][0]["content"] for row in rows], ["Answer", "Answer"])
@@ -615,6 +616,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
             message.channel.send.side_effect = OSError("send failed")
             with patch("elbow_helper.features.agent.cog.discord.Member", _Member), self.assertLogs("elbow_helper.features.agent.cog", level="WARNING"):
                 await self.cog.on_message(message)
+            await archive.drain()
             rows = archive.read_page(guild_id=GUILD_ID, channel_id=100, root_message_id=1)
             self.assertEqual(len(rows[0]["replies"]), 1)
             self.assertEqual(rows[0]["replies"][0]["content"], "x" * 2000)
@@ -1574,6 +1576,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
             with patch("elbow_helper.features.agent.cog.discord.Member", _Member):
                 await self.cog.on_message(first)
                 await self.cog.on_message(make_message(member, 2, "continue", reply_to=1001))
+            await self.cog.transcript_archive.drain()
             rows = self.cog.transcript_archive.read_page(guild_id=GUILD_ID, channel_id=100, root_message_id=1)
             self.assertEqual([row["content"] for row in rows], [original, "continue"])
             conversation = self.cog._conversations.find(GUILD_ID, 100, 1002)

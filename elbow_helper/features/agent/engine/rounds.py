@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 import asyncio
-from dataclasses import replace
+from dataclasses import asdict, replace
 import json
 import time
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
@@ -114,7 +114,10 @@ class ModelRounds:
         self.budget.output_reserve = remaining
         self.usage.attempted_rounds += 1
         self.rounds += 1
+        round_number = self.rounds
         round_started = time.monotonic()
+        model_step = None
+        round_elapsed_ms = None
         outcome = "failed"
         try:
             self.pending_results = self.pending_calls = ()
@@ -130,6 +133,10 @@ class ModelRounds:
                         else {}
                     ),
                 )
+            round_elapsed_ms = int((time.monotonic() - round_started) * 1000)
+            debug = getattr(self.context, "operator_debug", None)
+            if debug is not None:
+                debug.submitted(model_step.tool_calls)
             self.pending_calls = model_step.tool_calls
             self.usage.observe(model_step.usage)
             self.budget.observe(model_step.usage, projected_input=projected)
@@ -193,6 +200,16 @@ class ModelRounds:
                 )
             return model_step
         finally:
+            debug = getattr(self.context, "operator_debug", None)
+            if debug is not None:
+                debug.rounds.append({
+                    "round": round_number, "effort": reasoning_effort.value,
+                    "outcome": outcome, "output_limit": remaining,
+                    "elapsed_ms": round_elapsed_ms if round_elapsed_ms is not None else
+                    int((time.monotonic() - round_started) * 1000),
+                    "usage": asdict(model_step.usage) if model_step is not None else None,
+                    "content": model_step.content if model_step is not None else None,
+                })
             LOGGER.info(
                 ("Agent model round: request=%s round=%s "
                             "outcome=%s effort=%s output_limit=%s "

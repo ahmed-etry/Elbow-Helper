@@ -16,7 +16,6 @@ from .access import ACCESS_VIEW_AUDIT_LOG, require_evidence_access
 from .disclosure import can_show
 from .wording import ACTION_PRIVATE_ANSWER, ACTION_PREVIEW_HEADER, FAILURE_MESSAGE, LONG_REPLY_FILENAME
 from .conversation.state import Conversation
-from .conversation.transcripts import archive_write
 from .models import AgentAttachment, AgentDelivery, AgentRequestContext
 from .engine.service import AgentUnavailableError
 from .actions.private_view import PrivateResultView
@@ -693,10 +692,10 @@ class AgentDeliveryMixin:
         try:
             operation = (self.transcript_archive.replace_reply if previous_content is not None
                          else self.transcript_archive.record_reply)
-            await archive_write(operation, message_id=reply_id,
-                                request_message_id=request_id, content=content,
-                                **({"previous_content": previous_content} if previous_content is not None else {}))
-        except (OSError, sqlite3.Error, ValueError):
+            self.transcript_archive.enqueue_write(operation, message_id=reply_id,
+                request_message_id=request_id, content=content,
+                **({"previous_content": previous_content} if previous_content is not None else {}))
+        except Exception:
             # The reply is already visible. Do not send a misleading generation
             # failure or duplicate it because archival failed.
             LOGGER.exception("Agent transcript reply write failed: request=%s reply=%s", request_id, reply_id)

@@ -123,7 +123,8 @@ async def setup(bot) -> None:
         bot=bot, repository=action_repository, guild_id=GUILD_ID, service=cog.service,
         delivery=cog.send_response, action_runner=action_runner,
         context_factory=ScheduledContextFactory(
-            bot=bot, collaborators=collaborators, timeout_seconds=AGENT_REQUEST_TIMEOUT_SECONDS,
+            bot=bot, collaborators={**collaborators, "transcript_archive": archive},
+            timeout_seconds=AGENT_REQUEST_TIMEOUT_SECONDS,
             application_owner=lambda: cog.application_owner,
         ),
     )

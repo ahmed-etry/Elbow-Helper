@@ -12,7 +12,7 @@ from elbow_helper.infrastructure.ai import AgentToolResult
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort, AgentSession
 
 from ..models import RegisteredAgentTool
-from .checker import check_plan
+from .checker import PlanCheck, check_plan
 from .format import PLAN_TOOL_NAME
 from .results import plan_feedback
 from ..prompts import (
@@ -40,6 +40,7 @@ async def read_request(
     validate_step: Callable[[Mapping[str, Any]], Awaitable[str]] | None = None,
     validate_plan: Callable[[Mapping[str, Any]], str] | None = None,
     advance: Callable[..., Awaitable[Any]] | None = None,
+    on_check: Callable[[str, PlanCheck], None] | None = None,
 ) -> ReadDecision:
     rounds = []
     pending: tuple[AgentToolResult, ...] = ()
@@ -56,6 +57,9 @@ async def read_request(
         if len(step.tool_calls) != 1 or step.tool_calls[0].name != PLAN_TOOL_NAME:
             issue = ONE_PLAN_INSTRUCTION
             step_id, offered = "", ()
+            if on_check is not None:
+                for call in step.tool_calls:
+                    on_check(call.call_id, PlanCheck(False, issue))
         else:
             try:
                 plan = json.loads(step.tool_calls[0].arguments)
@@ -78,6 +82,8 @@ async def read_request(
                         json.dumps(plan, ensure_ascii=False, default=str))
             LOGGER.info("Agent plan check: request=%s attempt=%s ok=%s step=%s error=%s",
                         request_id, attempt + 1, check.ok, check.step_id, check.error)
+            if on_check is not None:
+                on_check(step.tool_calls[0].call_id, check)
             if check.ok:
                 return ReadDecision(None, plan, tuple(rounds))
             issue = check.error

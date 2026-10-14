@@ -1,10 +1,28 @@
 """Permanent visible chat archive, separate from expiring working snapshots."""
 
 import asyncio
+from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
+import json
+import logging
 from pathlib import Path
 import sqlite3
 
 from elbow_helper.infrastructure.persistence import SQLiteMigration, run_sqlite_migrations, sqlite_connection, sqlite_transaction
+
+LOGGER = logging.getLogger(__name__)
+DEBUG_RETENTION_DAYS = 30
+
+
+def _debug_schema(connection: sqlite3.Connection) -> None:
+    connection.execute("""CREATE TABLE operator_debug_records (
+        record_id INTEGER PRIMARY KEY, request_message_id INTEGER,
+        guild_id INTEGER NOT NULL, channel_id INTEGER NOT NULL,
+        root_message_id INTEGER, member_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL, record_json TEXT NOT NULL
+    )""")
+    connection.execute("CREATE INDEX operator_debug_expiry ON operator_debug_records(created_at)")
+    connection.execute("CREATE INDEX operator_debug_request ON operator_debug_records(request_message_id)")
 
 
 def _schema(connection: sqlite3.Connection) -> None:
@@ -26,8 +44,64 @@ def _schema(connection: sqlite3.Connection) -> None:
 class TranscriptArchive:
     def __init__(self, path: Path):
         self.path = path
+        self._write_tasks: set[asyncio.Task] = set()
+        self._write_lock = asyncio.Lock()
         with self.connect() as connection:
-            run_sqlite_migrations(connection, (SQLiteMigration(1, "visible chat transcripts", _schema),), target_version=1)
+            run_sqlite_migrations(connection, (
+                SQLiteMigration(1, "visible chat transcripts", _schema),
+                SQLiteMigration(2, "operator request diagnostics", _debug_schema),
+            ), target_version=2)
+
+    def enqueue_debug(self, context, record) -> None:
+        """Schedule best-effort diagnostics without waiting on SQLite or serialization."""
+        self.enqueue_write(
+            self.record_debug, record=record,
+            request_message_id=getattr(context.source_message, "id", None),
+            guild_id=context.guild.id, channel_id=context.source_message.channel.id,
+            root_message_id=context.conversation_root_id, member_id=context.member.id,
+        )
+
+    def enqueue_debug_prune(self) -> None:
+        self.enqueue_write(self.prune_debug)
+
+    def enqueue_write(self, operation, **values) -> None:
+        """Preserve request/reply order without putting archive I/O on delivery's path."""
+        async def write():
+            try:
+                async with self._write_lock:
+                    await archive_write(operation, **values)
+            except Exception:
+                LOGGER.exception("Agent transcript archive write failed")
+
+        task = asyncio.create_task(write())
+        self._write_tasks.add(task)
+        task.add_done_callback(self._write_tasks.discard)
+
+    async def drain(self) -> None:
+        """Settle queued writes for operator exports and orderly shutdown."""
+        while self._write_tasks:
+            await asyncio.gather(*self._write_tasks)
+
+    def record_debug(self, *, record, request_message_id, guild_id, channel_id,
+                     root_message_id, member_id) -> None:
+        now = datetime.now(timezone.utc)
+        encoded = json.dumps(asdict(record), ensure_ascii=False, default=str)
+        with self.connect() as connection, sqlite_transaction(connection, immediate=True):
+            connection.execute("""INSERT INTO operator_debug_records (
+                request_message_id, guild_id, channel_id, root_message_id,
+                member_id, created_at, record_json) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (request_message_id, guild_id, channel_id, root_message_id,
+                 member_id, now.isoformat(), encoded))
+            self._prune_debug(connection, now)
+
+    @staticmethod
+    def _prune_debug(connection, now):
+        cutoff = (now - timedelta(days=DEBUG_RETENTION_DAYS)).isoformat()
+        connection.execute("DELETE FROM operator_debug_records WHERE created_at < ?", (cutoff,))
+
+    def prune_debug(self) -> None:
+        with self.connect() as connection, sqlite_transaction(connection, immediate=True):
+            self._prune_debug(connection, datetime.now(timezone.utc))
 
     def connect(self):
         return sqlite_connection(self.path, synchronous="FULL", busy_timeout_ms=5000)

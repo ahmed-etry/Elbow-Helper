@@ -27,7 +27,7 @@ from .models import AgentRequestContext, AgentIdentity
 from .identity import agent_identity, member_identity
 from .engine.service import AgentUnavailableError
 from .engine.service import AgentService
-from .conversation.transcripts import TranscriptArchive, archive_write
+from .conversation.transcripts import TranscriptArchive
 from .conversation.persistence import ConversationPersistence
 
 
@@ -121,6 +121,7 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
             await self.persistence.restore(self._conversations, guild_id=GUILD_ID)
         if (
             self.persistence is not None or self.research_jobs is not None
+            or self.transcript_archive is not None
         ):
             self._cleanup_task = asyncio.create_task(self._prune_checkpoints())
         if self.research_runner is not None:
@@ -149,6 +150,8 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
     async def _prune_checkpoints(self) -> None:
         while True:
             await asyncio.sleep(60)
+            if self.transcript_archive is not None:
+                self.transcript_archive.enqueue_debug_prune()
             if self.persistence is not None:
                 try:
                     await self.persistence.prune(self._conversations)
@@ -373,13 +376,16 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
         await self._load_authorized_reports(conversation, context)
         await self._check_sources(context)
         if self.transcript_archive is not None:
-            await archive_write(
-                self.transcript_archive.record_request, message_id=message.id,
-                guild_id=message.guild.id, channel_id=message.channel.id,
-                root_message_id=root_id, member_id=member.id, created_at=message.created_at.isoformat(),
-                content=message.content,
-                replied_to_message_id=getattr(message.reference, "message_id", None),
-            )
+            try:
+                self.transcript_archive.enqueue_write(
+                    self.transcript_archive.record_request, message_id=message.id,
+                    guild_id=message.guild.id, channel_id=message.channel.id,
+                    root_message_id=root_id, member_id=member.id, created_at=message.created_at.isoformat(),
+                    content=message.content,
+                    replied_to_message_id=getattr(message.reference, "message_id", None),
+                )
+            except Exception:
+                LOGGER.exception("Agent transcript request enqueue failed: request=%s", message.id)
         local_context = await self._build_local_context(message, referenced, conversation)
         history = await self._conversation_history(conversation, context)
 

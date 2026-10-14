@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
@@ -12,6 +13,7 @@ import time
 from elbow_helper.infrastructure.ai import AgentModel
 from elbow_helper.infrastructure.ai import TextGenerationError
 from ..models import AgentRequestContext
+from ..conversation.debug import OperatorDebugRecord
 from ..actions.contracts import ActionClass
 from ..access import (
     AgentAccessLost,
@@ -205,8 +207,41 @@ class AgentService:
         conversation_history: str = "",
         on_plan: Callable[[Mapping[str, Any]], Awaitable[None]] | None = None,
     ) -> str:
+        record = OperatorDebugRecord(question)
+        context = replace(context, operator_debug=record)
+        try:
+            answer = await self._answer(
+                question=question, local_context=local_context, context=context,
+                conversation_history=conversation_history, on_plan=on_plan,
+            )
+            record.answer = answer
+            return answer
+        except asyncio.CancelledError:
+            record.status = "cancelled"
+            raise
+        except Exception:
+            if record.status == "incomplete":
+                record.status = "failed"
+            raise
+        finally:
+            if context.transcript_archive is not None:
+                try:
+                    context.transcript_archive.enqueue_debug(context, record)
+                except Exception:
+                    LOGGER.exception("Agent operator debug archive enqueue failed")
+
+    async def _answer(
+        self,
+        *,
+        question: str,
+        local_context: str,
+        context: AgentRequestContext,
+        conversation_history: str = "",
+        on_plan: Callable[[Mapping[str, Any]], Awaitable[None]] | None = None,
+    ) -> str:
         from ..files.images import request_images
         images = await request_images(context) if getattr(context, "attachment_sources", ()) else ()
+        context.operator_debug.image_labels = [image.label for image in images]
         flow, usage = self._start_flow(
             question=question,
             local_context=local_context,
@@ -245,6 +280,7 @@ class AgentService:
             status = "access_lost"
             raise
         finally:
+            context.operator_debug.status = status
             self._log_completion(
                 context=flow.context,
                 rounds=rounder.rounds,

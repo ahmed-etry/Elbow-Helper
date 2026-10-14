@@ -149,6 +149,28 @@ class PlanRunner:
         visit(payload)
 
     async def run_one(
+        self, step, arguments, earlier_results, *, plan_state,
+    ):
+        started = time.monotonic()
+        result = None
+        status = "failed"
+        try:
+            result = await self._run_one(step, arguments, earlier_results, plan_state=plan_state)
+            status = "completed"
+            return result
+        except asyncio.CancelledError:
+            status = "cancelled"
+            raise
+        finally:
+            debug = getattr(self.context, "operator_debug", None)
+            if debug is not None:
+                debug.tool_calls.append({
+                    "step_id": step["id"], "capability": step["capability"],
+                    "arguments": deepcopy(arguments), "result": deepcopy(result),
+                    "status": status, "elapsed_ms": int((time.monotonic() - started) * 1000),
+                })
+
+    async def _run_one(
         self,
         step: Mapping[str, Any],
         arguments: Mapping[str, Any],
