@@ -183,4 +183,5 @@ class RequestPromptTests(unittest.TestCase):
             asked_at=datetime(2026, 9, 16, tzinfo=timezone.utc), asker_id=42,
         )
         self.assertIn('Asker: member (member_id=42)\n', with_id)
+        self.assertTrue(with_id.endswith('Respond to the asker. Voice: salty and funny; facts exact.'))
         self.assertIn('<local_context>\nnearby 1\n</local_context>', prompts[0])
