@@ -55,6 +55,19 @@ def _fields(value, names):
     return {name: value[name] for name in names if name in value}
 
 
+def collection_counts(data, original, path=""):
+    """Count retained collections against the uncut API response."""
+    counts = {}
+    if isinstance(data, list) and isinstance(original, list):
+        counts[path] = {"returned_rows": len(data), "total_rows": len(original)}
+        for index, (row, source) in enumerate(zip(data, original)):
+            counts.update(collection_counts(row, source, f"{path}/{index}"))
+    elif isinstance(data, dict) and isinstance(original, dict):
+        for key, value in data.items():
+            counts.update(collection_counts(value, original.get(key), f"{path}/{key}"))
+    return counts
+
+
 def summary(kind, payload):
     if kind in ("current_war", "cwl_war"):
         return payload
@@ -160,7 +173,7 @@ async def read_clash(context, arguments):
                 path, attempts=1, timeout_seconds=max(0.1, deadline - time.monotonic()),
             )
             if response.ok and isinstance(response.payload, dict):
-                payload = response.payload
+                original = payload = response.payload
                 if kind == "battle_log":
                     # The battle-log route has no verified server-side limit parameter.
                     payload = {**payload, "items": payload.get("items", [])[:limit]}
@@ -171,6 +184,11 @@ async def read_clash(context, arguments):
                         else summary(kind, payload)
                     ),
                 }
+                counts = collection_counts(items[index]["data"], original)
+                items[index]["row_counts"] = counts or {"/": {"returned_rows": 1, "total_rows": 1}}
+                items[index]["truncated"] = any(
+                    count["returned_rows"] < count["total_rows"] for count in counts.values()
+                )
             else:
                 status = (
                     "not_found" if response.status == 404
@@ -191,7 +209,12 @@ async def read_clash(context, arguments):
                 task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
     await require_evidence_access(context)
-    return {"items": items, "observed_at": datetime.now(timezone.utc).isoformat()}
+    truncated = any(item.get("truncated", False) for item in items)
+    return {"source": "clash_api", "items": items,
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "truncated": truncated,
+            "flags": {"status": "partial" if truncated or any(
+                item["status"] != "ok" for item in items) else "complete", "truncated": truncated}}
 
 
 def clash_tools():

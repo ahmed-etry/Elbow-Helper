@@ -59,7 +59,8 @@ async def _live_batch(context, kind, tags):
             return result
         items.extend(result["items"])
         observed_at = result["observed_at"]
-    return {"items": items, "observed_at": observed_at}
+    return {"source": "clash_api", "items": items, "observed_at": observed_at,
+            "truncated": any(item.get("truncated", False) for item in items)}
 
 
 async def _live_history(context, selector, values, accounts):

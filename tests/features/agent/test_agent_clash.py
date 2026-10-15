@@ -1,5 +1,6 @@
 """Live Clash reads use a fake application client."""
 import asyncio
+import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -7,6 +8,8 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.features.agent.datasets.clash import ENDPOINTS, clash_tools, read_clash, summary
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.domain.player_tags import encode_clash_tag
+from elbow_helper.features.agent.engine.tool_call import bound_tool_result
+from elbow_helper.features.agent.plan.results import model_result, model_view
 
 
 class ClashReadTests(unittest.IsolatedAsyncioTestCase):
@@ -112,6 +115,12 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
                 result = await read_clash(self.context, arguments)
                 returned = result["items"][0]["data"]["items"]
                 self.assertEqual(len(returned), 10 if limit is None else limit)
+                item = result["items"][0]
+                self.assertTrue(item["truncated"])
+                self.assertEqual(item["row_counts"]["/items"], {
+                    "returned_rows": len(returned), "total_rows": 12,
+                })
+                self.assertEqual(model_result(result)["flags"]["status"], "partial")
                 self.assertEqual(self.client.get.await_args.args[0], "/players/%23P0/battlelog")
                 if detail == "full":
                     self.assertEqual(returned, entries[:limit])
@@ -148,3 +157,45 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
             }]}),
             {"items": [{"startTime": "synthetic"}]},
         )
+
+    async def test_uncut_and_empty_logs_are_not_marked_truncated(self):
+        for count in (0, 3, 10):
+            with self.subTest(count=count):
+                self.client.get.return_value.payload = {"items": [{"stars": 0}] * count}
+                result = await read_clash(self.context, {"kind": "battle_log", "tags": ["#P0"]})
+                self.assertFalse(result["truncated"])
+                self.assertEqual(result["items"][0]["row_counts"]["/items"], {
+                    "returned_rows": count, "total_rows": count,
+                })
+                self.assertEqual(model_result(result)["flags"]["status"], "complete")
+
+    async def test_size_caps_return_no_excerpt_and_preserve_api_row_totals(self):
+        for kind in ENDPOINTS:
+            with self.subTest(kind=kind):
+                # Extra fields make every full dataset exceed the encoded size cap.
+                self.client.get.return_value.payload = {
+                    "items": [{"stars": 0, "details": '"\\\n' * 1000} for _ in range(12)],
+                }
+                result = await read_clash(self.context, {
+                    "kind": kind, "tags": ["#P0"], "detail": "full", "limit": 3,
+                })
+                content = json.dumps(model_view(model_result(result)), ensure_ascii=False)
+                bounded = bound_tool_result(content, 1000)
+                self.assertLessEqual(len(bounded), 1000)
+                view = json.loads(bounded)
+                self.assertTrue(view["truncated"])
+                self.assertNotIn("result_excerpt", view)
+                self.assertEqual(view["items"], [])
+                self.assertEqual(view["row_counts"][0]["collections"]["/items"], {
+                    "returned_rows": 0, "total_rows": 12,
+                })
+
+    async def test_size_cap_counts_survive_compacted_account_table_and_tiny_budget(self):
+        self.client.get.return_value.payload = {"items": [{"stars": 0, "details": "x" * 2000}] * 12}
+        result = await read_clash(self.context, {"kind": "battle_log", "tags": ["#P0"] * 10})
+        content = json.dumps(model_view(model_result(result)))
+        self.assertIn("columns", json.loads(content)["items"])
+        view = json.loads(bound_tool_result(content, 100))
+        self.assertEqual(view, {"truncated": True, "returned_rows": 0, "total_rows": 120})
+        nested = json.dumps({"accounts": [], "live_battle_logs": {"result": model_result(result)}})
+        self.assertEqual(json.loads(bound_tool_result(nested, 100)), view)

@@ -345,6 +345,9 @@ def bound_tool_result(content: str, limit: int) -> str:
         return ""
     if len(content) <= limit:
         return content
+    clash = _clash_size_limit(content, limit)
+    if clash is not None:
+        return clash
     # JSON escaping can expand an excerpt; measure the encoded envelope itself.
     low, high = 0, len(content)
     result = "{}"
@@ -359,6 +362,39 @@ def bound_tool_result(content: str, limit: int) -> str:
         else:
             high = midpoint - 1
     return result
+
+
+def _clash_size_limit(content: str, limit: int) -> str | None:
+    """Do not expose an arbitrary JSON excerpt as part of a Clash dataset."""
+    try:
+        payload = json.loads(content)
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    live = payload if payload.get("source") == "clash_api" else payload.get(
+        "live_battle_logs", {}).get("result", {})
+    if not isinstance(live, dict) or live.get("source") != "clash_api":
+        return None
+    items = live.get("items", [])
+    # model_view may have encoded the account records as a table.
+    if isinstance(items, dict):
+        items = [dict(zip(items["columns"], row)) for row in items["rows"]]
+    counts = [{"tag": item["tag"], "collections": {
+        path: {"returned_rows": 0, "total_rows": count["total_rows"]}
+        for path, count in item.get("row_counts", {}).items()
+    }} for item in items]
+    bounded = {"source": "clash_api", "items": [], "row_counts": counts,
+               "truncated": True, "flags": {"status": "partial", "truncated": True},
+               "message": "Clash result exceeded the size limit; no rows included. Read fewer accounts or a smaller limit."}
+    encoded = json.dumps(bounded, ensure_ascii=False, separators=(",", ":"))
+    if len(encoded) <= limit:
+        return encoded
+    # Tiny budgets may not fit per-account counts. Report the collection total.
+    total = sum(count["total_rows"] for item in counts for count in item["collections"].values())
+    encoded = json.dumps({"truncated": True, "returned_rows": 0, "total_rows": total},
+                         separators=(",", ":"))
+    return encoded if len(encoded) <= limit else ""
 
 
 def error_result(message: str) -> str:
