@@ -32,6 +32,12 @@ def battle_time(value):
     return parsed.astimezone(timezone.utc)
 
 
+def opponent_identity(item):
+    tag = normalize_player_tag(item.get("opponentPlayerTag"))
+    name = item.get("opponentName")
+    return tag or (name if isinstance(name, str) and name else None)
+
+
 def log_identities(payload):
     """Compare all log modes using stable fields, including farming battles."""
     items = payload.get("items") if isinstance(payload, dict) else payload
@@ -45,7 +51,7 @@ def log_identities(payload):
             continue
         identities.add(json.dumps([
             timestamp, item.get("battleType"), item.get("attack"),
-            normalize_player_tag(item.get("opponentPlayerTag")),
+            opponent_identity(item),
         ]))
     return identities
 
@@ -82,14 +88,13 @@ def parse_log(payload, observation, report_missing):
         opponent = item.get("opponentPlayerTag")
         opponent = normalize_player_tag(opponent)
         report_missing("battlelog.attack", type(attack) is not bool)
-        report_missing("battlelog.opponentPlayerTag", opponent is None)
-        if when is None or type(attack) is not bool or opponent is None:
+        if when is None or type(attack) is not bool:
             skipped += 1
             continue
         timestamp = when.isoformat(timespec="microseconds")
-        # Results, names, loot and army data can be corrected in later polls.
-        # Identity uses only the player, time, mode, direction and opponent.
-        identity = json.dumps([observation["player_tag"], timestamp, mode, attack, opponent])
+        # Prefer the opponent tag; use the name only when the tag is absent.
+        # Results, loot and army data can be corrected in later polls.
+        identity = json.dumps([observation["player_tag"], timestamp, mode, attack, opponent_identity(item)])
         key = hashlib.sha256(identity.encode("utf-8")).hexdigest()
         records[key] = {
             "battle_key": key, "player_tag": observation["player_tag"],

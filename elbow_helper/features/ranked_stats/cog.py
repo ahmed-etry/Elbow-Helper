@@ -66,7 +66,10 @@ class RankedStats(commands.Cog):
         # A failing account is logged once, not on every poll, until it recovers.
         if (tag, kind) not in self._failing:
             self._failing.add((tag, kind))
-            LOGGER.warning("Ranked %s unavailable for %s (status %s)", kind, tag, status)
+            if status is None:
+                LOGGER.warning("Ranked %s unavailable for %s (no response)", kind, tag)
+            else:
+                LOGGER.warning("Ranked %s unavailable for %s (status %s)", kind, tag, status)
 
     async def collect_once(self):
         if not self.client.configured:

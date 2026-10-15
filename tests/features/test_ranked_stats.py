@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.features.ranked_stats.cog import RankedStats
 from elbow_helper.features.ranked_stats.queries import RankedQueries
 from elbow_helper.features.ranked_stats.store import RankedStore
-from elbow_helper.features.ranked_stats.battles import parse_log
+from elbow_helper.features.ranked_stats.battles import log_identities, parse_log
 from elbow_helper.features.ranked_stats.fields import project_player
 
 
@@ -68,6 +68,30 @@ class RankedWindowTests(unittest.TestCase):
         self.assertIsNone(row["attacks_used"])
         self.assertEqual(row["daily"], [])
         self.assertIsNone(row["attacks_available"])
+
+    def test_opponent_nullable_migration_preserves_existing_rows_and_indexes(self):
+        import sqlite3
+        save_log(self.store, [battle()])
+        with closing(sqlite3.connect(self.path)) as conn:
+            original = conn.execute("SELECT * FROM ranked_battles").fetchall()
+            conn.execute("ALTER TABLE ranked_battles RENAME TO saved_battles")
+            schema = conn.execute("SELECT sql FROM sqlite_master WHERE name='saved_battles'").fetchone()[0]
+            conn.execute(schema.replace('"saved_battles"', 'ranked_battles').replace(
+                "opponent_tag TEXT", "opponent_tag TEXT NOT NULL"))
+            conn.execute("INSERT INTO ranked_battles SELECT * FROM saved_battles")
+            conn.execute("DROP TABLE saved_battles")
+            conn.commit()
+        self.store.initialize()
+        self.store.initialize()
+        with closing(sqlite3.connect(self.path)) as conn:
+            self.assertEqual(conn.execute("SELECT * FROM ranked_battles").fetchall(), original)
+            columns = conn.execute("PRAGMA table_info(ranked_battles)").fetchall()
+            self.assertEqual(next(row[3] for row in columns if row[1] == "opponent_tag"), 0)
+            indexes = {row[1] for row in conn.execute("PRAGMA index_list(ranked_battles)")}
+            self.assertTrue({"battles_time", "battles_member", "battles_clan"} <= indexes)
+        save_log(self.store, [battle(minute=2, opponent=None)])
+        save_log(self.store, [dict(battle(minute=2, opponent=None), stars=3)], observation(minute=5))
+        self.assertEqual(self.read()["accounts"][0]["battle_records"], 2)
 
     def test_ranked_losses_legend_attacks_and_defenses_have_distinct_counts(self):
         save_log(self.store, [battle(stars=0), battle(minute=2, stars=3),
@@ -146,10 +170,37 @@ class BattleParsingTests(unittest.TestCase):
         missing = []
         poll, records = parse_log({"items": [battle(), *bad]}, observation(),
                                   lambda field, invalid: missing.append((field, invalid)))
-        self.assertEqual(len(records), 1)
+        self.assertEqual(len(records), 2)
         self.assertEqual(poll["status"], "partial")
-        self.assertEqual(poll["skipped_entries"], len(bad))
+        self.assertEqual(poll["skipped_entries"], len(bad) - 1)
         self.assertIn(("battlelog.battleTimestamp", True), missing)
+
+    def test_optional_opponent_identity_is_stable_and_quiet(self):
+        for opponent in (None, "invalid", "#Q2"):
+            for name in (None, "", "Synthetic opponent"):
+                with self.subTest(opponent=opponent, name=name):
+                    entry = dict(battle(opponent=opponent), opponentName=name)
+                    if opponent is None:
+                        entry.pop("opponentPlayerTag")
+                    missing = []
+                    poll, rows = parse_log([entry, entry], observation(),
+                        lambda field, invalid: invalid and missing.append(field))
+                    corrected = {**entry, "stars": 3, "army": []}
+                    if opponent == "#Q2":
+                        corrected["opponentName"] = "Renamed opponent"
+                    _, later = parse_log([corrected], observation(minute=5), lambda *_: None)
+                    self.assertEqual((poll["status"], poll["skipped_entries"], len(rows)), ("ok", 0, 1))
+                    self.assertEqual(rows[0]["battle_key"], later[0]["battle_key"])
+                    self.assertEqual(rows[0]["opponent_tag"], opponent if opponent == "#Q2" else None)
+                    self.assertEqual(log_identities([entry]), log_identities([corrected]))
+                    self.assertEqual(missing, [])
+
+    def test_opponent_names_distinguish_tagless_battles(self):
+        entries = [dict(battle(opponent=None), opponentName=name)
+                   for name in ("Synthetic one", "Synthetic two", None)]
+        _, rows = parse_log(entries, observation(), lambda *_: None)
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(len(log_identities(entries)), 3)
 
     def test_battle_types_match_regardless_of_case_and_other_modes_are_not_skips(self):
         missing = []
@@ -201,6 +252,15 @@ class PlayerFieldTests(unittest.TestCase):
 
 
 class RankedCollectorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_no_response_warning_and_http_status_remain_distinct(self):
+        for status, expected in ((None, "(no response)"), (503, "(status 503)")):
+            self.cog._failing.clear()
+            with self.assertLogs("elbow_helper.features.ranked_stats.cog") as logs:
+                self.cog._report_failure("#P0", "battle log", status)
+                self.cog._report_failure("#P0", "battle log", status)
+            self.assertEqual(len(logs.output), 1)
+            self.assertIn(expected, logs.output[0])
+
     async def asyncSetUp(self):
         self.temp = TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

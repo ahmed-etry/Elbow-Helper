@@ -25,11 +25,26 @@ class RankedStore:
             conn.execute("CREATE INDEX IF NOT EXISTS snapshots_time ON snapshots(observed_at)")
             conn.execute("""CREATE TABLE IF NOT EXISTS ranked_battles (
                 battle_key TEXT PRIMARY KEY, player_tag TEXT NOT NULL, battle_at TEXT NOT NULL,
-                battle_type TEXT NOT NULL, attack INTEGER NOT NULL, opponent_tag TEXT NOT NULL,
+                battle_type TEXT NOT NULL, attack INTEGER NOT NULL, opponent_tag TEXT,
                 member_id INTEGER NOT NULL, clan_tag TEXT, player_name TEXT,
                 first_observed_at TEXT NOT NULL, last_observed_at TEXT NOT NULL,
                 payload_json TEXT NOT NULL
             )""")
+            columns = conn.execute("PRAGMA table_info(ranked_battles)").fetchall()
+            if any(column[1] == "opponent_tag" and column[3] for column in columns):
+                # SQLite cannot drop NOT NULL in place. Rebuild in one transaction,
+                # preserving battle keys, payloads and first-observed associations.
+                conn.execute("BEGIN")
+                conn.execute("ALTER TABLE ranked_battles RENAME TO ranked_battles_old")
+                conn.execute("""CREATE TABLE ranked_battles (
+                    battle_key TEXT PRIMARY KEY, player_tag TEXT NOT NULL, battle_at TEXT NOT NULL,
+                    battle_type TEXT NOT NULL, attack INTEGER NOT NULL, opponent_tag TEXT,
+                    member_id INTEGER NOT NULL, clan_tag TEXT, player_name TEXT,
+                    first_observed_at TEXT NOT NULL, last_observed_at TEXT NOT NULL,
+                    payload_json TEXT NOT NULL
+                )""")
+                conn.execute("INSERT INTO ranked_battles SELECT * FROM ranked_battles_old")
+                conn.execute("DROP TABLE ranked_battles_old")
             conn.execute("CREATE INDEX IF NOT EXISTS battles_time ON ranked_battles(battle_at, player_tag)")
             conn.execute("CREATE INDEX IF NOT EXISTS battles_member ON ranked_battles(member_id, battle_at)")
             conn.execute("CREATE INDEX IF NOT EXISTS battles_clan ON ranked_battles(clan_tag, battle_at)")
