@@ -128,8 +128,11 @@ class KnowledgeCatalog:
             index_omitted.update(prompt.index_omitted)
             if prompt.index_fallback:
                 fallback.append(profile)
-        LOGGER.info("Community knowledge reloaded: sections_per_file=%s prompt_estimates=%s",
-                    counts, estimates)
+        # The broadest profile is the largest prompt any reader gets.
+        widest = max(estimates.values(), key=lambda item: item["core_tokens"] + item["index_tokens"],
+                     default={"core_tokens": 0, "index_tokens": 0})
+        LOGGER.info("Community knowledge loaded: %d files, %d sections; up to %d core + %d index tokens",
+                    len(counts), sum(counts.values()), widest["core_tokens"], widest["index_tokens"])
         if omitted:
             LOGGER.warning("Community knowledge core exceeds 4000 tokens; omitted sections: %s",
                            "; ".join(sorted(omitted)))
