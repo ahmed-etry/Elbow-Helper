@@ -11,6 +11,70 @@ from ..access import require_evidence_access
 from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool
 from ..research.history import search_date
+from .clash import read_clash
+
+
+def history_coverage(result, after, before):
+    accounts = result.get("accounts", [])
+    reasons = []
+    if not accounts or not any(row.get("battle_records", 0) for row in accounts):
+        reasons.append("empty_ranked_history")
+    if any(row.get("counts_complete") is False for row in accounts):
+        reasons.append("incomplete_ranked_counts")
+    if any(row.get("failed_battle_log_polls", 0) for row in accounts):
+        reasons.append("failed_battle_log_polls")
+    if result.get("coverage_complete") is False or result.get("complete") is False:
+        reasons.append("incomplete_ranked_history")
+    if result.get("unobserved_selections"):
+        reasons.append("unobserved_selections")
+    if result.get("next_offset") is not None:
+        reasons.append("more_accounts_available")
+    try:
+        returned_after = search_date(result.get("after"))
+        returned_before = search_date(result.get("before"))
+        if ((returned_after is not None and returned_after > after)
+                or (returned_before is not None and returned_before < before)):
+            reasons.append("shorter_observation_window")
+    except (ValueError, TypeError):
+        reasons.append("shorter_observation_window")
+    for row in accounts:
+        try:
+            first = search_date(row.get("first_observed_at"))
+            last = search_date(row.get("last_observed_at"))
+            if first is None or last is None or first > after or last < before:
+                reasons.append("shorter_observation_window")
+                break
+        except (ValueError, TypeError):
+            reasons.append("shorter_observation_window")
+            break
+    return list(dict.fromkeys(reasons))
+
+
+async def _live_batch(context, kind, tags):
+    items = []
+    observed_at = None
+    for start in range(0, len(tags), 20):
+        result = await read_clash(context, {"kind": kind, "tags": tags[start:start + 20], "limit": 50})
+        if "error" in result:
+            return result
+        items.extend(result["items"])
+        observed_at = result["observed_at"]
+    return {"items": items, "observed_at": observed_at}
+
+
+async def _live_history(context, selector, values, accounts):
+    # Current rolling logs do not replace historical counts or ownership.
+    tags = {row["player_tag"] for row in accounts}
+    if selector == "account_tags":
+        tags.update(values)
+    elif selector == "member_ids" and context.account_links is not None:
+        links = await asyncio.to_thread(context.account_links.get_links_for_members, values)
+        tags.update(row["player_tag"] for rows in links.values() for row in rows)
+    tags = sorted({tag for value in tags if (tag := normalize_player_tag(value)) is not None})
+    if not tags:
+        return {"error": "No accounts are available for a live battle log read."}
+    result = await _live_batch(context, "battle_log", tags)
+    return result
 
 
 async def read_ranked_stats(context, arguments):
@@ -53,6 +117,30 @@ async def read_ranked_stats(context, arguments):
     except (sqlite3.Error, ValueError):
         return {"error": "Ranked observations could not be read."}
     await require_evidence_access(context)
+    reasons = history_coverage(result, after, before)
+    if reasons:
+        result = {**result, "complete": False,
+                  "history_coverage": {
+                      "status": "empty" if "empty_ranked_history" in reasons else "partial",
+                      "message": ("Stored ranked history is empty for this selection."
+                                  if "empty_ranked_history" in reasons else
+                                  "Stored ranked history is incomplete for the requested window."),
+                      "requested_after": after.isoformat(), "requested_before": before.isoformat(),
+                      "reasons": reasons,
+                  },
+                  "flags": {"status": "partial", "truncated": False, "limits": reasons}}
+        try:
+            # A whole clan would fan out to every member's log; those stay explicit live reads.
+            live = ({"skipped": "Live battle logs are read automatically only for specific accounts or members."}
+                    if selector == "clan_tags" else
+                    await _live_history(context, selector, values, result["accounts"]))
+        except sqlite3.Error:
+            live = {"error": "Accounts could not be read for a live battle log read."}
+        result["live_battle_logs"] = {
+            "scope": "latest_rolling_log", "covers_requested_window": False,
+            "result": live,
+        }
+        await require_evidence_access(context)
     return result
 
 
