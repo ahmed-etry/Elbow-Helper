@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 import hashlib
 import json
+import logging
 
 from elbow_helper.domain.player_tags import normalize_player_tag
 
@@ -11,6 +12,15 @@ INITIAL_POLL_SECONDS = 300
 MIN_POLL_SECONDS = 300
 MAX_POLL_SECONDS = 3600
 RANKED_MODES = frozenset({"RANKED", "LEGEND"})
+LOGGER = logging.getLogger(__name__)
+_seen_modes = set()
+
+
+def report_unknown_mode(mode):
+    # Logged once per mode so a renamed ranked mode is visible without flooding the log.
+    if mode != "HOME_VILLAGE" and mode not in _seen_modes:
+        _seen_modes.add(mode)
+        LOGGER.info("Ranked battle log treats battle type %s as unranked", mode)
 
 
 def battle_time(value):
@@ -58,13 +68,16 @@ def parse_log(payload, observation, report_missing):
             report_missing("battlelog.battleTimestamp", True)
             when = None
         mode = item.get("battleType")
-        if mode == "HOME_VILLAGE":
-            continue
-        if not isinstance(mode, str) or mode not in RANKED_MODES:
+        if not isinstance(mode, str) or not mode:
             report_missing("battlelog.battleType", True)
             skipped += 1
             continue
         report_missing("battlelog.battleType", False)
+        mode = mode.upper()
+        if mode not in RANKED_MODES:
+            # Farming, friendly and other modes are not ranked battles.
+            report_unknown_mode(mode)
+            continue
         attack = item.get("attack")
         opponent = item.get("opponentPlayerTag")
         opponent = normalize_player_tag(opponent)

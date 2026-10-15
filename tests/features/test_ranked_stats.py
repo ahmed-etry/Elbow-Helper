@@ -11,6 +11,7 @@ from elbow_helper.features.ranked_stats.cog import RankedStats
 from elbow_helper.features.ranked_stats.queries import RankedQueries
 from elbow_helper.features.ranked_stats.store import RankedStore
 from elbow_helper.features.ranked_stats.battles import parse_log
+from elbow_helper.features.ranked_stats.fields import project_player
 
 
 def stamp(day=1, minute=0):
@@ -150,6 +151,13 @@ class BattleParsingTests(unittest.TestCase):
         self.assertEqual(poll["skipped_entries"], len(bad))
         self.assertIn(("battlelog.battleTimestamp", True), missing)
 
+    def test_battle_types_match_regardless_of_case_and_other_modes_are_not_skips(self):
+        missing = []
+        poll, records = parse_log([battle(mode="ranked"), battle(minute=2, mode="FRIENDLY_CHALLENGE")],
+                                  observation(), lambda field, invalid: invalid and missing.append(field))
+        self.assertEqual([record["battle_type"] for record in records], ["RANKED"])
+        self.assertEqual((poll["status"], missing), ("ok", []))
+
     def test_api_compact_times_and_offsets_are_normalized_to_utc(self):
         items = [dict(battle(), battleTimestamp="20260901T235900.000Z"),
                  dict(battle(minute=2), battleTimestamp="2026-09-02T01:00:00+02:00")]
@@ -170,6 +178,26 @@ class BattleParsingTests(unittest.TestCase):
             with self.subTest(items=items):
                 poll, _ = parse_log(items, observation(), lambda *_: None)
                 self.assertEqual(poll["poll_interval_seconds"], 300)
+
+
+class PlayerFieldTests(unittest.TestCase):
+    def test_sections_absent_outside_legend_league_are_not_reported(self):
+        missing = []
+        fields = project_player({"trophies": 100, "bestTrophies": 100, "attackWins": 0, "defenseWins": 0,
+                                 "leagueTier": {"id": 1, "name": "Synthetic league"},
+                                 "legendStatistics": {"bestSeason": {"trophies": 100}}},
+                                lambda field, invalid: invalid and missing.append(field))
+        self.assertEqual(missing, [])
+        self.assertEqual(fields["legendStatistics"], {"bestSeason": {"trophies": 100}})
+
+    def test_malformed_optional_sections_are_still_reported(self):
+        missing = []
+        project_player({"leagueTier": {"id": 1, "name": "Synthetic league"}, "league": "wrong",
+                        "legendStatistics": {"currentSeason": {"rank": -1}}},
+                       lambda field, invalid: invalid and missing.append(field))
+        self.assertIn("league", missing)
+        self.assertIn("legendStatistics.currentSeason.rank", missing)
+        self.assertNotIn("legendStatistics.currentSeason.id", missing)
 
 
 class RankedCollectorTests(unittest.IsolatedAsyncioTestCase):
@@ -283,7 +311,8 @@ class RankedCollectorTests(unittest.IsolatedAsyncioTestCase):
         self.client.get.side_effect = lambda *_args, **_kwargs: SimpleNamespace(
             ok=True, status=200, payload={"items": [battle(minute=30)]})
         with self.assertLogs("elbow_helper.features.ranked_stats.cog", level="WARNING") as logs:
-            await self.collect_at(600)
+            # The failed poll doubled the interval from 300 to 600 seconds.
+            await self.collect_at(900)
         self.assertTrue(any("shares no battles" in line for line in logs.output))
 
     async def test_profiles_are_hourly_and_can_be_due_without_battle_logs(self):
@@ -345,7 +374,11 @@ class RankedCollectorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.collect_at(1800), [])
         with self.assertLogs("elbow_helper.features.ranked_stats.cog"):
             self.assertEqual(await self.collect_at(2400), ["/players/%23P2/battlelog"])
-            self.assertEqual(await self.collect_at(2700), ["/players/%23P0/battlelog"])
+        # Failures back off by doubling the interval, and a repeated failure is not logged again.
+        self.assertEqual(await self.collect_at(3500), [])
+        with self.assertLogs("elbow_helper.features.ranked_stats.cog", level="WARNING") as logs:
+            self.assertIn("/players/%23P0/battlelog", await self.collect_at(3900))
+        self.assertFalse(any("battle log unavailable for #P0" in line for line in logs.output))
 
     async def test_failed_profiles_are_not_retried_by_more_frequent_battle_polls(self):
         def response(path, **kwargs):

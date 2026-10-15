@@ -41,6 +41,7 @@ class RankedStats(commands.Cog):
         self.store = RankedStore(bot.paths.data_root / "ranked_stats" / "ranked.sqlite3")
         self.queries = RankedQueries(self.store)
         self._missing_fields = set()
+        self._failing = set()
         self._collect_lock = asyncio.Lock()
         self._schedules = {}
         self._request_lock = asyncio.Lock()
@@ -61,6 +62,12 @@ class RankedStats(commands.Cog):
         elif not missing:
             self._missing_fields.discard(key)
 
+    def _report_failure(self, tag, kind, status):
+        # A failing account is logged once, not on every poll, until it recovers.
+        if (tag, kind) not in self._failing:
+            self._failing.add((tag, kind))
+            LOGGER.warning("Ranked %s unavailable for %s (status %s)", kind, tag, status)
+
     async def collect_once(self):
         if not self.client.configured:
             return
@@ -77,6 +84,7 @@ class RankedStats(commands.Cog):
                 accounts[tag] = member_id
             tags = set(accounts)
             self._missing_fields = {key for key in self._missing_fields if key[0] in tags}
+            self._failing = {key for key in self._failing if key[0] in tags}
             self._schedules = {tag: schedule for tag, schedule in self._schedules.items() if tag in tags}
             await self._restore_schedules(tags - self._schedules.keys())
             semaphore = asyncio.Semaphore(4)
@@ -153,6 +161,7 @@ class RankedStats(commands.Cog):
             response = await self._get("/players/" + encode_clash_tag(tag))
             payload = response.payload
             if response.ok and isinstance(payload, dict):
+                self._failing.discard((tag, "player snapshot"))
                 returned_tag = normalize_player_tag(payload.get("tag"))
                 if returned_tag is not None and returned_tag != tag:
                     raise ValueError("Player response identity mismatch")
@@ -168,7 +177,7 @@ class RankedStats(commands.Cog):
                     row["clan_tag"] = normalize_player_tag(clan.get("tag"))
                     self._report_field(tag, "clan.tag", row["clan_tag"] is None)
             else:
-                LOGGER.warning("Ranked player snapshot unavailable for %s (status %s)", tag, response.status)
+                self._report_failure(tag, "player snapshot", response.status)
         except Exception:
             LOGGER.exception("Ranked player snapshot failed for %s", tag)
         row["observed_at"] = datetime.now(timezone.utc).isoformat(timespec="microseconds")
@@ -183,6 +192,7 @@ class RankedStats(commands.Cog):
         try:
             response = await self._get("/players/" + encode_clash_tag(tag) + "/battlelog")
             if response.ok:
+                self._failing.discard((tag, "battle log"))
                 poll["observed_at"] = datetime.now(timezone.utc).isoformat(timespec="microseconds")
                 poll, battles = parse_log(response.payload, {**row, "observed_at": poll["observed_at"]},
                     lambda field, missing: self._report_field(tag, field, missing))
@@ -195,9 +205,11 @@ class RankedStats(commands.Cog):
                     )
                 schedule.previous_battles = identities
                 return poll, battles
-            LOGGER.warning("Ranked battle log unavailable for %s (status %s)", tag, response.status)
+            self._report_failure(tag, "battle log", response.status)
         except Exception:
             LOGGER.exception("Ranked battle log failed for %s", tag)
+        # Back off an account whose log keeps failing, up to the slowest poll interval.
+        poll["poll_interval_seconds"] = min(MAX_POLL_SECONDS, interval * 2)
         poll["observed_at"] = datetime.now(timezone.utc).isoformat(timespec="microseconds")
         return poll, []
 
