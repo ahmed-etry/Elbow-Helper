@@ -22,4 +22,10 @@ async def run_api(context: Any, values: Mapping[str, Any]) -> ActionOutcome:
 
 
 def diagnostic_adapters() -> tuple[CommandAdapter, ...]:
-    return (CommandAdapter("/api", "public", run_api, capability_name="check_clash_api"),)
+    return (CommandAdapter(
+        "/api", "public", run_api, capability_name="check_clash_api",
+        usage_note=(
+            "General Clash API status only. Check read or collector failures via "
+            "query_bot_data (stored evidence) or read_clash (same kind and tags); answer from evidence."
+        ),
+    ),)
