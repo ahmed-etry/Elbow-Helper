@@ -5,7 +5,9 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
-from elbow_helper.features.agent.knowledge.store import KnowledgeStore
+from elbow_helper.features.agent.knowledge.store import (
+    KnowledgeStore, TOPIC_INDEX_TOKEN_LIMIT,
+)
 from elbow_helper.features.agent.knowledge.tools import search_approved_knowledge
 from elbow_helper.features.agent.models import AgentRequestContext, AgentTurnState
 from elbow_helper.features.agent.conversation.context import estimate_tokens
@@ -125,36 +127,67 @@ Hidden""")
             prompt = catalog.prompt({level})
             self.assertIn("Restricted " + level, prompt.index)
             self.assertEqual(prompt.required_access, {level})
-            self.assertLessEqual(estimate_tokens(prompt.index), 2500)
+            self.assertLessEqual(estimate_tokens(prompt.index), TOPIC_INDEX_TOKEN_LIMIT)
 
-    def test_topic_index_keeps_one_hundred_section_titles(self):
-        titles = [f"Community knowledge section title {index}" for index in range(100)]
-        self.write("topics.md", "".join(f"# {title}\nBody\n" for title in titles))
+    def test_topic_index_keeps_five_hundred_titles_across_visibility_profiles(self):
+        visibilities = ["public"] * 13 + ["lead", "lead_plus", "core"] * 4
+        for file_index, visibility in enumerate(visibilities):
+            self.write(f"topics-{file_index:02}.md", f'+++\nvisibility="{visibility}"\n+++\n'
+                       + "".join(f"# Topic {file_index:02} section {index:02}\nBody\n"
+                                 for index in range(20)))
+        catalog = self.store.load()
+        self.assertEqual(len(catalog.active_sections), 500)
+        self.assertEqual(len(catalog.visible_sections()), 260)
+        for levels, prompt in catalog._prompts.items():
+            with self.subTest(levels=levels):
+                self.assertFalse(prompt.index_fallback)
+                self.assertEqual(prompt.index_omitted, ())
+                self.assertGreater(prompt.index_tokens, 2500)
+                self.assertLessEqual(prompt.index_tokens, TOPIC_INDEX_TOKEN_LIMIT)
+                self.assertEqual([line for line in prompt.index.splitlines() if line.startswith("- ")],
+                                 [f"- {section.title}" for section in catalog.visible_sections(levels)])
+                self.assertEqual(prompt.required_access, levels)
+
+    def test_topic_index_uses_full_cap_before_falling_back(self):
+        self.assertEqual(TOPIC_INDEX_TOKEN_LIMIT, 14000)
+        self.write("topics.md", "# Topic\nBody")
         prompt = self.store.load().prompt()
+        title = "Topic" + "x" * (2 * (TOPIC_INDEX_TOKEN_LIMIT - prompt.index_title_tokens))
+        self.write("topics.md", f"# {title}\nBody")
+        with patch("elbow_helper.features.agent.knowledge.store.time.monotonic", return_value=10**12):
+            prompt = self.store.load().prompt()
+        self.assertEqual(prompt.index_tokens, TOPIC_INDEX_TOKEN_LIMIT)
         self.assertFalse(prompt.index_fallback)
-        self.assertGreater(estimate_tokens(prompt.index), 1000)
-        self.assertLessEqual(estimate_tokens(prompt.index), 2500)
-        self.assertEqual(prompt.index.splitlines()[2:], [f"- {title}" for title in titles])
+        self.assertIn(f"- {title}", prompt.index)
+        self.write("topics.md", f"# {title}xx\nBody")
+        with (patch("elbow_helper.features.agent.knowledge.store.time.monotonic", return_value=10**12 + 60),
+              self.assertLogs("elbow_helper.features.agent.knowledge.store", level="WARNING") as logs):
+            prompt = self.store.load().prompt()
+        self.assertEqual(prompt.index_title_tokens, TOPIC_INDEX_TOKEN_LIMIT + 1)
+        self.assertTrue(prompt.index_fallback)
+        self.assertEqual(prompt.index.splitlines()[-1], "topics.md: 1 sections")
+        self.assertIn("exceeds 14000 tokens", " ".join(logs.output))
 
     def test_large_topic_index_falls_back_to_visible_file_counts(self):
-        self.write("topics.md", "".join(f"# Topic {index}\nBody\n" for index in range(600)))
+        self.write("topics.md", "".join(f"# Topic {index}\nBody\n" for index in range(2000)))
         self.write("private.md", '+++\nvisibility="lead"\n+++\n# Restricted title\nBody')
         with self.assertLogs("elbow_helper.features.agent.knowledge.store", level="WARNING") as logs:
             prompt = self.store.load().prompt()
-        self.assertEqual(prompt.index.splitlines()[-1], "topics.md: 600 sections")
+        self.assertEqual(prompt.index.splitlines()[-1], "topics.md: 2000 sections")
         self.assertNotIn("Topic 1", prompt.index)
         self.assertNotIn("private.md", prompt.index)
         self.assertIn("using file counts", " ".join(logs.output))
-        self.assertLessEqual(estimate_tokens(prompt.index), 2500)
+        self.assertLessEqual(estimate_tokens(prompt.index), TOPIC_INDEX_TOKEN_LIMIT)
 
     def test_file_count_fallback_stays_bounded_with_many_files(self):
-        for index in range(300):
-            self.write(f"topic-{index:03}.md", "# Generic topic\nGeneric body")
+        for index in range(1200):
+            self.write(f"community-knowledge-reference-topic-{index:04}.md",
+                       "# Generic topic\nGeneric body")
         with self.assertLogs("elbow_helper.features.agent.knowledge.store", level="WARNING") as logs:
             prompt = self.store.load().prompt()
         self.assertIn("Additional files omitted", prompt.index)
         self.assertIn("omitted files", " ".join(logs.output))
-        self.assertLessEqual(estimate_tokens(prompt.index), 2500)
+        self.assertLessEqual(estimate_tokens(prompt.index), TOPIC_INDEX_TOKEN_LIMIT)
 
     def test_search_counts_words_and_repeats_with_title_weight_and_exact_priority(self):
         self.write("topics.md", "# Repeated body\n" + "policy " * 20
@@ -191,7 +224,9 @@ Hidden""")
 
     def test_reload_logs_counts_estimates_and_warnings_once(self):
         self.write("core.md", "+++\nalways_loaded=true\n+++\n# Oversized core\n" + "x" * 9000)
-        self.write("topics.md", "".join(f"# Generic topic {index}\nBody\n" for index in range(300)))
+        self.write("topics.md", "".join(
+            f"# Generic community knowledge section for reload logging {index}\nBody\n"
+            for index in range(1000)))
         self.write("draft.md", '+++\nstatus="draft"\n+++\n# Draft title\nBody')
         self.write("invalid.md", '+++\nalways_loaded="invalid"\n+++\nBody')
         logger = "elbow_helper.features.agent.knowledge.store"
@@ -204,7 +239,7 @@ Hidden""")
         warnings = [line for line in logs.output if line.startswith("WARNING:")]
         self.assertEqual(len(info), 1)
         self.assertEqual(len(warnings), 2)
-        self.assertIn("4 files, 301 sections", info[0])
+        self.assertIn("4 files, 1001 sections", info[0])
         self.assertIn("index tokens", info[0])
         self.assertIn("Oversized core", " ".join(warnings))
         self.assertIn("using file counts", " ".join(warnings))
