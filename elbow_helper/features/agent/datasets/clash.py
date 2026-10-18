@@ -15,6 +15,7 @@ from ..models import RegisteredAgentTool
 from ..research.history import search_date
 from .battle_logs import select_battles
 from .clash_cache import MAX_AGE_SECONDS
+from .findings import AGGREGATES, FIELD_MEANINGS, battle_aggregate, cohort_aggregate
 
 
 ENDPOINTS = {
@@ -179,6 +180,12 @@ async def read_clash(context, arguments):
             raise ValueError("Battle selection applies only to battle logs")
     except (ValueError, TypeError, AttributeError):
         return {"error": "Use valid ISO dates, chronological order and offset for battle logs only."}
+    aggregate = arguments.get("aggregate")
+    if aggregate is not None and (kind != "battle_log" or aggregate not in AGGREGATES):
+        return {"error": "Choose a supported battle-log aggregate."}
+    # Repeated tags must not multiply a cohort's denominators.
+    if aggregate is not None:
+        normalized = list(dict.fromkeys(normalized))
     items = [{"tag": tag, "status": "unavailable"} for tag in normalized]
     semaphore = asyncio.Semaphore(8)
     deadline = time.monotonic() + budgets.TOOL_TIMEOUT_SECONDS - 1
@@ -230,6 +237,10 @@ async def read_clash(context, arguments):
                 )
                 if coverage is not None:
                     items[index]["coverage"] = coverage
+                if aggregate is not None:
+                    items[index]["aggregate"] = battle_aggregate(
+                        original, aggregate, after=after, before=before,
+                    )
             else:
                 status = (
                     "not_found" if response.status == 404
@@ -256,7 +267,10 @@ async def read_clash(context, arguments):
             cache.clear()
         raise
     truncated = any(item.get("truncated", False) for item in items)
-    return {"source": "clash_api", "items": items,
+    return {"source": "clash_api", "kind": kind, "items": items,
+            "field_meanings": FIELD_MEANINGS.get(kind, {}),
+            **({"aggregate": cohort_aggregate(items, aggregate, after=after, before=before)}
+               if aggregate is not None else {}),
             "observed_at": min((item["observed_at"] for item in items if "observed_at" in item),
                                default=datetime.now(timezone.utc).isoformat()),
             "truncated": truncated,
@@ -285,12 +299,13 @@ def clash_tools():
                     "offset": {"type": "integer", "minimum": 0, "default": 0},
                     "after": {"type": "string", "maxLength": 40},
                     "before": {"type": "string", "maxLength": 40},
+                    "aggregate": {"type": "string", "enum": list(AGGREGATES)},
                     "max_age_seconds": {"type": "integer", "minimum": 0, "maximum": 30,
                                         "default": 30},
                 },
                 "required": ["kind", "tags"], "additionalProperties": False,
             },
-            usage_note="Batch max 200 players, 20 others, 5 full. Raids limit 1..10 default 2; others 1..50 default 10. Battle-only order/offset/after/before; UTC, before exclusive.",
+            usage_note="Max 200 players/20 others/5 full. Raids limit 1..10 default 2; others 1..50 default 10. Battle dates UTC; before exclusive. Aggregates before paging.",
         ),
         read_clash,
         contract=CapabilityContract(), returns="items[].tag,status,data; observed_at",
