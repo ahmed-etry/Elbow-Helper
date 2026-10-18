@@ -11,7 +11,7 @@ def dataset_tools():
     return (RegisteredAgentTool(
         AgentToolDefinition(
             "query_bot_data",
-            "Query stored data with read-only SQL.",
+            "Query stored data with read-only SQL. Records are optional, often empty; absence is not evidence.",
             {
                 "type": "object",
                 "properties": {
@@ -25,7 +25,7 @@ def dataset_tools():
             },
             usage_note=(
                 "Prefer one SQL query for the whole question. Let SQL count, group, join, "
-                "filter and sort; never count long lists yourself."
+                "filter and sort. Read records only for records questions or specific logged cases."
             ),
         ),
         query_bot_data,

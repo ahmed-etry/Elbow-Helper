@@ -199,7 +199,10 @@ BONUS["attack_sample"] = BONUS.pop("attacks")
 BONUS.update(metric_name="", metric_definition="", ass_distinction=names("is_ass"))
 
 RESULT_FIELDS = {
-    "query_bot_data": {"rows": ["{selected SQL columns}"], **names("row_count,truncated")},
+    "query_bot_data": {
+        "rows": ["{selected SQL columns}"], **names("row_count,truncated"),
+        "source_coverage?": "{records:{window,record_count,member_count,members[],note}}",
+    },
     "read_clash": {"items": [{**names("tag,status"), "data?": "{endpoint fields}",
                                **names("observed_at?,reused?,row_counts?,truncated?"),
                                "coverage?": "{rolling history scope, date ranges, counts, selection}"}],

@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Callable
+import sqlite3
 
 
 @dataclass(frozen=True)
@@ -13,6 +15,7 @@ class DataSource:
     level: str = "none"
     note: str = ""
     config_constant: str = ""
+    coverage: Callable[[sqlite3.Connection, dict, int], dict] | None = None
 
     def resolve(self, paths):
         if self.alias == "achievements":

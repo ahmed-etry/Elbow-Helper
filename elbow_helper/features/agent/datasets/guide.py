@@ -43,7 +43,7 @@ class DataGuide:
                             self.entries.append((
                                 level,
                                 f"{source.alias}.{table} [{level}]: {note}\n"
-                                + ", ".join(_column(row) for row in columns),
+                                + ",".join(_column(row) for row in columns),
                             ))
             except sqlite3.Error:
                 continue
@@ -88,4 +88,5 @@ def _column(row):
         " (Unix s UTC)" if name.endswith("_ts")
         else " (ISO UTC)" if kind.upper() == "TEXT" and name.endswith(("_utc", "_at")) else ""
     )
+    kind = "INT" if kind.upper() == "INTEGER" else kind
     return f"{name} {kind}{unit}"

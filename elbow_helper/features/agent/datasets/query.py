@@ -75,6 +75,7 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=200):
         if level and level != "none" and level not in levels:
             return {"error": f"This needs {level} access.", "required_access": [level]}, set()
     touched = set()
+    read_tables = set()
     denied = set()
     deadline = time.monotonic() + QUERY_SECONDS
     try:
@@ -116,6 +117,8 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=200):
             connection.execute("SELECT value FROM json_each('[]')").fetchall()
             connection.execute("SELECT value FROM json_tree('[]')").fetchall()
             connection.execute("PRAGMA query_only = ON")
+            if not connection.in_transaction:
+                connection.execute("BEGIN")
 
             def authorize(action, arg1, arg2, database, trigger):
                 if action in (sqlite3.SQLITE_SELECT, sqlite3.SQLITE_RECURSIVE):
@@ -132,6 +135,7 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=200):
                         return sqlite3.SQLITE_OK
                     level = allowed.get((database, arg1))
                     if level is not None:
+                        read_tables.add((database, arg1))
                         if level != "none":
                             touched.add(level)
                         return sqlite3.SQLITE_OK
@@ -169,7 +173,17 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=200):
                 ).fetchone()[0]
             if not raw_rows:
                 result["columns"] = columns
+            coverage = {
+                source.alias: source.coverage(connection, bindings, min(cap, 200))
+                for source in sources if source.coverage is not None and any(
+                    (source.alias, table) in read_tables for table, _, _ in source.tables
+                )
+            }
+            if coverage:
+                result["source_coverage"] = coverage
             return result, touched
+    except ValueError as error:
+        return {"error": str(error)}, set()
     except sqlite3.Error as error:
         if denied:
             return {
