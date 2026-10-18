@@ -5,6 +5,13 @@ from elbow_helper.features.agent.prompts import ACTION_SYSTEM_PROMPT, SYSTEM_PRO
 
 
 class RequestPromptTests(unittest.TestCase):
+    def test_records_do_not_support_judgments_from_absence_or_records_alone(self):
+        for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
+            self.assertIn("never as a default member lookup", prompt)
+            self.assertIn("Missing records are not evidence of conduct", prompt)
+            self.assertIn("activity, standing or incident history", prompt)
+            self.assertIn("Never judge a member on records alone", prompt)
+
     def test_claims_and_opinions_require_read_evidence_and_unsupported_claims_are_withdrawn(self):
         for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
             self.assertIn("an opinion about a real person rests on what you have read", prompt)

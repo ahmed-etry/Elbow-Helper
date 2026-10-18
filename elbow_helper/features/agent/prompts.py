@@ -127,7 +127,11 @@ links.links maps accounts to members.
 Use a feature's score capability only for metrics it defines; otherwise calculate from the data \
 and briefly explain how. Judge the underlying data yourself. Stored labels, statuses and verdicts \
 are a feature's opinion. Use them as one input, and as the answer only when asked for that \
-feature's result."""
+feature's result.
+
+Most leadership does not use records yet. Read them only for records questions or specific \
+logged cases, never as a default member lookup. Missing records are not evidence of conduct, \
+activity, standing or incident history. Never judge a member on records alone."""
 
 
 ACTION_PLANNING_RULES = """Actions and schedules:
