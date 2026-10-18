@@ -104,6 +104,24 @@ class ConversationTurn:
         object.__setattr__(self, "retained_bytes", size)
 
 
+def _with_delivery_record(turn: ConversationTurn, record: ConversationRecord) -> ConversationTurn:
+    """Keep the model-facing answer aligned with acknowledged delivery only."""
+    text = turn.text
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            data.update(
+                answer=record.delivered_answer[:16_000],
+                answer_truncated=len(record.delivered_answer) > 16_000,
+                delivery_complete=record.delivery_complete,
+                delivery_unknown=record.delivery_unknown,
+            )
+            text = json.dumps(data, ensure_ascii=False)
+    except ValueError:
+        pass
+    return replace(turn, text=text, record=record)
+
+
 @dataclass(frozen=True, slots=True)
 class ConversationCheckpoint:
     covered_turn_count: int
@@ -275,7 +293,7 @@ class Conversation:
                 attempted_nonces=attempted_nonces, uncertain_nonce=uncertain_nonce,
                 generated_parts=generated_parts,
             )
-            self.turns[index] = replace(turn, record=record)
+            self.turns[index] = _with_delivery_record(turn, record)
             if self.checkpoint is not None and index < self.checkpoint.covered_turn_count:
                 self.checkpoint = None
             self.version += 1
@@ -296,14 +314,7 @@ class Conversation:
             parts[position] = content
             delivered = "\n".join(parts[:len(previous.reply_ids)])
             record = replace(previous, generated_parts=tuple(parts), delivered_answer=delivered)
-            try:
-                data = json.loads(turn.text)
-                if isinstance(data, dict):
-                    data.update(answer=delivered[:16_000], answer_truncated=len(delivered) > 16_000)
-                    turn = replace(turn, text=json.dumps(data, ensure_ascii=False))
-            except ValueError:
-                pass
-            self.turns[index] = replace(turn, record=record)
+            self.turns[index] = _with_delivery_record(turn, record)
             self.checkpoint = None
             self.version += 1
             self.touched_at = time.monotonic()
@@ -326,15 +337,7 @@ class Conversation:
                 delivery_unknown=previous.delivery_unknown or unknown,
                 uncertain_nonce=uncertain_nonce if uncertain_nonce is not None else previous.uncertain_nonce,
             )
-            try:
-                data = json.loads(turn.text)
-                if isinstance(data, dict):
-                    data.update(answer=record.delivered_answer[:16_000],
-                                answer_truncated=len(record.delivered_answer) > 16_000)
-                    turn = replace(turn, text=json.dumps(data, ensure_ascii=False))
-            except ValueError:
-                pass
-            self.turns[index] = replace(turn, record=record)
+            self.turns[index] = _with_delivery_record(turn, record)
             self.checkpoint = None
             self.version += 1
             self.touched_at = time.monotonic()
@@ -377,7 +380,7 @@ class Conversation:
             delivery_complete=delivery_complete,
             delivery_unknown=False, uncertain_nonce=None,
         )
-        self.turns[index] = replace(turn, record=updated)
+        self.turns[index] = _with_delivery_record(turn, updated)
         if self.checkpoint is not None and index < self.checkpoint.covered_turn_count:
             self.checkpoint = None
         self.version += 1

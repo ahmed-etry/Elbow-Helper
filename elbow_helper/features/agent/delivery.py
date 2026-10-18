@@ -247,6 +247,10 @@ class AgentDeliveryMixin:
                                     replaced_reply_id=notice_reply_id if _answer_disclosure else None,
                                     generated_parts=tuple(posted.generated_parts),
                                 )
+                                LOGGER.info(
+                                    "Agent posted answer delivery: request=%s replies=%s complete=%s unknown=%s",
+                                    message.id, posted.message_ids, posted.complete, posted.unknown,
+                                )
                                 persistence = getattr(self, "persistence", None)
                                 if persistence is not None:
                                     try:

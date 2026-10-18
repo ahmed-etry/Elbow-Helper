@@ -1,5 +1,7 @@
 """Restricted answers require the asker's deliberate disclosure."""
 
+from datetime import datetime, timezone
+import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
@@ -8,6 +10,7 @@ from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin
 from elbow_helper.features.agent.models import AgentAttachment, AgentTurnState, AgentDelivery
 from elbow_helper.features.agent.conversation.state import Conversation, ConversationRecord, ConversationTurn
+from elbow_helper.features.agent.conversation.context import compile_context
 from elbow_helper.features.agent.wording import ACTION_PRIVATE_ANSWER, ACTION_RESULT_EXPIRED, ACTION_RESULT_OWNER
 
 
@@ -25,7 +28,10 @@ class PrivateAnswerTests(unittest.IsolatedAsyncioTestCase):
         self.delivery._conversations = SimpleNamespace(register_reply=Mock())
         self.file = AgentAttachment("result.csv", b"private report")
         self.conversation = Conversation(1, 10)
-        self.conversation.append(ConversationTurn("Synthetic turn", frozenset({10, 20}),
+        self.conversation.append(ConversationTurn(json.dumps({
+            "question": "Synthetic request", "answer": ACTION_PRIVATE_ANSWER,
+            "local_context": "Synthetic context", "answer_truncated": False,
+        }), frozenset({10, 20}), required_access=frozenset({"lead"}),
             record=ConversationRecord(5, 2, "2026-01-01T00:00:00+00:00", "Synthetic request",
                 "Secret answer", ACTION_PRIVATE_ANSWER, "", (), (), (7,), True)))
         for target in ("delivery", "actions.answer_view"):
@@ -38,6 +44,19 @@ class PrivateAnswerTests(unittest.IsolatedAsyncioTestCase):
         return SimpleNamespace(id=33, user=SimpleNamespace(id=identifier),
             response=SimpleNamespace(send_message=AsyncMock(), defer=AsyncMock()),
             followup=SimpleNamespace(send=AsyncMock()))
+
+    def followup_history(self):
+        context = SimpleNamespace(
+            guild=SimpleNamespace(name="Synthetic guild"),
+            member=SimpleNamespace(display_name="Synthetic member", id=2),
+            source_message=SimpleNamespace(created_at=datetime(2026, 1, 1, tzinfo=timezone.utc)),
+            state=AgentTurnState(authorized_history=tuple(self.conversation.turns)),
+        )
+        compiled = compile_context(question="Continue", local_context="", tools=(), context=context)
+        self.assertEqual(context.state.source_channels, {10, 20})
+        self.assertEqual(context.state.required_access, {"lead"})
+        return json.loads(compiled.prompt.split("<conversation_history>\n")[1].split(
+            "\n</conversation_history>")[0])
 
     async def notice(self, response="Secret answer", **kwargs):
         with patch("elbow_helper.features.agent.delivery.can_show", new=AsyncMock(return_value=False)) as audience:
@@ -75,6 +94,11 @@ class PrivateAnswerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(record.delivered_answer, "Secret answer")
         self.assertEqual(record.reply_ids, (7,))
         self.assertTrue(record.delivery_complete)
+        history = self.followup_history()
+        self.assertEqual(history["answer"], "Secret answer")
+        self.assertTrue(history["delivery_complete"])
+        self.assertEqual(history["question"], "Synthetic request")
+        self.assertEqual(history["local_context"], "Synthetic context")
         for value in ("requester=2", "channel=10", "sources=[10, 20]", "levels=['lead']"):
             self.assertIn(value, logs.output[0])
 
@@ -92,6 +116,7 @@ class PrivateAnswerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all("files" not in call.kwargs for call in self.message.channel.send.await_args_list))
         self.assertEqual(self.conversation.turns[0].record.delivered_answer, "\n".join((first, *later)))
         self.assertEqual(self.conversation.turns[0].record.reply_ids, (7, 8))
+        self.assertEqual(self.followup_history()["answer"], "\n".join((first, *later)))
         self.assertEqual(self.delivery._archive_reply.await_args_list[0].args, (5, 7, first))
         self.assertEqual(self.delivery._archive_reply.await_args_list[-1].args, (5, 8, later[-1]))
         self.delivery.persistence.save.assert_awaited_once_with(self.delivery._conversations, self.conversation)
@@ -127,6 +152,7 @@ class PrivateAnswerTests(unittest.IsolatedAsyncioTestCase):
         self.sent.edit.assert_not_awaited()
         self.sent.delete.assert_not_awaited()
         self.assertEqual(self.message.reply.await_count, 1)
+        self.assertEqual(self.followup_history()["answer"], ACTION_PRIVATE_ANSWER)
 
     async def test_uncertain_followup_after_notice_edit_can_be_reconciled(self):
         from dataclasses import replace
@@ -145,6 +171,10 @@ class PrivateAnswerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(record.delivery_unknown)
         self.assertEqual(len(record.attempted_nonces), 2)
         self.assertEqual(record.reply_ids, (7,))
+        history = self.followup_history()
+        self.assertEqual(history["answer"], chunk_response(response)[0])
+        self.assertFalse(history["delivery_complete"])
+        self.assertTrue(history["delivery_unknown"])
         self.assertEqual(await self.delivery._reconcile_unknown_deliveries(
             self.conversation, self.message.channel), 1)
         record = self.conversation.turns[0].record
@@ -152,6 +182,10 @@ class PrivateAnswerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(record.delivery_unknown)
         self.assertEqual(record.reply_ids, (7, 8))
         self.assertEqual(record.delivered_answer, "\n".join(chunk_response(response)))
+        history = self.followup_history()
+        self.assertEqual(history["answer"], record.delivered_answer)
+        self.assertTrue(history["delivery_complete"])
+        self.assertFalse(history["delivery_unknown"])
     async def test_post_here_decision_reuses_only_subsets_in_same_conversation(self):
         view = await self.notice()
         await view.post_here(self.interaction())
@@ -200,6 +234,10 @@ class PrivateAnswerTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(RuntimeError):
             await view.post_here(self.interaction())
         self.assertEqual(self.conversation.answer_disclosures, {})
+        history = self.followup_history()
+        self.assertEqual(history["answer"], self.sent.edit.await_args.kwargs["content"])
+        self.assertFalse(history["delivery_complete"])
+        self.assertFalse(history["delivery_unknown"])
 
     async def test_visibility_decisions_are_operator_logs_only(self):
         with self.assertLogs("elbow_helper.features.agent.delivery", level="INFO") as logs:
