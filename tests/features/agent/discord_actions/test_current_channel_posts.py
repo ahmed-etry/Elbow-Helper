@@ -53,6 +53,14 @@ class CurrentChannelPostTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("Synthetic answer", "\n".join(logs.output))
                 self.assertIn("messages=[200]", "\n".join(logs.output))
 
+    async def test_unbound_personal_claim_is_rejected_before_sending(self):
+        result = await prepare_post(self.context, {
+            "channel_id": 2, "text": "Member Alpha objected to Applicant Beta.",
+        })
+        self.assertIn("error", result)
+        self.context.send_reply.assert_not_awaited()
+        self.assertEqual(self.context.state.reply_delivery.posts, [])
+
     async def test_other_channels_broadcasts_roles_and_files_still_need_confirmation(self):
         for arguments in (
             {"channel_id": 8, "text": "Synthetic answer"},

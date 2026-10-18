@@ -9,6 +9,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..models import AgentCapabilityEffect, RegisteredAgentTool
 from ..prompts import ACTION_SYSTEM_PROMPT, SYSTEM_PROMPT
+from ..engine.grounding import GROUNDING_INSTRUCTION
 
 
 PLAN_TOOL_NAME = "submit_request_plan"
@@ -21,7 +22,7 @@ def system_instructions(
     data_guide: str = "",
     community_knowledge: str = "",
 ) -> str:
-    parts = [ACTION_SYSTEM_PROMPT if actions_enabled else SYSTEM_PROMPT]
+    parts = [ACTION_SYSTEM_PROMPT if actions_enabled else SYSTEM_PROMPT, GROUNDING_INSTRUCTION]
     parts.append("<capabilities>\nArguments: trailing * is required; numeric [min..max] is inclusive; "
                  "array {min..max} counts items.\n" + capability_list(registry) + "\n</capabilities>")
     if data_guide:

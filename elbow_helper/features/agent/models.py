@@ -114,6 +114,7 @@ class AgentTurnState:
     reply_delivery: RequestReplyDelivery = field(default_factory=RequestReplyDelivery)
     source_channels: set[int] = field(default_factory=set)
     evidence: list[str] = field(default_factory=list)
+    grounding_evidence: dict[str, Any] = field(default_factory=dict)
     reports: dict[str, ReportArtifact] = field(default_factory=dict)
     report_sources: dict[str, frozenset[int]] = field(default_factory=dict)
     report_access_requirements: dict[str, frozenset[str]] = field(default_factory=dict)

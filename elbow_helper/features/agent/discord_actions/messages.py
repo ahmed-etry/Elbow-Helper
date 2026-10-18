@@ -241,10 +241,15 @@ async def prepare_post(context: AgentRequestContext,
             and "@everyone" not in arguments["text"] and "@here" not in arguments["text"]
             and not re.search(r"<@&\d+>", arguments["text"])):
         async with context.state.reply_delivery.lock:
+            from ..engine.grounding import GroundingError, ground_answer
+            try:
+                text = ground_answer(arguments["text"], context.state.grounding_evidence)
+            except GroundingError:
+                return {"error": "The answer needs message sources read in this request."}
             context.state.reply_to = arguments.get("reply_to")
             context.state.ping_author = arguments.get("ping_author", False)
             context.state.source_channels.add(channel.id)
-            result = await sender(context, arguments["text"])
+            result = await sender(context, text)
             outcome = {"status": "complete", "delivered_as_reply": True, **result}
             context.state.reply_delivery.posts.append(outcome)
             for part, is_gif in parts:

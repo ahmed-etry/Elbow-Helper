@@ -103,6 +103,7 @@ class AgentService:
         conversation_history: str,
         images=(),
     ):
+        context.state.grounding_evidence.clear()
         registry = build_agent_tools(getattr(context.bot, "gif_client", None))
         command_capabilities = {}
         actions_available = getattr(context.bot, "tree", None) is not None

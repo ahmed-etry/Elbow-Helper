@@ -29,6 +29,9 @@ from ..wording import (
 from . import budgets as limits
 from .rounds import AgentGracefulEnd, AgentLimitReached, ModelRounds
 from .steps import PlanRunner
+from .grounding import (
+    GROUNDING_INSTRUCTION, GROUNDING_UNAVAILABLE, GroundingError, ground_answer,
+)
 from ..models import AgentRequestContext, RegisteredAgentTool
 from .budgets import ContextBudget
 from elbow_helper.infrastructure.ai.agent import AgentSession
@@ -63,23 +66,53 @@ class AnswerFlow:
         self.runner = runner
         self.request_id = request_id
         self.completed_results = {}
+        self.result_views = {}
+
+    def _model_results(self, results):
+        visible = {key: self.result_views[key] for key in results if key in self.result_views}
+        self.context.state.grounding_evidence.update(visible)
+        return visible
 
     async def run(
         self, *, on_plan: Callable[[Mapping[str, Any]], Awaitable[None]] | None = None,
     ) -> str:
         try:
-            return await self._run(on_plan)
+            answer = await self._run(on_plan)
         except AgentLimitReached as error:
             if not self.completed_results:
                 raise
-            return await self._limit_reply(error)
+            answer = await self._limit_reply(error)
+        return await self._grounded_reply(answer)
+
+    async def _grounded_reply(self, answer):
+        """All final paths, including direct, recovery and limit replies, pass here."""
+        await require_evidence_access(self.context)
+        if not answer:
+            return answer
+        try:
+            return ground_answer(answer, self.context.state.grounding_evidence)
+        except GroundingError as error:
+            LOGGER.info("Agent answer rejected: request=%s reason=%s", self.request_id, error)
+        try:
+            repaired = await self.rounder.advance(
+                (), allow_tools=False, reasoning_effort=AgentReasoningEffort.LOW,
+                max_output_tokens=limits.FINAL_MAX_OUTPUT_TOKENS,
+                continuation_instruction=GROUNDING_INSTRUCTION +
+                " The previous answer failed grounding. Remove unsupported attributions.",
+            )
+            await require_evidence_access(self.context)
+            if repaired.content and not repaired.tool_calls:
+                return ground_answer(repaired.content, self.context.state.grounding_evidence)
+        except (GroundingError, AgentGracefulEnd, AgentLimitReached, TextGenerationError, TimeoutError):
+            pass
+        return GROUNDING_UNAVAILABLE
 
     async def _limit_reply(self, error: AgentLimitReached) -> str:
         if self.context.state.reply_delivery.posts:
             return ""
         pending = self.rounder.pending_results or tuple(
             AgentToolResult(call.call_id, json.dumps({
-                "results": self.runner.model_results_for(self.completed_results),
+                "results": self._model_results(self.completed_results),
                 "flags": {"status": "refused", "reason": "answer_only"},
             }, ensure_ascii=False, default=str))
             for call in self.rounder.pending_calls
@@ -127,6 +160,7 @@ class AnswerFlow:
                 await on_plan(self.plan)
             results = await self.runner.run(self.plan)
             self.completed_results.update(results)
+            self.result_views.update(self.runner.model_results_for(results))
             self.rounder.results_available = bool(results)
             if self.plan["steps"] and sum(
                 step["capability"] == "find_gif" for step in self.plan["steps"]
@@ -240,7 +274,7 @@ class AnswerFlow:
     async def _feedback_reply(self, results, instruction, **details) -> str:
         pending = (AgentToolResult(
             self.decision.rounds[-1].tool_calls[0].call_id,
-            json.dumps({"results": self.runner.model_results_for(results), "instruction": instruction, **details},
+            json.dumps({"results": self._model_results(results), "instruction": instruction, **details},
                        ensure_ascii=False, default=str),
         ),)
         reply = await self.rounder.advance(
@@ -258,7 +292,7 @@ class AnswerFlow:
                 self.decision.rounds[-1].tool_calls[0].call_id,
                 json.dumps(
                     {
-                        "results": self.runner.model_results_for(results),
+                        "results": self._model_results(results),
                         "instruction": RESULT_ANSWER_INSTRUCTION,
                     },
                     ensure_ascii=False,
