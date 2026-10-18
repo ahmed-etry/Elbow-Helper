@@ -673,6 +673,20 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sorted(result["flags"]["status"] for result in results.values()),
                          ["complete", "complete"])
 
+    async def test_live_reads_recheck_freshness_in_revised_plans(self):
+        original = self.registry.pop("read_value")
+        self.registry["read_clash"] = replace(
+            original, definition=replace(original.definition, name="read_clash"),
+        )
+        plans = []
+        for step_id in ("first", "second"):
+            step = _step(step_id)
+            step["capability"] = "read_clash"
+            plans.append(_model_step(_plan([step])))
+        session = _Session([*plans, AgentStep("Done.", (), AgentUsage())], self.events)
+        await self._answer(session)
+        self.assertEqual(self.events.count("read"), 2)
+
     async def test_revised_plan_references_completed_read(self):
         first = _plan([_step("first", {"value": 7})])
         second = _plan([

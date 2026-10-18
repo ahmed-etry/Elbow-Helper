@@ -20,6 +20,7 @@ from .conversation.state import ConversationCheckpoint, ConversationTurn
 from .reports.base import ReportArtifact
 from .conversation.instructions import TaskInstruction, WorkingState
 from .actions.contracts import ActionClass
+from .datasets.clash_cache import RequestClashReads
 
 if TYPE_CHECKING:
     from .engine.capability_contract import CapabilityContract
@@ -187,6 +188,7 @@ class AgentRequestContext:
     application_owner: AgentIdentity | None = None
     transcript_archive: Any = None
     operator_debug: Any = None
+    clash_reads: RequestClashReads = field(default_factory=RequestClashReads, compare=False)
 
 
 AgentToolHandler = Callable[

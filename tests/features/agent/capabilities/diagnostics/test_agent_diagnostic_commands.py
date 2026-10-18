@@ -51,7 +51,7 @@ class DiagnosticCommandTests(unittest.IsolatedAsyncioTestCase):
         with patch("elbow_helper.features.agent.datasets.clash.require_evidence_access", AsyncMock()):
             result = await read_clash(context, {"kind": "capital_raids", "tags": ["#P0"]})
         client.get.assert_awaited_once()
-        self.assertEqual(client.get.await_args.args[0], "/clans/%23P0/capitalraidseasons?limit=2")
+        self.assertEqual(client.get.await_args.args[0], "/clans/%23P0/capitalraidseasons?limit=10")
         self.assertEqual(result["items"], [{"tag": "#P0", "status": "maintenance", "http_status": 503}])
         self.assertEqual(result["flags"]["status"], "partial")
         workflow.check_clash_connection.assert_not_awaited()

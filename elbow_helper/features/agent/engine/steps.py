@@ -188,6 +188,8 @@ class PlanRunner:
         if (
             checked["tool"].effect is AgentCapabilityEffect.READ
             and checked["tool"].action_class is ActionClass.READ
+            # These handlers recheck freshness and project request-scoped raw reads.
+            and step["capability"] not in ("read_clash", "read_ranked_stats")
         ):
             async with self.state_lock:
                 if key in self.reads:

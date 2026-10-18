@@ -50,20 +50,21 @@ def history_coverage(result, after, before):
     return list(dict.fromkeys(reasons))
 
 
-async def _live_batch(context, kind, tags):
+async def _live_batch(context, kind, tags, max_age_seconds=30):
     items = []
     observed_at = None
     for start in range(0, len(tags), 20):
-        result = await read_clash(context, {"kind": kind, "tags": tags[start:start + 20], "limit": 50})
+        result = await read_clash(context, {"kind": kind, "tags": tags[start:start + 20], "limit": 50,
+                                            "max_age_seconds": max_age_seconds})
         if "error" in result:
             return result
         items.extend(result["items"])
-        observed_at = result["observed_at"]
+        observed_at = min(observed_at, result["observed_at"]) if observed_at else result["observed_at"]
     return {"source": "clash_api", "items": items, "observed_at": observed_at,
             "truncated": any(item.get("truncated", False) for item in items)}
 
 
-async def _live_history(context, selector, values, accounts):
+async def _live_history(context, selector, values, accounts, max_age_seconds=30):
     # Current rolling logs do not replace historical counts or ownership.
     tags = {row["player_tag"] for row in accounts}
     if selector == "account_tags":
@@ -74,7 +75,7 @@ async def _live_history(context, selector, values, accounts):
     tags = sorted({tag for value in tags if (tag := normalize_player_tag(value)) is not None})
     if not tags:
         return {"error": "No accounts are available for a live battle log read."}
-    result = await _live_batch(context, "battle_log", tags)
+    result = await _live_batch(context, "battle_log", tags, max_age_seconds)
     return result
 
 
@@ -134,7 +135,8 @@ async def read_ranked_stats(context, arguments):
             # A whole clan would fan out to every member's log; those stay explicit live reads.
             live = ({"skipped": "Live battle logs are read automatically only for specific accounts or members."}
                     if selector == "clan_tags" else
-                    await _live_history(context, selector, values, result["accounts"]))
+                    await _live_history(context, selector, values, result["accounts"],
+                                        arguments.get("max_age_seconds", 30)))
         except sqlite3.Error:
             live = {"error": "Accounts could not be read for a live battle log read."}
         result["live_battle_logs"] = {
@@ -160,6 +162,8 @@ def ranked_tools():
                 "before": {"type": "string", "maxLength": 40},
                 "offset": {"type": "integer", "minimum": 0, "default": 0},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 25, "default": 25},
+                "max_age_seconds": {"type": "integer", "minimum": 0, "maximum": 30,
+                                    "default": 30},
             }, "required": ["after"], "additionalProperties": False},
             usage_note="Choose one selector; max 90 days. Attacks count stored ranked/Legend records, including losses; check coverage. Quotas stay null; dates are UTC.",
         ), read_ranked_stats,

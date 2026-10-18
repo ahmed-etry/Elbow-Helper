@@ -14,6 +14,7 @@ from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool
 from ..research.history import search_date
 from .battle_logs import select_battles
+from .clash_cache import MAX_AGE_SECONDS
 
 
 ENDPOINTS = {
@@ -131,10 +132,21 @@ def summary(kind, payload):
 
 
 async def read_clash(context, arguments):
-    await require_evidence_access(context)
+    cache = getattr(context, "clash_reads", None)
+    try:
+        await require_evidence_access(context)
+    except BaseException:
+        if cache is not None:
+            cache.clear()
+        raise
     client = getattr(context.bot, "clash_client", None)
     if client is None or not client.configured:
         return {"error": "The Clash API is not set up."}
+    if cache is not None:
+        cache.bind((id(client), context.guild.id, context.member.id))
+    max_age = arguments.get("max_age_seconds", MAX_AGE_SECONDS)
+    if type(max_age) is not int or not 0 <= max_age <= MAX_AGE_SECONDS:
+        return {"error": "Clash freshness must be between zero and thirty seconds."}
     kind, tags = arguments["kind"], arguments["tags"]
     cap = 200 if kind == "player" else 20
     if (
@@ -180,10 +192,16 @@ async def read_clash(context, arguments):
         async with semaphore:
             path = ENDPOINTS[kind].format(tag=encode_clash_tag(tag))
             if kind in ("war_log", "capital_raids"):
-                path += f"?limit={limit}"
-            response = await client.get(
-                path, attempts=1, timeout_seconds=max(0.1, deadline - time.monotonic()),
-            )
+                path += "?limit=" + ("10" if kind == "capital_raids" else "50")
+            async def fetch():
+                return await client.get(
+                    path, attempts=1, timeout_seconds=max(0.1, deadline - time.monotonic()),
+                )
+            if cache is None:
+                response = await fetch()
+                observed_at, reused = datetime.now(timezone.utc).isoformat(), False
+            else:
+                response, observed_at, reused = await cache.get((kind, tag), fetch, max_age=max_age)
             if response.ok and isinstance(response.payload, dict):
                 original = payload = response.payload
                 coverage = None
@@ -192,8 +210,11 @@ async def read_clash(context, arguments):
                     payload, coverage = select_battles(
                         payload, limit=limit, offset=offset, order=order, after=after, before=before,
                     )
+                elif kind in ("war_log", "capital_raids"):
+                    payload = {**payload, "items": payload.get("items", [])[:limit]}
                 items[index] = {
                     "tag": tag, "status": "ok",
+                    "observed_at": observed_at, "reused": reused,
                     "data": (
                         payload if arguments.get("detail") == "full"
                         else summary(kind, payload)
@@ -228,10 +249,16 @@ async def read_clash(context, arguments):
             if not task.done():
                 task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-    await require_evidence_access(context)
+    try:
+        await require_evidence_access(context)
+    except BaseException:
+        if cache is not None:
+            cache.clear()
+        raise
     truncated = any(item.get("truncated", False) for item in items)
     return {"source": "clash_api", "items": items,
-            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "observed_at": min((item["observed_at"] for item in items if "observed_at" in item),
+                               default=datetime.now(timezone.utc).isoformat()),
             "truncated": truncated,
             "flags": {"status": "partial" if kind == "battle_log" or truncated or any(
                 item["status"] != "ok" for item in items) else "complete", "truncated": truncated,
@@ -258,6 +285,8 @@ def clash_tools():
                     "offset": {"type": "integer", "minimum": 0, "default": 0},
                     "after": {"type": "string", "maxLength": 40},
                     "before": {"type": "string", "maxLength": 40},
+                    "max_age_seconds": {"type": "integer", "minimum": 0, "maximum": 30,
+                                        "default": 30},
                 },
                 "required": ["kind", "tags"], "additionalProperties": False,
             },
