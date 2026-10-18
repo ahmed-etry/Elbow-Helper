@@ -173,6 +173,17 @@ class AgentRecruitmentToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.context.state.reports, {})
         self.assertEqual(self.context.state.source_channels, set())
 
+    async def test_ended_trial_in_accessible_ticket_is_distinct_from_access_denial(self):
+        del self.state["200"]
+        result = await read_active_recruitment_trials(self.context, {"ticket_channel_id": 200})
+        self.assertNotIn("error", result)
+        self.assertEqual(result["workflow_status"], "no_active_trial")
+        self.assertEqual(result["trials"], [])
+        self.assertEqual(self.context.state.source_channels, {200})
+        self.first.allowed = False
+        with self.assertRaises(AgentAccessLost):
+            await read_active_recruitment_trials(self.context, {"ticket_channel_id": 200})
+
     async def test_malformed_snapshot_does_not_retain_candidate_sources(self):
         self.queries.active_trial_snapshot.side_effect = ValueError("malformed")
         result = await read_active_recruitment_trials(self.context, {})

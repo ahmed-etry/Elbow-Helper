@@ -270,6 +270,10 @@ class ClanHealthSchema:
                 "CREATE INDEX IF NOT EXISTS idx_report_players_season_tag ON report_players(season_key, player_tag)"
             )
             cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_report_runs_membership "
+                "ON report_runs(scope, partial, created_ts DESC, run_id DESC)"
+            )
+            cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_war_activity_player_ts ON war_activity(player_tag, end_ts)"
             )
             cursor.execute(

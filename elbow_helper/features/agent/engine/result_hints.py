@@ -204,6 +204,12 @@ RESULT_FIELDS = {
                                **names("observed_at?,reused?,row_counts?,truncated?"),
                                "coverage?": "{rolling history scope, date ranges, counts, selection}"}],
                    "observed_at": ""},
+    "read_membership_history": {
+        **names("source,matching_rows,next_offset,truncated"), "coverage": "{observation bounds}",
+        "events": [names("player_tag,player_name,clan_code,kind,observed_at,previous_observation_at,"
+                         "previous_clan_code,prior_membership_observed_at,arrival_time_known,"
+                         "first_ever_membership_known,snapshot_gap")],
+    },
     "read_bot_command_help": {
         **names("matching_count?,next_offset?,source,visibility?,path?,summary?,details?,category?,"
                 "examples?,notes?"), "options?": [result_fields(ParameterInfo)],
@@ -376,7 +382,7 @@ RESULT_FIELDS["read_member_history"] = {**names("member_id,channel_id,search_is_
 RESULT_FIELDS["read_ranked_stats"] = {"accounts": [result_fields(RankedAccount)]}
 
 RESULT_FIELDS = {
-    name: shape if name in ("read_clash",)
+    name: shape if name in ("read_clash", "read_membership_history")
     else _returned_fields(shape) for name, shape in RESULT_FIELDS.items()
 }
 REPORT_FIELDS = {kind: _returned_fields(shape) for kind, shape in REPORT_FIELDS.items()}

@@ -99,6 +99,13 @@ async def read_active_recruitment_trials(
         type(selected_ticket_id) is not int or selected_ticket_id <= 0
     ):
         return {"error": "A valid ticket channel ID is required."}
+    selected_channel = None
+    if selected_ticket_id is not None:
+        selected_channel = await accessible_message_channel(context, selected_ticket_id)
+        if (selected_channel is None
+                or getattr(selected_channel, "category_id", None) != RECRUITMENT_TICKET_CATEGORY
+                or getattr(selected_channel, "type", None) != discord.ChannelType.text):
+            return {"error": "That recruitment trial is not accessible."}
     try:
         registrations = tuple(
             row for row in context.recruitment_queries.active_trial_registrations()
@@ -106,7 +113,7 @@ async def read_active_recruitment_trials(
         )
     except ValueError:
         return {"error": "Stored recruitment trials could not be listed."}
-    accessible_ids = []
+    accessible_ids = [selected_ticket_id] if selected_channel is not None else []
     for registration in registrations:
         channel = await accessible_message_channel(
             context, registration.ticket_channel_id,
@@ -116,9 +123,8 @@ async def read_active_recruitment_trials(
             and getattr(channel, "category_id", None) == RECRUITMENT_TICKET_CATEGORY
             and getattr(channel, "type", None) == discord.ChannelType.text
         ):
-            accessible_ids.append(registration.ticket_channel_id)
-    if selected_ticket_id is not None and not accessible_ids:
-        return {"error": "That recruitment trial is not accessible."}
+            if registration.ticket_channel_id not in accessible_ids:
+                accessible_ids.append(registration.ticket_channel_id)
     try:
         snapshot = context.recruitment_queries.active_trial_snapshot(
             ticket_channel_ids=tuple(accessible_ids),
@@ -134,6 +140,7 @@ async def read_active_recruitment_trials(
     await require_evidence_access(context)
     if not report.snapshot.trials:
         return {**report.manifest(), "report_id": None, "trials": [],
+                "workflow_status": "no_active_trial",
                 "selected_ticket_channel_id": selected_ticket_id}
     try:
         retain_report(context.state.reports, report)
