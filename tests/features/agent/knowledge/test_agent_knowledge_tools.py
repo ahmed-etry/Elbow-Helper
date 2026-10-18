@@ -34,20 +34,34 @@ class KnowledgeToolTests(unittest.IsolatedAsyncioTestCase):
     def write(self, name, text):
         (self.path / name).write_text(text, encoding="utf-8")
 
+    def assert_sections(self, result, expected):
+        self.assertEqual([
+            {key: section[key] for key in ("title", "body", "visibility")}
+            for section in result["sections"]
+        ], expected)
+        for section in result["sections"]:
+            self.assertRegex(section["section_id"], r"^[0-9a-f]{64}$")
+            self.assertEqual(section["section_offset"], 0)
+            self.assertEqual(section["total_characters"], len(section["body"]))
+            self.assertFalse(section["truncated"])
+            self.assertIsNone(section["next_section_offset"])
+
     async def test_titles_open_only_exact_sections_in_requested_order(self):
         self.write("topics.md", "# Alpha guide\nAlpha body\n# Beta guide\nBeta body\n"
                    "# Other\nAlpha guide Beta guide")
         result = await search_approved_knowledge(
             self.context, {"titles": ["Beta guide", "Alpha guide"], "query": "Other"},
         )
-        self.assertEqual(result["sections"], [
+        self.assert_sections(result, [
             {"title": "Beta guide", "body": "Beta body", "visibility": "public"},
             {"title": "Alpha guide", "body": "Alpha body", "visibility": "public"},
         ])
         for title in ("alpha guide", "Alpha", "Alpha guides", "Missing"):
             with self.subTest(title=title):
-                self.assertEqual(await search_approved_knowledge(self.context, {"titles": [title]}),
-                                 {"sections": []})
+                missing = await search_approved_knowledge(self.context, {"titles": [title]})
+                self.assertEqual(missing["sections"], [])
+                self.assertEqual(missing["match_status"], "no_visible_match")
+                self.assertEqual(missing["coverage"]["method"], "exact_titles")
 
     async def test_hidden_titles_are_indistinguishable_from_unknown_titles(self):
         self.write("public.md", "# Shared title\nPublic body")
@@ -59,7 +73,7 @@ class KnowledgeToolTests(unittest.IsolatedAsyncioTestCase):
             unknown = await search_approved_knowledge(self.context, {"titles": ["Unknown"]})
             self.assertEqual(hidden, unknown)
         result = await search_approved_knowledge(self.context, {"titles": ["Shared title"]})
-        self.assertEqual(result["sections"], [
+        self.assert_sections(result, [
             {"title": "Shared title", "body": "Public body", "visibility": "public"},
         ])
         self.assertEqual(self.context.state.required_access, set())
@@ -75,7 +89,7 @@ class KnowledgeToolTests(unittest.IsolatedAsyncioTestCase):
                 self.member.roles = [SimpleNamespace(id=AGENT_TESTER_ROLE_ID),
                                      SimpleNamespace(id=next(iter(role_ids)))]
                 result = await search_approved_knowledge(self.context, {"titles": [f"{level} topic"]})
-                self.assertEqual(result["sections"], [
+                self.assert_sections(result, [
                     {"title": f"{level} topic", "body": "Body", "visibility": level},
                 ])
                 self.assertEqual(self.context.state.required_access, {level})
@@ -103,12 +117,20 @@ class KnowledgeToolTests(unittest.IsolatedAsyncioTestCase):
         self.write("topics.md", "# Large\n" + "x" * 5000 + "\n# Searchable\nGeneric body")
         opened = await search_approved_knowledge(self.context, {"titles": ["Large"]})
         self.assertEqual(len(opened["sections"][0]["body"]), 4000)
+        self.assertTrue(opened["sections"][0]["truncated"])
+        self.assertEqual(opened["sections"][0]["total_characters"], 5000)
+        self.assertEqual(opened["sections"][0]["next_section_offset"], 4000)
         searched = await search_approved_knowledge(self.context, {"query": "searchable"})
         self.assertEqual([section["title"] for section in searched["sections"]], ["Searchable"])
-        self.assertEqual(await search_approved_knowledge(self.context, {}), {"sections": []})
+        browsed = await search_approved_knowledge(self.context, {})
+        self.assertEqual([section["title"] for section in browsed["sections"]], ["Large", "Searchable"])
+        self.assertEqual(browsed["coverage"]["method"], "browse")
         self.context.knowledge_store = None
-        self.assertEqual(await search_approved_knowledge(self.context, {"titles": ["Large"]}),
-                         {"sections": []})
+        unavailable = await search_approved_knowledge(self.context, {"titles": ["Large"]})
+        self.assertEqual(unavailable["sections"], [])
+        self.assertEqual(unavailable["store_status"], "unavailable")
+        self.assertEqual(unavailable["match_status"], "store_unavailable")
+        self.assertFalse(unavailable["search_complete"])
 
     async def test_conversation_access_is_rechecked_after_opening_titles(self):
         self.write("public.md", "# Public topic\nBody")
