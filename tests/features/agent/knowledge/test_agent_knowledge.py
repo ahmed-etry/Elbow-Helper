@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 from elbow_helper.features.agent.knowledge.store import (
-    KnowledgeStore, TOPIC_INDEX_TOKEN_LIMIT,
+    KnowledgeCatalog, KnowledgeSection, KnowledgeStore, TOPIC_INDEX_TOKEN_LIMIT,
 )
 from elbow_helper.features.agent.knowledge.tools import search_approved_knowledge
 from elbow_helper.features.agent.models import AgentRequestContext, AgentTurnState
@@ -189,7 +189,7 @@ Hidden""")
         self.assertIn("omitted files", " ".join(logs.output))
         self.assertLessEqual(estimate_tokens(prompt.index), TOPIC_INDEX_TOKEN_LIMIT)
 
-    def test_search_counts_words_and_repeats_with_title_weight_and_exact_priority(self):
+    def test_search_weights_titles_and_preserves_exact_priority(self):
         self.write("topics.md", "# Repeated body\n" + "policy " * 20
                    + "\n# Policy guide\nGeneric body"
                    + "\n# Sparse body\npolicy policy"
@@ -198,19 +198,20 @@ Hidden""")
                    + "\n# POLICY checklist\npolicy")
         catalog = self.store.load()
         titles = [s.title for s in catalog.search(catalog.active_sections, query="POLICY")]
-        self.assertEqual(titles, ["Policies", "Repeated body", "Policy policy guide", "POLICY checklist",
-                                  "Policy guide", "Sparse body"])
+        self.assertEqual(titles[0], "Policies")
+        for title in ("Policy guide", "Policy policy guide", "POLICY checklist"):
+            self.assertLess(titles.index(title), titles.index("Repeated body"))
         self.assertEqual(titles, [s.title for s in catalog.search(catalog.active_sections, query="policies")])
 
-    def test_search_prefers_query_coverage_and_matches_words_not_substrings(self):
+    def test_search_matches_multiple_terms_and_whole_words_not_substrings(self):
         self.write("topics.md", "# Single topic\n" + "war " * 30
                    + "\n# Combined topic\nwar policy"
                    + "\n# Irrelevant topic\nreward policies")
         catalog = self.store.load()
         results = catalog.search(catalog.active_sections, query="wars policies")
         self.assertEqual([s.title for s in results], ["Combined topic", "Single topic", "Irrelevant topic"])
-        self.assertEqual([s.title for s in catalog.search(catalog.active_sections, query="WAR")],
-                         ["Single topic", "Combined topic"])
+        self.assertEqual({s.title for s in catalog.search(catalog.active_sections, query="WAR")},
+                         {"Single topic", "Combined topic"})
         self.assertEqual(catalog.search(catalog.active_sections, query="missing"), ())
 
     def test_search_normalizes_regular_plurals_and_keeps_stable_ties(self):
@@ -331,3 +332,49 @@ Secret facts""")
             result = await search_approved_knowledge(context, {"query": "secret"})
             self.assertEqual(len(result["sections"]), 3)
             self.assertEqual(context.state.required_access, {"lead", "lead_plus", "core"})
+
+
+class KnowledgeRankingTests(unittest.TestCase):
+    def search(self, sections, query):
+        catalog = KnowledgeCatalog("", tuple(KnowledgeSection(*section) for section in sections))
+        return [section.title for section in catalog.search(catalog.active_sections, query=query)]
+
+    def test_question_stop_words_do_not_match_or_change_ranking(self):
+        sections = [("Broad reference", "what are the rules for how do i " * 50),
+                    ("Voucher policy", "Submit a voucher request."),
+                    ("Other topic", "voucher " * 20)]
+        expected = self.search(sections, "voucher")
+        self.assertEqual(self.search(sections, "What are the vouchers for?"), expected)
+        self.assertEqual(expected[0], "Voucher policy")
+        self.assertNotIn("Broad reference", expected)
+        self.assertEqual(self.search(sections, "the and of"), [])
+
+    def test_short_focused_body_beats_long_body_with_equal_term_frequency(self):
+        sections = [("Broad reference", "voucher " + "ordinary detail " * 500),
+                    ("Focused reference", "voucher")]
+        self.assertEqual(self.search(sections, "voucher"), ["Focused reference", "Broad reference"])
+
+    def test_rare_terms_outweigh_repeated_common_terms(self):
+        sections = [("Common reference", "token " * 100),
+                    ("Specific reference", "archive"),
+                    *[(f"Other {i}", "token") for i in range(10)]]
+        self.assertEqual(self.search(sections, "token archive")[0], "Specific reference")
+
+    def test_exact_title_keeps_priority_even_for_stop_words_or_a_long_body(self):
+        for title in ("Voucher policy", "Who we are"):
+            with self.subTest(title=title):
+                sections = [("Other reference", title), (title, "ordinary detail " * 500)]
+                self.assertEqual(self.search(sections, title)[0], title)
+
+    def test_empty_corpus_and_empty_query_remain_bounded(self):
+        self.assertEqual(self.search([], "voucher"), [])
+        sections = [(f"Topic {i}", "Body") for i in range(10)]
+        self.assertEqual(self.search(sections, ""), [title for title, _ in sections[:8]])
+
+    def test_hidden_sections_do_not_influence_visible_ranking(self):
+        public = (KnowledgeSection("First reference", "archive"),
+                  KnowledgeSection("Second reference", "voucher"))
+        hidden = tuple(KnowledgeSection(f"Hidden {i}", "archive", "core") for i in range(20))
+        catalog = KnowledgeCatalog("", public + hidden)
+        baseline = KnowledgeCatalog("", public).search(public, query="archive voucher")
+        self.assertEqual(catalog.search(catalog.visible_sections(), query="archive voucher"), baseline)

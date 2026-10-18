@@ -12,9 +12,13 @@ from .store import VISIBILITIES
 
 def knowledge_tools():
     return (RegisteredAgentTool(AgentToolDefinition(
-        "search_approved_knowledge", "Search approved community knowledge visible to the asker.",
-        {"type":"object", "properties":{"query":{"type":"string", "maxLength":200}},
-         "required":["query"], "additionalProperties":False}), search_approved_knowledge,
+        "search_approved_knowledge",
+        "Open knowledge by exact topic-index titles, or search with query; titles take precedence.",
+        {"type":"object", "properties":{
+            "query":{"type":"string", "minLength":0, "maxLength":200},
+            "titles":{"type":"array", "minItems":1, "maxItems":5, "uniqueItems":True,
+                      "items":{"type":"string"}}},
+         "required":[], "additionalProperties":False}), search_approved_knowledge,
         contract=CapabilityContract(()), returns="sections:[{title,body,visibility}]"),)
 
 
@@ -26,7 +30,13 @@ async def search_approved_knowledge(context, arguments):
     levels = {level for level in VISIBILITIES - {"public"}
               if has_access_requirements(context.guild, context.member.id, {level})}
     visible = catalog.visible_sections(levels)
-    sections = catalog.search(visible, query=arguments["query"])
+    if "titles" in arguments:
+        sections = tuple(section for title in dict.fromkeys(arguments["titles"])
+                         for section in visible if section.title == title)
+    elif "query" in arguments:
+        sections = catalog.search(visible, query=arguments["query"])
+    else:
+        sections = ()
     levels = {section.visibility for section in sections if section.visibility != "public"}
     if levels:
         require_lookup_access(context, levels)

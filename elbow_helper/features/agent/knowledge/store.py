@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from itertools import combinations
 import logging
+from math import log1p
 from pathlib import Path
 import re
 import time
@@ -33,6 +34,24 @@ def _words(text):
             word = word[:-1]
         words.append(word)
     return tuple(words)
+
+
+_STOP_WORDS = frozenset(_words(
+    "a about above after again against all am an and any are as at be because been before "
+    "being below between both but by can could did do does doing down during each few for "
+    "from further had has have having he her here hers herself him himself his how i if in "
+    "into is it its itself just me more most my myself no nor not of off on once only or "
+    "other our ours ourselves out over own same she should so some such than that the their "
+    "theirs them themselves then there these they this those through to too under until up "
+    "very was we were what when where which while who whom why will with would you your "
+    "yours yourself yourselves s t don doesn didn isn aren wasn weren won wouldn couldn "
+    "shouldn hasn haven hadn mustn d ll m re ve"
+))
+
+
+def _bm25(frequency, length, average_length):
+    """Saturate term frequency and normalize field length (k1=1.2, b=0.75)."""
+    return 2.2 * frequency / (frequency + 1.2 * (0.25 + 0.75 * length / average_length))
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,16 +89,34 @@ class KnowledgeCatalog:
 
     def search(self, sections, *, query=""):
         phrase = _words(query)
-        words = set(phrase)
-        ranked = []
-        for index, section in enumerate(sections):
+        sections = tuple(sections)
+        if not phrase:
+            return sections[:8]
+        words = set(phrase) - _STOP_WORDS
+        documents = []
+        for section in sections:
             title_words = _words(section.title)
-            title, body = Counter(title_words), Counter(_words(section.body))
-            coverage = sum(word in title or word in body for word in words)
-            score = sum(3 * title[word] + body[word] for word in words)
-            if not words or coverage:
-                exact = bool(phrase) and phrase == title_words
-                ranked.append((-exact, -coverage, -score, index, section))
+            title = Counter(word for word in title_words if word not in _STOP_WORDS)
+            body = Counter(word for word in _words(section.body) if word not in _STOP_WORDS)
+            documents.append((section, title_words, title, body))
+        if not documents:
+            return ()
+        average_title = sum(title.total() for _, _, title, _ in documents) / len(documents) or 1
+        average_body = sum(body.total() for _, _, _, body in documents) / len(documents) or 1
+        frequencies = Counter(word for _, _, title, body in documents for word in words
+                              if word in title or word in body)
+        weights = {word: log1p((len(documents) - count + 0.5) / (count + 0.5))
+                   for word, count in frequencies.items()}
+        ranked = []
+        for index, (section, title_words, title, body) in enumerate(documents):
+            title_length, body_length = title.total(), body.total()
+            score = sum(weight * (
+                3 * _bm25(title[word], title_length, average_title)
+                + _bm25(body[word], body_length, average_body))
+                for word, weight in weights.items() if word in title or word in body)
+            exact = phrase == title_words
+            if exact or score:
+                ranked.append((-exact, -score, index, section))
         return tuple(item[-1] for item in sorted(ranked)[:8])
 
     def visible_sections(self, levels=()):
