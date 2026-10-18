@@ -10,6 +10,10 @@ import discord
 from elbow_helper.configuration.roles import LEAD, LEAD_PLUS
 from elbow_helper.features.agent.access import ACCESS_LEAD, ACCESS_LEAD_PLUS
 from elbow_helper.features.agent.disclosure import can_show
+from elbow_helper.features.agent.delivery import AgentDeliveryMixin
+from elbow_helper.features.agent.models import AgentTurnState
+from elbow_helper.features.agent.actions.answer_view import PrivateAnswerView
+from elbow_helper.features.agent.wording import ACTION_PRIVATE_ANSWER
 
 
 @dataclass(frozen=True)
@@ -32,6 +36,7 @@ class Channel:
         self.guild = guild
         self.viewers = set(viewers)
         self.history_denied = set()
+        self.moderators = set()
         self.overwrites = {Role(identifier): SimpleNamespace(
             view_channel=True, read_message_history=True,
         )}
@@ -41,6 +46,7 @@ class Channel:
         return SimpleNamespace(
             view_channel=visible,
             read_message_history=visible and member.id not in self.history_denied,
+            manage_threads=member.id in self.moderators,
         )
 
 
@@ -161,3 +167,64 @@ class AudienceTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await can_show(
             self.destination, {20: self.source}, {ACCESS_LEAD, ACCESS_LEAD_PLUS}, self.guild,
         ))
+
+    async def test_lead_channel_and_mixed_channel_have_distinct_diagnostic_reasons(self):
+        for mixed in (False, True):
+            with self.subTest(mixed=mixed):
+                if mixed:
+                    self.destination.viewers.add(3)
+                with self.assertLogs("elbow_helper.features.agent.disclosure", level="INFO") as logs:
+                    allowed = await can_show(
+                        self.destination, {20: self.source}, {ACCESS_LEAD}, self.guild,
+                    )
+                self.assertEqual(allowed, not mixed)
+                self.assertIn("reason=" + ("viewer_missing_required_access" if mixed else
+                              "all_destination_viewers_authorized"), logs.output[0])
+
+    async def test_delivery_uses_channel_audience_for_restricted_evidence(self):
+        message = SimpleNamespace(
+            id=50, author=self.members[0], guild=self.guild, channel=self.destination,
+            mentions=(), archive_reply=False, reply=AsyncMock(return_value=SimpleNamespace(id=51)),
+        )
+        context = SimpleNamespace(
+            member=self.members[0], guild=self.guild, source_message=message,
+            disclosure_thread_members={},
+            state=AgentTurnState(source_channels={20}, required_access={ACCESS_LEAD}),
+        )
+        delivery = AgentDeliveryMixin()
+        delivery.bot = SimpleNamespace(user=self.guild.me)
+        for mixed in (False, True):
+            with self.subTest(mixed=mixed):
+                if mixed:
+                    self.destination.viewers.add(3)
+                with (patch("elbow_helper.features.agent.delivery.require_evidence_access",
+                            new=AsyncMock(return_value={20: self.source})),
+                      self.assertLogs("elbow_helper.features.agent.disclosure", level="INFO") as logs):
+                    await delivery.send_response(message, "Synthetic restricted answer", None, context=context)
+                self.assertIn("request=50", logs.output[0])
+                call = message.reply.await_args
+                if mixed:
+                    self.assertEqual(call.args[0], ACTION_PRIVATE_ANSWER)
+                    self.assertIsInstance(call.kwargs["view"], PrivateAnswerView)
+                else:
+                    self.assertEqual(call.args[0], "Synthetic restricted answer")
+                    self.assertNotIn("view", call.kwargs)
+
+    async def test_private_thread_includes_unjoined_moderators(self):
+        destination = Thread(11, self.source, private=True, members=[self.members[0]])
+        self.source.moderators.add(3)
+        self.assertFalse(await can_show(destination, {}, {ACCESS_LEAD}, self.guild))
+        self.source.moderators.clear()
+        self.assertTrue(await can_show(destination, {}, {ACCESS_LEAD}, self.guild))
+
+    async def test_unknown_thread_member_stays_private(self):
+        destination = Thread(11, self.source, private=True, members=[Member(404, ())])
+        with self.assertLogs("elbow_helper.features.agent.disclosure", level="INFO") as logs:
+            self.assertFalse(await can_show(destination, {20: self.source}, {ACCESS_LEAD}, self.guild))
+        self.assertIn("reason=destination_audience_unavailable", logs.output[0])
+
+    async def test_unproven_incomplete_member_cache_stays_private(self):
+        self.guild.chunked = False
+        with self.assertLogs("elbow_helper.features.agent.disclosure", level="INFO") as logs:
+            self.assertFalse(await can_show(self.destination, {20: self.source}, {ACCESS_LEAD}, self.guild))
+        self.assertIn("reason=incomplete_member_cache_unproven", logs.output[0])

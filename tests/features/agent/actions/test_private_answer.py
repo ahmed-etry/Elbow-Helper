@@ -163,7 +163,8 @@ class PrivateAnswerTests(unittest.IsolatedAsyncioTestCase):
                     conversation=self.conversation, context=self.context)
         self.assertEqual(self.message.reply.await_args.args[0], "Synthetic follow-up")
         self.assertNotIn("view", self.message.reply.await_args.kwargs)
-        self.assertIn("disclosure reused: requester=2 channel=10 sources=[20] levels=['lead']", logs.output[0])
+        self.assertIn("disclosure reused: requester=2 channel=10 sources=[20] levels=['lead']", "\n".join(logs.output))
+        self.assertIn("reason=prior_disclosure_reused", "\n".join(logs.output))
         for sources, levels, requester in (({20, 30}, {"lead"}, 2),
                                            ({20}, {"lead", "core"}, 2),
                                            ({20}, {"lead"}, 3)):
@@ -199,6 +200,19 @@ class PrivateAnswerTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(RuntimeError):
             await view.post_here(self.interaction())
         self.assertEqual(self.conversation.answer_disclosures, {})
+
+    async def test_visibility_decisions_are_operator_logs_only(self):
+        with self.assertLogs("elbow_helper.features.agent.delivery", level="INFO") as logs:
+            await self.notice()
+        self.assertIn("visibility=private reason=audience_not_proven", "\n".join(logs.output))
+        self.assertIn("controls=('view_result', 'post_here')", "\n".join(logs.output))
+        self.assertEqual(self.message.reply.await_args.args[0], ACTION_PRIVATE_ANSWER)
+
+        with (patch("elbow_helper.features.agent.delivery.can_show", new=AsyncMock(return_value=True)),
+              self.assertLogs("elbow_helper.features.agent.delivery", level="INFO") as logs):
+            await self.delivery.send_response(self.message, "Answer", None, context=self.context)
+        self.assertIn("visibility=public reason=audience_authorized", "\n".join(logs.output))
+        self.assertEqual(self.message.reply.await_args.args[0], "Answer")
 
     async def test_other_members_cannot_use_either_button(self):
         view = await self.notice()

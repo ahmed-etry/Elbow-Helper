@@ -39,6 +39,17 @@ MAX_RESPONSE_CHARACTERS = 12_000
 _USER_MENTION = re.compile(r"<@!?(\d+)>")
 
 
+def _log_visibility(message, context, visibility, reason, *, controls=()):
+    requester = getattr(context, "member", None) or getattr(message, "author", None)
+    LOGGER.info(
+        "Agent answer visibility: request=%s requester=%s channel=%s visibility=%s "
+        "reason=%s sources=%s levels=%s controls=%s",
+        getattr(message, "id", None), getattr(requester, "id", None),
+        getattr(getattr(message, "channel", None), "id", None), visibility, reason,
+        sorted(context.state.source_channels), sorted(context.state.required_access), controls,
+    )
+
+
 class AgentDeliveryUnknown(RuntimeError):
     """Discord may have accepted a send whose response was not observed."""
 
@@ -61,6 +72,7 @@ class AgentDeliveryMixin:
         audience_allowed = not audit_private and await can_show(
             message.channel, sources, context.state.required_access, context.guild,
             thread_members=context.disclosure_thread_members,
+            request_id=message.id,
         )
         if not audience_allowed:
             await self._send_response(
@@ -109,6 +121,7 @@ class AgentDeliveryMixin:
                                             or await can_show(
                 message.channel, sources, context.state.required_access, context.guild,
                 thread_members=context.disclosure_thread_members,
+                request_id=message.id,
             ))
             if not allowed and not audit_private and conversation is not None:
                 allowed = conversation.can_reuse_answer_disclosure(
@@ -181,6 +194,8 @@ class AgentDeliveryMixin:
             )
             return
         reused_disclosure = False
+        if context is not None and _audience_override:
+            _log_visibility(message, context, "public", "requester_post_override")
         if (context is not None and not context.state.proposed_changes
                 and (not context.state.outcomes or _answer_disclosure or audit_private)
                 and not _audience_override):
@@ -188,6 +203,7 @@ class AgentDeliveryMixin:
             audience_allowed = False if audit_private else await can_show(
                 message.channel, sources, context.state.required_access,
                 context.guild, thread_members=context.disclosure_thread_members,
+                request_id=message.id,
             )
             reused_disclosure = bool(
                 not audit_private and not audience_allowed and conversation is not None
@@ -195,6 +211,14 @@ class AgentDeliveryMixin:
                     context.member.id, message.channel.id,
                     context.state.source_channels, context.state.required_access,
                 )
+            )
+            _log_visibility(
+                message, context, "public" if audience_allowed or reused_disclosure else "private",
+                "audit_log_requires_private_delivery" if audit_private else
+                "audience_authorized" if audience_allowed else
+                "prior_disclosure_reused" if reused_disclosure else "audience_not_proven",
+                controls=() if audience_allowed or reused_disclosure else
+                ("view_result",) if audit_private else ("view_result", "post_here"),
             )
             if not audience_allowed and not reused_disclosure:
                 async def post(interaction):
@@ -369,13 +393,24 @@ class AgentDeliveryMixin:
         allowed = False if audit_private else await can_show(
             message.channel, sources, answer_context.state.required_access, context.guild,
             thread_members=context.disclosure_thread_members,
+            request_id=message.id,
         )
+        reused_disclosure = False
         if (not allowed and conversation is not None
                 and ACCESS_VIEW_AUDIT_LOG not in context.state.required_access):
-            allowed = conversation.can_reuse_answer_disclosure(
+            reused_disclosure = conversation.can_reuse_answer_disclosure(
                 context.member.id, message.channel.id,
                 context.state.source_channels, context.state.required_access,
             )
+            allowed = reused_disclosure
+        _log_visibility(
+            message, answer_context, "public" if allowed else "private",
+            "audit_log_requires_private_delivery" if audit_private else
+            "prior_disclosure_reused" if reused_disclosure else
+            "audience_authorized" if allowed else "audience_not_proven",
+            controls=("confirmation",) + (() if allowed else
+                      ("view_result",) if audit_private else ("view_result", "post_here")),
+        )
         answer = response if allowed else ACTION_PRIVATE_ANSWER
         private_view, _ = build_reply_views(message, answer_context, None)
         _, confirm_view = build_reply_views(
@@ -809,6 +844,8 @@ def build_reply_views(message, context, runner, *, preview_timeout=CONFIRMATION_
         message.author.id, private_parts, private_files,
         panels=private_panels, panel_labels=panel_labels,
     ) if private_parts or private_files or private_panels else None)
+    if private_view is not None:
+        _log_visibility(message, context, "private", "feature_private_result", controls=("view_result",))
     confirm_view = (ConfirmationView(message.author.id,
                                      tuple(context.state.proposed_changes), context,
                                      private_view,

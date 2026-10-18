@@ -143,9 +143,10 @@ class KnowledgeCatalog:
             if section.visibility != "public":
                 access.add(section.visibility)
         core = "\n\n".join(included)
-        index, title_tokens, fallback, index_omitted = _topic_index(visible)
-        if index:
-            access.update(section.visibility for section in visible if section.visibility != "public")
+        # Titles and file names can themselves disclose restricted information.
+        # Keep discovery public; authorized searches can still open restricted
+        # sections and retain their access requirements with the returned bodies.
+        index, title_tokens, fallback, index_omitted = _topic_index(self.visible_sections())
         return KnowledgePrompt(core, frozenset(access), estimate_tokens(core), tuple(omitted),
                                index, estimate_tokens(index), title_tokens, fallback, index_omitted)
 

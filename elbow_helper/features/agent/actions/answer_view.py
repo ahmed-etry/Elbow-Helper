@@ -37,6 +37,14 @@ class PrivateAnswerView(PrivateResultView):
             button.callback = self.post_here
             self.add_item(button)
 
+    async def on_timeout(self):
+        LOGGER.info(
+            "Agent private answer expired: request=%s requester=%s channel=%s",
+            getattr(self.context.source_message, "id", None), self.owner_id,
+            self.context.source_message.channel.id,
+        )
+        await super().on_timeout()
+
     async def _authorize(self, interaction):
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message(ACTION_RESULT_OWNER, ephemeral=True)

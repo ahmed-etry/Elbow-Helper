@@ -65,7 +65,7 @@ class AgentDisclosureTests(unittest.IsolatedAsyncioTestCase):
         self.member = _Member(42, (self.lead, self.core))
         self.bot_member = _Member(99, ())
         self.guild = SimpleNamespace(
-            id=1, name="Brown Elbow", default_role=self.default,
+            id=1, name="Brown Elbow", default_role=self.default, owner_id=42,
             roles=[self.default, self.lead, self.core],
             me=self.bot_member,
             get_member=lambda member_id: self.member if member_id == 42 else None,
@@ -148,9 +148,28 @@ class AgentDisclosureTests(unittest.IsolatedAsyncioTestCase):
         destination.overwrites[self.member] = SimpleNamespace(
             view_channel=True, read_message_history=True,
         )
+        self.assertTrue(await can_disclose_provenance(
+            self.context, {100}, {ACCESS_LEAD},
+        ))
+        destination.overwrites[_Member(43, ())] = SimpleNamespace(
+            view_channel=True, read_message_history=True,
+        )
         self.assertFalse(await can_disclose_provenance(
             self.context, {100}, {ACCESS_LEAD},
         ))
+
+    async def test_incomplete_cache_requires_authorized_owner_despite_role_overwrites(self):
+        destination = self.channel(100, allow={self.lead.id})
+        self.context.source_message.channel = destination
+        for owner_id in (None, 43):
+            with self.subTest(owner_id=owner_id):
+                self.guild.owner_id = owner_id
+                self.assertFalse(await can_disclose_provenance(self.context, {100}, {ACCESS_LEAD}))
+        owner = _Member(43, ())
+        self.guild.get_member = lambda identifier: self.member if identifier == 42 else owner
+        self.assertFalse(await can_disclose_provenance(self.context, {100}, {ACCESS_LEAD}))
+        self.guild.owner_id = 42
+        self.assertTrue(await can_disclose_provenance(self.context, {100}, {ACCESS_LEAD}))
 
     async def test_requester_can_read_evidence_for_a_private_answer(self):
         destination = self.channel(100, public=True)

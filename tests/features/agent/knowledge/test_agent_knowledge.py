@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 from elbow_helper.features.agent.knowledge.store import (
     KnowledgeCatalog, KnowledgeSection, KnowledgeStore, TOPIC_INDEX_TOKEN_LIMIT,
 )
@@ -108,7 +108,7 @@ Hidden""")
         with self.assertLogs("elbow_helper.features.agent.knowledge.store", level="ERROR"):
             self.assertEqual(self.store.load().active_sections, ())
 
-    def test_topic_index_groups_only_approved_visible_titles_by_file(self):
+    def test_topic_index_groups_only_public_titles_without_restricted_provenance(self):
         self.write("b.md", "# Second topic\nSecond body\n# Third topic\nThird body")
         self.write("a.md", "# First topic\nFirst body")
         self.write("draft.md", '+++\nstatus="draft"\n+++\n# Draft title\nBody')
@@ -125,11 +125,12 @@ Hidden""")
         self.assertEqual(prompt.required_access, set())
         for level in ("lead", "lead_plus", "core"):
             prompt = catalog.prompt({level})
-            self.assertIn("Restricted " + level, prompt.index)
-            self.assertEqual(prompt.required_access, {level})
+            self.assertNotIn("Restricted", prompt.index)
+            self.assertNotIn(level + ".md", prompt.index)
+            self.assertEqual(prompt.required_access, set())
             self.assertLessEqual(estimate_tokens(prompt.index), TOPIC_INDEX_TOKEN_LIMIT)
 
-    def test_topic_index_keeps_five_hundred_titles_across_visibility_profiles(self):
+    def test_topic_index_keeps_public_titles_across_visibility_profiles(self):
         visibilities = ["public"] * 13 + ["lead", "lead_plus", "core"] * 4
         for file_index, visibility in enumerate(visibilities):
             self.write(f"topics-{file_index:02}.md", f'+++\nvisibility="{visibility}"\n+++\n'
@@ -145,8 +146,8 @@ Hidden""")
                 self.assertGreater(prompt.index_tokens, 2500)
                 self.assertLessEqual(prompt.index_tokens, TOPIC_INDEX_TOKEN_LIMIT)
                 self.assertEqual([line for line in prompt.index.splitlines() if line.startswith("- ")],
-                                 [f"- {section.title}" for section in catalog.visible_sections(levels)])
-                self.assertEqual(prompt.required_access, levels)
+                                 [f"- {section.title}" for section in catalog.visible_sections()])
+                self.assertEqual(prompt.required_access, set())
 
     def test_topic_index_uses_full_cap_before_falling_back(self):
         self.assertEqual(TOPIC_INDEX_TOKEN_LIMIT, 14000)
@@ -287,6 +288,32 @@ Hidden""")
                 member.roles.pop()
                 with self.assertRaises(AgentAccessLost):
                     await require_evidence_access(context)
+
+    async def test_unused_restricted_titles_do_not_restrict_a_public_answer(self):
+        self.write("private.md", '+++\nvisibility="lead"\n+++\n# Restricted topic\nRestricted body')
+        self.write("public.md", "# Public topic\nPublic body")
+        member = SimpleNamespace(id=1, display_name="Synthetic member", roles=[
+            SimpleNamespace(id=AGENT_TESTER_ROLE_ID), SimpleNamespace(id=next(iter(LEAD)))])
+        channel = SimpleNamespace(id=2, permissions_for=lambda _: SimpleNamespace(
+            view_channel=True, read_message_history=True))
+        guild = SimpleNamespace(id=3, name="Synthetic guild", me=member, get_member=lambda _: member)
+        model = SimpleNamespace(create_agent_session=Mock(return_value=SimpleNamespace()))
+        context = AgentRequestContext(bot=SimpleNamespace(), guild=guild, member=member,
+            source_message=SimpleNamespace(channel=channel, created_at=datetime.now(timezone.utc)),
+            account_links=None, message_search=None, knowledge_store=self.store)
+        AgentService(model)._start_flow(question="Public question", local_context="",
+                                        context=context, conversation_history="")
+        self.assertEqual(context.state.required_access, set())
+        prompt = model.create_agent_session.call_args.kwargs["system_prompt"]
+        self.assertIn("Public topic", prompt)
+        self.assertNotIn("Restricted topic", prompt)
+        self.assertNotIn("Restricted body", prompt)
+        self.assertNotIn("private.md", prompt)
+        # The restricted body remains searchable by authorized members. Reading
+        # it, unlike loading the public index, must constrain delivery.
+        result = await search_approved_knowledge(context, {"query": "Restricted topic"})
+        self.assertEqual(result["sections"][0]["body"], "Restricted body")
+        self.assertEqual(context.state.required_access, {"lead"})
 
     async def test_visibility_and_result_bounds(self):
         self.write("public.md", "".join(
