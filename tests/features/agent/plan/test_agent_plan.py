@@ -54,6 +54,40 @@ def _plan_for(name, tool, contract, selected_field=None):
 
 
 class PlanContractTests(unittest.TestCase):
+    def test_catalogue_exposes_bounds_defaults_and_required_dates(self):
+        catalogue = capability_list(REGISTRY)
+        ranked = next(line for line in catalogue.splitlines() if line.startswith("read_ranked_stats:"))
+        clash = next(line for line in catalogue.splitlines() if line.startswith("read_clash:"))
+        self.assertIn("limit:int[1..25](default=25)", ranked)
+        self.assertIn("after:str*", ranked)
+        self.assertIn("limit:int[1..50]", clash)
+        self.assertIn("offset:int>=0(default=0)", ranked)
+        self.assertIn("account_tags:[str]{1..200}", ranked)
+
+    def test_synthetic_replays_reject_four_missing_dates_and_four_oversized_limits(self):
+        for index in range(4):
+            for missing_date in (False, True):
+                arguments = {"account_tags": ["#P0"], "limit": 26 + index}
+                if missing_date:
+                    arguments["limit"] = 25
+                else:
+                    arguments["after"] = "2026-10-01"
+                plan = {"goal": "Synthetic history", "effort": "low", "output": "text",
+                        "steps": [{"id": "history", "capability": "read_ranked_stats",
+                                   "arguments": arguments, "depends_on": []}]}
+                with self.subTest(index=index, missing_date=missing_date):
+                    checked = check_plan(plan, REGISTRY)
+                    error = checked.step_errors.get("history", checked.error)
+                    self.assertTrue(error)
+                    if missing_date:
+                        self.assertIn("Missing fields: after", error)
+                        arguments["after"] = "2026-10-01"
+                    else:
+                        self.assertIn('"maximum":25', error)
+                        arguments["limit"] = 25
+                    self.assertTrue(check_plan(plan, REGISTRY).ok)
+                    self.assertFalse(check_plan(plan, REGISTRY).step_errors)
+
     def test_catalogue_describes_nested_objects_and_object_arrays(self):
         tool = RegisteredAgentTool(
             AgentToolDefinition(
@@ -83,8 +117,8 @@ class PlanContractTests(unittest.TestCase):
             lambda *_: None,
         )
         catalogue = capability_list({"synthetic": tool})
-        self.assertIn("schedule:{kind:string,nested:{hour:integer}}", catalogue)
-        self.assertIn("sheets:[{sql:string}]", catalogue)
+        self.assertIn("schedule:{kind:str,nested:{hour:int}}", catalogue)
+        self.assertIn("sheets:[{sql:str}]", catalogue)
 
     def test_extra_parameter_keys_are_allowed_only_by_schema(self):
         from elbow_helper.features.agent.plan.checker import valid_arguments

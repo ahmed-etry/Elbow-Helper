@@ -163,7 +163,7 @@ class CommandRegistryTests(unittest.TestCase):
         catalogue = capability_list({"synthetic_inspect": RegisteredAgentTool(
             capability.definition, AsyncMock(), AgentCapabilityEffect.COMMAND,
         )})
-        self.assertIn("target:string*", catalogue)
+        self.assertIn("target:str*", catalogue)
         self.assertEqual(capability.definition.description,
                          "Inspect a target.")
         self.assertEqual(capability.definition.parameters["properties"]["mode"]["enum"],

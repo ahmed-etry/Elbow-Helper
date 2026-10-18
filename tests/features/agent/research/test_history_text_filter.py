@@ -148,7 +148,7 @@ class HistoryTextFilterTests(unittest.IsolatedAsyncioTestCase):
         lines = capability_list(tools).splitlines()
         for name in ("read_discord_channel_history", "start_discord_history_job"):
             line = next(line for line in lines if line.startswith(name + ":"))
-            self.assertIn("text_filter:string", line)
+            self.assertIn("text_filter:str", line)
             self.assertIn("case-insensitively", line)
         self.assertIn("Search misses embeds; filter history for bot logs",
                       tools["search_discord_messages"].definition.usage_note)

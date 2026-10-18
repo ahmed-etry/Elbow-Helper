@@ -235,7 +235,7 @@ def clash_tools():
                 },
                 "required": ["kind", "tags"], "additionalProperties": False,
             },
-            usage_note="Use for current Clash state and latest battles; stored tables are historical snapshots.",
+            usage_note="Batch max 200 players, 20 others, 5 full. Raids limit 1..10 default 2; others 1..50 default 10.",
         ),
         read_clash,
         contract=CapabilityContract(), returns="items[].tag,status,data; observed_at",

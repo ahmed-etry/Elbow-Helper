@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import json
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
@@ -21,7 +22,8 @@ def system_instructions(
     community_knowledge: str = "",
 ) -> str:
     parts = [ACTION_SYSTEM_PROMPT if actions_enabled else SYSTEM_PROMPT]
-    parts.append(f"<capabilities>\n{capability_list(registry)}\n</capabilities>")
+    parts.append("<capabilities>\nArguments: trailing * is required; numeric [min..max] is inclusive; "
+                 "array {min..max} counts items.\n" + capability_list(registry) + "\n</capabilities>")
     if data_guide:
         parts.append(f"<data_guide>\n{data_guide}\n</data_guide>")
     if community_knowledge:
@@ -43,20 +45,36 @@ def _argument(detail: Mapping) -> str:
         kind = "[" + _argument(detail.get("items", {})) + "]"
     elif kind == "object":
         fields = detail.get("properties", {})
+        required = set(detail.get("required", ()))
         kind = "{" + ",".join(
-            f"{name}:{_argument(field)}" for name, field in fields.items()
+            f"{name}:{_argument(field)}{'*' if name in required else ''}"
+            for name, field in fields.items()
         ) + "}"
         if not fields and isinstance(detail.get("additionalProperties"), Mapping):
             kind = "{*:" + _argument(detail["additionalProperties"]) + "}"
+    else:
+        kind = {"integer": "int", "boolean": "bool", "string": "str"}.get(kind, kind)
     if "enum" in detail:
         choices = detail["enum"]
         kind += (
             "=" + "/".join(map(str, choices)) if len(choices) <= 20
             else f"({len(choices)} choices)"
         )
-    return kind + (
-        f"(maxItems={detail["maxItems"]})" if kind.startswith("[") and "maxItems" in detail else ""
-    )
+    if "minimum" in detail and "maximum" in detail:
+        kind += f"[{detail['minimum']}..{detail['maximum']}]"
+    elif "minimum" in detail:
+        kind += f">={detail['minimum']}"
+    elif "maximum" in detail:
+        kind += f"<={detail['maximum']}"
+    if "minItems" in detail and "maxItems" in detail:
+        kind += f"{{{detail['minItems']}..{detail['maxItems']}}}"
+    elif "minItems" in detail:
+        kind += f"{{>={detail['minItems']}}}"
+    elif "maxItems" in detail:
+        kind += f"{{<={detail['maxItems']}}}"
+    if "default" in detail:
+        kind += "(default=" + json.dumps(detail["default"], ensure_ascii=False, separators=(',', ':')) + ")"
+    return kind
 
 
 def output_forms(registry: Mapping[str, RegisteredAgentTool]) -> tuple[str, ...]:
@@ -87,7 +105,7 @@ def capability_list(registry: Mapping[str, RegisteredAgentTool]) -> str:
             raise ValueError(
                 f"Capability {name} usage note must fit one line within 160 characters"
             )
-        line = f"{name}: {meaning} | {tool.action_class.value} | args " + ",".join(arguments)
+        line = f"{name}: {meaning} | {tool.action_class.value} | " + ",".join(arguments)
         if note:
             line += " | use " + note
         if tool.returns:

@@ -39,9 +39,9 @@ class ResultSpreadsheetTests(unittest.IsolatedAsyncioTestCase):
     def test_catalogue_shows_result_sheet_fields(self):
         catalogue = capability_list(build_agent_tools())
         self.assertIn("rows_from:reference(list of records)", catalogue)
-        self.assertIn("columns:[string]", catalogue)
-        self.assertIn("columns:[{field:string(dotted field),heading:string}]", catalogue)
-        self.assertNotIn("columns:[string/{field:string,heading:string}]", catalogue)
+        self.assertIn("columns:[str]{1..20}*", catalogue)
+        self.assertIn("columns:[{field:string(dotted field)*,heading:str*}]{1..20}*", catalogue)
+        self.assertNotIn("columns:[str/{field:string(dotted field)*,heading:str*}]", catalogue)
 
     async def test_wrong_result_columns_are_refused_before_the_handler_runs(self):
         read = AsyncMock(return_value={"items": [{"value": 7}]})

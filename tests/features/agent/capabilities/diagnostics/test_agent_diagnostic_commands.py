@@ -31,7 +31,7 @@ class DiagnosticCommandTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(name, registry)
             self.assertIn(f"{name} ({scope})", line)
         self.assertIn("answer from evidence.", line)
-        self.assertIn("clan:string=", line)
+        self.assertIn("clan:str=", line)
 
     async def test_specific_read_reports_its_failure_despite_general_check_success(self):
         workflow = SimpleNamespace(check_clash_connection=AsyncMock(
