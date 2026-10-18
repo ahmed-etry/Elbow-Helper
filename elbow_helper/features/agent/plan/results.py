@@ -115,13 +115,17 @@ def model_result(
             continue
         if value:
             items = value if isinstance(value, (list, tuple)) else [value]
-            limits.extend(_flag(item) for item in items)
+            # Retain structured explanations; short flags alone lose their meaning.
+            data[field] = value
+            limits.extend(_flag(item) for item in items if not isinstance(item, Mapping))
     error = data.get("error")
     if error is not None:
         limits.append(_flag(error))
     truncated = truncated or data.get("truncated") is True or existing.get("truncated") is True
     complete = not truncated and error is None and existing.get("status") not in ("failed", "partial", "refused") and all(
-        data.get(field) is not False for field in ("complete", "complete_snapshot")
+        data.get(field) is not False for field in (
+            "complete", "complete_snapshot", "coverage_complete", "search_complete", "search_is_exhaustive",
+        )
     ) and data.get("status") != "partial" and all(
         data.get(field) is None for field in ("next_offset", "next_cursor")
     )

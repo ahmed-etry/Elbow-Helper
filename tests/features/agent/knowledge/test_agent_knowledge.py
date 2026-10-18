@@ -14,6 +14,7 @@ from elbow_helper.features.agent.conversation.context import estimate_tokens
 from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.features.agent.access import AgentAccessLost, require_evidence_access
 from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID, LEAD
+from elbow_helper.features.agent.plan.results import model_result
 
 
 class KnowledgeTests(unittest.IsolatedAsyncioTestCase):
@@ -359,6 +360,80 @@ Secret facts""")
             result = await search_approved_knowledge(context, {"query": "secret"})
             self.assertEqual(len(result["sections"]), 3)
             self.assertEqual(context.state.required_access, {"lead", "lead_plus", "core"})
+
+
+class KnowledgeCoverageTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.path = Path(directory.name)
+        self.store = KnowledgeStore(self.path)
+        self.context = SimpleNamespace(knowledge_store=self.store, member=SimpleNamespace(id=1),
+                                       guild=object(), state=AgentTurnState())
+        for name, replacement in (("require_evidence_access", AsyncMock()),
+                                  ("has_access_requirements", lambda *_: False)):
+            patcher = patch("elbow_helper.features.agent.knowledge.tools." + name, replacement)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    async def test_unconfigured_empty_and_invisible_matches_are_distinct_without_title_leaks(self):
+        self.context.knowledge_store = None
+        missing = model_result(await search_approved_knowledge(self.context, {"query": "vault"}))
+        self.assertEqual(missing["match_status"], "store_unavailable")
+        self.assertEqual(missing["flags"]["status"], "failed")
+        self.context.knowledge_store = self.store
+        empty = await search_approved_knowledge(self.context, {"query": "vault"})
+        self.assertEqual(empty["store_status"], "available")
+        self.assertEqual(empty["match_status"], "no_visible_match")
+        self.store = KnowledgeStore(self.path)
+        self.context.knowledge_store = self.store
+        (self.path / "private.md").write_text('+++\nvisibility="core"\n+++\n# Hidden vault title\nVault body', encoding="utf-8")
+        hidden = await search_approved_knowledge(self.context, {"query": "vault"})
+        self.assertEqual(hidden["match_status"], "no_visible_match")
+        exact = await search_approved_knowledge(self.context, {"titles": ["Hidden vault title"]})
+        self.assertNotIn("Hidden vault title", str(hidden) + str(exact))
+        self.assertNotIn("private.md", str(hidden) + str(exact))
+
+    async def test_long_sections_continue_without_clipping_silently(self):
+        body = "x" * 9000
+        (self.path / "public.md").write_text("# Long reference\n" + body, encoding="utf-8")
+        first = model_result(await search_approved_knowledge(self.context, {"titles": ["Long reference"]}))
+        section = first["sections"][0]
+        self.assertTrue(section["truncated"])
+        self.assertEqual(section["next_section_offset"], 4000)
+        self.assertEqual(first["flags"]["status"], "partial")
+        second = await search_approved_knowledge(self.context, {"section_id": section["section_id"], "section_offset": 4000})
+        last = await search_approved_knowledge(self.context, {"section_id": section["section_id"], "section_offset": 8000})
+        self.assertEqual(section["body"] + second["sections"][0]["body"] + last["sections"][0]["body"], body)
+        self.assertFalse(last["sections"][0]["truncated"])
+        self.assertIsNone(last["sections"][0]["next_section_offset"])
+
+    async def test_non_exhaustive_search_paging_and_partial_store_preserve_limits(self):
+        (self.path / "public.md").write_text("".join(f"# Reference {i}\nArchive facts\n" for i in range(10)), encoding="utf-8")
+        first = model_result(await search_approved_knowledge(self.context, {"query": "archive"}))
+        self.assertFalse(first["search_is_exhaustive"])
+        self.assertEqual(first["flags"]["status"], "partial")
+        self.assertEqual(first["next_offset"], 8)
+        last = await search_approved_knowledge(self.context, {"query": "archive", "offset": 8})
+        self.assertEqual(len(last["sections"]), 2)
+        self.assertIsNone(last["next_offset"])
+        self.assertTrue(first["limitations"]["lexical_search_only"])
+        (self.path / "bad.md").write_text('+++\nvisibility="invalid"\n+++\n# Bad\nBody', encoding="utf-8")
+        self.context.knowledge_store = KnowledgeStore(self.path)
+        with self.assertLogs("elbow_helper.features.agent.knowledge.store", level="ERROR"):
+            partial = await search_approved_knowledge(self.context, {"titles": ["Reference 0"]})
+        self.assertEqual(partial["store_status"], "partial")
+        self.assertFalse(partial["search_complete"])
+        self.assertNotIn("bad.md", str(partial))
+
+    async def test_missing_directory_and_load_failure_report_unavailable(self):
+        self.context.knowledge_store = KnowledgeStore(self.path / "missing")
+        with self.assertLogs("elbow_helper.features.agent.knowledge.store", level="ERROR"):
+            result = await search_approved_knowledge(self.context, {})
+        self.assertEqual(result["store_status"], "unavailable")
+        with patch.object(self.context.knowledge_store, "load", side_effect=OSError("synthetic read failure")):
+            failed = await search_approved_knowledge(self.context, {})
+        self.assertEqual(failed["match_status"], "store_unavailable")
 
 
 class KnowledgeRankingTests(unittest.TestCase):

@@ -324,7 +324,12 @@ RESULT_FIELDS = {
                    **{key: [{**result_fields(RoleConnectionCondition), "role_name": ""}]
                       for key in ("all_conditions", "any_conditions")}}],
     },
-    "search_approved_knowledge": {"sections": [names("title,body,visibility")]},
+    "search_approved_knowledge": {
+        **names("store_status?,match_status?,observed_at?,offset?,next_offset?,search_is_exhaustive?,search_complete?,truncated?"),
+        "coverage?": "{visible search scope, method, counts, store completeness}",
+        "sections": [{**names("title,body,visibility"),
+                      **names("section_id?,section_offset?,total_characters?,truncated?,next_section_offset?")}],
+    },
     "remember_task_instruction": {
         **names("working_state_version,action_authorized"),
         "instruction": result_fields(TaskInstruction),
@@ -382,7 +387,7 @@ RESULT_FIELDS["read_member_history"] = {**names("member_id,channel_id,search_is_
 RESULT_FIELDS["read_ranked_stats"] = {"accounts": [result_fields(RankedAccount)]}
 
 RESULT_FIELDS = {
-    name: shape if name in ("read_clash", "read_membership_history")
+    name: shape if name in ("read_clash", "read_membership_history", "search_approved_knowledge")
     else _returned_fields(shape) for name, shape in RESULT_FIELDS.items()
 }
 REPORT_FIELDS = {kind: _returned_fields(shape) for kind, shape in REPORT_FIELDS.items()}

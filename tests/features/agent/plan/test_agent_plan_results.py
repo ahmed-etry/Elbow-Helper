@@ -76,7 +76,7 @@ class ModelResultTests(unittest.TestCase):
             "status": "complete", "truncated": False,
         })
 
-    def test_failure_and_limits_are_flags_without_caveat_sentences(self):
+    def test_failure_flags_preserve_meaningful_limitations(self):
         result = model_result({
             "error": "That source is not accessible.",
             "limitations": ["The selected page is incomplete."],
@@ -88,7 +88,14 @@ class ModelResultTests(unittest.TestCase):
             "limits": ["access_denied", "partial"],
         })
         self.assertEqual(result["error"], "That source is not accessible.")
-        self.assertNotIn("limitations", result)
+        self.assertEqual(result["limitations"], ["The selected page is incomplete."])
+        self.assertEqual(model_result(result), result)
+
+    def test_non_exhaustive_search_and_incomplete_coverage_cannot_claim_complete(self):
+        for field in ("search_is_exhaustive", "search_complete", "coverage_complete"):
+            with self.subTest(field=field):
+                result = model_result({field: False, "sections": [], "flags": {"status": "complete"}})
+                self.assertEqual(result["flags"]["status"], "partial")
 
     def test_truncation_marks_partial_result(self):
         result = model_result({"rows": [], "complete": True}, truncated=True)

@@ -84,14 +84,15 @@ class KnowledgePrompt:
 class KnowledgeCatalog:
     observed_at: str
     active_sections: tuple[KnowledgeSection, ...]
+    store_status: str = "available"
     _prompts: Mapping[frozenset[str], KnowledgePrompt] = field(default_factory=dict, repr=False,
                                                             compare=False)
 
-    def search(self, sections, *, query=""):
+    def search(self, sections, *, query="", limit=8):
         phrase = _words(query)
         sections = tuple(sections)
         if not phrase:
-            return sections[:8]
+            return sections[:limit]
         words = set(phrase) - _STOP_WORDS
         documents = []
         for section in sections:
@@ -117,7 +118,7 @@ class KnowledgeCatalog:
             exact = phrase == title_words
             if exact or score:
                 ranked.append((-exact, -score, index, section))
-        return tuple(item[-1] for item in sorted(ranked)[:8])
+        return tuple(item[-1] for item in sorted(ranked)[:limit])
 
     def visible_sections(self, levels=()):
         return tuple(section for section in self.active_sections
@@ -215,7 +216,7 @@ class KnowledgeStore:
         self.directory = directory
         self._checked_at = float("-inf")
         self._signature = None
-        self._catalog = KnowledgeCatalog(datetime.now(timezone.utc).isoformat(), ())
+        self._catalog = KnowledgeCatalog(datetime.now(timezone.utc).isoformat(), (), "unavailable")
 
     def load(self):
         now = time.monotonic()
@@ -223,16 +224,20 @@ class KnowledgeStore:
             return self._catalog
         self._checked_at = now
         try:
+            if not self.directory.is_dir():
+                raise OSError("Knowledge directory is unavailable")
             paths = sorted(self.directory.glob("*.md"), key=lambda path: path.name.casefold())
             signature = tuple(
                 (path.name, path.stat().st_mtime_ns, path.stat().st_size) for path in paths
             )
         except OSError:
             LOGGER.exception("Cannot inspect community knowledge files")
+            self._signature = None
+            self._catalog = KnowledgeCatalog(datetime.now(timezone.utc).isoformat(), (), "unavailable")
             return self._catalog
         if signature == self._signature:
             return self._catalog
-        sections, counts = [], {}
+        sections, counts, incomplete = [], {}, False
         for path in paths:
             counts[path.name] = 0
             try:
@@ -242,8 +247,10 @@ class KnowledgeStore:
                 sections.extend(parsed)
                 counts[path.name] = len(parsed)
             except (OSError, UnicodeError, ValueError):
+                incomplete = True
                 LOGGER.exception("Cannot read community knowledge: %s", path.name)
-        catalog = KnowledgeCatalog(datetime.now(timezone.utc).isoformat(), tuple(sections)).prepare_prompts()
+        catalog = KnowledgeCatalog(datetime.now(timezone.utc).isoformat(), tuple(sections),
+                                   "partial" if incomplete else "available").prepare_prompts()
         catalog.log_reload(counts)
         self._signature = signature
         self._catalog = catalog
