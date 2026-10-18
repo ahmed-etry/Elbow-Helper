@@ -200,7 +200,9 @@ BONUS.update(metric_name="", metric_definition="", ass_distinction=names("is_ass
 
 RESULT_FIELDS = {
     "query_bot_data": {"rows": ["{selected SQL columns}"], **names("row_count,truncated")},
-    "read_clash": {"items": [{**names("tag,status"), "data?": "{endpoint fields}"}],
+    "read_clash": {"items": [{**names("tag,status"), "data?": "{endpoint fields}",
+                               **names("row_counts?,truncated?"),
+                               "coverage?": "{rolling history scope, date ranges, counts, selection}"}],
                    "observed_at": ""},
     "read_bot_command_help": {
         **names("matching_count?,next_offset?,source,visibility?,path?,summary?,details?,category?,"
@@ -373,7 +375,10 @@ RESULT_FIELDS["read_member_history"] = {**names("member_id,channel_id,search_is_
 
 RESULT_FIELDS["read_ranked_stats"] = {"accounts": [result_fields(RankedAccount)]}
 
-RESULT_FIELDS = {name: _returned_fields(shape) for name, shape in RESULT_FIELDS.items()}
+RESULT_FIELDS = {
+    name: shape if name in ("read_clash",)
+    else _returned_fields(shape) for name, shape in RESULT_FIELDS.items()
+}
 REPORT_FIELDS = {kind: _returned_fields(shape) for kind, shape in REPORT_FIELDS.items()}
 RESULT_FIELDS["read_discord_poll"] = result_fields(PollSnapshot)
 RESULT_FIELDS["read_discord_audit_log"] = _returned_fields(result_fields(AuditSnapshot))

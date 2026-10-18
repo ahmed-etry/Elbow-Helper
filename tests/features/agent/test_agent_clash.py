@@ -167,7 +167,36 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["items"][0]["row_counts"]["/items"], {
                     "returned_rows": count, "total_rows": count,
                 })
-                self.assertEqual(model_result(result)["flags"]["status"], "complete")
+                self.assertFalse(result["items"][0]["coverage"]["history_complete"])
+                self.assertEqual(model_result(result)["flags"]["status"], "partial")
+
+    async def test_chronological_selection_finds_recent_attack_in_any_api_order(self):
+        entries = [{"battleTimestamp": f"202610{day:02d}T120000.000Z", "attack": day == 18,
+                    "stars": day % 4, "army": [day]} for day in range(1, 19)]
+        for rows in (entries, entries[::-1], entries[::2] + entries[1::2]):
+            self.client.get.return_value.payload = {"items": rows}
+            result = await read_clash(self.context, {"kind": "battle_log", "tags": ["#P0"], "limit": 12})
+            item = result["items"][0]
+            self.assertTrue(item["data"]["items"][0]["attack"])
+            self.assertEqual(item["coverage"]["available_range"]["oldest"], "2026-10-01T12:00:00+00:00")
+            self.assertEqual(item["coverage"]["returned_range"]["oldest"], "2026-10-07T12:00:00+00:00")
+            self.assertEqual(item["coverage"]["next_offset"], 12)
+            self.assertFalse(item["coverage"]["selection_complete"])
+            older = await read_clash(self.context, {"kind": "battle_log", "tags": ["#P0"],
+                                                    "limit": 2, "order": "oldest_first", "detail": "full"})
+            self.assertEqual(older["items"][0]["data"]["items"], entries[:2])
+            window = await read_clash(self.context, {"kind": "battle_log", "tags": ["#P0"],
+                "after": "2026-10-17", "before": "2026-10-18", "offset": 0})
+            self.assertEqual(window["items"][0]["coverage"]["matching_rows"], 1)
+
+    async def test_unknown_timestamps_and_empty_date_slice_have_explicit_coverage(self):
+        self.client.get.return_value.payload = {"items": [{"battleTimestamp": "bad", "attack": True}]}
+        result = await read_clash(self.context, {"kind": "battle_log", "tags": ["#P0"], "after": "2026-10-01"})
+        item = result["items"][0]
+        self.assertEqual(item["data"]["items"], [])
+        self.assertEqual(item["coverage"]["unknown_timestamp_rows"], 1)
+        self.assertFalse(item["coverage"]["chronology_complete"])
+        self.assertEqual(item["coverage"]["returned_range"], {"oldest": None, "newest": None})
 
     async def test_size_caps_return_no_excerpt_and_preserve_api_row_totals(self):
         for kind in ENDPOINTS:

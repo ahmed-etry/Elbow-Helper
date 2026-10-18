@@ -12,6 +12,8 @@ from ..access import require_evidence_access
 from ..engine import budgets
 from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool
+from ..research.history import search_date
+from .battle_logs import select_battles
 
 
 ENDPOINTS = {
@@ -155,6 +157,16 @@ async def read_clash(context, arguments):
     limit = arguments.get("limit", 2 if kind == "capital_raids" else 10)
     if type(limit) is not int or not 1 <= limit <= (10 if kind == "capital_raids" else 50):
         return {"error": "The selected Clash history limit is invalid."}
+    order, offset = arguments.get("order", "newest_first"), arguments.get("offset", 0)
+    try:
+        after, before = search_date(arguments.get("after")), search_date(arguments.get("before"))
+        if (order not in ("newest_first", "oldest_first") or type(offset) is not int or offset < 0
+                or after is not None and before is not None and after >= before):
+            raise ValueError("Invalid battle selection")
+        if kind != "battle_log" and any(key in arguments for key in ("order", "offset", "after", "before")):
+            raise ValueError("Battle selection applies only to battle logs")
+    except (ValueError, TypeError, AttributeError):
+        return {"error": "Use valid ISO dates, chronological order and offset for battle logs only."}
     items = [{"tag": tag, "status": "unavailable"} for tag in normalized]
     semaphore = asyncio.Semaphore(8)
     deadline = time.monotonic() + budgets.TOOL_TIMEOUT_SECONDS - 1
@@ -174,9 +186,12 @@ async def read_clash(context, arguments):
             )
             if response.ok and isinstance(response.payload, dict):
                 original = payload = response.payload
+                coverage = None
                 if kind == "battle_log":
                     # The battle-log route has no verified server-side limit parameter.
-                    payload = {**payload, "items": payload.get("items", [])[:limit]}
+                    payload, coverage = select_battles(
+                        payload, limit=limit, offset=offset, order=order, after=after, before=before,
+                    )
                 items[index] = {
                     "tag": tag, "status": "ok",
                     "data": (
@@ -184,11 +199,16 @@ async def read_clash(context, arguments):
                         else summary(kind, payload)
                     ),
                 }
-                counts = collection_counts(items[index]["data"], original)
+                counts = collection_counts(items[index]["data"], payload)
+                if "items" in original:
+                    counts["/items"] = {"returned_rows": len(payload.get("items", [])),
+                                        "total_rows": len(original["items"])}
                 items[index]["row_counts"] = counts or {"/": {"returned_rows": 1, "total_rows": 1}}
                 items[index]["truncated"] = any(
                     count["returned_rows"] < count["total_rows"] for count in counts.values()
                 )
+                if coverage is not None:
+                    items[index]["coverage"] = coverage
             else:
                 status = (
                     "not_found" if response.status == 404
@@ -213,8 +233,9 @@ async def read_clash(context, arguments):
     return {"source": "clash_api", "items": items,
             "observed_at": datetime.now(timezone.utc).isoformat(),
             "truncated": truncated,
-            "flags": {"status": "partial" if truncated or any(
-                item["status"] != "ok" for item in items) else "complete", "truncated": truncated}}
+            "flags": {"status": "partial" if kind == "battle_log" or truncated or any(
+                item["status"] != "ok" for item in items) else "complete", "truncated": truncated,
+                "limits": ["rolling_history_only"] if kind == "battle_log" else []}}
 
 
 def clash_tools():
@@ -232,10 +253,15 @@ def clash_tools():
                     },
                     "limit": {"type": "integer", "minimum": 1, "maximum": 50},
                     "detail": {"type": "string", "enum": ["summary", "full"]},
+                    "order": {"type": "string", "enum": ["newest_first", "oldest_first"],
+                              "default": "newest_first"},
+                    "offset": {"type": "integer", "minimum": 0, "default": 0},
+                    "after": {"type": "string", "maxLength": 40},
+                    "before": {"type": "string", "maxLength": 40},
                 },
                 "required": ["kind", "tags"], "additionalProperties": False,
             },
-            usage_note="Batch max 200 players, 20 others, 5 full. Raids limit 1..10 default 2; others 1..50 default 10.",
+            usage_note="Batch max 200 players, 20 others, 5 full. Raids limit 1..10 default 2; others 1..50 default 10. Battle-only order/offset/after/before; UTC, before exclusive.",
         ),
         read_clash,
         contract=CapabilityContract(), returns="items[].tag,status,data; observed_at",
