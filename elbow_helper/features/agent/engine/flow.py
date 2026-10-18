@@ -32,6 +32,7 @@ from .steps import PlanRunner
 from .grounding import (
     GROUNDING_INSTRUCTION, GROUNDING_UNAVAILABLE, GroundingError, ground_answer,
 )
+from .factual_answers import narrow_answer
 from ..models import AgentRequestContext, RegisteredAgentTool
 from .budgets import ContextBudget
 from elbow_helper.infrastructure.ai.agent import AgentSession
@@ -90,6 +91,9 @@ class AnswerFlow:
         if not answer:
             return answer
         try:
+            factual = narrow_answer(self.context.state.request_text, self.context.state.grounding_evidence)
+            if factual is not None:
+                return factual
             return ground_answer(answer, self.context.state.grounding_evidence)
         except GroundingError as error:
             LOGGER.info("Agent answer rejected: request=%s reason=%s", self.request_id, error)
@@ -102,6 +106,9 @@ class AnswerFlow:
             )
             await require_evidence_access(self.context)
             if repaired.content and not repaired.tool_calls:
+                factual = narrow_answer(self.context.state.request_text, self.context.state.grounding_evidence)
+                if factual is not None:
+                    return factual
                 return ground_answer(repaired.content, self.context.state.grounding_evidence)
         except (GroundingError, AgentGracefulEnd, AgentLimitReached, TextGenerationError, TimeoutError):
             pass

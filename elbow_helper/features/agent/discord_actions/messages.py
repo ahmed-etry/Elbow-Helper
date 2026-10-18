@@ -242,8 +242,11 @@ async def prepare_post(context: AgentRequestContext,
             and not re.search(r"<@&\d+>", arguments["text"])):
         async with context.state.reply_delivery.lock:
             from ..engine.grounding import GroundingError, ground_answer
+            from ..engine.factual_answers import narrow_answer
             try:
-                text = ground_answer(arguments["text"], context.state.grounding_evidence)
+                text = narrow_answer(context.state.request_text, context.state.grounding_evidence)
+                if text is None:
+                    text = ground_answer(arguments["text"], context.state.grounding_evidence)
             except GroundingError:
                 return {"error": "The answer needs message sources read in this request."}
             context.state.reply_to = arguments.get("reply_to")
