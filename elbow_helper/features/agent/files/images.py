@@ -1,6 +1,7 @@
 """Request image acquisition through authorized Discord sources."""
 
 import asyncio
+import json
 import re
 import time
 from pathlib import PurePosixPath
@@ -110,6 +111,7 @@ async def request_images(context):
 
 async def _request_images(context, result, wait_until):
     async for source, label_source in _sources(context):
+        label_source = _source_label(context, source, label_source)
         for attachment in getattr(source, "attachments", ()):
             mime = str(getattr(attachment, "content_type", "") or "").split(";")[0].lower()
             if not mime:
@@ -128,6 +130,31 @@ async def _request_images(context, result, wait_until):
                 if image is not None:
                     result.append(image)
                     _remember_source(context, source)
+            if len(result) == MAX_REQUEST_IMAGES:
+                return tuple(result)
+        for sticker in getattr(source, "stickers", ()):
+            label = f"{label_source}; sticker {json.dumps(sticker.name, ensure_ascii=False)}"
+            mime = {
+                discord.StickerFormatType.png: "image/png",
+                discord.StickerFormatType.apng: "image/png",
+                discord.StickerFormatType.gif: "image/gif",
+            }.get(sticker.format)
+            image = None
+            if mime:
+                try:
+                    data = await sticker.read()
+                except (discord.HTTPException, OSError, asyncio.TimeoutError):
+                    data = None
+                if isinstance(data, bytes) and 0 < len(data) <= MAX_IMAGE_BYTES:
+                    image = await model_image(
+                        data, mime, label, source.id, len(result) + 1,
+                        animated=sticker.format == discord.StickerFormatType.apng,
+                    )
+            _remember_source(context, source)
+            if image is None:
+                _source_status(context, f"Sticker image could not be viewed: {label} (message {source.id}).")
+            else:
+                result.append(image)
             if len(result) == MAX_REQUEST_IMAGES:
                 return tuple(result)
         for data in await gif_media(context, source, wait_until):
@@ -155,29 +182,58 @@ async def _request_images(context, result, wait_until):
                     PurePosixPath(url.split("?", 1)[0]).suffix.lower(), "image/jpeg",
                 )
                 if isinstance(data, bytes) and 0 < len(data) <= MAX_IMAGE_BYTES:
-                    result.append(AgentImage(
-                        _image_mime(data, mime), data,
-                        f"Image {len(result)+1}, from {label_source} (message {source.id})",
-                    ))
-                    _remember_source(context, source)
+                    image = await model_image(data, mime, label_source, source.id, len(result) + 1)
+                    if image is not None:
+                        result.append(image)
+                        _remember_source(context, source)
                 if len(result) == MAX_REQUEST_IMAGES:
                     return tuple(result)
                 break
     return tuple(result)
 
 
-async def model_image(data, mime, label_source, message_id, number, *, gif_source=False):
+def _source_label(context, source, label):
+    """Keep visual speakers and reply targets attached to their own media."""
+    bot_id = getattr(getattr(getattr(context, "bot", None), "user", None), "id", None)
+
+    def author_identity(author):
+        identifier = getattr(author, "id", None)
+        return {"name": getattr(author, "display_name", getattr(author, "name", "")),
+                "member_id": identifier, "is_you": identifier is not None and identifier == bot_id}
+
+    details = {}
+    if getattr(source, "author", None) is not None:
+        details["sender"] = author_identity(source.author)
+    if getattr(source, "content", ""):
+        details["message_text"] = source.content
+    reference = getattr(source, "reference", None)
+    reply_id = getattr(reference, "message_id", None)
+    if reply_id is not None:
+        details["replies_to_message_id"] = reply_id
+        channel_id = getattr(getattr(source, "channel", None), "id", None)
+        targets = (*getattr(context, "attachment_sources", ()), getattr(reference, "resolved", None))
+        for target in targets:
+            if (channel_id is not None and getattr(target, "id", None) == reply_id
+                    and getattr(getattr(target, "channel", None), "id", None) == channel_id
+                    and getattr(target, "author", None) is not None):
+                details["reply_recipient"] = author_identity(target.author)
+                break
+    return label + ("; " + json.dumps(details, ensure_ascii=False) if details else "")
+
+
+async def model_image(data, mime, label_source, message_id, number, *, gif_source=False, animated=False):
     mime = _image_mime(data, mime)
     label = f"Image {number}, from {label_source} (message {message_id})"
     if gif_source:
         label = f"Still of one GIF {number}, from {label_source} (message {message_id})"
-    if mime == "image/gif":
+    if mime == "image/gif" or animated:
         try:
             data = await asyncio.to_thread(animation_sheet, data)
         except (OSError, ValueError, UnidentifiedImageError, Image.DecompressionBombError):
             return None
         mime = "image/png"
-        label = f"Frames of one GIF {number}, from {label_source} (message {message_id})"
+        kind = "sticker" if animated else "GIF"
+        label = f"Frames of one {kind} {number}, from {label_source} (message {message_id})"
     return AgentImage(mime, data, label)
 
 

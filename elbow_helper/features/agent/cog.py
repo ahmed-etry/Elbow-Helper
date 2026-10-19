@@ -353,7 +353,7 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
         if not mention_pattern.sub("", content).strip():
             from .files.gif_media import has_image_content
             if has_image_content(message):
-                return "Respond to the image or GIF in this message."
+                return "Respond to the image, sticker or GIF in this message."
             return ""
         identity = agent_identity(self.bot, getattr(message, "guild", None))
         if identity is None:

@@ -12,6 +12,8 @@ def message_text(
     message: discord.Message, *, identity: AgentIdentity | None = None,
 ) -> str:
     parts = [str(message.content or "").strip()]
+    for sticker in getattr(message, "stickers", ()):
+        parts.append(f"[sticker: {sticker.name}]")
     for embed in getattr(message, "embeds", ()):
         author = getattr(getattr(embed, "author", None), "name", None)
         if author:

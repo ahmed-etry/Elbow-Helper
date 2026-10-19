@@ -130,4 +130,4 @@ class GifImageTests(unittest.IsolatedAsyncioTestCase):
             message.author = SimpleNamespace(bot=False)
             self.assertTrue(cog._is_agent_request(message))
             self.assertEqual(cog._extract_question(message),
-                             "Respond to the image or GIF in this message.")
+                             "Respond to the image, sticker or GIF in this message.")
