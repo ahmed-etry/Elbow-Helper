@@ -20,5 +20,7 @@ class GifInstructionTests(unittest.TestCase):
         self.assertEqual(instructions.count(policy), 1)
         self.assertNotIn("put it alone on the last line", instructions)
         self.assertNotIn("find_gif", DATA_RULES)
-        self.assertIn("Use emoji rarely, never decoratively", PERSONA_RULES)
+        self.assertIn("Use emoji sparingly and purposefully", PERSONA_RULES)
+        self.assertIn("A fitting GIF can be the whole reply", PERSONA_RULES)
+        self.assertNotIn("reaction or GIF can be the whole response", PERSONA_RULES)
         self.assertNotIn("reaction emoji", PERSONA_RULES)

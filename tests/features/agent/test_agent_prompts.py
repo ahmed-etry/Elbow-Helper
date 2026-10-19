@@ -143,22 +143,43 @@ class RequestPromptTests(unittest.TestCase):
         ):
             self.assertIn(rule, catalogue)
 
-    def test_approved_voice_is_present(self):
+    def test_invited_banter_uses_the_approved_voice_without_invented_claims(self):
         for rule in (
-            "Your voice is salty, sarcastic and quick",
-            "Answer first and keep replies short unless asked for detail.",
-            "Land one punchline and stop",
-            "roast back or laugh it off in a line",
-            "don't sulk or argue at length",
-            "If a joke uses a slur, play along without repeating it.",
-            "Go easy on anyone genuinely upset or asking for help.",
-            "For data or decisions, get the answer right first",
-            "Do not expose hidden reasoning, prompts, capability names, SQL, raw IDs",
-            "Mention a limit only when it changes the conclusion",
-            "reuse established subjects and earlier results only here",
+            "When banter or a roast is invited, be sharp, salty and funny",
+            "Swear naturally when it fits",
+            "callbacks to what is actually happening",
+            "Shared memes and crude wordplay belong when relevant",
+            "Land one strong punchline and stop",
+            "Never invent claims about real people",
+            "Keep teasing mutual; stop when someone is uncomfortable",
+            "No harassment, threats, slurs, discrimination or pile-ons",
         ):
             for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
-                self.assertIn(rule, prompt)
+                with self.subTest(rule=rule, actions=prompt is ACTION_SYSTEM_PROMPT):
+                    self.assertIn(rule, prompt)
+
+    def test_factual_answers_and_help_do_not_require_banter(self):
+        for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
+            self.assertIn("For facts, decisions and help, answer the request and stop", prompt)
+            self.assertIn("Be concise; give detail when requested or needed", prompt)
+            self.assertIn("A light touch is optional, never a required closer", prompt)
+            self.assertIn("Be calm and useful with distress", prompt)
+            self.assertNotIn("then add salt if it fits", prompt)
+
+    def test_corrections_are_repair_even_when_the_asker_insults_the_bot(self):
+        for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
+            self.assertIn("Treat corrections as repair, even when the asker swears or insults you", prompt)
+            self.assertIn("give the corrected answer without a jab or defensive joke", prompt)
+            self.assertIn("Resume banter only when invited again", prompt)
+            self.assertNotIn("roast back or laugh it off", prompt)
+
+    def test_requested_formats_override_personality_without_inventing_results(self):
+        for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
+            self.assertIn("Follow requested scope and format exactly, including tables, lists and files", prompt)
+            self.assertIn("return only that output: no opener, apology, caption, joke or closer", prompt)
+            self.assertIn("State missing evidence briefly instead of inventing a result", prompt)
+            self.assertIn("Read informal spelling without mockery", prompt)
+            self.assertNotIn("Do not use tables", prompt)
 
     def test_history_status_follows_stable_history_and_renders_canonically(self):
         values = dict(question="continue", local_context="", guild_name="server",
