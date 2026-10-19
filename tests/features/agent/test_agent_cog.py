@@ -33,6 +33,7 @@ from elbow_helper.features.agent.conversation.codec import decode_conversation
 from elbow_helper.features.agent.conversation.persistence import ConversationPersistence
 from elbow_helper.features.agent.conversation.context import build_history_checkpoint
 from elbow_helper.features.agent.engine.service import AgentService
+from elbow_helper.features.agent.wording import AGENT_ANSWER_UNFINISHED
 from elbow_helper.infrastructure.ai.client import DeepSeekTextClient
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from elbow_helper.features.agent.models import RegisteredAgentTool
@@ -75,21 +76,33 @@ def _message(*, author: _Member, bot_id: int, content: str):
 
 
 class AgentCogTests(unittest.IsolatedAsyncioTestCase):
-    async def test_direct_answer_is_delivered_without_typing(self):
+    async def test_direct_answer_starts_typing_before_the_model(self):
         from features.agent.engine.test_agent_plan_flow import _Model, _Session
         from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 
         member = _Member(121, (next(iter(CORE)),))
         message = self._real_handler_scenario(member)(member, 501, "<@999> synthetic question")
-        message.channel.typing = MagicMock(return_value=nullcontext())
-        session = _Session([AgentStep("Synthetic answer", (), AgentUsage())], [])
+        events = []
+
+        @asynccontextmanager
+        async def typing():
+            events.append("typing")
+            try:
+                yield
+            finally:
+                events.append("typing ended")
+
+        message.channel.typing = MagicMock(side_effect=typing)
+        self.cog._build_local_context.side_effect = lambda *args: events.append("context") or "Synthetic context"
+        session = _Session([AgentStep("Synthetic answer", (), AgentUsage())], events)
         self.cog.service = AgentService(_Model(session))
         with (
             patch("elbow_helper.features.agent.cog.discord.Member", _Member),
             patch("elbow_helper.features.agent.engine.service.build_agent_tools", return_value={}),
         ):
             await self.cog.on_message(message)
-        message.channel.typing.assert_not_called()
+        message.channel.typing.assert_called_once()
+        self.assertEqual(events, ["typing", "context", "model", "typing ended"])
         message.reply.assert_awaited_once()
         self.assertEqual(message.reply.await_args.args[0], "Synthetic answer")
         self.assertEqual(len(session.calls), 1)
@@ -113,7 +126,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(conversation.turns[-1].record.delivered_answer, "Synthetic posted answer")
         self.assertTrue(conversation.turns[-1].record.delivery_complete)
 
-    async def test_lookup_plan_starts_typing_after_first_round_and_keeps_it_through_delivery(self):
+    async def test_lookup_starts_typing_before_first_round_and_keeps_it_through_delivery(self):
         from features.agent.engine.test_agent_plan_flow import (
             _Model, _Session, _model_step, _plan, _step,
         )
@@ -160,18 +173,18 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         ):
             await self.cog.on_message(message)
         self.assertEqual(events, [
-            "model", "typing", "lookup", "model", "delivery", "typing ended",
+            "typing", "model", "lookup", "model", "delivery", "typing ended",
         ])
         message.channel.typing.assert_called_once()
 
-    async def test_reaction_plans_deliver_and_record_only_the_reply_needed(self):
+    async def test_reaction_plans_always_deliver_and_record_a_reply(self):
         from features.agent.engine.test_agent_plan_flow import (
             _Model, _Session, _model_step, _plan, _step,
         )
         from elbow_helper.features.agent.discord_actions.reactions import reaction_tools
         from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 
-        for mode in ("silent", "text", "failed", "partial", "mixed"):
+        for mode in ("needs_text", "text", "failed", "partial", "mixed", "empty"):
             with self.subTest(mode=mode):
                 self.setUp()
                 member = _Member(121, (next(iter(CORE)),))
@@ -206,9 +219,9 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 if mode == "text":
                     first = AgentStep("You're welcome.", first.tool_calls, AgentUsage())
                 rounds = [first]
-                fallback = mode in ("failed", "partial", "mixed")
+                fallback = mode != "text"
                 if fallback:
-                    rounds.append(AgentStep("Normal answer.", (), AgentUsage()))
+                    rounds.append(AgentStep("" if mode == "empty" else "Normal answer.", (), AgentUsage()))
                 session = _Session(rounds, [])
                 message.channel.typing = MagicMock(return_value=nullcontext())
                 self.cog.service = AgentService(_Model(session))
@@ -218,10 +231,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                           return_value=registry),
                 ):
                     await self.cog.on_message(message)
-                if mode == "mixed":
-                    message.channel.typing.assert_called_once()
-                else:
-                    message.channel.typing.assert_not_called()
+                message.channel.typing.assert_called_once()
                 self.assertEqual(len(session.calls), 2 if fallback else 1)
                 self.assertEqual(message.add_reaction.await_args_list[0].args, ("👍",))
                 self.assertEqual(message.add_reaction.await_count, 2 if mode == "partial" else 1)
@@ -229,17 +239,14 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 conversation = self.cog._conversations.get(message.id)
                 self.assertEqual(len(conversation.turns), 1)
                 answer = json.loads(conversation.turns[0].text)["answer"]
-                if mode == "silent":
-                    message.reply.assert_not_awaited()
-                    self.assertEqual(answer, "Reactions: 👍")
-                    self.assertTrue(conversation.turns[0].record.delivery_complete)
-                    self.assertEqual(conversation.turns[0].record.reply_ids, ())
-                else:
-                    message.reply.assert_awaited_once()
-                    expected = "You're welcome." if mode == "text" else "Normal answer."
-                    self.assertIn(expected, message.reply.await_args.args[0])
-                    self.assertIn(expected, answer)
-                    self.assertEqual("Reactions: 👍" in answer, mode != "failed")
+                message.reply.assert_awaited_once()
+                expected = ("You're welcome." if mode == "text" else
+                            AGENT_ANSWER_UNFINISHED if mode == "empty" else "Normal answer.")
+                self.assertIn(expected, message.reply.await_args.args[0])
+                self.assertIn(expected, answer)
+                self.assertEqual("Reactions: 👍" in answer, mode != "failed")
+                self.assertTrue(conversation.turns[0].record.delivery_complete)
+                self.assertEqual(conversation.turns[0].record.reply_ids, (1501,))
 
 
     async def test_mixed_answer_and_preview_share_delivery_and_records(self):

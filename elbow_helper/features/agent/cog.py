@@ -371,45 +371,34 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
         deadline_monotonic: float | None = None,
     ) -> None:
         member = require_access(message.guild, member.id, message.channel)
-        referenced = await self._resolve_referenced_message(message)
-        context, root_id = self._request_context(
-            message, member, referenced, conversation, deadline_monotonic,
-        )
-        await self._load_authorized_reports(conversation, context)
-        await self._check_sources(context)
-        if self.transcript_archive is not None:
-            try:
-                self.transcript_archive.enqueue_write(
-                    self.transcript_archive.record_request, message_id=message.id,
-                    guild_id=message.guild.id, channel_id=message.channel.id,
-                    root_message_id=root_id, member_id=member.id, created_at=message.created_at.isoformat(),
-                    content=message.content,
-                    replied_to_message_id=getattr(message.reference, "message_id", None),
-                )
-            except Exception:
-                LOGGER.exception("Agent transcript request enqueue failed: request=%s", message.id)
-        local_context = await self._build_local_context(message, referenced, conversation)
-        history = await self._conversation_history(conversation, context)
-
         reply_activity = AsyncExitStack()
-        typing_started = False
-
-        async def start_typing(plan):
-            nonlocal typing_started
-            if typing_started or all(
-                step["capability"] == "react_to_request" for step in plan["steps"]
-            ):
-                return
-            await reply_activity.enter_async_context(message.channel.typing())
-            typing_started = True
-
         try:
+            await reply_activity.enter_async_context(message.channel.typing())
+            referenced = await self._resolve_referenced_message(message)
+            context, root_id = self._request_context(
+                message, member, referenced, conversation, deadline_monotonic,
+            )
+            await self._load_authorized_reports(conversation, context)
+            await self._check_sources(context)
+            if self.transcript_archive is not None:
+                try:
+                    self.transcript_archive.enqueue_write(
+                        self.transcript_archive.record_request, message_id=message.id,
+                        guild_id=message.guild.id, channel_id=message.channel.id,
+                        root_message_id=root_id, member_id=member.id, created_at=message.created_at.isoformat(),
+                        content=message.content,
+                        replied_to_message_id=getattr(message.reference, "message_id", None),
+                    )
+                except Exception:
+                    LOGGER.exception("Agent transcript request enqueue failed: request=%s", message.id)
+            local_context = await self._build_local_context(message, referenced, conversation)
+            history = await self._conversation_history(conversation, context)
+
             response = await self.service.answer(
                 question=question,
                 local_context=local_context,
                 context=context,
                 conversation_history=history,
-                on_plan=start_typing,
             )
             require_access(message.guild, member.id, message.channel)
             await self._check_sources(context)
@@ -417,13 +406,11 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
             try:
                 if delivery.message_ids and not context.state.proposed_changes:
                     pass
-                elif response or context.state.gif_url or not context.state.reactions.emojis:
+                else:
                     await self.send_response(
                         message, response, referenced, context.state.attachments, conversation,
                         delivery=delivery, context=context,
                     )
-                else:
-                    delivery.complete = True
             finally:
                 await self._record_turn(
                     message, member, question, response, local_context,

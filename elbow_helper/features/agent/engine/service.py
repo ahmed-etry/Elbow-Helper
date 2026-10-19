@@ -7,8 +7,6 @@ import json
 from dataclasses import replace
 
 import asyncio
-from collections.abc import Awaitable, Callable, Mapping
-from typing import Any
 from datetime import datetime, timezone
 import time
 from elbow_helper.infrastructure.ai import AgentModel
@@ -243,14 +241,13 @@ class AgentService:
         local_context: str,
         context: AgentRequestContext,
         conversation_history: str = "",
-        on_plan: Callable[[Mapping[str, Any]], Awaitable[None]] | None = None,
     ) -> str:
         record = OperatorDebugRecord(question)
         context = replace(context, operator_debug=record)
         try:
             answer = await self._answer(
                 question=question, local_context=local_context, context=context,
-                conversation_history=conversation_history, on_plan=on_plan,
+                conversation_history=conversation_history,
             )
             record.answer = answer
             return answer
@@ -275,7 +272,6 @@ class AgentService:
         local_context: str,
         context: AgentRequestContext,
         conversation_history: str = "",
-        on_plan: Callable[[Mapping[str, Any]], Awaitable[None]] | None = None,
     ) -> str:
         from ..files.images import request_images
         context.state.request_text = question
@@ -297,7 +293,7 @@ class AgentService:
         rounder = flow.rounder
         runner = flow.runner
         try:
-            answer = await flow.run(on_plan=on_plan)
+            answer = await flow.run()
             status = "completed"
             return answer
         except AgentGracefulEnd as error:

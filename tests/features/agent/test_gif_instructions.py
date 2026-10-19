@@ -10,9 +10,8 @@ from elbow_helper.features.agent.plan.format import system_instructions
 class GifInstructionTests(unittest.TestCase):
     def test_approved_policy_is_present_once_without_link_pasting_instructions(self):
         policy = (
-            "This server talks in reactions and GIFs as much as words. "
-            "React instead of replying when a reaction says it: thanks, acknowledgements, "
-            "a joke landing, something hype. In banter, or when someone sends you a GIF, "
+            "React alongside a reply for thanks, acknowledgements, a joke landing or "
+            "something hype; never react without replying. In banter, or when someone sends you a GIF, "
             "a GIF can be the whole reply. Keep data, decisions and anything serious in words, "
             "and don't react or GIF on every message."
         )
