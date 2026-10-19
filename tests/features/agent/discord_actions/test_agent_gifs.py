@@ -41,7 +41,7 @@ class GifTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("find_gif", enabled)
         self.assertIn("never paste GIF links", enabled["find_gif"].definition.description)
         self.assertIn("alone or with a few words", enabled["find_gif"].definition.description)
-        self.assertIn("a GIF can be the whole reply", system_instructions(enabled))
+        self.assertIn("A fitting GIF can be the whole reply", system_instructions(enabled))
         context = SimpleNamespace(bot=SimpleNamespace(
             gif_client=SimpleNamespace(search_candidates=AsyncMock(return_value=[])),
         ))

@@ -63,6 +63,7 @@ class ModelRounds:
         self.final_attempted = False
         self.results_available = False
         self.lookup_route = False
+        self.social_route = False
         self.expand_context = None
         self.last_allow_tools = True
         self.budget_limited = False

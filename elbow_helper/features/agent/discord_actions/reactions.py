@@ -64,7 +64,7 @@ def reaction_tools():
         AgentToolDefinition(
             "react_to_request",
             (
-                "Add up to three Unicode or server reactions alongside your reply."
+                "Reply with up to three Unicode or server reactions, alone or with text or a GIF."
             ),
             {
                 "type": "object", "properties": {"emoji": {"type": "string"}},

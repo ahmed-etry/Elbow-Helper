@@ -168,7 +168,7 @@ class AnswerFlow:
             advance=self.rounder.advance,
             on_check=(self.context.operator_debug.checked
                       if self.context.operator_debug is not None else None),
-            reasoning_effort=(AgentReasoningEffort.LOW if self.rounder.lookup_route
+            reasoning_effort=(AgentReasoningEffort.LOW if self.rounder.lookup_route or self.rounder.social_route
                               else AgentReasoningEffort.HIGH),
         )
         if self.decision.answer is not None:
@@ -188,7 +188,7 @@ class AnswerFlow:
                                       and self.registry[step["capability"]].action_class is ActionClass.READ
                                       and self.registry[step["capability"]].effect is AgentCapabilityEffect.READ})
             self.rounder.results_available = bool(results)
-            if (self.context.state.gif_url or self.decision.rounds[-1].content) and sum(
+            if self.plan["steps"] and sum(
                 step["capability"] == "find_gif" for step in self.plan["steps"]
             ) <= 1 and all(
                 (step["capability"] == "react_to_request"

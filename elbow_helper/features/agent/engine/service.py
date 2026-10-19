@@ -28,6 +28,7 @@ from .usage import RequestUsage
 from .budgets import ContextBudget
 from .routing import (
     simple_lookup, LOOKUP_CAPABILITIES, LOOKUP_INSTRUCTION, EXPAND_DEFINITION,
+    social_candidate, SOCIAL_CAPABILITIES, SOCIAL_INSTRUCTION,
 )
 from ..reports.tools import filter_fields
 from ..plan.format import plan_definition, system_instructions
@@ -125,9 +126,10 @@ class AgentService:
             registry.update(command_tools)
         full_registry = dict(registry)
         lookup = simple_lookup(question) and not images
-        if lookup:
+        social = not lookup and social_candidate(question, context.source_message)
+        if lookup or social:
             registry = {name: tool for name, tool in registry.items()
-                        if name in LOOKUP_CAPABILITIES}
+                        if name in (SOCIAL_CAPABILITIES if social else LOOKUP_CAPABILITIES)}
 
         def research_instructions():
             levels = {
@@ -144,10 +146,11 @@ class AgentService:
             )
 
         definition = plan_definition(registry)
-        definitions = (definition, EXPAND_DEFINITION) if lookup else (definition,)
+        definitions = (definition, EXPAND_DEFINITION) if lookup or social else (definition,)
         system_prompt = (
             system_instructions(registry, actions_enabled=actions_available)
-            + "\n\n" + LOOKUP_INSTRUCTION if lookup else research_instructions()
+            + "\n\n" + (SOCIAL_INSTRUCTION if social else LOOKUP_INSTRUCTION)
+            if lookup or social else research_instructions()
         )
         context.state.request_text = question
         compiled = compile_context(
@@ -186,7 +189,7 @@ class AgentService:
             + estimate_tokens(request_prompt)
             - estimate_tokens(compiled.prompt),
             final_answer_reserve=limits.FINAL_MAX_OUTPUT_TOKENS,
-            request_limits=limits.LOOKUP_LIMITS if lookup else limits.RESEARCH_LIMITS,
+            request_limits=limits.LOOKUP_LIMITS if lookup or social else limits.RESEARCH_LIMITS,
         )
         usage = RequestUsage()
         request_id = getattr(context.source_message, "id", None)
@@ -198,7 +201,8 @@ class AgentService:
             request_id=request_id,
         )
         rounder.lookup_route = lookup
-        if lookup:
+        rounder.social_route = social
+        if lookup or social:
             def expand_context():
                 instructions = research_instructions()
                 registry.update(full_registry)
@@ -211,11 +215,13 @@ class AgentService:
                          for item in definitions))
                 budget.request_limits = limits.RESEARCH_LIMITS
                 rounder.lookup_route = False
+                rounder.social_route = False
                 LOGGER.info("Agent route expanded: request=%s rounds=%s", request_id, rounder.rounds)
                 return instructions
 
             rounder.expand_context = expand_context
-        LOGGER.info("Agent route: request=%s route=%s", request_id, "lookup" if lookup else "research")
+        LOGGER.info("Agent route: request=%s route=%s", request_id,
+                    "social" if social else "lookup" if lookup else "research")
 
         runner = PlanRunner(
             service=self,

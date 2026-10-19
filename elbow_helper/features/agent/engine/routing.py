@@ -30,6 +30,33 @@ LOOKUP_CAPABILITIES = frozenset({
     "list_supported_attachments", "import_text_attachment",
 })
 
+SOCIAL_CAPABILITIES = frozenset({"react_to_request", "find_gif"})
+SOCIAL_INSTRUCTION = (
+    "This is the short social reply route. For a social image, sticker, GIF or "
+    "one-liner, default to a low-effort plan with react_to_request and/or find_gif; "
+    "text is optional and at most one short line. Choose the reaction or GIF for "
+    "the actual exchange, not just the media type. If this is a factual request, "
+    "correction or serious help, answer appropriately without a social response. "
+    "Call load_research_context alone with {} before any lookup or other work; "
+    "it loads the full capabilities and context."
+)
+
+
+def social_candidate(question, message):
+    """Select a cheap starting route, not the meaning or tone of the reply."""
+    from ..files.gif_media import has_image_content
+
+    text = re.sub(r"<@!?\d+>", "", getattr(message, "content", "") or question).strip()
+    if len(text) > 300 or simple_lookup(text):
+        return False
+    if has_image_content(message):
+        return True
+    return bool(re.fullmatch(
+        r"(?:hi|hey|hello|yo|thanks(?: a lot)?|thank you|cheers|lol|lmao|lmfao|"
+        r"haha(?:ha)*|nice|gg|well played|my man|you legend|bruh|fair enough|"
+        r"roast me|good bot|bad bot)[.! ,\U0001f300-\U0001faff]*", text, re.IGNORECASE,
+    ))
+
 
 def simple_lookup(question: str) -> bool:
     """Conservatively select short factual requests; uncertain tasks use research.

@@ -35,7 +35,7 @@ def gif_embed(embed):
 def has_image_content(message):
     from .images import EXTENSIONS, MIME_TYPES
     from pathlib import PurePosixPath
-    return bool(gif_links(message) or any(
+    return bool(getattr(message, "stickers", ()) or gif_links(message) or any(
         getattr(item, "content_type", None) in MIME_TYPES
         or PurePosixPath(item.filename).suffix.lower() in EXTENSIONS
         for item in getattr(message, "attachments", ())
