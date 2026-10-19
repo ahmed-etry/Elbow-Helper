@@ -105,10 +105,12 @@ class StrictFlowTests(unittest.IsolatedAsyncioTestCase):
                                    ("count only", "2")):
             with self.subTest(question=question):
                 payload = query([{"count": 2}]) if question == "count only" else players()
-                registry = {"read_value": RegisteredAgentTool(AgentToolDefinition(
-                    "read_value", "Read synthetic values.", {"type": "object", "properties": {}}),
+                registry = {"read_clash": RegisteredAgentTool(AgentToolDefinition(
+                    "read_clash", "Read synthetic values.", {"type": "object", "properties": {}}),
                     AsyncMock(return_value=payload))}
-                session = _Session([_model_step(_plan([_step("read")]))], [])
+                session = _Session([_model_step(_plan([
+                    {**_step("read"), "capability": "read_clash"},
+                ]))], [])
                 with patch("elbow_helper.features.agent.engine.service.build_agent_tools", return_value=registry):
                     answer = await AgentService(_Model(session)).answer(
                         question=question, context=_context(), local_context="")

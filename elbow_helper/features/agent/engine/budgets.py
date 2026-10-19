@@ -1,5 +1,4 @@
-(('Model-context headroom across one '
-            'tool-assisted request, not a money quota.'))
+"""Context headroom and cumulative request spending, including recovery rounds."""
 
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 
@@ -11,12 +10,51 @@ from elbow_helper.infrastructure.ai import AgentToolResult, AgentUsage
 from ..conversation.context import estimate_tokens
 
 
+@dataclass(frozen=True, slots=True)
+class RequestLimits:
+    rounds: int
+    input_tokens: int
+    output_tokens: int
+    round_output_tokens: int
+
+
+LOOKUP_LIMITS = RequestLimits(4, 80_000, 12_000, 4_096)
+RESEARCH_LIMITS = RequestLimits(20, 600_000, 128_000, 64_000)
+REQUEST_FINAL_RESERVE = 2_048
+
+
 @dataclass(slots=True)
 class ContextBudget:
     context_window_tokens: int | None
     output_reserve: int
     next_input_estimate: int
     final_answer_reserve: int | None = None
+    request_limits: RequestLimits | None = None
+    spent_input: int = 0
+    spent_output: int = 0
+    spent_rounds: int = 0
+
+    def request_output_limit(self, projected_input: int, *, allow_tools: bool) -> int:
+        policy = self.request_limits
+        if policy is None:
+            return AGENT_MAX_OUTPUT_TOKENS
+        if (self.spent_rounds >= policy.rounds
+                or self.spent_input + projected_input > policy.input_tokens):
+            return 0
+        return max(0, min(
+            policy.round_output_tokens,
+            policy.output_tokens - self.spent_output
+            - (REQUEST_FINAL_RESERVE if allow_tools else 0),
+        ))
+
+    def request_can_research(self, projected_input: int) -> bool:
+        policy = self.request_limits
+        return policy is None or (
+            self.spent_rounds < policy.rounds - 1
+            and self.spent_input + 2 * projected_input + 8192 <= policy.input_tokens
+            and policy.output_tokens - self.spent_output
+            >= REQUEST_FINAL_RESERVE + MIN_FINAL_OUTPUT_TOKENS
+        )
 
     @property
     def final_reserve(self) -> int:
@@ -38,7 +76,13 @@ class ContextBudget:
 
     def can_continue_tools(self, projected_input: int, *, result_reserve: int) -> bool:
         # Reserve this round, one bounded result, then a final answer.
-        return (
+        policy = self.request_limits
+        request_room = policy is None or (
+            self.spent_rounds < policy.rounds
+            and self.spent_input + projected_input + result_reserve <= policy.input_tokens
+            and policy.output_tokens - self.spent_output >= REQUEST_FINAL_RESERVE
+        )
+        return request_room and (
             self.context_window_tokens is None
             or projected_input + self.output_reserve + self.final_reserve + result_reserve
             <= self.context_window_tokens
@@ -51,6 +95,9 @@ class ContextBudget:
         completion = (
             usage.completion_tokens if usage.completion_tokens is not None else self.output_reserve
         )
+        self.spent_rounds += 1
+        self.spent_input += prompt
+        self.spent_output += completion
         self.next_input_estimate = prompt + completion + 128
 
     def result_character_limit(

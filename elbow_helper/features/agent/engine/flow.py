@@ -88,6 +88,9 @@ class AnswerFlow:
                 raise
             answer = await self._limit_reply(error)
         answer = await self._grounded_reply(answer)
+        if (self.rounder.budget_limited and not self.context.state.reply_delivery.posts
+                and AGENT_RESEARCH_UNFINISHED not in answer):
+            answer = "\n\n".join(filter(None, (answer, AGENT_RESEARCH_UNFINISHED)))
         if self.append_commands and not self.context.state.reply_delivery.posts:
             answer = "\n\n".join(filter(None, (answer, command_reply(self.context.state.outcomes))))
         return answer
@@ -167,6 +170,8 @@ class AnswerFlow:
             advance=self.rounder.advance,
             on_check=(self.context.operator_debug.checked
                       if self.context.operator_debug is not None else None),
+            reasoning_effort=(AgentReasoningEffort.LOW if self.rounder.lookup_route
+                              else AgentReasoningEffort.HIGH),
         )
         if self.decision.answer is not None:
             await require_evidence_access(self.context)
@@ -313,6 +318,15 @@ class AnswerFlow:
                 return narrow_answer(state.request_text, state.grounding_evidence)
         except GroundingError:
             return GROUNDING_UNAVAILABLE
+        if self.rounder.lookup_route:
+            self._model_results(self.read_results)
+            try:
+                # The same validated formatter runs at final delivery. Reuse it
+                # here when it already has the answer instead of buying synthesis.
+                return narrow_answer(state.request_text, state.grounding_evidence)
+            except GroundingError:
+                # Missing or ambiguous evidence may still need another read.
+                pass
         return None
 
     async def _feedback_reply(self, results, instruction, **details) -> str:

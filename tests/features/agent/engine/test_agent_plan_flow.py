@@ -395,6 +395,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_small_remaining_context_still_answers_from_checked_results(self):
         session = _Session([_model_step(_plan([_step("first")])),
                             AgentStep("Checked seven.", (), AgentUsage())], self.events)
+        session.context_window_tokens = 100_000
         projected = ContextBudget.projected_input
         def pressure(budget, results):
             if results:
@@ -529,6 +530,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
             _model_step(second_revision),
             AgentStep("Synthetic request complete.", (), AgentUsage()),
         ], self.events)
+        session.steps = [replace(step, usage=AgentUsage(4000, 100)) for step in session.steps]
         answer, _ = await self._answer(session)
         self.assertEqual(answer, "Synthetic request complete.")
         self.assertEqual(self.events.count("read"), 3)
@@ -618,6 +620,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                  for n in range(6)]
         session = _Session([*[_model_step(plan) for plan in plans],
                             AgentStep("Checked six periods.", (), AgentUsage())], self.events)
+        session.steps = [replace(step, usage=AgentUsage(4000, 100)) for step in session.steps]
         with patch_contracts(self.registry, {
             "read_value": CapabilityContract(())
         }):
@@ -940,12 +943,13 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_research_can_continue_past_old_round_limit(self):
         plans = [_plan([_step(str(value), {"value": value})]) for value in range(1, 13)]
         session = _Session([*map(_model_step, plans), AgentStep("Ready.", (), AgentUsage())], self.events)
+        session.steps = [replace(step, usage=AgentUsage(4000, 100)) for step in session.steps]
         await self._answer(session)
         self.assertEqual(self.events.count("read"), 12)
         self.assertEqual(len(session.calls), 13)
 
     async def test_future_unused_evidence_does_not_prevent_next_lookup(self):
-        step = replace(_model_step(_plan([_step("first")])), usage=AgentUsage(350_000, 1000))
+        step = replace(_model_step(_plan([_step("first")])), usage=AgentUsage(150_000, 1000))
         session = _Session([step, AgentStep("Ready.", (), AgentUsage())], self.events)
         await self._answer(session)
         self.assertEqual(self.events.count("read"), 1)

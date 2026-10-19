@@ -9,7 +9,7 @@ from dataclasses import asdict, replace
 import json
 import time
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
-from elbow_helper.infrastructure.ai import AgentToolResult
+from elbow_helper.infrastructure.ai import AgentToolResult, AgentUsage
 from ..access import AgentAccessLost, require_evidence_access
 from ..conversation.context import estimate_tokens
 from ..wording import AGENT_ANSWER_UNFINISHED, AGENT_RESEARCH_UNFINISHED
@@ -18,12 +18,14 @@ from .tool_call import discard_unpublished_results
 from ..models import AgentRequestContext
 from .budgets import ContextBudget
 from .usage import RequestUsage
+from .routing import EXPAND_CONTEXT
 from elbow_helper.infrastructure.ai.agent import AgentSession
 from ..prompts import (
     REPEAT_TOOL_CALL_INSTRUCTION,
     CONTINUE_ANSWER_INSTRUCTION,
     AUTHORIZED_CONTEXT_INSTRUCTION,
     INCOMPLETE_PLAN_INSTRUCTION,
+    LIMIT_ANSWER_INSTRUCTION,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -60,8 +62,35 @@ class ModelRounds:
         self.pending_calls = ()
         self.final_attempted = False
         self.results_available = False
+        self.lookup_route = False
+        self.expand_context = None
+        self.last_allow_tools = True
+        self.budget_limited = False
 
-    async def advance(
+    async def advance(self, results=(), **kwargs):
+        step = await self._advance(results, **kwargs)
+        if step.tool_calls and not self.last_allow_tools and self.budget_limited:
+            raise AgentLimitReached(AGENT_RESEARCH_UNFINISHED)
+        if (len(step.tool_calls) == 1
+                and step.tool_calls[0].name == EXPAND_CONTEXT
+                and self.expand_context is not None
+                and self.last_allow_tools):
+            call = step.tool_calls[0]
+            try:
+                valid = json.loads(call.arguments) == {}
+            except (TypeError, ValueError):
+                valid = False
+            if valid:
+                await require_evidence_access(self.context)
+                instructions = self.expand_context()
+                self.expand_context = None
+                return await self.advance(
+                    (AgentToolResult(call.call_id, instructions),),
+                    **{**kwargs, "reasoning_effort": AgentReasoningEffort.HIGH},
+                )
+        return step
+
+    async def _advance(
         self,
         results=(),
         *,
@@ -98,12 +127,26 @@ class ModelRounds:
         projected = self.budget.projected_input(results) + estimate_tokens(
             continuation_instruction or ""
         )
+        if allow_tools and not self.budget.request_can_research(projected):
+            allow_tools = False
+            self.budget_limited = True
+            continuation_instruction = "\n".join(filter(None, (
+                continuation_instruction, LIMIT_ANSWER_INSTRUCTION,
+            )))
+            projected += estimate_tokens(LIMIT_ANSWER_INSTRUCTION)
+        self.last_allow_tools = allow_tools
+        request_output = self.budget.request_output_limit(
+            projected, allow_tools=allow_tools,
+        )
+        max_output_tokens = min(max_output_tokens, request_output)
         remaining = (
             max_output_tokens
             if self.budget.context_window_tokens is None
             else min(max_output_tokens, self.budget.context_window_tokens - projected)
         )
         if remaining < (1 if final else limits.MIN_FINAL_OUTPUT_TOKENS):
+            if request_output < (1 if final else limits.MIN_FINAL_OUTPUT_TOKENS):
+                self.budget_limited = True
             raise AgentLimitReached(AGENT_RESEARCH_UNFINISHED)
         if final:
             if self.final_attempted:
@@ -119,6 +162,7 @@ class ModelRounds:
         model_step = None
         round_elapsed_ms = None
         outcome = "failed"
+        observed = False
         try:
             self.pending_results = self.pending_calls = ()
             async with asyncio.timeout_at(self.context.deadline_monotonic):
@@ -140,6 +184,7 @@ class ModelRounds:
             self.pending_calls = model_step.tool_calls
             self.usage.observe(model_step.usage)
             self.budget.observe(model_step.usage, projected_input=projected)
+            observed = True
             outcome = "completed"
             LOGGER.info(
                 ("Agent model response: request=%s round=%s "
@@ -200,6 +245,9 @@ class ModelRounds:
                 )
             return model_step
         finally:
+            if not observed:
+                # A failed or cancelled attempt may still be billed by the provider.
+                self.budget.observe(AgentUsage(), projected_input=projected)
             debug = getattr(self.context, "operator_debug", None)
             if debug is not None:
                 debug.rounds.append({

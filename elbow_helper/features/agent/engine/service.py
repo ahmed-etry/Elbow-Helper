@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import json
 from dataclasses import replace
 
 import asyncio
@@ -26,6 +27,9 @@ from ..conversation.context import compile_context, estimate_tokens
 from .registry import build_agent_tools
 from .usage import RequestUsage
 from .budgets import ContextBudget
+from .routing import (
+    simple_lookup, LOOKUP_CAPABILITIES, LOOKUP_INSTRUCTION, EXPAND_DEFINITION,
+)
 from ..reports.tools import filter_fields
 from ..plan.format import plan_definition, system_instructions
 from ..plan.planning import PlanNotSettled
@@ -120,27 +124,38 @@ class AgentService:
                 enabled_adapters(),
             )
             registry.update(command_tools)
+        full_registry = dict(registry)
+        lookup = simple_lookup(question) and not images
+        if lookup:
+            registry = {name: tool for name, tool in registry.items()
+                        if name in LOOKUP_CAPABILITIES}
+
+        def research_instructions():
+            levels = {
+                level for level in KNOWN_ACCESS_REQUIREMENTS
+                if has_access_requirements(context.guild, context.member.id, {level})
+            }
+            knowledge = context.knowledge_store.load().prompt(levels) if context.knowledge_store else None
+            if knowledge:
+                context.state.required_access.update(knowledge.required_access)
+            return system_instructions(
+                full_registry, actions_enabled=actions_available,
+                data_guide=self._data_guide.for_levels(levels) if self._data_guide else "",
+                community_knowledge=knowledge.text if knowledge else "",
+            )
+
         definition = plan_definition(registry)
-        guide = self._data_guide
-        levels = {
-            level for level in KNOWN_ACCESS_REQUIREMENTS
-            if has_access_requirements(context.guild, context.member.id, {level})
-        }
-        knowledge = context.knowledge_store.load().prompt(levels) if context.knowledge_store else None
-        if knowledge:
-            context.state.required_access.update(knowledge.required_access)
-        system_prompt = system_instructions(
-            registry,
-            actions_enabled=actions_available,
-            data_guide=guide.for_levels(levels) if guide else "",
-            community_knowledge=knowledge.text if knowledge else "",
+        definitions = (definition, EXPAND_DEFINITION) if lookup else (definition,)
+        system_prompt = (
+            system_instructions(registry, actions_enabled=actions_available)
+            + "\n\n" + LOOKUP_INSTRUCTION if lookup else research_instructions()
         )
         context.state.request_text = question
         compiled = compile_context(
             question=question,
             local_context=local_context,
             context=context,
-            tools=(definition,),
+            tools=definitions,
             conversation_history=conversation_history,
             report_filter_fields=filter_fields(registry),
             system_prompt=system_prompt,
@@ -157,7 +172,7 @@ class AgentService:
         session = self._model.create_agent_session(
             system_prompt=system_prompt,
             prompt=request_prompt,
-            tools=(definition,),
+            tools=definitions,
             max_output_tokens=limits.AGENT_MAX_OUTPUT_TOKENS,
             **({"images": images} if images else {}),
         )
@@ -170,6 +185,7 @@ class AgentService:
             + estimate_tokens(request_prompt)
             - estimate_tokens(compiled.prompt),
             final_answer_reserve=limits.FINAL_MAX_OUTPUT_TOKENS,
+            request_limits=limits.LOOKUP_LIMITS if lookup else limits.RESEARCH_LIMITS,
         )
         usage = RequestUsage()
         request_id = getattr(context.source_message, "id", None)
@@ -180,6 +196,25 @@ class AgentService:
             session=session,
             request_id=request_id,
         )
+        rounder.lookup_route = lookup
+        if lookup:
+            def expand_context():
+                instructions = research_instructions()
+                registry.update(full_registry)
+                expanded = plan_definition(registry)
+                session.replace_tools((expanded,))
+                # The provider resends the larger definition on subsequent rounds.
+                budget.next_input_estimate += max(0, estimate_tokens(json.dumps(
+                    expanded.parameters, ensure_ascii=False,
+                )) - sum(estimate_tokens(json.dumps(item.parameters, ensure_ascii=False))
+                         for item in definitions))
+                budget.request_limits = limits.RESEARCH_LIMITS
+                rounder.lookup_route = False
+                LOGGER.info("Agent route expanded: request=%s rounds=%s", request_id, rounder.rounds)
+                return instructions
+
+            rounder.expand_context = expand_context
+        LOGGER.info("Agent route: request=%s route=%s", request_id, "lookup" if lookup else "research")
 
         runner = PlanRunner(
             service=self,

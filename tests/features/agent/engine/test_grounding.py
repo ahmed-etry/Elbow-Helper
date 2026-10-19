@@ -128,7 +128,7 @@ class GroundingFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_limit_reply_cannot_bypass_guard(self):
         context = _context()
         flow = AnswerFlow(context=context, session=None, registry={}, budget=None,
-                          rounder=SimpleNamespace(advance=AsyncMock(return_value=AgentStep(
+                          rounder=SimpleNamespace(budget_limited=False, advance=AsyncMock(return_value=AgentStep(
                               "Member Alpha wants removal.", (), AgentUsage()))),
                           runner=None, request_id=1)
         flow.completed_results = {"read": {"value": 1}}

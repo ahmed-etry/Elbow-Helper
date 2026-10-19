@@ -42,12 +42,13 @@ async def read_request(
     validate_plan: Callable[[Mapping[str, Any]], str] | None = None,
     advance: Callable[..., Awaitable[Any]] | None = None,
     on_check: Callable[[str, PlanCheck], None] | None = None,
+    reasoning_effort: AgentReasoningEffort = AgentReasoningEffort.HIGH,
 ) -> ReadDecision:
     rounds = []
     pending: tuple[AgentToolResult, ...] = ()
     for attempt in range(2):
         step = await (advance or session.advance)(
-            pending, reasoning_effort=AgentReasoningEffort.HIGH,
+            pending, reasoning_effort=reasoning_effort,
             max_output_tokens=INITIAL_MAX_OUTPUT_TOKENS,
         )
         rounds.append(step)
