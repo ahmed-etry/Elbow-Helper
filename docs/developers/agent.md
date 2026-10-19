@@ -81,8 +81,22 @@ read. Short sections marked `always_loaded` are included in research requests.
 The topic list includes public titles and filenames; members can search
 restricted sections when their roles allow it.
 
-`search_approved_knowledge` searches words, opens exact titles, and continues
-long sections. Follow its continuation fields when the full text is needed.
+Use `titles` to open a clearly matching topic from the index first. Use a word
+search when no title clearly matches. `search_approved_knowledge` defaults to
+`scope="channel"`: it returns only sections the requester and everyone in the
+destination channel may read, using the same audience checks as answer delivery.
+If the question needs restricted knowledge, such as leadership processes or
+policies, explicitly select `scope="requester"`. This still checks the requester's
+roles. Every returned restriction stays with the turn, even if the answer does
+not quote that section; delivery then uses the existing private-answer controls
+when the channel cannot read it. Keep the chosen scope when following page and
+section continuation fields.
+
+For a private answer, check the `Agent audience decision` log for the request ID.
+`failed_requirement` names the rejected access group or source permission;
+`reader_kind` distinguishes a role group, a bot, or an unknown member, without
+member names. An incomplete-cache reason means the requirement could not be
+proved from channel permissions, rather than identifying an unauthorized person.
 See [Agent knowledge files](../operators/agent-knowledge.md) for editing and
 reload instructions.
 
