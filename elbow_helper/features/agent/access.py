@@ -8,7 +8,7 @@ from functools import wraps
 import discord
 
 from elbow_helper.configuration.roles import (
-    AGENT_TESTER_ROLE_ID, CORE, CWL_HELPERS, LEAD, LEAD_PLUS, RECRUITERS,
+    AGENT_TESTER_ROLE_ID, CORE, CWL_HELPERS, EXAMINERS, LEAD, LEAD_PLUS, RECRUITERS,
 )
 
 from .models import AgentRequestContext
@@ -36,12 +36,18 @@ def require_lookup_access(context, requirements):
 ACCESS_LEAD = "lead"
 ACCESS_LEAD_PLUS = "lead_plus"
 ACCESS_CORE = "core"
+ACCESS_RECRUITER = "recruiter"
+ACCESS_CWL_HELPER = "cwl_helper"
+ACCESS_EXAMINER = "examiner"
 ACCESS_RECRUITER_OR_CORE = "recruiter_or_core"
 ACCESS_LEAD_PLUS_OR_CWL_HELPER = "lead_plus_or_cwl_helper"
 ACCESS_ROLE_SETS = {
     ACCESS_LEAD: LEAD,
     ACCESS_LEAD_PLUS: LEAD_PLUS,
     ACCESS_CORE: CORE,
+    ACCESS_RECRUITER: RECRUITERS | LEAD_PLUS,
+    ACCESS_CWL_HELPER: CWL_HELPERS | LEAD_PLUS,
+    ACCESS_EXAMINER: EXAMINERS | LEAD_PLUS,
     ACCESS_RECRUITER_OR_CORE: RECRUITERS | CORE,
     ACCESS_LEAD_PLUS_OR_CWL_HELPER: LEAD_PLUS | CWL_HELPERS,
 }

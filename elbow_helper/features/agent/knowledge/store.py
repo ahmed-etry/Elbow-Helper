@@ -14,7 +14,7 @@ from ..conversation.context import estimate_tokens
 
 
 LOGGER = logging.getLogger(__name__)
-VISIBILITIES = frozenset({"public", "lead", "lead_plus", "core"})
+VISIBILITIES = frozenset({"public", "lead", "lead_plus", "core", "recruiter", "cwl_helper", "examiner"})
 STATUSES = frozenset({"approved", "draft", "retired"})
 TOPIC_INDEX_TOKEN_LIMIT = 14_000
 

@@ -7,7 +7,9 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID, CORE, LEAD, LEAD_PLUS
+from elbow_helper.configuration.roles import (
+    AGENT_TESTER_ROLE_ID, CORE, CWL_HELPERS, EXAMINERS, LEAD, LEAD_PLUS, RECRUITERS,
+)
 from elbow_helper.features.agent.access import AgentAccessLost, LookupAccessDenied
 from elbow_helper.features.agent.knowledge.store import KnowledgeStore
 from elbow_helper.features.agent.knowledge.tools import knowledge_tools, search_approved_knowledge
@@ -65,10 +67,10 @@ class KnowledgeToolTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_hidden_titles_are_indistinguishable_from_unknown_titles(self):
         self.write("public.md", "# Shared title\nPublic body")
-        for level in ("lead", "lead_plus", "core"):
+        for level in ("lead", "lead_plus", "core", "recruiter", "cwl_helper", "examiner"):
             self.write(level + ".md", f'+++\nvisibility="{level}"\n+++\n'
                        f'# Hidden {level}\nRestricted body\n# Shared title\nRestricted duplicate')
-        for level in ("lead", "lead_plus", "core"):
+        for level in ("lead", "lead_plus", "core", "recruiter", "cwl_helper", "examiner"):
             hidden = await search_approved_knowledge(self.context, {"titles": [f"Hidden {level}"]})
             unknown = await search_approved_knowledge(self.context, {"titles": ["Unknown"]})
             self.assertEqual(hidden, unknown)
@@ -79,7 +81,8 @@ class KnowledgeToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.context.state.required_access, set())
 
     async def test_titles_retain_each_visibility_and_recheck_access(self):
-        roles = {"lead": LEAD, "lead_plus": LEAD_PLUS, "core": CORE}
+        roles = {"lead": LEAD, "lead_plus": LEAD_PLUS, "core": CORE,
+                 "recruiter": RECRUITERS, "cwl_helper": CWL_HELPERS, "examiner": EXAMINERS}
         for level, role_ids in roles.items():
             with self.subTest(level=level):
                 self.write(level + ".md", f'+++\nvisibility="{level}"\n+++\n# {level} topic\nBody')
@@ -98,20 +101,24 @@ class KnowledgeToolTests(unittest.IsolatedAsyncioTestCase):
                     await search_approved_knowledge(self.context, {"titles": ["Unknown"]})
 
     async def test_access_loss_during_title_selection_is_rechecked(self):
-        self.write("private.md", '+++\nvisibility="lead"\n+++\n# Restricted\nBody')
-        self.member.roles.append(SimpleNamespace(id=next(iter(LEAD))))
-        catalog = self.store.load()
-        visible_sections = type(catalog).visible_sections
+        for level, roles in (("lead", LEAD), ("recruiter", RECRUITERS),
+                             ("cwl_helper", CWL_HELPERS), ("examiner", EXAMINERS)):
+            with self.subTest(level=level):
+                self.write("private.md", f'+++\nvisibility="{level}"\n+++\n# Restricted\nBody')
+                self.context.knowledge_store = KnowledgeStore(self.path)
+                self.member.roles.append(SimpleNamespace(id=next(iter(roles))))
+                catalog = self.context.knowledge_store.load()
+                visible_sections = type(catalog).visible_sections
 
-        def lose_access(catalog, levels):
-            visible = visible_sections(catalog, levels)
-            self.member.roles.pop()
-            return visible
+                def lose_access(catalog, levels):
+                    visible = visible_sections(catalog, levels)
+                    self.member.roles.pop()
+                    return visible
 
-        with patch.object(type(catalog), "visible_sections", lose_access):
-            with self.assertRaises(LookupAccessDenied):
-                await search_approved_knowledge(self.context, {"titles": ["Restricted"]})
-        self.assertEqual(self.context.state.required_access, set())
+                with patch.object(type(catalog), "visible_sections", lose_access):
+                    with self.assertRaises(LookupAccessDenied):
+                        await search_approved_knowledge(self.context, {"titles": ["Restricted"]})
+                self.assertEqual(self.context.state.required_access, set())
 
     async def test_title_body_bounds_and_query_compatibility(self):
         self.write("topics.md", "# Large\n" + "x" * 5000 + "\n# Searchable\nGeneric body")

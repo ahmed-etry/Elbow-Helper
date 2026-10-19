@@ -23,15 +23,24 @@ The settings apply to the whole file:
 
 | Field | Values | Default |
 |---|---|---|
-| `visibility` | `public`, `lead`, `lead_plus`, `core` | `public` |
+| `visibility` | `public`, `lead`, `lead_plus`, `core`, `recruiter`, `cwl_helper`, `examiner` | `public` |
 | `status` | `approved`, `draft`, `retired` | `approved` |
 | `always_loaded` | `true` or `false`, without quotes | `false` |
 
-`public` lets anyone who can use the agent read the material. `lead` allows
-Lead, `lead_plus` allows Lead Plus, and `core` allows Core leadership. Each
-requires a role in that [access group](../reference/commands-and-permissions.md#access-groups).
-Core leadership members need a Lead or Lead Plus role to read files for those
-groups.
+Each visibility requires a role in the listed
+[access group](../reference/commands-and-permissions.md#access-groups):
+
+| Visibility | Who can read it |
+|---|---|
+| `public` | Anyone who can use the agent |
+| `lead` | Lead (Co-Leaders and Cross-Leaders) |
+| `lead_plus` | Lead Plus (Lead and Co-Leader Applicants) |
+| `core` | Core leadership |
+| `recruiter` | Recruiters or Lead Plus |
+| `cwl_helper` | CWL helpers or Lead Plus |
+| `examiner` | Examiners or Lead Plus |
+
+Members with several roles can read material for each matching group.
 
 Files without settings are approved and public as soon as they load. Use
 `status = "draft"` while editing new material. Only `+++` settings control
