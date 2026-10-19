@@ -15,6 +15,7 @@ from elbow_helper.features.agent.engine.rounds import AgentLimitReached
 from elbow_helper.features.agent.engine.routing import EXPAND_CONTEXT, simple_lookup
 from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.features.agent.models import AgentCapabilityEffect, RegisteredAgentTool
+from elbow_helper.features.agent.knowledge.store import KnowledgePrompt
 from elbow_helper.features.agent.wording import AGENT_RESEARCH_UNFINISHED
 from features.agent.engine.test_agent_plan_flow import _context, _Session, _Model, _model_step, _plan, _step
 
@@ -77,8 +78,8 @@ class RequestCostTests(unittest.IsolatedAsyncioTestCase):
         guide = Mock()
         guide.for_levels.return_value = "Synthetic data schema"
         knowledge = Mock()
-        knowledge.load.return_value.prompt.return_value = SimpleNamespace(
-            text="Synthetic community knowledge", required_access=set(),
+        knowledge.load.return_value.prompt.return_value = KnowledgePrompt(
+            "Synthetic community knowledge", frozenset(), 0,
         )
         context = replace(_context(), knowledge_store=knowledge)
         tool = RegisteredAgentTool(AgentToolDefinition(
@@ -115,8 +116,8 @@ class RequestCostTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_expanded_knowledge_access_is_rechecked_before_generation(self):
         knowledge = Mock()
-        knowledge.load.return_value.prompt.return_value = SimpleNamespace(
-            text="Restricted evidence", required_access={"lead"},
+        knowledge.load.return_value.prompt.return_value = KnowledgePrompt(
+            "Restricted evidence", frozenset({"lead"}), 0,
         )
         context = replace(_context(), knowledge_store=knowledge)
         expand = response("", (AgentToolCall("expand", EXPAND_CONTEXT, "{}"),))

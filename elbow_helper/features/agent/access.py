@@ -182,7 +182,8 @@ async def require_evidence_access(context: AgentRequestContext) -> dict[int, Any
     """Fail closed before reusing evidence whose sources became inaccessible."""
     require_access(context.guild, context.member.id, context.source_message.channel)
     require_access_requirements(
-        context.guild, context.member.id, context.state.required_access,
+        context.guild, context.member.id,
+        context.state.required_access | context.state.knowledge_title_access,
     )
     sources = {}
     for channel_id in tuple(context.state.source_channels):

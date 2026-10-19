@@ -76,21 +76,31 @@ troubleshooting records are kept.
 
 ## Community knowledge
 
-`KnowledgeStore` supplies approved reference sections that the member can
-read. Short sections marked `always_loaded` are included in research requests.
-The topic list includes public titles and filenames; members can search
-restricted sections when their roles allow it.
+`KnowledgeStore` supplies approved reference sections that the asker can
+read. Research requests load short `always_loaded` sections only when the
+channel audience may read them. The topic list contains public titles and
+filenames.
 
-Use `titles` to open a clearly matching topic from the index first. Use a word
-search when no title clearly matches. `search_approved_knowledge` defaults to
-`scope="channel"`: it returns only sections the requester and everyone in the
-destination channel may read, using the same audience checks as answer delivery.
-If the question needs restricted knowledge, such as leadership processes or
-policies, explicitly select `scope="requester"`. This still checks the requester's
-roles. Every returned restriction stays with the turn, even if the answer does
-not quote that section; delivery then uses the existing private-answer controls
-when the channel cannot read it. Keep the chosen scope when following page and
-section continuation fields.
+Use `titles` to open a clearly matching topic from the index, or a word search
+when no title clearly matches. Searches cover the asker's access groups.
+The first answer pass receives channel-readable bodies and only a title plus
+an `available_privately` note for other matches. Sections outside the asker's
+access are absent, including their titles. Legacy `scope` arguments do not
+release private bodies.
+
+When the channel-readable material suffices, the answer stays public. If the
+model returns exactly `{"needs_restricted_knowledge":true}`, or the search
+results contain only private matches, one additional answer pass receives the
+withheld bodies. That pass cannot run tools and its answer starts in the existing
+private-answer flow, even if an earlier answer was posted publicly. Access is
+rechecked before using bodies or titles. Retained evidence keeps the title
+restrictions too, so later requests cannot discover them through history.
+Delivery also keeps a reply private if it repeats a withheld title. Generated
+artifacts and change details retain the title restrictions.
+
+The private pass receives complete matched sections within the existing
+evidence limits. If they do not fit, the request stops with the existing
+shorter-request response rather than answering from clipped sections.
 
 For a private answer, check the `Agent audience decision` log for the request ID.
 `failed_requirement` names the rejected access group or source permission;

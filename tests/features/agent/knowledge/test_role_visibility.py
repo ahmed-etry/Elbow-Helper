@@ -16,7 +16,7 @@ from elbow_helper.features.agent.access import AgentAccessLost, require_evidence
 from elbow_helper.features.agent.disclosure import can_show
 from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.features.agent.knowledge.store import KnowledgeStore, VISIBILITIES
-from elbow_helper.features.agent.knowledge.tools import _section_id, search_approved_knowledge
+from elbow_helper.features.agent.knowledge.tools import _section_id, channel_knowledge_access, search_approved_knowledge
 from elbow_helper.features.agent.models import AgentRequestContext, AgentTurnState
 
 
@@ -143,6 +143,7 @@ class RoleVisibilityTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.subTest(expected=expected):
                 self.set_roles(identifiers)
+                self.context.state.knowledge_channel_access = await channel_knowledge_access(self.context)
                 service._start_flow(question="Explain community processes", local_context="",
                                     context=self.context, conversation_history="")
                 prompt = model.create_agent_session.call_args.kwargs["system_prompt"]

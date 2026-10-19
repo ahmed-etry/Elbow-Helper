@@ -12,6 +12,8 @@ import time
 from elbow_helper.infrastructure.ai import AgentModel
 from elbow_helper.infrastructure.ai import TextGenerationError
 from ..models import AgentRequestContext
+from ..knowledge.tools import channel_knowledge_access
+from ..knowledge.answers import CHANNEL_FIRST_INSTRUCTION
 from ..conversation.debug import OperatorDebugRecord
 from ..conversation.replay import replay_answer
 from ..actions.contracts import ActionClass
@@ -136,8 +138,11 @@ class AgentService:
                 level for level in KNOWN_ACCESS_REQUIREMENTS
                 if has_access_requirements(context.guild, context.member.id, {level})
             }
-            knowledge = context.knowledge_store.load().prompt(levels) if context.knowledge_store else None
+            knowledge = context.knowledge_store.load().prompt(
+                context.state.knowledge_channel_access,
+            ) if context.knowledge_store else None
             if knowledge:
+                context.state.knowledge_core_available = bool(knowledge.core)
                 context.state.required_access.update(knowledge.required_access)
             return system_instructions(
                 full_registry, actions_enabled=actions_available,
@@ -152,6 +157,7 @@ class AgentService:
             + "\n\n" + (SOCIAL_INSTRUCTION if social else LOOKUP_INSTRUCTION)
             if lookup or social else research_instructions()
         )
+        system_prompt += "\n\n" + CHANNEL_FIRST_INSTRUCTION
         context.state.request_text = question
         compiled = compile_context(
             question=question,
@@ -289,6 +295,8 @@ class AgentService:
             context.operator_debug.status = "replayed"
             return replay
         images = await request_images(context)
+        if context.knowledge_store is not None:
+            context.state.knowledge_channel_access = await channel_knowledge_access(context)
         context.operator_debug.image_labels = [image.label for image in images] + context.state.image_source_status
         flow, usage = self._start_flow(
             question=question,

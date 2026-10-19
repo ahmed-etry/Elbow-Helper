@@ -9,7 +9,7 @@ from elbow_helper.features.agent.knowledge.store import (
     KnowledgeCatalog, KnowledgeSection, KnowledgeStore, TOPIC_INDEX_TOKEN_LIMIT,
 )
 from elbow_helper.features.agent.knowledge import store as knowledge_store
-from elbow_helper.features.agent.knowledge.tools import search_approved_knowledge
+from elbow_helper.features.agent.knowledge.tools import channel_knowledge_access, search_approved_knowledge
 from elbow_helper.features.agent.models import AgentRequestContext, AgentTurnState
 from elbow_helper.features.agent.conversation.context import estimate_tokens
 from elbow_helper.features.agent.engine.service import AgentService
@@ -287,7 +287,9 @@ Hidden""")
             SimpleNamespace(id=AGENT_TESTER_ROLE_ID), SimpleNamespace(id=next(iter(LEAD)))])
         channel = SimpleNamespace(id=2, permissions_for=lambda _: SimpleNamespace(
             view_channel=True, read_message_history=True))
-        guild = SimpleNamespace(id=3, name="Synthetic guild", me=member, get_member=lambda _: member)
+        guild = SimpleNamespace(id=3, name="Synthetic guild", me=member, get_member=lambda _: member,
+                                chunked=True, members=[member])
+        channel.guild = guild
         source = SimpleNamespace(channel=channel, created_at=datetime.now(timezone.utc))
         requests = []
 
@@ -299,6 +301,7 @@ Hidden""")
         for allowed in (True, False):
             context = AgentRequestContext(bot=SimpleNamespace(), guild=guild, member=member,
                 source_message=source, account_links=None, message_search=None, knowledge_store=self.store)
+            context.state.knowledge_channel_access = await channel_knowledge_access(context)
             service._start_flow(question="Synthetic question", local_context="", context=context,
                                 conversation_history="")
             self.assertEqual("Restricted body" in requests[-1]["system_prompt"], allowed)
@@ -330,11 +333,13 @@ Hidden""")
         self.assertNotIn("Restricted topic", prompt)
         self.assertNotIn("Restricted body", prompt)
         self.assertNotIn("private.md", prompt)
-        # The restricted body remains searchable by authorized members. Reading
-        # it, unlike loading the public index, must constrain delivery.
+        # Authorized searches discover the title without exposing its body to
+        # the first pass or making an otherwise public answer private.
         result = await search_approved_knowledge(context, {"query": "Restricted topic", "scope": "requester"})
-        self.assertEqual(result["sections"][0]["body"], "Restricted body")
-        self.assertEqual(context.state.required_access, {"lead"})
+        self.assertEqual(result["sections"][0], {"title": "Restricted topic", "available_privately": True})
+        self.assertEqual(context.state.required_access, set())
+        self.assertEqual(context.state.knowledge_title_access, {"lead"})
+        self.assertEqual(next(iter(context.state.private_knowledge.values()))["body"], "Restricted body")
 
     async def test_visibility_and_result_bounds(self):
         self.write("public.md", "".join(
@@ -376,6 +381,8 @@ Secret facts""")
                 return_value=True,
             ),
             patch("elbow_helper.features.agent.knowledge.tools.require_lookup_access"),
+            patch("elbow_helper.features.agent.knowledge.tools.channel_knowledge_access",
+                  AsyncMock(return_value={"lead", "lead_plus", "core"})),
         ):
             result = await search_approved_knowledge(context, {"query": "secret", "scope": "requester"})
             self.assertEqual(len(result["sections"]), 3)

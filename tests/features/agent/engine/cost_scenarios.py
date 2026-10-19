@@ -18,6 +18,7 @@ from unittest.mock import patch
 from elbow_helper.features.agent.conversation.context import estimate_tokens
 from elbow_helper.features.agent.engine.registry import build_agent_tools
 from elbow_helper.features.agent.engine.service import AgentService
+from elbow_helper.features.agent.knowledge.store import KnowledgePrompt
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
 from features.agent.engine.test_agent_plan_flow import _context
 
@@ -113,8 +114,8 @@ async def measure():
     registry["search_approved_knowledge"] = replace(registry["search_approved_knowledge"], handler=knowledge)
     # Fixed, small synthetic context. No deployment data or member identities.
     guide = SimpleNamespace(for_levels=lambda _: "synthetic.accounts: tag TEXT, name TEXT, clan_tag TEXT")
-    store = SimpleNamespace(load=lambda: SimpleNamespace(prompt=lambda _: SimpleNamespace(
-        text="Example rules: activity decisions require war evidence.", required_access=set(),
+    store = SimpleNamespace(load=lambda: SimpleNamespace(prompt=lambda _: KnowledgePrompt(
+        "Example rules: activity decisions require war evidence.", frozenset(), 0,
     )))
     measurements = {}
     for name, question, history, steps, expected in scenarios():

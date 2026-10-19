@@ -209,9 +209,10 @@ async def _report_sheet(context, specification) -> AgentSpreadsheetSheet:
     if (
         report is None or sources is None or requirements is None
         or not sources <= context.state.source_channels
-        or not requirements <= context.state.required_access
+        or not requirements <= (context.state.required_access | context.state.knowledge_title_access)
     ):
         raise ValueError("That report is not authorized in this conversation")
+    context.state.required_access.update(requirements)
     return await asyncio.to_thread(
         materialize_report_table, report, name=name,
         collection=collection, columns=columns,

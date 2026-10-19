@@ -11,7 +11,6 @@ from elbow_helper.features.agent.delivery import AgentDeliveryMixin
 from elbow_helper.features.agent.knowledge.store import KnowledgeCatalog, KnowledgeSection
 from elbow_helper.features.agent.knowledge.tools import knowledge_tools, search_approved_knowledge
 from elbow_helper.features.agent.models import AgentRequestContext
-from elbow_helper.features.agent.wording import ACTION_PRIVATE_ANSWER
 from tests.features.agent.test_agent_audiences import Channel, Member, Role, Thread
 
 
@@ -50,7 +49,7 @@ class SearchScopeTests(unittest.IsolatedAsyncioTestCase):
         await self.delivery.send_response(self.message, "Synthetic answer", None, context=self.context)
         return self.message.reply.await_args.args[0]
 
-    async def test_broad_public_search_never_ranks_restricted_sections_and_stays_public(self):
+    async def test_search_ranks_requester_sections_but_withholds_private_bodies(self):
         ranked = []
         search = KnowledgeCatalog.search
 
@@ -62,80 +61,78 @@ class SearchScopeTests(unittest.IsolatedAsyncioTestCase):
             result = await search_approved_knowledge(
                 self.context, {"query": "Brown Elbow founding history"},
             )
-        self.assertEqual([s.visibility for s in ranked], ["public"])
-        self.assertEqual([s["title"] for s in result["sections"]], ["Clan family lore"])
-        self.assertEqual(result["scope"], "channel")
+        self.assertEqual({s.visibility for s in ranked}, {"public", "lead", "recruiter"})
+        notes = [s for s in result["sections"] if s.get("available_privately")]
+        self.assertCountEqual(notes, [
+            {"title": "Returning applicants", "available_privately": True},
+            {"title": "Alliance policies", "available_privately": True},
+        ])
+        self.assertEqual(result["scope"], "requester")
         self.assertEqual(self.context.state.required_access, set())
+        self.assertEqual(self.context.state.knowledge_title_access, {"lead", "recruiter"})
         self.assertEqual(await self.deliver(), "Synthetic answer")
 
-    async def test_explicit_wider_search_retains_restrictions_and_delivers_private(self):
-        result = await search_approved_knowledge(
-            self.context, {"query": "Brown Elbow founding history", "scope": "requester"},
-        )
-        self.assertEqual({s["visibility"] for s in result["sections"]}, {"public", "lead", "recruiter"})
-        self.assertEqual(result["scope"], "requester")
-        self.assertEqual(self.context.state.required_access, {"lead", "recruiter"})
-        # A later public title cannot undo restrictions from evidence already read.
-        await search_approved_knowledge(self.context, {"titles": ["Clan family lore"]})
-        self.assertEqual(self.context.state.required_access, {"lead", "recruiter"})
-        with self.assertLogs("elbow_helper.features.agent.disclosure", "INFO") as logs:
-            self.assertEqual(await self.deliver(), ACTION_PRIVATE_ANSWER)
-        self.assertIn("failed_requirement=lead reader_kind=role_group", logs.output[0])
+    async def test_legacy_scope_cannot_release_private_bodies(self):
+        for scope in ("channel", "requester"):
+            result = await search_approved_knowledge(
+                self.context, {"titles": ["Alliance policies"], "scope": scope},
+            )
+            self.assertEqual(result["sections"], [
+                {"title": "Alliance policies", "available_privately": True},
+            ])
+            self.assertEqual(self.context.state.required_access, set())
 
-    async def test_exact_public_title_stays_public_and_is_the_documented_first_choice(self):
+    async def test_exact_public_title_stays_public(self):
         result = await search_approved_knowledge(
             self.context, {"titles": ["Clan family lore"], "query": "Brown Elbow founding history"},
         )
         self.assertEqual([s["visibility"] for s in result["sections"]], ["public"])
         self.assertEqual(result["coverage"]["method"], "exact_titles")
-        self.assertEqual(self.context.state.required_access, set())
+        self.assertFalse(self.context.state.private_knowledge)
         self.assertEqual(await self.deliver(), "Synthetic answer")
-        self.assertIn("Open matching titles first;",
-                      knowledge_tools()[0].definition.description)
+        self.assertIn("Open matching titles first;", knowledge_tools()[0].definition.description)
 
-    async def test_requester_scope_never_grants_roles_the_requester_lacks(self):
+    async def test_unauthorized_requester_gets_no_private_titles_or_hints(self):
         self.members[0] = Member(2, (Role(AGENT_TESTER_ROLE_ID),))
-        result = await search_approved_knowledge(self.context, {"scope": "requester"})
-        self.assertEqual([s["visibility"] for s in result["sections"]], ["public"])
-        self.assertEqual(self.context.state.required_access, set())
+        for scope in ("channel", "requester"):
+            result = await search_approved_knowledge(self.context, {"scope": scope})
+            self.assertEqual([s["visibility"] for s in result["sections"]], ["public"])
+            hidden = await search_approved_knowledge(
+                self.context, {"titles": ["Alliance policies"], "scope": scope},
+            )
+            unknown = await search_approved_knowledge(
+                self.context, {"titles": ["Unknown"], "scope": scope},
+            )
+            self.assertEqual(hidden, unknown)
+        self.assertFalse(self.context.state.private_knowledge)
+        self.assertFalse(self.context.state.knowledge_title_access)
 
-    async def test_restricted_titles_ids_and_continuations_need_explicit_wider_scope(self):
-        title = {"titles": ["Alliance policies"]}
-        hidden = await search_approved_knowledge(self.context, title)
-        unknown = await search_approved_knowledge(self.context, {"titles": ["Unknown"]})
-        self.assertEqual(hidden, unknown)
-        first = await search_approved_knowledge(self.context, {**title, "scope": "requester"})
+    async def test_channel_readable_restricted_bodies_keep_paging(self):
+        self.context = replace(self.context, delivery_channel=Channel(11, self.guild, {2, 99}))
+        first = await search_approved_knowledge(self.context, {"titles": ["Alliance policies"]})
         section, = first["sections"]
-        continuation = {"section_id": section["section_id"],
-                        "section_offset": section["next_section_offset"]}
-        self.assertTrue(section["truncated"])
-        self.assertEqual((await search_approved_knowledge(self.context, continuation))["sections"], [])
-        rest = await search_approved_knowledge(self.context, {**continuation, "scope": "requester"})
+        rest = await search_approved_knowledge(self.context, {
+            "section_id": section["section_id"], "section_offset": section["next_section_offset"],
+        })
         self.assertEqual(section["body"] + rest["sections"][0]["body"], self.catalog.active_sections[1].body)
         self.assertEqual(self.context.state.required_access, {"lead"})
+        self.assertFalse(self.context.state.private_knowledge)
 
-    async def test_channel_scope_uses_delivery_destination_and_ignores_bots_for_roles(self):
-        destination = Channel(11, self.guild, {2, 99})
-        self.context = replace(self.context, delivery_channel=destination)
-        result = await search_approved_knowledge(self.context, {})
-        self.assertEqual({s["visibility"] for s in result["sections"]}, {"public", "lead", "recruiter"})
-
-    async def test_private_thread_includes_unjoined_moderators_and_fails_closed_on_unknown_members(self):
+    async def test_private_thread_checks_unjoined_moderators_and_unknown_members(self):
         destination = Thread(11, self.channel, private=True, members=[self.requester])
         self.context = replace(self.context, delivery_channel=destination)
         with patch("elbow_helper.features.agent.disclosure.discord.Thread", Thread):
             result = await search_approved_knowledge(self.context, {})
-            self.assertIn("lead", {s["visibility"] for s in result["sections"]})
+            self.assertIn("lead", {s.get("visibility") for s in result["sections"]})
             destination.fetch_members.assert_awaited_once()
             self.channel.moderators.add(self.reader.id)
-            self.context.state.required_access.clear()
             result = await search_approved_knowledge(self.context, {})
-            self.assertEqual([s["visibility"] for s in result["sections"]], ["public"])
+            self.assertEqual([s["visibility"] for s in result["sections"] if "body" in s], ["public"])
             self.channel.moderators.clear()
             self.context.disclosure_thread_members.clear()
             destination.fetch_members.return_value = [SimpleNamespace(id=404)]
             result = await search_approved_knowledge(self.context, {})
-            self.assertEqual([s["visibility"] for s in result["sections"]], ["public"])
+            self.assertEqual([s["visibility"] for s in result["sections"] if "body" in s], ["public"])
 
     async def test_invalid_scope_cannot_widen_search(self):
         result = await search_approved_knowledge(self.context, {"scope": "all"})

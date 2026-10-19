@@ -18,6 +18,7 @@ from ..plan.checker import check_plan, step_dependencies
 from ..plan.format import PLAN_TOOL_NAME
 from ..plan.planning import read_request
 from ..plan.results import plan_feedback
+from ..knowledge.answers import needs_private_knowledge, only_private_matches, private_knowledge_answer
 from ..actions.outcomes import command_reply
 from ..actions.preview import preview_text
 from ..actions.details import prepare_preview
@@ -85,6 +86,14 @@ class AnswerFlow:
             if not self.completed_results:
                 raise
             answer = await self._limit_reply(error)
+        if (needs_private_knowledge(answer) or (
+                self.context.state.private_knowledge
+                and not self.context.state.knowledge_core_available
+                and only_private_matches(self.read_results)
+                and not self.context.state.reply_delivery.posts
+                and not self.context.state.outcomes
+                and not self.context.state.proposed_changes)):
+            answer = await private_knowledge_answer(self)
         answer = await self._grounded_reply(answer)
         if (self.rounder.budget_limited and not self.context.state.reply_delivery.posts
                 and AGENT_RESEARCH_UNFINISHED not in answer):
@@ -105,6 +114,8 @@ class AnswerFlow:
             return ground_answer(answer, self.context.state.grounding_evidence)
         except GroundingError as error:
             LOGGER.info("Agent answer rejected: request=%s reason=%s", self.request_id, error)
+            if self.context.state.private_knowledge_used:
+                return GROUNDING_UNAVAILABLE
             try:
                 if strict_mode(self.context.state.request_text) is not None:
                     return GROUNDING_UNAVAILABLE

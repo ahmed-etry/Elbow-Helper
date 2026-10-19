@@ -122,6 +122,11 @@ class AgentTurnState:
     preserved_report_sources: dict[str, frozenset[int]] = field(default_factory=dict)
     preserved_report_access_requirements: dict[str, frozenset[str]] = field(default_factory=dict)
     required_access: set[str] = field(default_factory=set)
+    knowledge_channel_access: set[str] = field(default_factory=set)
+    knowledge_core_available: bool = False
+    knowledge_title_access: set[str] = field(default_factory=set)
+    private_knowledge: dict[str, Any] = field(default_factory=dict)
+    private_knowledge_used: bool = False
     attachments: list[AgentAttachment] = field(default_factory=list)
     history_status: dict[str, int | bool] = field(default_factory=dict)
     authorized_history: tuple[ConversationTurn, ...] | None = None

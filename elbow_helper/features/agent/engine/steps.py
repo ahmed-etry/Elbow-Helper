@@ -315,6 +315,9 @@ class PlanRunner:
             payload = json.loads(raw)
         except ValueError:
             payload = {"error": "Invalid lookup result"}
+        if tool.effect is AgentCapabilityEffect.ARTIFACT and "error" not in payload:
+            # Model-authored tables and labels may include withheld titles.
+            local.state.required_access.update(local.state.knowledge_title_access)
         payload = model_result(payload)
         return await self._record_result(
             step, arguments, checked["scope"], local, previous, payload, checked["contract"], plan_state,

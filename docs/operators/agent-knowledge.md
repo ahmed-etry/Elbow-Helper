@@ -40,7 +40,16 @@ Each visibility requires a role in the listed
 | `cwl_helper` | CWL helpers or Lead Plus |
 | `examiner` | Examiners or Lead Plus |
 
-Members with several roles can read material for each matching group.
+Members with several roles can read material for each matching group. Searches
+cover all material the asker may read. The agent first tries to answer using
+sections everyone in the channel can read; other matches contribute only their
+titles and a note that they are available privately. Members without access
+receive no titles or hints about those sections.
+
+If the channel's material answers the question, the reply stays public. If it
+does not and restricted sections matched, the agent uses those sections in one
+additional pass and gives the asker a private answer to open. An unrelated
+restricted match does not make an otherwise public answer private.
 
 Files without settings are approved and public as soon as they load. Use
 `status = "draft"` while editing new material. Only `+++` settings control
@@ -57,7 +66,8 @@ before the first heading uses the filename as its title, without `.md`.
 2. Check every section against the community's approved rules and workflows,
    then set `status = "approved"`.
 3. Set `always_loaded = true` for short references needed across requests.
-   The agent can search the other approved sections when needed.
+   These load with research requests only where the channel may read them.
+   All approved sections remain searchable.
 4. To retire a file, set `status = "retired"` or remove it. To retire one
    section, remove it from the approved file or move it to a retired file.
 5. After reloading, ask the agent about the changed topic. For restricted

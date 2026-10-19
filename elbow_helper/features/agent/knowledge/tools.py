@@ -15,7 +15,7 @@ from .store import VISIBILITIES
 def knowledge_tools():
     return (RegisteredAgentTool(AgentToolDefinition(
         "search_approved_knowledge",
-        "Open matching titles first; widen default channel scope only for needed policies or processes.",
+        "Open matching titles first; search all requester-accessible sections, with private bodies withheld.",
         {"type":"object", "properties":{
             "scope":{"type":"string", "enum":["channel", "requester"]},
             "query":{"type":"string", "minLength":0, "maxLength":200},
@@ -26,12 +26,12 @@ def knowledge_tools():
             "limit":{"type":"integer", "minimum":1, "maximum":8},
             "section_offset":{"type":"integer", "minimum":0}},
          "required":[], "additionalProperties":False}), search_approved_knowledge,
-        contract=CapabilityContract(()), returns="sections:[{title,body,visibility}]"),)
+        contract=CapabilityContract(()), returns="sections:[{title,body,visibility,available_privately}]"),)
 
 
 async def search_approved_knowledge(context, arguments):
     await require_evidence_access(context)
-    scope = arguments.get("scope", "channel")
+    scope = arguments.get("scope", "requester")
     if scope not in ("channel", "requester"):
         return {"error": "Use channel or requester knowledge scope."}
     if context.knowledge_store is None:
@@ -50,14 +50,7 @@ async def search_approved_knowledge(context, arguments):
         return {"error": "Use a valid knowledge page; section continuation needs a title or section ID."}
     levels = {level for level in VISIBILITIES - {"public"}
               if has_access_requirements(context.guild, context.member.id, {level})}
-    if scope == "channel" and levels:
-        destination = getattr(context, "delivery_channel", None) or context.source_message.channel
-        cache = getattr(context, "disclosure_thread_members", None)
-        if cache is None:
-            cache = {}
-        levels = {level for level in sorted(levels) if await can_show(
-            destination, {}, {level}, context.guild, thread_members=cache, log_decision=False,
-        )}
+    channel_levels = await channel_knowledge_access(context, levels)
     visible = catalog.visible_sections(levels)
     if "section_id" in arguments:
         sections = tuple(section for section in visible if _section_id(section) == arguments["section_id"])
@@ -78,19 +71,32 @@ async def search_approved_knowledge(context, arguments):
     if levels:
         require_lookup_access(context, levels)
     await require_evidence_access(context)
-    context.state.required_access.update(levels)
+    context.state.required_access.update(levels & channel_levels)
+    context.state.knowledge_title_access.update(levels - channel_levels)
+    channel_titles = {section.title for section in catalog.visible_sections(channel_levels)}
     returned = []
     for section in sections:
         body = section.body[section_offset:section_offset + 4000]
         end = section_offset + len(body)
-        returned.append({"title": section.title, "section_id": _section_id(section), "body": body,
-                         "visibility": section.visibility, "section_offset": section_offset,
-                         "total_characters": len(section.body), "truncated": end < len(section.body),
-                         "next_section_offset": end if end < len(section.body) else None})
+        page = {"title": section.title, "section_id": _section_id(section), "body": body,
+                "visibility": section.visibility, "section_offset": section_offset,
+                "total_characters": len(section.body), "truncated": end < len(section.body),
+                "next_section_offset": end if end < len(section.body) else None}
+        if section.visibility != "public" and section.visibility not in channel_levels:
+            # Keep the body outside all model-facing results until the answer pass
+            # explicitly needs it. Legacy scope arguments cannot bypass this gate.
+            context.state.private_knowledge[page["section_id"]] = {
+                **page, "body": section.body, "section_offset": 0,
+                "truncated": False, "next_section_offset": None,
+                "title_visible_in_channel": section.title in channel_titles,
+            }
+            returned.append({"title": section.title, "available_privately": True})
+        else:
+            returned.append(page)
     next_offset = offset + len(sections) if offset + len(sections) < total else None
-    clipped = any(section["truncated"] for section in returned)
+    clipped = any(section.get("truncated", False) for section in returned)
     exhaustive = catalog.store_status == "available" and method != "lexical_ranked"
-    return {"sections": returned, "store_status": catalog.store_status, "scope": scope,
+    return {"sections": returned, "store_status": catalog.store_status, "scope": "requester",
             "match_status": "matches" if total else "no_visible_match",
             "observed_at": catalog.observed_at, "offset": offset, "next_offset": next_offset,
             "search_is_exhaustive": exhaustive,
@@ -102,6 +108,20 @@ async def search_approved_knowledge(context, arguments):
             "limitations": {"lexical_search_only": method == "lexical_ranked",
                             "store_incomplete": catalog.store_status != "available",
                             "section_continuation_available": clipped}}
+
+
+async def channel_knowledge_access(context, levels=None):
+    if levels is None:
+        levels = {level for level in VISIBILITIES - {"public"}
+                  if has_access_requirements(context.guild, context.member.id, {level})}
+    if not levels:
+        return set()
+    destination = getattr(context, "delivery_channel", None) or context.source_message.channel
+    cache = getattr(context, "disclosure_thread_members", None)
+    return {level for level in sorted(levels) if await can_show(
+        destination, {}, {level}, context.guild,
+        thread_members=cache if cache is not None else {}, log_decision=False,
+    )}
 
 
 def _section_id(section):

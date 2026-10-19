@@ -114,6 +114,24 @@ class AgentSpreadsheetContractTests(unittest.TestCase):
 
 
 class AgentSpreadsheetToolTests(unittest.IsolatedAsyncioTestCase):
+    async def test_report_export_retains_private_title_requirements(self):
+        class Report:
+            def page(self, *, offset=0, limit=25):
+                return {"accounts": [{"tag": "#P0"}], "next_offset": None}
+
+        with TemporaryDirectory() as directory:
+            context = _context(directory)
+            context.state.knowledge_title_access = {"core"}
+            context.state.reports["report"] = Report()
+            context.state.report_sources["report"] = frozenset()
+            context.state.report_access_requirements["report"] = frozenset({"core"})
+            result = await prepare_spreadsheet(context, {"title": "Synthetic", "sheets": [
+                {"name": "Accounts", "report_id": "report", "collection": "accounts",
+                 "columns": [{"field": "tag", "heading": "Account"}]},
+            ]})
+            self.assertTrue(result["attachment_prepared"])
+            self.assertEqual(context.state.required_access, {"core"})
+
     async def test_query_report_and_written_sheets_share_one_workbook(self):
         class Report:
             def page(self, *, offset=0, limit=25):

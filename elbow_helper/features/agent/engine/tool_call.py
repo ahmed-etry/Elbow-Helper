@@ -134,6 +134,7 @@ def capture_detail_provenance(context, snapshot, scope) -> None:
     sources |= frozenset(scope.get("bound_source_channels", ()))
     access = frozenset(context.state.required_access - snapshot["required_access"])
     access |= frozenset(scope.get("required_access", ()))
+    access |= frozenset(context.state.knowledge_title_access)
     for index in range(len(snapshot["proposed_changes"]), len(context.state.proposed_changes)):
         proposal = context.state.proposed_changes[index]
         if isinstance(proposal, PreparedAction):
@@ -194,7 +195,7 @@ def evidence_record(
             ),
             "observed_at": datetime.now(timezone.utc).isoformat(),
             "source_channels": sorted(context.state.source_channels),
-            "required_access": sorted(context.state.required_access),
+            "required_access": sorted(context.state.required_access | context.state.knowledge_title_access),
         },
         ensure_ascii=False,
     )
@@ -209,7 +210,7 @@ def record_report_provenance(
         if previous.get(report_id) is not report:
             context.state.report_sources[report_id] = frozenset(context.state.source_channels)
             context.state.report_access_requirements[report_id] = frozenset(
-                context.state.required_access
+                context.state.required_access | context.state.knowledge_title_access
             )
     retained = set(context.state.reports)
     for provenance in (
@@ -244,6 +245,8 @@ def merge_tool_state(
         retain_reports(target.state.reports, additions)
     target.state.source_channels.update(local.state.source_channels)
     target.state.required_access.update(local.state.required_access)
+    target.state.knowledge_title_access.update(local.state.knowledge_title_access)
+    target.state.private_knowledge.update(local.state.private_knowledge)
     for name in ("reports", "report_sources", "report_access_requirements"):
         destination = getattr(target.state, name)
         selected = getattr(local.state, name)
