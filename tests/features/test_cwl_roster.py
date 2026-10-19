@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 from unittest.mock import AsyncMock
 from unittest.mock import patch
+from xml.etree import ElementTree
 from typing import get_type_hints
 
 from elbow_helper.features.clan_health.database import ClanHealthRepository
@@ -265,6 +266,41 @@ def _synthetic_history() -> tuple[list[dict], list[dict], list[dict]]:
     return wars, roster, attacks
 
 
+def _synthetic_position_war(team_size: int) -> tuple[list[dict], list[dict], list[dict]]:
+    war_id = f"position-war-{team_size}"
+    wars = [{
+        "war_id": war_id,
+        "clan_code": "BE4",
+        "cwl_season": "2026-06",
+        "cwl_league": "Master League I",
+        "team_size": team_size,
+        "attacks_per_member": 1,
+        "end_ts": team_size,
+    }]
+    roster = []
+    attacks = []
+    for position in range(1, team_size + 1):
+        identity = {
+            "war_id": war_id,
+            "clan_code": "BE4",
+            "player_tag": f"#P{position}",
+        }
+        roster.append({
+            **identity,
+            "player_name": f"Player {position}",
+            "townhall": 18,
+            "map_position": position,
+            "attacks_expected": 1,
+        })
+        attacks.append({
+            **identity,
+            "stars": 3,
+            "destruction": 100,
+            "defender_map_position": position,
+        })
+    return wars, roster, attacks
+
+
 class AssProfileTests(unittest.TestCase):
     def test_latest_profile_mapping(self) -> None:
         self.assertIs(profile_for_league("Champion League III"), ASS_PROFILE_HIGH)
@@ -281,6 +317,83 @@ class AssProfileTests(unittest.TestCase):
 
 
 class AssAnalysisTests(unittest.TestCase):
+    def test_target_position_scale_tracks_war_size_for_both_profiles(self) -> None:
+        for profile, weight in ((ASS_PROFILE_HIGH, 0.4), (ASS_PROFILE_LOWER, 1.0)):
+            self.assertEqual(profile.difficulty_weight, weight)
+            for team_size in (10, 15, 20, 30, 45):
+                with self.subTest(profile=profile.key, team_size=team_size):
+                    wars, roster, attacks = _synthetic_position_war(team_size)
+                    metrics = build_ass_season_metrics(
+                        wars=wars, roster=roster, attacks=attacks,
+                        season_order={"2026-06": 1},
+                        profiles_by_clan={"BE4": profile},
+                    )
+                    by_tag = {metric.player_tag: metric for metric in metrics}
+                    step = weight * 15 / team_size
+                    top = by_tag["#P1"]
+                    bottom = by_tag[f"#P{team_size}"]
+                    expected_top = (team_size - 1) / 2 * step
+                    self.assertAlmostEqual(top.difficulty_adjustment, expected_top)
+                    self.assertAlmostEqual(bottom.difficulty_adjustment, -expected_top)
+                    self.assertAlmostEqual(top.score, 21 + expected_top)
+                    self.assertAlmostEqual(bottom.score, 21 - expected_top)
+                    for position in range(1, team_size):
+                        higher = by_tag[f"#P{position}"]
+                        lower = by_tag[f"#P{position + 1}"]
+                        self.assertAlmostEqual(
+                            higher.difficulty_adjustment - lower.difficulty_adjustment,
+                            step,
+                        )
+                    if team_size % 2:
+                        middle = by_tag[f"#P{(team_size + 1) // 2}"]
+                        self.assertEqual(middle.difficulty_adjustment, 0)
+
+    def test_mixed_war_sizes_are_scaled_before_averaging(self) -> None:
+        wars, roster, attacks = [], [], []
+        for team_size in (15, 30):
+            war_rows, roster_rows, attack_rows = _synthetic_position_war(team_size)
+            wars.extend(war_rows)
+            roster.extend(roster_rows)
+            attacks.extend(attack_rows)
+        metrics = build_ass_season_metrics(
+            wars=wars, roster=roster, attacks=attacks,
+            season_order={"2026-06": 1},
+            profiles_by_clan={"BE4": ASS_PROFILE_HIGH},
+        )
+        top = next(metric for metric in metrics if metric.player_tag == "#P1")
+        self.assertEqual(top.attacks, 2)
+        self.assertAlmostEqual(top.difficulty_adjustment, 2.85)
+        self.assertAlmostEqual(top.score, 23.85)
+        self.assertEqual(top.average_target_position, 1)
+
+    def test_missing_war_size_uses_roster_positions_for_scaling(self) -> None:
+        for missing_size in (None, 0, -1):
+            with self.subTest(team_size=missing_size):
+                wars, roster, attacks = _synthetic_position_war(30)
+                wars[0]["team_size"] = missing_size
+                metrics = build_ass_season_metrics(
+                    wars=wars, roster=roster, attacks=attacks,
+                    season_order={"2026-06": 1},
+                    profiles_by_clan={"BE4": ASS_PROFILE_HIGH},
+                )
+                top = next(metric for metric in metrics if metric.player_tag == "#P1")
+                self.assertAlmostEqual(top.difficulty_adjustment, 2.9)
+                self.assertAlmostEqual(top.score, 23.9)
+
+    def test_missing_positions_and_war_size_do_not_prevent_scoring(self) -> None:
+        wars, roster, attacks = _synthetic_position_war(1)
+        wars[0].pop("team_size")
+        roster[0].pop("map_position")
+        attacks[0].pop("defender_map_position")
+        metrics = build_ass_season_metrics(
+            wars=wars, roster=roster, attacks=attacks,
+            season_order={"2026-06": 1},
+            profiles_by_clan={"BE4": ASS_PROFILE_HIGH},
+        )
+        self.assertEqual(len(metrics), 1)
+        self.assertEqual(metrics[0].difficulty_adjustment, 0)
+        self.assertEqual(metrics[0].score, 21)
+
     def test_season_and_mega_ranking(self) -> None:
         wars, roster, attacks = _synthetic_history()
         season_metrics = build_ass_season_metrics(
@@ -488,6 +601,61 @@ class CandidateTests(unittest.IsolatedAsyncioTestCase):
 
 
 class WorkbookTests(unittest.TestCase):
+    def test_30v30_workbook_exports_scaled_ass_values(self) -> None:
+        wars, roster, attacks = _synthetic_position_war(30)
+        metrics = build_ass_season_metrics(
+            wars=wars, roster=roster, attacks=attacks,
+            season_order={"2026-06": 1},
+            profiles_by_clan={"BE4": ASS_PROFILE_HIGH},
+        )
+        top = next(metric for metric in metrics if metric.player_tag == "#P1")
+        mega = next(
+            metric for metric in build_mega_ass_metrics(metrics)
+            if metric.player_tag == "#P1"
+        )
+        sheets = _WorkbookHarness()._build_roster_workbook(
+            candidates=[{
+                "discord_member": "Member",
+                "account_name": top.player_name,
+                "player_tag": top.player_tag,
+                "townhall": top.townhall,
+                "current_clan": "BE4",
+                "latest": top,
+                "mega": mega,
+            }],
+            signed_tags={top.player_tag},
+            season_metrics=metrics,
+            records=[], links_by_user={},
+            seasons=[{"key": "2026-06"}],
+            profiles={"BE4": ASS_PROFILE_HIGH},
+            latest_leagues={"BE4": "Master League I"},
+            clan_choices=("BE4",),
+        )
+        planner, history = sheets[:2]
+        self.assertEqual(planner.rows[0][7], 23.9)
+        self.assertEqual(planner.rows[0][11], 23.9)
+        self.assertEqual(history.rows[0][6], 23.9)
+        self.assertEqual(history.rows[0][16], 2.9)
+
+        namespace = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "ass-30v30.xlsx"
+            _WorkbookHarness()._write_roster_xlsx(path, sheets)
+            with zipfile.ZipFile(path) as workbook:
+                for sheet_index, expected_cells in (
+                    (1, {"H2": 23.9, "L2": 23.9}),
+                    (2, {"G2": 23.9, "Q2": 2.9}),
+                ):
+                    root = ElementTree.fromstring(workbook.read(
+                        f"xl/worksheets/sheet{sheet_index}.xml",
+                    ))
+                    for cell, expected in expected_cells.items():
+                        with self.subTest(sheet=sheet_index, cell=cell):
+                            value = root.findtext(
+                                f".//m:c[@r='{cell}']/m:v", namespaces=namespace,
+                            )
+                            self.assertEqual(float(value), expected)
+
     def test_roster_workbook_hides_non_signup_clutter(self) -> None:
         signed_metric = AssSeasonMetric(
             season="2026-06",

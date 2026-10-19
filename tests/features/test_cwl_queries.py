@@ -192,6 +192,18 @@ class CwlQueriesTests(unittest.TestCase):
                          summary[0]["total_adjusted_delta"])
         self.assertEqual(len(bonus.attacks), len(attacks))
 
+    def test_chosen_wars_normalize_each_war_size_before_combining(self):
+        dataset = _dataset()
+        dataset["wars"][1]["team_size"] = 30
+        queries = self.bonus_queries(dataset)
+        result = queries.ass_wars(clan_code="BEH", war_ids=["war-1", "war-2"])
+        row = result.rows[0]
+        self.assertEqual(result.difficulty_weight, 0.4)
+        self.assertEqual(row.attacks, 2)
+        self.assertEqual(row.average_target_position, 1)
+        self.assertAlmostEqual(row.difficulty_adjustment, 2.85)
+        self.assertAlmostEqual(row.ass_score, 23.85)
+
     def test_one_war_projects_to_seven_attacks_with_exact_sample(self):
         queries = self.bonus_queries()
         result = queries.ass_wars(clan_code="BEH", war_ids=["war-3"])

@@ -86,8 +86,10 @@ def build_ass_season_metrics(
             team_size = max(
                 (int(member.get("map_position") or 0) for member in war_roster),
                 default=15,
-            )
+            ) or 15
         midpoint = (team_size + 1) / 2
+        # Keep the 15v15 position scale when a war has a different size.
+        position_scale = 15.0 / team_size
 
         for member in war_roster:
             player_tag = str(member.get("player_tag") or "")
@@ -138,7 +140,7 @@ def build_ass_season_metrics(
                 metric.defensive_position_total += attacker_position
                 metric.difficulty_total += (
                     midpoint - defender_position
-                ) * profile.difficulty_weight
+                ) * position_scale * profile.difficulty_weight
 
     result = list(metrics.values())
     for metric in result:
