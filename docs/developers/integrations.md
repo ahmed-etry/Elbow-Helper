@@ -19,10 +19,11 @@ Recruitment and Support Tickets request text through `TextGenerator`.
 - The support-ticket feature uses it for one welcome sentence.
 
 The [agent](agent.md) uses the same application-owned client through
-`AgentModel` and `AgentSession`. Infrastructure owns provider messages, tool
-results, images, usage reporting, and request failures; the feature owns
-planning, access, evidence, and delivery. Data sent for these requests is
-described in [Privacy and AI](../users/privacy-and-ai.md#agent).
+`AgentModel` and `AgentSession`. The client sends messages, tool results, and
+images to DeepSeek and reports usage and request failures. The agent feature
+plans and runs tools, checks permissions and answers, and sends the reply to
+Discord. See [Privacy and AI](../users/privacy-and-ai.md#agent) for the data
+these requests may include.
 
 Before adding another use, identify the exact data sent, audience, output
 checks, privacy impact, and failure tests.
@@ -36,10 +37,9 @@ exports go to the authenticated account's default location.
 
 ## GIPHY
 
-The agent's find_gif capability searches GIPHY when `GIPHY_API_KEY` is set and
-puts the GIF's GIPHY page link in its reply. Only the search text leaves the bot.
-Without the key, the capability is not offered; when GIPHY is unavailable, the
-agent replies without a GIF.
+The agent's `find_gif` tool sends search text to GIPHY and adds the selected
+GIF's page link to its reply. Set `GIPHY_API_KEY` to enable the tool. If GIPHY
+is unavailable, the agent can reply without a GIF.
 
 ## HTML transcripts
 
