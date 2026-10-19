@@ -29,6 +29,7 @@ from .files.delivery import (
 )
 from .files.gif_media import URLS
 from .discord_actions.reply_targets import answer_reply_target
+from .discord_actions.reactions import render_server_emojis
 from .discord_actions.message_parts import outgoing_parts
 from .discord_actions.messages import post_mentions
 from .text import DISCORD_MESSAGE_LIMIT
@@ -179,6 +180,8 @@ class AgentDeliveryMixin:
         _suppress_mentions: bool = False,
         _post_mentions: bool = False,
     ) -> None:
+        guild = getattr(context, "guild", None) or getattr(message, "guild", None)
+        response = render_server_emojis(response, guild)
         audit_private = bool(context and ACCESS_VIEW_AUDIT_LOG in context.state.required_access
                              and not isinstance(message.channel, discord.DMChannel))
         if audit_private:

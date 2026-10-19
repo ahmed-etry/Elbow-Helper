@@ -13,6 +13,20 @@ from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool
 
 
+_TEXT_EMOJI = re.compile(
+    r"<a?:\w+:\d+>|https?://\S+|```[\s\S]*?```|`[^`\n]*`|:([A-Za-z0-9_]+):"
+)
+
+
+def render_server_emojis(text, guild):
+    """Resolve known shortcodes without rewriting markup, URLs or code."""
+    available = {item.name: str(item) for item in getattr(guild, "emojis", ())
+                 if item.is_usable()}
+    return _TEXT_EMOJI.sub(
+        lambda match: available.get(match.group(1), match.group(0)), text,
+    )
+
+
 def server_reaction_context(guild):
     """Expose names and exact markup from Discord's cached usable server emojis."""
     emojis = [str(item) for item in getattr(guild, "emojis", ()) if item.is_usable()]
