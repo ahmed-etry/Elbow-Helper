@@ -177,7 +177,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         ])
         message.channel.typing.assert_called_once()
 
-    async def test_reaction_plans_record_optional_text_and_recover_from_failures(self):
+    async def test_reaction_plans_record_the_reply_and_recover_from_failures(self):
         from features.agent.engine.test_agent_plan_flow import (
             _Model, _Session, _model_step, _plan, _step,
         )
@@ -220,7 +220,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 if mode == "text":
                     first = AgentStep("You're welcome.", first.tool_calls, AgentUsage())
                 rounds = [first]
-                fallback = mode not in ("reaction_only", "text")
+                fallback = mode != "text"
                 if fallback:
                     rounds.append(AgentStep("" if mode == "empty" else "Normal answer.", (), AgentUsage()))
                 session = _Session(rounds, [])
@@ -240,19 +240,14 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 conversation = self.cog._conversations.get(message.id)
                 self.assertEqual(len(conversation.turns), 1)
                 answer = json.loads(conversation.turns[0].text)["answer"]
-                if mode == "reaction_only":
-                    message.reply.assert_not_awaited()
-                    self.assertEqual(answer, "Reactions: 👍")
-                else:
-                    message.reply.assert_awaited_once()
-                    expected = ("You're welcome." if mode == "text" else
-                                AGENT_ANSWER_UNFINISHED if mode == "empty" else "Normal answer.")
-                    self.assertIn(expected, message.reply.await_args.args[0])
-                    self.assertIn(expected, answer)
+                message.reply.assert_awaited_once()
+                expected = ("You're welcome." if mode == "text" else
+                            AGENT_ANSWER_UNFINISHED if mode == "empty" else "Normal answer.")
+                self.assertIn(expected, message.reply.await_args.args[0])
+                self.assertIn(expected, answer)
                 self.assertEqual("Reactions: 👍" in answer, mode not in ("failed", "empty"))
                 self.assertTrue(conversation.turns[0].record.delivery_complete)
-                self.assertEqual(conversation.turns[0].record.reply_ids,
-                                 () if mode == "reaction_only" else (1501,))
+                self.assertEqual(conversation.turns[0].record.reply_ids, (1501,))
 
 
     async def test_mixed_answer_and_preview_share_delivery_and_records(self):

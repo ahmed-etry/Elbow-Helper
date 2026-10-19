@@ -1,4 +1,4 @@
-"""An acknowledged reaction completes delivery without an empty Discord reply."""
+"""An acknowledged reaction does not replace the requested reply."""
 
 import unittest
 from unittest.mock import AsyncMock
@@ -10,15 +10,15 @@ from features.agent.engine.test_agent_service import _context
 
 
 class ReactionDeliveryTests(unittest.IsolatedAsyncioTestCase):
-    async def test_reaction_only_completes_without_sending_an_empty_message(self):
+    async def test_reaction_alone_does_not_mark_the_reply_complete(self):
         context = _context()
         context.state.reactions.emojis.append("\U0001f44d")
         surface = AgentDeliveryMixin()
         surface._send_response = AsyncMock()
         delivery = AgentDelivery()
         await surface.send_response(context.source_message, "", None, context=context, delivery=delivery)
-        surface._send_response.assert_not_awaited()
-        self.assertTrue(delivery.complete)
+        surface._send_response.assert_awaited_once()
+        self.assertFalse(delivery.complete)
         self.assertEqual(delivery.message_ids, [])
         self.assertEqual(delivery.attempted_nonces, [])
 

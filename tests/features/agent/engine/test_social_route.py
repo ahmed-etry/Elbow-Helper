@@ -1,4 +1,4 @@
-"""Short social requests use checked reactions or GIFs without a synthesis round."""
+"""Short social replies combine reactions with text or a GIF."""
 
 from dataclasses import replace
 import json
@@ -31,7 +31,7 @@ class SocialRouteTests(unittest.IsolatedAsyncioTestCase):
                      "I need help with recruitment", "x" * 301):
             self.assertFalse(social_candidate(text, SimpleNamespace(content=text)))
 
-    async def test_social_reaction_and_gif_need_one_low_effort_round(self):
+    async def test_reaction_with_text_or_gif_needs_one_low_effort_round(self):
         for mode in ("reaction", "gif", "both"):
             with self.subTest(mode=mode):
                 context = _context()
@@ -45,29 +45,33 @@ class SocialRouteTests(unittest.IsolatedAsyncioTestCase):
                     calls.append(AgentToolCall("react", "react_to_request", json.dumps({"emoji": "👍"})))
                 if mode != "reaction":
                     calls.append(AgentToolCall("gif", "find_gif", json.dumps({"query": "synthetic salute"})))
-                session = _AgentSession([AgentStep("", (plan_call(*calls),), AgentUsage())])
+                text = "Synthetic acknowledgement." if mode == "reaction" else ""
+                session = _AgentSession([AgentStep(text, (plan_call(*calls),), AgentUsage())])
                 model = _AgentModel(session)
                 answer = await AgentService(model).answer(question="MY MAN", local_context="", context=context)
-                self.assertEqual(answer, "")
+                self.assertEqual(answer, text)
                 self.assertEqual(session.efforts, [AgentReasoningEffort.LOW])
                 self.assertEqual(context.source_message.add_reaction.await_count, int(mode != "gif"))
                 self.assertEqual(bool(context.state.gif_url), mode != "reaction")
                 offered = model.request["tools"][0].parameters["properties"]["steps"]["items"]["properties"]["capability"]["enum"]
                 self.assertEqual(set(offered), SOCIAL_CAPABILITIES)
                 knowledge.load.assert_not_called()
-                self.assertIn("text is optional", model.request["system_prompt"])
+                self.assertIn("Accompany reactions with one short line or a GIF", model.request["system_prompt"])
 
-    async def test_unconfigured_gifs_still_allow_a_reaction(self):
+    async def test_empty_reaction_plan_still_gets_a_reply_without_configured_gifs(self):
         context = _context()
         context.source_message.id = 300
         context.source_message.add_reaction = AsyncMock()
         step = AgentStep("", (plan_call(AgentToolCall(
             "react", "react_to_request", json.dumps({"emoji": "👍"}),
         )),), AgentUsage())
-        model = _AgentModel(_AgentSession([step]))
+        session = _AgentSession([step, AgentStep("Synthetic acknowledgement.", (), AgentUsage())])
+        model = _AgentModel(session)
         self.assertEqual(await AgentService(model).answer(
             question="thanks", local_context="", context=context,
-        ), "")
+        ), "Synthetic acknowledgement.")
+        self.assertEqual(len(session.calls), 2)
+        context.source_message.add_reaction.assert_awaited_once()
         offered = model.request["tools"][0].parameters["properties"]["steps"]["items"]["properties"]["capability"]["enum"]
         self.assertEqual(offered, ["react_to_request"])
 

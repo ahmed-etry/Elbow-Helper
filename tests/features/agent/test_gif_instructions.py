@@ -10,8 +10,8 @@ from elbow_helper.features.agent.plan.format import system_instructions
 class GifInstructionTests(unittest.TestCase):
     def test_approved_policy_is_present_once_without_link_pasting_instructions(self):
         policy = (
-            "For short social messages, default to react_to_request or find_gif at low effort, "
-            "with optional text. Use listed server emoji: "
+            "Short social replies use low-effort react_to_request with text or a GIF; "
+            "a GIF needs no text. Use listed server emoji: "
             "nodCat for agreement. No reactions or GIFs on factual answers, decisions or serious help."
         )
         instructions = system_instructions(build_agent_tools())

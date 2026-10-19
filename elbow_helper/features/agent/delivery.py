@@ -110,12 +110,6 @@ class AgentDeliveryMixin:
         knowledge_private = bool(context and requires_private_knowledge_delivery(context, response))
         active = delivery or AgentDelivery()
         gif = context.state.gif_url if context is not None else None
-        if (not response and not attachments and not gif and context is not None
-                and context.state.reactions.emojis and not context.state.proposed_changes
-                and context.state.preview_reply is None and not context.state.outcomes):
-            await require_evidence_access(context)
-            active.complete = True
-            return
         if gif:
             response = _without_reply_gif(response, gif)
         if response or attachments or not gif:

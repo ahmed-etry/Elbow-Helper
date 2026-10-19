@@ -33,8 +33,9 @@ LOOKUP_CAPABILITIES = frozenset({
 SOCIAL_CAPABILITIES = frozenset({"react_to_request", "find_gif"})
 SOCIAL_INSTRUCTION = (
     "This is the short social reply route. For a social image, sticker, GIF or "
-    "one-liner, default to a low-effort plan with react_to_request and/or find_gif; "
-    "text is optional and at most one short line. Choose the reaction or GIF for "
+    "one-liner, default to a low-effort plan with react_to_request and/or find_gif. "
+    "Accompany reactions with one short line or a GIF; a GIF needs no text. "
+    "Include any reply text with the plan to avoid another model round. Choose the reaction or GIF for "
     "the actual exchange, not just the media type. If this is a factual request, "
     "correction or serious help, answer appropriately without a social response. "
     "Call load_research_context alone with {} before any lookup or other work; "

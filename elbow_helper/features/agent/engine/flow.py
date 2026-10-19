@@ -201,7 +201,10 @@ class AnswerFlow:
             self.rounder.results_available = bool(results)
             if self.plan["steps"] and sum(
                 step["capability"] == "find_gif" for step in self.plan["steps"]
-            ) <= 1 and all(
+            ) <= 1 and (
+                (self.decision.rounds[-1].content or "").strip()
+                or any(step["capability"] == "find_gif" for step in self.plan["steps"])
+            ) and all(
                 (step["capability"] == "react_to_request"
                  and results.get(step["id"], {}).get("reacted") is True
                  or step["capability"] == "find_gif"
