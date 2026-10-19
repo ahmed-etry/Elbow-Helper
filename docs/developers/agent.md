@@ -1,163 +1,95 @@
 # Agent
 
-`elbow_helper.features.agent` owns mention-driven requests, checked tool plans,
-conversation state, and confirmed actions. Feature adapters use the owning
-features' query and command interfaces. They do not take ownership of those
-features' databases or Clash transport.
+`elbow_helper.features.agent` handles questions and action requests sent by
+mentioning the bot or replying to an agent conversation. It calls other
+features through their query and command interfaces. Those features own their
+saved data; shared infrastructure handles Clash and AI requests.
 
-## Request flow
+## Request handling
 
-`AgentCog` accepts mentions and replies to retained agent conversations in the
-configured guild. Entry is limited to Core leadership and the Agent Tester
-role. This rollout check does not grant access to restricted tools or sources.
+- `cog.py` receives messages and gathers nearby messages and conversation
+  history. Requests from the same member or conversation run one at a time.
+- `engine/service.py` prepares the model request and available tools. Simple
+  lookups start with fewer tools and can expand to include the full tool list,
+  data guide, and community knowledge.
+- `plan/planning.py` reads the model's answer or proposed steps.
+  `plan/checker.py` checks tool names, arguments, and references to earlier
+  results. `PlanRunner` in `engine/steps.py` checks access and runs the steps.
+- `AnswerFlow` in `engine/flow.py` checks the answer. `delivery.py` decides
+  where it can be shown and presents changes for confirmation.
 
-Requests take a conversation lock, a member lock, and one of four execution
-slots. Queue waiting is limited to 120 seconds; execution has a separate
-480-second deadline. The cog gathers nearby messages and authorized conversation
-history; `AgentService` loads request images before building the model context.
+Request timeouts are set in `cog.py`; model usage and result size limits are
+in `engine/budgets.py`. When investigating an unfinished request, check the
+`Agent usage` log for its status and usage.
 
-1. `engine/service.py` builds the capability registry and model context. Simple
-   lookups start with a smaller catalogue and can expand to the research route.
-   The research prompt includes the data guide and community knowledge.
-2. `plan/planning.py` accepts a direct answer or a structured plan. Plans name
-   a goal, effort, output, and steps with arguments and dependencies.
-3. `plan/checker.py` checks plan structure, registered names, schemas, result
-   references, and action boundaries. `PlanRunner` checks resolved arguments
-   and access before execution. Independent reads may run concurrently;
-   dependent steps wait for their inputs.
-4. Results return to the model for an answer or revised plan. Failed steps keep
-   their errors; dependent steps cannot treat them as successful results.
-5. `AnswerFlow` checks the final answer, then delivery checks its audience.
-   Change proposals go through the confirmation flow described below.
+## Adding tools and actions
 
-`engine/budgets.py` bounds cumulative provider use, including recovery rounds:
+`RegisteredAgentTool` connects a tool's name and arguments to its handler.
+Its `CapabilityContract` describes the data it can read, the source channels,
+and the roles a member needs. Channel reads must record their sources so
+access can be checked again when results or saved reports are used.
 
-| Route | Model rounds | Input tokens | Output tokens | Output tokens per round |
-|---|---:|---:|---:|---:|
-| Lookup | 4 | 80,000 | 12,000 | 4,096 |
-| Research | 20 | 600,000 | 128,000 | 64,000 |
+Changes use `PreparedAction` with a preview and a check that the change is
+still valid. Before running a change, the action code checks permissions and
+whether the preview still matches. Keep feature command adapters under
+`capabilities/`; `commands/bridge.py` builds tools from registered command
+definitions and calls the feature adapters.
 
-There is also a limit of 48 tool calls. New tool-result text sent to the model
-is limited to 64,000 characters per result and 300,000 characters per request.
-These character limits apply to the model view, not the full structured results
-kept in turn records. Context and deadline checks reserve room for a final
-answer and delivery, so a request can stop before these limits.
-Missing provider usage counts against the budget using estimates and the full
-output allowance. `Agent usage` logs distinguish reported and unknown usage.
+## Access and sharing
 
-## Capability contract
+Core leadership and members with the Agent Tester role can use the agent.
+`access.py` checks their roles and channel permissions for each source. Both
+the member and the bot must be able to read a source channel; the member must
+also belong to any private thread being read. These checks apply again when
+using saved history or reports and before sending an answer.
 
-`RegisteredAgentTool` pairs a model-facing schema with a trusted handler, an
-effect, an action class, and a `CapabilityContract`. The registry rejects
-duplicate names and missing or inconsistent contracts.
+`disclosure.py` checks whether everyone who can see the destination can read
+the answer's sources. When that cannot be established, `PrivateAnswerView`
+lets the requesting member view the answer privately. See
+[Privacy and AI](../users/privacy-and-ai.md#agent) for the sharing controls and
+the audit-log restriction.
 
-The contract declares entity fields, filters, source channels, retained source
-identities, and required access. `compile_capability_call` binds arguments to
-that scope; `require_source_provenance` rejects successful channel reads that
-omit or exceed it. Reports retain their source channels and access requirements
-alongside their contents. A result without provenance must not become reusable
-evidence.
+## Answer checks
 
-The effect distinguishes reads, conversation state, artifacts, and commands.
-The action class separately distinguishes reads, outputs, changes, and
-irreversible changes. Change handlers prepare a `PreparedAction` with a preview
-and precondition check. Confirmation and execution recheck permissions and
-preconditions; planning a change does not execute it. Reads cannot depend on a
-change result. Irreversible changes can share a preview only when they are all
-the same kind. Command adapters live under `capabilities/`; the bridge uses the
-registered command's interface and checks.
+`engine/grounding.py` replaces `[[message:ID]]` with the recorded author,
+message text, and source link. It rejects unknown message IDs and checks
+specific claims against the information read during the request.
+`factual_answers.py` and `strict_answers.py` build supported answers, such as
+counts and tag lists, directly from lookup results.
 
-## Access and disclosure
-
-`access.py` checks the member and bot can read the request channel, then checks
-each evidence source and required role group. Private-thread reads also require
-the requester to be a thread member. Retained history, reports, and knowledge
-access are rechecked when reused and before delivery.
-
-`disclosure.py` separately checks whether the destination audience may see all
-sources. An incomplete member cache needs a provable permission structure;
-uncertain readership does not authorize a public answer. When the audience
-cannot be established, `PrivateAnswerView` offers requester-only controls.
-The member-facing behavior, including explicit disclosure and the audit-log
-exception, is described in [Privacy and AI](../users/privacy-and-ai.md#agent).
-Remembered disclosure decisions apply only to that requester and conversation,
-and only to subsets of the previously disclosed sources and access requirements.
-They never bypass the requester's own access checks.
-
-## Grounding
-
-`engine/grounding.py` renders `[[message:ID]]` from messages read during the
-request, using the recorded author, exact text, and source link. It escapes
-source Markdown and mentions and rejects unknown or conflicting message
-identities. A lexical guard rejects unsupported personal attributions and
-specific false implications from Clash profile or roster fields.
-
-`factual_answers.py` and `strict_answers.py` render supported narrow lookups from
-typed evidence rather than generated numbers. A failed grounding check may
-receive one answer-only repair round; an answer that still fails is withheld.
-These checks cover defined patterns and lookups, not the truth of arbitrary
-prose. Tests for new answer forms must exercise unsupported claims as well as
-valid evidence.
+When adding an answer format, test missing or conflicting information as well
+as a valid result. The checks depend on the claim or lookup being supported.
 
 ## Conversation state
 
-Conversations are scoped by guild, channel, and root message. Reply IDs locate
-them, including after a restart. Turns retain the question, generated and
-delivered answers, evidence, report IDs, source access, image references, and
-delivery state. Nonces let delivery reconcile an uncertain send without asking
-the model to generate the answer again.
+`conversation/` saves questions, answers, lookup results, report references,
+source permissions, and delivery progress. Reply IDs connect follow-up
+messages to the conversation after a restart. Delivery progress lets the bot
+check an uncertain send and reuse the answer.
 
-Working conversations expire after six idle hours. Memory holds up to 128
-conversations. Each conversation keeps at most 2,048 turns, 1 MiB of turn data
-in total, and 512 reply references. Oldest turns are evicted to meet the turn
-and byte limits. When a turn exceeds the byte limit, its full record is dropped;
-its context excerpt is kept if it fits and marked as retention-limited.
-Active requests are protected from idle pruning.
-Persistence uses revision checks and settles a started write before cancellation
-completes.
-Context compilation selects whole authorized records and bounded checkpoints;
-older retained turns remain available through the history tool.
+Working conversations and Discord research jobs expire after six idle hours.
+Long conversations can lose older turns sooner to keep their saved size
+within limits. Action execution and scheduled requests have separate saved
+state. See [Saved data](../reference/storage.md) for the files and
+[Privacy and AI](../users/privacy-and-ai.md#agent) for how long request text and
+troubleshooting records are kept.
 
-Discord research jobs keep their own cursors, coverage, leases, and results.
-Their six-hour idle lifetime is refreshed when touched. Action execution and
-scheduled requests use separate durable state. See [Saved data](../reference/storage.md)
-for file ownership and [Privacy and AI](../users/privacy-and-ai.md#agent)
-for transcript and diagnostic retention; conversation expiry does not erase
-those archives.
+## Community knowledge
 
-## Knowledge retrieval
+`KnowledgeStore` supplies approved reference sections that the member can
+read. Short sections marked `always_loaded` are included in research requests.
+The topic list includes public titles and filenames; members can search
+restricted sections when their roles allow it.
 
-`KnowledgeStore` builds an immutable catalogue and cached prompts for access
-profiles. Approved, visible `always_loaded` sections form the core. The topic
-index contains only public titles and filenames, even for privileged members;
-restricted sections are still available through authorized retrieval.
-
-`search_approved_knowledge` can search words, open up to five exact titles, or
-continue a section by its ID. Titles are case-sensitive and take precedence
-over a query; a section ID takes precedence over both. Search normalizes regular
-English plurals, removes stop words, and ranks title and body matches with
-length normalization. It is lexical retrieval, not exhaustive evidence that a
-topic is absent.
-
-Results include store status, coverage, pagination, and section continuation.
-Hidden titles are indistinguishable from unknown titles. Consumers must preserve
-partial results and follow continuation fields when they need complete text.
-See [Maintaining agent knowledge](../operators/agent-knowledge.md) for file
-format, reload behavior, and prompt limits.
+`search_approved_knowledge` searches words, opens exact titles, and continues
+long sections. Follow its continuation fields when the full text is needed.
+See [Agent knowledge files](../operators/agent-knowledge.md) for editing and
+reload instructions.
 
 ## Testing
 
-Agent tests live under `tests/features/agent`, grouped like the implementation.
-Run them from the repository root:
-
-```console
-python -m unittest discover -s tests/features/agent -t .
-python -m unittest discover -s tests
-```
-
-For a capability change, cover schema and dependency failures, lost access,
-source provenance, partial results, and confirmation rechecks where relevant.
-The `engine`, `knowledge`, `conversation`, and `actions` suites cover budgets,
-grounding, retrieval, persistence, and private delivery. Provider-session tests
-live in `tests/core/test_ai_infrastructure.py`. Follow
-[Testing and verification](testing.md) for Discord and external-service checks.
+Tests live under `tests/features/agent`, grouped like the feature code.
+For tool changes, check invalid arguments, failed earlier steps, lost access,
+source tracking, incomplete results, and confirmation checks as relevant.
+Model-client tests live in `tests/core/test_ai_infrastructure.py`. See
+[Testing and verification](testing.md) for commands and manual checks.
