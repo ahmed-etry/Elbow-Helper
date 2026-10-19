@@ -15,6 +15,7 @@ from ..models import RegisteredAgentTool
 
 _TEXT_EMOJI = re.compile(
     r"<a?:\w+:\d+>|https?://\S+|```[\s\S]*?```|`[^`\n]*`|:([A-Za-z0-9_]+):"
+    r"|(?<![\w:/]):([A-Za-z0-9_]+)(?=$|[\s.!?,;])"
 )
 
 
@@ -23,7 +24,7 @@ def render_server_emojis(text, guild):
     available = {item.name: str(item) for item in getattr(guild, "emojis", ())
                  if item.is_usable()}
     return _TEXT_EMOJI.sub(
-        lambda match: available.get(match.group(1), match.group(0)), text,
+        lambda match: available.get(match.group(1) or match.group(2), match.group(0)), text,
     )
 
 
