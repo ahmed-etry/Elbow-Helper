@@ -1,7 +1,6 @@
 """Request cost limits cover planning, expansion, recovery and confirmation."""
 
 import asyncio
-import json
 from dataclasses import replace
 from types import SimpleNamespace
 import unittest
