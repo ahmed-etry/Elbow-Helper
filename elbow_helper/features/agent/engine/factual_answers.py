@@ -4,7 +4,7 @@ import math
 import re
 
 from elbow_helper.domain.player_tags import normalize_player_tag
-from .grounding import GroundingError
+from .grounding import GROUNDING_GAPS, GroundingError
 from .strict_answers import strict_answer, strict_mode
 
 
@@ -22,8 +22,18 @@ def _clash_results(evidence, kind):
 
 def narrow_answer(question, evidence):
     """Return None for open-ended or unsupported intents, fail closed for known lookups."""
-    if strict_mode(question) is not None:
-        return strict_answer(question, evidence)
+    try:
+        mode = strict_mode(question)
+        if mode is not None:
+            try:
+                return strict_answer(question, evidence)
+            except GroundingError as error:
+                error.kind = "count" if mode == "count" else "list"
+                raise
+    except GroundingError as error:
+        if error.kind == "source":
+            error.kind = "list"
+        raise
     question = question.casefold().strip()
     if (len(question.split()) > 45 or re.search(
             r"\b(why|recommend|should|advice|assess|evaluate|explain|promote|kick)\b", question)):
@@ -38,6 +48,14 @@ def narrow_answer(question, evidence):
         requested.append(("average_destruction_percent", "Average destruction", "%"))
     if not count and not requested:
         return None
+    try:
+        return _numeric_answer(question, evidence, count=count, requested=requested)
+    except GroundingError as error:
+        error.kind = "count" if count and not requested else "figures"
+        raise
+
+
+def _numeric_answer(question, evidence, *, count, requested):
     if count and requested:
         raise GroundingError("ambiguous_numeric_request")
     results = _clash_results(evidence, "clan" if count else "battle_log")
@@ -70,11 +88,16 @@ def narrow_answer(question, evidence):
         raise GroundingError("battle_aggregate_wrong_selection")
     coverage = aggregate.get("coverage", {})
     lines = []
+    incomplete = False
     for field, label, suffix in requested:
         metric = aggregate.get(field, {})
-        numerator, denominator = metric.get("numerator"), metric.get("denominator")
+        numerator, denominator = (
+            (metric.get("numerator"), metric.get("denominator"))
+            if isinstance(metric, dict) else (None, None)
+        )
         if not _number(numerator) or type(denominator) is not int or denominator < 0:
-            raise GroundingError("battle_metric_invalid")
+            incomplete = True
+            continue
         if denominator == 0:
             lines.append(f"{label}: unavailable (no measured battles).")
             continue
@@ -83,6 +106,10 @@ def narrow_answer(question, evidence):
         places = 4 if field == "average_stars" else 2
         value = f"{numerator / denominator:.{places}f}"
         lines.append(f"{label}: {value}{suffix} ({denominator} measured battles).")
+    if not lines:
+        raise GroundingError("battle_metric_invalid")
+    if incomplete:
+        lines.append(GROUNDING_GAPS["figures"])
     after, before = coverage.get("requested_after"), coverage.get("requested_before")
     if after or before:
         lines.append(f"Window: {after or 'start of available log'} to {before or 'latest available battle'} (end exclusive).")

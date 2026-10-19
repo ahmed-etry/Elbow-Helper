@@ -247,8 +247,10 @@ async def prepare_post(context: AgentRequestContext,
                 text = narrow_answer(context.state.request_text, context.state.grounding_evidence)
                 if text is None:
                     text = ground_answer(arguments["text"], context.state.grounding_evidence)
-            except GroundingError:
-                return {"error": "The answer needs message sources read in this request."}
+            except GroundingError as error:
+                return {"error": "The answer needs message sources read in this request.",
+                        "source_issue": str(error), "missing_result": error.kind,
+                        "instruction": "Correct only the unresolved reference or claim, preserving useful supported content."}
             context.state.reply_to = arguments.get("reply_to")
             context.state.ping_author = arguments.get("ping_author", False)
             context.state.source_channels.add(channel.id)

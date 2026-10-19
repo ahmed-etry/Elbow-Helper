@@ -53,13 +53,21 @@ class CurrentChannelPostTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("Synthetic answer", "\n".join(logs.output))
                 self.assertIn("messages=[200]", "\n".join(logs.output))
 
-    async def test_unbound_personal_claim_is_rejected_before_sending(self):
+    async def test_unknown_source_reference_is_rejected_before_sending(self):
         result = await prepare_post(self.context, {
-            "channel_id": 2, "text": "Member Alpha objected to Applicant Beta.",
+            "channel_id": 2, "text": "My recommendation: keep them. [[message:999]]",
         })
         self.assertIn("error", result)
+        self.assertEqual(result["source_issue"], "message_not_read_this_turn")
+        self.assertEqual(result["missing_result"], "source")
         self.context.send_reply.assert_not_awaited()
         self.assertEqual(self.context.state.reply_delivery.posts, [])
+
+    async def test_natural_recommendation_can_be_sent_without_mandatory_quotations(self):
+        text = 'I wouldn\'t push for feedback. Saying "I am not very social" isn\'t a complaint.'
+        result = await prepare_post(self.context, {"channel_id": 2, "text": text})
+        self.assertEqual(result["status"], "complete")
+        self.context.send_reply.assert_awaited_once_with(self.context, text)
 
     async def test_other_channels_broadcasts_roles_and_files_still_need_confirmation(self):
         for arguments in (

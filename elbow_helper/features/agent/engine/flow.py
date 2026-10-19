@@ -31,7 +31,7 @@ from . import budgets as limits
 from .rounds import AgentGracefulEnd, AgentLimitReached, ModelRounds
 from .steps import PlanRunner
 from .grounding import (
-    GROUNDING_INSTRUCTION, GROUNDING_UNAVAILABLE, GroundingError, ground_answer,
+    GROUNDING_INSTRUCTION, GroundingError, ground_answer, partial_answer,
 )
 from .factual_answers import narrow_answer
 from .strict_answers import strict_mode
@@ -113,20 +113,21 @@ class AnswerFlow:
                 return factual
             return ground_answer(answer, self.context.state.grounding_evidence)
         except GroundingError as error:
-            LOGGER.info("Agent answer rejected: request=%s reason=%s", self.request_id, error)
-            if self.context.state.private_knowledge_used:
-                return GROUNDING_UNAVAILABLE
-            try:
-                if strict_mode(self.context.state.request_text) is not None:
-                    return GROUNDING_UNAVAILABLE
-            except GroundingError:
-                return GROUNDING_UNAVAILABLE
+            failure = error
+            LOGGER.info("Agent answer source issue: request=%s kind=%s reason=%s",
+                        self.request_id, error.kind, error)
+            # A rewrite cannot manufacture missing or ambiguous typed data.
+            if error.kind != "source":
+                return partial_answer(answer, self.context.state.grounding_evidence, error)
         try:
             repaired = await self.rounder.advance(
                 (), allow_tools=False, reasoning_effort=AgentReasoningEffort.LOW,
                 max_output_tokens=limits.FINAL_MAX_OUTPUT_TOKENS,
                 continuation_instruction=GROUNDING_INSTRUCTION +
-                " The previous answer failed grounding. Remove unsupported attributions.",
+                f" A source reference could not be resolved ({failure}). "
+                "Correct the reference using evidence already read, or remove that claim and "
+                "reconsider conclusions relying on it. Preserve the rest of the useful answer "
+                "and its requested format. Do not invent a source or withdraw supported recommendations.",
             )
             await require_evidence_access(self.context)
             if repaired.content and not repaired.tool_calls:
@@ -134,9 +135,15 @@ class AnswerFlow:
                 if factual is not None:
                     return factual
                 return ground_answer(repaired.content, self.context.state.grounding_evidence)
-        except (GroundingError, AgentGracefulEnd, AgentLimitReached, TextGenerationError, TimeoutError):
-            pass
-        return GROUNDING_UNAVAILABLE
+        except GroundingError as error:
+            failure = error
+            LOGGER.info("Agent source repair incomplete: request=%s kind=%s reason=%s",
+                        self.request_id, error.kind, error)
+        except (AgentGracefulEnd, AgentLimitReached, TextGenerationError, TimeoutError) as error:
+            LOGGER.info("Agent source repair unavailable: request=%s reason=%s",
+                        self.request_id, type(error).__name__)
+        await require_evidence_access(self.context)
+        return partial_answer(answer, self.context.state.grounding_evidence, failure)
 
     async def _limit_reply(self, error: AgentLimitReached) -> str:
         if self.context.state.reply_delivery.posts:
@@ -326,8 +333,10 @@ class AnswerFlow:
                 self._model_results(self.read_results)
                 await require_evidence_access(self.context)
                 return narrow_answer(state.request_text, state.grounding_evidence)
-        except GroundingError:
-            return GROUNDING_UNAVAILABLE
+        except GroundingError as error:
+            if error.kind == "source":
+                error.kind = "list"
+            return partial_answer("", state.grounding_evidence, error)
         if self.rounder.lookup_route:
             self._model_results(self.read_results)
             try:

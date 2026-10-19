@@ -52,13 +52,28 @@ the audit-log restriction.
 ## Answer checks
 
 `engine/grounding.py` replaces `[[message:ID]]` with the recorded author,
-message text, and source link. It rejects unknown message IDs and checks
-specific claims against the information read during the request.
+message text, and source link. It rejects unknown or conflicting message
+references; it does not judge the meaning of prose by matching English words.
+The answer model must distinguish sourced statements from its recommendations,
+using message authors, chronology and explicit reply targets. A correct citation
+alone does not establish that an interpretation is faithful.
 `factual_answers.py` and `strict_answers.py` build supported answers, such as
 counts and tag lists, directly from lookup results.
 
-When adding an answer format, test missing or conflicting information as well
-as a valid result. The checks depend on the claim or lookup being supported.
+An unresolved message reference gets one answer-only repair. If repair cannot
+finish, the reply retains referenced source messages that were actually read
+and identifies the missing result. Valid measured figures and completed command
+outcomes survive failures in independent results. Access checks still apply
+before delivery, including recovery replies.
+
+Unit tests check source integrity, numeric results and recovery. To assess
+interpretation with the actual answer model, run
+`python -m tests.features.agent.engine.evaluate_grounding` where the bot's hosting
+settings are available. It uses synthetic evidence and production answer
+instructions, prints answers with review criteria, and never connects to Discord.
+Review the output: finishing the command is not a semantic pass. Use `--case feedback`
+to run only the feedback example. This evaluates answer writing, not live tool
+selection or Discord delivery.
 
 ## Conversation state
 

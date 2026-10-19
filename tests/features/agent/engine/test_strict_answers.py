@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.agent.engine.factual_answers import narrow_answer
 from elbow_helper.features.agent.engine.flow import AnswerFlow
-from elbow_helper.features.agent.engine.grounding import GroundingError, GROUNDING_UNAVAILABLE
+from elbow_helper.features.agent.engine.grounding import GroundingError, GROUNDING_GAPS
 from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.features.agent.models import RegisteredAgentTool
 from elbow_helper.features.agent.wording import ACTION_EMPTY
@@ -118,7 +118,7 @@ class StrictFlowTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(session.calls), 1)
 
     async def test_generated_banter_is_discarded_and_missing_data_gets_no_repair_round(self):
-        for evidence, expected in (({"read": players()}, "#P0\n#P2"), ({}, GROUNDING_UNAVAILABLE)):
+        for evidence, expected in (({"read": players()}, "#P0\n#P2"), ({}, GROUNDING_GAPS["list"])):
             context = _context()
             context.state.request_text = "tags only"
             context.state.grounding_evidence = deepcopy(evidence)

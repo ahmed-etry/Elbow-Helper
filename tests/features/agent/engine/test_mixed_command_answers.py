@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.features.agent.actions.contracts import ActionClass, ChangePreview, PreparedAction
 from elbow_helper.features.agent.actions.outcomes import ActionOutcome
 from elbow_helper.features.agent.engine.service import AgentService
-from elbow_helper.features.agent.engine.grounding import GROUNDING_UNAVAILABLE
+from elbow_helper.features.agent.engine.grounding import GROUNDING_GAPS
 from elbow_helper.features.agent.models import AgentCapabilityEffect, RegisteredAgentTool
 from elbow_helper.features.agent.wording import ACTION_PRIVATE_NOTE, ACTION_PRIVATE_ANSWER
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolDefinition, AgentUsage
@@ -111,7 +111,7 @@ class MixedAnswerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_failed_strict_read_does_not_hide_completed_command(self):
         answer, _, _ = await self.answer(question="count only; run the command", payload={"error": "unavailable"})
-        self.assertEqual(answer, f"{GROUNDING_UNAVAILABLE}\n\nCommand result")
+        self.assertEqual(answer, f"{GROUNDING_GAPS['count']}\n\nCommand result")
 
 
 class MixedDeliveryTests(unittest.IsolatedAsyncioTestCase):

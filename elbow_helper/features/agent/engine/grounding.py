@@ -1,10 +1,4 @@
-"""Bind personal attributions to messages supplied during this request.
-
-Free prose is deliberately not accepted as proof that a person holds a stance.
-The message form renders the source's words and author, without paraphrasing.
-The lexical guard is conservative English detection, not a semantic entailment
-model; behavioural evaluation remains necessary for unrestricted judgement.
-"""
+"""Validate source references without treating English wording as proof or error."""
 
 from collections.abc import Mapping
 import re
@@ -13,44 +7,32 @@ import discord
 
 
 MESSAGE = re.compile(r"\[\[message:(\d+)\]\]")
-ATTRIBUTION = re.compile(
-    r"\b(said|says|saying|told|stated|stating|wrote|writes|mentioned|mentions|"
-    r"objected|objects|opposed|opposes|opposition|objection|complained|complains|"
-    r"argued|argues|insisted|insists|requested|requests|asked|asks|"
-    r"wants|wanted|prefers|preferred|believes|believed|thinks|thought|"
-    r"feels|felt|supports|supported|endorsed|agreed|agrees|disagreed|disagrees|"
-    r"vetoed|vetoes|rejected|rejects|demanded|demands|favours|favors|"
-    r"concerned|concerns|stance|against|in favor|according to|"
-    r"(?:scandal|fuss)\b.{0,70}\b(?:making|made|raised|raising)|"
-    r"[’']s (?:only )?crime|"
-    r"[’']s (?:view|opinion|preference|position)|in .{1,50}'s (?:view|opinion))\b",
-    re.IGNORECASE,
-)
-REQUEST_OR_SELF = re.compile(
-    r"^(?:I (?:said|thought|asked)|you (?:asked|requested))\b", re.IGNORECASE,
-)
 LINK = re.compile(r"https://discord(?:app)?\.com/channels/\d+/\d+/\d+")
-RECORD_CLAIM = re.compile(
-    r"\b(?:on|in|from)\s+(?:the\s+)?leadership records\b|"
-    r"\bleadership records\s+(?:show|say|contain|have|list|confirm|prove|establish)\b",
-    re.IGNORECASE,
-)
-
 GROUNDING_INSTRUCTION = (
-    "Use [[message:ID]] for exact quotes from this turn. No stance paraphrases; "
-    "keep recommendations separate. Never claim unread leadership records contain an answer."
+    "Answer the question from the evidence. Separate facts from recommendations and qualify "
+    "uncertain parts. [[message:ID]] optionally inserts an exact read message."
 )
-GROUNDING_UNAVAILABLE = "I couldn't verify that answer from the sources I read."
+GROUNDING_GAPS = {
+    "source": "I couldn’t confirm the quoted message.",
+    "count": "I couldn’t confirm the requested count.",
+    "list": "I couldn’t confirm the requested list.",
+    "figures": "I couldn’t confirm the requested figures.",
+}
 
 
 class GroundingError(ValueError):
-    """An answer has unsupported personal attributions or invalid source bindings."""
+    """A concrete source reference or typed result cannot support the requested output."""
+
+    def __init__(self, reason, *, kind="source"):
+        super().__init__(reason)
+        self.kind = kind
 
 
 def records(value):
     """Walk ordinary results and the compact column/row model representation."""
     if isinstance(value, Mapping):
-        if value.get("error") or value.get("flags", {}).get("status") in ("failed", "refused"):
+        flags = value.get("flags")
+        if "error" in value or isinstance(flags, Mapping) and flags.get("status") in ("failed", "refused"):
             return
         columns, rows = value.get("columns"), value.get("rows")
         if isinstance(columns, list) and isinstance(rows, list):
@@ -86,26 +68,8 @@ def messages_from(evidence):
 
 
 def ground_answer(answer, evidence):
-    _check_field_meanings(answer, evidence)
-    if RECORD_CLAIM.search(answer) and not any(
-        isinstance(row.get("source_coverage"), Mapping)
-        and isinstance(row["source_coverage"].get("records"), Mapping)
-        for row in records(evidence)
-    ):
-        raise GroundingError("leadership_records_not_read_this_turn")
+    """Validate source bindings; interpretation belongs to evidence-aware generation."""
     messages = messages_from(evidence)
-    # Check the surrounding prose before inserting source text. A valid citation
-    # beside an invented objection is still an unsupported attribution.
-    prose = MESSAGE.sub("", answer)
-    prose = re.sub(r"https?://\S+", "", prose)
-    # This idiom contains no proposition about what somebody actually said.
-    prose = re.sub(r"\b(he|she|they) said what \1 said\b", "", prose, flags=re.IGNORECASE)
-    if re.search(r"(?:<@!?\d+>|\b[A-Z][\w ]{0,60}):\s*[\"“]", prose):
-        raise GroundingError("personal_quote_requires_message")
-    for sentence in re.split(r"[.!?\n]+", prose):
-        sentence = sentence.strip(" *_->\t")
-        if ATTRIBUTION.search(REQUEST_OR_SELF.sub("", sentence)):
-            raise GroundingError("personal_attribution_requires_message")
 
     def render(match):
         row = messages.get(match[1])
@@ -119,27 +83,22 @@ def ground_answer(answer, evidence):
         quoted = "\n".join("> " + line for line in content.splitlines())
         return f"{author} ([message]({row['source']})):\n{quoted}"
 
-    result = MESSAGE.sub(render, answer)
-    if "[[message:" in result:
+    if "[[message:" in MESSAGE.sub("", answer):
         raise GroundingError("invalid_message_binding")
-    return result
+    return MESSAGE.sub(render, answer)
 
 
-def _check_field_meanings(answer, evidence):
-    """Reject the known unsupported profile/roster implications in factual prose."""
-    kinds = {row.get("kind") for row in records(evidence) if row.get("source") == "clash_api"}
-    for sentence in re.split(r"[.!?\n]+", MESSAGE.sub("", answer)):
-        # Explicitly denying that the fields establish a fact is useful and safe.
-        if re.search(r"\b(?:does not|doesn't|cannot|can't|do not|don't) (?:prove|establish|show|mean|imply)\b",
-                     sentence, re.IGNORECASE):
-            continue
-        if "player" in kinds and not kinds.intersection({"current_war", "cwl_war", "war_log", "battle_log"}):
-            if re.search(r"\b(inactive|barely active|no war (?:participation|attacks)|never attacks)\b",
-                         sentence, re.IGNORECASE):
-                raise GroundingError("profile_does_not_establish_activity")
-        if "clan" in kinds:
-            if re.search(r"\b(hard cap|at capacity|no more (?:members )?can join)\b", sentence, re.IGNORECASE):
-                raise GroundingError("member_count_does_not_establish_capacity")
-            if re.search(r"\b(newly (?:arrived|joined)|recently joined|newest (?:member|recruit)|join time)\b",
-                         sentence, re.IGNORECASE):
-                raise GroundingError("roster_rank_does_not_establish_join_time")
+def referenced_sources(answer, evidence, *, limit=3):
+    """Retain usable evidence after a failed repair, without retaining unverified prose."""
+    messages = messages_from(evidence)
+    identities = [match[1] for match in MESSAGE.finditer(answer)]
+    identities.extend(match.group().rsplit("/", 1)[-1] for match in LINK.finditer(answer))
+    selected = list(dict.fromkeys(identity for identity in identities if identity in messages))[:limit]
+    return "\n\n".join(ground_answer(f"[[message:{identity}]]", evidence) for identity in selected)
+
+
+def partial_answer(answer, evidence, error):
+    """Keep referenced source material when generated source repair cannot finish."""
+    return "\n\n".join(filter(None, (
+        referenced_sources(answer, evidence), GROUNDING_GAPS[error.kind],
+    )))

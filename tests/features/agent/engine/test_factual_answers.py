@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import AsyncMock
 
 from elbow_helper.features.agent.engine.factual_answers import narrow_answer
-from elbow_helper.features.agent.engine.grounding import GroundingError
+from elbow_helper.features.agent.engine.grounding import GROUNDING_GAPS, GroundingError
 from elbow_helper.features.agent.datasets.findings import metrics
 from elbow_helper.features.agent.engine.flow import AnswerFlow
 from features.agent.engine.test_agent_plan_flow import _context
@@ -64,6 +64,22 @@ class FactualAnswerTests(unittest.TestCase):
                                                       if key != "aggregate"})):
             with self.subTest(question=question), self.assertRaises(GroundingError):
                 narrow_answer(question, {"read": payload})
+
+    def test_missing_metric_does_not_erase_other_measured_results(self):
+        for invalid in ({}, None, {"numerator": True, "denominator": 3}):
+            with self.subTest(invalid=invalid):
+                payload = sample()
+                payload["aggregate"]["triple_rate_percent"] = invalid
+                answer = narrow_answer("Average stars and triple rate for ranked defenses?", {"read": payload})
+                self.assertIn("Average stars: 2.3333", answer)
+                self.assertIn(GROUNDING_GAPS["figures"], answer)
+                self.assertNotIn("Triple rate:", answer)
+
+    def test_missing_results_identify_the_kind_without_a_model_rewrite(self):
+        for question, kind in (("Member count?", "count"), ("Average stars?", "figures")):
+            with self.subTest(question=question), self.assertRaises(GroundingError) as caught:
+                narrow_answer(question, {})
+            self.assertEqual(caught.exception.kind, kind)
 
     def test_judgement_request_retains_synthesis(self):
         self.assertIsNone(narrow_answer("Should we recruit more, given the member count?", {"read": clan()}))
