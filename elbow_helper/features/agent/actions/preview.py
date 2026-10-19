@@ -23,6 +23,7 @@ from ..wording import (
     ACTION_RESULT_OWNER, ACTION_RESULT_EXPIRED,
 )
 from .private_view import PrivateResultView
+from .message_cleanup import log_cleanup_failure
 
 
 LOGGER = logging.getLogger(__name__)
@@ -178,8 +179,8 @@ class ConfirmationView(discord.ui.View):
             if progress_message is None and self.message is not None:
                 try:
                     await self.message.edit(view=None)
-                except discord.DiscordException:
-                    LOGGER.warning("Agent preview buttons could not be removed")
+                except discord.DiscordException as error:
+                    log_cleanup_failure(LOGGER, "Agent preview buttons could not be removed", error)
                 self.stop()
             try:
                 if self.runner is None:
@@ -197,8 +198,8 @@ class ConfirmationView(discord.ui.View):
                 if self.message is not None and progress_message is not None:
                     try:
                         await self.message.edit(view=None)
-                    except discord.DiscordException:
-                        LOGGER.warning("Agent preview buttons could not be removed")
+                    except discord.DiscordException as error:
+                        log_cleanup_failure(LOGGER, "Agent preview buttons could not be removed", error)
                 self.stop()
                 await (
                     getattr(self.context, "delivery_channel", None)
@@ -228,8 +229,8 @@ class ConfirmationView(discord.ui.View):
             if self.message is not None:
                 try:
                     await self.message.edit(view=None)
-                except discord.DiscordException:
-                    LOGGER.warning("Agent preview could not be invalidated")
+                except discord.DiscordException as error:
+                    log_cleanup_failure(LOGGER, "Agent preview could not be invalidated", error)
             self.stop()
 
     async def on_timeout(self) -> None:
@@ -244,6 +245,6 @@ class ConfirmationView(discord.ui.View):
                     **({} if self.used else {"content": self._replacement(ACTION_PREVIEW_EXPIRED)}),
                     view=None,
                 )
-            except discord.DiscordException:
-                LOGGER.warning("Agent command preview could not expire")
+            except discord.DiscordException as error:
+                log_cleanup_failure(LOGGER, "Agent command preview could not expire", error)
         self.stop()

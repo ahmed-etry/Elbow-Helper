@@ -4,6 +4,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
+import discord
+
 from elbow_helper.features.agent.actions.private_view import PrivateResultView
 from elbow_helper.features.agent.actions.outcomes import ActionOutcome
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin
@@ -77,6 +79,42 @@ class PrivateCommandViewTests(unittest.IsolatedAsyncioTestCase):
         member = self.interaction(101)
         await view.open_result(member)
         member.response.send_message.assert_awaited_once_with(ACTION_RESULT_EXPIRED, ephemeral=True)
+
+    async def test_deleted_or_expired_message_cleanup_is_debug_and_still_refuses_open(self):
+        for error in (
+            discord.NotFound(SimpleNamespace(status=404, reason="Not Found"),
+                             {"code": 10008, "message": "Unknown Message"}),
+            discord.NotFound(SimpleNamespace(status=404, reason="Not Found"),
+                             {"code": 10015, "message": "Unknown Webhook"}),
+            discord.HTTPException(SimpleNamespace(status=401, reason="Unauthorized"),
+                                  {"code": 50027, "message": "Invalid Webhook Token"}),
+        ):
+            with self.subTest(code=error.code):
+                view = PrivateResultView(101, ("synthetic private data",))
+                view.message = SimpleNamespace(edit=AsyncMock(side_effect=error))
+                with self.assertLogs("elbow_helper.features.agent.actions.private_view", level="DEBUG") as logs:
+                    await view.on_timeout()
+                self.assertEqual([record.levelname for record in logs.records], ["DEBUG"])
+                self.assertTrue(view.expired)
+                self.assertTrue(all(item.disabled for item in view.children))
+                member = self.interaction(101)
+                await view.open_result(member)
+                member.response.send_message.assert_awaited_once_with(ACTION_RESULT_EXPIRED, ephemeral=True)
+
+    async def test_unexpected_cleanup_failure_keeps_warning_with_diagnostics(self):
+        for error in (
+            discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"),
+                              {"code": 50013, "message": "Missing Permissions"}),
+            discord.HTTPException(SimpleNamespace(status=500, reason="Server Error"), "Failure"),
+        ):
+            with self.subTest(status=error.status):
+                view = PrivateResultView(101, ("synthetic private data",))
+                view.message = SimpleNamespace(edit=AsyncMock(side_effect=error))
+                with self.assertLogs("elbow_helper.features.agent.actions.private_view", level="WARNING") as logs:
+                    await view.on_timeout()
+                self.assertEqual(len(logs.output), 1)
+                self.assertIsNotNone(logs.records[0].exc_info)
+                self.assertTrue(view.expired)
 
     async def test_delivery_attaches_the_private_view_to_the_public_note(self):
         delivery_surface = AgentDeliveryMixin()

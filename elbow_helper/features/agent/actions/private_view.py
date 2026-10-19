@@ -15,6 +15,7 @@ from ..wording import (
 from ..models import AgentAttachment
 from ..files.delivery import attachment_files, spreadsheet_links, spreadsheet_warnings
 from ..text import chunk_response
+from .message_cleanup import log_cleanup_failure
 
 
 LOGGER = logging.getLogger(__name__)
@@ -118,5 +119,5 @@ class PrivateResultView(discord.ui.View):
         if self.message is not None:
             try:
                 await self.message.edit(view=self)
-            except discord.DiscordException:
-                LOGGER.warning("Private command result could not be disabled")
+            except discord.DiscordException as error:
+                log_cleanup_failure(LOGGER, "Private command result could not be disabled", error)

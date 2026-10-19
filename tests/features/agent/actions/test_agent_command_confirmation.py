@@ -5,6 +5,8 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
 
+import discord
+
 from elbow_helper.features.agent.actions.preview import ConfirmationView, preview_text
 from elbow_helper.features.agent.actions.contracts import ChangePreview, PreparedAction
 from elbow_helper.features.agent.actions.outcomes import ActionOutcome
@@ -20,6 +22,23 @@ from elbow_helper.features.agent.wording import (
 
 
 class ConfirmationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_deleted_preview_timeout_is_debug_and_still_expires(self):
+        proposal, _, _ = self.proposal(1)
+        view = self.view((proposal,))
+        view.message.edit.side_effect = discord.NotFound(
+            SimpleNamespace(status=404, reason="Not Found"),
+            {"code": 10008, "message": "Unknown Message"},
+        )
+        with self.assertLogs("elbow_helper.features.agent.actions.preview", level="DEBUG") as logs:
+            await view.on_timeout()
+        self.assertEqual([record.levelname for record in logs.records], ["DEBUG"])
+        self.assertTrue(view.expired)
+        self.assertTrue(view.is_finished())
+        interaction = self.interaction(101)
+        await view.confirm(interaction)
+        interaction.response.send_message.assert_awaited_once_with(ACTION_PREVIEW_EXPIRED, ephemeral=True)
+        view.runner.submit.assert_not_awaited()
+
     async def test_confirm_removes_unreusable_preview_buttons_and_stops_its_timeout(self):
         proposal, _, _ = self.proposal(1)
         view = self.view((proposal,))
