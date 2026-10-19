@@ -26,7 +26,9 @@ class KnowledgeToolTests(unittest.IsolatedAsyncioTestCase):
         self.member = SimpleNamespace(id=1, roles=[SimpleNamespace(id=AGENT_TESTER_ROLE_ID)])
         channel = SimpleNamespace(permissions_for=lambda _: SimpleNamespace(
             view_channel=True, read_message_history=True))
-        guild = SimpleNamespace(me=self.member, get_member=lambda _: self.member)
+        guild = SimpleNamespace(id=3, chunked=True, members=[self.member],
+                                me=self.member, get_member=lambda _: self.member)
+        channel.guild = guild
         self.context = SimpleNamespace(
             knowledge_store=self.store, member=self.member, guild=guild,
             source_message=SimpleNamespace(channel=channel, created_at=datetime.now(timezone.utc)),
@@ -157,11 +159,14 @@ class KnowledgeToolTests(unittest.IsolatedAsyncioTestCase):
     def test_tool_schema_accepts_either_argument_or_both_and_bounds_titles(self):
         schema = knowledge_tools()[0].definition.parameters
         for arguments in ({"query": "topic"}, {"query": ""}, {"titles": ["Topic"]},
+                          {"query": "topic", "scope": "requester"},
+                          {"query": "topic", "scope": "channel"},
                           {"query": "topic", "titles": ["Topic"]},
                           {"titles": [f"Topic {i}" for i in range(5)]}):
             with self.subTest(arguments=arguments):
                 self.assertTrue(valid_arguments(arguments, schema))
         for arguments in ({"titles": []}, {"titles": ["Topic"] * 2},
+                          {"query": "topic", "scope": "all"}, {"scope": True},
                           {"titles": [f"Topic {i}" for i in range(6)]},
                           {"titles": "Topic"}, {"titles": [1]}, {"query": "x" * 201}):
             with self.subTest(arguments=arguments):

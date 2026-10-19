@@ -5,6 +5,7 @@ import hashlib
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ..access import has_access_requirements, require_lookup_access, require_evidence_access
+from ..disclosure import can_show
 
 from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool
@@ -14,21 +15,25 @@ from .store import VISIBILITIES
 def knowledge_tools():
     return (RegisteredAgentTool(AgentToolDefinition(
         "search_approved_knowledge",
-        "Open knowledge by exact topic-index titles, or search with query; titles take precedence.",
+        "Open matching titles first; widen default channel scope only for needed policies or processes.",
         {"type":"object", "properties":{
+            "scope":{"type":"string", "enum":["channel", "requester"]},
             "query":{"type":"string", "minLength":0, "maxLength":200},
             "titles":{"type":"array", "minItems":1, "maxItems":5, "uniqueItems":True,
                       "items":{"type":"string"}},
             "section_id":{"type":"string", "minLength":64, "maxLength":64},
-            "offset":{"type":"integer", "minimum":0, "default":0},
-            "limit":{"type":"integer", "minimum":1, "maximum":8, "default":8},
-            "section_offset":{"type":"integer", "minimum":0, "default":0}},
+            "offset":{"type":"integer", "minimum":0},
+            "limit":{"type":"integer", "minimum":1, "maximum":8},
+            "section_offset":{"type":"integer", "minimum":0}},
          "required":[], "additionalProperties":False}), search_approved_knowledge,
         contract=CapabilityContract(()), returns="sections:[{title,body,visibility}]"),)
 
 
 async def search_approved_knowledge(context, arguments):
     await require_evidence_access(context)
+    scope = arguments.get("scope", "channel")
+    if scope not in ("channel", "requester"):
+        return {"error": "Use channel or requester knowledge scope."}
     if context.knowledge_store is None:
         return _unavailable()
     try:
@@ -45,6 +50,14 @@ async def search_approved_knowledge(context, arguments):
         return {"error": "Use a valid knowledge page; section continuation needs a title or section ID."}
     levels = {level for level in VISIBILITIES - {"public"}
               if has_access_requirements(context.guild, context.member.id, {level})}
+    if scope == "channel" and levels:
+        destination = getattr(context, "delivery_channel", None) or context.source_message.channel
+        cache = getattr(context, "disclosure_thread_members", None)
+        if cache is None:
+            cache = {}
+        levels = {level for level in sorted(levels) if await can_show(
+            destination, {}, {level}, context.guild, thread_members=cache, log_decision=False,
+        )}
     visible = catalog.visible_sections(levels)
     if "section_id" in arguments:
         sections = tuple(section for section in visible if _section_id(section) == arguments["section_id"])
@@ -77,7 +90,7 @@ async def search_approved_knowledge(context, arguments):
     next_offset = offset + len(sections) if offset + len(sections) < total else None
     clipped = any(section["truncated"] for section in returned)
     exhaustive = catalog.store_status == "available" and method != "lexical_ranked"
-    return {"sections": returned, "store_status": catalog.store_status,
+    return {"sections": returned, "store_status": catalog.store_status, "scope": scope,
             "match_status": "matches" if total else "no_visible_match",
             "observed_at": catalog.observed_at, "offset": offset, "next_offset": next_offset,
             "search_is_exhaustive": exhaustive,

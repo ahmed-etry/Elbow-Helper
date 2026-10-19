@@ -332,7 +332,7 @@ Hidden""")
         self.assertNotIn("private.md", prompt)
         # The restricted body remains searchable by authorized members. Reading
         # it, unlike loading the public index, must constrain delivery.
-        result = await search_approved_knowledge(context, {"query": "Restricted topic"})
+        result = await search_approved_knowledge(context, {"query": "Restricted topic", "scope": "requester"})
         self.assertEqual(result["sections"][0]["body"], "Restricted body")
         self.assertEqual(context.state.required_access, {"lead"})
 
@@ -377,7 +377,7 @@ Secret facts""")
             ),
             patch("elbow_helper.features.agent.knowledge.tools.require_lookup_access"),
         ):
-            result = await search_approved_knowledge(context, {"query": "secret"})
+            result = await search_approved_knowledge(context, {"query": "secret", "scope": "requester"})
             self.assertEqual(len(result["sections"]), 3)
             self.assertEqual(context.state.required_access, {"lead", "lead_plus", "core"})
 
