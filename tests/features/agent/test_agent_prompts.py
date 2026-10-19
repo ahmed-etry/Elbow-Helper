@@ -211,5 +211,17 @@ class RequestPromptTests(unittest.TestCase):
             asked_at=datetime(2026, 9, 16, tzinfo=timezone.utc), asker_id=42,
         )
         self.assertIn('Asker: member (member_id=42)\n', with_id)
-        self.assertTrue(with_id.endswith('Respond to the asker. Voice: salty and funny; facts exact.'))
+        self.assertTrue(with_id.endswith('</local_context>'))
         self.assertIn('<local_context>\nnearby 1\n</local_context>', prompts[0])
+
+    def test_request_context_does_not_repeat_or_override_system_voice(self):
+        for question in ("Roast that replay", "Count only", "Fix your answer, dumbass"):
+            with self.subTest(question=question):
+                prompt = build_request_prompt(
+                    question=question, local_context="", guild_name="server", asker_name="member",
+                    asked_at=datetime(2026, 9, 16, tzinfo=timezone.utc),
+                )
+                self.assertIn(f"<request>\n{question}\n</request>", prompt)
+                self.assertTrue(prompt.endswith("</local_context>"))
+                self.assertNotIn("Voice:", prompt)
+                self.assertNotIn("Persona and tone:", prompt)

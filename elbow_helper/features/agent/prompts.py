@@ -295,6 +295,4 @@ Asked at: {asked_at.isoformat()}{identity_context}
 
 <local_context>
 {local_context or "No nearby conversation was available."}
-</local_context>
-
-Respond to the asker. Voice: salty and funny; facts exact."""
+</local_context>"""
