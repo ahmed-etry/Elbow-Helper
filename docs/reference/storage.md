@@ -10,6 +10,11 @@ retain older feature names because existing deployments depend on them.
 | Shared exports | `data/.exports/` | Temporary workbooks and crash leftovers |
 | Account links | `data/clan_links/links.sqlite3` | Account links, suggestions, and current clan locations |
 | Achievements | `data/achievements/achievements.db` | Achievements, activity, coins, raffles, and rewards |
+| Agent | `data/agent/agent.sqlite3` | Conversations and reply IDs used to continue after a restart |
+| Agent | `data/agent/transcripts.sqlite3` | Request and reply text, plus troubleshooting records |
+| Agent | `data/agent/research_jobs.sqlite3` | Progress and results for Discord searches and history reads |
+| Agent | `data/agent/actions.sqlite3` | Action history, progress, tracked messages, scheduled requests, watched conditions, and member timezones |
+| Agent | `data/agent/knowledge/*.md` | [Community reference files](../operators/agent-knowledge.md) |
 | Clan health | `data/clan_health/clan_health.db` | Snapshots, activity, movement, wars, and report evidence |
 | Clan health | `data/clan_health/player_health_config.json` | Health-report expectations |
 | Clan reports | `data/clan_data/clan_activity.json` | Monthly report and board state |
@@ -36,3 +41,11 @@ retain older feature names because existing deployments depend on them.
 | Rosters | `data/rosters/rosters.sqlite3` | Rosters, signups, posts, and schedules |
 | Support and hibernation | `data/support/created_tickets.json` | Bot-created support and reactivation tickets |
 | Wars | `data/war/war_cache.json` | Processed wars, board and summary message IDs, and war-role lineups |
+
+Agent cleanup deletes action history 90 days after execution, action progress
+90 days after its last update, and records of tracked messages 90 days after
+creation.
+Saved requests, watched conditions, and member timezones stay saved.
+See [Agent](../developers/agent.md#conversation-state) for conversation and
+research job expiry, and [Privacy and AI](../users/privacy-and-ai.md#agent)
+for how long request text and troubleshooting records are kept.

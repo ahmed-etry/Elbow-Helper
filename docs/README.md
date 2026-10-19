@@ -14,6 +14,7 @@ Use `/help` in Discord for current command options, examples, and restrictions.
 - [Configuration](operators/configuration.md)
 - [Deployment](operators/deployment.md)
 - [Scheduled work](operators/scheduled-jobs.md)
+- [Agent knowledge files](operators/agent-knowledge.md)
 
 ## Development
 
@@ -22,7 +23,7 @@ Use `/help` in Discord for current command options, examples, and restrictions.
 - [Feature loading and restarts](developers/extension-lifecycle.md)
 - [Data and migrations](developers/data-and-migrations.md)
 - [External services](developers/integrations.md)
-- [Agent](developers/agent.md)
+- [Agent requests and actions](developers/agent.md)
 - [Testing](developers/testing.md)
 
 ## Reference

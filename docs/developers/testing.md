@@ -18,6 +18,12 @@ service:
 uv run python -m unittest -q tests.features.test_rosters
 ```
 
+To run the agent tests:
+
+```console
+uv run python -m unittest discover -s tests/features/agent -t .
+```
+
 ## Manual verification
 
 Manually verify changes that affect:
