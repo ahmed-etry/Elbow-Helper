@@ -252,14 +252,53 @@ class PlayerFieldTests(unittest.TestCase):
 
 
 class RankedCollectorTests(unittest.IsolatedAsyncioTestCase):
-    async def test_no_response_warning_and_http_status_remain_distinct(self):
+    async def test_transport_timeouts_stay_debug_and_preserve_backoff(self):
+        self.client.get.side_effect = TimeoutError("synthetic timeout")
+        logger = "elbow_helper.features.ranked_stats.cog"
+        with self.assertLogs(logger, level="DEBUG") as logs:
+            await self.collect_at(0)
+        self.assertTrue(all(record.levelname == "DEBUG" for record in logs.records))
+        self.assertEqual(self.cog._schedules["#P0"].battle_interval, 600)
+        with self.assertNoLogs(logger, level="WARNING"):
+            await self.collect_at(600)
+        self.assertEqual(self.cog._schedules["#P0"].battle_interval, 1200)
+        with self.assertLogs(logger, level="WARNING") as logs:
+            await self.collect_at(1800)
+        self.assertEqual(len(logs.output), 2)
+        self.assertTrue(all("3 consecutive polls" in line for line in logs.output))
+        self.assertEqual(self.cog._schedules["#P0"].battle_interval, 2400)
+        self.client.get.side_effect = self.response
+        with self.assertLogs(logger, level="INFO") as logs:
+            await self.collect_at(4200)
+        self.assertEqual(sum("recovered" in line for line in logs.output), 2)
+
+    async def test_invalid_link_warning_is_once_until_repaired(self):
+        self.links["invalid"] = {"discord_user_id": 0}
+        self.client.get.side_effect = self.response
+        logger = "elbow_helper.features.ranked_stats.cog"
+        with self.assertLogs(logger, level="WARNING") as logs:
+            await self.collect_at(0)
+            await self.collect_at(60)
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("invalid linked account identities", logs.output[0])
+        del self.links["invalid"]
+        with self.assertLogs(logger, level="INFO") as logs:
+            await self.collect_at(120)
+            await self.collect_at(180)
+        self.assertEqual(len(logs.output), 1)
+        self.links["invalid"] = {"discord_user_id": 0}
+        with self.assertLogs(logger, level="WARNING"):
+            await self.collect_at(240)
+
+    async def test_no_response_and_http_failure_stay_debug_for_single_poll(self):
         for status, expected in ((None, "(no response)"), (503, "(status 503)")):
-            self.cog._failing.clear()
-            with self.assertLogs("elbow_helper.features.ranked_stats.cog") as logs:
-                self.cog._report_failure("#P0", "battle log", status)
-                self.cog._report_failure("#P0", "battle log", status)
-            self.assertEqual(len(logs.output), 1)
-            self.assertIn(expected, logs.output[0])
+            with self.subTest(status=status):
+                self.client.get.side_effect = lambda *_args, **_kwargs: SimpleNamespace(
+                    ok=False, status=status, payload=None)
+                with self.assertLogs("elbow_helper.features.ranked_stats.cog", level="DEBUG") as logs:
+                    await self.collect_at(0 if status is None else 7200)
+                self.assertTrue(all(record.levelname == "DEBUG" for record in logs.records))
+                self.assertTrue(any(expected in line for line in logs.output))
 
     async def asyncSetUp(self):
         self.temp = TemporaryDirectory()
@@ -366,7 +405,7 @@ class RankedCollectorTests(unittest.IsolatedAsyncioTestCase):
         await self.collect_at(0)
         self.client.get.side_effect = lambda *_args, **_kwargs: SimpleNamespace(
             ok=False, status=503, payload=None)
-        with self.assertLogs("elbow_helper.features.ranked_stats.cog", level="WARNING"):
+        with self.assertNoLogs("elbow_helper.features.ranked_stats.cog", level="WARNING"):
             await self.collect_at(300)
         self.client.get.side_effect = lambda *_args, **_kwargs: SimpleNamespace(
             ok=True, status=200, payload={"items": [battle(minute=30)]})
@@ -429,16 +468,15 @@ class RankedCollectorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.collect_at(1200), ["/players/%23P2/battlelog"])
         self.client.get.side_effect = lambda *_args, **_kwargs: SimpleNamespace(
             ok=False, status=503, payload=None)
-        with self.assertLogs("elbow_helper.features.ranked_stats.cog"):
+        with self.assertNoLogs("elbow_helper.features.ranked_stats.cog", level="WARNING"):
             self.assertEqual(await self.collect_at(1500), ["/players/%23P0/battlelog"])
         self.assertEqual(await self.collect_at(1800), [])
-        with self.assertLogs("elbow_helper.features.ranked_stats.cog"):
+        with self.assertNoLogs("elbow_helper.features.ranked_stats.cog", level="WARNING"):
             self.assertEqual(await self.collect_at(2400), ["/players/%23P2/battlelog"])
-        # Failures back off by doubling the interval, and a repeated failure is not logged again.
+        # Failures still double the interval; the second failure remains below the warning threshold.
         self.assertEqual(await self.collect_at(3500), [])
-        with self.assertLogs("elbow_helper.features.ranked_stats.cog", level="WARNING") as logs:
+        with self.assertNoLogs("elbow_helper.features.ranked_stats.cog", level="WARNING"):
             self.assertIn("/players/%23P0/battlelog", await self.collect_at(3900))
-        self.assertFalse(any("battle log unavailable for #P0" in line for line in logs.output))
 
     async def test_failed_profiles_are_not_retried_by_more_frequent_battle_polls(self):
         def response(path, **kwargs):
@@ -481,7 +519,7 @@ class RankedCollectorTests(unittest.IsolatedAsyncioTestCase):
             return self.response(path, **kwargs)
 
         self.client.get.side_effect = response
-        with self.assertLogs("elbow_helper.features.ranked_stats.cog"):
+        with self.assertLogs("elbow_helper.features.ranked_stats.cog", level="DEBUG"):
             await self.cog.collect_once()
         self.assertEqual(len(starts), 24)
         self.assertEqual(sum(path.endswith("/battlelog") for _, path, _ in starts), 12)

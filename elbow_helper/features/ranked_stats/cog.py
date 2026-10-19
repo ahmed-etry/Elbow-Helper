@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import logging
 from time import monotonic
 
+import aiohttp
 from discord.ext import commands, tasks
 
 from elbow_helper.core.background import start_resilient_loop
@@ -14,6 +15,7 @@ from elbow_helper.domain.player_tags import encode_clash_tag, normalize_player_t
 from .fields import project_player
 from .queries import RankedQueries
 from .store import RankedStore
+from .health import CollectionHealth
 from .battles import INITIAL_POLL_SECONDS, MAX_POLL_SECONDS, MIN_POLL_SECONDS, battle_time, log_identities, parse_log
 
 
@@ -41,7 +43,8 @@ class RankedStats(commands.Cog):
         self.store = RankedStore(bot.paths.data_root / "ranked_stats" / "ranked.sqlite3")
         self.queries = RankedQueries(self.store)
         self._missing_fields = set()
-        self._failing = set()
+        self._invalid_links = False
+        self._health = CollectionHealth(LOGGER)
         self._collect_lock = asyncio.Lock()
         self._schedules = {}
         self._request_lock = asyncio.Lock()
@@ -63,13 +66,7 @@ class RankedStats(commands.Cog):
             self._missing_fields.discard(key)
 
     def _report_failure(self, tag, kind, status):
-        # A failing account is logged once, not on every poll, until it recovers.
-        if (tag, kind) not in self._failing:
-            self._failing.add((tag, kind))
-            if status is None:
-                LOGGER.warning("Ranked %s unavailable for %s (no response)", kind, tag)
-            else:
-                LOGGER.warning("Ranked %s unavailable for %s (status %s)", kind, tag, status)
+        self._health.record(tag, kind, status)
 
     async def collect_once(self):
         if not self.client.configured:
@@ -78,16 +75,22 @@ class RankedStats(commands.Cog):
             started = monotonic()
             links = await asyncio.to_thread(self.account_links.get_all_links)
             accounts = {}
+            invalid_links = 0
             for raw_tag, link in links.items():
                 tag = normalize_player_tag(raw_tag)
                 member_id = link.get("discord_user_id")
                 if tag is None or type(member_id) is not int or member_id <= 0:
-                    LOGGER.warning("Ranked snapshot skips invalid linked account identity")
+                    invalid_links += 1
                     continue
                 accounts[tag] = member_id
+            if invalid_links and not self._invalid_links:
+                LOGGER.warning("Ranked snapshot skips %s invalid linked account identities", invalid_links)
+            elif not invalid_links and self._invalid_links:
+                LOGGER.info("Ranked linked account identities recovered")
+            self._invalid_links = bool(invalid_links)
             tags = set(accounts)
             self._missing_fields = {key for key in self._missing_fields if key[0] in tags}
-            self._failing = {key for key in self._failing if key[0] in tags}
+            self._health.retain(tags)
             self._schedules = {tag: schedule for tag, schedule in self._schedules.items() if tag in tags}
             await self._restore_schedules(tags - self._schedules.keys())
             semaphore = asyncio.Semaphore(4)
@@ -115,6 +118,7 @@ class RankedStats(commands.Cog):
 
             completed = await asyncio.gather(*(collect(tag, member) for tag, member in accounts.items()
                 if monotonic() >= min(self._schedules[tag].profile_due, self._schedules[tag].battle_due)))
+            self._health.report()
             if completed:
                 await asyncio.to_thread(self.store.append,
                     [row for row, _, _ in completed if row is not None],
@@ -164,7 +168,6 @@ class RankedStats(commands.Cog):
             response = await self._get("/players/" + encode_clash_tag(tag))
             payload = response.payload
             if response.ok and isinstance(payload, dict):
-                self._failing.discard((tag, "player snapshot"))
                 returned_tag = normalize_player_tag(payload.get("tag"))
                 if returned_tag is not None and returned_tag != tag:
                     raise ValueError("Player response identity mismatch")
@@ -179,9 +182,13 @@ class RankedStats(commands.Cog):
                 if isinstance(clan, dict):
                     row["clan_tag"] = normalize_player_tag(clan.get("tag"))
                     self._report_field(tag, "clan.tag", row["clan_tag"] is None)
+                self._health.record(tag, "player snapshot", 200, ok=True)
             else:
                 self._report_failure(tag, "player snapshot", response.status)
+        except (TimeoutError, aiohttp.ClientError, OSError):
+            self._report_failure(tag, "player snapshot", None)
         except Exception:
+            self._report_failure(tag, "player snapshot", None)
             LOGGER.exception("Ranked player snapshot failed for %s", tag)
         row["observed_at"] = datetime.now(timezone.utc).isoformat(timespec="microseconds")
         return row
@@ -195,7 +202,6 @@ class RankedStats(commands.Cog):
         try:
             response = await self._get("/players/" + encode_clash_tag(tag) + "/battlelog")
             if response.ok:
-                self._failing.discard((tag, "battle log"))
                 poll["observed_at"] = datetime.now(timezone.utc).isoformat(timespec="microseconds")
                 poll, battles = parse_log(response.payload, {**row, "observed_at": poll["observed_at"]},
                     lambda field, missing: self._report_field(tag, field, missing))
@@ -207,9 +213,13 @@ class RankedStats(commands.Cog):
                         "battles may have been missed between polls", tag,
                     )
                 schedule.previous_battles = identities
+                self._health.record(tag, "battle log", 200, ok=True)
                 return poll, battles
             self._report_failure(tag, "battle log", response.status)
+        except (TimeoutError, aiohttp.ClientError, OSError):
+            self._report_failure(tag, "battle log", None)
         except Exception:
+            self._report_failure(tag, "battle log", None)
             LOGGER.exception("Ranked battle log failed for %s", tag)
         # Back off an account whose log keeps failing, up to the slowest poll interval.
         poll["poll_interval_seconds"] = min(MAX_POLL_SECONDS, interval * 2)
