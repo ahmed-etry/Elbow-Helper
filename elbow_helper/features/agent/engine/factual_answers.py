@@ -5,6 +5,7 @@ import re
 
 from elbow_helper.domain.player_tags import normalize_player_tag
 from .grounding import GroundingError
+from .strict_answers import strict_answer, strict_mode
 
 
 def _number(value):
@@ -21,6 +22,8 @@ def _clash_results(evidence, kind):
 
 def narrow_answer(question, evidence):
     """Return None for open-ended or unsupported intents, fail closed for known lookups."""
+    if strict_mode(question) is not None:
+        return strict_answer(question, evidence)
     question = question.casefold().strip()
     if (len(question.split()) > 45 or re.search(
             r"\b(why|recommend|should|advice|assess|evaluate|explain|promote|kick)\b", question)):

@@ -33,6 +33,7 @@ from .grounding import (
     GROUNDING_INSTRUCTION, GROUNDING_UNAVAILABLE, GroundingError, ground_answer,
 )
 from .factual_answers import narrow_answer
+from .strict_answers import strict_mode
 from ..models import AgentRequestContext, RegisteredAgentTool
 from .budgets import ContextBudget
 from elbow_helper.infrastructure.ai.agent import AgentSession
@@ -97,6 +98,11 @@ class AnswerFlow:
             return ground_answer(answer, self.context.state.grounding_evidence)
         except GroundingError as error:
             LOGGER.info("Agent answer rejected: request=%s reason=%s", self.request_id, error)
+            try:
+                if strict_mode(self.context.state.request_text) is not None:
+                    return GROUNDING_UNAVAILABLE
+            except GroundingError:
+                return GROUNDING_UNAVAILABLE
         try:
             repaired = await self.rounder.advance(
                 (), allow_tools=False, reasoning_effort=AgentReasoningEffort.LOW,
@@ -276,6 +282,13 @@ class AnswerFlow:
         if state.outcomes:
             await require_evidence_access(self.context)
             return command_reply(state.outcomes)
+        try:
+            if strict_mode(state.request_text) is not None:
+                self._model_results(self.completed_results)
+                await require_evidence_access(self.context)
+                return narrow_answer(state.request_text, state.grounding_evidence)
+        except GroundingError:
+            return GROUNDING_UNAVAILABLE
         return None
 
     async def _feedback_reply(self, results, instruction, **details) -> str:
