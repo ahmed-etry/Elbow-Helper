@@ -136,6 +136,7 @@ class AgentTurnState:
     ping_author: bool = False
     used_gif_urls: set[str] = field(default_factory=set)
     outcomes: list[Any] = field(default_factory=list)
+    has_read_answer: bool = False
     proposed_changes: list[Any] = field(default_factory=list)
     preview_reply: str | None = None
     preview_first: bool = False

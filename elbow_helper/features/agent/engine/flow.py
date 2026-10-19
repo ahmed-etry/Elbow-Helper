@@ -34,7 +34,7 @@ from .grounding import (
 )
 from .factual_answers import narrow_answer
 from .strict_answers import strict_mode
-from ..models import AgentRequestContext, RegisteredAgentTool
+from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from .budgets import ContextBudget
 from elbow_helper.infrastructure.ai.agent import AgentSession
 from ..prompts import (
@@ -69,6 +69,9 @@ class AnswerFlow:
         self.request_id = request_id
         self.completed_results = {}
         self.result_views = {}
+        self.read_results = {}
+        self.steps_by_id = {}
+        self.append_commands = False
 
     def _model_results(self, results):
         visible = {key: self.result_views[key] for key in results if key in self.result_views}
@@ -84,7 +87,10 @@ class AnswerFlow:
             if not self.completed_results:
                 raise
             answer = await self._limit_reply(error)
-        return await self._grounded_reply(answer)
+        answer = await self._grounded_reply(answer)
+        if self.append_commands and not self.context.state.reply_delivery.posts:
+            answer = "\n\n".join(filter(None, (answer, command_reply(self.context.state.outcomes))))
+        return answer
 
     async def _grounded_reply(self, answer):
         """All final paths, including direct, recovery and limit replies, pass here."""
@@ -172,8 +178,14 @@ class AnswerFlow:
             if on_plan is not None:
                 await on_plan(self.plan)
             results = await self.runner.run(self.plan)
+            self.steps_by_id.update({step["id"]: step for step in self.plan["steps"]})
             self.completed_results.update(results)
             self.result_views.update(self.runner.model_results_for(results))
+            self.read_results.update({step["id"]: results[step["id"]]
+                                      for step in self.plan["steps"]
+                                      if step["id"] in results
+                                      and self.registry[step["capability"]].action_class is ActionClass.READ
+                                      and self.registry[step["capability"]].effect is AgentCapabilityEffect.READ})
             self.rounder.results_available = bool(results)
             if self.plan["steps"] and sum(
                 step["capability"] == "find_gif" for step in self.plan["steps"]
@@ -190,7 +202,9 @@ class AnswerFlow:
             response = await self._result_response(results)
             if response is not None:
                 return response
-            response, model_step = await self._answer_round(results)
+            response, model_step = await self._answer_round(
+                self.read_results if self.append_commands else results,
+            )
             if response is not None:
                 return response
             response = await self._revise(model_step)
@@ -205,6 +219,7 @@ class AnswerFlow:
 
     async def _result_response(self, results: Mapping[str, Any]) -> str | None:
         state = self.context.state
+        self.append_commands = False
         lookup_missing = [item for item in results.values()
                           if item.get("status") == "needs_input"]
         missing = [item for item in state.outcomes if item.status == "needs_input"]
@@ -242,18 +257,18 @@ class AnswerFlow:
                 await require_evidence_access(self.context)
                 return response
             # Lookups that only resolve change targets are shown by the preview itself.
-            steps_by_id = {step["id"]: step for step in self.plan["steps"]}
+            steps_by_id = self.steps_by_id
             feeds_change: set[str] = set()
-            pending = [owner for step in changes for owner in step_dependencies(step)]
+            pending = [owner for action in state.proposed_changes
+                       for owner in step_dependencies(steps_by_id[action.step_id])]
             while pending:
                 step_id = pending.pop()
                 if step_id in feeds_change or step_id not in steps_by_id:
                     continue
                 feeds_change.add(step_id)
                 pending.extend(step_dependencies(steps_by_id[step_id]))
-            answered = [step for step in self.plan["steps"]
-                        if self.registry[step["capability"]].action_class is ActionClass.READ
-                        and step["id"] in results and step["id"] not in feeds_change]
+            answered = [steps_by_id[step_id] for step_id in self.read_results
+                        if step_id not in feeds_change]
             reads = bool(answered)
             if reads or state.outcomes:
                 state.preview_reply = response
@@ -261,17 +276,20 @@ class AnswerFlow:
                 if state.outcomes:
                     answer_ids.update(step["id"] for step in self.plan["steps"]
                                       if self.registry[step["capability"]].action_class is ActionClass.OUTPUT)
-                order = [step["id"] for step in self.plan["steps"]]
-                state.preview_first = min(order.index(step["id"]) for step in changes) < min(
+                order = list(steps_by_id)
+                state.preview_first = min(order.index(action.step_id) for action in state.proposed_changes) < min(
                     (order.index(step_id) for step_id in answer_ids), default=len(order),
                 )
             answer = await self._feedback_reply(
-                {step_id: value for step_id, value in results.items() if step_id not in feeds_change},
+                {step["id"]: self.read_results[step["id"]] for step in answered},
                 RESULT_ANSWER_INSTRUCTION + " Changes are waiting for the member's "
                 "confirmation; do not describe them as done.",
             ) if reads else ""
             if state.outcomes:
-                answer = "\n\n".join(filter(None, (answer, command_reply(state.outcomes))))
+                if reads:
+                    self.append_commands = True
+                else:
+                    answer = command_reply(state.outcomes)
             await require_evidence_access(self.context)
             if answer:
                 return answer
@@ -281,10 +299,16 @@ class AnswerFlow:
             return ""
         if state.outcomes:
             await require_evidence_access(self.context)
-            return command_reply(state.outcomes)
+            if not self.read_results:
+                return command_reply(state.outcomes)
+            # Commands keep their own outcome text. Independent read results still
+            # need an answer, including reads from an earlier plan revision.
+            self.append_commands = True
+            state.has_read_answer = True
+            self._model_results(self.read_results)
         try:
             if strict_mode(state.request_text) is not None:
-                self._model_results(self.completed_results)
+                self._model_results(self.read_results)
                 await require_evidence_access(self.context)
                 return narrow_answer(state.request_text, state.grounding_evidence)
         except GroundingError:
@@ -313,7 +337,10 @@ class AnswerFlow:
                 json.dumps(
                     {
                         "results": self._model_results(results),
-                        "instruction": RESULT_ANSWER_INSTRUCTION,
+                        "instruction": RESULT_ANSWER_INSTRUCTION + (
+                            " Answer the reads only; command outcomes are delivered separately."
+                            if self.append_commands else ""
+                        ),
                     },
                     ensure_ascii=False,
                     default=str,

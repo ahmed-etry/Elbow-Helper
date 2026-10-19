@@ -197,7 +197,8 @@ class AgentDeliveryMixin:
         if context is not None and _audience_override:
             _log_visibility(message, context, "public", "requester_post_override")
         if (context is not None and not context.state.proposed_changes
-                and (not context.state.outcomes or _answer_disclosure or audit_private)
+                and (not context.state.outcomes or context.state.has_read_answer
+                     or _answer_disclosure or audit_private)
                 and not _audience_override):
             sources = await require_evidence_access(context)
             audience_allowed = False if audit_private else await can_show(
