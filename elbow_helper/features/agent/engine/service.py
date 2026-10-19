@@ -14,6 +14,7 @@ from elbow_helper.infrastructure.ai import AgentModel
 from elbow_helper.infrastructure.ai import TextGenerationError
 from ..models import AgentRequestContext
 from ..conversation.debug import OperatorDebugRecord
+from ..conversation.replay import replay_answer
 from ..actions.contracts import ActionClass
 from ..access import (
     AgentAccessLost,
@@ -243,6 +244,10 @@ class AgentService:
     ) -> str:
         from ..files.images import request_images
         context.state.request_text = question
+        replay = await replay_answer(question, context)
+        if replay is not None:
+            context.operator_debug.status = "replayed"
+            return replay
         images = await request_images(context)
         context.operator_debug.image_labels = [image.label for image in images] + context.state.image_source_status
         flow, usage = self._start_flow(
