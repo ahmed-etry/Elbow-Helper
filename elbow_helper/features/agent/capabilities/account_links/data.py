@@ -12,8 +12,9 @@ SOURCES = (
         tables=(
             (
                 "links", "lead",
-                "One linked account; discord_user_id owns player_tag; is_primary marks "
-                "the primary account; last_seen_role is Clash member/admin/coLeader/leader.",
+                "Links Clash account tags to Discord members. One member can have "
+                "multiple linked accounts. Includes the last recorded account name, "
+                "clan and clan role. These links are separate from ClashPerk's.",
             ),
             ("ignored_tags", "lead", "One ignored account tag."),
             (

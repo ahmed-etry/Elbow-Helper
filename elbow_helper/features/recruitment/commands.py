@@ -494,13 +494,12 @@ class RecruitmentCommandMixin:
                 player_rows = []
                 failed_tags.extend(player_tags)
 
-        for index, row in enumerate(player_rows):
+        for row in player_rows:
             tag = str(row["player_tag"])
             try:
                 self.account_links.upsert_link(
                     player_tag=tag,
                     discord_user_id=user.id,
-                    is_primary=index == 0,
                     player_name_last_seen=str(row["player_name"]),
                 )
             except (OSError, sqlite3.Error):

@@ -13,15 +13,13 @@ _LINK_UPSERT_SQL = """
     INSERT INTO links (
         player_tag,
         discord_user_id,
-        is_primary,
         player_name_last_seen,
         last_seen_clan_tag,
         last_seen_clan_code,
         last_seen_role
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(player_tag) DO UPDATE SET
         discord_user_id = excluded.discord_user_id,
-        is_primary = excluded.is_primary,
         player_name_last_seen = excluded.player_name_last_seen,
         last_seen_clan_tag = excluded.last_seen_clan_tag,
         last_seen_clan_code = excluded.last_seen_clan_code,
@@ -41,17 +39,22 @@ class AccountLinksDbMixin:
             conn.close()
 
     def _init_db(self) -> None:
-        with self._db_connect() as conn:
+        with self._db_connect() as conn, conn:
             cursor = conn.cursor()
             cursor.execute("PRAGMA journal_mode=WAL")
             cursor.execute("PRAGMA synchronous=NORMAL")
             cursor.execute("PRAGMA busy_timeout=30000")
+            # Keep schema changes atomic. SQLite rejects dependencies on the old
+            # column rather than silently removing indexes, constraints or triggers.
+            cursor.execute("BEGIN IMMEDIATE")
+            columns = {row["name"] for row in cursor.execute("PRAGMA table_info(links)")}
+            if "is_primary" in columns:
+                cursor.execute("ALTER TABLE links DROP COLUMN is_primary")
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS links (
                     player_tag TEXT PRIMARY KEY,
                     discord_user_id INTEGER NOT NULL,
-                    is_primary INTEGER NOT NULL DEFAULT 0,
                     player_name_last_seen TEXT DEFAULT '',
                     last_seen_clan_tag TEXT DEFAULT '',
                     last_seen_clan_code TEXT DEFAULT '',
@@ -119,7 +122,6 @@ class AccountLinksDbMixin:
                 SELECT * FROM links
                 WHERE discord_user_id = ?
                 ORDER BY
-                    is_primary DESC,
                     COALESCE(player_name_last_seen, '') COLLATE NOCASE ASC,
                     player_tag ASC
                 """,
@@ -144,7 +146,7 @@ class AccountLinksDbMixin:
                 placeholders = ",".join("?" for _ in batch)
                 rows = conn.execute(
                     f"SELECT * FROM links WHERE discord_user_id IN ({placeholders}) "
-                    "ORDER BY discord_user_id, is_primary DESC, player_tag",
+                    "ORDER BY discord_user_id, player_tag",
                     batch,
                 ).fetchall()
                 for row in rows:
@@ -163,7 +165,6 @@ class AccountLinksDbMixin:
         *,
         player_tag: str,
         discord_user_id: int,
-        is_primary: bool = False,
         player_name_last_seen: str = "",
         last_seen_clan_tag: str = "",
         last_seen_clan_code: str = "",
@@ -174,7 +175,6 @@ class AccountLinksDbMixin:
                 {
                     "player_tag": player_tag,
                     "discord_user_id": discord_user_id,
-                    "is_primary": is_primary,
                     "player_name_last_seen": player_name_last_seen,
                     "last_seen_clan_tag": last_seen_clan_tag,
                     "last_seen_clan_code": last_seen_clan_code,
@@ -188,7 +188,6 @@ class AccountLinksDbMixin:
             (
                 str(link["player_tag"]),
                 int(link["discord_user_id"]),
-                1 if bool(link.get("is_primary")) else 0,
                 str(link.get("player_name_last_seen") or ""),
                 str(link.get("last_seen_clan_tag") or ""),
                 str(link.get("last_seen_clan_code") or ""),
@@ -215,11 +214,10 @@ class AccountLinksDbMixin:
                 (
                     (
                         tag, int(row["discord_user_id"]),
-                        int(row.get("is_primary") or 0),
-                        str(row.get("player_name_last_seen") or ""),
-                        str(row.get("last_seen_clan_tag") or ""),
-                        str(row.get("last_seen_clan_code") or ""),
-                        str(row.get("last_seen_role") or ""),
+                        row.get("player_name_last_seen", ""),
+                        row.get("last_seen_clan_tag", ""),
+                        row.get("last_seen_clan_code", ""),
+                        row.get("last_seen_role", ""),
                     )
                     for tag, row in before.items() if row is not None
                 ),

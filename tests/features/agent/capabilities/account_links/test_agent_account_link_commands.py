@@ -20,7 +20,7 @@ class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
     async def test_reassignment_preview_run_and_undo(self):
         links = object.__new__(AccountLinks)
         owner = SimpleNamespace(id=7, mention="<@7>", display_name="New owner")
-        old = {"player_tag": "#P0Y", "discord_user_id": 8, "is_primary": 1,
+        old = {"player_tag": "#P0Y", "discord_user_id": 8,
                "player_name_last_seen": "Old name", "last_seen_clan_code": "BEH",
                "last_seen_clan_tag": "#CLAN", "last_seen_role": "member"}
         saved = {"#P0Y": dict(old)}
@@ -36,7 +36,6 @@ class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
             row["player_tag"]: {
                 "player_tag": row["player_tag"],
                 "discord_user_id": row["discord_user_id"],
-                "is_primary": int(row["is_primary"]),
                 "player_name_last_seen": row["player_name_last_seen"],
                 "last_seen_clan_code": "", "last_seen_clan_tag": "",
                 "last_seen_role": "",
@@ -52,6 +51,7 @@ class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
         values = {"member": owner.id, "tags": "#P0Y"}
         preview = await prepare_account_add(context, values)
         self.assertTrue(any("from <@8> to <@7>" in line for line in preview.lines))
+        self.assertFalse(any("primary" in line.lower() for line in preview.lines))
         self.assertTrue(any("Clear the saved clan" in line for line in preview.lines))
         self.assertTrue(await preview.recheck())
         self.assertEqual(saved["#P0Y"]["discord_user_id"], 8)
@@ -61,6 +61,11 @@ class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
         undo = await prepare_account_add_undo(context, {
             "before": preview.before, "after": outcome.after,
         })
+        self.assertTrue(await undo.preview.recheck())
+        expected = saved["#P0Y"]
+        saved["#P0Y"] = {**expected, "player_name_last_seen": "Changed"}
+        self.assertFalse(await undo.preview.recheck())
+        saved["#P0Y"] = expected
         self.assertTrue(await undo.preview.recheck())
         await undo.run()
         self.assertEqual(saved["#P0Y"], old)
@@ -93,7 +98,7 @@ class AccountLinkRestoreTests(unittest.TestCase):
                 links._init_db()
                 original = {
                     "player_tag": "#P0Y", "discord_user_id": 8,
-                    "is_primary": 1, "player_name_last_seen": "Original",
+                    "player_name_last_seen": "Original",
                     "last_seen_clan_tag": "#CLAN",
                     "last_seen_clan_code": "BEH", "last_seen_role": "member",
                 }

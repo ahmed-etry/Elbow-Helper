@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.account_links.evidence import (
-    member_account_evidence, refresh_account_locations,
+    member_account_evidence, refresh_account_locations, validate_account_location_rows,
 )
 from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.agent.research.members import find_discord_roles
@@ -71,6 +71,14 @@ class AgentReportTests(unittest.IsolatedAsyncioTestCase):
         refreshed = await refresh_account_locations(context.account_links, [account])
         self.assertEqual(account["location_status"], "unknown")
         self.assertEqual(refreshed[0]["location_status"], "refresh_failed")
+        self.assertNotIn("primary", refreshed[0])
+        self.assertTrue(account["primary"])
+        current = {key: value for key, value in account.items() if key != "primary"}
+        self.assertEqual(validate_account_location_rows([current]), (current,))
+        with self.assertRaises(ValueError):
+            validate_account_location_rows([{**account, "unexpected": True}])
+        with self.assertRaises(ValueError):
+            validate_account_location_rows([{**account, "primary": "yes"}])
         with self.assertRaisesRegex(ValueError, "exceeds 25"):
             await refresh_account_locations(context.account_links, [account] * 26)
 
@@ -79,6 +87,7 @@ class AgentReportTests(unittest.IsolatedAsyncioTestCase):
         links.clash_client.get.side_effect = [ClashResponse(200, {"tag": "#2PP", "name": "Unclanned"}, {}, 1, 1),
                                              ClashResponse(503, None, {}, 1, 1)]
         result = await member_account_evidence(links, [1, 2], refresh=True)
+        self.assertTrue(all("primary" not in row for row in result[1]))
         self.assertFalse(result[1][0]["in_clan"])
         self.assertIsNone(result[1][0]["clan_tag"])
         self.assertEqual(result[1][0]["location_status"], "refreshed")

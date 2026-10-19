@@ -116,6 +116,12 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
                 player_tags=["#A", "#B"],
             )
 
+        self.assertEqual(
+            [call.kwargs for call in owner.account_links.upsert_link.call_args_list],
+            [dict(player_tag="#A", discord_user_id=42, player_name_last_seen="Alpha"),
+             dict(player_tag="#B", discord_user_id=42, player_name_last_seen="Beta")],
+        )
+        user.edit.assert_awaited_once_with(nick="Ahmad")
         user.remove_roles.assert_awaited_once_with(applicant_role)
         self.assertEqual(
             [call.args[0] for call in user.add_roles.await_args_list],

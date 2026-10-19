@@ -16,7 +16,6 @@ from ...wording import (
     ACTION_ACCOUNT_LOCATION_CLEAR,
     ACTION_ACCOUNT_NAME_LINE,
     ACTION_ACCOUNT_NO_LINK,
-    ACTION_ACCOUNT_PRIMARY_LINE,
     ACTION_ACCOUNT_REASSIGN_LINE,
     ACTION_ACCOUNT_REMOVE_LABEL,
     ACTION_ACCOUNT_REMOVE_LINE,
@@ -57,8 +56,6 @@ def _add_lines(prepared: Mapping[str, Any], member: Any) -> tuple[str, ...]:
             lines.append(ACTION_ACCOUNT_ADD_LINE.format(
                 name=row["player_name_last_seen"], tag=tag, member=member.mention,
             ))
-        if row["is_primary"]:
-            lines.append(ACTION_ACCOUNT_PRIMARY_LINE.format(tag=tag))
         if old and old.get("player_name_last_seen") != row["player_name_last_seen"]:
             lines.append(ACTION_ACCOUNT_NAME_LINE.format(
                 old=old.get("player_name_last_seen") or tag,
@@ -116,7 +113,6 @@ async def run_account_add(context: Any,
     if any(
         after.get(row["player_tag"]) is None
         or int(after[row["player_tag"]]["discord_user_id"]) != member.id
-        or bool(after[row["player_tag"]]["is_primary"]) != bool(row["is_primary"])
         or after[row["player_tag"]]["player_name_last_seen"] != row["player_name_last_seen"]
         for row in result["rows"]
     ):

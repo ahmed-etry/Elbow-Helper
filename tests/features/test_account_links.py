@@ -122,16 +122,15 @@ class AccountLinksTests(unittest.TestCase):
         self.assertEqual([parameter.name for parameter in commands["remove"].parameters], ["tags"])
         self.assertEqual([parameter.name for parameter in commands["list"].parameters], ["member", "tag"])
 
-    def test_member_accounts_are_sorted_by_name_after_primary(self) -> None:
+    def test_member_accounts_are_sorted_by_name_then_tag(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             database_path = Path(directory) / "clan_links.db"
             with patch("elbow_helper.features.account_links.database.DB_PATH", database_path):
                 links = _LinksHarness()
                 links._init_db()
                 links.upsert_link(
-                    player_tag="#PRIMARY",
+                    player_tag="#FIRST",
                     discord_user_id=1,
-                    is_primary=True,
                     player_name_last_seen="Zulu",
                 )
                 links.upsert_link(
@@ -147,7 +146,7 @@ class AccountLinksTests(unittest.TestCase):
 
                 rows = links.get_links_for_user(1)
 
-        self.assertEqual([row["player_tag"] for row in rows], ["#PRIMARY", "#ALPHA", "#ZULU"])
+        self.assertEqual([row["player_tag"] for row in rows], ["#ALPHA", "#FIRST", "#ZULU"])
 
     def test_batch_upsert_rolls_back_every_link_when_one_write_fails(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -238,6 +237,7 @@ class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
 
         batch = links.upsert_links.call_args.args[0]
         self.assertEqual([row["player_tag"] for row in batch], ["#P0Y", "#LQG"])
+        self.assertTrue(all("is_primary" not in row for row in batch))
         message = interaction.followup.send.call_args.args[0]
         self.assertIn("Linked Alpha (`#P0Y`) to <@42>", message)
         self.assertIn("Linked Bravo (`#LQG`) to <@42>", message)

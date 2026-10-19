@@ -449,22 +449,14 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         member_links = self.get_links_for_user(member.id)
         existing_links = self.get_all_links()
         before = {tag: existing_links.get(tag) for tag in valid_tags}
-        has_primary = any(bool(row.get("is_primary")) for row in member_links)
         lines: list[str] = []
         link_rows: list[dict[str, object]] = []
         for row in player_rows:
             tag = str(row["player_tag"])
             existing = existing_links.get(tag)
-            is_primary = False
-            if existing and int(existing["discord_user_id"]) == member.id:
-                is_primary = bool(existing.get("is_primary"))
-            elif not has_primary:
-                is_primary = True
-                has_primary = True
             link_rows.append({
                 "player_tag": tag,
                 "discord_user_id": member.id,
-                "is_primary": is_primary,
                 "player_name_last_seen": str(row["player_name"]),
             })
             if existing and int(existing["discord_user_id"]) != member.id:

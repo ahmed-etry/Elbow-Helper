@@ -26,8 +26,7 @@ def _linked_accounts(rows: list[dict[str, Any]]) -> str:
     for row in rows:
         name = str(row.get("player_name_last_seen") or row.get("player_tag") or "Unknown")
         tag = str(row.get("player_tag") or "")
-        primary = " [Primary]" if bool(row.get("is_primary")) else ""
-        values.append(f"{name} ({tag}){primary}" if tag else f"{name}{primary}")
+        values.append(f"{name} ({tag})" if tag else name)
     return "\n".join(values) if values else "-"
 
 

@@ -15,7 +15,7 @@ from elbow_helper.domain.player_tags import encode_clash_tag, normalize_player_t
 LOCATION_CONCURRENCY = 4
 LOCATION_REFRESH_SECONDS = 20.0
 ACCOUNT_LOCATION_FIELDS = frozenset({
-    "player_tag", "player_name", "primary", "clan_tag", "clan_code",
+    "player_tag", "player_name", "clan_tag", "clan_code",
     "clan_name", "clan_role", "in_clan", "location_status", "checked_at",
 })
 ACCOUNT_LOCATION_STATUSES = frozenset({
@@ -133,7 +133,6 @@ async def member_account_evidence(
             account = {
                 "player_tag": tag,
                 "player_name": location.get("player_name") or row.get("player_name_last_seen") or tag,
-                "primary": bool(row.get("is_primary")),
                 "clan_tag": clan_tag,
                 "clan_code": clan_code,
                 "clan_name": CLANS[clan_code].name if clan_code in CLANS else None,
@@ -182,6 +181,9 @@ def validate_account_location_rows(
         raise ValueError("Account refresh input exceeds its row bound")
     tags: set[str] = set()
     for row in rows:
+        # Retained report inputs may predate removal of account-primary status.
+        if isinstance(row, dict) and type(row.get("primary")) is bool:
+            row.pop("primary")
         if not isinstance(row, dict) or set(row) != ACCOUNT_LOCATION_FIELDS:
             raise ValueError("Invalid account refresh row")
         tag = row["player_tag"]
@@ -192,7 +194,6 @@ def validate_account_location_rows(
             not isinstance(row["player_name"], str)
             or not row["player_name"]
             or len(row["player_name"]) > 200
-            or type(row["primary"]) is not bool
             or row["location_status"] not in ACCOUNT_LOCATION_STATUSES
             or row["in_clan"] is not None
             and type(row["in_clan"]) is not bool

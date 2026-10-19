@@ -129,17 +129,14 @@ class _Links:
             {
                 "player_tag": "#A",
                 "player_name_last_seen": "Alpha",
-                "is_primary": 1,
             },
             {
                 "player_tag": "#B",
                 "player_name_last_seen": "Beta",
-                "is_primary": 0,
             },
             {
                 "player_tag": "#C",
                 "player_name_last_seen": "Gamma",
-                "is_primary": 0,
             },
         ]
 
