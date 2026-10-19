@@ -93,41 +93,66 @@ def _source_audience_contains_destination(
 
 def _destination_satisfies_role_requirements(
     channel: Any, guild: discord.Guild, requirements: frozenset[str] | set[str],
+    *, failure: dict | None = None,
 ) -> bool:
+    def deny(requirement=None, reader_kind="unknown_member"):
+        if failure is not None:
+            failure.update(failed_requirement=requirement or sorted(requirements)[0],
+                           reader_kind=reader_kind)
+        return False
+
     if not requirements:
         return True
     if ACCESS_VIEW_AUDIT_LOG in requirements:
-        return False
+        return deny(ACCESS_VIEW_AUDIT_LOG, "role_group")
     if not requirements <= KNOWN_ACCESS_REQUIREMENTS:
-        return False
+        return deny(sorted(requirements - KNOWN_ACCESS_REQUIREMENTS)[0])
     destination = channel.parent if isinstance(channel, discord.Thread) else channel
     roles = getattr(guild, "roles", None)
     default_role = getattr(guild, "default_role", None)
     signature = _read_audience_signature(destination)
     if roles is None or default_role is None or signature is None:
-        return False
+        return deny()
     # The owner bypasses channel overwrites, even without an administrator role.
     owner_id = getattr(guild, "owner_id", None)
     if type(owner_id) is not int or not has_access_requirements(guild, owner_id, requirements):
-        return False
+        requirement, kind = _member_access_failure(guild, owner_id, requirements)
+        return deny(requirement, kind)
     allowed_ids = set.intersection(*(set(ACCESS_ROLE_SETS[level]) for level in requirements))
     known_roles = {getattr(role, "id", None) for role in roles}
     if not known_roles or getattr(default_role, "id", None) not in known_roles:
-        return False
+        return deny()
     if destination.permissions_for(default_role).view_channel:
-        return False
+        return deny(reader_kind="role_group")
     for role in roles:
         if getattr(role, "managed", False):
             continue
         if destination.permissions_for(role).view_channel and role.id not in allowed_ids:
-            return False
+            requirement = next(level for level in sorted(requirements)
+                               if role.id not in ACCESS_ROLE_SETS[level])
+            return deny(requirement, "role_group")
     for target, overwrite in destination.overwrites.items():
         if overwrite.view_channel is True and target.id not in known_roles:
             # A member-specific grant is safe only when that member can be
             # resolved and satisfies every requirement under the usual checks.
             if not has_access_requirements(guild, target.id, requirements):
-                return False
+                requirement, kind = _member_access_failure(guild, target.id, requirements)
+                return deny(requirement, kind)
     return True
+
+
+def _reader_kind(member):
+    if member is None:
+        return "unknown_member"
+    return "bot" if getattr(member, "bot", False) else "role_group"
+
+
+def _member_access_failure(guild, member_id, requirements):
+    member = guild.get_member(member_id) if type(member_id) is int else None
+    requirement = next((level for level in sorted(requirements)
+                        if not has_access_requirements(guild, member_id, {level})),
+                       "guild_membership")
+    return requirement, _reader_kind(member)
 
 
 async def can_disclose_provenance(
@@ -158,12 +183,13 @@ async def can_disclose_provenance(
 def _resolved_sources_disclosable(
     destination: Any, guild: discord.Guild, sources: Mapping[int, Any],
     required_access: frozenset[str] | set[str],
+    *, failure: dict | None = None,
 ) -> bool:
     return bool(
         getattr(getattr(destination, "guild", None), "id", None)
         == getattr(guild, "id", None)
         and _destination_satisfies_role_requirements(
-            destination, guild, required_access,
+            destination, guild, required_access, failure=failure,
         )
         and all(
             _source_audience_contains_destination(source, destination, guild)
@@ -207,16 +233,30 @@ async def can_show(
     access_levels: frozenset[str] | set[str], guild: discord.Guild,
     *, thread_members: dict[int, frozenset[int] | None] | None = None,
     request_id: int | None = None,
+    log_decision: bool = True,
 ) -> bool:
     """Compare the actual destination audience with every source's readership."""
-    def decide(allowed, reason, *, source_id=None, member_id=None):
-        LOGGER.info(
-            "Agent audience decision: request=%s channel=%s allowed=%s reason=%s sources=%s "
-            "levels=%s source=%s member=%s",
-            request_id, getattr(destination, "id", None), allowed, reason, sorted(sources),
-            sorted(access_levels), source_id, member_id,
-        )
+    def decide(allowed, reason, *, source_id=None, member_id=None,
+               failed_requirement=None, reader_kind=None):
+        if log_decision:
+            LOGGER.info(
+                "Agent audience decision: request=%s channel=%s allowed=%s reason=%s sources=%s "
+                "levels=%s source=%s member=%s failed_requirement=%s reader_kind=%s",
+                request_id, getattr(destination, "id", None), allowed, reason, sorted(sources),
+                sorted(access_levels), source_id, member_id, failed_requirement, reader_kind,
+            )
         return allowed
+
+    def prove(reason, *, source_id=None, failed_requirement=None):
+        failure = {}
+        allowed = _resolved_sources_disclosable(
+            destination, guild, sources, access_levels, failure=failure,
+        )
+        if not allowed and not failure:
+            failure = {"failed_requirement": failed_requirement or "source_readership",
+                       "reader_kind": "unknown_member"}
+        return decide(allowed, "permission_structure_proven" if allowed else reason,
+                      source_id=source_id, **failure)
 
     if isinstance(destination, discord.DMChannel):
         recipient = destination.recipient
@@ -225,32 +265,39 @@ async def can_show(
         )
         return decide(allowed, "dm_recipient_authorized" if allowed else "dm_recipient_denied")
     if ACCESS_VIEW_AUDIT_LOG in access_levels:
-        return decide(False, "audit_log_requires_private_delivery")
+        return decide(False, "audit_log_requires_private_delivery",
+                      failed_requirement=ACCESS_VIEW_AUDIT_LOG, reader_kind="role_group")
     if (getattr(getattr(destination, "guild", None), "id", None) != guild.id
             or not access_levels <= KNOWN_ACCESS_REQUIREMENTS
             or any(getattr(getattr(source, "guild", None), "id", None) != guild.id
                    for source in sources.values())):
-        return decide(False, "unknown_access_or_guild_boundary")
+        return decide(False, "unknown_access_or_guild_boundary",
+                      failed_requirement=next(iter(sorted(access_levels - KNOWN_ACCESS_REQUIREMENTS)),
+                                              "guild_boundary"), reader_kind="unknown_member")
     bot_member = guild.me
     if bot_member is None:
-        return decide(False, "bot_membership_unavailable")
+        return decide(False, "bot_membership_unavailable",
+                      failed_requirement="guild_membership", reader_kind="bot")
     for source in sources.values():
         permissions = source.permissions_for(bot_member)
         if not (permissions.view_channel and permissions.read_message_history):
-            return decide(False, "bot_source_read_denied", source_id=source.id)
+            return decide(False, "bot_source_read_denied", source_id=source.id,
+                          failed_requirement="view_channel" if not permissions.view_channel else
+                          "read_message_history", reader_kind="bot")
     if not getattr(guild, "chunked", False):
-        allowed = _resolved_sources_disclosable(destination, guild, sources, access_levels)
-        return decide(allowed, "permission_structure_proven" if allowed else "incomplete_member_cache_unproven")
+        return prove("incomplete_member_cache_unproven")
     cache = thread_members if thread_members is not None else {}
     viewers = await _destination_viewers(destination, guild, cache)
     if viewers is None:
-        allowed = _resolved_sources_disclosable(destination, guild, sources, access_levels)
-        return decide(allowed, "permission_structure_proven" if allowed else "destination_audience_unavailable")
+        return prove("destination_audience_unavailable",
+                     failed_requirement=next(iter(sorted(access_levels)), "destination_readership"))
     humans = {member.id: member for member in viewers
               if member.id != bot_member.id and not getattr(member, "bot", False)}
     for actor in humans.values():
         if not has_access_requirements(guild, actor.id, access_levels):
-            return decide(False, "viewer_missing_required_access", member_id=actor.id)
+            requirement, kind = _member_access_failure(guild, actor.id, access_levels)
+            return decide(False, "viewer_missing_required_access", member_id=actor.id,
+                          failed_requirement=requirement, reader_kind=kind)
     actors = {**humans, bot_member.id: bot_member}
     for source in sources.values():
         same_or_public = source.id == destination.id or _public_read_source(source, guild)
@@ -258,17 +305,19 @@ async def can_show(
         if not same_or_public and isinstance(source, discord.Thread) and source.is_private():
             private_members = await _thread_member_ids(source, cache)
             if private_members is None:
-                allowed = _resolved_sources_disclosable(destination, guild, sources, access_levels)
-                return decide(allowed, "permission_structure_proven" if allowed else "source_thread_members_unavailable",
-                              source_id=source.id)
+                return prove("source_thread_members_unavailable", source_id=source.id,
+                             failed_requirement="source_thread_membership")
         for actor in actors.values():
             if same_or_public and actor.id != bot_member.id:
                 continue
             permissions = source.permissions_for(actor)
             if not (permissions.view_channel and permissions.read_message_history):
-                return decide(False, "viewer_source_read_denied", source_id=source.id, member_id=actor.id)
+                return decide(False, "viewer_source_read_denied", source_id=source.id, member_id=actor.id,
+                              failed_requirement="view_channel" if not permissions.view_channel else
+                              "read_message_history", reader_kind=_reader_kind(actor))
             if private_members is not None and actor.id not in private_members:
-                return decide(False, "viewer_not_source_thread_member", source_id=source.id, member_id=actor.id)
+                return decide(False, "viewer_not_source_thread_member", source_id=source.id, member_id=actor.id,
+                              failed_requirement="source_thread_membership", reader_kind=_reader_kind(actor))
     return decide(True, "all_destination_viewers_authorized")
 
 

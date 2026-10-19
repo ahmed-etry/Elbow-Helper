@@ -168,6 +168,40 @@ class AudienceTests(unittest.IsolatedAsyncioTestCase):
             self.destination, {20: self.source}, {ACCESS_LEAD, ACCESS_LEAD_PLUS}, self.guild,
         ))
 
+    async def test_diagnostics_record_the_failed_requirement_without_member_names(self):
+        self.destination.viewers.add(3)
+        with self.assertLogs("elbow_helper.features.agent.disclosure", "INFO") as logs:
+            self.assertFalse(await can_show(
+                self.destination, {}, {ACCESS_LEAD, ACCESS_LEAD_PLUS}, self.guild,
+            ))
+        self.assertIn("failed_requirement=lead reader_kind=role_group", logs.output[0])
+
+    async def test_bot_source_failure_identifies_the_permission(self):
+        self.source.history_denied.add(self.guild.me.id)
+        with self.assertLogs("elbow_helper.features.agent.disclosure", "INFO") as logs:
+            self.assertFalse(await can_show(self.destination, {20: self.source}, set(), self.guild))
+        self.assertIn("failed_requirement=read_message_history reader_kind=bot", logs.output[0])
+
+    async def test_incomplete_cache_diagnostics_distinguish_roles_bots_and_unknown_members(self):
+        self.guild.chunked = False
+        self.guild.owner_id = self.members[0].id
+        self.destination.viewers = {2, next(iter(LEAD))}
+        for reader, expected_kind in (
+            (Role(1), "role_group"), (Member(98, (), bot=True), "bot"),
+            (Member(404, ()), "unknown_member"),
+        ):
+            with self.subTest(kind=expected_kind):
+                self.destination.overwrites = {reader: SimpleNamespace(
+                    view_channel=True, read_message_history=True,
+                )}
+                self.destination.viewers.add(reader.id)
+                if expected_kind == "bot":
+                    self.members.append(reader)
+                with self.assertLogs("elbow_helper.features.agent.disclosure", "INFO") as logs:
+                    self.assertFalse(await can_show(self.destination, {}, {ACCESS_LEAD}, self.guild))
+                self.assertIn(f"failed_requirement=lead reader_kind={expected_kind}", logs.output[0])
+                self.destination.viewers.discard(reader.id)
+
     async def test_lead_channel_and_mixed_channel_have_distinct_diagnostic_reasons(self):
         for mixed in (False, True):
             with self.subTest(mixed=mixed):
