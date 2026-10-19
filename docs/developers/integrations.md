@@ -18,6 +18,12 @@ Recruitment and Support Tickets request text through `TextGenerator`.
   opinions through `/opinion`.
 - The support-ticket feature uses it for one welcome sentence.
 
+The [agent](agent.md) uses the same application-owned client through
+`AgentModel` and `AgentSession`. Infrastructure owns provider messages, tool
+results, images, usage reporting, and request failures; the feature owns
+planning, access, evidence, and delivery. Data sent for these requests is
+described in [Privacy and AI](../users/privacy-and-ai.md#agent).
+
 Before adding another use, identify the exact data sent, audience, output
 checks, privacy impact, and failure tests.
 

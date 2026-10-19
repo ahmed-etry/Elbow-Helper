@@ -22,6 +22,7 @@ Use `/help` in Discord for current command options, examples, and restrictions.
 - [Feature loading and restarts](developers/extension-lifecycle.md)
 - [Data and migrations](developers/data-and-migrations.md)
 - [External services](developers/integrations.md)
+- [Agent](developers/agent.md)
 - [Testing](developers/testing.md)
 
 ## Reference

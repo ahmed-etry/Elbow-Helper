@@ -21,6 +21,7 @@
 |---|---|
 | `account_links` | Discord member and Clash account links |
 | `achievements` | Achievements, coins, inventory, rewards, and raffle |
+| [`agent`](agent.md) | Questions, conversations, community references, and confirmed actions |
 | `attack_plans` | Attack-planning requests |
 | `clan_health` | Activity history, analysis, settings, and reports |
 | `clan_reporting` | Monthly war and missing-Elder reports |
