@@ -13,6 +13,12 @@ from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool
 
 
+def server_reaction_context(guild):
+    """Expose names and exact markup from Discord's cached usable server emojis."""
+    emojis = [str(item) for item in getattr(guild, "emojis", ()) if item.is_usable()]
+    return "Available server reaction emojis: " + " ".join(emojis) if emojis else ""
+
+
 async def react_to_request(context, arguments):
     message = context.source_message
     if not getattr(message, "id", None) or not callable(getattr(message, "add_reaction", None)):
@@ -44,7 +50,7 @@ def reaction_tools():
         AgentToolDefinition(
             "react_to_request",
             (
-                "Add up to three usable emoji reactions to the request."
+                "Add up to three Unicode or server reactions alongside your reply."
             ),
             {
                 "type": "object", "properties": {"emoji": {"type": "string"}},

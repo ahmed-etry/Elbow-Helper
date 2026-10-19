@@ -22,6 +22,7 @@ from ..access import (
     has_access_requirements,
 )
 from ..conversation.context import compile_context, estimate_tokens
+from ..discord_actions.reactions import server_reaction_context
 from .registry import build_agent_tools
 from .usage import RequestUsage
 from .budgets import ContextBudget
@@ -151,7 +152,9 @@ class AgentService:
         context.state.request_text = question
         compiled = compile_context(
             question=question,
-            local_context=local_context,
+            local_context="\n".join(filter(None, (
+                local_context, server_reaction_context(context.guild),
+            ))),
             context=context,
             tools=definitions,
             conversation_history=conversation_history,
