@@ -37,9 +37,11 @@ history; `AgentService` loads request images before building the model context.
 | Lookup | 4 | 80,000 | 12,000 | 4,096 |
 | Research | 20 | 600,000 | 128,000 | 64,000 |
 
-There are also limits of 48 tool calls, 64,000 characters per tool result, and
-300,000 evidence characters per request. Context and deadline checks reserve
-room for a final answer and delivery, so a request can stop before these limits.
+There is also a limit of 48 tool calls. New tool-result text sent to the model
+is limited to 64,000 characters per result and 300,000 characters per request.
+These character limits apply to the model view, not the full structured results
+kept in turn records. Context and deadline checks reserve room for a final
+answer and delivery, so a request can stop before these limits.
 Missing provider usage counts against the budget using estimates and the full
 output allowance. `Agent usage` logs distinguish reported and unknown usage.
 
@@ -106,8 +108,11 @@ delivery state. Nonces let delivery reconcile an uncertain send without asking
 the model to generate the answer again.
 
 Working conversations expire after six idle hours. Memory holds up to 128
-conversations, with up to 2,048 turns, 1 MiB of turn data, and 512 reply
-references per conversation. Active requests are protected from idle pruning.
+conversations. Each conversation keeps at most 2,048 turns, 1 MiB of turn data
+in total, and 512 reply references. Oldest turns are evicted to meet the turn
+and byte limits. When a turn exceeds the byte limit, its full record is dropped;
+its context excerpt is kept if it fits and marked as retention-limited.
+Active requests are protected from idle pruning.
 Persistence uses revision checks and settles a started write before cancellation
 completes.
 Context compilation selects whole authorized records and bounded checkpoints;
