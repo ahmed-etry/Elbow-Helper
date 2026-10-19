@@ -45,9 +45,29 @@ class GroundingTests(unittest.TestCase):
             "I think Member Alpha wants Applicant Beta removed.",
             "Member Alpha's objection was about Applicant Beta's town hall.",
             "Member Alpha is against keeping Applicant Beta.",
+            "A TH15 in war isn't the scandal Member Alpha's making it.",
+            "Member Alpha's only crime is recruiting lower-level accounts.",
+            "That is the fuss Member Alpha raised about Applicant Beta.",
         ):
             with self.subTest(answer=answer), self.assertRaises(GroundingError):
                 ground_answer(answer, {"read": {"messages": [MESSAGE]}})
+
+    def test_sources_are_not_invented_for_a_missing_fact(self):
+        for answer in (
+            "The actual first name is on the leadership records.",
+            "You can find their real name in leadership records.",
+            "Leadership records contain the founder's real name.",
+        ):
+            for evidence in ({}, {"read": {"sections": [{"title": "Family history", "body": "Synthetic lore."}]}},
+                             {"read": {"error": "denied", "source_coverage": {"records": {}}}}):
+                with self.subTest(answer=answer, evidence=evidence), self.assertRaises(GroundingError):
+                    ground_answer(answer, evidence)
+
+    def test_unrelated_fuss_and_record_limit_explanations_are_allowed(self):
+        for answer in ("No need to make a fuss. My recommendation: keep Applicant Beta.",
+                       "I haven't read leadership records for this answer.",
+                       "The available family history doesn't give a real name."):
+            self.assertEqual(ground_answer(answer, {}), answer)
 
     def test_binding_renders_actual_author_and_words_with_source(self):
         answer = ground_answer("[[message:101]]\nMy recommendation: keep Applicant Beta.",
@@ -114,6 +134,18 @@ class GroundingFlowTests(unittest.IsolatedAsyncioTestCase):
         answer, session = await self.answer([bad, bad])
         self.assertEqual(answer, GROUNDING_UNAVAILABLE)
         self.assertEqual(len(session.calls), 2)
+
+    async def test_indirect_personal_jab_and_invented_record_source_are_repaired(self):
+        for unsupported in ("It isn't the scandal Member Alpha's making it.",
+                            "Their real name is on the leadership records."):
+            with self.subTest(answer=unsupported):
+                answer, session = await self.answer([
+                    AgentStep(unsupported, (), AgentUsage()),
+                    AgentStep("The available evidence doesn't establish that.", (), AgentUsage()),
+                ])
+                self.assertEqual(answer, "The available evidence doesn't establish that.")
+                self.assertEqual(len(session.calls), 2)
+                self.assertFalse(session.calls[-1][1])
 
     async def test_tool_answer_requires_binding_and_preserves_read_evidence(self):
         answer, session = await self.answer([

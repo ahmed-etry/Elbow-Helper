@@ -21,6 +21,8 @@ ATTRIBUTION = re.compile(
     r"feels|felt|supports|supported|endorsed|agreed|agrees|disagreed|disagrees|"
     r"vetoed|vetoes|rejected|rejects|demanded|demands|favours|favors|"
     r"concerned|concerns|stance|against|in favor|according to|"
+    r"(?:scandal|fuss)\b.{0,70}\b(?:making|made|raised|raising)|"
+    r"[’']s (?:only )?crime|"
     r"[’']s (?:view|opinion|preference|position)|in .{1,50}'s (?:view|opinion))\b",
     re.IGNORECASE,
 )
@@ -28,10 +30,15 @@ REQUEST_OR_SELF = re.compile(
     r"^(?:I (?:said|thought|asked)|you (?:asked|requested))\b", re.IGNORECASE,
 )
 LINK = re.compile(r"https://discord(?:app)?\.com/channels/\d+/\d+/\d+")
+RECORD_CLAIM = re.compile(
+    r"\b(?:on|in|from)\s+(?:the\s+)?leadership records\b|"
+    r"\bleadership records\s+(?:show|say|contain|have|list|confirm|prove|establish)\b",
+    re.IGNORECASE,
+)
 
 GROUNDING_INSTRUCTION = (
-    "Use [[message:ID]] for personal attributions: renders author, exact text and link "
-    "from messages read this turn. No stance paraphrases; keep recommendations separate."
+    "Use [[message:ID]] for exact quotes from this turn. No stance paraphrases; "
+    "keep recommendations separate. Never claim unread leadership records contain an answer."
 )
 GROUNDING_UNAVAILABLE = "I couldn't verify that answer from the sources I read."
 
@@ -80,6 +87,12 @@ def messages_from(evidence):
 
 def ground_answer(answer, evidence):
     _check_field_meanings(answer, evidence)
+    if RECORD_CLAIM.search(answer) and not any(
+        isinstance(row.get("source_coverage"), Mapping)
+        and isinstance(row["source_coverage"].get("records"), Mapping)
+        for row in records(evidence)
+    ):
+        raise GroundingError("leadership_records_not_read_this_turn")
     messages = messages_from(evidence)
     # Check the surrounding prose before inserting source text. A valid citation
     # beside an invented objection is still an unsupported attribution.
