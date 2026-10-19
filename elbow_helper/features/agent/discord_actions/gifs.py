@@ -11,7 +11,7 @@ def gif_tools(client):
     if client is None or not client.configured:
         return ()
     return (RegisteredAgentTool(AgentToolDefinition("find_gif",
-        "Choose one GIF for a separate reply message; never paste GIF links.",
+        "Find a GIF reply, alone or with a few words; never paste GIF links.",
         {"type":"object", "properties":{"query":{"type":"string", "minLength":1, "maxLength":50}},
          "required":["query"], "additionalProperties":False}), find_gif,
         effect=AgentCapabilityEffect.READ, action_class=ActionClass.OUTPUT,

@@ -128,26 +128,51 @@ class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(delivery.complete)
             surface._conversations.register_reply.assert_called_once_with(conversation, 800)
 
-    async def test_gif_and_reaction_plan_finishes_in_one_model_round(self):
+    async def test_gif_replies_with_optional_text_and_reactions_finish_in_one_model_round(self):
+        for react in (False, True):
+            for caption in ("", "Synthetic banter."):
+                with self.subTest(react=react, caption=caption):
+                    context = _context()
+                    context.source_message.id = 300
+                    context.source_message.add_reaction = AsyncMock()
+                    client = candidate_client(AsyncMock(return_value="synthetic-link"))
+                    context = replace(context, bot=SimpleNamespace(gif_client=client))
+                    registry = build_agent_tools(client)
+                    calls = [AgentToolCall("gif", "find_gif", json.dumps({"query": "synthetic"}))]
+                    if react:
+                        calls.append(AgentToolCall("reaction", "react_to_request", json.dumps({"emoji": "👍"})))
+                    step = AgentStep(caption, (plan_call(*calls),), AgentUsage())
+                    session = _AgentSession([step])
+                    service = AgentService(_AgentModel(session))
+                    with patch("elbow_helper.features.agent.engine.service.build_agent_tools",
+                               return_value=registry):
+                        answer = await service.answer(question="Synthetic request", local_context="",
+                                                      context=context)
+                    self.assertEqual(answer, caption)
+                    self.assertEqual(len(session.calls), 1)
+                    self.assertEqual(context.state.gif_url, "synthetic-link")
+                    self.assertEqual(context.source_message.add_reaction.await_count, int(react))
+
+    async def test_empty_gif_search_with_a_reaction_still_generates_a_text_reply(self):
         context = _context()
         context.source_message.id = 300
         context.source_message.add_reaction = AsyncMock()
-        client = candidate_client(AsyncMock(return_value="synthetic-link"))
+        client = candidate_client(AsyncMock(return_value=None))
         context = replace(context, bot=SimpleNamespace(gif_client=client))
-        registry = build_agent_tools(client)
-        step = AgentStep("", (plan_call(
-            AgentToolCall("reaction", "react_to_request", json.dumps({"emoji": "\U0001f44d"})),
-            AgentToolCall("gif", "find_gif", json.dumps({"query": "synthetic"})),
-        ),), AgentUsage())
-        session = _AgentSession([step])
-        service = AgentService(_AgentModel(session))
-        with patch("elbow_helper.features.agent.engine.service.build_agent_tools",
-                   return_value=registry):
-            answer = await service.answer(question="Synthetic request", local_context="",
-                                          context=context)
-        self.assertEqual(answer, "")
-        self.assertEqual(len(session.calls), 1)
-        self.assertEqual(context.state.gif_url, "synthetic-link")
+        session = _AgentSession([
+            AgentStep("", (plan_call(
+                AgentToolCall("reaction", "react_to_request", json.dumps({"emoji": "👍"})),
+                AgentToolCall("gif", "find_gif", json.dumps({"query": "synthetic"})),
+            ),), AgentUsage()),
+            AgentStep("Synthetic text reply.", (), AgentUsage()),
+        ])
+        answer = await AgentService(_AgentModel(session)).answer(
+            question="Synthetic request", local_context="", context=context,
+        )
+        self.assertEqual(answer, "Synthetic text reply.")
+        self.assertEqual(len(session.calls), 2)
+        self.assertIsNone(context.state.gif_url)
+        context.source_message.add_reaction.assert_awaited_once()
 
     async def test_plan_searches_replace_in_step_order(self):
         context = _context()

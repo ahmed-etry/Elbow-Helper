@@ -10,10 +10,11 @@ from elbow_helper.features.agent.plan.format import system_instructions
 class GifInstructionTests(unittest.TestCase):
     def test_approved_policy_is_present_once_without_link_pasting_instructions(self):
         policy = (
-            "React alongside a reply for thanks, acknowledgements, a joke landing or "
-            "something hype; never react without replying. In banter, or when someone sends you a GIF, "
-            "a GIF can be the whole reply. Keep data, decisions and anything serious in words, "
-            "and don't react or GIF on every message."
+            "React alongside a text or GIF reply, never alone. Use listed server emoji: "
+            "nodCat for agreement. Prefer find_gif over words for banter, celebration or "
+            "mock outrage when it fits. Plan at low effort; a GIF can be the whole reply, "
+            "or keep text brief. No GIFs on factual answers, decisions or serious help. "
+            "Don't react or GIF on every message."
         )
         instructions = system_instructions(build_agent_tools())
         self.assertEqual(instructions.count(policy), 1)
