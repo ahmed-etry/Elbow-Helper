@@ -174,14 +174,17 @@ async def _search_matches(context, arguments, scope, raw_results):
         if channel is None:
             continue
         context.state.source_channels.add(result.channel_id)
-        matches.append({
+        entry = {
             "message_id": result.message_id, "channel_id": result.channel_id,
             "channel": getattr(channel, "name", str(result.channel_id)),
             "author_id": result.author_id, "author": result.author_name,
             "timestamp": result.timestamp,
             "content": bounded_text(search_message_text(result, context.guild), 1_600),
             "source": jump_url(context.guild.id, result.channel_id, result.message_id),
-        })
+        }
+        if result.reply_to_message_id is not None:
+            entry["reply_to_message_id"] = result.reply_to_message_id
+        matches.append(entry)
         if len(matches) >= scope["limit"]:
             break
     return matches

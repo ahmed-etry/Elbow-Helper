@@ -39,6 +39,7 @@ class DiscordSearchMessage:
     embeds: tuple[dict[str, Any], ...] = ()
     attachment_names: tuple[str, ...] = ()
     author_is_bot: bool = False
+    reply_to_message_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -408,6 +409,7 @@ def _parse_search_message(raw: object) -> DiscordSearchMessage | None:
         author_is_bot=author.get("bot") is True,
         content=content,
         timestamp=timestamp,
+        reply_to_message_id=_reply_message_id(raw, channel_id),
         embeds=tuple(
             item for item in (raw["embeds"] if isinstance(raw.get("embeds"), list) else ())
             if isinstance(item, dict)
@@ -419,3 +421,16 @@ def _parse_search_message(raw: object) -> DiscordSearchMessage | None:
             if isinstance(item, dict) and isinstance(item.get("filename"), str)
         ),
     )
+
+
+def _reply_message_id(raw, channel_id):
+    """Retain an explicit same-channel reply target, never infer one from adjacency."""
+    reference = raw.get("message_reference")
+    if not isinstance(reference, dict) or reference.get("type", 0) != 0:
+        return None
+    try:
+        identity = int(reference.get("message_id") or 0)
+        reference_channel = int(reference.get("channel_id") or channel_id)
+    except (TypeError, ValueError):
+        return None
+    return identity if identity > 0 and reference_channel == channel_id else None

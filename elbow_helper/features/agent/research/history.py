@@ -153,6 +153,8 @@ async def read_discord_channel_history(
             "content": bounded_text(content, 1_600),
             "source": jump_url(context.guild.id, channel_id, message.message_id),
         }
+        if message.reply_to_message_id is not None:
+            entry["reply_to_message_id"] = message.reply_to_message_id
         entry_characters = len(json.dumps(entry, ensure_ascii=False, separators=(",", ":"))) + 1
         if messages and message_characters + entry_characters > HISTORY_MESSAGE_CHARACTER_BUDGET:
             # Discord pages are newest first. Resume immediately before the
@@ -169,6 +171,7 @@ async def read_discord_channel_history(
         "channel": getattr(channel, "name", str(channel_id)),
         "messages": messages,
         "coverage": {
+            "order": "newest_first",
             "requested_after": after.isoformat(),
             "requested_before": before.isoformat() if before is not None else None,
             "window_after_message_id": after_id,
@@ -410,7 +413,7 @@ def searchable_channel_ids(context: AgentRequestContext, *, limit: int | None = 
 
 def discord_message_evidence(guild_id: int, message: discord.Message) -> dict[str, Any]:
     content = message_text(message)
-    return {
+    entry = {
         "message_id": message.id,
         "author_id": message.author.id,
         "author": message.author.display_name,
@@ -418,6 +421,14 @@ def discord_message_evidence(guild_id: int, message: discord.Message) -> dict[st
         "content": bounded_text(content, 1_600),
         "source": jump_url(guild_id, message.channel.id, message.id),
     }
+    reference = getattr(message, "reference", None)
+    target = getattr(reference, "message_id", None)
+    reference_channel = getattr(reference, "channel_id", message.channel.id)
+    reference_type = getattr(reference, "type", discord.MessageReferenceType.default)
+    if (type(target) is int and target > 0 and reference_channel == message.channel.id
+            and reference_type == discord.MessageReferenceType.default):
+        entry["reply_to_message_id"] = target
+    return entry
 
 
 def jump_url(guild_id: int, channel_id: int, message_id: int) -> str:

@@ -260,10 +260,12 @@ def validate_research_message(value: Any) -> dict[str, Any]:
         "message_id", "channel_id", "channel", "author_id", "author",
         "timestamp", "content", "source",
     }
-    if set(value) != required:
+    if not required <= value.keys() or not value.keys() <= required | {"reply_to_message_id"}:
         raise ValueError("Invalid persisted research message")
     for key in ("message_id", "channel_id", "author_id"):
         positive_int(value[key])
+    if "reply_to_message_id" in value:
+        positive_int(value["reply_to_message_id"])
     if any(not isinstance(value[key], str) for key in required - {
         "message_id", "channel_id", "author_id",
     }):
@@ -355,8 +357,10 @@ def _validate_history_coverage(value: dict[str, Any]) -> dict[str, Any]:
         "repeated_cursor_detected",
     }
     counts = {"scanned_count", "matched_count"}
-    if not required <= value.keys() or not value.keys() <= required | optional | counts:
+    if not required <= value.keys() or not value.keys() <= required | optional | counts | {"order"}:
         raise ValueError("Invalid research job history coverage")
+    if "order" in value and value["order"] != "newest_first":
+        raise ValueError("Invalid research job history order")
     cursor = value["next_cursor"]
     requested_after = value["requested_after"]
     requested_before = value["requested_before"]

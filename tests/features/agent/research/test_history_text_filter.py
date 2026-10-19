@@ -14,7 +14,7 @@ from elbow_helper.discord.message_search import (
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.engine.registry import build_agent_tools
 from elbow_helper.features.agent.plan.format import capability_list
-from elbow_helper.features.agent.research.history import read_discord_channel_history
+from elbow_helper.features.agent.research.history import discord_message_evidence, read_discord_channel_history
 from elbow_helper.features.agent.research.repository import ResearchJobRepository
 from elbow_helper.features.agent.research.tools import (
     continue_discord_research_job, start_discord_history_job,
@@ -22,12 +22,13 @@ from elbow_helper.features.agent.research.tools import (
 from features.agent.research.test_agent_search import _context
 
 
-def history(context, records):
+def history(context, records, *, reply_to_message_id=None):
     upper = discord.utils.time_snowflake(context.source_message.created_at)
     context.source_message.id = upper
     rows = tuple(DiscordSearchMessage(
         upper - index - 1, 100, author, "Synthetic Bot", content,
         "2026-09-16T12:00:00+00:00", embeds, attachments,
+        reply_to_message_id=reply_to_message_id,
     ) for index, (author, content, embeds, attachments) in enumerate(records))
 
     async def page(**arguments):
@@ -52,6 +53,7 @@ class HistoryTextFilterTests(unittest.IsolatedAsyncioTestCase):
             "id": str(upper - 1), "channel_id": "100", "content": "",
             "author": {"id": "99", "username": "Synthetic Bot"},
             "timestamp": "2026-09-16T12:00:00+00:00",
+            "message_reference": {"message_id": str(upper - 2), "channel_id": "100"},
             "embeds": [{"title": "Synthetic log", "author": {"name": "Subject <@1>"},
                         "footer": {"text": "Synthetic Footer"}}],
             "attachments": [{"filename": "synthetic-transcript.html"}],
@@ -66,6 +68,25 @@ class HistoryTextFilterTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("Subject @Synthetic Member", result["messages"][0]["content"])
                 self.assertEqual(result["coverage"]["scanned_count"], 1)
                 self.assertEqual(result["coverage"]["matched_count"], 1)
+                self.assertEqual(result["messages"][0]["reply_to_message_id"], upper - 2)
+                self.assertEqual(result["coverage"]["order"], "newest_first")
+
+    def test_message_context_keeps_reply_metadata_without_treating_forwards_as_replies(self):
+        from datetime import datetime, timezone
+        message = SimpleNamespace(
+            id=300, author=SimpleNamespace(id=1, display_name="Member"), content="yes",
+            channel=SimpleNamespace(id=100), created_at=datetime(2026, 10, 19, tzinfo=timezone.utc),
+            attachments=[], embeds=[], stickers=[],
+        )
+        for channel, kind, expected in (
+            (100, discord.MessageReferenceType.default, 200),
+            (100, discord.MessageReferenceType.forward, None),
+            (999, discord.MessageReferenceType.default, None),
+        ):
+            with self.subTest(channel=channel, kind=kind):
+                message.reference = SimpleNamespace(message_id=200, channel_id=channel, type=kind)
+                result = discord_message_evidence(10, message)
+                self.assertEqual(result.get("reply_to_message_id"), expected)
 
     async def test_filter_scans_full_text_and_pages_without_skipping_matches_at_the_budget(self):
         context = _context()
@@ -112,7 +133,7 @@ class HistoryTextFilterTests(unittest.IsolatedAsyncioTestCase):
             context.source_message.channel = context.guild.get_channel_or_thread(100)
             context.member.roles = [SimpleNamespace(id=next(iter(CORE)))]
             history(context, [(1, "Other", (), ()),
-                              (1, "", ({"footer": {"text": "Synthetic target"}},), ())])
+                              (1, "", ({"footer": {"text": "Synthetic target"}},), ())], reply_to_message_id=100)
             path = Path(directory) / "synthetic.sqlite"
             context.research_jobs = ResearchJobRepository(path)
             context.conversation_root_id = 500
@@ -126,6 +147,7 @@ class HistoryTextFilterTests(unittest.IsolatedAsyncioTestCase):
             context.research_jobs = ResearchJobRepository(path)
             second = await continue_discord_research_job(context, {"job_id": started["job_id"]})
             self.assertEqual(len(second["new_messages"]), 1)
+            self.assertEqual(second["new_messages"][0]["reply_to_message_id"], 100)
             last = await continue_discord_research_job(context, {"job_id": started["job_id"]})
             self.assertEqual(last["status"], "completed")
             self.assertEqual(last["coverage"]["scanned_count"], 2)

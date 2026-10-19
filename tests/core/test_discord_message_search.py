@@ -268,6 +268,24 @@ class DiscordMessageSearchTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNone(page.next_before_id)
                 self.assertTrue(all(message.message_id > 50 for message in page.messages))
 
+    async def test_history_retains_only_explicit_same_channel_reply_targets(self):
+        for reference, expected in (
+            ({"message_id": "70", "channel_id": "34"}, 70),
+            ({"message_id": "70", "channel_id": "34", "type": 0}, 70),
+            ({"message_id": "70"}, 70),
+            ({"message_id": "70", "channel_id": "99"}, None),
+            ({"message_id": "70", "type": 1}, None),
+            ({"message_id": "invalid"}, None), ({}, None), (None, None),
+        ):
+            with self.subTest(reference=reference):
+                http = AsyncMock()
+                http.request.return_value = [{**self.history_message(90), "message_reference": reference}]
+                page = await DiscordMessageSearch(http).history_page(
+                    channel_id=34, before_id=100, after_id=50, limit=2,
+                )
+                self.assertEqual(page.messages[0].reply_to_message_id, expected)
+                http.request.assert_awaited_once()  # Metadata must not fetch another message.
+
     async def test_channel_history_rejects_malformed_wrong_channel_or_order(self):
         payloads = (
             {},

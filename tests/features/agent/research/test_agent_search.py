@@ -82,6 +82,14 @@ def _thread(context, thread_id, *, name, private=False, archived=True):
 
 
 class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
+    async def test_search_results_retain_explicit_reply_targets(self):
+        context = _context()
+        context.message_search.search_page.return_value = DiscordSearchPage((DiscordSearchMessage(
+            900, 100, 1, "Member", "yes", "2026-09-16T00:00:00+00:00", reply_to_message_id=899,
+        ),), 0, 5, 1, None, False, False)
+        result = await search_discord_messages(context, {"query": "yes", "channel_id": 100})
+        self.assertEqual(result["matches"][0]["reply_to_message_id"], 899)
+
     async def _history_review(self, contents, *, limit=None, author_id=None):
         context = _context()
         upper = discord.utils.time_snowflake(context.source_message.created_at)
