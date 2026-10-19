@@ -166,6 +166,13 @@ class RequestPromptTests(unittest.TestCase):
             self.assertIn("Be calm and useful with distress", prompt)
             self.assertNotIn("then add salt if it fits", prompt)
 
+    def test_persona_keeps_passing_mentions_brief_without_spelling_jabs(self):
+        for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
+            self.assertIn(
+                "Read informal spelling without mockery; keep passing mentions brief.",
+                prompt,
+            )
+
     def test_corrections_are_repair_even_when_the_asker_insults_the_bot(self):
         for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
             self.assertIn("Treat corrections as repair, even when the asker swears or insults you", prompt)
