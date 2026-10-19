@@ -2,16 +2,13 @@
 
 from dataclasses import dataclass, field, replace
 from collections import Counter
-from collections.abc import Mapping
 from datetime import datetime, timezone
-from itertools import combinations
 import logging
 from math import log1p
 from pathlib import Path
 import re
 import time
 import tomllib
-from types import MappingProxyType
 
 from ..conversation.context import estimate_tokens
 
@@ -85,8 +82,8 @@ class KnowledgeCatalog:
     observed_at: str
     active_sections: tuple[KnowledgeSection, ...]
     store_status: str = "available"
-    _prompts: Mapping[frozenset[str], KnowledgePrompt] = field(default_factory=dict, repr=False,
-                                                            compare=False)
+    _prompts: dict[frozenset[str], KnowledgePrompt] = field(default_factory=dict, repr=False,
+                                                         compare=False)
 
     def search(self, sections, *, query="", limit=8):
         phrase = _words(query)
@@ -126,9 +123,9 @@ class KnowledgeCatalog:
 
     def prompt(self, levels=()):
         key = frozenset(levels) & (VISIBILITIES - {"public"})
-        if key in self._prompts:
-            return self._prompts[key]
-        return self._build_prompt(key)
+        if key not in self._prompts:
+            self._prompts[key] = self._build_prompt(key)
+        return self._prompts[key]
 
     def _build_prompt(self, levels):
         included, omitted, access = [], [], set()
@@ -147,18 +144,25 @@ class KnowledgeCatalog:
         # Titles and file names can themselves disclose restricted information.
         # Keep discovery public; authorized searches can still open restricted
         # sections and retain their access requirements with the returned bodies.
-        index, title_tokens, fallback, index_omitted = _topic_index(self.visible_sections())
+        if levels:
+            public = self.prompt()
+            index, title_tokens, fallback, index_omitted = (
+                public.index, public.index_title_tokens, public.index_fallback, public.index_omitted,
+            )
+        else:
+            index, title_tokens, fallback, index_omitted = _topic_index(self.visible_sections())
         return KnowledgePrompt(core, frozenset(access), estimate_tokens(core), tuple(omitted),
                                index, estimate_tokens(index), title_tokens, fallback, index_omitted)
 
     def prepare_prompts(self):
-        levels = sorted(VISIBILITIES - {"public"})
-        prompts = {frozenset(profile): self._build_prompt(profile)
-                   for size in range(len(levels) + 1) for profile in combinations(levels, size)}
-        return replace(self, _prompts=MappingProxyType(prompts))
+        # Prepare bounded reload diagnostics; cache actual reader profiles on demand.
+        catalog = replace(self, _prompts={})
+        catalog.prompt()
+        catalog.prompt(VISIBILITIES - {"public"})
+        return catalog
 
     def log_reload(self, counts):
-        """Report each reload once, including every supported visibility profile."""
+        """Report each reload once using the prepared visibility profiles."""
         estimates, omitted, fallback, index_omitted = {}, set(), [], set()
         for levels, prompt in self._prompts.items():
             profile = ",".join(("public", *sorted(levels)))

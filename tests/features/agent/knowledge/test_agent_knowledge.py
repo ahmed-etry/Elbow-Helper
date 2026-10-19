@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from elbow_helper.features.agent.knowledge.store import (
     KnowledgeCatalog, KnowledgeSection, KnowledgeStore, TOPIC_INDEX_TOKEN_LIMIT,
 )
+from elbow_helper.features.agent.knowledge import store as knowledge_store
 from elbow_helper.features.agent.knowledge.tools import search_approved_knowledge
 from elbow_helper.features.agent.models import AgentRequestContext, AgentTurnState
 from elbow_helper.features.agent.conversation.context import estimate_tokens
@@ -65,6 +66,25 @@ Hidden""")
             self.assertIs(self.store.load(), first)
         with patch("elbow_helper.features.agent.knowledge.store.time.monotonic", return_value=60):
             self.assertEqual(self.store.load().active_sections[0].body, "New facts")
+
+    def test_prompt_profiles_are_lazy_and_share_the_public_index(self):
+        self.write("public.md", "# Public topic\nPublic body")
+        self.write("private.md", '+++\nvisibility="lead"\nalways_loaded=true\n+++\n# Lead topic\nLead body')
+        with patch.object(knowledge_store, "_topic_index", wraps=knowledge_store._topic_index) as index:
+            catalog = self.store.load()
+            self.assertLessEqual(len(catalog._prompts), 2)
+            prompt = catalog.prompt({"lead"})
+            self.assertIs(prompt, catalog.prompt({"public", "lead", "unknown"}))
+            self.assertIn("Lead body", prompt.core)
+            self.assertEqual(prompt.required_access, {"lead"})
+            self.assertEqual(prompt.index, catalog.prompt().index)
+            self.assertNotIn("Lead topic", prompt.index)
+            index.assert_called_once()
+        self.write("private.md", '+++\nvisibility="lead"\nalways_loaded=true\n+++\n# Lead topic\nChanged body')
+        with patch.object(knowledge_store.time, "monotonic", return_value=10**12):
+            reloaded = self.store.load()
+        self.assertIsNot(reloaded.prompt({"lead"}), prompt)
+        self.assertIn("Changed body", reloaded.prompt({"lead"}).core)
 
     def test_prompt_threshold(self):
         self.write("large.md", "+++\nalways_loaded=true\n+++\n# Facts\n" + "x" * 20000)
