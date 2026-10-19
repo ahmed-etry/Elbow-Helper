@@ -125,6 +125,11 @@ class ClanHealthFlagMixin:
                 war_used=int(row.get("regular_war_hits_used") or 0),
                 available_wars_in_window=regular_available,
             )
+            regular_joined = int(row.get("regular_war_events_joined") or 0)
+            regular_current = (
+                f"Joined {regular_joined} regular {'war' if regular_joined == 1 else 'wars'} across the family"
+                if regular_joined > 0 else "No regular wars joined during this period"
+            )
 
             allowed_miss_rate_percent = float((rules.get("war") or {}).get("missed_attack_rate_percent") or 0)
             cwl_result = self._cwl_assessment(
@@ -172,8 +177,9 @@ class ClanHealthFlagMixin:
                 "war_attendance": {
                     "name": "War participation",
                     "verdict": regular_result["attendance_verdict"],
-                    "reason": regular_result["attendance_reason"],
-                    "current": f"Joined {int(row.get('regular_war_events_joined') or 0)} of {regular_available} regular wars",
+                    "reason": (regular_current if regular_result["attendance_reason"].startswith("Joined ")
+                               else regular_result["attendance_reason"]),
+                    "current": regular_current,
                     "target": (
                         f"Wars to join: {int(regular_result.get('wars_required') or 0)}"
                         if int((rules.get("war") or {}).get("wars_to_join") or 0) > 0
