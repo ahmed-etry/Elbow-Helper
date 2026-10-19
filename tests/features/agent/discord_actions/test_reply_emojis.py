@@ -48,6 +48,39 @@ class ReplyEmojiTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(render_server_emojis(original, self.guild), original)
 
+    def test_trailing_server_emoji_stays_with_the_prose(self):
+        for tail in (":syntheticNod:", ":syntheticNod", "<:syntheticNod:101>"):
+            with self.subTest(tail=tail):
+                self.assertEqual(render_server_emojis("Synthetic answer.\n\n" + tail, self.guild),
+                                 "Synthetic answer. <:syntheticNod:101>")
+        self.assertEqual(render_server_emojis(
+            "Synthetic answer.\n:syntheticNod: :syntheticWave:", self.guild,
+        ), "Synthetic answer. <:syntheticNod:101> <a:syntheticWave:102>")
+
+    def test_emoji_layout_preserves_structured_text_code_and_unknown_names(self):
+        for original in (":syntheticNod:", "Synthetic answer.\n:unknown:",
+                         "Synthetic answer.\nMore prose :syntheticNod:",
+                         "```\n<:syntheticNod:101>", "~~~\n<:syntheticNod:101>",
+                         "```\ncode\n```\n<:syntheticNod:101>",
+                         "> Quoted text\n<:syntheticNod:101>",
+                         "| Table |\n<:syntheticNod:101>",
+                         "- List item\n<:syntheticNod:101>"):
+            with self.subTest(text=original):
+                expected = original.replace(":syntheticNod:", "<:syntheticNod:101>") if "<:" not in original else original
+                self.assertEqual(render_server_emojis(original, self.guild), expected)
+
+    async def test_delivery_records_the_emoji_with_its_answer(self):
+        surface = AgentDeliveryMixin()
+        surface.bot = SimpleNamespace(user=None)
+        message = SimpleNamespace(
+            id=1, guild=self.guild, mentions=[], archive_reply=False,
+            channel=SimpleNamespace(), reply=AsyncMock(return_value=SimpleNamespace(id=2)),
+        )
+        delivery = AgentDelivery()
+        await surface.send_response(message, "Synthetic answer.\n\n:syntheticNod:", None, delivery=delivery)
+        self.assertEqual(message.reply.await_args.args[0], "Synthetic answer. <:syntheticNod:101>")
+        self.assertEqual(delivery.text_parts, ["Synthetic answer. <:syntheticNod:101>"])
+
     async def test_delivery_renders_the_reported_incomplete_shortcode_form(self):
         surface = AgentDeliveryMixin()
         surface.bot = SimpleNamespace(user=None)

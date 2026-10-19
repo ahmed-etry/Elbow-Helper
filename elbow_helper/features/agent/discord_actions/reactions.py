@@ -23,9 +23,21 @@ def render_server_emojis(text, guild):
     """Resolve known shortcodes without rewriting markup, URLs or code."""
     available = {item.name: str(item) for item in getattr(guild, "emojis", ())
                  if item.is_usable()}
-    return _TEXT_EMOJI.sub(
+    rendered = _TEXT_EMOJI.sub(
         lambda match: available.get(match.group(1) or match.group(2), match.group(0)), text,
     )
+    # A trailing social emoji belongs beside its sentence. Preserve code,
+    # quotations, tables and lists, where a line break carries structure.
+    body, separator, tail = rendered.rstrip().rpartition("\n")
+    body = body.rstrip()
+    tokens = tail.split()
+    if separator and body and tokens and all(token in available.values() for token in tokens):
+        last_line = body.splitlines()[-1].lstrip()
+        if (not body.count("`") % 2 and not body.count("~~~") % 2
+                and not last_line.startswith(("```", "~~~", ">", "|", "#", "- ", "* ", "+ "))
+                and not re.match(r"\d+[.)]\s", last_line)):
+            return body + " " + " ".join(tokens)
+    return rendered
 
 
 def server_reaction_context(guild):
