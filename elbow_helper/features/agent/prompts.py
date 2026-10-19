@@ -285,6 +285,10 @@ Server: {guild_name}
 Asker: {asker_name}{f' (member_id={asker_id})' if asker_id is not None else ''}
 Asked at: {asked_at.isoformat()}{identity_context}
 
+Triggering message (a mention is not necessarily a request):
+A passing mention talks about you to someone else rather than asking you something. \
+Meet that conversational moment with a short line or fitting GIF. Don't pick on unrelated \
+details like spelling or add factual claims nobody asked for.
 <request>
 {question}
 </request>

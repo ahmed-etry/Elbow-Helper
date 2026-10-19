@@ -173,6 +173,30 @@ class RequestPromptTests(unittest.TestCase):
                 prompt,
             )
 
+    def test_message_context_preserves_passing_mentions_and_direct_requests(self):
+        for message in (
+            "Mira, @Synthetic Bot helped me sortt those signup notes.",
+            "@Synthetic Bot, summarize those signup notes.",
+        ):
+            with self.subTest(message=message):
+                nearby = "Mira: How did you organize signups?"
+                prompt = build_request_prompt(
+                    question=message, local_context=nearby, guild_name="Synthetic server",
+                    asker_name="Synthetic member", asked_at=datetime(2026, 9, 16, tzinfo=timezone.utc),
+                    agent_identity={"display_name": "Synthetic Bot", "member_id": 999},
+                )
+                self.assertIn(
+                    "Triggering message (a mention is not necessarily a request):\n"
+                    "A passing mention talks about you to someone else rather than asking you something. "
+                    "Meet that conversational moment with a short line or fitting GIF. "
+                    "Don't pick on unrelated details like spelling or add factual claims nobody asked for.\n"
+                    f"<request>\n{message}\n</request>",
+                    prompt,
+                )
+                self.assertIn(f"<local_context>\n{nearby}\n</local_context>", prompt)
+                self.assertIn('Agent (you): {"display_name": "Synthetic Bot", "member_id": 999}', prompt)
+                self.assertNotIn("Persona and tone:", prompt)
+
     def test_corrections_are_repair_even_when_the_asker_insults_the_bot(self):
         for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
             self.assertIn("Treat corrections as repair, even when the asker swears or insults you", prompt)
