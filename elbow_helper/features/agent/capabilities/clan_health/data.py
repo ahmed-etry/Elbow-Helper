@@ -41,7 +41,7 @@ SOURCES = (
             (
                 "player_directory", "lead_plus",
                 "Latest known account identity; first_seen_ts and last_seen_ts "
-                "are UTC Unix seconds.",
+                "are UTC Unix seconds when observed by this bot, not join dates or proof of new recruitment.",
             ),
             (
                 "player_snapshots", "lead_plus",

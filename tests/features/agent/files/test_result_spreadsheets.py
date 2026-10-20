@@ -75,7 +75,8 @@ class ResultSpreadsheetTests(unittest.IsolatedAsyncioTestCase):
             return await registry[step["capability"]].handler(None, arguments)
 
         results = await execute_plan(plan, run, step_errors=check.step_errors)
-        self.assertEqual(results["write"], {"error": check.step_errors["write"]})
+        self.assertEqual(results["write"]["error"], check.step_errors["write"])
+        self.assertEqual(results["write"]["cause"], "invalid_arguments")
         read.assert_awaited_once()
         write.assert_not_called()
 

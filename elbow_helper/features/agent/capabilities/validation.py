@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 
+def invalid_arguments(message: str, *fields: str) -> dict:
+    """Identify semantic validation without guessing from public error wording."""
+    return {"error": message, "cause": "invalid_arguments", "invalid_fields": list(fields)}
+
+
 def bounded_text(value: object, limit: int) -> str:
     text = str(value or "").strip()
     if len(text) <= limit:

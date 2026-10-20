@@ -71,9 +71,10 @@ class DataGuide:
                 "battle_log (latest player attacks/defenses), "
                 "capital_raids (items without attackLog/defenseLog). "
                 "Clash timestamps: 20261008T120000.000Z, UTC.",
-                "CWL: cwl_season is one key per league: YYYY-MM for the month's normal CWL, "
+                "CWL: health.wars.cwl_season is one key per league: YYYY-MM for the month's normal CWL, "
                 "YYYY-MM-catchup for an extra league. cwl_season_label is Clash's raw label. "
-                "cwl_round (1-7) is the CWL day.",
+                "health.wars.cwl_round (1-7) is the CWL day. Join attacks and roster rows to wars by war_id; "
+                "do not assume these columns exist on attack rows.",
                 "Family clans:", self.clans, *entries,
                 *([
                     "Not available to this asker: " + ", ".join(unavailable) + "."

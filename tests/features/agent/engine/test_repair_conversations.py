@@ -1,15 +1,22 @@
 """Anonymous conversations exercise real planning, tools, model views and delivery."""
 
+from contextlib import closing
 from dataclasses import replace
 import json
+from pathlib import Path
+import sqlite3
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock
 
+import discord
 
 from elbow_helper.configuration.roles import LEAD
 from elbow_helper.features.agent.conversation.context import compile_context
 from elbow_helper.features.agent.conversation.state import ConversationRecord, ConversationTurn
+from elbow_helper.features.agent.datasets.query import run_query
+from elbow_helper.features.agent.datasets.sources import DataSource
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin
 from elbow_helper.features.agent.engine.factual_answers import narrow_answer, clan_count_tag
 from elbow_helper.features.agent.engine.grounding import GroundingError
@@ -122,3 +129,57 @@ class RepairConversationTests(unittest.IsolatedAsyncioTestCase):
         compiled = compile_context(question="Those same accounts, ranked league only.", local_context="", context=followup, tools=())
         self.assertNotIn("unneeded_profile_marker", compiled.prompt)
         self.assertIn("Electro League 33", compiled.prompt)
+
+
+
+
+
+
+
+    def test_schema_failure_lists_real_accessible_columns_and_denied_schema_stays_hidden(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "sample.sqlite3"
+            with closing(sqlite3.connect(path)) as connection:
+                connection.execute("CREATE TABLE attacks (player_tag TEXT, defender_townhall INTEGER)")
+                connection.commit()
+            source = DataSource("sample", path, tables=(("attacks", "lead", "Synthetic attacks"),))
+            sql = "SELECT defender_th FROM sample.attacks"
+            result, touched = run_query((source,), None, {"lead"}, sql)
+            self.assertEqual(result["cause"], "sql_schema_error")
+            self.assertEqual(set(result["available_schema"]["sample.attacks"]["columns"]), {"player_tag", "defender_townhall"})
+            self.assertEqual(touched, {"lead"})
+            denied, _ = run_query((source,), None, set(), sql)
+            self.assertNotIn("available_schema", denied)
+            self.assertEqual(denied["required_access"], ["lead"])
+
+    async def test_missing_history_date_is_repaired_once_and_identical_invalid_retry_stops(self):
+        for repeat in (False, True):
+            with self.subTest(repeat=repeat):
+                context = self.context(lambda *_a, **_kw: SimpleNamespace(ok=True, status=200, payload={
+                    "name": "Example", "leagueTier": {"name": "Dragon League 30"}}))
+                async def page(**arguments):
+                    return SimpleNamespace(**arguments, messages=(), reached_window_start=True, next_before_id=None)
+                search = SimpleNamespace(history_page=AsyncMock(side_effect=page))
+                context = replace(context, message_search=search)
+                context.source_message.id = discord.utils.time_snowflake(context.source_message.created_at, high=True)
+                arguments = {"channel_id": 91}
+                first = _plan([
+                    {"id": "account", "capability": "read_clash", "arguments": {"kind": "player", "tags": ["#P0"]}, "depends_on": []},
+                    {"id": "history", "capability": "read_discord_channel_history", "arguments": arguments, "depends_on": []},
+                ])
+                corrected = arguments if repeat else {**arguments, "after": "2025-12-01"}
+                session = _Session([
+                    replace(_model_step(first), usage=AgentUsage(1000, 100)),
+                    planned("history", "read_discord_channel_history", corrected),
+                    AgentStep("Account checked. History could not be read." if repeat else "Account checked. No messages in that window.", (), AgentUsage(1000, 100)),
+                ], [])
+                answer = await AgentService(_Model(session)).answer(question="Analyze the example case", local_context="", context=context)
+                errors = json.loads(session.calls[1][0][0].content)["results"]
+                self.assertIn("after", errors["history"]["argument_schema"]["required"])
+                self.assertEqual(errors["history"]["cause"], "invalid_arguments")
+                self.assertEqual(errors["account"]["items"][0]["data"]["leagueTier"]["name"], "Dragon League 30")
+                self.assertIn("Account checked.", answer)
+                self.assertEqual(search.history_page.await_count, 0 if repeat else 1)
+                self.assertEqual(len(session.calls), 3)
+                if repeat:
+                    self.assertFalse(session.calls[-1][1])

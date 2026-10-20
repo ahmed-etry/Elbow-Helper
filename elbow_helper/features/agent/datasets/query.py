@@ -77,6 +77,7 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=200):
     touched = set()
     read_tables = set()
     denied = set()
+    schemas = {}
     deadline = time.monotonic() + QUERY_SECONDS
     try:
         with closing(sqlite3.connect("file::memory:", uri=True)) as connection:
@@ -95,6 +96,14 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=200):
                     (path.resolve().as_uri() + "?mode=ro",),
                 )
                 allowed.update({(source.alias, name): level for name, level in readable.items()})
+                for name, level in readable.items():
+                    if re.search(r"\b" + re.escape(source.alias + "." + name) + r"\b", identifiers):
+                        schemas[f"{source.alias}.{name}"] = {
+                            "access": level,
+                            "columns": {row[1]: row[2] for row in connection.execute(
+                                f'PRAGMA "{source.alias}".table_info("{name}")',
+                            )},
+                        }
             connection.execute("ATTACH DATABASE ':memory:' AS state")
             for name in set(STATE_NAMES.findall(identifiers)):
                 source = states.get(name)
@@ -192,6 +201,10 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=200):
             }, set()
         if time.monotonic() >= deadline:
             return {"error": "The query took too long. Narrow it or aggregate."}, set()
+        if str(error).startswith(("no such column:", "no such table:")):
+            schema_access = {item["access"] for item in schemas.values() if item["access"] != "none"}
+            return {"error": str(error), "cause": "sql_schema_error", "available_schema": schemas,
+                    "instruction": "Use only the listed columns for these tables. Correct the query; do not repeat it or guess column names."}, schema_access
         return {"error": str(error)}, set()
     except OSError:
         return {"error": "The selected data is unavailable right now."}, set()
@@ -214,7 +227,7 @@ async def query_context(context, sql, params=None, max_rows=200):
             "error": "This needs " + ", ".join(sorted(touched)) + " access.",
             "required_access": sorted(touched),
         }
-    if "error" not in result:
+    if "error" not in result or "available_schema" in result:
         context.state.required_access.update(touched)
     return result
 

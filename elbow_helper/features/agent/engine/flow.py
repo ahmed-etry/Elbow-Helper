@@ -73,6 +73,7 @@ class AnswerFlow:
         self.read_results = {}
         self.steps_by_id = {}
         self.append_commands = False
+        self.failed_reads = set()
 
     def _model_results(self, results):
         visible = {key: self.result_views[key] for key in results if key in self.result_views}
@@ -199,6 +200,11 @@ class AnswerFlow:
             results = await self.runner.run(self.plan)
             self.steps_by_id.update({step["id"]: step for step in self.plan["steps"]})
             self.completed_results.update(results)
+            self.failed_reads.update(
+                step["capability"] + json.dumps(step["arguments"], sort_keys=True, default=str)
+                for step in self.plan["steps"] if results.get(step["id"], {}).get("cause")
+                in ("invalid_arguments", "sql_schema_error")
+            )
             self.result_views.update(self.runner.model_results_for(results))
             self.read_results.update({step["id"]: results[step["id"]]
                                       for step in self.plan["steps"]
@@ -499,6 +505,11 @@ class AnswerFlow:
             if not check.ok:
                 raise AgentGracefulEnd(AGENT_PLAN_UNFINISHED)
             model_step = corrected
+        if any(
+            step["capability"] + json.dumps(step["arguments"], sort_keys=True, default=str) in self.failed_reads
+            for step in next_plan["steps"]
+        ):
+            raise AgentLimitReached(AGENT_PLAN_UNFINISHED)
         self.revisions += 1
         self.plan = next_plan
         self._reserve_answer()

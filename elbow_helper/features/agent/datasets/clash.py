@@ -13,6 +13,7 @@ from ..engine import budgets
 from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool
 from ..research.history import search_date
+from ..capabilities.validation import invalid_arguments
 from .battle_logs import select_battles
 from .clash_cache import MAX_AGE_SECONDS
 from .findings import AGGREGATES, FIELD_MEANINGS, battle_aggregate, cohort_aggregate
@@ -149,13 +150,13 @@ async def read_clash(context, arguments):
         cache.bind((id(client), context.guild.id, context.member.id))
     max_age = arguments.get("max_age_seconds", MAX_AGE_SECONDS)
     if type(max_age) is not int or not 0 <= max_age <= MAX_AGE_SECONDS:
-        return {"error": "Clash freshness must be between zero and thirty seconds."}
+        return invalid_arguments("Clash freshness must be between zero and thirty seconds.", "max_age_seconds")
     kind, tags = arguments["kind"], arguments["tags"]
     cap = 200 if kind == "player" else 20
     if (
         kind not in ENDPOINTS or not 1 <= len(tags) <= cap
     ):
-        return {"error": "The selected Clash batch is too large or has an unknown kind."}
+        return invalid_arguments("The selected Clash batch is too large or has an unknown kind.", "kind", "tags")
     normalized = []
     for value in tags:
         clan = (
@@ -166,11 +167,11 @@ async def read_clash(context, arguments):
         if tag is None and kind == "cwl_war" and value == "#0":
             tag = "#0"
         if tag is None:
-            return {"error": "Use valid Clash tags or family clan codes."}
+            return invalid_arguments("Use valid Clash tags or family clan codes.", "tags")
         normalized.append(tag)
     limit = arguments.get("limit", 2 if kind == "capital_raids" else 10)
     if type(limit) is not int or not 1 <= limit <= (10 if kind == "capital_raids" else 50):
-        return {"error": "The selected Clash history limit is invalid."}
+        return invalid_arguments("The selected Clash history limit is invalid.", "limit")
     order, offset = arguments.get("order", "newest_first"), arguments.get("offset", 0)
     try:
         after, before = search_date(arguments.get("after")), search_date(arguments.get("before"))
@@ -180,10 +181,11 @@ async def read_clash(context, arguments):
         if kind != "battle_log" and any(key in arguments for key in ("order", "offset", "after", "before")):
             raise ValueError("Battle selection applies only to battle logs")
     except (ValueError, TypeError, AttributeError):
-        return {"error": "Use valid ISO dates, chronological order and offset for battle logs only."}
+        return invalid_arguments("Use valid ISO dates, chronological order and offset for battle logs only.",
+                                 "after", "before", "order", "offset")
     aggregate = arguments.get("aggregate")
     if aggregate is not None and (kind != "battle_log" or aggregate not in AGGREGATES):
-        return {"error": "Choose a supported battle-log aggregate."}
+        return invalid_arguments("Choose a supported battle-log aggregate.", "aggregate")
     # Repeated tags must not multiply a cohort's denominators.
     if aggregate is not None:
         normalized = list(dict.fromkeys(normalized))

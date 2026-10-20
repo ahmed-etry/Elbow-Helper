@@ -11,6 +11,7 @@ from ..access import require_evidence_access
 from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool
 from ..research.history import search_date
+from ..capabilities.validation import invalid_arguments
 from .clash import read_clash
 
 
@@ -85,21 +86,21 @@ async def read_ranked_stats(context, arguments):
         return {"error": "Ranked observations are not available."}
     selectors = [key for key in ("member_ids", "account_tags", "clan_tags") if arguments.get(key)]
     if len(selectors) != 1:
-        return {"error": "Choose members, accounts or clans."}
+        return invalid_arguments("Choose members, accounts or clans.", "member_ids", "account_tags", "clan_tags")
     selector = selectors[0]
     values = arguments[selector]
     if not isinstance(values, list) or not 1 <= len(values) <= 200:
-        return {"error": "Choose between one and two hundred members, accounts or clans."}
+        return invalid_arguments("Choose between one and two hundred members, accounts or clans.", selector)
     if selector == "member_ids":
         if any(type(value) is not int or value <= 0 for value in values):
-            return {"error": "Supply valid member IDs."}
+            return invalid_arguments("Supply valid member IDs.", "member_ids")
     else:
         normalized = []
         for value in values:
             clan = CLANS.get(value.upper()) if isinstance(value, str) and selector == "clan_tags" else None
             tag = normalize_player_tag(clan.tag if clan else value)
             if tag is None:
-                return {"error": "Use valid Clash tags or family clan codes."}
+                return invalid_arguments("Use valid Clash tags or family clan codes.", selector)
             normalized.append(tag)
         values = normalized
     try:
@@ -111,7 +112,8 @@ async def read_ranked_stats(context, arguments):
         if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 25:
             raise ValueError("Invalid page")
     except (ValueError, TypeError):
-        return {"error": "Use ISO dates for a window of up to ninety days and a valid page."}
+        return invalid_arguments("Use ISO dates for a window of up to ninety days and a valid page.",
+                                 "after", "before", "offset", "limit")
     try:
         result = await asyncio.to_thread(context.ranked_queries.window,
             after=after.isoformat(timespec="microseconds"), before=before.isoformat(timespec="microseconds"), selector=selector,

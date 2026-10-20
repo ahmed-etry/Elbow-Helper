@@ -86,7 +86,7 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
             AgentToolDefinition(
                 name="read_discord_channel_history",
                 description=(
-                    "Read a page of channel or thread history over a period."
+                    "Read channel history from the required after date to an optional before date."
                 ),
                 parameters={
                     "type": "object",

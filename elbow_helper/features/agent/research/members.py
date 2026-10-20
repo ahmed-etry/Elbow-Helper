@@ -15,7 +15,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ..engine.capability_contract import CapabilityContract
 from ..access import require_evidence_access
 from ..models import AgentRequestContext, RegisteredAgentTool
-from ..capabilities.validation import positive_int
+from ..capabilities.validation import positive_int, invalid_arguments
 MEMBER_RESULT_LIMIT = 8
 MEMBER_DETAILS_LIMIT = 1000
 MEMBER_ID_LIMIT = 1000
@@ -31,7 +31,7 @@ async def find_discord_members(
 ) -> Mapping[str, Any]:
     query = str(arguments.get("query") or "").strip()
     if not query:
-        return {"error": "A member name, mention, or ID is required."}
+        return invalid_arguments("A member name, mention, or ID is required.", "query")
     match = re.fullmatch(r"<@!?(\d+)>", query)
     numeric_id = int(match.group(1)) if match else (positive_int(query) or 0)
     needle = query.casefold()
@@ -86,14 +86,14 @@ async def read_discord_members(
     identifiers = arguments.get("member_ids")
     role_ids = arguments.get("role_ids")
     if identifiers is None and role_ids is None:
-        return {"error": "Choose member IDs or role IDs."}
+        return invalid_arguments("Choose member IDs or role IDs.", "member_ids", "role_ids")
     if role_ids is not None and (
         not isinstance(role_ids, list) or not 1 <= len(role_ids) <= 25
         or any(type(value) is not int or value <= 0 for value in role_ids)
     ):
-        return {"error": "Choose between 1 and 25 role IDs."}
+        return invalid_arguments("Choose between 1 and 25 role IDs.", "role_ids")
     if arguments.get("role_match", "any") not in ("any", "all"):
-        return {"error": "Choose any or all roles."}
+        return invalid_arguments("Choose any or all roles.", "role_match")
     selected_ids = set(identifiers) if isinstance(identifiers, list) else None
     if role_ids is not None:
         await require_evidence_access(context)
@@ -117,14 +117,14 @@ async def read_discord_members(
             or role_ids is None and not 1 <= len(identifiers) <= MEMBER_ID_LIMIT
             or any(type(value) is not int or value <= 0 for value in identifiers)
             or len(set(identifiers)) != len(identifiers)):
-        return {"error": "Provide between 1 and 1000 distinct member IDs."}
+        return invalid_arguments("Provide between 1 and 1000 distinct member IDs.", "member_ids")
     offset, limit = arguments.get("offset", 0), arguments.get("limit", 100)
     if (type(offset) is not int or not 0 <= offset <= MEMBER_ID_LIMIT
             or type(limit) is not int or not 1 <= limit <= MEMBER_DETAILS_LIMIT):
-        return {"error": "Use an offset from 0 to 1000 and a limit from 1 to 1000."}
+        return invalid_arguments("Use an offset from 0 to 1000 and a limit from 1 to 1000.", "offset", "limit")
     sorting = arguments.get("sort")
     if sorting is not None and sorting not in ("oldest_first", "newest_first"):
-        return {"error": "Sort join dates oldest_first or newest_first."}
+        return invalid_arguments("Sort join dates oldest_first or newest_first.", "sort")
     await require_evidence_access(context)
     rows, missing = [], []
     for identifier in identifiers:
@@ -203,6 +203,7 @@ def member_tools():
                     }, "required": [], "additionalProperties": False,
                 },
                 usage_note=(
+                    "Supply member_ids or role_ids (both filters may be combined). "
                     "Sort by joined_at before paging; unknown joins come last. No sort "
                     "preserves ID order."
                 ),

@@ -99,7 +99,11 @@ async def execute_plan(
                     "error": f"Step {dependency} failed, so this step could not run.",
                 }
         if step["id"] in (step_errors or {}):
-            return step["id"], {"error": step_errors[step["id"]]}
+            return step["id"], {
+                "error": step_errors[step["id"]], "cause": "invalid_arguments",
+                "capability": step["capability"],
+                **({"argument_schema": argument_schema(step)} if argument_schema else {}),
+            }
         try:
             arguments = resolve_arguments(
                 step["arguments"], results,

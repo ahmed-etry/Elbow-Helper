@@ -212,6 +212,11 @@ class PlanRunner:
                 )
             if future is not None:
                 future.set_result(result)
+                # Coalesce in-flight reads, but a failed transport/setup/access
+                # result must not replace the next real retry. Invalid arguments
+                # are bounded by the flow using their explicit cause.
+                if "error" in result or result.get("flags", {}).get("status") == "failed":
+                    self.reads.pop(key, None)
             return result
         except BaseException:
             if future is not None:
@@ -223,7 +228,8 @@ class PlanRunner:
         name = step["capability"]
         checked = check_step({**step, "arguments": arguments}, self.registry, resolved=True)
         if not checked.ok:
-            return {"error": checked.error, "offered": checked.offered}
+            return {"error": checked.error, "offered": checked.offered,
+                    "cause": "invalid_arguments", "argument_schema": self.registry[name].definition.parameters}
         try:
             scope = compile_capability_call(
                 checked.tool, arguments, self.source_identities, contract=checked.contract,
@@ -315,6 +321,8 @@ class PlanRunner:
             payload = json.loads(raw)
         except ValueError:
             payload = {"error": "Invalid lookup result"}
+        if payload.get("cause") == "invalid_arguments":
+            payload.update(capability=step["capability"], argument_schema=tool.definition.parameters)
         if tool.effect is AgentCapabilityEffect.ARTIFACT and "error" not in payload:
             # Model-authored tables and labels may include withheld titles.
             local.state.required_access.update(local.state.knowledge_title_access)
