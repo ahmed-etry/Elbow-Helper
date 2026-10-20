@@ -5,6 +5,7 @@ import re
 from elbow_helper.domain.player_tags import find_player_tags, normalize_player_tag
 from ..wording import ACTION_EMPTY
 from .grounding import GroundingError
+from .answer_evidence import observations
 
 
 FIELDS = {
@@ -58,20 +59,23 @@ def _field(rows, mode):
 
 def _values(result, mode, question):
     if result.get("source") == "clash_api" and result.get("kind") in ("clan", "player"):
-        _complete(result)
+        if result["kind"] == "player" and mode == "count":
+            return None
         items = _rows(result.get("items"))
+        tags = find_player_tags(question)
+        observed_tags = {item.get("tag") for item in items}
+        if tags and observed_tags and tags.isdisjoint(observed_tags):
+            return None
+        _complete(result)
         if not items or any(item.get("status") != "ok" for item in items):
             raise GroundingError("strict_accounts_unavailable")
         for item in items:
             _complete(item)
             if not isinstance(item.get("data"), dict):
                 raise GroundingError("invalid_strict_account")
-        tags = find_player_tags(question)
-        if tags and tags != {item.get("tag") for item in items}:
+        if tags and tags != observed_tags:
             raise GroundingError("strict_source_wrong_accounts")
         if result["kind"] == "player":
-            if mode == "count":
-                return None
             return ([item["tag"] for item in items] if mode == "tags"
                     else _field([item["data"] for item in items], mode))
         if len(items) != 1:
@@ -99,7 +103,7 @@ def strict_answer(question, evidence):
     mode = strict_mode(question)
     if mode is None:
         return None
-    candidates = [values for result in evidence.values() if isinstance(result, dict)
+    candidates = [values for result in observations(evidence)
                   for values in [_values(result, mode, question)] if values is not None]
     if len(candidates) != 1:
         raise GroundingError("strict_source_missing_or_ambiguous")

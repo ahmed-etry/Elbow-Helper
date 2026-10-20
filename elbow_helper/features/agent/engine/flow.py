@@ -348,10 +348,10 @@ class AnswerFlow:
                 self._model_results(self.read_results)
                 await require_evidence_access(self.context)
                 return narrow_answer(state.request_text, state.grounding_evidence)
-        except GroundingError as error:
-            if error.kind == "source":
-                error.kind = "list"
-            return partial_answer("", state.grounding_evidence, error)
+        except GroundingError:
+            # An intermediate read may fail or omit required fields. Let the
+            # existing bounded plan loop correct it before final validation.
+            pass
         if self.rounder.lookup_route:
             self._model_results(self.read_results)
             try:

@@ -7,6 +7,7 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.configuration.clans import CLANS
 from .grounding import GROUNDING_GAPS, GroundingError
 from .strict_answers import strict_answer, strict_mode
+from .answer_evidence import observations
 
 
 def _number(value):
@@ -16,9 +17,8 @@ def _number(value):
 def _clash_results(evidence, kind):
     # Only top-level tool results qualify: quoted messages and arbitrary nested
     # JSON must not be able to introduce trusted numeric findings.
-    return [value for value in evidence.values() if isinstance(value, dict)
-            and value.get("source") == "clash_api" and value.get("kind") == kind
-            and not value.get("error") and value.get("flags", {}).get("status") not in ("failed", "refused")]
+    return [value for value in observations(evidence)
+            if value.get("source") == "clash_api" and value.get("kind") == kind]
 
 
 def narrow_answer(question, evidence):

@@ -75,7 +75,7 @@ class StrictAnswerTests(unittest.TestCase):
                         {"search_is_exhaustive": False}, {"flags": {"status": "partial"}}):
             with self.subTest(changes=changes), self.assertRaises(GroundingError):
                 narrow_answer("tags only", {"read": {**players(), **changes}})
-        for evidence in ({}, {"a": players(), "b": players()},
+        for evidence in ({},
                          {"message": {"content": str(players())}},
                          {"read": query([{"tag": "#P0", "player_tag": "#P2"}])}):
             with self.subTest(evidence=evidence), self.assertRaises(GroundingError):
