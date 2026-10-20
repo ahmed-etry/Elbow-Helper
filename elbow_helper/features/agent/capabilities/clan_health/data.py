@@ -11,7 +11,9 @@ SOURCES = (
         tables=(
             (
                 "wars", "none",
-                "One war; war_type REG/CWL/UNKNOWN; state preparation/inWar/warEnded/notInWar; "
+                "One stored war identity; regular-war IDs use endTime when no warTag exists, "
+                "so changed endTime can produce alternate identities for one war. "
+                "war_type REG/CWL/UNKNOWN; state preparation/inWar/warEnded/notInWar; "
                 "source=war_cwl_api/currentwar_api:<state>/currentwar_api:warEnded_scheduled/"
                 "cwl_api:warEnded_scheduled; use end_ts for history.",
             ),
@@ -46,7 +48,8 @@ SOURCES = (
             (
                 "player_snapshots", "lead_plus",
                 "One periodic account snapshot at captured_ts; sums are total upgrade levels; "
-                "games_total is lifetime games points.",
+                "games_total is lifetime games points. Changes between captures do not provide "
+                "a login timestamp or identify who accessed the account.",
             ),
             (
                 "report_runs", "lead_plus",
