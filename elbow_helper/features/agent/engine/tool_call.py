@@ -158,6 +158,7 @@ def evidence_record(
     result: str,
     raw_result_characters: int,
     result_complete: bool,
+    model_result_content: str | None = None,
     capability_scope: Mapping[str, Any] | None = None,
     context: AgentRequestContext,
 ) -> str:
@@ -183,6 +184,7 @@ def evidence_record(
             "tool": tool,
             "arguments": arguments,
             "result": result,
+            **({"model_result": model_result_content} if model_result_content is not None else {}),
             "result_status": status,
             "raw_result_characters": raw_result_characters,
             "result_complete": status == "complete",
@@ -379,25 +381,87 @@ def _clash_size_limit(content: str, limit: int) -> str | None:
         "live_battle_logs", {}).get("result", {})
     if not isinstance(live, dict) or live.get("source") != "clash_api":
         return None
-    items = live.get("items", [])
-    # model_view may have encoded the account records as a table.
-    if isinstance(items, dict):
-        items = [dict(zip(items["columns"], row)) for row in items["rows"]]
-    counts = [{"tag": item["tag"], "collections": {
+    from copy import deepcopy
+    from ..datasets.clash import summary, collection_counts
+
+    def records(value):
+        if isinstance(value, dict):
+            if set(value) == {"columns", "rows"}:
+                return [records(dict(zip(value["columns"], row))) for row in value["rows"]]
+            return {key: records(item) for key, item in value.items()}
+        return [records(item) for item in value] if isinstance(value, list) else value
+
+    # Preserve the wrapper (ranked reads may contain both stored and live data).
+    bounded = records(deepcopy(payload))
+    target = bounded if live is payload else bounded["live_battle_logs"]["result"]
+    items = target.get("items", [])
+    totals = [{"tag": item["tag"], "collections": {
         path: {"returned_rows": 0, "total_rows": count["total_rows"]}
         for path, count in item.get("row_counts", {}).items()
     }} for item in items]
-    bounded = {"source": "clash_api", "items": [], "row_counts": counts,
-               "truncated": True, "flags": {"status": "partial", "truncated": True},
-               "message": "Clash result exceeded the size limit; no rows included. Read fewer accounts or a smaller limit."}
-    encoded = json.dumps(bounded, ensure_ascii=False, separators=(",", ":"))
+    target.update(truncated=True, flags={**target.get("flags", {}),
+                                         "status": "partial", "truncated": True})
+
+    def encode():
+        return json.dumps(bounded, ensure_ascii=False, separators=(",", ":"))
+
+    # Full profiles can be large. Keep every completed account's compact facts
+    # before considering a smaller page. Missing fields are explicit, never an
+    # arbitrary JSON excerpt passed off as a complete profile.
+    for item in items:
+        original = item.get("data")
+        if item.get("status") == "ok" and isinstance(original, dict):
+            projected = summary(live.get("kind"), original)
+            if projected != original:
+                item.update(data=projected, projection="summary", truncated=True)
+                counts = collection_counts(projected, original)
+                item["row_counts"] = {path: {
+                    "returned_rows": counts.get(path, {}).get("returned_rows", 0),
+                    "total_rows": count["total_rows"],
+                } for path, count in item.get("row_counts", {}).items()}
+    target["projection"] = "summary"
+    encoded = encode()
     if len(encoded) <= limit:
         return encoded
-    # Tiny budgets may not fit per-account counts. Report the collection total.
-    total = sum(count["total_rows"] for item in counts for count in item["collections"].values())
-    encoded = json.dumps({"truncated": True, "returned_rows": 0, "total_rows": total},
+
+    # Preserve the league/count facts of the entire cohort when even summaries
+    # are too large. Do not lose a zero-trophy account's ranked league.
+    if live.get("kind") in ("player", "clan"):
+        keys = ("tag", "name", "townHallLevel", "leagueTier", "league", "trophies", "bestTrophies") \
+            if live["kind"] == "player" else ("tag", "name", "members")
+        for item in items:
+            if isinstance(item.get("data"), dict):
+                item["data"] = {key: value for key, value in item["data"].items() if key in keys}
+                item.update(projection="facts", truncated=True)
+                item.pop("row_counts", None)
+        target["projection"] = "facts"
+        encoded = encode()
+        if len(encoded) <= limit:
+            return encoded
+
+    # A bounded prefix is still useful. The remainder can be read using the
+    # normal tags argument and request cache, without repeating completed I/O.
+    target["items"] = []
+    target["total_accounts"] = len(items)
+    target["next_tags"] = [item["tag"] for item in items]
+    target["row_counts"] = totals
+    best = encode()
+    for index, item in enumerate(items):
+        target["items"].append(item)
+        target["next_tags"] = [row["tag"] for row in items[index + 1:]]
+        target["row_counts"] = totals[index + 1:]
+        encoded = encode()
+        if len(encoded) > limit:
+            break
+        best = encoded
+    if len(best) <= limit:
+        return best
+    encoded = json.dumps({"truncated": True, "returned_rows": 0,
+                          "total_rows": sum(count["total_rows"] for item in totals
+                                            for count in item["collections"].values())},
                          separators=(",", ":"))
     return encoded if len(encoded) <= limit else ""
+
 
 
 def error_result(message: str) -> str:

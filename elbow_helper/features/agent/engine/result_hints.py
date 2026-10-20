@@ -22,7 +22,7 @@ from ..discord_actions.polls import PollSnapshot
 from ..discord_actions.audit_log import AuditSnapshot
 from ..datasets.clash import (
     BATTLE_LOG_FIELDS, CLAN_FIELDS, CLAN_MEMBER_FIELDS, CWL_CLAN_FIELDS, CWL_GROUP_FIELDS, CWL_MEMBER_FIELDS,
-    HERO_FIELDS, LEAGUE_FIELDS, PLAYER_CLAN_FIELDS, PLAYER_FIELDS, WAR_CLAN_FIELDS,
+    HERO_FIELDS, LEAGUE_FIELDS, RANKED_LEAGUE_FIELDS, PLAYER_CLAN_FIELDS, PLAYER_FIELDS, WAR_CLAN_FIELDS,
     WAR_LOG_FIELDS, WAR_SIDE_FIELDS,
 )
 from ..plan.results import LIMIT_FIELDS
@@ -34,6 +34,7 @@ CONTEXT_MESSAGE = names("message_id,author_id,author,timestamp,content,source,is
 CLASH_SUMMARIES = {
     "player": {**dict.fromkeys(PLAYER_FIELDS, ""), "clan": dict.fromkeys(PLAYER_CLAN_FIELDS, ""),
                "league": dict.fromkeys(LEAGUE_FIELDS, ""),
+               "leagueTier": dict.fromkeys(RANKED_LEAGUE_FIELDS, ""),
                "heroes": [dict.fromkeys(HERO_FIELDS, "")]},
     "clan": {**dict.fromkeys(CLAN_FIELDS, ""), "warLeague": dict.fromkeys(LEAGUE_FIELDS, ""),
              "capitalLeague": dict.fromkeys(LEAGUE_FIELDS, ""),

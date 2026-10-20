@@ -9,6 +9,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
 from ..access import accessible_message_channel, require_evidence_access
+from .context import model_evidence
 from .state import ConversationTurn
 from ..models import AgentRequestContext, RegisteredAgentTool
 
@@ -55,7 +56,7 @@ def _document(turn: ConversationTurn) -> str:
         "delivery_complete": record.delivery_complete,
         "delivery_unknown": record.delivery_unknown,
         "local_context": record.local_context,
-        "lookup_results": record.evidence,
+        "lookup_results": [model_evidence(encoded) for encoded in record.evidence],
         "report_ids": record.report_ids,
         "reply_ids": record.reply_ids,
     }, ensure_ascii=False)

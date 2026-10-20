@@ -39,6 +39,7 @@ CLAN_FIELDS = (
 ).split()
 PLAYER_CLAN_FIELDS = ("tag", "name", "clanLevel")
 LEAGUE_FIELDS = ("name",)
+RANKED_LEAGUE_FIELDS = ("id", "name")
 HERO_FIELDS = ("name", "level", "maxLevel", "village")
 CLAN_MEMBER_FIELDS = tuple(
     "tag name role townHallLevel expLevel trophies donations donationsReceived clanRank".split()
@@ -77,7 +78,8 @@ def summary(kind, payload):
         return payload
     if kind == "player":
         result = _fields(payload, PLAYER_FIELDS)
-        for field, names in (("clan", PLAYER_CLAN_FIELDS), ("league", LEAGUE_FIELDS)):
+        for field, names in (("clan", PLAYER_CLAN_FIELDS), ("league", LEAGUE_FIELDS),
+                             ("leagueTier", RANKED_LEAGUE_FIELDS)):
             if isinstance(payload.get(field), dict):
                 result[field] = _fields(payload[field], names)
         result["heroes"] = [
@@ -152,7 +154,6 @@ async def read_clash(context, arguments):
     cap = 200 if kind == "player" else 20
     if (
         kind not in ENDPOINTS or not 1 <= len(tags) <= cap
-        or arguments.get("detail") == "full" and len(tags) > 5
     ):
         return {"error": "The selected Clash batch is too large or has an unknown kind."}
     normalized = []
@@ -305,7 +306,7 @@ def clash_tools():
                 },
                 "required": ["kind", "tags"], "additionalProperties": False,
             },
-            usage_note="Max 200 players/20 others/5 full. Raids limit 1..10 default 2; others 1..50 default 10. Battle dates UTC; before exclusive. Aggregates before paging.",
+            usage_note="Max 200 players/20 others. Summary: leagueTier ranked, league legacy. Raids 1..10. Battle dates UTC, before exclusive. Aggregates before paging.",
         ),
         read_clash,
         contract=CapabilityContract(), returns="items[].tag,status,data; observed_at",

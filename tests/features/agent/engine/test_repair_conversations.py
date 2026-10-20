@@ -1,16 +1,20 @@
 """Anonymous conversations exercise real planning, tools, model views and delivery."""
 
 from dataclasses import replace
+import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock
 
 
 from elbow_helper.configuration.roles import LEAD
+from elbow_helper.features.agent.conversation.context import compile_context
+from elbow_helper.features.agent.conversation.state import ConversationRecord, ConversationTurn
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin
 from elbow_helper.features.agent.engine.factual_answers import narrow_answer, clan_count_tag
 from elbow_helper.features.agent.engine.grounding import GroundingError
 from elbow_helper.features.agent.engine.service import AgentService
+from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from features.agent.engine.test_agent_plan_flow import _context, _Model, _Session, _model_step, _plan
 
@@ -88,3 +92,33 @@ class RepairConversationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(narrow_answer("How many members in Example clan?", {"one": named}), "50")
         with self.assertRaises(GroundingError):
             narrow_answer("How many members in Different clan?", {"one": named})
+
+    async def test_large_profiles_keep_every_ranked_league_in_model_and_retained_views(self):
+        tags = ["#P" + str(index).replace("1", "Y").replace("3", "L").replace("4", "Q").replace("5", "V").replace("6", "G").replace("7", "R") for index in range(30)]
+        def fetch(path, **options):
+            tag = "#" + path.split("%23")[1]
+            return SimpleNamespace(ok=True, status=200, payload={
+                "tag": tag, "name": "Example " + tag, "league": {"name": "Silver III"},
+                "leagueTier": {"id": 105000033, "name": "Electro League 33"},
+                "trophies": 0, "bestTrophies": 6000,
+                "troops": [{"name": "unneeded_profile_marker", "detail": "x" * 2000}] * 50})
+        context = self.context(fetch)
+        session = _Session([planned("players", "read_clash", {"kind": "player", "tags": tags, "detail": "full"}),
+                            AgentStep("Checked the ranked leagues.", (), AgentUsage(1000, 100))], [])
+        await AgentService(_Model(session)).answer(question="Read the player leagues.", local_context="", context=context)
+        payload = json.loads(session.calls[1][0][0].content)["results"]["players"]
+        items = unpack(payload["items"])
+        self.assertEqual({item["tag"] for item in items}, set(tags))
+        self.assertTrue(payload["truncated"])
+        for item in items:
+            self.assertEqual(item["data"]["leagueTier"]["name"], "Electro League 33")
+            self.assertEqual(item["data"]["league"]["name"], "Silver III")
+        evidence = json.loads(context.state.evidence[0])
+        self.assertNotIn("unneeded_profile_marker", evidence["model_result"])
+        turn = ConversationTurn("{}", frozenset(), record=ConversationRecord(
+            100, 41, "2026-10-01T00:00:00+00:00", "Read player leagues", "Checked.", "Checked.", "",
+            tuple(context.state.evidence), (), (), True))
+        followup = replace(context, state=AgentTurnState(authorized_history=(turn,)))
+        compiled = compile_context(question="Those same accounts, ranked league only.", local_context="", context=followup, tools=())
+        self.assertNotIn("unneeded_profile_marker", compiled.prompt)
+        self.assertIn("Electro League 33", compiled.prompt)

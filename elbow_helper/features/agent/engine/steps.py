@@ -368,7 +368,9 @@ class PlanRunner:
                     call_id=step["id"],
                     tool=step["capability"],
                     arguments=arguments,
-                    result=structured_content,
+                    result=(content if payload.get("source") == "clash_api"
+                            and content != model_content else structured_content),
+                    model_result_content=content,
                     raw_result_characters=len(structured_content),
                     result_complete=content == model_content,
                     capability_scope=scope,

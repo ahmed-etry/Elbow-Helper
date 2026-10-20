@@ -73,6 +73,24 @@ def _history_text(turn):
     return json.dumps(payload, ensure_ascii=False)
 
 
+def model_evidence(encoded):
+    """Replay only the exact delivered model view, retaining raw records internally."""
+    try:
+        record = json.loads(encoded)
+        if "model_result" in record:
+            record["result"] = record.pop("model_result")
+        elif record.get("result_complete") is False:
+            record["result"] = json.dumps({"flags": {"status": "partial"},
+                                           "cause": "retained_model_view_unavailable"})
+        else:
+            return encoded
+        return json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+    except (TypeError, ValueError, AttributeError):
+        return encoded
+
+
+
+
 def build_history_checkpoint(
     turns: Sequence[ConversationTurn], *, covered_turn_count: int,
     created_at: datetime,
@@ -176,7 +194,7 @@ def compile_context(
     for instruction in context.state.authorized_instructions:
         context.state.source_channels.add(instruction.source_channel_id)
 
-    evidence = [(turn, encoded) for turn in candidates or () if turn.record is not None
+    evidence = [(turn, model_evidence(encoded)) for turn in candidates or () if turn.record is not None
                 for encoded in turn.record.evidence]
     carried = []
 
@@ -275,6 +293,17 @@ def compile_context(
                                            omitted_evidence_records=len(evidence) - len(carried))
     estimated = (estimate_tokens(system_prompt) + estimate_tokens(tool_json)
                  + estimate_tokens(prompt) + REQUEST_OVERHEAD_ESTIMATE)
+    retained = {}
+    for index, item in enumerate(carried):
+        try:
+            record = json.loads(item["record"])
+            retained[str(index)] = json.loads(record["result"])
+        except (KeyError, TypeError, ValueError):
+            continue
+    if retained:
+        # Retained messages can ground references in a follow-up. They remain
+        # nested so stale live data cannot replace a new top-level numeric read.
+        context.state.grounding_evidence["retained"] = retained
     return CompiledContext(
         prompt=prompt, estimated_input_tokens=estimated,
         input_content_bytes=len((system_prompt + tool_json + prompt).encode("utf-8")),
