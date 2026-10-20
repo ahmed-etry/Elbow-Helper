@@ -76,6 +76,80 @@ def _message(*, author: _Member, bot_id: int, content: str):
 
 
 class AgentCogTests(unittest.IsolatedAsyncioTestCase):
+    async def test_real_typing_refresh_stops_before_recording_public_or_private_terminal_delivery(self):
+        from discord.context_managers import Typing
+        from elbow_helper.features.agent.wording import ACTION_PRIVATE_ANSWER
+
+        for mode in ("public", "private_post", "private_timeout"):
+            with self.subTest(mode=mode):
+                private = mode != "public"
+                self.setUp()
+                member = _Member(121, (next(iter(CORE)),))
+                message = self._real_handler_scenario(member)(member, 501, "<@999> synthetic question")
+                channel = message.channel
+                channel._state = SimpleNamespace(loop=asyncio.get_running_loop(), http=SimpleNamespace(send_typing=AsyncMock()))
+                channel._get_channel = AsyncMock(return_value=channel)
+                typing = Typing(channel)
+                channel.typing = lambda: typing
+                sent = message.reply.return_value
+                sent.edit = AsyncMock(return_value=sent)
+                recording, finish = asyncio.Event(), asyncio.Event()
+                original = self.cog._record_turn
+
+                async def record(*args):
+                    recording.set()
+                    await finish.wait()
+                    await original(*args)
+
+                self.cog._record_turn = record
+                with (patch("elbow_helper.features.agent.cog.discord.Member", _Member),
+                      patch("elbow_helper.features.agent.delivery.can_show", AsyncMock(return_value=not private))):
+                    task = asyncio.create_task(self.cog.on_message(message))
+                    await asyncio.wait_for(recording.wait(), 2)
+                    self.assertTrue(typing.task.done())
+                    self.assertTrue(typing.task.cancelled())
+                    self.assertEqual(channel._state.http.send_typing.await_count, 1)
+                    if private:
+                        self.assertEqual(message.reply.await_args.args[0], ACTION_PRIVATE_ANSWER)
+                    finish.set()
+                    await task
+                if private:
+                    view = message.reply.await_args.kwargs["view"]
+                    interaction = SimpleNamespace(id=801, user=member, response=SimpleNamespace(
+                        send_message=AsyncMock(), defer=AsyncMock()), followup=SimpleNamespace(send=AsyncMock()))
+                    await view.open_result(interaction)
+                    self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
+                    if mode == "private_post":
+                        await view.post_here(interaction)
+                        self.assertEqual(sent.edit.await_args.kwargs["content"], "Answer")
+                    else:
+                        await view.on_timeout()
+                    self.assertTrue(typing.task.cancelled())
+                    self.assertEqual(channel._state.http.send_typing.await_count, 1)
+
+    async def test_real_typing_refresh_is_cancelled_on_timeout_access_loss_and_request_cancellation(self):
+        from discord.context_managers import Typing
+        for error in (TimeoutError(), AgentAccessLost(), asyncio.CancelledError()):
+            with self.subTest(error=type(error).__name__):
+                self.setUp()
+                member = _Member(121, (next(iter(CORE)),))
+                message = self._real_handler_scenario(member)(member, 501, "<@999> question")
+                channel = message.channel
+                channel._state = SimpleNamespace(loop=asyncio.get_running_loop(), http=SimpleNamespace(send_typing=AsyncMock()))
+                channel._get_channel = AsyncMock(return_value=channel)
+                typing = Typing(channel)
+                channel.typing = lambda: typing
+                self.cog.service.answer.side_effect = error
+                with patch("elbow_helper.features.agent.cog.discord.Member", _Member):
+                    task = asyncio.create_task(self.cog.on_message(message))
+                    if isinstance(error, asyncio.CancelledError):
+                        with self.assertRaises(asyncio.CancelledError):
+                            await task
+                    else:
+                        await task
+                self.assertTrue(typing.task.cancelled())
+                self.assertEqual(channel._state.http.send_typing.await_count, 1)
+
     async def test_direct_answer_starts_typing_before_the_model(self):
         from features.agent.engine.test_agent_plan_flow import _Model, _Session
         from elbow_helper.infrastructure.ai import AgentStep, AgentUsage

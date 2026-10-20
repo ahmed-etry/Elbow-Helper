@@ -413,6 +413,9 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
                         delivery=delivery, context=context,
                     )
             finally:
+                # Delivery is terminal even when it leaves requester controls.
+                # Persistence can take time; it must not keep refreshing typing.
+                await reply_activity.aclose()
                 await self._record_turn(
                     message, member, question, response, local_context,
                     context, delivery, conversation,
