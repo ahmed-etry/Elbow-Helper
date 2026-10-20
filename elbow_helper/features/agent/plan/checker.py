@@ -209,7 +209,8 @@ def _mixes_irreversible_changes(steps, registry) -> bool:
 def check_plan(raw, registry, *, completed_steps=None):
     """Return a correctable structural error; data errors belong to execution."""
     try:
-        if not isinstance(raw, dict) or set(raw) != {"goal", "effort", "output", "steps"}:
+        required = {"goal", "effort", "output", "steps"}
+        if not isinstance(raw, dict) or not required <= set(raw) or set(raw) - required - {"reply"}:
             return _error("Supply goal, effort, output and steps.")
         if not isinstance(raw["goal"], str) or not 1 <= len(raw["goal"].strip()) <= 240:
             return _error("Write a short goal.")
@@ -217,8 +218,17 @@ def check_plan(raw, registry, *, completed_steps=None):
             return _error("Choose low, high or max effort.")
         if raw["output"] not in output_forms(registry):
             return _error("Choose an available output form.")
-        if not isinstance(raw["steps"], list) or not 1 <= len(raw["steps"]) <= 48:
-            return _error("List between 1 and 48 steps.")
+        if not isinstance(raw["steps"], list) or not 0 <= len(raw["steps"]) <= 48:
+            return _error("List up to 48 steps.")
+        if "reply" in raw and (
+            not isinstance(raw["reply"], str) or not 1 <= len(raw["reply"].strip()) <= 1800
+            or raw["output"] != "text"
+            or any(step.get("capability") not in ("react_to_request", "find_gif")
+                   for step in raw["steps"] if isinstance(step, dict))
+        ):
+            return _error("Use reply only for social text with optional reactions or a GIF.")
+        if not raw["steps"] and not raw.get("reply"):
+            return _error("Supply reply text or capability steps.")
         completed = completed_steps or {}
         earlier = set(completed)
         step_errors = {}

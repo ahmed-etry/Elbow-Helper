@@ -16,7 +16,7 @@ from ..actions.contracts import ActionClass
 from ..access import require_access, require_evidence_access
 from ..plan.checker import check_plan, step_dependencies
 from ..plan.format import PLAN_TOOL_NAME
-from ..plan.planning import read_request
+from ..plan.planning import read_request, social_reply_issue
 from ..plan.results import plan_feedback
 from ..knowledge.answers import needs_private_knowledge, private_knowledge_answer
 from ..actions.outcomes import command_reply
@@ -211,21 +211,15 @@ class AnswerFlow:
                                       and self.registry[step["capability"]].action_class is ActionClass.READ
                                       and self.registry[step["capability"]].effect is AgentCapabilityEffect.READ})
             self.rounder.results_available = bool(results)
-            if self.plan["steps"] and sum(
-                step["capability"] == "find_gif" for step in self.plan["steps"]
-            ) <= 1 and (
-                (self.decision.rounds[-1].content or "").strip()
-                or any(step["capability"] == "find_gif" for step in self.plan["steps"])
-            ) and all(
-                (step["capability"] == "react_to_request"
-                 and results.get(step["id"], {}).get("reacted") is True
-                 or step["capability"] == "find_gif"
-                 and bool(results.get(step["id"], {}).get("url")))
-                and not results[step["id"]].get("error")
-                for step in self.plan["steps"]
-            ):
+            social_steps = self.plan["steps"]
+            reply_text = self.decision.rounds[-1].content or ""
+            if (social_steps and all(step["capability"] in ("react_to_request", "find_gif") for step in social_steps)
+                    and sum(step["capability"] == "find_gif" for step in social_steps) <= 1
+                    and (reply_text.strip() or any(
+                        step["capability"] == "find_gif" and results.get(step["id"], {}).get("url")
+                        for step in social_steps))):
                 await require_evidence_access(self.context)
-                return self.decision.rounds[-1].content or ""
+                return reply_text
             response = await self._result_response(results)
             if response is not None:
                 return response
@@ -453,6 +447,8 @@ class AnswerFlow:
         except (TypeError, ValueError):
             next_plan = None
         check = check_plan(next_plan, self.registry, completed_steps=self.runner.completed_steps)
+        if check.ok and (issue := social_reply_issue(next_plan, model_step.content)):
+            check = replace(check, ok=False, error=issue)
         if self.context.operator_debug is not None:
             self.context.operator_debug.checked(model_step.tool_calls[0].call_id, check)
         LOGGER.info(
@@ -492,6 +488,8 @@ class AnswerFlow:
             check = check_plan(
                 next_plan, self.registry, completed_steps=self.runner.completed_steps,
             )
+            if check.ok and (issue := social_reply_issue(next_plan, corrected.content)):
+                check = replace(check, ok=False, error=issue)
             if self.context.operator_debug is not None:
                 self.context.operator_debug.checked(corrected.tool_calls[0].call_id, check)
             LOGGER.info(
@@ -510,6 +508,10 @@ class AnswerFlow:
         ):
             raise AgentLimitReached(AGENT_PLAN_UNFINISHED)
         self.revisions += 1
+        if next_plan.get("reply"):
+            model_step = replace(model_step, content=next_plan["reply"])
+            if not next_plan["steps"]:
+                return next_plan["reply"]
         self.plan = next_plan
         self._reserve_answer()
         self.decision = type(self.decision)(None, self.plan, (model_step,))

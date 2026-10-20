@@ -24,9 +24,13 @@ class ReplyEmojiTests(unittest.IsolatedAsyncioTestCase):
             "<:syntheticNod:101> <a:syntheticWave:102> <:syntheticNod:101>",
         )
 
+    def test_known_shortcode_names_are_case_insensitive(self):
+        self.assertEqual(render_server_emojis(":syntheticnod: :SYNTHETICNOD", self.guild),
+                         "<:syntheticNod:101> <:syntheticNod:101>")
+
     def test_unknown_unusable_markup_urls_and_code_stay_unchanged(self):
         original = (
-            ":unknown: :locked: :syntheticnod: :unknown :locked :syntheticnod "
+            ":unknown: :locked: :unknown :locked "
             "<:syntheticNod:101> <a:syntheticWave:102> 👍 "
             "https://example.invalid/:syntheticNod: `:syntheticNod:`\n"
             "```\n:syntheticWave:\n```"

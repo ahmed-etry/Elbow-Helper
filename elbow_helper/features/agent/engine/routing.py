@@ -39,8 +39,9 @@ LOOKUP_CAPABILITIES = frozenset({
 SOCIAL_CAPABILITIES = frozenset({"react_to_request", "find_gif"})
 SOCIAL_INSTRUCTION = (
     "This is the short social reply route. For a social image, sticker, GIF or "
-    "one-liner, default to a low-effort plan with react_to_request and/or find_gif. "
-    "Accompany reactions with one short line or a GIF; a GIF needs no text. "
+    "one-liner, reply directly with text when it fits. Reactions and GIFs are optional. "
+    "Never reply with only reactions. Accompany a reaction with a short line or GIF. "
+    "A failed reaction must not prevent the accompanying text or start more research. "
     "Include any reply text with the plan to avoid another model round. Choose the reaction or GIF for "
     "the actual exchange, not just the media type. If this is a factual request, "
     "correction or serious help, answer appropriately without a social response. "
@@ -61,7 +62,7 @@ def social_candidate(question, message):
     return bool(re.fullmatch(
         r"(?:hi|hey|hello|yo|thanks(?: a lot)?|thank you|cheers|lol|lmao|lmfao|"
         r"haha(?:ha)*|nice|gg|well played|my man|you legend|bruh|fair enough|"
-        r"roast me|good bot|bad bot)[.! ,\U0001f300-\U0001faff]*", text, re.IGNORECASE,
+        r"roast me|good bot|bad bot|(?:u|you) up|you awake)[?!. ,\U0001f300-\U0001faff]*", text, re.IGNORECASE,
     ))
 
 

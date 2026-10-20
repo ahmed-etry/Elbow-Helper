@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
@@ -26,6 +26,13 @@ LOGGER = logging.getLogger(__name__)
 
 class PlanNotSettled(ValueError):
     """The model gave neither a reply nor a checked plan after its correction."""
+
+
+def social_reply_issue(plan, content):
+    if (plan["steps"] and not (plan.get("reply") or (content or "").strip())
+            and all(item["capability"] == "react_to_request" for item in plan["steps"])):
+        return "Include reply text with reactions, or select a GIF."
+    return ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +75,8 @@ async def read_request(
             except (TypeError, ValueError):
                 plan = None
             check = check_plan(plan, registry)
+            if check.ok and (issue := social_reply_issue(plan, step.content)):
+                check = PlanCheck(False, issue)
             if check.ok and validate_plan is not None:
                 issue = validate_plan(plan)
                 if issue:
@@ -87,6 +96,10 @@ async def read_request(
             if on_check is not None:
                 on_check(step.tool_calls[0].call_id, check)
             if check.ok:
+                if plan.get("reply"):
+                    rounds[-1] = replace(step, content=plan["reply"])
+                    if not plan["steps"]:
+                        return ReadDecision(plan["reply"], None, tuple(rounds))
                 return ReadDecision(None, plan, tuple(rounds))
             issue = check.error
             step_id, offered = check.step_id, check.offered

@@ -20,6 +20,31 @@ def _server_emoji(name, identifier, *, usable=True, animated=False):
 
 
 class ReactionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cached_names_shortcodes_and_markup_resolve_to_the_same_usable_emoji(self):
+        item = _server_emoji("syntheticNod", 101)
+        for value in ("syntheticNod", ":syntheticNod:", ":SYNTHETICNOD", "<:syntheticNod:101>"):
+            with self.subTest(value=value):
+                context = _context()
+                context.guild.emojis = (item,)
+                context.guild.get_emoji = Mock(return_value=item)
+                context.source_message.add_reaction = AsyncMock()
+                self.assertEqual(await react_to_request(context, {"emoji": value}), {"reacted": True})
+                context.source_message.add_reaction.assert_awaited_once_with(item)
+
+    async def test_failure_causes_distinguish_selection_limit_permissions_and_delivery(self):
+        import discord
+        context = _context()
+        context.source_message.add_reaction = AsyncMock()
+        self.assertEqual((await react_to_request(context, {"emoji": "missing_selection"}))["cause"], "invalid_selection")
+        context.state.reactions.count = 3
+        self.assertEqual((await react_to_request(context, {"emoji": "👍"}))["cause"], "reaction_limit")
+        context.state.reactions.count = 0
+        for exception, cause in ((discord.Forbidden(SimpleNamespace(status=403, reason="denied"), "denied"), "permission_denied"),
+                                 (discord.HTTPException(SimpleNamespace(status=500, reason="failed"), "failed"), "delivery_failed")):
+            context.source_message.add_reaction.side_effect = exception
+            self.assertEqual((await react_to_request(context, {"emoji": "👍"}))["cause"], cause)
+        self.assertEqual(context.state.reactions.count, 0)
+
     async def test_request_prompt_lists_only_usable_server_emoji_with_exact_markup(self):
         context = _context()
         available = _server_emoji("syntheticNod", 101)
@@ -77,7 +102,4 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(message.add_reaction.await_count, 3)
         self.assertEqual(sum("error" in result for result in results), 1)
         context.source_message = SimpleNamespace(id=0)
-        self.assertEqual(
-            await react_to_request(context, {"emoji": "👍"}),
-            {"error": "There is no message to react to."},
-        )
+        self.assertEqual((await react_to_request(context, {"emoji": "👍"}))["cause"], "missing_message")

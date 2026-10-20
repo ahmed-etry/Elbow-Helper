@@ -141,8 +141,10 @@ def plan_definition(registry: Mapping[str, RegisteredAgentTool]) -> AgentToolDef
                 "goal": {"type": "string", "minLength": 1, "maxLength": 240},
                 "effort": {"type": "string", "enum": ["low", "high", "max"]},
                 "output": {"type": "string", "enum": list(output_forms(registry))},
+                "reply": {"type": "string", "minLength": 1, "maxLength": 1800,
+                          "description": "Optional social reply, sent after reaction/GIF selection. For text alone use empty steps."},
                 "steps": {
-                    "type": "array", "minItems": 1, "maxItems": 48,
+                    "type": "array", "minItems": 0, "maxItems": 48,
                     "items": {
                         "type": "object",
                         "properties": {

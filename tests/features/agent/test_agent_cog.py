@@ -33,7 +33,7 @@ from elbow_helper.features.agent.conversation.codec import decode_conversation
 from elbow_helper.features.agent.conversation.persistence import ConversationPersistence
 from elbow_helper.features.agent.conversation.context import build_history_checkpoint
 from elbow_helper.features.agent.engine.service import AgentService
-from elbow_helper.features.agent.wording import AGENT_ANSWER_UNFINISHED
+from elbow_helper.features.agent.wording import AGENT_PLAN_UNFINISHED
 from elbow_helper.infrastructure.ai.client import DeepSeekTextClient
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from elbow_helper.features.agent.models import RegisteredAgentTool
@@ -216,11 +216,14 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                         contract=CapabilityContract(()),
                     )
                     steps.append(_step("read"))
-                first = _model_step(_plan(steps))
+                social_plan = _plan(steps)
+                if mode in ("failed", "partial"):
+                    social_plan["reply"] = "Normal answer."
+                first = _model_step(social_plan)
                 if mode == "text":
                     first = AgentStep("You're welcome.", first.tool_calls, AgentUsage())
                 rounds = [first]
-                fallback = mode != "text"
+                fallback = mode not in ("text", "failed", "partial")
                 if fallback:
                     rounds.append(AgentStep("" if mode == "empty" else "Normal answer.", (), AgentUsage()))
                 session = _Session(rounds, [])
@@ -234,18 +237,20 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                     await self.cog.on_message(message)
                 message.channel.typing.assert_called_once()
                 self.assertEqual(len(session.calls), 2 if fallback else 1)
-                self.assertEqual(message.add_reaction.await_args_list[0].args, ("👍",))
-                self.assertEqual(message.add_reaction.await_count, 2 if mode == "partial" else 1)
+                if mode not in ("reaction_only", "empty"):
+                    self.assertEqual(message.add_reaction.await_args_list[0].args, ("👍",))
+                self.assertEqual(message.add_reaction.await_count,
+                                 0 if mode in ("reaction_only", "empty") else 2 if mode == "partial" else 1)
                 message.channel.send.assert_not_awaited()
                 conversation = self.cog._conversations.get(message.id)
                 self.assertEqual(len(conversation.turns), 1)
                 answer = json.loads(conversation.turns[0].text)["answer"]
                 message.reply.assert_awaited_once()
                 expected = ("You're welcome." if mode == "text" else
-                            AGENT_ANSWER_UNFINISHED if mode == "empty" else "Normal answer.")
+                            AGENT_PLAN_UNFINISHED if mode == "empty" else "Normal answer.")
                 self.assertIn(expected, message.reply.await_args.args[0])
                 self.assertIn(expected, answer)
-                self.assertEqual("Reactions: 👍" in answer, mode not in ("failed", "empty"))
+                self.assertEqual("Reactions: 👍" in answer, mode not in ("reaction_only", "failed", "empty"))
                 self.assertTrue(conversation.turns[0].record.delivery_complete)
                 self.assertEqual(conversation.turns[0].record.reply_ids, (1501,))
 

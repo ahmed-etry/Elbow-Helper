@@ -174,6 +174,24 @@ class RepairConversationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(complete["matching_accounts_in_page"], 2)
         self.assertEqual(context.bot.clash_client.get.await_count, 3)
 
+    async def test_optional_failed_reaction_still_delivers_planned_text_in_one_round(self):
+        events = []
+        context = self.context(lambda *_a, **_kw: None)
+        async def react(_emoji):
+            events.append("reaction")
+            raise discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"), "denied")
+        context.source_message.add_reaction = AsyncMock(side_effect=react)
+        context.source_message.reply.side_effect = lambda *a, **kw: events.append("text") or SimpleNamespace(id=501)
+        session = _Session([planned("reaction", "react_to_request", {"emoji": "👍"}, reply="Still here.")], [])
+        answer = await AgentService(_Model(session)).answer(question="u up?", local_context="", context=context)
+        self.assertEqual(answer, "Still here.")
+        delivery = AgentDeliveryMixin()
+        delivery.bot = context.bot
+        await delivery.send_response(context.source_message, answer, None, context=context)
+        self.assertEqual(events, ["reaction", "text"])
+        self.assertEqual(len(session.calls), 1)
+        result = json.loads(context.state.evidence[-1])["result"]
+        self.assertEqual(json.loads(result)["cause"], "permission_denied")
 
     async def test_join_cohort_filters_discord_join_dates_before_resolving_accounts(self):
         context = self.context(lambda *_a, **_kw: SimpleNamespace(ok=True, status=200, payload={

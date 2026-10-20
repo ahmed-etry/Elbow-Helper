@@ -18,6 +18,19 @@ from tests.features.agent_plan_helpers import plan_call
 
 
 class SocialRouteTests(unittest.IsolatedAsyncioTestCase):
+    async def test_optional_gif_failure_keeps_planned_text_without_another_model_round(self):
+        context = _context()
+        context.source_message.id = 300
+        context = replace(context, bot=SimpleNamespace(gif_client=candidate_client(AsyncMock(return_value=None))))
+        call = plan_call(AgentToolCall("gif", "find_gif", '{"query":"synthetic acknowledgement"}'))
+        plan = json.loads(call.arguments)
+        plan["reply"] = "Still here."
+        session = _AgentSession([AgentStep("", (replace(call, arguments=json.dumps(plan)),), AgentUsage())])
+        answer = await AgentService(_AgentModel(session)).answer(question="you up?", local_context="", context=context)
+        self.assertEqual(answer, "Still here.")
+        self.assertEqual(len(session.calls), 1)
+        self.assertIsNone(context.state.gif_url)
+
     def test_media_and_social_one_liners_select_the_small_route(self):
         for text in ("MY MAN", "<@999> thanks!", "lol", "roast me"):
             self.assertTrue(social_candidate(text, SimpleNamespace(content=text)))
@@ -56,7 +69,7 @@ class SocialRouteTests(unittest.IsolatedAsyncioTestCase):
                 offered = model.request["tools"][0].parameters["properties"]["steps"]["items"]["properties"]["capability"]["enum"]
                 self.assertEqual(set(offered), SOCIAL_CAPABILITIES)
                 knowledge.load.assert_not_called()
-                self.assertIn("Accompany reactions with one short line or a GIF", model.request["system_prompt"])
+                self.assertIn("Never reply with only reactions", model.request["system_prompt"])
 
     async def test_empty_reaction_plan_still_gets_a_reply_without_configured_gifs(self):
         context = _context()
@@ -71,7 +84,7 @@ class SocialRouteTests(unittest.IsolatedAsyncioTestCase):
             question="thanks", local_context="", context=context,
         ), "Synthetic acknowledgement.")
         self.assertEqual(len(session.calls), 2)
-        context.source_message.add_reaction.assert_awaited_once()
+        context.source_message.add_reaction.assert_not_awaited()
         offered = model.request["tools"][0].parameters["properties"]["steps"]["items"]["properties"]["capability"]["enum"]
         self.assertEqual(offered, ["react_to_request"])
 
