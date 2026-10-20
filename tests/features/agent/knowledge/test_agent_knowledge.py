@@ -336,7 +336,7 @@ Hidden""")
         # Authorized searches discover the title without exposing its body to
         # the first pass or making an otherwise public answer private.
         result = await search_approved_knowledge(context, {"query": "Restricted topic", "scope": "requester"})
-        self.assertEqual(result["sections"][0], {"title": "Restricted topic", "available_privately": True})
+        self.assertEqual({key: value for key, value in result["sections"][0].items() if key != "section_id"}, {"title": "Restricted topic", "available_privately": True})
         self.assertEqual(context.state.required_access, set())
         self.assertEqual(context.state.knowledge_title_access, {"lead"})
         self.assertEqual(next(iter(context.state.private_knowledge.values()))["body"], "Restricted body")

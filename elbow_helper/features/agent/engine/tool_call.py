@@ -198,6 +198,7 @@ def evidence_record(
             "observed_at": datetime.now(timezone.utc).isoformat(),
             "source_channels": sorted(context.state.source_channels),
             "required_access": sorted(context.state.required_access | context.state.knowledge_title_access),
+            "knowledge_sources": sorted(context.state.knowledge_sources),
         },
         ensure_ascii=False,
     )
@@ -248,6 +249,7 @@ def merge_tool_state(
     target.state.source_channels.update(local.state.source_channels)
     target.state.required_access.update(local.state.required_access)
     target.state.knowledge_title_access.update(local.state.knowledge_title_access)
+    target.state.knowledge_sources.update(local.state.knowledge_sources)
     target.state.private_knowledge.update(local.state.private_knowledge)
     for name in ("reports", "report_sources", "report_access_requirements"):
         destination = getattr(target.state, name)

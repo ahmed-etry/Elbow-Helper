@@ -98,22 +98,30 @@ filenames.
 
 Use `titles` to open a clearly matching topic from the index, or a word search
 when no title clearly matches. Searches cover the asker's access groups.
-The first answer pass receives channel-readable bodies and only a title plus
-an `available_privately` note for other matches. Sections outside the asker's
+The first answer pass receives channel-readable bodies and a title, section ID
+and `available_privately` note for other matches. Sections outside the asker's
 access are absent, including their titles. Legacy `scope` arguments do not
 release private bodies.
 
-When the channel-readable material suffices, the answer stays public. If the
-model returns exactly `{"needs_restricted_knowledge":true}`, or the search
-results contain only private matches, one additional answer pass receives the
-withheld bodies. That pass cannot run tools and its answer starts in the existing
-private-answer flow, even if an earlier answer was posted publicly. Access is
-rechecked before using bodies or titles. Retained evidence keeps the title
-restrictions too, so later requests cannot discover them through history.
-Delivery also keeps a reply private if it repeats a withheld title. Generated
-artifacts and change details retain the title restrictions.
+When channel-readable material suffices, the answer stays public. The model can
+request needed bodies with `{"needs_restricted_knowledge":true,"section_ids":["..."]}`.
+One additional answer pass receives only those sections and cannot run tools.
+The older boolean-only signal opens a single withheld section directly; ambiguous
+or invalid selections get one answer-only correction before any bodies are opened.
+Malformed internal signals, including extra fields or wrong value types, are
+recognized as protocol rather than delivered as answer text. Only a valid
+selection can open bodies; an invalid correction stops with the existing failure reply.
+Unused private matches do not trigger another answer pass.
 
-The private pass receives complete matched sections within the existing
+Access is rechecked before using bodies or titles and before delivery. If the
+destination audience cannot read the evidence, the answer uses the private-result
+controls. An explicit **Post here** decision can cover later answers for the same
+requester and channel, with access rechecked. Knowledge section IDs include their
+contents, so a different or revised section needs its own decision. Audit results
+remain private. Retained evidence, generated artifacts and change details also
+keep their source restrictions.
+
+The private pass receives complete selected sections within the existing
 evidence limits. If they do not fit, the request stops with the existing
 shorter-request response rather than answering from clipped sections.
 

@@ -8,8 +8,8 @@ from typing import Any, Mapping
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
-from ..access import accessible_message_channel, require_evidence_access
-from .context import model_evidence
+from ..access import accessible_message_channel, require_evidence_access, has_access_requirements
+from .context import retained_knowledge_sources, model_evidence
 from .state import ConversationTurn
 from ..models import AgentRequestContext, RegisteredAgentTool
 
@@ -95,6 +95,8 @@ async def read_conversation_history(
     matches: list[tuple[ConversationTurn, str]] = []
     # The request receives an immutable turn tuple for this conversation only.
     for turn in reversed(context.history):
+        if not has_access_requirements(context.guild, context.member.id, turn.required_access):
+            continue
         if request_id is not None and (
             turn.record is None or turn.record.request_message_id != request_id
         ):
@@ -124,6 +126,8 @@ async def read_conversation_history(
                 position += len(character.casefold())
         results.append(_excerpt(turn, document, start))
         context.state.source_channels.update(turn.source_channels)
+        context.state.required_access.update(turn.required_access)
+        context.state.knowledge_sources.update(retained_knowledge_sources(turn))
     await require_evidence_access(context)
     return {
         "results": results,

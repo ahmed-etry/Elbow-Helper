@@ -9,6 +9,7 @@ from elbow_helper.features.agent.reports import tools as saved_reports
 from elbow_helper.features.agent.models import RegisteredAgentTool
 from elbow_helper.features.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.infrastructure.ai import AgentToolDefinition
+from features.agent.engine.test_agent_plan_flow import _context
 
 
 class SavedReportRegistryTests(unittest.TestCase):
@@ -61,7 +62,10 @@ class SavedReportRoutingTests(unittest.IsolatedAsyncioTestCase):
         state = SimpleNamespace(reports={"one": SimpleNamespace(
             manifest=lambda: {"kind": "synthetic"},
         )})
-        context = SimpleNamespace(state=state)
+        context = _context()
+        context.state.reports.update(state.reports)
+        context.state.report_sources["one"] = frozenset({91})
+        context.state.report_access_requirements["one"] = frozenset()
         result = await surface.handler(context, {
             "report_kind": "synthetic", "report_id": "one", "offset": 2,
         })
@@ -90,9 +94,10 @@ class SavedReportRoutingTests(unittest.IsolatedAsyncioTestCase):
                 entity_fields=(("report_id", "synthetic_report"),), retained_fields=("report_id",),
             ))
             return saved_reports._tool(saved_reports.READ_NAME, {"synthetic": tool})
-        context = SimpleNamespace(state=SimpleNamespace(reports={"one": SimpleNamespace(
-            manifest=lambda: {"kind": "synthetic"},
-        )}))
+        context = _context()
+        context.state.reports["one"] = SimpleNamespace(manifest=lambda: {"kind": "synthetic"})
+        context.state.report_sources["one"] = frozenset({91})
+        context.state.report_access_requirements["one"] = frozenset()
         earlier = surface(first)
         later = surface(second)
         arguments = {"report_kind": "synthetic", "report_id": "one"}

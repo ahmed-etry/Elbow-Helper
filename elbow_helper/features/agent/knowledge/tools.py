@@ -90,8 +90,11 @@ async def search_approved_knowledge(context, arguments):
                 "truncated": False, "next_section_offset": None,
                 "title_visible_in_channel": section.title in channel_titles,
             }
-            returned.append({"title": section.title, "available_privately": True})
+            returned.append({"title": section.title, "section_id": page["section_id"],
+                             "available_privately": True})
         else:
+            if section.visibility != "public":
+                context.state.knowledge_sources.add(page["section_id"])
             returned.append(page)
     next_offset = offset + len(sections) if offset + len(sections) < total else None
     clipped = any(section.get("truncated", False) for section in returned)

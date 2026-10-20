@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID, LEAD
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin
 from elbow_helper.features.agent.knowledge.store import KnowledgeCatalog, KnowledgeSection
-from elbow_helper.features.agent.knowledge.tools import knowledge_tools, search_approved_knowledge
+from elbow_helper.features.agent.knowledge.tools import knowledge_tools, search_approved_knowledge, _section_id
 from elbow_helper.features.agent.models import AgentRequestContext
 from tests.features.agent.test_agent_audiences import Channel, Member, Role, Thread
 
@@ -64,8 +64,8 @@ class SearchScopeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({s.visibility for s in ranked}, {"public", "lead", "recruiter"})
         notes = [s for s in result["sections"] if s.get("available_privately")]
         self.assertCountEqual(notes, [
-            {"title": "Returning applicants", "available_privately": True},
-            {"title": "Alliance policies", "available_privately": True},
+            {"title": "Returning applicants", "section_id": _section_id(self.catalog.active_sections[2]), "available_privately": True},
+            {"title": "Alliance policies", "section_id": _section_id(self.catalog.active_sections[1]), "available_privately": True},
         ])
         self.assertEqual(result["scope"], "requester")
         self.assertEqual(self.context.state.required_access, set())
@@ -78,7 +78,7 @@ class SearchScopeTests(unittest.IsolatedAsyncioTestCase):
                 self.context, {"titles": ["Alliance policies"], "scope": scope},
             )
             self.assertEqual(result["sections"], [
-                {"title": "Alliance policies", "available_privately": True},
+                {"title": "Alliance policies", "section_id": _section_id(self.catalog.active_sections[1]), "available_privately": True},
             ])
             self.assertEqual(self.context.state.required_access, set())
 

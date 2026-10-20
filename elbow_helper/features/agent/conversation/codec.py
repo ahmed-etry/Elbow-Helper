@@ -174,6 +174,7 @@ def encode_conversation(
                 "requester_id": decision.requester_id,
                 "source_channels": sorted(decision.source_channels),
                 "required_access": sorted(decision.required_access),
+                "knowledge_sources": sorted(decision.knowledge_sources),
             }
             for decision in conversation.answer_disclosures.values()
         ],
@@ -245,19 +246,23 @@ def decode_conversation(
     if not isinstance(decisions, list) or len(decisions) > MAX_REPLY_REFERENCES:
         raise ValueError("Invalid answer disclosure decisions")
     for row in decisions:
-        if not isinstance(row, dict) or set(row) != {"requester_id", "source_channels", "required_access"}:
+        required = {"requester_id", "source_channels", "required_access"}
+        if not isinstance(row, dict) or not required <= set(row) or set(row) - required - {"knowledge_sources"}:
             raise ValueError("Invalid answer disclosure decision fields")
         requester_id = _integer(row["requester_id"])
         if requester_id in conversation.answer_disclosures:
             raise ValueError("Duplicate answer disclosure requester")
         sources, access = row["source_channels"], row["required_access"]
+        knowledge = row.get("knowledge_sources", [])
         if (not isinstance(sources, list) or any(type(value) is not int or value <= 0 for value in sources)
                 or len(sources) != len(set(sources))
                 or not isinstance(access, list) or any(not isinstance(value, str) for value in access)
-                or len(access) != len(set(access))):
+                or len(access) != len(set(access))
+                or not isinstance(knowledge, list) or any(not isinstance(value, str) for value in knowledge)
+                or len(knowledge) != len(set(knowledge))):
             raise ValueError("Invalid answer disclosure provenance")
         conversation.answer_disclosures[requester_id] = AnswerDisclosure(
-            requester_id, frozenset(sources), frozenset(access),
+            requester_id, frozenset(sources), frozenset(access), frozenset(knowledge),
         )
     for row in data["turns"]:
         if type(row["retention_limited"]) is not bool:

@@ -22,6 +22,7 @@ from elbow_helper.features.agent.engine.factual_answers import narrow_answer, cl
 from elbow_helper.features.agent.engine.grounding import GroundingError
 from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.features.agent.models import AgentTurnState
+from features.agent.report_helpers import make_event_report
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from features.agent.engine.test_agent_plan_flow import _context, _Model, _Session, _model_step, _plan
 
@@ -134,6 +135,17 @@ class RepairConversationTests(unittest.IsolatedAsyncioTestCase):
 
 
 
+    async def test_unused_saved_report_manifest_does_not_import_its_restricted_provenance(self):
+        context = self.context(lambda *_a, **_kw: None)
+        report = make_event_report("example-report", "2026-09-17")
+        context.state.reports[report.report_id] = report
+        context.state.report_sources[report.report_id] = frozenset({91})
+        context.state.report_access_requirements[report.report_id] = frozenset({"lead"})
+        compiled = compile_context(question="What's a clan war?", local_context="", context=context, tools=())
+        self.assertFalse(context.state.required_access)
+        manifest = json.loads(compiled.prompt.split("<available_reports>\n")[1].split("\n</available_reports>")[0])[0]
+        self.assertEqual(set(manifest), {"report_id", "kind", "requires_read", "filter_fields"})
+        self.assertTrue(manifest["requires_read"])
 
 
     def test_schema_failure_lists_real_accessible_columns_and_denied_schema_stays_hidden(self):

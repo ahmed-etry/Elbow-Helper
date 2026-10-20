@@ -56,11 +56,19 @@ class AgentDeliveryUnknown(RuntimeError):
     """Discord may have accepted a send whose response was not observed."""
 
 
+async def _delivery_sources(context):
+    sources = await require_evidence_access(context)
+    # Generation may have cached private-thread membership before the audience
+    # changed. Publication needs a fresh audience proof, including new readers.
+    context.disclosure_thread_members.clear()
+    return sources
+
+
 class AgentDeliveryMixin:
     """Agent delivery; owns no conversation or provider lifecycle."""
 
     async def send_post_reply(self, message, text, referenced, context, conversation):
-        knowledge_private = requires_private_knowledge_delivery(context, text)
+        requires_private_knowledge_delivery(context, text)
         delivery = context.state.reply_delivery.delivery
         answer_context = replace(context, state=replace(
             context.state, proposed_changes=[], preview_reply=None, outcomes=[],
@@ -69,7 +77,7 @@ class AgentDeliveryMixin:
         parts = outgoing_parts(text)
         words = "\n".join(part for part, is_gif in parts if not is_gif)
         seed = message.id + 1_000_000 + len(context.state.reply_delivery.posts)
-        sources = await require_evidence_access(context)
+        sources = await _delivery_sources(context)
         audit_private = (ACCESS_VIEW_AUDIT_LOG in context.state.required_access
                          and not isinstance(message.channel, discord.DMChannel))
         audience_allowed = not audit_private and await can_show(
@@ -77,7 +85,12 @@ class AgentDeliveryMixin:
             thread_members=context.disclosure_thread_members,
             request_id=message.id,
         )
-        audience_allowed = audience_allowed and not knowledge_private
+        if not audience_allowed and not audit_private and conversation is not None:
+            audience_allowed = conversation.can_reuse_answer_disclosure(
+                context.member.id, message.channel.id,
+                context.state.source_channels, context.state.required_access,
+                context.state.knowledge_sources,
+            )
         if not audience_allowed:
             await self._send_response(
                 message, text, referenced, conversation=conversation,
@@ -107,7 +120,8 @@ class AgentDeliveryMixin:
 
     async def send_response(self, message, response, referenced, attachments=(), conversation=None,
                             *, delivery=None, context=None, **options):
-        knowledge_private = bool(context and requires_private_knowledge_delivery(context, response))
+        if context is not None:
+            requires_private_knowledge_delivery(context, response)
         active = delivery or AgentDelivery()
         gif = context.state.gif_url if context is not None else None
         if gif:
@@ -119,7 +133,7 @@ class AgentDeliveryMixin:
             )
         if gif:
             active.complete = False
-            sources = await require_evidence_access(context)
+            sources = await _delivery_sources(context)
             audit_private = (ACCESS_VIEW_AUDIT_LOG in context.state.required_access
                              and not isinstance(message.channel, discord.DMChannel))
             allowed = not audit_private and (options.get("_audience_override", False)
@@ -128,13 +142,12 @@ class AgentDeliveryMixin:
                 thread_members=context.disclosure_thread_members,
                 request_id=message.id,
             ))
-            allowed = allowed and (not knowledge_private
-                                   or options.get("_audience_override", False))
-            if (not allowed and not audit_private and not knowledge_private
+            if (not allowed and not audit_private
                     and conversation is not None):
                 allowed = conversation.can_reuse_answer_disclosure(
                     context.member.id, message.channel.id,
                     context.state.source_channels, context.state.required_access,
+                    context.state.knowledge_sources,
                 )
             if allowed:
                 await self._send_gif(message, gif, context, conversation, active,
@@ -211,28 +224,29 @@ class AgentDeliveryMixin:
                 and (not context.state.outcomes or context.state.has_read_answer
                      or _answer_disclosure or audit_private or knowledge_private)
                 and not _audience_override):
-            sources = await require_evidence_access(context)
+            sources = await _delivery_sources(context)
             audience_allowed = False if audit_private else await can_show(
                 message.channel, sources, context.state.required_access,
                 context.guild, thread_members=context.disclosure_thread_members,
                 request_id=message.id,
             )
-            audience_allowed = audience_allowed and not knowledge_private
             reused_disclosure = bool(
-                not knowledge_private and not audit_private
+                not audit_private
                 and not audience_allowed and conversation is not None
                 and conversation.can_reuse_answer_disclosure(
                     context.member.id, message.channel.id,
                     context.state.source_channels, context.state.required_access,
+                    context.state.knowledge_sources,
                 )
             )
             _log_visibility(
                 message, context, "public" if audience_allowed or reused_disclosure else "private",
                 "audit_log_requires_private_delivery" if audit_private else
                 "audience_authorized" if audience_allowed else
+                "prior_disclosure_reused" if reused_disclosure else
                 "private_knowledge_pass" if context.state.private_knowledge_used else
                 "private_knowledge_title" if knowledge_private else
-                "prior_disclosure_reused" if reused_disclosure else "audience_not_proven",
+                "audience_not_proven",
                 controls=() if audience_allowed or reused_disclosure else
                 ("view_result",) if audit_private else ("view_result", "post_here"),
             )
@@ -252,6 +266,7 @@ class AgentDeliveryMixin:
                                 conversation.remember_answer_disclosure(
                                     context.member.id, message.channel.id,
                                     context.state.source_channels, context.state.required_access,
+                                    context.state.knowledge_sources,
                                 )
                         finally:
                             if conversation is not None and posted.message_ids:
@@ -408,30 +423,31 @@ class AgentDeliveryMixin:
         await prepare_preview(preview_context)
         preview = preview_text(preview_context.state.proposed_changes)
         context.state.preview_reply = preview
-        sources = await require_evidence_access(answer_context)
+        knowledge_private = requires_private_knowledge_delivery(answer_context, response)
+        sources = await _delivery_sources(answer_context)
         audit_private = ACCESS_VIEW_AUDIT_LOG in answer_context.state.required_access
         allowed = False if audit_private else await can_show(
             message.channel, sources, answer_context.state.required_access, context.guild,
             thread_members=context.disclosure_thread_members,
             request_id=message.id,
         )
-        knowledge_private = requires_private_knowledge_delivery(answer_context, response)
-        allowed = allowed and not knowledge_private
         reused_disclosure = False
-        if (not allowed and not knowledge_private and conversation is not None
+        if (not allowed and conversation is not None
                 and ACCESS_VIEW_AUDIT_LOG not in context.state.required_access):
             reused_disclosure = conversation.can_reuse_answer_disclosure(
                 context.member.id, message.channel.id,
                 context.state.source_channels, context.state.required_access,
+                context.state.knowledge_sources,
             )
             allowed = reused_disclosure
         _log_visibility(
             message, answer_context, "public" if allowed else "private",
             "audit_log_requires_private_delivery" if audit_private else
+            "prior_disclosure_reused" if reused_disclosure else
+            "audience_authorized" if allowed else
             "private_knowledge_pass" if context.state.private_knowledge_used else
             "private_knowledge_title" if knowledge_private else
-            "prior_disclosure_reused" if reused_disclosure else
-            "audience_authorized" if allowed else "audience_not_proven",
+            "audience_not_proven",
             controls=("confirmation",) + (() if allowed else
                       ("view_result",) if audit_private else ("view_result", "post_here")),
         )
@@ -496,6 +512,7 @@ class AgentDeliveryMixin:
                     conversation.remember_answer_disclosure(
                         context.member.id, message.channel.id,
                         context.state.source_channels, context.state.required_access,
+                        context.state.knowledge_sources,
                     )
                     await self._save_reply_conversation(conversation, message.id)
 

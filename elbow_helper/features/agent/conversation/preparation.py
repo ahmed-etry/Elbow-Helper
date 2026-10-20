@@ -124,8 +124,6 @@ class ConversationContextMixin:
                 context.state.reports[report_id] = report
                 context.state.report_sources[report_id] = sources
                 context.state.report_access_requirements[report_id] = requirements
-                context.state.source_channels.update(sources)
-                context.state.required_access.update(requirements)
             else:
                 context.state.preserved_reports[report_id] = report
                 context.state.preserved_report_sources[report_id] = sources

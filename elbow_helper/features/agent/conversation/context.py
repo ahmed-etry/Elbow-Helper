@@ -84,6 +84,18 @@ def _history_text(turn):
     return json.dumps(payload, ensure_ascii=False)
 
 
+def retained_knowledge_sources(turn):
+    sources = set()
+    for encoded in turn.record.evidence if turn.record is not None else ():
+        try:
+            record = json.loads(encoded)
+            sources.update(value for value in record.get("knowledge_sources", ())
+                           if isinstance(value, str) and len(value) == 64)
+        except (TypeError, ValueError, AttributeError):
+            continue
+    return sources
+
+
 def model_evidence(encoded):
     """Replay only the exact delivered model view, retaining raw records internally."""
     try:
@@ -268,7 +280,10 @@ def compile_context(
     tool_json = json.dumps(definitions, ensure_ascii=False, sort_keys=True)
     manifest = []
     for report in context.state.reports.values():
-        item = dict(report.manifest())
+        # Navigational handles do not expose a retained report's private counts
+        # or summaries. Its reader authorizes and loads that evidence on demand.
+        details = report.manifest()
+        item = {"report_id": details.get("report_id"), "kind": details.get("kind"), "requires_read": True}
         item["filter_fields"] = list((report_filter_fields or {}).get(item.get("kind", ""), ()))
         manifest.append(item)
     candidates = context.state.authorized_history
@@ -340,6 +355,7 @@ def compile_context(
         for turn in selected:
             context.state.source_channels.update(turn.source_channels)
             context.state.required_access.update(turn.required_access)
+            context.state.knowledge_sources.update(retained_knowledge_sources(turn))
         remaining = max(0, target_tokens - base - estimate_tokens(prompt) - 128)
         for turn, encoded in reversed(evidence):
             item = {"request_message_id": turn.record.request_message_id, "record": encoded}
@@ -378,6 +394,7 @@ def compile_context(
         for turn, _ in evidence[len(evidence) - len(carried):] if carried else ():
             context.state.source_channels.update(turn.source_channels)
             context.state.required_access.update(turn.required_access)
+            context.state.knowledge_sources.update(retained_knowledge_sources(turn))
         context.state.history_status.update(included_evidence_records=len(carried),
                                            omitted_evidence_records=len(evidence) - len(carried))
     estimated = (estimate_tokens(system_prompt) + estimate_tokens(tool_json)

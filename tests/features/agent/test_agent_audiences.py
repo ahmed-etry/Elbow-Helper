@@ -244,6 +244,25 @@ class AudienceTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(call.args[0], "Synthetic restricted answer")
                     self.assertNotIn("view", call.kwargs)
 
+    async def test_delivery_refreshes_private_thread_membership_cached_during_generation(self):
+        destination = Thread(11, self.source, private=True, members=[self.members[0]])
+        cache = {}
+        self.assertTrue(await can_show(destination, {20: self.source}, {ACCESS_LEAD}, self.guild, thread_members=cache))
+        destination.fetch_members.return_value = [self.members[0], self.members[1]]
+        # Reusing generation's cache would still approve the old audience.
+        self.assertTrue(await can_show(destination, {20: self.source}, {ACCESS_LEAD}, self.guild, thread_members=cache))
+        message = SimpleNamespace(id=50, author=self.members[0], guild=self.guild, channel=destination,
+                                  mentions=(), archive_reply=False, reply=AsyncMock(return_value=SimpleNamespace(id=51)))
+        context = SimpleNamespace(member=self.members[0], guild=self.guild, source_message=message,
+                                  disclosure_thread_members=cache,
+                                  state=AgentTurnState(source_channels={20}, required_access={ACCESS_LEAD}))
+        delivery = AgentDeliveryMixin()
+        delivery.bot = SimpleNamespace(user=self.guild.me)
+        with patch("elbow_helper.features.agent.delivery.require_evidence_access", AsyncMock(return_value={20: self.source})):
+            await delivery.send_response(message, "Restricted answer", None, context=context)
+        self.assertEqual(message.reply.await_args.args[0], ACTION_PRIVATE_ANSWER)
+        self.assertEqual(destination.fetch_members.await_count, 2)
+
     async def test_private_thread_includes_unjoined_moderators(self):
         destination = Thread(11, self.source, private=True, members=[self.members[0]])
         self.source.moderators.add(3)

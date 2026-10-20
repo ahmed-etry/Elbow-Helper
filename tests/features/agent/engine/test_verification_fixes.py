@@ -9,7 +9,9 @@ from unittest.mock import AsyncMock, Mock, patch
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.conversation.context import compile_context
 from elbow_helper.features.agent.conversation.state import ConversationRecord, ConversationTurn
+from elbow_helper.features.agent.delivery import AgentDeliveryMixin
 from elbow_helper.features.agent.engine.service import AgentService
+from elbow_helper.features.agent.wording import FAILURE_MESSAGE
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from features.agent.engine import test_repair_conversations as repairs
 from features.agent.engine.test_agent_plan_flow import _Model, _Session
@@ -68,6 +70,19 @@ class VerificationFixTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(error["invalid_fields"]), {"member_ids", "role_ids"})
         self.assertIn("member_ids", error["argument_schema"]["properties"])
 
+    async def test_additional_key_private_signal_without_withheld_evidence_never_reaches_delivery(self):
+        context = self.context(lambda *_a, **_kw: None)
+        signal = json.dumps({"needs_restricted_knowledge": True, "section_ids": ["section"], "reason": "Need the policy"})
+        session = _Session([AgentStep(signal, (), AgentUsage(1000, 100))], [])
+        answer = await AgentService(_Model(session)).answer(
+            question="Explain the relevant guidance.", local_context="", context=context)
+        delivery = AgentDeliveryMixin()
+        delivery.bot = context.bot
+        await delivery.send_response(context.source_message, answer, None, context=context)
+        self.assertEqual(context.source_message.reply.await_args.args[0], FAILURE_MESSAGE)
+        self.assertNotIn("needs_restricted_knowledge", context.source_message.reply.await_args.args[0])
+        self.assertFalse(context.state.private_knowledge_used)
+        self.assertEqual(len(session.calls), 1)
 
     async def test_semantic_errors_allow_a_valid_correction_and_retain_independent_results(self):
         cases = (
@@ -147,3 +162,18 @@ class VerificationFixTests(unittest.IsolatedAsyncioTestCase):
                 question="Review the members in this conversation.", local_context="", context=context)
         self.assertEqual(len(session.calls), 2)
         self.assertFalse(any('"members": [' in record for record in context.state.evidence))
+
+    async def test_grounding_rewrite_cannot_release_private_protocol(self):
+        context = self.context(lambda *_a, **_kw: None)
+        session = _Session([
+            AgentStep("[[message:999]]", (), AgentUsage(1000, 100)),
+            AgentStep('{"needs_restricted_knowledge":true,"reason":"internal_reason_marker"}', (), AgentUsage(1000, 100)),
+        ], [])
+        answer = await AgentService(_Model(session)).answer(
+            question="Explain the relevant guidance.", local_context="", context=context)
+        delivery = AgentDeliveryMixin()
+        delivery.bot = context.bot
+        await delivery.send_response(context.source_message, answer, None, context=context)
+        self.assertEqual(context.source_message.reply.await_args.args[0], FAILURE_MESSAGE)
+        self.assertNotIn("internal_reason_marker", answer)
+        self.assertEqual(len(session.calls), 2)

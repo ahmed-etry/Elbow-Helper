@@ -10,6 +10,27 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool
+from ..access import require_evidence_access, require_lookup_access, accessible_message_channel
+from ..conversation.context import retained_knowledge_sources
+
+
+async def authorize_report(context, report_id):
+    if (report_id not in context.state.report_sources
+            or report_id not in context.state.report_access_requirements):
+        return False
+    sources = context.state.report_sources.get(report_id, frozenset())
+    requirements = context.state.report_access_requirements.get(report_id, frozenset())
+    require_lookup_access(context, requirements)
+    for channel_id in sources:
+        if await accessible_message_channel(context, channel_id) is None:
+            return False
+    context.state.source_channels.update(sources)
+    context.state.required_access.update(requirements)
+    for turn in getattr(context, "history", ()):
+        if turn.record is not None and any(report_id in encoded for encoded in turn.record.evidence):
+            context.state.knowledge_sources.update(retained_knowledge_sources(turn))
+    await require_evidence_access(context)
+    return True
 
 
 REPORT_READERS = {
@@ -92,9 +113,13 @@ class ReportRouter:
         ids = (("before_report_id", "after_report_id") if self.name == COMPARE_NAME
                else ("report_id",))
         for field in ids:
-            report = context.state.reports.get(arguments[field])
+            report_id = arguments[field]
+            report = context.state.reports.get(report_id)
             if report is None or report.manifest().get("kind") != kind:
                 return {"error": "That report is unavailable in this conversation."}
+            if not await authorize_report(context, report_id):
+                return {"error": "That report is unavailable in this conversation."}
+        await require_evidence_access(context)
         return await selected.handler(context, original_arguments(arguments))
 
 

@@ -5,6 +5,7 @@ import re
 
 from ..access import require_evidence_access
 from ..wording import ACTION_EMPTY, ACTION_PRIVATE_ANSWER
+from .context import retained_knowledge_sources
 
 
 REPLAY = re.compile(
@@ -38,6 +39,7 @@ async def replay_answer(question, context):
     await require_evidence_access(replace(context, state=state))
     context.state.source_channels.update(turn.source_channels)
     context.state.required_access.update(turn.required_access)
+    context.state.knowledge_sources.update(retained_knowledge_sources(turn))
     record = turn.record
     delivered = record.delivered_answer
     # A restricted answer's notice is delivery metadata, not the requested result.

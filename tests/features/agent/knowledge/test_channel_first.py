@@ -13,8 +13,9 @@ from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.features.agent.engine.registry import build_agent_tools
 from elbow_helper.features.agent.knowledge.answers import needs_private_knowledge
 from elbow_helper.features.agent.knowledge.store import KnowledgeCatalog
-from elbow_helper.features.agent.knowledge.tools import search_approved_knowledge
-from elbow_helper.features.agent.wording import ACTION_PRIVATE_ANSWER, AGENT_ANSWER_UNFINISHED
+from elbow_helper.features.agent.knowledge.tools import search_approved_knowledge, _section_id
+from elbow_helper.features.agent.models import AgentTurnState
+from elbow_helper.features.agent.wording import ACTION_PRIVATE_ANSWER, AGENT_ANSWER_UNFINISHED, FAILURE_MESSAGE
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
 from tests.features.agent.knowledge import test_search_scope
 from tests.features.agent.test_agent_audiences import Member, Role
@@ -45,6 +46,11 @@ class ChannelFirstTests(unittest.IsolatedAsyncioTestCase):
         object.__setattr__(self.requester, "display_name", "Asker")
 
     async def answer(self, first, *, private=None, titles=None):
+        if first == '{"needs_restricted_knowledge":true}':
+            selected = [section for section in self.catalog.active_sections
+                        if section.visibility != "public" and (titles is None or section.title in titles)]
+            first = json.dumps({"needs_restricted_knowledge": True,
+                                "section_ids": [_section_id(section) for section in selected]})
         arguments = {"titles": titles} if titles else {"query": "Brown Elbow"}
         steps = [AgentStep("", (plan_call(AgentToolCall(
             "knowledge", "search_approved_knowledge", json.dumps(arguments),
@@ -54,7 +60,7 @@ class ChannelFirstTests(unittest.IsolatedAsyncioTestCase):
         self.session = Session(steps)
         self.model = SimpleNamespace(create_agent_session=lambda **kw: self.capture(kw))
         return await AgentService(self.model).answer(
-            question="Explain Brown Elbow history", local_context="", context=self.context,
+            question="Analyze Brown Elbow history", local_context="", context=self.context,
         )
 
     def capture(self, request):
@@ -77,7 +83,7 @@ class ChannelFirstTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(sections), 3)
         for section in sections:
             if section["title"] != "Clan family lore":
-                self.assertEqual(set(section), {"title", "available_privately"})
+                self.assertEqual(set(section), {"title", "section_id", "available_privately"})
         self.assertNotIn(self.catalog.active_sections[1].body, str(self.session.calls))
 
     async def test_structured_request_adds_exactly_one_private_pass_and_preserves_logs(self):
@@ -98,16 +104,159 @@ class ChannelFirstTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.message.reply.await_args.kwargs["view"].parts[0], answer)
         self.assertTrue(any('private-knowledge-answer' in item for item in self.context.state.evidence))
 
-    async def test_only_private_matches_adds_pass_without_guessing_from_reply_text(self):
+    async def test_unused_private_matches_do_not_force_a_private_answer(self):
         answer = await self.answer("No public evidence.", private="Private policy answer.",
                                    titles=["Alliance policies"])
-        self.assertEqual(len(self.session.calls), 3)
-        self.assertEqual(await self.deliver(answer), ACTION_PRIVATE_ANSWER)
+        self.assertEqual(len(self.session.calls), 2)
+        self.assertEqual(await self.deliver(answer), "No public evidence.")
 
     async def test_no_private_match_means_no_extra_pass(self):
         answer = await self.answer("Public answer.", titles=["Clan family lore"])
         self.assertEqual(len(self.session.calls), 2)
         self.assertEqual(await self.deliver(answer), answer)
+
+    async def test_selected_body_only_and_explicit_post_reuses_exact_covered_source(self):
+        answer = await self.answer('{"needs_restricted_knowledge":true}', private="Policy answer.",
+                                   titles=["Alliance policies"])
+        self.assertNotIn('"title": "Returning applicants"', self.session.calls[-1][1]["continuation_instruction"])
+        conversation = Conversation(1, self.channel.id)
+        self.delivery._conversations = SimpleNamespace(register_reply=lambda *_: None)
+        sent = self.message.reply.return_value
+        sent.edit = AsyncMock(return_value=sent)
+        self.assertEqual(await self.deliver(answer, conversation), ACTION_PRIVATE_ANSWER)
+
+        view = self.message.reply.await_args.kwargs["view"]
+        interaction = SimpleNamespace(id=801, user=self.requester, response=SimpleNamespace(
+            send_message=AsyncMock(), defer=AsyncMock()), followup=SimpleNamespace(send=AsyncMock()))
+        await view.open_result(interaction)
+        self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
+        await view.post_here(interaction)
+        self.assertEqual(sent.edit.await_args.kwargs["content"], "Policy answer.")
+        self.assertTrue(view.expired)
+        self.assertEqual(conversation.answer_disclosures[2].knowledge_sources,
+                         {_section_id(self.catalog.active_sections[1])})
+        self.context = replace(self.context, state=AgentTurnState())
+        self.message.reply.reset_mock()
+        answer = await self.answer('{"needs_restricted_knowledge":true}', private="Policy follow-up.",
+                                   titles=["Alliance policies"])
+        with self.assertLogs("elbow_helper.features.agent.delivery", "INFO") as logs:
+            self.assertEqual(await self.deliver(answer, conversation), "Policy follow-up.")
+        self.assertTrue(any("visibility=public reason=prior_disclosure_reused" in line for line in logs.output), logs.output)
+        self.assertNotIn("view", self.message.reply.await_args.kwargs)
+
+        # A different section with the same role requirement still needs consent.
+        self.catalog = replace(self.catalog, active_sections=(*self.catalog.active_sections,
+            replace(self.catalog.active_sections[1], title="Different policy", body="Different restricted evidence.")))
+        self.context = replace(self.context, state=AgentTurnState())
+        self.message.reply.reset_mock()
+        answer = await self.answer('{"needs_restricted_knowledge":true}', private="Different policy answer.",
+                                   titles=["Different policy"])
+        self.assertEqual(await self.deliver(answer, conversation), ACTION_PRIVATE_ANSWER)
+
+    async def test_ambiguous_boolean_signal_gets_one_selection_repair_without_opening_unneeded_bodies(self):
+        selected = _section_id(self.catalog.active_sections[1])
+        self.session = Session([
+            AgentStep("", (plan_call(AgentToolCall("knowledge", "search_approved_knowledge", '{"query":"Brown Elbow"}')),), AgentUsage(100, 10)),
+            AgentStep('{"needs_restricted_knowledge":true}', (), AgentUsage(100, 10)),
+            AgentStep(json.dumps({"needs_restricted_knowledge": True, "section_ids": [selected]}), (), AgentUsage(100, 10)),
+            AgentStep("Selected policy answer.", (), AgentUsage(100, 10)),
+        ])
+        answer = await AgentService(SimpleNamespace(create_agent_session=lambda **kw: self.capture(kw))).answer(
+            question="Analyze Brown Elbow history", local_context="", context=self.context)
+        self.assertEqual(answer, "Selected policy answer.")
+        self.assertEqual(len(self.session.calls), 4)
+        selection = self.session.calls[2][1]["continuation_instruction"]
+        self.assertNotIn(self.catalog.active_sections[1].body, selection)
+        self.assertEqual(self.context.state.required_access, {"lead"})
+        self.assertEqual(self.context.state.knowledge_sources, {selected})
+        self.assertNotIn('"title": "Returning applicants"', self.session.calls[3][1]["continuation_instruction"])
+
+    async def test_invalid_section_selection_repairs_once_and_never_opens_unknown_bodies(self):
+        selected = _section_id(self.catalog.active_sections[1])
+        for invalid in ([], ["unknown"], [{}], "unknown", None):
+            for repaired in ([selected], [{}]):
+                with self.subTest(invalid=invalid, repaired=repaired):
+                    self.context = replace(self.context, state=AgentTurnState())
+                    self.session = Session([
+                        AgentStep("", (plan_call(AgentToolCall(
+                            "knowledge", "search_approved_knowledge", '{"query":"Brown Elbow"}',
+                        )),), AgentUsage(100, 10)),
+                        AgentStep(json.dumps({"needs_restricted_knowledge": True,
+                                              "section_ids": invalid}), (), AgentUsage(100, 10)),
+                        AgentStep(json.dumps({"needs_restricted_knowledge": True,
+                                              "section_ids": repaired}), (), AgentUsage(100, 10)),
+                        AgentStep("Selected policy answer.", (), AgentUsage(100, 10)),
+                    ])
+                    answer = await AgentService(SimpleNamespace(
+                        create_agent_session=lambda **kw: self.capture(kw),
+                    )).answer(question="Analyze Brown Elbow history", local_context="", context=self.context)
+                    if repaired == [selected]:
+                        self.assertEqual(answer, "Selected policy answer.")
+                        self.assertEqual(len(self.session.calls), 4)
+                        self.assertEqual(self.context.state.knowledge_sources, {selected})
+                    else:
+                        self.assertEqual(answer, FAILURE_MESSAGE)
+                        self.assertEqual(len(self.session.calls), 3)
+                        self.assertFalse(self.context.state.private_knowledge_used)
+                        self.assertFalse(self.context.state.knowledge_sources)
+                    selection = self.session.calls[2][1]["continuation_instruction"]
+                    self.assertNotIn(self.catalog.active_sections[1].body, selection)
+
+    async def test_malformed_internal_signals_repair_before_body_access_and_deliver_no_protocol(self):
+        self.catalog = replace(self.catalog, active_sections=tuple(
+            replace(section, body=f"Brown Elbow synthetic {section.visibility} section body.")
+            if section.visibility != "public" else section for section in self.catalog.active_sections))
+        selected = _section_id(self.catalog.active_sections[1])
+        signals = (
+            {"needs_restricted_knowledge": True, "section_ids": [selected], "reason": "internal_reason_marker"},
+            {"needs_restricted_knowledge": True, "section_ids": {"unexpected": selected}},
+            {"needs_restricted_knowledge": "true", "section_ids": [selected]},
+        )
+        for signal in signals:
+            for repaired in (True, False):
+                with self.subTest(signal=signal, repaired=repaired):
+                    self.context = replace(self.context, state=AgentTurnState())
+                    self.message.reply.reset_mock()
+                    self.session = Session([
+                        AgentStep("", (plan_call(AgentToolCall("knowledge", "search_approved_knowledge", '{"query":"Brown Elbow"}')),), AgentUsage(100, 10)),
+                        AgentStep(json.dumps(signal), (), AgentUsage(100, 10)),
+                        AgentStep(json.dumps({"needs_restricted_knowledge": True, "section_ids": [selected]}
+                                             if repaired else signal), (), AgentUsage(100, 10)),
+                        AgentStep("Selected policy answer.", (), AgentUsage(100, 10)),
+                    ])
+                    answer = await AgentService(SimpleNamespace(create_agent_session=lambda **kw: self.capture(kw))).answer(
+                        question="Analyze Brown Elbow history", local_context="", context=self.context)
+                    shown = await self.deliver(answer)
+                    self.assertNotIn("needs_restricted_knowledge", shown)
+                    self.assertNotIn("internal_reason_marker", shown)
+                    self.assertNotIn(self.catalog.active_sections[1].body, str(self.session.calls[:3]))
+                    self.assertNotIn(self.catalog.active_sections[2].body, str(self.session.calls))
+                    if repaired:
+                        self.assertEqual(shown, ACTION_PRIVATE_ANSWER)
+                        self.assertEqual(len(self.session.calls), 4)
+                        self.assertEqual(self.context.state.knowledge_sources, {selected})
+                        view = self.message.reply.await_args.kwargs["view"]
+                        interaction = SimpleNamespace(user=self.requester, response=SimpleNamespace(send_message=AsyncMock()))
+                        await view.open_result(interaction)
+                        self.assertEqual(interaction.response.send_message.await_args.args[0], "Selected policy answer.")
+                    else:
+                        self.assertEqual(shown, FAILURE_MESSAGE)
+                        self.assertEqual(len(self.session.calls), 3)
+                        self.assertFalse(self.context.state.private_knowledge_used)
+                        self.assertFalse(self.context.state.knowledge_sources)
+
+    async def test_removed_role_blocks_private_view_and_post_here(self):
+        from elbow_helper.features.agent.wording import ACTION_RESULT_EXPIRED
+        answer = await self.answer('{"needs_restricted_knowledge":true}', private="Policy answer.",
+                                   titles=["Alliance policies"])
+        await self.deliver(answer)
+        view = self.message.reply.await_args.kwargs["view"]
+        view.message.edit = AsyncMock()
+        self.members[0] = Member(2, (Role(AGENT_TESTER_ROLE_ID),))
+        for callback in (view.open_result, view.post_here):
+            interaction = SimpleNamespace(user=self.members[0], response=SimpleNamespace(send_message=AsyncMock()))
+            await callback(interaction)
+            interaction.response.send_message.assert_awaited_with(ACTION_RESULT_EXPIRED, ephemeral=True)
 
     async def test_private_pass_receives_the_end_of_a_long_section(self):
         body = "Policy detail. " * 650 + "Important exception at the end."
@@ -138,8 +287,8 @@ class ChannelFirstTests(unittest.IsolatedAsyncioTestCase):
             answer = await self.answer('{"needs_restricted_knowledge":true}')
         self.assertEqual(len(self.session.calls), 2)
         self.assertEqual(answer, AGENT_ANSWER_UNFINISHED)
-        self.assertTrue(self.context.state.private_knowledge_used)
-        self.assertEqual(await self.deliver(answer), ACTION_PRIVATE_ANSWER)
+        self.assertFalse(self.context.state.private_knowledge_used)
+        self.assertEqual(await self.deliver(answer), AGENT_ANSWER_UNFINISHED)
         self.assertFalse(any('private-knowledge-answer' in item for item in self.context.state.evidence))
 
     async def test_repeated_private_title_cannot_be_delivered_publicly(self):
@@ -223,7 +372,7 @@ class ChannelFirstTests(unittest.IsolatedAsyncioTestCase):
         model = SimpleNamespace(create_agent_session=lambda **_: session)
         with patch("elbow_helper.features.agent.engine.service.build_agent_tools", return_value=registry):
             answer = await AgentService(model).answer(
-                question="Explain Brown Elbow history", local_context="", context=self.context,
+                question="Analyze Brown Elbow history", local_context="", context=self.context,
             )
         self.assertEqual(self.context.state.required_access, {"lead", "recruiter"})
         self.assertEqual(await self.deliver(answer), ACTION_PRIVATE_ANSWER)
@@ -254,9 +403,9 @@ class ChannelFirstTests(unittest.IsolatedAsyncioTestCase):
         conversation.remember_answer_disclosure(2, self.channel.id, {self.channel.id}, {"lead", "recruiter"})
         self.delivery._conversations = SimpleNamespace(register_reply=lambda *_: None)
         self.assertEqual(await self.deliver(answer, conversation), ACTION_PRIVATE_ANSWER)
-        # Even a newly narrowed audience must first receive the private controls.
+        # Current audience proof can authorize delivery independently of consent.
         self.channel.viewers.remove(self.reader.id)
-        self.assertEqual(await self.deliver(answer), ACTION_PRIVATE_ANSWER)
+        self.assertEqual(await self.deliver(answer), answer)
 
     async def test_always_loaded_public_material_can_answer_without_private_pass(self):
         self.catalog = KnowledgeCatalog("synthetic", tuple(
@@ -307,7 +456,7 @@ class ChannelFirstTests(unittest.IsolatedAsyncioTestCase):
         self.capture = capture
         answer = await self.answer('{"needs_restricted_knowledge":true}', private="")
         self.assertEqual(len(self.session.calls), 3)
-        self.assertEqual(answer, AGENT_ANSWER_UNFINISHED)
+        self.assertEqual(answer, FAILURE_MESSAGE)
         self.assertEqual(await self.deliver(answer), ACTION_PRIVATE_ANSWER)
 
     async def test_private_pass_output_limit_cannot_start_another_pass(self):
@@ -324,11 +473,14 @@ class ChannelFirstTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(answer, AGENT_ANSWER_UNFINISHED)
         self.assertEqual(await self.deliver(answer), ACTION_PRIVATE_ANSWER)
 
-    def test_signal_requires_exact_shape_and_boolean(self):
+    def test_internal_signal_recognition_does_not_authorize_malformed_requests(self):
         self.assertTrue(needs_private_knowledge('{"needs_restricted_knowledge":true}'))
-        for answer in ('true', '{"needs_restricted_knowledge":1}',
+        for answer in ('{"needs_restricted_knowledge":1}',
                        '{"needs_restricted_knowledge":"true"}',
                        '{"needs_restricted_knowledge":false}',
                        '{"needs_restricted_knowledge":true,"answer":"x"}',
-                       'I need restricted knowledge.', '```json\n{"needs_restricted_knowledge":true}\n```'):
+                       '{"needs_restricted_knowledge":true,',
+                       '```json\n{"needs_restricted_knowledge":true}\n```'):
+            self.assertTrue(needs_private_knowledge(answer))
+        for answer in ('true', 'I need restricted knowledge.', '{"answer":"Public answer."}'):
             self.assertFalse(needs_private_knowledge(answer))

@@ -8,6 +8,7 @@ from dataclasses import dataclass, field, replace
 import hashlib
 import json
 import logging
+import re
 import time
 from ..reports.base import ReportArtifact
 from .instructions import WorkingState
@@ -171,11 +172,16 @@ class AnswerDisclosure:
     requester_id: int
     source_channels: frozenset[int]
     required_access: frozenset[str]
+    knowledge_sources: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         from ..access import KNOWN_ACCESS_REQUIREMENTS
         if (type(self.requester_id) is not int or self.requester_id <= 0
-                or not isinstance(self.source_channels, frozenset) or not self.source_channels
+                or not isinstance(self.source_channels, frozenset)
+                or not (self.source_channels or self.knowledge_sources)
+                or not isinstance(self.knowledge_sources, frozenset)
+                or any(not isinstance(value, str) or not re.fullmatch(r"[a-f0-9]{64}", value)
+                       for value in self.knowledge_sources)
                 or any(type(value) is not int or value <= 0 for value in self.source_channels)
                 or not isinstance(self.required_access, frozenset)
                 or not self.required_access <= KNOWN_ACCESS_REQUIREMENTS):
@@ -202,7 +208,7 @@ class Conversation:
 
     def remember_answer_disclosure(
         self, requester_id: int, channel_id: int,
-        sources: set[int], access: set[str],
+        sources: set[int], access: set[str], knowledge_sources=frozenset(),
     ) -> None:
         if channel_id != self.channel_id:
             raise ValueError("Answer disclosure belongs to another channel")
@@ -211,6 +217,7 @@ class Conversation:
             requester_id,
             frozenset(sources) | (previous.source_channels if previous else frozenset()),
             frozenset(access) | (previous.required_access if previous else frozenset()),
+            frozenset(knowledge_sources) | (previous.knowledge_sources if previous else frozenset()),
         )
         self.answer_disclosures[requester_id] = decision
         while len(self.answer_disclosures) > MAX_REPLY_REFERENCES:
@@ -220,12 +227,13 @@ class Conversation:
 
     def can_reuse_answer_disclosure(
         self, requester_id: int, channel_id: int,
-        sources: set[int], access: set[str],
+        sources: set[int], access: set[str], knowledge_sources=frozenset(),
     ) -> bool:
         decision = self.answer_disclosures.get(requester_id)
         return bool(
             channel_id == self.channel_id and decision is not None
             and sources <= decision.source_channels and access <= decision.required_access
+            and set(knowledge_sources) <= decision.knowledge_sources
         )
 
     def append(self, turn: ConversationTurn) -> None:
