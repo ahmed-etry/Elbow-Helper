@@ -3,10 +3,12 @@
 from .reads import recruitment_tools
 from .trial_end import trial_end_tools
 from .commands import recruitment_adapters
+from .leagues import cohort_league_tools
 
 
 TOOLS = (
     *recruitment_tools(),
+    *cohort_league_tools(),
     *trial_end_tools(),
 )
 

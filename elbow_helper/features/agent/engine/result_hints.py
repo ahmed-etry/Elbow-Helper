@@ -229,6 +229,15 @@ RESULT_FIELDS = {
         "members": [{**names("member_id,display_name,username,joined_at,bot"),
                      "roles?": [names("role_id,name")]}],
     },
+    "read_linked_accounts": {
+        **names("source,member_ids,unlinked_member_ids,account_count,member_count"),
+        "accounts": [names("member_id,player_tag,player_name")],
+    },
+    "read_cohort_leagues": {
+        **names("source,cohort_report_id,cohort,after,before,metric,league,member_ids,member_count,account_count,unlinked_member_ids,unknown_account_tags,matching_members_in_page,matching_accounts_in_page,offset,next_offset,complete"),
+        "accounts": [{**names("member_id,player_tag,player_name,status,ranked_league,legacy_league,trophies,best_trophies,matches"),
+                      "leagueTier": dict.fromkeys(RANKED_LEAGUE_FIELDS, "")}],
+    },
     "find_discord_roles": {
         **names("matched_count,next_offset"),
         "roles": [{**names("role_id,name,position,managed,permissions,member_count"),

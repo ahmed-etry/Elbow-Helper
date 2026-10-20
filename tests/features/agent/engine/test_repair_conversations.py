@@ -2,6 +2,7 @@
 
 from contextlib import closing
 from dataclasses import replace
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sqlite3
@@ -13,6 +14,8 @@ from unittest.mock import AsyncMock, Mock
 import discord
 
 from elbow_helper.configuration.roles import LEAD
+from elbow_helper.configuration.channels import RECRUITMENT_TICKET_CATEGORY
+from elbow_helper.features.agent.capabilities.recruitment.report import RecruitmentTrialReport
 from elbow_helper.features.agent.conversation.context import compile_context
 from elbow_helper.features.agent.conversation.state import ConversationRecord, ConversationTurn
 from elbow_helper.features.agent.datasets.query import run_query
@@ -20,8 +23,12 @@ from elbow_helper.features.agent.datasets.sources import DataSource
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin
 from elbow_helper.features.agent.engine.factual_answers import narrow_answer, clan_count_tag
 from elbow_helper.features.agent.engine.grounding import GroundingError
+from elbow_helper.features.agent.engine.registry import build_agent_tools
 from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.features.agent.models import AgentTurnState
+from elbow_helper.features.recruitment.queries import RecruitmentQueries
+from elbow_helper.features.member_lifecycle.queries import MemberLifecycleQueries
+from elbow_helper.features.agent.capabilities.member_lifecycle.report import MemberLifecycleReport
 from features.agent.report_helpers import make_event_report
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from features.agent.engine.test_agent_plan_flow import _context, _Model, _Session, _model_step, _plan
@@ -131,9 +138,111 @@ class RepairConversationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("unneeded_profile_marker", compiled.prompt)
         self.assertIn("Electro League 33", compiled.prompt)
 
+    async def test_cohort_leagues_count_members_across_accounts_and_page_without_extra_candidates(self):
+        def fetch(path, **options):
+            name = "Legend III" if path.endswith(("%23P0", "%23Q0")) else "Dragon League 30"
+            return SimpleNamespace(ok=True, status=200, payload={"leagueTier": {"id": 105000034, "name": name},
+                                   "league": {"name": "Silver III"}, "trophies": 0, "bestTrophies": 6000})
+        context = self.context(fetch)
+        links = {101: [{"player_tag": "#P0"}, {"player_tag": "#P2"}], 102: [{"player_tag": "#Q0"}],
+                 103: [{"player_tag": "#Q2"}]}  # 103 is an established member, outside the trial cohort.
+        context = replace(context, account_links=SimpleNamespace(get_links_for_members=Mock(
+            side_effect=lambda ids: {value: links[value] for value in ids})))
+        queries = RecruitmentQueries(lambda: {
+            "201": {"applicant_id": 101, "start": "2026-10-01T00:00:00+00:00", "days": 7},
+            "202": {"applicant_id": 102, "start": "2026-10-02T00:00:00+00:00", "days": 7},
+        }, clock=lambda: datetime(2026, 10, 4, tzinfo=timezone.utc))
+        report = RecruitmentTrialReport("cohort", context.guild.id, queries.active_trial_snapshot(ticket_channel_ids=(201, 202)))
+        context.state.reports[report.report_id] = report
+        context.state.report_sources[report.report_id] = frozenset({91})
+        context.state.report_access_requirements[report.report_id] = frozenset({"lead"})
+        tool = build_agent_tools()["read_cohort_leagues"]
+        first = await tool.handler(context, {"cohort_report_id": "cohort", "league": "Legend", "limit": 2})
+        second = await tool.handler(context, {"cohort_report_id": "cohort", "league": "Legend", "offset": first["next_offset"]})
+        self.assertEqual(first["member_ids"], [101, 102])
+        self.assertEqual(first["account_count"], 3)
+        rows = first["accounts"] + second["accounts"]
+        self.assertEqual({row["player_tag"] for row in rows if row["matches"]}, {"#P0", "#Q0"})
+        self.assertEqual({row["member_id"] for row in rows if row["matches"]}, {101, 102})
+        self.assertFalse(first["complete"])
+        self.assertIsNone(second["next_offset"])
+        self.assertEqual(context.bot.clash_client.get.await_count, 3)
+        self.assertNotIn(103, context.account_links.get_links_for_members.call_args.args[0])
+        complete = await tool.handler(context, {"cohort_report_id": "cohort", "league": "Legend League"})
+        self.assertTrue(complete["complete"])
+        self.assertEqual(complete["matching_members_in_page"], 2)
+        self.assertEqual(complete["matching_accounts_in_page"], 2)
+        self.assertEqual(context.bot.clash_client.get.await_count, 3)
 
 
+    async def test_join_cohort_filters_discord_join_dates_before_resolving_accounts(self):
+        context = self.context(lambda *_a, **_kw: SimpleNamespace(ok=True, status=200, payload={
+            "name": "Example", "leagueTier": {"name": "Legend III"}, "trophies": 0, "bestTrophies": 0}))
+        links = SimpleNamespace(get_links_for_members=Mock(side_effect=lambda ids: {
+            value: [{"player_tag": "#P0" if value == 101 else "#Q0"}] for value in ids}))
+        context = replace(context, account_links=links)
+        lifecycle = MemberLifecycleQueries(lambda: {"members": {
+            "101": {"joined_at_iso": "2026-10-01T00:00:00+00:00", "platform": "Example"},
+            "102": {"joined_at_iso": "2026-10-02T00:00:00+00:00", "platform": "Example"},
+            "103": {"joined_at_iso": "2025-05-01T00:00:00+00:00", "platform": "Example"},
+        }}, clock=lambda: datetime(2026, 10, 4, tzinfo=timezone.utc))
+        report = MemberLifecycleReport("joins", context.guild.id, 91, lifecycle.snapshot(
+            current_members={101: "Example A", 102: "Example B", 103: "Established member"}, activity_channels={}))
+        context.state.reports[report.report_id] = report
+        context.state.report_sources[report.report_id] = frozenset({91})
+        context.state.report_access_requirements[report.report_id] = frozenset()
+        result = await build_agent_tools()["read_cohort_leagues"].handler(context, {
+            "cohort_report_id": "joins", "after": "2026-10-01", "before": "2026-11-01", "league": "Legend"})
+        self.assertEqual(result["member_ids"], [101, 102])
+        self.assertEqual(result["cohort"], "current_stay_joins")
+        self.assertEqual(result["matching_members_in_page"], 2)
+        links.get_links_for_members.assert_called_once_with([101, 102])
 
+    async def test_planned_trial_report_and_leagues_cover_members_beyond_the_first_report_page(self):
+        def fetch(path, **options):
+            tier = "Legend III" if path.endswith(("%23P0", "%23P2", "%23Q0", "%23Q2")) else "Dragon League 30"
+            return SimpleNamespace(ok=True, status=200, payload={"leagueTier": {"name": tier},
+                                   "league": {"name": "Silver III"}, "trophies": 0})
+        context = self.context(fetch)
+        members = list(range(101, 132))
+        links = {member: [{"player_tag": "#L" + str(member).replace("1", "Y").replace("3", "L").replace("4", "Q").replace("5", "V").replace("6", "G").replace("7", "R")}]
+                 for member in members}
+        links[101] = [{"player_tag": "#P0"}, {"player_tag": "#P2"}]
+        links[102] = [{"player_tag": "#Q0"}]
+        links[131] = [{"player_tag": "#Q2"}]
+        links[999] = [{"player_tag": "#P8"}]
+        queries = RecruitmentQueries(lambda: {str(200 + index): {
+            "applicant_id": member, "start": "2026-10-01T00:00:00+00:00", "days": 7,
+        } for index, member in enumerate(members)}, clock=lambda: datetime(2026, 10, 4, tzinfo=timezone.utc))
+        channels = {91: context.source_message.channel}
+        for identifier in range(200, 231):
+            channels[identifier] = SimpleNamespace(id=identifier, guild=context.guild,
+                type=discord.ChannelType.text, category_id=RECRUITMENT_TICKET_CATEGORY,
+                permissions_for=lambda _: SimpleNamespace(view_channel=True, read_message_history=True))
+        context.guild.get_channel_or_thread = channels.get
+        context = replace(context, recruitment_queries=queries, account_links=SimpleNamespace(
+            get_links_for_members=Mock(side_effect=lambda ids: {value: links[value] for value in ids})))
+        plan = _plan([
+            {"id": "trials", "capability": "read_active_recruitment_trials", "arguments": {}, "depends_on": []},
+            {"id": "leagues", "capability": "read_cohort_leagues", "arguments": {
+                "cohort_report_id": {"step": "trials", "path": ["report_id"]}, "league": "Legend",
+            }, "depends_on": ["trials"]},
+        ])
+        session = _Session([replace(_model_step(plan), usage=AgentUsage(1000, 100)),
+                            AgentStep("3 members, across 4 matching accounts.", (), AgentUsage(1000, 100))], [])
+        answer = await AgentService(_Model(session)).answer(question="How many recruits are in Legend league?", local_context="", context=context)
+        results = json.loads(session.calls[1][0][0].content)["results"]
+        self.assertEqual(len(unpack(results["trials"]["trials"])), 25)
+        self.assertEqual(results["leagues"]["member_count"], 31)
+        self.assertTrue(results["leagues"]["complete"])
+        self.assertEqual(results["leagues"]["matching_members_in_page"], 3)
+        self.assertEqual(results["leagues"]["matching_accounts_in_page"], 4)
+        self.assertEqual(context.bot.clash_client.get.await_count, 32)
+        self.assertEqual(len(session.calls), 2)
+        delivery = AgentDeliveryMixin()
+        delivery.bot = context.bot
+        await delivery.send_response(context.source_message, answer, None, context=context)
+        self.assertEqual(context.source_message.reply.await_args.args[0], answer)
 
     async def test_unused_saved_report_manifest_does_not_import_its_restricted_provenance(self):
         context = self.context(lambda *_a, **_kw: None)

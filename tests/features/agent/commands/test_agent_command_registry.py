@@ -104,7 +104,7 @@ class CommandRegistryTests(unittest.TestCase):
             registry, actions_enabled=True, data_guide=guide,
             community_knowledge="\n\n".join((core, index)),
         )
-        self.assertLessEqual(estimate_tokens(prompt), 61_000)
+        self.assertLessEqual(estimate_tokens(prompt), 64_000)
         self.assertEqual(len(capability_list(registry).splitlines()), len(registry))
         lines = capability_list(registry).splitlines()
         for name, tool in registry.items():

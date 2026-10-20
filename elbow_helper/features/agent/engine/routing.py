@@ -22,11 +22,17 @@ LOOKUP_INSTRUCTION = (
     "alone with {}. It loads the full research route without discarding prior results. "
     "Do not guess unavailable schemas or claim an unlisted capability is unavailable."
     " read_clash accepts family clan codes for clan reads: "
-    + "; ".join(f"{code}={CLANS[code].name}" for code in CLAN_ORDER) + "."
+    + "; ".join(f"{code}={CLANS[code].name}" for code in CLAN_ORDER) + ". "
+    "For a member's league resolve their linked accounts, then read summary leagueTier. "
+    "For a recruit cohort use read_cohort_leagues with a trial or join report; "
+    "account first_seen dates do not establish new recruits."
 )
 LOOKUP_CAPABILITIES = frozenset({
     "read_clash", "read_message_context", "find_discord_members",
     "read_discord_members", "search_approved_knowledge", "read_conversation_history",
+    "read_linked_accounts", "read_active_recruitment_trials", "read_saved_report",
+    "read_member_lifecycle", "read_cohort_leagues",
+    "remember_task_instruction", "retire_task_instruction",
     "list_supported_attachments", "import_text_attachment",
 })
 
