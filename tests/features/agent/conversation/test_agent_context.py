@@ -30,14 +30,14 @@ def _turn(
         request_message_id=index, member_id=42,
         created_at=f"2026-09-17T12:{index:02d}:00+00:00",
         question=f"Question {index}", generated_answer=f"Answer {index}",
-        delivered_answer=f"Answer {index}", local_context="", evidence=(),
+        delivered_answer=f"Answer {index}" + "x" * payload_characters, local_context="", evidence=(),
         report_ids=(f"report-{index}",), reply_ids=(1000 + index,),
         delivery_complete=True,
     )
     return ConversationTurn(
         json.dumps({
             "question": record.question,
-            "answer": record.delivered_answer + "x" * payload_characters,
+            "answer": record.delivered_answer,
         }),
         frozenset({channel}), record=record,
     )
@@ -146,7 +146,7 @@ class AgentContextTests(unittest.TestCase):
         context = _context(turns)
         context.state.authorized_checkpoint = checkpoint
         base = _compile(_context()).estimated_input_tokens
-        result = _compile(context, target_tokens=base + 8_000)
+        result = _compile(context, target_tokens=base + 14_000)
         self.assertGreaterEqual(result.omitted_turns, 8)
         self.assertIn(checkpoint.summary, result.prompt)
         self.assertEqual(context.state.source_channels, {100})

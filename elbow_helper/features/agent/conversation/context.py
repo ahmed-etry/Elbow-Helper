@@ -3,6 +3,7 @@
 from dataclasses import asdict, dataclass
 from datetime import datetime
 import json
+import re
 from typing import Mapping, Sequence
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
@@ -61,6 +62,16 @@ def select_recent_turns(turns: Sequence[ConversationTurn], *, token_budget: int)
 
 def _history_text(turn):
     """Old snapshots' sliced excerpts cannot stand in for complete lookup records."""
+    if turn.record is not None:
+        # Nearby Discord context is already supplied for this request. Repeating
+        # every old window multiplies context and can drown out corrections.
+        return json.dumps({"member_id": turn.record.member_id,
+                           "question": turn.record.question,
+                           "answer": turn.record.delivered_answer,
+                           "delivery_complete": turn.record.delivery_complete,
+                           "delivery_unknown": turn.record.delivery_unknown,
+                           "request_message_id": turn.record.request_message_id,
+                           "report_ids": turn.record.report_ids}, ensure_ascii=False)
     if "lookup_excerpts" not in turn.text:
         return turn.text
     try:
@@ -89,6 +100,82 @@ def model_evidence(encoded):
         return encoded
 
 
+def _contextual_followup(text):
+    return bool(re.search(
+        r"\b(he|she|him|her|they|them|it|that|those|these|same|previous|recruits?|"
+        r"continue|again|correction|wrong|failed|asked|everyone|their|his|hers)\b",
+        text.casefold(),
+    ) or re.search(r"^(?:actually\b|instead\b|use\b|include\b|exclude\b|no[,!. ])", text.casefold()))
+
+
+def relevant_turns(question, turns):
+    """Keep resolved subjects for follow-ups without importing unrelated cases."""
+    text = question.casefold()
+    matched = set()
+    aliases = {}
+
+    def rows(value):
+        if isinstance(value, dict) and set(value) == {"columns", "rows"}:
+            return [dict(zip(value["columns"], row)) for row in value["rows"]]
+        return value if isinstance(value, list) else []
+
+    for turn in turns:
+        for encoded in turn.record.evidence if turn.record else ():
+            try:
+                record = json.loads(encoded)
+                result = json.loads(record["result"])
+                if record["tool"] == "find_discord_members":
+                    entries = rows(result.get("members"))
+                    keys = ("member_id", "display_name", "username")
+                elif record["tool"] == "read_linked_accounts":
+                    entries = rows(result.get("accounts"))
+                    keys = ("member_id", "player_tag", "player_name")
+                elif record["tool"] == "read_clash":
+                    entries = [{**item.get("data", {}), "tag": item.get("tag")}
+                               for item in rows(result.get("items")) if item.get("status") == "ok"]
+                    keys = ("tag", "name")
+                else:
+                    continue
+                for entry in entries:
+                    values = {str(entry[key]).casefold() for key in keys if entry.get(key) is not None}
+                    identities = values & {str(entry[key]).casefold() for key in ("member_id", "player_tag", "tag")
+                                           if entry.get(key) is not None}
+                    for identity in identities:
+                        aliases.setdefault(identity, set()).update(values)
+            except (KeyError, TypeError, ValueError, AttributeError):
+                continue
+    for identity, names in aliases.items():
+        if any(len(name) >= 3 and re.search(r"(?<!\w)" + re.escape(name) + r"(?!\w)", text) for name in names):
+            matched.add(identity)
+    if matched:
+        def subjects(document):
+            return {identity for identity, names in aliases.items() if any(
+                len(name) >= 3 and re.search(r"(?<!\w)" + re.escape(name) + r"(?!\w)", document.casefold())
+                for name in names)}
+
+        selected, active = [], False
+        for turn in turns:
+            if turn.record is None:
+                active = False
+                continue
+            record = turn.record
+            # A question's explicit subject takes priority over incidental names
+            # in a result set. Unnamed corrections inherit only the active task;
+            # another subject or standalone turn ends that continuity.
+            named = subjects(record.question) or subjects(record.delivered_answer + " " + " ".join(record.evidence))
+            if named:
+                active = bool(named & matched)
+            elif active:
+                active = _contextual_followup(record.question)
+            if active:
+                selected.append(turn)
+        return tuple(selected[-8:])
+    # Pronouns, cohort references and corrections depend on the ongoing task.
+    # A new explicit question can use its own resolution tools instead of
+    # loading a private case merely because it happened nearby.
+    referential = _contextual_followup(text)
+    standalone = re.search(r"^(?:@[^?]+?\s+)?(?:what(?:'s|’s| is)|who is|how does|tell me about)\b", text)
+    return () if standalone and not referential else turns
 
 
 def build_history_checkpoint(
@@ -185,7 +272,9 @@ def compile_context(
         item["filter_fields"] = list((report_filter_fields or {}).get(item.get("kind", ""), ()))
         manifest.append(item)
     candidates = context.state.authorized_history
-    checkpoint = context.state.authorized_checkpoint
+    scoped = relevant_turns(question, candidates) if candidates is not None else None
+    checkpoint = context.state.authorized_checkpoint if scoped == candidates else None
+    candidates = scoped
     instructions = [asdict(instruction) for instruction in context.state.authorized_instructions]
     own_identity = agent_identity(getattr(context, "bot", None), context.guild)
     owner = getattr(context, "application_owner", None)

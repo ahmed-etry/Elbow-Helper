@@ -183,3 +183,26 @@ class RepairConversationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(session.calls), 3)
                 if repeat:
                     self.assertFalse(session.calls[-1][1])
+
+
+    def test_followup_keeps_resolved_accounts_cohort_metric_and_exact_correction(self):
+        correction = "I asked about competitive promotion, not CWL eligibility. Use regular wars and same TH or +1 triples."
+        evidence = json.dumps({"call_id": "cohort", "tool": "read_cohort_leagues", "result_complete": True,
+            "result": json.dumps({"source": "cohort_ranked_leagues", "member_ids": [101, 102],
+                                  "accounts": [{"member_id": 101, "player_tag": "#P0", "ranked_league": "Legend III"}]})})
+        turns = tuple(ConversationTurn("{}", frozenset({91}), record=ConversationRecord(
+            index, 41, "2026-10-01T00:00:00+00:00", question, "Checked.", "Checked.",
+            "unrelated_old_window_marker" * 1000, (evidence,) if index == 1 else (), (), (), True))
+            for index, question in enumerate(("Review this cohort.", correction), 1))
+        context = _context()
+        context.state.authorized_history = turns
+        compiled = compile_context(question="Does he meet that bar?", local_context="", context=context, tools=())
+        self.assertIn(correction, compiled.prompt)
+        self.assertIn("#P0", compiled.prompt)
+        self.assertIn("cohort_ranked_leagues", compiled.prompt)
+        self.assertNotIn("unrelated_old_window_marker", compiled.prompt)
+        self.assertEqual(context.state.source_channels, {91})
+        fresh = replace(context, state=AgentTurnState(authorized_history=turns))
+        scoped = compile_context(question="What's another member's league?", local_context="", context=fresh, tools=())
+        self.assertNotIn(correction, scoped.prompt)
+        self.assertFalse(fresh.state.required_access)

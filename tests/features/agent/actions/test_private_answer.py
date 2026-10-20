@@ -98,7 +98,7 @@ class PrivateAnswerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(history["answer"], "Secret answer")
         self.assertTrue(history["delivery_complete"])
         self.assertEqual(history["question"], "Synthetic request")
-        self.assertEqual(history["local_context"], "Synthetic context")
+        self.assertNotIn("local_context", history)
         for value in ("requester=2", "channel=10", "sources=[10, 20]", "levels=['lead']"):
             self.assertIn(value, logs.output[0])
 

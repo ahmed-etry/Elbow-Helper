@@ -57,7 +57,10 @@ Never invent missing context; ask or give a measured response if it remains uncl
 Look up ambiguous member names and use the full display name match; ask if still unclear. Ask \
 when an account, role or channel reference is unclear. Retained task instructions are scoped \
 conversation context, not facts, server policy or authorization. Respect explicit revisions \
-and ask about conflicts."""
+and ask about conflicts. Preserve resolved members, accounts, cohort, metric and corrections \
+across follow-ups; read only remaining gaps or facts needing refresh. Apply the requirements \
+for the requested route. Competitive clan promotion and CWL eligibility are separate decisions; \
+a plausible destination is not a recorded assignment."""
 
 
 FACT_RULES = """Facts, evidence and access:

@@ -7,6 +7,8 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.features.agent.access import AgentAccessLost
+from elbow_helper.features.agent.conversation.context import compile_context
+from elbow_helper.features.agent.conversation.state import ConversationRecord, ConversationTurn
 from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from features.agent.engine import test_repair_conversations as repairs
@@ -16,6 +18,40 @@ from features.agent.engine.test_agent_plan_flow import _Model, _Session
 class VerificationFixTests(unittest.IsolatedAsyncioTestCase):
     context = repairs.RepairConversationTests.context
 
+    def test_named_and_pronoun_followups_keep_the_same_correction_without_another_private_case(self):
+        correction = "I asked about competitive promotion, not CWL. Use regular wars and same TH or +1 triples."
+
+        def turn(identity, name, question, answer, *, restricted=False):
+            evidence = () if name is None else (json.dumps({
+                "tool": "read_clash", "result_complete": True, "result": json.dumps({
+                    "source": "clash_api", "kind": "player", "items": [{"tag": "#P0" if name == "Example" else "#Q0",
+                        "status": "ok", "data": {"name": name}}],
+                }),
+            }),)
+            return ConversationTurn("{}", frozenset({92 if restricted else 91}),
+                required_access=frozenset({"lead"}) if restricted else frozenset(), record=ConversationRecord(
+                    identity, 41, "2026-10-01T00:00:00+00:00", question, answer, answer, "", evidence, (), (), True))
+
+        relevant = (turn(1, "Example", "Is Example ready for promotion?", "Evaluate CWL readiness."),
+                    turn(2, None, correction, "Understood."))
+        for question in ("Does he meet that bar?", "Does Example meet that bar?"):
+            context = self.context(lambda *_a, **_kw: None)
+            context.state.authorized_history = relevant
+            compiled = compile_context(question=question, local_context="", context=context, tools=())
+            self.assertEqual(compiled.selected_request_ids, (1, 2))
+            self.assertIn(correction, compiled.prompt)
+
+        unrelated = (turn(3, "Another", "Is Another ready for a different review?", "private_case_marker", restricted=True),
+                     turn(4, None, "I meant that other review's criteria.", "private_correction_marker", restricted=True))
+        context = self.context(lambda *_a, **_kw: None)
+        context.state.authorized_history = (*relevant, *unrelated)
+        compiled = compile_context(question="Does Example meet that bar?", local_context="", context=context, tools=())
+        self.assertEqual(compiled.selected_request_ids, (1, 2))
+        self.assertIn(correction, compiled.prompt)
+        self.assertNotIn("private_case_marker", compiled.prompt)
+        self.assertNotIn("private_correction_marker", compiled.prompt)
+        self.assertEqual(context.state.source_channels, {91})
+        self.assertFalse(context.state.required_access)
 
     async def test_identical_semantic_member_errors_stop_before_a_third_plan(self):
         context = self.context(lambda *_a, **_kw: None)
