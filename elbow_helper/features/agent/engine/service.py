@@ -43,6 +43,9 @@ from .rounds import AgentGracefulEnd, ModelRounds
 from .steps import PlanRunner
 from .flow import AnswerFlow
 from .tool_call import execute_tool
+from .factual_answers import clan_count_tag, narrow_answer
+from .grounding import GroundingError, GROUNDING_GAPS
+from .tool_call import evidence_record
 
 LOGGER = logging.getLogger(__name__)
 
@@ -294,6 +297,43 @@ class AgentService:
         if replay is not None:
             context.operator_debug.status = "replayed"
             return replay
+        tag = clan_count_tag(question)
+        client = getattr(context.bot, "clash_client", None)
+        if tag is not None and client is not None and client.configured:
+            # A single current clan count needs one resolved read and the same
+            # typed formatter used by the model route, with no synthesis round.
+            from ..datasets.clash import read_clash
+            arguments = {"kind": "clan", "tags": [tag], "detail": "summary"}
+            started = time.monotonic()
+            raw = await self.execute_tool(name="read_clash", handler=read_clash,
+                                          arguments=arguments, context=context)
+            payload = json.loads(raw)
+            if "items" in payload:
+                payload["items"] = [{**{key: value for key, value in item.items()
+                                         if key not in ("data", "row_counts", "truncated")},
+                                     **({"data": {"members": item["data"].get("members")}}
+                                        if "data" in item else {})} for item in payload["items"]]
+                payload["projection"] = "member_count"
+            context.state.grounding_evidence["clan_count"] = payload
+            context.state.evidence.append(evidence_record(
+                call_id="clan_count", tool="read_clash", arguments=arguments,
+                result=json.dumps(payload), raw_result_characters=len(raw),
+                result_complete=True, context=context,
+            ))
+            context.operator_debug.tool_calls.append({
+                "step_id": "clan_count", "capability": "read_clash", "arguments": arguments,
+                "result": payload, "status": "completed",
+                "elapsed_ms": int((time.monotonic() - started) * 1000),
+            })
+            await require_evidence_access(context)
+            try:
+                answer = narrow_answer(question, context.state.grounding_evidence)
+            except GroundingError:
+                context.operator_debug.status = "incomplete"
+                return GROUNDING_GAPS["count"]
+            context.operator_debug.status = "completed"
+            LOGGER.info("Agent route: request=%s route=clan_count rounds=0 tools=1", context.source_message.id)
+            return answer
         images = await request_images(context)
         if context.knowledge_store is not None:
             context.state.knowledge_channel_access = await channel_knowledge_access(context)

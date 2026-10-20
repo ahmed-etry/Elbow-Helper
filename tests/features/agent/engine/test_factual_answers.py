@@ -37,7 +37,7 @@ class FactualAnswerTests(unittest.TestCase):
                 narrow_answer("Member count?", {"read": clan(value)})
 
     def test_ambiguous_missing_and_wrong_account_counts_are_rejected(self):
-        for evidence in ({}, {"one": clan(), "two": clan()},
+        for evidence in ({}, {"one": clan(), "two": clan(49)},
                          {"read": {**clan(), "error": "denied"}}):
             with self.subTest(evidence=evidence), self.assertRaises(GroundingError):
                 narrow_answer("Member count?", evidence)

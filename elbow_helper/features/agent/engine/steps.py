@@ -411,6 +411,9 @@ class PlanRunner:
                 step["id"]: step for step in plan["steps"]
                 if "error" not in result[step["id"]]
                 and result[step["id"]].get("flags", {}).get("status") != "failed"
+                and not (result[step["id"]].get("source") == "clash_api"
+                         and not any(item.get("status") == "ok"
+                                     for item in result[step["id"]].get("items", ())))
             })
             consume_gifs(self.context.state, self.completed_steps, self.results)
             self.rounder.unpublished = plan_state.original
