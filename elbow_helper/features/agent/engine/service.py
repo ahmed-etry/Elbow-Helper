@@ -31,8 +31,12 @@ from .budgets import ContextBudget
 from .routing import (
     simple_lookup, LOOKUP_CAPABILITIES, LOOKUP_INSTRUCTION, EXPAND_DEFINITION,
     social_candidate, SOCIAL_CAPABILITIES, SOCIAL_INSTRUCTION,
+    lightweight_request,
 )
 from ..reports.tools import filter_fields
+from ..reports.tools import ReportRouter, _tool as report_tool, READ_NAME
+from ..plan.results import result_handler
+from .result_hints import capability_returns
 from ..plan.format import plan_definition, system_instructions
 from ..plan.planning import PlanNotSettled
 from ..capabilities import enabled_adapters
@@ -130,11 +134,22 @@ class AgentService:
             )
             registry.update(command_tools)
         full_registry = dict(registry)
-        lookup = simple_lookup(question) and not images
-        social = not lookup and social_candidate(question, context.source_message)
+        social = social_candidate(question, context.source_message)
+        lookup = not social and not images and (
+            simple_lookup(question) or lightweight_request(question)
+            and {"read_clash", "search_approved_knowledge"} <= registry.keys()
+        )
         if lookup or social:
             registry = {name: tool for name, tool in registry.items()
-                        if name in (SOCIAL_CAPABILITIES if social else LOOKUP_CAPABILITIES)}
+                        if name in (SOCIAL_CAPABILITIES if social else LOOKUP_CAPABILITIES
+                                    | (SOCIAL_CAPABILITIES if not simple_lookup(question) else frozenset()))}
+        if lookup and (saved := registry.get(READ_NAME)) is not None:
+            router = getattr(saved.handler, "__wrapped__", saved.handler)
+            if isinstance(router, ReportRouter):
+                selected = report_tool(READ_NAME, {kind: tool for kind, tool in router.specs.items()
+                                                 if kind in ("active_recruitment_trials", "member_lifecycle", "text_import")})
+                registry[READ_NAME] = replace(selected, handler=result_handler(selected.handler),
+                                              returns=capability_returns(selected))
 
         def research_instructions():
             levels = {
@@ -172,6 +187,7 @@ class AgentService:
             conversation_history=conversation_history,
             report_filter_fields=filter_fields(registry),
             system_prompt=system_prompt,
+            target_tokens=10_000 if social else 18_000 if lookup else 64_000,
         )
         request_prompt = (
             compiled.prompt.replace(
@@ -210,6 +226,7 @@ class AgentService:
             request_id=request_id,
         )
         rounder.lookup_route = lookup
+        rounder.factual_lookup = simple_lookup(question)
         rounder.social_route = social
         if lookup or social:
             def expand_context():

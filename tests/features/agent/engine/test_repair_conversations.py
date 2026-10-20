@@ -21,6 +21,7 @@ from elbow_helper.features.agent.conversation.state import ConversationRecord, C
 from elbow_helper.features.agent.datasets.query import run_query
 from elbow_helper.features.agent.datasets.sources import DataSource
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin
+from elbow_helper.features.agent.engine.budgets import RequestLimits
 from elbow_helper.features.agent.engine.factual_answers import narrow_answer, clan_count_tag
 from elbow_helper.features.agent.engine.grounding import GroundingError
 from elbow_helper.features.agent.engine.registry import build_agent_tools
@@ -274,6 +275,24 @@ class RepairConversationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(manifest), {"report_id", "kind", "requires_read", "filter_fields"})
         self.assertTrue(manifest["requires_read"])
 
+    async def test_text_only_social_plan_and_completed_budget_answer_have_no_continuation(self):
+        context = self.context(lambda *_a, **_kw: None)
+        plan = _plan([])
+        plan["reply"] = "Still here."
+        session = _Session([replace(_model_step(plan), usage=AgentUsage(1000, 100))], [])
+        service = AgentService(_Model(session))
+        flow, _ = service._start_flow(question="u up?", local_context="", context=context, conversation_history="")
+        answer = await flow.run()
+        self.assertEqual(answer, "Still here.")
+        self.assertEqual(len(session.calls), 1)
+        self.assertEqual(context.state.reactions.count, 0)
+        finished = _Session([AgentStep("Still here.", (), AgentUsage(1000, 100))], [])
+        flow, _ = AgentService(_Model(finished))._start_flow(
+            question="u up?", local_context="", context=context, conversation_history="")
+        flow.budget.request_limits = RequestLimits(1, 80_000, 12_000, 4096)
+        self.assertEqual(await flow.run(), "Still here.")
+        self.assertTrue(flow.rounder.budget_limited)
+        self.assertFalse(finished.calls[0][1])
 
     def test_schema_failure_lists_real_accessible_columns_and_denied_schema_stays_hidden(self):
         with TemporaryDirectory() as directory:
@@ -323,6 +342,24 @@ class RepairConversationTests(unittest.IsolatedAsyncioTestCase):
                 if repeat:
                     self.assertFalse(session.calls[-1][1])
 
+    async def test_initial_missing_account_claim_recovers_on_original_lookup(self):
+        context = self.context(lambda *_a, **_kw: SimpleNamespace(ok=True, status=200, payload={
+            "name": "Example", "leagueTier": {"name": "Dragon League 30"}, "league": {"name": "Silver III"}, "trophies": 0}))
+        context = replace(context, account_links=SimpleNamespace(get_links_for_members=Mock(return_value={
+            101: [{"player_tag": "#P0", "player_name_last_seen": "Example"}]})))
+        session = _Session([
+            AgentStep("I don't have the player tag. Send it to me.", (), AgentUsage(1000, 100)),
+            planned("links", "read_linked_accounts", {"member_ids": [101]}),
+            planned("profile", "read_clash", {"kind": "player", "tags": ["#P0"]}),
+            AgentStep("Dragon League 30.", (), AgentUsage(1000, 100)),
+        ], [])
+        answer = await AgentService(_Model(session)).answer(question="What's Example's trophy league?", local_context="Example is member 101.", context=context)
+        self.assertEqual(answer, "Dragon League 30.")
+        self.assertEqual(len(session.calls), 4)
+        self.assertFalse(session.calls[-1][1])
+        data = json.loads(session.calls[-1][0][0].content)["results"]["profile"]["items"][0]["data"]
+        self.assertEqual(data["leagueTier"]["name"], "Dragon League 30")
+        self.assertEqual(data["league"]["name"], "Silver III")
 
     def test_followup_keeps_resolved_accounts_cohort_metric_and_exact_correction(self):
         correction = "I asked about competitive promotion, not CWL eligibility. Use regular wars and same TH or +1 triples."

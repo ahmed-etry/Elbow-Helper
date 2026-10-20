@@ -18,7 +18,7 @@ LOOKUP_INSTRUCTION = (
     "This is the small lookup route. Use low effort for a single fact or extraction. "
     "The listed capabilities are a subset, not the limits of the bot. Before a task "
     "needs other capabilities, stored-data schemas, community context, changes, "
-    "multi-source analysis or a substantive correction, call load_research_context "
+    "multi-source analysis, call load_research_context "
     "alone with {}. It loads the full research route without discarding prior results. "
     "Do not guess unavailable schemas or claim an unlisted capability is unavailable."
     " read_clash accepts family clan codes for clan reads: "
@@ -27,6 +27,15 @@ LOOKUP_INSTRUCTION = (
     "For a recruit cohort use read_cohort_leagues with a trial or join report; "
     "account first_seen dates do not establish new recruits."
 )
+
+
+def lightweight_request(question):
+    """Start short exchanges with resolution tools and an explicit expansion path."""
+    text = question.casefold()
+    return len(text) <= 240 and not re.search(
+        r"\b(analy[sz]e|compare|investigate|recommend|evaluate|assessment|export|spreadsheet|"
+        r"schedule|delete|remove|change|post|send|say|reply|ping|remember|retire|promotion|qualified|competent)\b", text,
+    )
 LOOKUP_CAPABILITIES = frozenset({
     "read_clash", "read_message_context", "find_discord_members",
     "read_discord_members", "search_approved_knowledge", "read_conversation_history",
@@ -72,7 +81,7 @@ def simple_lookup(question: str) -> bool:
     This is only an initial cost policy, never an authorization decision. The
     model can expand when context makes an apparently small request complex.
     """
-    text = question.strip().lower()
+    text = question.strip().lower().replace("’", "'")
     if len(text) > 300 or re.search(
         r"\b(compare|analy[sz]e|investigate|why|recommend|should|history|trend|"
         r"across|sources|remove|delete|change|add|give|send|post|schedule|"

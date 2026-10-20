@@ -25,6 +25,7 @@ from elbow_helper.features.agent.actions.outcomes import ActionOutcome
 from elbow_helper.features.agent.actions.contracts import ActionRefused, ChangePreview
 from elbow_helper.features.agent.actions.contracts import ActionClass, PreparedAction
 from elbow_helper.features.agent.commands.registry import CommandAdapter
+from elbow_helper.features.agent.prompts import LIMIT_ANSWER_INSTRUCTION
 from elbow_helper.features.agent.wording import (
     AGENT_ANSWER_UNFINISHED, AGENT_PLAN_UNFINISHED,
 )
@@ -389,7 +390,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(answer, "Checked seven; no more reads.")
         self.assertFalse(session.calls[-1][1])
         self.assertEqual(session.instructions[-1],
-                         "Answer now from these results. Say briefly what you couldn't finish.")
+                         LIMIT_ANSWER_INSTRUCTION)
         self.assertEqual(self.events.count("read"), 1)
 
     async def test_small_remaining_context_still_answers_from_checked_results(self):
@@ -406,7 +407,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(answer, "Checked seven.")
         self.assertFalse(session.calls[-1][1])
         self.assertEqual(session.instructions[-1],
-                         "Answer now from these results. Say briefly what you couldn't finish.")
+                         LIMIT_ANSWER_INSTRUCTION)
         self.assertLessEqual(session.output_limits[-1], 512)
 
     async def test_failed_final_answer_uses_the_fixed_unfinished_message(self):
@@ -416,7 +417,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         advance = session.advance
         async def fail_final(*args, **kwargs):
             if kwargs.get("continuation_instruction") == (
-                "Answer now from these results. Say briefly what you couldn't finish."
+                LIMIT_ANSWER_INSTRUCTION
             ):
                 raise TextGenerationError("synthetic_failure")
             return await advance(*args, **kwargs)
@@ -1025,7 +1026,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(session.calls[1][1])
                 self.assertFalse(session.calls[2][1])
                 self.assertEqual(session.instructions[2],
-                    "Answer now from these results. Say briefly what you couldn't finish.")
+                    LIMIT_ANSWER_INSTRUCTION)
                 self.assertEqual(self.events.count("read"), 1)
                 self.assertIn("answer_only", session.calls[2][0][0].content)
 

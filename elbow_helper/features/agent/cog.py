@@ -378,6 +378,7 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
             context, root_id = self._request_context(
                 message, member, referenced, conversation, deadline_monotonic,
             )
+            context.state.request_text = question
             await self._load_authorized_reports(conversation, context)
             await self._check_sources(context)
             if self.transcript_archive is not None:

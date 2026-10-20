@@ -302,7 +302,7 @@ Hidden""")
             context = AgentRequestContext(bot=SimpleNamespace(), guild=guild, member=member,
                 source_message=source, account_links=None, message_search=None, knowledge_store=self.store)
             context.state.knowledge_channel_access = await channel_knowledge_access(context)
-            service._start_flow(question="Synthetic question", local_context="", context=context,
+            service._start_flow(question="Analyze the synthetic question", local_context="", context=context,
                                 conversation_history="")
             self.assertEqual("Restricted body" in requests[-1]["system_prompt"], allowed)
             self.assertNotIn("Search-only body", requests[-1]["system_prompt"])
@@ -325,7 +325,7 @@ Hidden""")
         context = AgentRequestContext(bot=SimpleNamespace(), guild=guild, member=member,
             source_message=SimpleNamespace(channel=channel, created_at=datetime.now(timezone.utc)),
             account_links=None, message_search=None, knowledge_store=self.store)
-        AgentService(model)._start_flow(question="Public question", local_context="",
+        AgentService(model)._start_flow(question="Analyze the public question", local_context="",
                                         context=context, conversation_history="")
         self.assertEqual(context.state.required_access, set())
         prompt = model.create_agent_session.call_args.kwargs["system_prompt"]

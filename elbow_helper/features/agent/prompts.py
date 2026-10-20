@@ -167,7 +167,10 @@ CHANGE_REFUSAL_INSTRUCTION = (
     "with the rest. Don't say anything ran."
 )
 
-LIMIT_ANSWER_INSTRUCTION = "Answer now from these results. Say briefly what you couldn't finish."
+LIMIT_ANSWER_INSTRUCTION = (
+    "No further research is available in this request. Answer fully from the evidence already read. "
+    "Mention only an actual unanswered part; a completed answer needs no continuation or limit notice."
+)
 
 RESULT_ANSWER_INSTRUCTION = (
     "Answer now from these results. Submit another plan only for a remaining gap."

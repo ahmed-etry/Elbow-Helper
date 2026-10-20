@@ -63,6 +63,7 @@ class ModelRounds:
         self.final_attempted = False
         self.results_available = False
         self.lookup_route = False
+        self.factual_lookup = False
         self.social_route = False
         self.expand_context = None
         self.last_allow_tools = True
@@ -166,7 +167,12 @@ class ModelRounds:
         observed = False
         try:
             self.pending_results = self.pending_calls = ()
-            async with asyncio.timeout_at(self.context.deadline_monotonic):
+            deadline = self.context.deadline_monotonic
+            if deadline is not None:
+                deadline -= limits.DELIVERY_TIME_RESERVE_SECONDS
+                if allow_tools:
+                    deadline -= limits.FINAL_ANSWER_TIME_RESERVE_SECONDS
+            async with asyncio.timeout_at(deadline):
                 model_step = await self.session.advance(
                     results,
                     allow_tools=allow_tools,
@@ -245,6 +251,8 @@ class ModelRounds:
                     ),
                 )
             return model_step
+        except TimeoutError as error:
+            raise AgentLimitReached(AGENT_RESEARCH_UNFINISHED) from error
         finally:
             if not observed:
                 # A failed or cancelled attempt may still be billed by the provider.

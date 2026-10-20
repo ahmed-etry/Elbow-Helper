@@ -10,6 +10,8 @@ from ..reports.base import retain_report
 from .state import Conversation
 from .history_tool import _document
 from .context import CHECKPOINT_MIN_GROWTH, CHECKPOINT_MIN_OMITTED_TURNS, build_history_checkpoint
+from ..engine.routing import social_candidate
+from ..disclosure import can_disclose_provenance
 
 LOGGER = logging.getLogger("elbow_helper.features.agent.cog")
 
@@ -20,7 +22,8 @@ class ConversationContextMixin:
     async def _conversation_history(self, conversation: Conversation, context: AgentRequestContext) -> str:
         access: dict[int, bool] = {}
         retained = []
-        for turn in conversation.turns:
+        social = social_candidate(context.state.request_text, getattr(context, "source_message", None))
+        for turn in conversation.turns[-4:] if social else conversation.turns:
             for channel_id in turn.source_channels:
                 if channel_id not in access:
                     access[channel_id] = await accessible_message_channel(context, channel_id) is not None
@@ -28,6 +31,10 @@ class ConversationContextMixin:
                     and (not turn.required_access or has_access_requirements(
                         context.guild, context.member.id, turn.required_access,
                     ))):
+                if social and not await can_disclose_provenance(
+                    context, turn.source_channels, turn.required_access,
+                ):
+                    continue
                 retained.append(turn)
         context.state.authorized_history = tuple(retained)
         checkpoint = conversation.checkpoint

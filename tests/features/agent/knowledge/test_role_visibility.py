@@ -144,7 +144,7 @@ class RoleVisibilityTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(expected=expected):
                 self.set_roles(identifiers)
                 self.context.state.knowledge_channel_access = await channel_knowledge_access(self.context)
-                service._start_flow(question="Explain community processes", local_context="",
+                service._start_flow(question="Analyze community processes", local_context="",
                                     context=self.context, conversation_history="")
                 prompt = model.create_agent_session.call_args.kwargs["system_prompt"]
                 for level in DEPARTMENTS:

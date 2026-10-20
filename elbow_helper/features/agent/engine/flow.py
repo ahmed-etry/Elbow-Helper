@@ -95,9 +95,6 @@ class AnswerFlow:
             # A grounding rewrite is another model output boundary. It cannot
             # release internal protocol or start a second private-answer pass.
             raise AgentGracefulEnd(FAILURE_MESSAGE)
-        if (self.rounder.budget_limited and not self.context.state.reply_delivery.posts
-                and AGENT_RESEARCH_UNFINISHED not in answer):
-            answer = "\n\n".join(filter(None, (answer, AGENT_RESEARCH_UNFINISHED)))
         if self.append_commands and not self.context.state.reply_delivery.posts:
             answer = "\n\n".join(filter(None, (answer, command_reply(self.context.state.outcomes))))
         return answer
@@ -190,8 +187,27 @@ class AnswerFlow:
                               else AgentReasoningEffort.HIGH),
         )
         if self.decision.answer is not None:
-            await require_evidence_access(self.context)
-            return self.decision.answer
+            if (self.rounder.lookup_route and self.rounder.factual_lookup and self.rounder.last_allow_tools
+                    and {"read_clash", "read_linked_accounts"}.intersection(self.registry)):
+                # A lookup cannot establish missing links or unavailable data by
+                # declining before using its resolution tools. Give it one
+                # bounded chance to do the work in the original request.
+                async def recover(*args, **kwargs):
+                    return await self.rounder.advance(*args, **kwargs,
+                        continuation_instruction=(
+                            "This is a factual lookup with no completed reads in this request. "
+                            "Use the available member/account resolution and compact data tools "
+                            "before claiming a tag or fact is unavailable. Resolve the original "
+                            "request now; ask only for information these tools cannot establish."
+                        ))
+                self.decision = await read_request(
+                    self.session, self.registry, self.request_id, advance=recover,
+                    on_check=(self.context.operator_debug.checked if self.context.operator_debug else None),
+                    reasoning_effort=AgentReasoningEffort.LOW,
+                )
+            if self.decision.answer is not None:
+                await require_evidence_access(self.context)
+                return self.decision.answer
         self.plan = self.decision.plan
         self.revisions = 0
         self._reserve_answer()

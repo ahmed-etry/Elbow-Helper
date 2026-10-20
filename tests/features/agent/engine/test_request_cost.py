@@ -190,7 +190,7 @@ class RequestCostTests(unittest.IsolatedAsyncioTestCase):
         flow, session, _, _ = self.flow([plan(), response("Checked league only.")])
         flow.budget.request_limits = RequestLimits(2, 80_000, 12_000, 4096)
         answer = await flow.run()
-        self.assertEqual(answer, "Checked league only.\n\n" + AGENT_RESEARCH_UNFINISHED)
+        self.assertEqual(answer, "Checked league only.")
         self.assertFalse(session.calls[-1][1])
         self.assertEqual(len(session.calls), 2)
         with self.assertRaises(AgentLimitReached):
@@ -223,7 +223,7 @@ class RequestCostTests(unittest.IsolatedAsyncioTestCase):
         flow, session, _, usage = self.flow([])
         session.advance = AsyncMock(side_effect=TimeoutError)
         projected = flow.budget.next_input_estimate
-        with self.assertRaises(TimeoutError):
+        with self.assertRaises(AgentLimitReached):
             await flow.rounder.advance(max_output_tokens=2048)
         self.assertEqual(flow.budget.spent_rounds, 1)
         self.assertEqual(flow.budget.spent_input, projected)

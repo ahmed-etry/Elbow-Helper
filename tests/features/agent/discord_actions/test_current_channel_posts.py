@@ -114,7 +114,7 @@ class CurrentChannelPostTests(unittest.IsolatedAsyncioTestCase):
             return_value=({}, {}),
         ):
             response = await AgentService(_AgentModel(session)).answer(
-                question="Give a synthetic answer", local_context="", context=context,
+                question="Post a synthetic answer", local_context="", context=context,
             )
         self.assertEqual(response, "")
         self.assertEqual(len(session.calls), 1)
