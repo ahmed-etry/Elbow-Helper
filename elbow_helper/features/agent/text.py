@@ -72,6 +72,84 @@ def render_member_mentions(
 DISCORD_MESSAGE_LIMIT = 2_000
 
 
+def _table_cells(line):
+    """Split table pipes outside inline code, preserving escaped literal pipes."""
+    cells, cell = [], []
+    code_ticks = 0
+    index = 0
+    while index < len(line):
+        char = line[index]
+        if char == "\\" and index + 1 < len(line):
+            cell.extend(line[index:index + 2])
+            index += 2
+            continue
+        if char == "`":
+            end = index + 1
+            while end < len(line) and line[end] == "`":
+                end += 1
+            count = end - index
+            code_ticks = 0 if count == code_ticks else count if not code_ticks else code_ticks
+            cell.append(line[index:end])
+            index = end
+            continue
+        if char == "|" and not code_ticks:
+            cells.append("".join(cell).strip())
+            cell = []
+        else:
+            cell.append(char)
+        index += 1
+    cells.append("".join(cell).strip())
+    if line.lstrip().startswith("|"):
+        cells.pop(0)
+    if line.rstrip().endswith("|") and not line.rstrip().endswith("\\|"):
+        cells.pop()
+    return cells
+
+
+def discord_text(content):
+    """Render genuine Markdown tables as readable bullets; keep code and other text."""
+    lines = content.splitlines()
+    result = []
+    fence = None
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        marker = re.match(r"^\s*(`{3,}|~{3,})", line)
+        if marker:
+            run = marker[1]
+            if fence is None:
+                fence = run
+            elif run[0] == fence[0] and len(run) >= len(fence):
+                fence = None
+            result.append(line)
+            index += 1
+            continue
+        if fence is None and index + 2 < len(lines) and "|" in line:
+            headings = _table_cells(line)
+            separators = _table_cells(lines[index + 1])
+            rows, end = [], index + 2
+            if (len(headings) > 1 and len(headings) == len(separators)
+                    and all(re.fullmatch(r":?-{3,}:?", cell) for cell in separators)):
+                while end < len(lines) and "|" in lines[end]:
+                    cells = _table_cells(lines[end])
+                    if len(cells) != len(headings):
+                        break
+                    rows.append(cells)
+                    end += 1
+            if rows:
+                for cells in rows:
+                    result.append("- " + "; ".join(
+                        f"{heading}: {value}" if heading else value
+                        for heading, value in zip(headings, cells)
+                    ))
+                index = end
+                continue
+        result.append(line)
+        index += 1
+    # Avoid changing whitespace in replies that did not contain a table.
+    return "\n".join(result) if result != lines else content
+
+
 def chunk_response(content: str) -> list[str]:
     remaining = str(content or "").strip()
     chunks: list[str] = []
