@@ -84,6 +84,10 @@ messages to the conversation after a restart. Delivery progress lets the bot
 check an uncertain send and reuse the answer.
 
 Working conversations and Discord research jobs expire after six idle hours.
+Context compilation keeps the most recent authorized whole turns that fit,
+including intervening constraints and corrections, without filtering by wording.
+Token estimates and soft context targets are calibrated against archived usage;
+see [Context measurements](agent-context-measurements.md) for the method and sizes.
 Long conversations can lose older turns sooner to keep their saved size
 within limits. Action execution and scheduled requests have separate saved
 state. See [Saved data](../reference/storage.md) for the files and
