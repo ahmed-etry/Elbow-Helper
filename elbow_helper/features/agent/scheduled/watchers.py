@@ -58,6 +58,7 @@ async def read_current(context, reads):
     if not getattr(context, "dm_delivery", False) and not await can_show(
         context.source_message.channel, sources, context.state.required_access, context.guild,
         thread_members=context.disclosure_thread_members,
+        examination_queries=getattr(context, "examination_queries", None),
     ):
         raise ValueError("Watcher evidence cannot be shared in this channel")
     return results

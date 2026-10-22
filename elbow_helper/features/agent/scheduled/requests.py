@@ -35,6 +35,7 @@ async def dm_message(context, message):
     if not await can_show_in_dm(
         context.guild, context.member.id,
         context.state.source_channels, context.state.required_access,
+        examination_queries=getattr(context, "examination_queries", None),
     ):
         raise AgentAccessLost("Scheduled DM evidence access is no longer available")
     try:
@@ -114,6 +115,7 @@ async def run_saved_request(
     message = context.source_message
     original_delivery = delivery
     if rule.get("deliver_to") == "dm":
+        context = replace(context, dm_delivery=True)
         async def delivery(message, *args, **kwargs):
             destination = await dm_message(context, message)
             if kwargs.get("context") is not None:
@@ -159,7 +161,6 @@ async def run_saved_request(
                 None,
                 context.state.attachments,
                 context=output_context,
-                **({"_answer_disclosure": True} if context.state.preview_reply else {}),
             )
         return ScheduledResult(action_run=run)
     await delivery(

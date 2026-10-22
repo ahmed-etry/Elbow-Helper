@@ -48,7 +48,8 @@ from .destination_limits import require_destination_spacing
 
 TOOL_CONTRACTS = {
     "save_standing_rule": CapabilityContract(
-        entity_fields=(("destination_channel_id", "discord_channel"),),
+        entity_fields=(("destination_channel_id", "discord_channel"),
+                       ("dm_member_ids", "discord_member_set")),
         source_scope="request_context",
         filter_fields=(
             "kind", "request", "schedule", "timezone", "allowed_actions", "reads",
@@ -188,6 +189,7 @@ async def _watcher_destination(context, values, destination, registry_factory) -
     if values.get("deliver_to") == "dm":
         return
     if not await can_show(destination, sources, levels, context.guild,
+                          examination_queries=getattr(context, "examination_queries", None),
                           thread_members=getattr(context, "disclosure_thread_members", None)):
         raise ActionRefused("That source cannot be shared in this channel.")
 
