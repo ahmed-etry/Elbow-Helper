@@ -10,7 +10,6 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
-from ...access import lookup_level, ACCESS_LEAD_PLUS_OR_CWL_HELPER
 from ...access import accessible_message_channel, require_evidence_access
 from ...reports.base import ArtifactCapacityError, retain_report
 from .report import CwlPerformanceReport
@@ -29,7 +28,6 @@ USAGE_NOTES = {
 TOOL_CONTRACTS = {
     "read_cwl_performance": CapabilityContract(
         entity_fields=(("clan_code", "clan"), ("player_tag", "clash_account")),
-        required_access=frozenset({ACCESS_LEAD_PLUS_OR_CWL_HELPER}),
     ),
     "read_cwl_performance_report": CapabilityContract(
         entity_fields=(
@@ -37,7 +35,6 @@ TOOL_CONTRACTS = {
             ("clan_code", "clan"), ("player_tag", "clash_account"),
         ),
         retained_fields=("report_id",),
-        required_access=frozenset({ACCESS_LEAD_PLUS_OR_CWL_HELPER}),
     ),
     "read_cwl_threads": CapabilityContract(entity_fields=()),
 }
@@ -70,7 +67,6 @@ def cwl_tools() -> tuple[RegisteredAgentTool, ...]:
     ) for name, description, properties, required, handler in definitions) + cwl_scoring_tools()
 
 
-@lookup_level(ACCESS_LEAD_PLUS_OR_CWL_HELPER)
 async def read_cwl_performance(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -92,7 +88,6 @@ async def read_cwl_performance(
     return _report_page(report, arguments)
 
 
-@lookup_level(ACCESS_LEAD_PLUS_OR_CWL_HELPER)
 async def read_cwl_performance_report(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:

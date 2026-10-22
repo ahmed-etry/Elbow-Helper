@@ -7,10 +7,7 @@ from uuid import uuid4
 
 import discord
 
-from elbow_helper.configuration.channels import (
-    EXAMINATION_ROOM,
-    EXAMINATION_TICKET_CATEGORY,
-)
+from elbow_helper.configuration.channels import EXAMINATION_ROOM
 from elbow_helper.features.examination.queries import CASE_TYPES, WORKFLOW_STATUSES
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
@@ -127,8 +124,10 @@ async def read_accessible_examination_cases(
         )
         if (
             channel is not None
-            and getattr(channel, "category_id", None) == EXAMINATION_TICKET_CATEGORY
-            and getattr(channel, "type", None) == discord.ChannelType.text
+            and getattr(channel, "type", None) in (
+                discord.ChannelType.text, discord.ChannelType.public_thread,
+                discord.ChannelType.private_thread,
+            )
         ):
             accessible_ids.append(registration.ticket_channel_id)
     if selected_ticket_id is not None and not accessible_ids:

@@ -79,7 +79,7 @@ class CwlBriefCommandTests(unittest.IsolatedAsyncioTestCase):
         workflow = CwlAnnouncementMixin()
         workflow.bot = SimpleNamespace(get_channel=lambda _: channel)
         workflow._send_chunked = AsyncMock()
-        context = SimpleNamespace(
+        context = SimpleNamespace(private_pass=True,
             bot=SimpleNamespace(get_cog=lambda _: workflow),
             guild=SimpleNamespace(me=SimpleNamespace(id=2)),
             member=SimpleNamespace(id=3), state=AgentTurnState(),

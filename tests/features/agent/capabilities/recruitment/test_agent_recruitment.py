@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 
 from elbow_helper.configuration.channels import RECRUITMENT_TICKET_CATEGORY
-from elbow_helper.configuration.roles import CORE
+from elbow_helper.configuration.roles import CORE, LEAD
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
 from elbow_helper.features.agent.capabilities.recruitment.report import RecruitmentTrialReport
@@ -41,7 +41,7 @@ class AgentRecruitmentToolTests(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
         requester = SimpleNamespace(
-            id=10, roles=[SimpleNamespace(id=next(iter(CORE)))],
+            id=10, roles=[SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=next(iter(LEAD)))],
         )
         bot_member = SimpleNamespace(id=20)
         self.requester = requester
@@ -94,7 +94,7 @@ class AgentRecruitmentToolTests(unittest.IsolatedAsyncioTestCase):
                 side_effect=real_queries.active_trial_snapshot,
             ),
         )
-        self.context = AgentRequestContext(
+        self.context = AgentRequestContext(private_pass=True,
             bot=SimpleNamespace(fetch_channel=AsyncMock(return_value=None)),
             guild=guild,
             member=requester,
@@ -196,7 +196,7 @@ class AgentRecruitmentToolTests(unittest.IsolatedAsyncioTestCase):
 
         def revoke_after_projection(*, ticket_channel_ids):
             snapshot = project(ticket_channel_ids=ticket_channel_ids)
-            self.first.denied_actor_ids.add(self.requester.id)
+            self.first.denied_actor_ids.add(self.bot_member.id)
             return snapshot
 
         self.queries.active_trial_snapshot.side_effect = revoke_after_projection
@@ -239,7 +239,7 @@ class AgentRecruitmentToolTests(unittest.IsolatedAsyncioTestCase):
         result = await read_active_recruitment_trials(self.context, {})
         report_id = result["report_id"]
 
-        self.first.denied_actor_ids.add(self.requester.id)
+        self.first.denied_actor_ids.add(self.bot_member.id)
         with self.assertRaises(AgentAccessLost):
             await read_active_recruitment_trial_report(
                 self.context, {"report_id": report_id},

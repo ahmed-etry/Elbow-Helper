@@ -74,6 +74,7 @@ async def read_cohort_leagues(context, arguments):
     next_offset = offset + len(selected) if offset + len(selected) < len(accounts) else None
     unknown = [row["player_tag"] for row in result if row["matches"] is None]
     matched = [row for row in result if row["matches"] is True]
+    next_page = ({**arguments, "offset": next_offset} if next_offset is not None else None)
     await require_evidence_access(context)
     return {"source": "cohort_ranked_leagues", "cohort_report_id": report_id,
             "cohort": "active_trials" if trials else "current_stay_joins",
@@ -83,6 +84,15 @@ async def read_cohort_leagues(context, arguments):
             "accounts": result, "unlinked_member_ids": unlinked, "unknown_account_tags": unknown,
             "matching_members_in_page": len({row["member_id"] for row in matched}),
             "matching_accounts_in_page": len(matched), "offset": offset, "next_offset": next_offset,
+            "returned_account_count": len(selected),
+            "remaining_account_count": max(0, len(accounts) - offset - len(selected)),
+            "next_page_arguments": next_page,
+            "instruction": ("This is one account page, not a complete cohort count. "
+                            "Continue read_cohort_leagues with next_page_arguments or narrow the date filters. "
+                            "Deduplicate members across account pages."
+                            if next_page is not None else
+                            "Combine all requested account pages before counting members. "
+                            "Unlinked members and unknown leagues remain unverified."),
             "complete": offset == 0 and next_offset is None and not unknown and not unlinked,
             "field_meanings": {"ranked_league": "leagueTier.name, never legacy league or best trophies",
                                "cohort": "trial start or current Discord stay join dates, never account first_seen",

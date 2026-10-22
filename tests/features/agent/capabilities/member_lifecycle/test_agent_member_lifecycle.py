@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import AsyncMock
 
 from elbow_helper.configuration.channels import OVERSEEING_TERRACE
-from elbow_helper.configuration.roles import CORE
+from elbow_helper.configuration.roles import CORE, LEAD
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
 from elbow_helper.features.agent.capabilities.member_lifecycle.reads import (
@@ -23,7 +23,7 @@ class AgentMemberLifecycleTests(unittest.IsolatedAsyncioTestCase):
         }
         self.member = SimpleNamespace(
             id=42, display_name="Requester",
-            roles=[SimpleNamespace(id=next(iter(CORE)))],
+            roles=[SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=next(iter(LEAD)))],
         )
         self.observed = SimpleNamespace(id=7, display_name="Observed", roles=[])
         self.hidden = SimpleNamespace(id=8, display_name="Hidden", roles=[])
@@ -74,7 +74,7 @@ class AgentMemberLifecycleTests(unittest.IsolatedAsyncioTestCase):
             lambda: state,
             clock=lambda: datetime(2026, 9, 19, 12, tzinfo=timezone.utc),
         )
-        self.context = AgentRequestContext(
+        self.context = AgentRequestContext(private_pass=True,
             bot=SimpleNamespace(fetch_channel=AsyncMock(return_value=None)),
             guild=self.guild, member=self.member,
             source_message=SimpleNamespace(channel=self.source),

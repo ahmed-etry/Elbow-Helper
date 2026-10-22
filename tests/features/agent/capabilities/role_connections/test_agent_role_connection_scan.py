@@ -31,7 +31,7 @@ class RoleConnectionScanTests(unittest.IsolatedAsyncioTestCase):
             role_connection_scan_plan=AsyncMock(return_value=((member, ((role, True),)),)),
             apply_role_connection_change=AsyncMock(side_effect=apply),
         )
-        context = SimpleNamespace(
+        context = SimpleNamespace(private_pass=True,
             bot=SimpleNamespace(get_cog=lambda name: workflow),
             guild=SimpleNamespace(id=1, me=bot_member, get_role=lambda role_id: role),
             state=AgentTurnState(), member=SimpleNamespace(id=7),
@@ -67,7 +67,7 @@ class RoleConnectionScanTests(unittest.IsolatedAsyncioTestCase):
             connections_board_signature=lambda: "signature",
             role_connection_scan_plan=AsyncMock(return_value=((member, ((role, True),)),)),
         )
-        context = SimpleNamespace(
+        context = SimpleNamespace(private_pass=True,
             bot=SimpleNamespace(get_cog=lambda name: workflow),
             guild=SimpleNamespace(id=1, me=SimpleNamespace(
                 id=99, top_role=SimpleNamespace(position=10))),

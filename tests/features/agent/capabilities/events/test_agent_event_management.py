@@ -27,7 +27,7 @@ class EventManagementActionTests(unittest.IsolatedAsyncioTestCase):
                 footer=SimpleNamespace(text=None),
             )),
         )
-        context = SimpleNamespace(
+        context = SimpleNamespace(private_pass=True,
             bot=SimpleNamespace(get_cog=lambda name: workflow),
             guild=SimpleNamespace(), state=AgentTurnState(),
         )
@@ -62,7 +62,7 @@ class EventManagementActionTests(unittest.IsolatedAsyncioTestCase):
             move_event_to_position=MagicMock(return_value=True),
             force_refresh=AsyncMock(),
         )
-        context = SimpleNamespace(
+        context = SimpleNamespace(private_pass=True,
             bot=SimpleNamespace(get_cog=lambda name: workflow),
             guild=SimpleNamespace(), state=AgentTurnState(),
         )

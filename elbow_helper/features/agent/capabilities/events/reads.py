@@ -9,7 +9,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
 from ...access import (
-    ACCESS_LEAD, require_lookup_access, require_evidence_access,
+    require_evidence_access,
 )
 from ...reports.base import ArtifactCapacityError, retain_report
 from .report import EventScheduleReport
@@ -26,11 +26,10 @@ USAGE_NOTES = {
 TOOL_CONTRACTS = {
     "read_event_schedule": CapabilityContract(
         entity_fields=(), filter_fields=("phase", "event_type"),
-        required_access=frozenset({"lead"}),
     ),
     "read_event_schedule_report": CapabilityContract(
         entity_fields=(("report_id", "event_schedule_report"),),
-        filter_fields=("phase", "event_type"), required_access=frozenset({"lead"}),
+        filter_fields=("phase", "event_type"),
         retained_fields=("report_id",),
     ),
 }
@@ -85,8 +84,6 @@ def event_tools() -> tuple[RegisteredAgentTool, ...]:
 async def read_event_schedule(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
-    require_lookup_access(context, {ACCESS_LEAD},
-    )
     await require_evidence_access(context)
     if context.event_queries is None:
         return {"error": "Event schedules are not available."}
@@ -97,9 +94,6 @@ async def read_event_schedule(
         )
     except (RuntimeError, TypeError, ValueError):
         return {"error": "Event schedules could not be read completely."}
-    require_lookup_access(context, {ACCESS_LEAD},
-    )
-    context.state.required_access.add(ACCESS_LEAD)
     await require_evidence_access(context)
     try:
         retain_report(context.state.reports, report)
@@ -120,9 +114,6 @@ async def read_event_schedule(
 async def read_event_schedule_report(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
-    require_lookup_access(context, {ACCESS_LEAD},
-    )
-    context.state.required_access.add(ACCESS_LEAD)
     await require_evidence_access(context)
     report = context.state.reports.get(arguments["report_id"])
     if (
@@ -143,8 +134,6 @@ async def read_event_schedule_report(
         )
     except ValueError as error:
         return {"error": str(error)}
-    require_lookup_access(context, {ACCESS_LEAD},
-    )
     await require_evidence_access(context)
     return result
 

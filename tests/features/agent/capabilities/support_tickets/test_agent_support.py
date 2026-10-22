@@ -95,7 +95,7 @@ class AgentSupportToolTests(unittest.IsolatedAsyncioTestCase):
                 side_effect=real_queries.metadata_snapshot,
             ),
         )
-        self.context = AgentRequestContext(
+        self.context = AgentRequestContext(private_pass=True,
             bot=SimpleNamespace(fetch_channel=AsyncMock(return_value=None)),
             guild=guild,
             member=requester,

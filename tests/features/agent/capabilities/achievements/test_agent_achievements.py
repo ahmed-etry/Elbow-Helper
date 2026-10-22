@@ -128,7 +128,7 @@ class AgentAchievementTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
         self.channel.guild = self.guild
-        self.context = AgentRequestContext(
+        self.context = AgentRequestContext(private_pass=True,
             bot=SimpleNamespace(fetch_channel=AsyncMock(return_value=None)),
             guild=self.guild, member=self.requester,
             source_message=SimpleNamespace(channel=self.channel),
@@ -201,44 +201,27 @@ class AgentAchievementTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AgentAccessLost):
             await read_achievement_economy_rules(self.context, {})
 
-    async def test_other_inventory_requires_and_retains_current_lead_access(self):
-        denied = await _capture_access_loss(
-            read_member_inventory(self.context, {"member_id": self.target.id}),
-        )
-        self.assertTrue(denied)
+    async def test_other_inventory_requires_lead(self):
+        result = await read_member_inventory(self.context, {"member_id": self.target.id})
+        self.assertEqual(result["required_access"], ["lead"])
+        self.assertFalse(self.context.state.required_access)
 
         self.requester.roles.append(SimpleNamespace(id=next(iter(LEAD))))
-        result = await read_member_inventory(
-            self.context, {"member_id": self.target.id},
-        )
+        self.context.state.scope = None
+        result = await read_member_inventory(self.context, {"member_id": self.target.id})
         self.assertEqual(result["member_name"], "Alpha")
-        self.assertIn("lead", self.context.state.required_access)
+        self.assertEqual(self.context.state.required_access, {"lead"})
 
-        self.requester.roles = [
-            role for role in self.requester.roles if role.id not in LEAD
-        ]
-        with self.assertRaises(AgentAccessLost):
-            await read_member_inventory(
-                self.context, {"member_id": self.target.id},
-            )
-
-    async def test_lead_loss_during_other_inventory_read_blocks_result(self):
+    async def test_lead_loss_during_inventory_read_discards_result(self):
         self.requester.roles.append(SimpleNamespace(id=next(iter(LEAD))))
-
-        class _RevokingQueries(_Queries):
+        class RevokingQueries(_Queries):
             def member_inventory(inner, member_id):
-                self.requester.roles = [
-                    role for role in self.requester.roles if role.id not in LEAD
-                ]
+                self.requester.roles = [role for role in self.requester.roles if role.id not in LEAD]
                 return super().member_inventory(member_id)
-
-        self.context = replace(
-            self.context, achievement_queries=_RevokingQueries(),
-        )
-        with self.assertRaises((AgentAccessLost, LookupAccessDenied)):
-            await read_member_inventory(
-                self.context, {"member_id": self.target.id},
-            )
+        self.context = replace(self.context, achievement_queries=RevokingQueries())
+        result = await read_member_inventory(self.context, {"member_id": self.target.id})
+        self.assertIn("error", result)
+        self.assertFalse(self.context.state.required_access)
 
 
 async def _capture_access_loss(awaitable):

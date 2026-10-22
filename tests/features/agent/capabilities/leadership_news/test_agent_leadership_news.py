@@ -16,7 +16,7 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
         prompt = SimpleNamespace(id=8)
         source = SimpleNamespace(id=1, mention="<#1>", fetch_message=AsyncMock(return_value=prompt))
         workflow = SimpleNamespace(public_news_prompt_source=lambda _: 7)
-        context = SimpleNamespace(bot=SimpleNamespace(get_cog=lambda _: workflow),
+        context = SimpleNamespace(private_pass=True, bot=SimpleNamespace(get_cog=lambda _: workflow),
                                   guild=SimpleNamespace(me=object()), member=object(),
                                   state=AgentTurnState())
         with (patch("elbow_helper.features.agent.capabilities.leadership_news.actions.require_evidence_access",
@@ -42,7 +42,7 @@ class LeadershipNewsActionTests(unittest.IsolatedAsyncioTestCase):
             find_public_news_prompts=AsyncMock(return_value=(prompt,)),
             publish_public_news=AsyncMock(return_value=SimpleNamespace(jump_url="posted-url")),
         )
-        context = SimpleNamespace(
+        context = SimpleNamespace(private_pass=True,
             bot=SimpleNamespace(get_cog=lambda name: workflow),
             guild=SimpleNamespace(me=object()), member=object(), state=AgentTurnState(),
         )

@@ -19,7 +19,7 @@ from ...models import AgentRequestContext, RegisteredAgentTool
 USAGE_NOTES = {
     "read_member_history": "ID-verified mentions plus name searches and embed history. Continue cursors; check search_is_exhaustive. Deleted logs are unavailable.",
     "read_member_lifecycle": (
-        "Tracked observations are not complete history or an inactivity verdict."
+        "Omit platform for all sources; never guess a source label. For server-join cohorts use read_discord_members. Observations do not prove inactivity."
     ),
 }
 

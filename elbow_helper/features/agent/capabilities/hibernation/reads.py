@@ -41,6 +41,7 @@ def hibernation_tools() -> tuple[RegisteredAgentTool, ...]:
         name=name, description=description,
         parameters={"type": "object", "properties": properties,
                     "required": list(required), "additionalProperties": False},
+        usage_note="Workflow cohort, not role holders. Pass report_id as read_discord_members.hibernation_report_id to sort all retained members by server join date.",
     ), handler,
         contract=TOOL_CONTRACTS[name],
     ) for name, description, properties, required, handler in definitions)

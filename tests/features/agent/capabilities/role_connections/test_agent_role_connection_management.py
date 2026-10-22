@@ -27,7 +27,7 @@ class RoleConnectionManagementTests(unittest.IsolatedAsyncioTestCase):
             add_connection=MagicMock(),
             refresh_connections_message=AsyncMock(return_value=SimpleNamespace(jump_url="board-url")),
         )
-        context = SimpleNamespace(
+        context = SimpleNamespace(private_pass=True,
             bot=SimpleNamespace(get_cog=lambda name: workflow),
             guild=SimpleNamespace(get_role=lambda role_id: role, me=object()),
             member=object(), source_message=SimpleNamespace(channel=SimpleNamespace(id=9)),
@@ -83,7 +83,7 @@ class RoleConnectionManagementTests(unittest.IsolatedAsyncioTestCase):
             remove_connection=MagicMock(return_value=True),
             refresh_connections_message=AsyncMock(return_value=SimpleNamespace(jump_url="board-url")),
         )
-        context = SimpleNamespace(
+        context = SimpleNamespace(private_pass=True,
             bot=SimpleNamespace(get_cog=lambda name: workflow),
             guild=SimpleNamespace(get_role=lambda role_id: role, me=object()),
             member=object(), source_message=SimpleNamespace(channel=SimpleNamespace(id=9)),

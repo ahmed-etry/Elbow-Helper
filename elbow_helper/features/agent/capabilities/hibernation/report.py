@@ -83,6 +83,8 @@ class HibernationReport:
             ),
             "ignored_metadata_entries": self.snapshot.ignored_metadata_entries,
             "complete_valid_record_snapshot": True,
+            "cohort_source": "active_hibernation_records",
+            "cohort_rule": "Use these member IDs for hibernating members; role holders may differ even when counts match.",
             "record_order": "newest recorded start first; records without a start time last",
             "included_fields": [
                 "member_id", "started_at", "started_ts", "start_time_status",

@@ -30,11 +30,12 @@ from ...discord_actions.safety import check_post_access, check_view_access, reso
 def promotion_route_tools() -> tuple[RegisteredAgentTool, ...]:
     return (RegisteredAgentTool(AgentToolDefinition(
         name="read_promotion_review",
-        description="Read a promotion review's details or your availability overlap.",
+        description="Read an active promotion review's details or your availability overlap.",
         parameters={"type": "object", "properties": {
             "ticket_channel_id": {"type": "integer", "minimum": 1},
             "view": {"type": "string", "enum": ["details", "availability"]},
         }, "required": ["ticket_channel_id", "view"], "additionalProperties": False},
+        usage_note="Requires an active routing review. For historical examination status use read_accessible_examination_cases, then read_examination_case_report.",
     ), read_promotion_review,
         contract=CapabilityContract(
             entity_fields=(("ticket_channel_id", "examination_ticket_channel"),),

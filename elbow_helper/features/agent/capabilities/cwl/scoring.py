@@ -10,7 +10,6 @@ from elbow_helper.features.cwl.config import CWL_CLAN_CODES
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
-from ...access import lookup_level, ACCESS_LEAD_PLUS_OR_CWL_HELPER
 from ...access import require_evidence_access
 from ...models import AgentRequestContext, RegisteredAgentTool
 
@@ -18,11 +17,9 @@ from ...models import AgentRequestContext, RegisteredAgentTool
 TOOL_CONTRACTS = {
     "cwl_ass_scores": CapabilityContract(
         entity_fields=(("clan_code", "clan"),),
-        required_access=frozenset({ACCESS_LEAD_PLUS_OR_CWL_HELPER}),
     ),
     "cwl_bonus_scores": CapabilityContract(
         entity_fields=(("clan_code", "clan"),),
-        required_access=frozenset({ACCESS_LEAD_PLUS_OR_CWL_HELPER}),
     ),
 }
 
@@ -72,7 +69,6 @@ def cwl_scoring_tools() -> tuple[RegisteredAgentTool, ...]:
     )
 
 
-@lookup_level(ACCESS_LEAD_PLUS_OR_CWL_HELPER)
 async def cwl_ass_scores(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -90,10 +86,28 @@ async def cwl_ass_scores(
     await require_evidence_access(context)
     result = asdict(snapshot)
     result = {"players": list(result.pop("rows")), **result}
+    result["ranking"] = ass_ranking(result["players"])
     return result
 
 
-@lookup_level(ACCESS_LEAD_PLUS_OR_CWL_HELPER)
+def ass_ranking(players):
+    """Project every selected account without choosing how to answer a request.
+
+    Text is atomic at the result-size boundary: detailed player/attack arrays
+    may be trimmed, but a surviving ranking is never a partial list marked
+    complete. Keep feature-owned ranks, including ties and unscored accounts.
+    """
+    lines = ["Rank\tAccount\tPlayer tag\tASS"]
+    for row in sorted(players, key=lambda row: (
+        row["rank"] is None, row["rank"] or 0, row["player_tag"],
+    )):
+        rank = str(row["rank"]) if row["rank"] is not None else "-"
+        score = f"{row['ass_score']:.2f}" if row["ass_score"] is not None else "-"
+        name = " ".join(row["player_name"].split())
+        lines.append(f"{rank}\t{name}\t{row['player_tag']}\t{score}")
+    return {"account_count": len(players), "complete": True, "text": "\n".join(lines)}
+
+
 async def cwl_bonus_scores(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:

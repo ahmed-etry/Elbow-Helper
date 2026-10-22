@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import AsyncMock
 
 from elbow_helper.configuration.channels import CLAN_LEADERSHIP_CHANNELS
-from elbow_helper.configuration.roles import CORE
+from elbow_helper.configuration.roles import CORE, LEAD
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
 from elbow_helper.features.agent.capabilities.clan_reporting.reads import (
@@ -22,7 +22,7 @@ class AgentClanReportingTests(unittest.IsolatedAsyncioTestCase):
         self.permissions = {50: True, self.first_channel: True, self.second_channel: False}
         self.member = SimpleNamespace(
             id=42, display_name="Requester",
-            roles=[SimpleNamespace(id=next(iter(CORE)))],
+            roles=[SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=next(iter(LEAD)))],
         )
         self.bot_member = SimpleNamespace(id=99, roles=[])
         self.guild = SimpleNamespace(id=1, me=self.bot_member, members=[self.member])
@@ -65,7 +65,7 @@ class AgentClanReportingTests(unittest.IsolatedAsyncioTestCase):
             lambda code: rows[code],
             clock=lambda: datetime(2026, 9, 19, 12, tzinfo=timezone.utc),
         )
-        self.context = AgentRequestContext(
+        self.context = AgentRequestContext(private_pass=True,
             bot=SimpleNamespace(fetch_channel=AsyncMock(return_value=None)),
             guild=self.guild, member=self.member,
             source_message=SimpleNamespace(channel=self.source),

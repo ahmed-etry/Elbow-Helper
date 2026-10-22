@@ -8,7 +8,7 @@ from typing import Any, Mapping
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
-from ...access import ACCESS_LEAD, require_lookup_access, require_evidence_access
+from ...access import ACCESS_LEAD, lookup_level, require_evidence_access
 from ...models import AgentRequestContext, RegisteredAgentTool
 TOOL_CONTRACTS = {
     "read_achievement_economy_rules": CapabilityContract(entity_fields=()),
@@ -84,11 +84,21 @@ async def read_achievement_economy_rules(
 async def read_member_inventory(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
+    if arguments["member_id"] != context.member.id:
+        return await _read_other_inventory(context, arguments)
+    return await _read_inventory(context, arguments)
+
+
+@lookup_level(ACCESS_LEAD)
+async def _read_other_inventory(context, arguments):
+    return await _read_inventory(context, arguments)
+
+
+async def _read_inventory(
+    context: AgentRequestContext, arguments: Mapping[str, Any],
+) -> Mapping[str, Any]:
     await require_evidence_access(context)
     member_id = arguments["member_id"]
-    requires_lead = member_id != context.member.id
-    if requires_lead:
-        require_lookup_access(context, {ACCESS_LEAD})
     if context.achievement_queries is None:
         return {"error": "Achievement economy data is not available."}
     if context.guild.get_member(member_id) is None:
@@ -100,13 +110,9 @@ async def read_member_inventory(
     except (RuntimeError, ValueError):
         return {"error": "Member inventory could not be read completely."}
     await require_evidence_access(context)
-    if requires_lead:
-        require_lookup_access(context, {ACCESS_LEAD})
     current_member = context.guild.get_member(member_id)
     if current_member is None:
         return {"error": "That member is not currently in this server."}
-    if requires_lead:
-        context.state.required_access.add(ACCESS_LEAD)
     return {
         "observed_at": snapshot.observed_at, "member_id": snapshot.member_id,
         "member_name": current_member.display_name, "balance": snapshot.balance,

@@ -5,14 +5,13 @@ import asyncio
 from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
-from ...access import require_evidence_access, require_lookup_access
+from ...access import require_evidence_access
 from ...engine.capability_contract import CapabilityContract
 from ...models import RegisteredAgentTool
 
 
 async def read_linked_accounts(context, arguments, *, maximum=200):
     await require_evidence_access(context)
-    require_lookup_access(context, {"lead"})
     members = arguments.get("member_ids")
     if (not isinstance(members, list) or not 1 <= len(members) <= maximum
             or any(type(value) is not int or value <= 0 for value in members)):
@@ -22,7 +21,6 @@ async def read_linked_accounts(context, arguments, *, maximum=200):
     members = list(dict.fromkeys(members))
     links = await asyncio.to_thread(context.account_links.get_links_for_members, members)
     await require_evidence_access(context)
-    require_lookup_access(context, {"lead"})
     rows = []
     for member_id in members:
         for link in links.get(member_id, ()):
@@ -30,7 +28,6 @@ async def read_linked_accounts(context, arguments, *, maximum=200):
             if tag is not None:
                 rows.append({"member_id": member_id, "player_tag": tag,
                              "player_name": link.get("player_name_last_seen")})
-    context.state.required_access.add("lead")
     return {"source": "bot_account_links", "accounts": rows,
             "member_ids": members, "unlinked_member_ids": [value for value in members
                 if not any(row["member_id"] == value for row in rows)],
@@ -50,7 +47,6 @@ def account_read_tools():
             }, "required": ["member_ids"], "additionalProperties": False},
             usage_note="Use before player lookups. These bot links are separate from ClashPerk links; no API token is needed to read a linked account's public profile.",
         ), read_linked_accounts,
-        contract=CapabilityContract(entity_fields=(("member_ids", "discord_member_set"),),
-                                    required_access=frozenset({"lead"})),
+        contract=CapabilityContract(entity_fields=(("member_ids", "discord_member_set"),)),
         returns="accounts:[{member_id,player_tag,player_name}],unlinked_member_ids,member_ids,account_count,member_count",
     ),)

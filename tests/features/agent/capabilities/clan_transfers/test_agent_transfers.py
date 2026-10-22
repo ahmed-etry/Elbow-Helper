@@ -85,7 +85,7 @@ class AgentTransferToolTests(unittest.IsolatedAsyncioTestCase):
             queue_registrations=MagicMock(return_value=registrations),
             pending_snapshot=MagicMock(side_effect=self._selected_snapshot),
         )
-        self.context = AgentRequestContext(
+        self.context = AgentRequestContext(private_pass=True,
             bot=SimpleNamespace(fetch_channel=AsyncMock(return_value=None)),
             guild=guild, member=member,
             source_message=SimpleNamespace(

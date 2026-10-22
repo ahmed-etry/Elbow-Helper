@@ -1,10 +1,9 @@
 from types import SimpleNamespace
 import unittest
-from elbow_helper.features.agent.access import LookupAccessDenied
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
-from elbow_helper.configuration.roles import CO_APPLICANT_ROLE_ID, CORE, LEAD
-from elbow_helper.features.agent.access import ACCESS_LEAD, AgentAccessLost
+from elbow_helper.configuration.roles import CORE, LEAD
+from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.models import AgentRequestContext
 from elbow_helper.features.agent.capabilities.events.reads import (
     read_event_schedule, read_event_schedule_report,
@@ -56,7 +55,7 @@ class AgentEventTests(unittest.IsolatedAsyncioTestCase):
             get_channel_or_thread=lambda value: self.channel if value == 100 else None,
         )
         self.channel.guild = self.guild
-        self.context = AgentRequestContext(
+        self.context = AgentRequestContext(private_pass=True,
             bot=SimpleNamespace(fetch_channel=AsyncMock(return_value=None)),
             guild=self.guild, member=self.member,
             source_message=SimpleNamespace(channel=self.channel),
@@ -72,44 +71,32 @@ class AgentEventTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first["event_count"], 2)
         self.assertEqual(first["matching_rows"], 1)
         self.assertEqual(first["events"][0]["event_key"], "cwl")
-        self.assertEqual(self.context.state.required_access, {ACCESS_LEAD})
+        self.assertEqual(self.context.state.required_access, set())
         retained = await read_event_schedule_report(self.context, {
             "report_id": first["report_id"], "phase": "live",
         })
         self.assertEqual(retained["events"][0]["member_count"], 20)
 
-    async def test_non_lead_fails_before_read(self):
-        self.member.roles = [
-            SimpleNamespace(id=next(iter(CORE))),
-            SimpleNamespace(id=CO_APPLICANT_ROLE_ID),
-        ]
-        self.context.event_queries.snapshot = unittest.mock.Mock()
-
-        with self.assertRaises((AgentAccessLost, LookupAccessDenied)):
-            await read_event_schedule(self.context, {})
-
-        self.context.event_queries.snapshot.assert_not_called()
-
-    async def test_lead_loss_during_read_retains_nothing(self):
-        with patch(
-            "elbow_helper.features.agent.capabilities.events.reads.require_lookup_access",
-            side_effect=[None, AgentAccessLost("revoked")],
-        ):
-            with self.assertRaises(AgentAccessLost):
-                await read_event_schedule(self.context, {})
-
-        self.assertEqual(self.context.state.reports, {})
-        self.assertEqual(self.context.state.required_access, set())
-
-    async def test_lead_loss_hides_retained_report(self):
-        first = await read_event_schedule(self.context, {})
+    async def test_member_can_read_public_event_data(self):
         self.member.roles = [SimpleNamespace(id=next(iter(CORE)))]
+        first = await read_event_schedule(self.context, {})
+        self.assertEqual(first["event_count"], 2)
+        self.assertFalse(self.context.state.required_access)
+        retained = await read_event_schedule_report(self.context, {"report_id": first["report_id"]})
+        self.assertEqual(retained["event_count"], 2)
 
+    async def test_entry_loss_during_read_retains_nothing(self):
+        snapshot = self.context.event_queries.snapshot
+        def lose_entry(guild):
+            self.member.roles = []
+            return snapshot(guild)
+        self.context.event_queries.snapshot = lose_entry
         with self.assertRaises(AgentAccessLost):
-            await read_event_schedule_report(self.context, {
-                "report_id": first["report_id"],
-            })
+            await read_event_schedule(self.context, {})
+        self.assertEqual(self.context.state.reports, {})
 
-
-if __name__ == "__main__":
-    unittest.main()
+    async def test_entry_loss_blocks_retained_report(self):
+        first = await read_event_schedule(self.context, {})
+        self.member.roles = []
+        with self.assertRaises(AgentAccessLost):
+            await read_event_schedule_report(self.context, {"report_id": first["report_id"]})

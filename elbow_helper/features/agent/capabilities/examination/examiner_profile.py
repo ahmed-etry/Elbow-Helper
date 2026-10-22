@@ -12,7 +12,9 @@ from elbow_helper.features.examination.panel import ExaminerProfileInputError
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...engine.capability_contract import CapabilityContract
-from ...access import require_evidence_access
+from ...access import (
+    ACCESS_EXAMINER, accessible_message_channel, lookup_level, require_evidence_access,
+)
 from ...actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ...actions.outcomes import ActionOutcome
 from ...actions.values import display_value
@@ -25,7 +27,7 @@ from ...wording import (
     ACTION_EXAMINER_PROFILE_LEAVE_LABEL,
     ACTION_EXAMINER_PROFILE_FIELDS,
 )
-from ...discord_actions.safety import check_post_access, check_view_access, resolve_channel
+from ...discord_actions.safety import check_post_access, resolve_channel
 
 
 PROFILE_FIELDS = ("th_levels", "status", "timezone", "availability")
@@ -55,6 +57,7 @@ def examiner_profile_tools() -> tuple[RegisteredAgentTool, ...]:
                 entity_fields=(),
                 source_scope="channel_status",
                 result_channel_fields=("panel_channel_id",),
+                required_access=frozenset({ACCESS_EXAMINER}),
             ),
         ),
         RegisteredAgentTool(AgentToolDefinition(
@@ -69,6 +72,7 @@ def examiner_profile_tools() -> tuple[RegisteredAgentTool, ...]:
                 entity_fields=(),
                 source_scope="channel_status",
                 result_channel_fields=("panel_channel_id",),
+                required_access=frozenset({ACCESS_EXAMINER}),
                 filter_fields=("offset", "limit"),
             ),
         ),
@@ -93,6 +97,7 @@ def examiner_profile_tools() -> tuple[RegisteredAgentTool, ...]:
     )
 
 
+@lookup_level(ACCESS_EXAMINER)
 async def read_examiner_profile(context: AgentRequestContext,
                                 values: Mapping[str, Any]) -> Mapping[str, Any]:
     workflow, channel = await _workflow(context, post=False)
@@ -104,6 +109,7 @@ async def read_examiner_profile(context: AgentRequestContext,
             "profile_complete": profile["profile_complete"]}
 
 
+@lookup_level(ACCESS_EXAMINER)
 async def read_examiner_roster(context: AgentRequestContext,
                                values: Mapping[str, Any]) -> Mapping[str, Any]:
     workflow, channel = await _workflow(context, post=False)
@@ -117,13 +123,16 @@ async def read_examiner_roster(context: AgentRequestContext,
 async def _workflow(context: AgentRequestContext, *, post: bool = True):
     await require_evidence_access(context)
     workflow = context.bot.get_cog("Examination")
-    if workflow is None or not workflow.can_edit_examiner_profile(context.member):
+    if workflow is None or (post and not workflow.can_edit_examiner_profile(context.member)):
         raise ActionRefused("That examiner profile isn't available.")
-    channel = await resolve_channel(context, EXAMINATION_PANEL_THREAD)
     if post:
+        channel = await resolve_channel(context, EXAMINATION_PANEL_THREAD)
         check_post_access(channel, context.member, context.guild.me)
     else:
-        check_view_access(channel, context.member, context.guild.me)
+        channel = await accessible_message_channel(context, EXAMINATION_PANEL_THREAD)
+        if channel is None:
+            raise ActionRefused("That examiner panel is not accessible here.")
+        context.state.source_channels.add(channel.id)
     return workflow, channel
 
 
