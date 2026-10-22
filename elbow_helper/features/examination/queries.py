@@ -76,6 +76,13 @@ class ExaminationQueries:
         registrations.sort(key=lambda row: row.ticket_channel_id)
         return tuple(registrations)
 
+    def is_promotion_case(self, channel_id: int) -> bool:
+        """Verify workflow identity without exposing application content."""
+        if type(channel_id) is not int or channel_id <= 0:
+            return False
+        cases = self._load()
+        return _case_status(channel_id, cases.get(str(channel_id))) is not None
+
     def case_snapshot(
         self,
         *,
