@@ -11,13 +11,19 @@ def _identifier(value: Any) -> int | None:
     return value if type(value) is int and 0 < value < 2**64 else None
 
 
-def target_links(guild_id: int, values: Mapping[str, Any]) -> tuple[str, ...]:
-    links = []
+def target_channel_ids(values: Mapping[str, Any]) -> tuple[int, ...]:
+    identifiers = []
     for field in ("channel_id", "source_channel_id", "target_channel_id", "thread_id",
                   "parent_channel_id", "ticket_channel_id", "channel", "thread"):
         identifier = _identifier(values.get(field))
         if identifier is not None:
-            links.append(f"https://discord.com/channels/{guild_id}/{identifier}")
+            identifiers.append(identifier)
+    return tuple(dict.fromkeys(identifiers))
+
+
+def target_links(guild_id: int, values: Mapping[str, Any]) -> tuple[str, ...]:
+    links = [f"https://discord.com/channels/{guild_id}/{identifier}"
+             for identifier in target_channel_ids(values)]
     channel_id = _identifier(values.get("channel_id", values.get(
         "target_channel_id", values.get("source_channel_id", values.get("channel")))))
     message_id = _identifier(values.get("message_id"))

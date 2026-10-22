@@ -6,7 +6,7 @@ from typing import Any
 
 import discord
 
-from ..access import ACCESS_VIEW_AUDIT_LOG, require_evidence_access
+from ..access import ACCESS_VIEW_AUDIT_LOG, require_evidence_access, require_lookup_access
 from .management import ID, guard, text, tool
 from .safety import DiscordActionRefused
 
@@ -86,6 +86,7 @@ def entry_row(entry):
 async def read_audit(context, arguments):
     await require_evidence_access(context)
     guard(context, "view_audit_log")
+    require_lookup_access(context, {ACCESS_VIEW_AUDIT_LOG})
     options = {"limit": 100}
     if "member_id" in arguments:
         options["user"] = discord.Object(arguments["member_id"])
@@ -102,6 +103,7 @@ async def read_audit(context, arguments):
                 or getattr(entry.target, "id", None) == arguments["target_id"]):
             matches.append(entry_row(entry))
     guard(context, "view_audit_log")
+    require_lookup_access(context, {ACCESS_VIEW_AUDIT_LOG})
     context.state.required_access.add(ACCESS_VIEW_AUDIT_LOG)
     await require_evidence_access(context)
     return asdict(AuditSnapshot(matches[:limit], scanned, scanned == 100 or len(matches) > limit))

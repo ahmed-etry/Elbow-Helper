@@ -9,6 +9,7 @@ from elbow_helper.features.agent.actions.log_tools import (
     read_agent_action_log, undo_agent_action,
 )
 from elbow_helper.features.agent.actions.targets import target_links
+from elbow_helper.features.agent.models import AgentTurnState
 
 
 class ActionLogToolTests(unittest.IsolatedAsyncioTestCase):
@@ -30,15 +31,20 @@ class ActionLogToolTests(unittest.IsolatedAsyncioTestCase):
             return [{"log_id": "one", "action_name": "synthetic",
                      "action_label": "Change target", "action_class": "change",
                      "targets_json": '{"channel_id": 5, "message_id": 6, "text": "Synthetic private content"}',
+                     "guild_id": 1, "channel_id": 5,
+                     "preview_json": '{"detail_sources": [], "detail_access": []}',
                      "outcome": "completed",
                      "executed_at": 1000}]
         context = SimpleNamespace(
             member=SimpleNamespace(id=4),
             guild=SimpleNamespace(id=1),
             action_repository=SimpleNamespace(recent_log=recent_log),
+            state=AgentTurnState(),
         )
-        with patch("elbow_helper.features.agent.actions.log_tools.require_evidence_access",
-                   new_callable=AsyncMock):
+        with (patch("elbow_helper.features.agent.actions.log_tools.require_evidence_access",
+                    new_callable=AsyncMock),
+              patch("elbow_helper.features.agent.actions.log_tools.can_disclose_provenance",
+                    new_callable=AsyncMock, return_value=True)):
             result = await read_agent_action_log(context, {"limit": 1})
         self.assertEqual(calls, [(4, 0, 2)])
         self.assertEqual(result["actions"][0]["target_links"], (

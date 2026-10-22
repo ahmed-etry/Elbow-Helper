@@ -74,6 +74,18 @@ class ActionRunOutput:
     public_details: bool = False
 
 
+def _history_preview(context, action, *, original=None):
+    state = context.state
+    sources = set(state.source_channels) | set(action.preview.detail_sources)
+    access = (set(state.required_access) | set(state.knowledge_title_access)
+              | set(action.preview.detail_access))
+    if original is not None:
+        sources.update(original.preview.detail_sources)
+        access.update(original.preview.detail_access)
+    return {"lines": action.preview.lines,
+            "detail_sources": sorted(sources), "detail_access": sorted(access)}
+
+
 class AgentActionRunner:
     """Own live callbacks while SQLite owns run and audit state."""
 
@@ -117,7 +129,7 @@ class AgentActionRunner:
                 "label": action.preview.summary or action.path,
                 "class": action.action_class.value,
                 "values": dict(action.values),
-                "preview": action.preview.lines,
+                "preview": _history_preview(context, action),
                 "before": action.preview.before,
             } for action in actions),
         )
@@ -267,6 +279,7 @@ class AgentActionRunner:
                 recorded_values = await asyncio.to_thread(
                     self.repository.set_step_values, run_id, index,
                     owner=owner, values=current_action.values,
+                    preview=_history_preview(context, current_action, original=action),
                 )
                 if not recorded_values:
                     raise RuntimeError("Action targets could not be recorded")
@@ -326,7 +339,9 @@ class AgentActionRunner:
                 context.guild, context.member.id, action.preview.detail_access,
             )
         for identifier in action.preview.detail_sources:
-            if await accessible_message_channel(context, identifier) is None:
+            if await accessible_message_channel(replace(
+                context, private_pass=True, state=replace(context.state, scope=None, source_access={}),
+            ), identifier) is None:
                 raise AgentAccessLost("Action detail source is no longer readable")
         details_hidden = action.details_hidden
         if action.preview.detail_sources or action.preview.detail_access:
