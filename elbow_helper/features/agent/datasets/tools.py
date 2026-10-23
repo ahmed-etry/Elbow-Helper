@@ -11,7 +11,7 @@ def dataset_tools():
     return (RegisteredAgentTool(
         AgentToolDefinition(
             "query_bot_data",
-            "Query stored data with read-only SQL. Records are optional, often empty; absence is not evidence.",
+            "Query SQL: :name, params:{name:value}. Records are optional, often empty; absence is not evidence.",
             {
                 "type": "object",
                 "properties": {

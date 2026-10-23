@@ -9,7 +9,7 @@ import time
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
-from ..access import require_evidence_access, require_lookup_access
+from ..access import require_evidence_access
 from ..capabilities.clan_health.data import SOURCES
 from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool
@@ -86,7 +86,6 @@ def membership_events(runs, rows, after, clan_codes):
 
 async def read_membership_history(context, arguments):
     await require_evidence_access(context)
-    require_lookup_access(context, {"lead_plus"})
     try:
         after = search_date(arguments.get("after"))
         before = search_date(arguments.get("before")) or datetime.now(timezone.utc)
@@ -109,9 +108,7 @@ async def read_membership_history(context, arguments):
         events = membership_events(runs, rows, after.timestamp(), codes)
     except (sqlite3.Error, OSError, ValueError):
         return {"error": "Membership observations could not be read within their bounds."}
-    require_lookup_access(context, {"lead_plus"})
     await require_evidence_access(context)
-    context.state.required_access.add("lead_plus")
     selected = events[offset:offset + limit]
     next_offset = offset + len(selected) if offset + len(selected) < len(events) else None
     times = [run["created_ts"] for run in runs]
@@ -148,4 +145,4 @@ def membership_tools():
             "limit": {"type": "integer", "minimum": 1, "maximum": 25, "default": 25},
         }, "required": ["after"], "additionalProperties": False},
         usage_note="Max 90 days, 128 complete family snapshots. First observed is not first-ever membership; returns require earlier observations inside bounds.",
-    ), read_membership_history, contract=CapabilityContract(required_access=frozenset({"lead_plus"}))),)
+    ), read_membership_history, contract=CapabilityContract()),)

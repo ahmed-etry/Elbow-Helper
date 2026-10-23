@@ -29,7 +29,7 @@ class MembershipReadTests(unittest.IsolatedAsyncioTestCase):
         self.codes = list(CLANS)[:2]
         self.context = SimpleNamespace(bot=SimpleNamespace(paths=None), state=AgentTurnState())
         for name, replacement in (
-            ("require_evidence_access", AsyncMock()), ("require_lookup_access", lambda *_: None),
+            ("require_evidence_access", AsyncMock()),
             ("SOURCES", (DataSource("health", self.path),)),
         ):
             patcher = patch("elbow_helper.features.agent.datasets.membership." + name, replacement)
@@ -62,7 +62,7 @@ class MembershipReadTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(not row["first_ever_membership_known"] for row in events.values()))
         self.assertEqual(result["coverage"]["observed_after"], "2026-10-01T00:00:00+00:00")
         self.assertFalse(result["coverage"]["history_complete"])
-        self.assertEqual(self.context.state.required_access, {"lead_plus"})
+        self.assertEqual(self.context.state.required_access, set())
         page = await read_membership_history(self.context, {**self.arguments, "limit": 1})
         self.assertEqual(page["next_offset"], 1)
         next_page = await read_membership_history(self.context, {**self.arguments, "offset": 1, "limit": 1})

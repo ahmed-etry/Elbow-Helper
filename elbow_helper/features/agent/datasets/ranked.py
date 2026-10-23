@@ -51,12 +51,14 @@ def history_coverage(result, after, before):
     return list(dict.fromkeys(reasons))
 
 
-async def _live_batch(context, kind, tags, max_age_seconds=30):
+async def _live_batch(context, kind, tags, max_age_seconds=30, *, full_detail=False):
     items = []
     observed_at = None
     for start in range(0, len(tags), 20):
         result = await read_clash(context, {"kind": kind, "tags": tags[start:start + 20], "limit": 50,
-                                            "max_age_seconds": max_age_seconds})
+                                            "max_age_seconds": max_age_seconds,
+                                            **({'detail':'full'} if full_detail else {})},
+                                  **({'complete_battle_log': True} if full_detail and kind == 'battle_log' else {}))
         if "error" in result:
             return result
         items.extend(result["items"])
@@ -65,7 +67,7 @@ async def _live_batch(context, kind, tags, max_age_seconds=30):
             "truncated": any(item.get("truncated", False) for item in items)}
 
 
-async def _live_history(context, selector, values, accounts, max_age_seconds=30):
+async def _live_history(context, selector, values, accounts, max_age_seconds=30, *, full_detail=False):
     # Current rolling logs do not replace historical counts or ownership.
     tags = {row["player_tag"] for row in accounts}
     if selector == "account_tags":
@@ -76,20 +78,21 @@ async def _live_history(context, selector, values, accounts, max_age_seconds=30)
     tags = sorted({tag for value in tags if (tag := normalize_player_tag(value)) is not None})
     if not tags:
         return {"error": "No accounts are available for a live battle log read."}
-    result = await _live_batch(context, "battle_log", tags, max_age_seconds)
+    result = await _live_batch(context, "battle_log", tags, max_age_seconds, full_detail=full_detail)
     return result
 
 
-async def read_ranked_stats(context, arguments):
+async def read_ranked_stats(context, arguments, *, maximum=25, include_battles=False,
+                            allow_live_only=False, selection_maximum=200):
     await require_evidence_access(context)
-    if context.ranked_queries is None:
+    if context.ranked_queries is None and not allow_live_only:
         return {"error": "Ranked observations are not available."}
     selectors = [key for key in ("member_ids", "account_tags", "clan_tags") if arguments.get(key)]
     if len(selectors) != 1:
         return invalid_arguments("Choose members, accounts or clans.", "member_ids", "account_tags", "clan_tags")
     selector = selectors[0]
     values = arguments[selector]
-    if not isinstance(values, list) or not 1 <= len(values) <= 200:
+    if not isinstance(values, list) or not 1 <= len(values) <= selection_maximum:
         return invalid_arguments("Choose between one and two hundred members, accounts or clans.", selector)
     if selector == "member_ids":
         if any(type(value) is not int or value <= 0 for value in values):
@@ -109,7 +112,7 @@ async def read_ranked_stats(context, arguments):
         if after is None or after >= before or (before - after) > timedelta(days=90):
             raise ValueError("Invalid window")
         offset, limit = arguments.get("offset", 0), arguments.get("limit", 25)
-        if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 25:
+        if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= maximum:
             raise ValueError("Invalid page")
     except (ValueError, TypeError):
         return invalid_arguments("Use ISO dates for a window of up to ninety days and a valid page.",
@@ -117,11 +120,17 @@ async def read_ranked_stats(context, arguments):
     try:
         result = await asyncio.to_thread(context.ranked_queries.window,
             after=after.isoformat(timespec="microseconds"), before=before.isoformat(timespec="microseconds"), selector=selector,
-            values=tuple(dict.fromkeys(values)), offset=offset, limit=limit)
+            values=tuple(dict.fromkeys(values)), offset=offset, limit=limit,
+            **({'include_battles': True} if include_battles else {})) if context.ranked_queries else {
+                'accounts': [], 'stored_battles': [], 'total_accounts': 0, 'next_offset': None,
+                'complete': False, 'coverage_complete': False,
+                'unobserved_selections': values, 'limitations': ['ranked_collection_unavailable']}
     except (sqlite3.Error, ValueError):
         return {"error": "Ranked observations could not be read."}
     await require_evidence_access(context)
     reasons = history_coverage(result, after, before)
+    if include_battles:
+        result = {**result,'after':after.isoformat(),'before':before.isoformat()}
     if reasons:
         result = {**result, "complete": False,
                   "history_coverage": {
@@ -138,7 +147,8 @@ async def read_ranked_stats(context, arguments):
             live = ({"skipped": "Live battle logs are read automatically only for specific accounts or members."}
                     if selector == "clan_tags" else
                     await _live_history(context, selector, values, result["accounts"],
-                                        arguments.get("max_age_seconds", 30)))
+                                        arguments.get("max_age_seconds", 30),
+                                        **({'full_detail':True} if include_battles else {})))
         except sqlite3.Error:
             live = {"error": "Accounts could not be read for a live battle log read."}
         result["live_battle_logs"] = {

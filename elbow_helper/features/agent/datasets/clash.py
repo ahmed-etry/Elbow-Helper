@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import datetime, timezone
+import re
 import time
 
 from elbow_helper.configuration.clans import CLANS
@@ -30,20 +31,18 @@ ENDPOINTS = {
     "battle_log": "/players/{tag}/battlelog",
 }
 PLAYER_FIELDS = (
-    "tag name townHallLevel townHallWeaponLevel expLevel trophies bestTrophies warStars "
-    "attackWins defenseWins builderHallLevel role warPreference donations donationsReceived "
-    "clanCapitalContributions"
+    "tag name townHallLevel role trophies bestTrophies"
 ).split()
 CLAN_FIELDS = (
     "tag name type description clanLevel clanPoints members warWins warLosses warTies "
-    "warWinStreak isWarLogPublic requiredTownhallLevel"
+    "warWinStreak isWarLogPublic requiredTownhallLevel requiredTrophies requiredBuilderBaseTrophies"
 ).split()
 PLAYER_CLAN_FIELDS = ("tag", "name", "clanLevel")
 LEAGUE_FIELDS = ("name",)
 RANKED_LEAGUE_FIELDS = ("id", "name")
 HERO_FIELDS = ("name", "level", "maxLevel", "village")
 CLAN_MEMBER_FIELDS = tuple(
-    "tag name role townHallLevel expLevel trophies donations donationsReceived clanRank".split()
+    "tag name townHallLevel role trophies".split()
 )
 CWL_GROUP_FIELDS = ("state", "season")
 CWL_CLAN_FIELDS = ("tag", "name", "clanLevel")
@@ -51,6 +50,8 @@ CWL_MEMBER_FIELDS = ("tag", "name", "townHallLevel")
 WAR_LOG_FIELDS = ("result", "endTime", "teamSize", "attacksPerMember")
 WAR_SIDE_FIELDS = ("tag", "name", "stars", "destructionPercentage")
 WAR_CLAN_FIELDS = (*WAR_SIDE_FIELDS, "attacks", "expEarned")
+WAR_FIELDS = ("state", "teamSize", "attacksPerMember", "preparationStartTime", "startTime", "endTime")
+WAR_MEMBER_FIELDS = ("tag", "name", "townhallLevel", "mapPosition")
 BATTLE_LOG_FIELDS = (
     "battleType", "battleTimestamp", "attack", "opponentPlayerTag", "opponentName",
     "stars", "destructionPercentage", "battleTime",
@@ -59,6 +60,43 @@ BATTLE_LOG_FIELDS = (
 
 def _fields(value, names):
     return {name: value[name] for name in names if name in value}
+
+
+def select_fields(payload, fields):
+    """Project API field paths through objects and lists without removing rows."""
+    tree = {}
+    for path in fields:
+        node = tree
+        for part in path.split("."):
+            node = node.setdefault(part, {})
+        node[""] = True
+
+    def project(value, selection):
+        if "" in selection:
+            return value
+        if isinstance(value, list):
+            return [project(row, selection) for row in value]
+        if isinstance(value, dict):
+            return {key: project(value[key], child) for key, child in selection.items() if key in value}
+        return value
+
+    return project(payload, tree)
+
+
+def omitted_fields(original, projected, path=""):
+    """List removed field subtrees; * denotes the rows of a retained collection."""
+    missing = set()
+    if isinstance(original, dict) and isinstance(projected, dict):
+        for key, value in original.items():
+            child_path = f"{path}/{key}"
+            if key not in projected:
+                missing.add(child_path)
+            else:
+                missing.update(omitted_fields(value, projected[key], child_path))
+    elif isinstance(original, list) and isinstance(projected, list):
+        for row, kept in zip(original, projected):
+            missing.update(omitted_fields(row, kept, f"{path}/*"))
+    return sorted(missing)
 
 
 def collection_counts(data, original, path=""):
@@ -76,29 +114,30 @@ def collection_counts(data, original, path=""):
 
 def summary(kind, payload):
     if kind in ("current_war", "cwl_war"):
-        return payload
+        result = _fields(payload, WAR_FIELDS)
+        for side in ("clan", "opponent"):
+            if isinstance(payload.get(side), dict):
+                result[side] = _fields(payload[side], (*WAR_CLAN_FIELDS, "clanLevel"))
+                result[side]["members"] = [
+                    _fields(row, WAR_MEMBER_FIELDS) for row in payload[side].get("members", [])
+                ]
+        return result
     if kind == "player":
         result = _fields(payload, PLAYER_FIELDS)
         for field, names in (("clan", PLAYER_CLAN_FIELDS), ("league", LEAGUE_FIELDS),
                              ("leagueTier", RANKED_LEAGUE_FIELDS)):
             if isinstance(payload.get(field), dict):
                 result[field] = _fields(payload[field], names)
-        result["heroes"] = [
-            _fields(row, HERO_FIELDS)
-            for row in payload.get("heroes", [])
-        ]
         return result
     if kind == "clan":
         result = _fields(payload, CLAN_FIELDS)
-        if "description" in result:
-            result["description"] = result["description"][:300]
         for field in ("warLeague", "capitalLeague"):
             if isinstance(payload.get(field), dict):
                 result[field] = _fields(payload[field], LEAGUE_FIELDS)
-        result["memberList"] = [
-            _fields(row, CLAN_MEMBER_FIELDS)
-            for row in payload.get("memberList", [])
-        ]
+        if "memberList" in payload:
+            result["memberList"] = [
+                _fields(row, CLAN_MEMBER_FIELDS) for row in payload["memberList"]
+            ]
         return result
     if kind == "cwl_group":
         result = _fields(payload, CWL_GROUP_FIELDS)
@@ -135,7 +174,7 @@ def summary(kind, payload):
     ]}
 
 
-async def read_clash(context, arguments):
+async def read_clash(context, arguments, *, complete_battle_log=False):
     cache = getattr(context, "clash_reads", None)
     try:
         await require_evidence_access(context)
@@ -152,6 +191,17 @@ async def read_clash(context, arguments):
     if type(max_age) is not int or not 0 <= max_age <= MAX_AGE_SECONDS:
         return invalid_arguments("Clash freshness must be between zero and thirty seconds.", "max_age_seconds")
     kind, tags = arguments["kind"], arguments["tags"]
+    member_scope = arguments.get("member_scope", "community")
+    if member_scope not in ("community", "current"):
+        return invalid_arguments("Choose community or current membership.", "member_scope")
+    fields = arguments.get("fields")
+    if fields is not None and (
+        not isinstance(fields, list) or not 1 <= len(fields) <= 40
+        or any(not isinstance(path, str) or len(path) > 160
+               or re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*", path) is None
+               for path in fields)
+    ):
+        return invalid_arguments("Select 1 to 40 dotted Clash field paths.", "fields")
     cap = 200 if kind == "player" else 20
     if (
         kind not in ENDPOINTS or not 1 <= len(tags) <= cap
@@ -205,7 +255,9 @@ async def read_clash(context, arguments):
                 path += "?limit=" + ("10" if kind == "capital_raids" else "50")
             async def fetch():
                 return await client.get(
-                    path, attempts=1, timeout_seconds=max(0.1, deadline - time.monotonic()),
+                    path, attempts=2,
+                    timeout_seconds=max(0.1, (deadline - time.monotonic() - 0.2) / 2),
+                    backoff_seconds=0.1, maximum_backoff_seconds=0.1,
                 )
             if cache is None:
                 response = await fetch()
@@ -218,18 +270,37 @@ async def read_clash(context, arguments):
                 if kind == "battle_log":
                     # The battle-log route has no verified server-side limit parameter.
                     payload, coverage = select_battles(
-                        payload, limit=limit, offset=offset, order=order, after=after, before=before,
+                        payload, limit=max(1, len(payload.get('items', []))) if complete_battle_log else limit,
+                        offset=offset, order=order, after=after, before=before,
                     )
                 elif kind in ("war_log", "capital_raids"):
                     payload = {**payload, "items": payload.get("items", [])[:limit]}
+                clan = next((clan for clan in CLANS.values() if clan.tag == tag), None)
+                seasonal_members = (kind == "clan" and clan is not None
+                                    and clan.cwl_only and member_scope != "current")
+                if seasonal_members:
+                    # Keep API meanings intact: never put CWL players into a
+                    # current memberList, or offer parked accounts as evidence
+                    # for a community member question, even with fields/full.
+                    payload = {key: value for key, value in payload.items()
+                               if key not in ("members", "memberList")}
                 items[index] = {
                     "tag": tag, "status": "ok",
                     "observed_at": observed_at, "reused": reused,
                     "data": (
+                        select_fields(payload, fields) if fields is not None else
                         payload if arguments.get("detail") == "full"
                         else summary(kind, payload)
                     ),
                 }
+                if seasonal_members:
+                    items[index]["data"].pop("members", None)
+                    items[index]["data"].pop("memberList", None)
+                    items[index]["member_cohort"] = {
+                        "clan_code": clan.code, "basis": "seasonal_cwl",
+                        "status": "requires_season_roster", "excluded_fields": ["members", "memberList"],
+                        "instruction": "Use this clan's assigned CWL roster, league-group members or stored CWL participants with an explicit season. Read their player profiles for cumulative stats. If unavailable, report that gap. member_scope=current is only for explicitly requested current in-game membership.",
+                    }
                 counts = collection_counts(items[index]["data"], payload)
                 if "items" in original:
                     counts["/items"] = {"returned_rows": len(payload.get("items", [])),
@@ -246,7 +317,8 @@ async def read_clash(context, arguments):
                     )
             else:
                 status = (
-                    "not_found" if response.status == 404
+                    "timeout" if isinstance(getattr(response, 'error', None), TimeoutError)
+                    else "not_found" if response.status == 404
                     else "maintenance" if response.status == 503
                     else "private" if response.status == 403
                     and kind in ("war_log", "current_war", "cwl_group") else "unavailable"
@@ -257,12 +329,19 @@ async def read_clash(context, arguments):
 
     tasks = [asyncio.create_task(read(index, tag)) for index, tag in enumerate(normalized)]
     try:
-        await asyncio.wait(tasks, timeout=max(0, deadline - time.monotonic()))
+        _, pending = await asyncio.wait(tasks, timeout=max(0, deadline - time.monotonic()))
+        for index, task in enumerate(tasks):
+            if task in pending:
+                items[index] = {'tag': normalized[index], 'status': 'timeout'}
     finally:
         for task in tasks:
             if not task.done():
                 task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+        for index, outcome in enumerate(outcomes):
+            if isinstance(outcome, Exception):
+                items[index] = {'tag': normalized[index], 'status': 'unavailable',
+                                'error_type': type(outcome).__name__}
     try:
         await require_evidence_access(context)
     except BaseException:
@@ -271,6 +350,8 @@ async def read_clash(context, arguments):
         raise
     truncated = any(item.get("truncated", False) for item in items)
     return {"source": "clash_api", "kind": kind, "items": items,
+            "projection": "fields" if fields is not None else arguments.get("detail", "summary"),
+            **({"fields": fields} if fields is not None else {}),
             "field_meanings": FIELD_MEANINGS.get(kind, {}),
             **({"aggregate": cohort_aggregate(items, aggregate, after=after, before=before)}
                if aggregate is not None else {}),
@@ -286,7 +367,7 @@ def clash_tools():
     return (RegisteredAgentTool(
         AgentToolDefinition(
             "read_clash",
-            "Read current Clash clan, war, CWL, raid, player or battle log data.",
+            "Read Clash clans, wars and profiles using resolved tags, never placeholder values.",
             {
                 "type": "object",
                 "properties": {
@@ -296,7 +377,14 @@ def clash_tools():
                         "items": {"type": "string"},
                     },
                     "limit": {"type": "integer", "minimum": 1, "maximum": 50},
-                    "detail": {"type": "string", "enum": ["summary", "full"]},
+                    "detail": {"type": "string", "enum": ["summary", "full"], "default": "summary"},
+                    "member_scope": {"type": "string", "enum": ["community", "current"],
+                                     "default": "community",
+                                     "description": "CWL-only clans require seasonal players. Use current only for explicitly requested current in-game membership."},
+                    "fields": {"type": "array", "minItems": 1, "maxItems": 40,
+                               "items": {"type": "string", "minLength": 1, "maxLength": 160,
+                                         "pattern": r"^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*$"},
+                               "description": "Replace defaults with API field paths, e.g. memberList.townHallLevel or heroes.level. Parent paths include all children; overrides detail."},
                     "order": {"type": "string", "enum": ["newest_first", "oldest_first"],
                               "default": "newest_first"},
                     "offset": {"type": "integer", "minimum": 0, "default": 0},
@@ -308,7 +396,7 @@ def clash_tools():
                 },
                 "required": ["kind", "tags"], "additionalProperties": False,
             },
-            usage_note="Max 200 players/20 others. Summary: leagueTier ranked, league legacy. Raids 1..10. Battle dates UTC, before exclusive. Aggregates before paging.",
+            usage_note="Max 200 players/20 others; fields overrides detail. CWL-only clans need a seasonal CWL cohort first; player.warStars is cumulative.",
         ),
         read_clash,
         contract=CapabilityContract(), returns="items[].tag,status,data; observed_at",
