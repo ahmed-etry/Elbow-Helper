@@ -40,7 +40,7 @@ class RankedQueries:
     def __init__(self, store):
         self.store = store
 
-    def window(self, *, after, before, selector, values, offset=0, limit=25):
+    def window(self, *, after, before, selector, values, offset=0, limit=25, include_battles=False):
         parameters = dict(after=after, before=before, selector=selector, values=values)
         rows, truncated = self.store.read_window(**parameters)
         battles, polls, battle_truncated = self.store.read_battle_window(**parameters)
@@ -70,6 +70,7 @@ class RankedQueries:
             "next_offset": offset + limit if offset + limit < len(accounts) else None,
             "unobserved_selections": [value for value in values if value not in matched],
             "complete": not (truncated or battle_truncated), "coverage_complete": False,
+            **({"stored_battles": battles} if include_battles else {}),
             "limitations": ["selection_rank_uses_last_observed_trophies_within_selected_accounts",
                             "attacks_used_counts_stored_RANKED_and_LEGEND_attacks_including_losses",
                             "rolling_logs_and_collection_gaps_can_hide_battles", "attack_quota_unavailable",
