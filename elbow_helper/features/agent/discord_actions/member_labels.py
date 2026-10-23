@@ -1,19 +1,12 @@
-"""Identify message targets with Discord's display name and unique username."""
+"""Identify message targets by their server display name."""
 
 import re
 
-import discord
-
+from ..member_names import member_label
 from .safety import resolve_member
-
-
-def member_label(member):
-    display_name = discord.utils.escape_markdown(" ".join(member.display_name.split()))
-    username = discord.utils.escape_markdown(member.name)
-    return f"{display_name} (@{username})"
 
 
 async def mentioned_member_labels(guild, text):
     identifiers = dict.fromkeys(int(value) for value in re.findall(r"<@!?([0-9]+)>", text))
-    return {identifier: member_label(await resolve_member(guild, identifier))
+    return {identifier: member_label(await resolve_member(guild, identifier), guild=guild)
             for identifier in identifiers}
