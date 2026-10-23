@@ -280,7 +280,11 @@ async def _store_spreadsheet(
     await require_evidence_access(context)
     if data is None:
         return {"error": "The spreadsheet exceeds this server's attachment size limit."}
-    prepared = AgentAttachment(filename, data, attachment_key, spreadsheet_title=spreadsheet.title)
+    prepared = AgentAttachment(
+        filename, data, attachment_key, spreadsheet_title=spreadsheet.title,
+        total_rows=sum(len(sheet.rows) for sheet in spreadsheet.sheets),
+        sheet_rows=tuple((sheet.name, len(sheet.rows)) for sheet in spreadsheet.sheets),
+    )
     context.state.attachments[:] = [
         item for item in context.state.attachments if item not in previous
     ]

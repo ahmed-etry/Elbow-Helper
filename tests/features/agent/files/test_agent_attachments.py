@@ -310,7 +310,7 @@ class AgentAttachmentToolTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.reconciler = None
-        self.context = AgentRequestContext(
+        self.context = AgentRequestContext(private_pass=True,
             bot=SimpleNamespace(fetch_channel=AsyncMock(return_value=None)), guild=guild,
             member=member, source_message=request, account_links=None,
             message_search=None, attachment_sources=(request, replied),
@@ -410,8 +410,3 @@ class AgentAttachmentToolTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AgentAccessLost):
             await import_text_attachment(self.context, {"attachment_id": 8})
         self.assertEqual(self.context.state.reports, {})
-
-
-
-
-

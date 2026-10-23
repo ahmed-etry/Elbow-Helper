@@ -12,6 +12,25 @@ from ..access import require_evidence_access
 from .workbooks import publish_workbook_bytes
 
 
+def delivery_manifest(attachments):
+    """Describe retained outputs independently of paged or bounded read evidence."""
+    files = []
+    for item in attachments:
+        pending = ((item.report_id or "").startswith("spreadsheet:")
+                   and not item.publication_attempted and not item.google_link)
+        entry = {"filename": item.filename,
+                 "delivery": "link" if item.google_link else "publish_or_attach" if pending else "attachment"}
+        if item.google_link:
+            entry["url"] = item.google_link
+        if item.total_rows is not None:
+            entry["total_rows"] = item.total_rows
+        if item.sheet_rows:
+            entry["sheet_count"] = len(item.sheet_rows)
+            entry["sheets"] = [{"name": name, "rows": count} for name, count in item.sheet_rows]
+        files.append(entry)
+    return {"files": files}
+
+
 async def publish_spreadsheet(context, attachments):
     """Publish the retained agent workbook once, immediately before assembling its reply."""
     prepared = []

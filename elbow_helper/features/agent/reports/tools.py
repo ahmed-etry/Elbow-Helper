@@ -167,7 +167,8 @@ def _tool(name: str, specs: Mapping[str, RegisteredAgentTool]) -> RegisteredAgen
         AgentToolDefinition(
             name=name, description=description,
             usage_note=(
-                "Use manifest kind/ID. XLSX needs exact sheet_name; fields are zero-based "
+                "Use manifest kind/ID, never 'latest'; keep filters when paging. "
+                "XLSX needs exact sheet_name; fields are zero-based "
                 "column indexes as strings."
             ),
             parameters={
