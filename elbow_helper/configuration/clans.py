@@ -25,6 +25,7 @@ class ClanConfig:
     leadership_role_id: Optional[int]
     cwl_helper_role_id: Optional[int]
     cwl_bench_role_id: Optional[int]
+    cwl_only: bool = False
 
 
 CLAN_ORDER = ("BEH", "BE4", "BES", "BE1", "BEM", "BEC", "BEE", "BEP", "BEW")
@@ -56,6 +57,7 @@ CLANS: dict[str, ClanConfig] = {
         leadership_role_id=1168971049006792714,
         cwl_helper_role_id=1251809893690638396,
         cwl_bench_role_id=1251812287891767396,
+        cwl_only=True,
     ),
     "BES": ClanConfig(
         code="BES",
