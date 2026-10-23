@@ -26,6 +26,7 @@ class ActionOutcome:
     private_panel: Callable[[discord.Interaction], Awaitable[None]] | None = None
     command_name: str = ""
     posted_in: int | None = None
+    cause: str | None = None
 
     @classmethod
     def needs_input(cls, descriptions: tuple[str, ...], *,
@@ -33,8 +34,8 @@ class ActionOutcome:
         return cls("needs_input", missing=descriptions, missing_options=options)
 
     @classmethod
-    def unavailable(cls) -> "ActionOutcome":
-        return cls("unavailable")
+    def unavailable(cls, *, cause: str = "unavailable", text: str = "") -> "ActionOutcome":
+        return cls("unavailable", cause=cause, text=text)
 
 
 def embed_text(embed: discord.Embed) -> str:
@@ -46,15 +47,19 @@ def embed_text(embed: discord.Embed) -> str:
     return "\n".join(parts)
 
 
-def command_reply(outcomes: list[ActionOutcome]) -> str:
+def command_reply(outcomes: list[ActionOutcome], *, has_findings: bool = False) -> str:
     parts = [item.text for item in outcomes
              if item.status == "complete" and item.visibility == "public" and item.text]
     if any(item.visibility == "private" and (item.private_parts or item.attachments
                                               or item.private_panel)
            for item in outcomes):
         parts.append(ACTION_PRIVATE_NOTE)
+    parts.extend(item.text for item in outcomes if item.status == "unavailable" and item.text)
     if parts:
         return "\n\n".join(parts)
     if any(item.status == "empty" for item in outcomes):
         return ACTION_EMPTY
-    return ACTION_UNAVAILABLE
+    if any(item.status == "needs_input" for item in outcomes):
+        missing = dict.fromkeys(value for item in outcomes for value in item.missing)
+        return "Please provide: " + "; ".join(missing) + "." if missing else "Which command result do you need?"
+    return "" if has_findings or not outcomes else ACTION_UNAVAILABLE

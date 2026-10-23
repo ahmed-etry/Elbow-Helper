@@ -406,6 +406,13 @@ RESULT_FIELDS = {
 REPORT_FIELDS = {kind: _returned_fields(shape) for kind, shape in REPORT_FIELDS.items()}
 RESULT_FIELDS["read_discord_poll"] = result_fields(PollSnapshot)
 RESULT_FIELDS["read_discord_audit_log"] = _returned_fields(result_fields(AuditSnapshot))
+RESULT_FIELDS['read_discord_role_change_preview'] = {
+    **names('role_id,role_name,preview_only'),
+    'members': [names('member_id,member_name,current_role_ids,add_role_ids,remove_role_ids,allowed,refusal')]}
+for _role_change in ('add_discord_roles', 'remove_discord_roles'):
+    RESULT_FIELDS[_role_change] = {
+        **names('status,role_id,role_name,requested_has_role'),
+        'members': [names('member_id,display_name,has_role')]}
 RETURN_HINTS = {name: format_returns(shape) for name, shape in RESULT_FIELDS.items()}
 
 

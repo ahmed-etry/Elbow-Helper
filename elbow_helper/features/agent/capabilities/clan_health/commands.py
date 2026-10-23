@@ -20,8 +20,6 @@ def _health_access(context: Any) -> bool:
     allowed = has_access_requirements(
         context.guild, context.member.id, {ACCESS_LEAD_PLUS},
     )
-    if allowed:
-        context.state.required_access.add(ACCESS_LEAD_PLUS)
     return allowed
 
 

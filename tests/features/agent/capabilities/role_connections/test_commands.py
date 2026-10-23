@@ -29,7 +29,7 @@ class RoleConnectionCommandTests(unittest.IsolatedAsyncioTestCase):
             ),
             post_connections_message=AsyncMock(return_value=message),
         )
-        context = SimpleNamespace(
+        context = SimpleNamespace(private_pass=True,
             guild=guild, member=member, state=AgentTurnState(),
             source_message=SimpleNamespace(channel=channel),
             bot=SimpleNamespace(get_cog=lambda _: workflow),

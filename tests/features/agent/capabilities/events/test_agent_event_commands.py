@@ -20,7 +20,7 @@ class EventCommandTests(unittest.IsolatedAsyncioTestCase):
             queries=SimpleNamespace(snapshot=lambda _: SimpleNamespace(rows=rows)),
             force_refresh=AsyncMock(),
         )
-        context = SimpleNamespace(
+        context = SimpleNamespace(private_pass=True,
             guild=guild, member=member, state=AgentTurnState(),
             bot=SimpleNamespace(get_cog=lambda _: workflow),
         )
@@ -38,7 +38,7 @@ class EventCommandTests(unittest.IsolatedAsyncioTestCase):
         member = SimpleNamespace(id=4, roles=[SimpleNamespace(id=next(iter(LEAD)))])
         guild = SimpleNamespace(get_member=lambda _: member)
         workflow = object()
-        context = SimpleNamespace(
+        context = SimpleNamespace(private_pass=True,
             guild=guild, member=member, state=AgentTurnState(),
             bot=SimpleNamespace(get_cog=lambda _: workflow),
         )

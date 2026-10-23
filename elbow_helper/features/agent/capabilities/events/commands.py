@@ -25,7 +25,6 @@ async def run_event_panel(context: Any, values: Mapping[str, Any]) -> ActionOutc
     workflow = context.bot.get_cog("EventStatsCog")
     if workflow is None:
         return ActionOutcome.unavailable()
-    context.state.required_access.add(ACCESS_LEAD)
 
     async def open_panel(interaction):
         if not has_access_requirements(context.guild, context.member.id, {ACCESS_LEAD}):
@@ -51,7 +50,6 @@ async def prepare_event_update(context: Any, values: Mapping[str, Any]) -> Chang
     workflow = context.bot.get_cog("EventStatsCog")
     if workflow is None:
         raise ActionRefused("Event stats are unavailable")
-    context.state.required_access.add(ACCESS_LEAD)
     snapshot = workflow.queries.snapshot(context.guild)
     targets = tuple((row.event_key, row.name) for row in snapshot.rows)
 

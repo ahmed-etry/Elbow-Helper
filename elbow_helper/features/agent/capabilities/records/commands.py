@@ -39,7 +39,6 @@ def _workflow(context: Any) -> Any | None:
         context.guild, context.member.id, {ACCESS_LEAD_PLUS},
     ):
         return None
-    context.state.required_access.add(ACCESS_LEAD_PLUS)
     return context.bot.get_cog("Records")
 
 

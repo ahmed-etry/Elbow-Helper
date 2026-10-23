@@ -146,7 +146,7 @@ def check_raw_role(role: Any, guild: Any, bot_member: Any,
         raise DiscordActionRefused("An integration manages that role.")
     current = guild.get_member(requester.id)
     if current is None or not getattr(current.guild_permissions, "manage_roles", False):
-        raise DiscordActionRefused(ACTION_UNAVAILABLE)
+        raise DiscordActionRefused("Changing roles requires Manage Roles permission.")
     if not _below_requester(role.position, guild, requester):
         raise DiscordActionRefused("That role is above your top role.")
     for permission in POWERFUL_PERMISSIONS:

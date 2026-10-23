@@ -172,6 +172,11 @@ class DiscordRoleActionTests(unittest.IsolatedAsyncioTestCase):
         role.id = 11
         result = await prepare_add_roles(context, {"role_id": 11, "member_ids": [5]})
         self.assertEqual(result["status"], "no_change")
+        self.assertEqual(result["role_name"], "Synthetic role")
+        self.assertEqual(result["members"], [{"member_id": 5,
+                         "display_name": "Synthetic Member 5", "has_role": True}])
+        self.assertTrue(result["requested_has_role"])
+        members[5].add_roles.assert_not_awaited()
         role.id = 99
         result = await prepare_remove_roles(context, {"role_id": 99, "member_ids": [5]})
         self.assertEqual(result["status"], "confirmation_required")
@@ -218,7 +223,7 @@ class DiscordRoleActionTests(unittest.IsolatedAsyncioTestCase):
 
     def context(self):
         role = SimpleNamespace(
-            id=3, mention="@role", position=1, managed=False,
+            id=3, name="Synthetic role", mention="@role", position=1, managed=False,
             permissions=SimpleNamespace(), is_default=lambda: False,
         )
         bot_member = SimpleNamespace(id=1, top_role=SimpleNamespace(position=10))

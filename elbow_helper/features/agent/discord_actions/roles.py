@@ -26,14 +26,30 @@ from .safety import (
 def discord_role_tools() -> tuple[RegisteredAgentTool, ...]:
     schema = {"type": "object", "properties": {
         "role_id": {"type": "integer", "minimum": 1},
+        "role_name": {"type": "string", "minLength": 1, "maxLength": 100},
         "member_ids": {"type": "array", "items": {"type": "integer", "minimum": 1},
                        "minItems": 1, "maxItems": 25, "uniqueItems": True},
-    }, "required": ["role_id", "member_ids"], "additionalProperties": False}
+    }, "required": ["member_ids"], "anyOf": [
+        {"required": ["role_id"]}, {"required": ["role_name"]}], "additionalProperties": False}
     return (
         RegisteredAgentTool(AgentToolDefinition(
+            name="read_discord_role_change_preview",
+            description="Read current roles and a role delta by exact name or ID, without preparing or executing an action.",
+            parameters={"type": "object", "properties": {
+                "role_name": {"type": "string", "minLength": 1, "maxLength": 100},
+                "role_id": {"type": "integer", "minimum": 1},
+                "member_ids": schema["properties"]["member_ids"],
+                "operation": {"type": "string", "enum": ["add", "remove"]}},
+                "required": ["member_ids", "operation"], "additionalProperties": False},
+            usage_note='Read-only eligibility and exact delta; use this for inspection. To prepare a confirmation preview use add_discord_roles or remove_discord_roles directly.',
+        ), read_role_change_preview, contract=CapabilityContract(
+            entity_fields=(("role_id", "discord_role"), ("member_ids", "discord_member_set"))),
+        returns="role_id,role_name,members:[{member_id,current_role_ids,add_role_ids,remove_role_ids,allowed,refusal}]"),
+        RegisteredAgentTool(AgentToolDefinition(
             name="add_discord_roles",
-            description="Add one safe Discord role to the selected members.",
+            description="Prepare a confirmation preview to add one Discord role by exact name or ID; never applies it.",
             parameters=schema,
+            usage_note='Supply role_name or role_id plus member_ids. Resolves the role, checks eligibility and existing membership, then queues only actual changes for confirmation.',
         ), prepare_add_roles, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
                 entity_fields=(("role_id", "discord_role"), ("member_ids", "discord_member_set")),
@@ -42,8 +58,9 @@ def discord_role_tools() -> tuple[RegisteredAgentTool, ...]:
         ),
         RegisteredAgentTool(AgentToolDefinition(
             name="remove_discord_roles",
-            description="Remove one safe Discord role from the selected members.",
+            description="Prepare a confirmation preview to remove one Discord role by exact name or ID; never applies it.",
             parameters=schema,
+            usage_note='Supply role_name or role_id plus member_ids. Resolves the role, checks eligibility and existing membership, then queues only actual changes for confirmation.',
         ), prepare_remove_roles, AgentCapabilityEffect.COMMAND, ActionClass.CHANGE,
             contract=CapabilityContract(
                 entity_fields=(("role_id", "discord_role"), ("member_ids", "discord_member_set")),
@@ -51,6 +68,62 @@ def discord_role_tools() -> tuple[RegisteredAgentTool, ...]:
             ),
         ),
     )
+
+
+def selected_role(context, arguments):
+    """Resolve an exact guild-owned identifier; never infer a role from request prose."""
+    if arguments.get('role_id'):
+        role = context.guild.get_role(arguments['role_id'])
+        roles = [role] if role is not None else []
+    else:
+        roles = [role for role in context.guild.roles
+                 if role.name.casefold() == str(arguments.get('role_name', '')).casefold()]
+    if len(roles) != 1 or arguments.get('role_name') and roles[0].name.casefold() != arguments['role_name'].casefold():
+        raise DiscordActionRefused('Choose one exact guild role name or ID.')
+    return roles[0]
+
+
+def role_change_access(context):
+    """Expose live requester authority before the model chooses an action."""
+    current = context.guild.get_member(context.member.id)
+    return {'requester_allowed': bool(current and getattr(
+                getattr(current, 'guild_permissions', None), 'manage_roles', False)),
+            'required_permission': 'Manage Roles',
+            'operator_roles': [{'role_id': role.id, 'name': role.name}
+                for role in getattr(context.guild, 'roles', ())
+                if getattr(getattr(role, 'permissions', None), 'manage_roles', False)
+                or getattr(getattr(role, 'permissions', None), 'administrator', False)]}
+
+
+async def read_role_change_preview(context, arguments):
+    """Read-only role arithmetic with the same eligibility checks as preparation."""
+    await require_evidence_access(context)
+    try:
+        role = selected_role(context, arguments)
+    except DiscordActionRefused as error:
+        return {'error': str(error), 'cause': 'needs_input'}
+    owners = await managed_role_commands(context)
+    rows = []
+    for identifier in arguments['member_ids']:
+        member = await resolve_member(context.guild, identifier)
+        current = sorted(item.id for item in member.roles)
+        change = (role.id not in current) == (arguments['operation'] == 'add')
+        refusal = None
+        try:
+            check_raw_role(role, context.guild, context.guild.me, owners, requester=context.member)
+            check_member(member, context.guild.me, requester=context.member, guild=context.guild)
+            if change:
+                check_member_role_ownership(context, role, member)
+        except DiscordActionRefused as error:
+            refusal = str(error)
+        rows.append({'member_id': identifier, 'member_name': member.display_name, 'current_role_ids': current,
+            'add_role_ids': [role.id] if change and arguments['operation'] == 'add' else [],
+            'remove_role_ids': [role.id] if change and arguments['operation'] == 'remove' else [],
+            'allowed': refusal is None, 'refusal': refusal})
+    await require_evidence_access(context)
+    return {'role_id': role.id, 'role_name': role.name, 'members': rows, 'preview_only': True,
+            'role_change_access': role_change_access(context),
+            'status': 'eligibility_checked', 'change_attempted': False, 'confirmation_prepared': False}
 
 
 async def prepare_add_roles(context: AgentRequestContext,
@@ -67,25 +140,32 @@ async def _prepare_roles(context: AgentRequestContext, arguments: Mapping[str, A
                          *, add: bool) -> Mapping[str, Any]:
     await require_evidence_access(context)
     try:
-        role = context.guild.get_role(arguments["role_id"])
+        role = selected_role(context, arguments)
         owners = await managed_role_commands(context)
         check_raw_role(role, context.guild, context.guild.me, owners, requester=context.member)
         selected = []
+        members = []
         for member_id in arguments["member_ids"]:
             member = await resolve_member(context.guild, member_id)
             check_member(member, context.guild.me, requester=context.member, guild=context.guild)
+            members.append({"member_id": member.id, "display_name": member.display_name,
+                            "has_role": role in member.roles})
             if (role in member.roles) != add:
                 check_member_role_ownership(context, role, member)
                 selected.append(member)
     except DiscordActionRefused as error:
-        return {"error": str(error)}
+        return {"error": str(error), 'cause': 'ineligible',
+                'role_change_access': role_change_access(context),
+                'change_attempted': False, 'confirmation_prepared': False}
     await require_evidence_access(context)
     for member in selected:
         context.state.proposed_changes.append(_role_action(
             context, role.id, member.id, add=add,
             before=not add, label_role=role.mention, label_member=member.mention,
         ))
-    return {"status": "confirmation_required" if selected else "no_change"}
+    return {"status": "confirmation_required" if selected else "no_change",
+            "role_id": role.id, "role_name": role.name, "members": members,
+            "requested_has_role": add}
 
 
 def _role_action(

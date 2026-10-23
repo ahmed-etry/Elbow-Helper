@@ -25,7 +25,6 @@ async def _target(context: Any, values: Mapping[str, Any]) -> tuple[Any, Any]:
     workflow = context.bot.get_cog("RoleConnections")
     if workflow is None:
         raise ActionRefused("Role connections are unavailable")
-    context.state.required_access.add(ACCESS_LEAD)
     channel_id = values.get("channel") or context.source_message.channel.id
     channel = await resolve_channel(context, channel_id)
     if not isinstance(channel, discord.TextChannel):
