@@ -21,6 +21,8 @@ MAX_HISTORY_SEASONS = 12
 
 
 class CwlHistorySource(Protocol):
+    def attendance(self, **selection) -> dict[str, Any]: ...
+
     def scoring_wars(
         self, clan_code: str, war_ids: list[str],
     ) -> list[dict[str, Any]]: ...
@@ -245,6 +247,16 @@ class CwlQueries:
         self._bonus_analysis = bonus_analysis
         self._bonus_config = bonus_config
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+
+    def attendance(self, **selection):
+        """Read stored regular/CWL participation, including incomplete seasons."""
+        return self._history.attendance(**selection)
+
+    def latest_season(self, *, clan_code: str) -> str | None:
+        """Latest stored season with completed wars for this clan, not one war."""
+        if clan_code not in CWL_CLAN_NAMES:
+            raise ValueError("Invalid CWL clan code")
+        return max(self._history.bonus_seasons([clan_code]), default=None)
 
     def performance(
         self, *, history_limit: int = 3, season: str | None = None,
