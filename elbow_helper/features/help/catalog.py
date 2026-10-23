@@ -483,13 +483,17 @@ HELP_ENTRIES: tuple[HelpEntry, ...] = (
     ),
     HelpEntry(
         path="/roster post",
-        summary="Post a roster in this channel.",
+        summary="Post and manage roster signups in this channel.",
         details=(
             "Posts the roster with Signup, Opt-out, refresh, and a gear menu. Every post of the "
             "same roster stays in sync. The gear menu handles account changes, signup controls, "
-            "Google Sheets exports, and the Discord layout. Larger rosters add page controls. The "
+            "Google Sheets exports, and the Discord layout. Members can opt out themselves. "
+            "Larger rosters add page controls. The "
             "message shows the signup role, account limit, Town Hall minimum when set, and signup "
-            "timing while signup controls are shown."
+            "timing while signup controls are shown. To remove another member's war or CWL "
+            "signup accounts, open the gear menu on the posted roster, choose Remove accounts, "
+            "select the accounts (optionally filter by Discord member), then press Remove. "
+            "Co-Leader, Cross-Leader, or Co Applicant can use this management control."
         ),
         category=CAT_ROSTERS,
         visible_to=LEAD_PLUS,

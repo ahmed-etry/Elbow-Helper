@@ -36,7 +36,7 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
         channel = SimpleNamespace(guild=guild, permissions_for=lambda actor: SimpleNamespace(
             view_channel=True, send_messages=True))
         guild.get_channel_or_thread = lambda channel_id: channel
-        context = SimpleNamespace(
+        context = SimpleNamespace(private_pass=True,
             bot=SimpleNamespace(get_cog=lambda name: workflow),
             guild=guild, member=object(), state=AgentTurnState(),
         )
@@ -81,7 +81,7 @@ class RosterManagementActionTests(unittest.IsolatedAsyncioTestCase):
         channel = SimpleNamespace(guild=guild, permissions_for=lambda actor: SimpleNamespace(
             view_channel=True, send_messages=True))
         guild.get_channel_or_thread = lambda channel_id: channel
-        context = SimpleNamespace(
+        context = SimpleNamespace(private_pass=True,
             bot=SimpleNamespace(get_cog=lambda name: workflow),
             guild=guild, member=object(), state=AgentTurnState(),
         )

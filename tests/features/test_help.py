@@ -184,7 +184,7 @@ class HelpCatalogTests(unittest.TestCase):
         self.assertIn("enabled:false", HELP_INDEX["/roster schedule"].examples[2])
         self.assertIn("before posting", HELP_INDEX["/roster schedule"].notes[2])
         self.assertIn("wherever the roster is posted", HELP_INDEX["/roster schedule"].notes[2])
-        self.assertEqual(HELP_INDEX["/roster post"].summary, "Post a roster in this channel.")
+        self.assertEqual(HELP_INDEX["/roster post"].summary, "Post and manage roster signups in this channel.")
         self.assertIn("same roster stays in sync", HELP_INDEX["/roster post"].details)
         self.assertIn("changed while cloning", HELP_INDEX["/roster clone"].details)
         self.assertIn("min_townhall:16", HELP_INDEX["/roster clone"].examples[1])

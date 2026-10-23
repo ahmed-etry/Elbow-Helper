@@ -14,6 +14,7 @@ from .registry import (
     CommandAdapter, CommandCapability, PreparedCommandChange,
     build_command_capabilities,
 )
+from ..engine.capability_contract import CapabilityContract
 
 
 def _missing_value(value: Any) -> bool:
@@ -110,10 +111,19 @@ def build_command_tools(
             outcome = _with_option_data(outcome, selected, values)
             outcome = _record_outcome(context, outcome, selected.adapter.path)
             return {"command": selected.adapter.path, "status": outcome.status,
-                    "visibility": outcome.visibility}
+                    "visibility": outcome.visibility,
+                    **({"cause": outcome.cause} if outcome.cause else {}),
+                    **({"missing_fields": list(outcome.missing)} if outcome.missing else {})}
+        member_fields = {
+            field: kind for field, kind in capability.adapter.entity_options
+            if kind in ("discord_member", "discord_member_set")
+        }
+        member_fields.update({option.name: "discord_member" for option in capability.option_info
+                              if option.type_name in ("member", "user")})
         tools[name] = RegisteredAgentTool(
             capability.definition, handle, AgentCapabilityEffect.COMMAND,
             capability.adapter.classification, returns="command,status,visibility?",
+            contract=CapabilityContract(entity_fields=tuple(member_fields.items())) if member_fields else None,
         )
     return tools, capabilities
 

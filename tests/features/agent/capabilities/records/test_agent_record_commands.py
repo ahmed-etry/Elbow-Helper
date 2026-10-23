@@ -76,7 +76,7 @@ class RecordCommandPatternTests(unittest.IsolatedAsyncioTestCase):
             get_member=lambda member_id: self.asker if member_id == self.asker.id else self.member,
             fetch_member=AsyncMock(return_value=self.member),
         )
-        self.context = SimpleNamespace(
+        self.context = SimpleNamespace(private_pass=True,
             bot=SimpleNamespace(get_cog=lambda _: workflow), guild=guild,
             member=self.asker, state=AgentTurnState(),
         )
