@@ -252,6 +252,19 @@ class DiscordMessageSearchTests(unittest.IsolatedAsyncioTestCase):
             [("limit", 2), ("before", "100")],
         )
 
+    async def test_history_without_a_start_date_accepts_zero_lower_bound(self):
+        http = AsyncMock()
+        http.request.return_value = [self.history_message(90)]
+        page = await DiscordMessageSearch(http).history_page(
+            channel_id=34, before_id=100, after_id=0, limit=100)
+        self.assertEqual([message.message_id for message in page.messages], [90])
+        self.assertEqual(page.after_id, 0)
+        self.assertTrue(page.reached_window_start)
+        for lower in (-1, False, None):
+            with self.subTest(lower=lower), self.assertRaises(ValueError):
+                await DiscordMessageSearch(http).history_page(
+                    channel_id=34, before_id=100, after_id=lower, limit=100)
+
     async def test_channel_history_stops_at_lower_bound_and_short_end(self):
         for payload in (
             [self.history_message(60), self.history_message(50)],

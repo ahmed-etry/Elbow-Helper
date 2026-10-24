@@ -231,8 +231,8 @@ class DiscordMessageSearch:
 
         if any(
             type(value) is not int or value <= 0
-            for value in (channel_id, before_id, after_id)
-        ) or after_id >= before_id:
+            for value in (channel_id, before_id)
+        ) or type(after_id) is not int or after_id < 0 or after_id >= before_id:
             raise ValueError("Invalid Discord history scope")
         if type(limit) is not int or not 1 <= limit <= 100:
             raise ValueError("Invalid Discord history page size")
