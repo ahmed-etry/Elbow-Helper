@@ -13,7 +13,7 @@ class AccessRefusalTests(unittest.IsolatedAsyncioTestCase):
         context = SimpleNamespace(guild=object(), member=SimpleNamespace(id=1))
         with (
             patch("elbow_helper.features.agent.access.require_evidence_access", AsyncMock()),
-            patch("elbow_helper.features.agent.access.has_access_requirements", return_value=False),
+            patch("elbow_helper.features.agent.access.has_reader_access_requirements", return_value=False),
         ):
             result = await lookup_level("lead")(handler)(context, {})
         self.assertEqual(result, {"error": "This needs lead access.", "required_access": ["lead"]})
