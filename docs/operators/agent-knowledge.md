@@ -25,7 +25,7 @@ The settings apply to the whole file:
 |---|---|---|
 | `visibility` | `public`, `lead`, `lead_plus`, `core`, `recruiter`, `cwl_helper`, `examiner` | `public` |
 | `status` | `approved`, `draft`, `retired` | `approved` |
-| `always_loaded` | `true` or `false`, without quotes | `false` |
+| `always_loaded` | `true` or `false`, without quotes; accepted for existing files, without preloading bodies into requests | `false` |
 
 Each visibility requires a role in the listed
 [access group](../reference/commands-and-permissions.md#access-groups):
@@ -55,9 +55,12 @@ Files without settings are approved and public as soon as they load. Use
 `status = "draft"` while editing new material. Only `+++` settings control
 access and approval; YAML `---` settings and review dates have no effect.
 
-Use distinct, descriptive headings. `#`, `##`, and `###` headings outside
-code blocks start new sections; deeper headings stay within a section. Text
-before the first heading uses the filename as its title, without `.md`.
+Use distinct, descriptive headings. Headings from `#` through `######` outside
+code blocks start sections titled with their full path, such as
+`Rank rules › Co-Leader › Requirements`. Headings without body text become
+part of their children's paths. Text before the first heading uses the filename
+as its title, without `.md`. Long sections split at paragraph boundaries;
+an individual paragraph or code block stays whole.
 
 ## Add or change material
 
@@ -65,9 +68,9 @@ before the first heading uses the filename as its title, without `.md`.
    sections that different members can read.
 2. Check every section against the community's approved rules and workflows,
    then set `status = "approved"`.
-3. Set `always_loaded = true` for short references needed across requests.
-   These load with research requests only where the channel may read them.
-   All approved sections remain searchable.
+3. Research requests start with the visible heading index. The agent opens only
+   sections needed for the question, including references marked `always_loaded`.
+   All approved sections remain searchable within their visibility.
 4. To retire a file, set `status = "retired"` or remove it. To retire one
    section, remove it from the approved file or move it to a retired file.
 5. After reloading, ask the agent about the changed topic. For restricted
@@ -93,5 +96,5 @@ lists remain searchable.
   Correct its TOML, field values, encoding, size, or file permissions, then
   save it again. Valid files still load; the rejected file is left out.
 - If there is no load error, check the file's location, status, visibility,
-  and headings. Exact-title searches are case-sensitive. Distinct headings
-  help the agent open the intended section.
+  and headings. Exact-title searches ignore case and accept the full heading
+  path. A plain heading also works when it identifies one accessible path.

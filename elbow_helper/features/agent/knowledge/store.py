@@ -17,6 +17,8 @@ LOGGER = logging.getLogger(__name__)
 VISIBILITIES = frozenset({"public", "lead", "lead_plus", "core", "recruiter", "cwl_helper", "examiner"})
 STATUSES = frozenset({"approved", "draft", "retired"})
 TOPIC_INDEX_TOKEN_LIMIT = 14_000
+SECTION_TOKEN_TARGET = 1_500
+HEADING_SEPARATOR = " › "
 
 
 def _words(text):
@@ -58,6 +60,9 @@ class KnowledgeSection:
     visibility: str = "public"
     file_name: str = ""
     always_loaded: bool = False
+    part: int = 1
+    parts: int = 1
+    applicability: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +89,36 @@ class KnowledgeCatalog:
     store_status: str = "available"
     _prompts: dict[frozenset[str], KnowledgePrompt] = field(default_factory=dict, repr=False,
                                                          compare=False)
+
+    def matching_titles(self, sections, titles):
+        """Open full paths, or a leaf title identifying one visible section path."""
+        selected = []
+        for title in dict.fromkeys(value.casefold() for value in titles):
+            matches = tuple(section for section in sections if section.title.casefold() == title)
+            if not matches:
+                matches = tuple(section for section in sections
+                                if section.title.rsplit(HEADING_SEPARATOR, 1)[-1].casefold() == title)
+                if len({(section.file_name, section.title.casefold()) for section in matches}) != 1:
+                    continue
+            selected.extend(section for section in matches if section not in selected)
+        return tuple(selected)
+
+    def select(self, sections, *, titles=(), query=""):
+        """Open headings exactly; indexed file names narrow a lexical search.
+
+        A filename is a container in the topic index, not a section title. Never
+        let it silently discard the accompanying query or widen visibility.
+        """
+        sections = tuple(sections)
+        if not titles:
+            return self.search(sections, query=query, limit=None), (
+                "lexical_ranked" if query.strip() else "browse")
+        exact = self.matching_titles(sections, titles)
+        files = {value.casefold() for value in titles}
+        contained = tuple(section for section in sections if section.file_name.casefold() in files)
+        ranked = self.search(contained, query=query, limit=None) if contained else ()
+        return tuple(dict.fromkeys((*exact, *ranked))), (
+            "lexical_ranked" if contained and query.strip() else "exact_titles")
 
     def search(self, sections, *, query="", limit=8):
         phrase = _words(query)
@@ -141,16 +176,9 @@ class KnowledgeCatalog:
             if section.visibility != "public":
                 access.add(section.visibility)
         core = "\n\n".join(included)
-        # Titles and file names can themselves disclose restricted information.
-        # Keep discovery public; authorized searches can still open restricted
-        # sections and retain their access requirements with the returned bodies.
-        if levels:
-            public = self.prompt()
-            index, title_tokens, fallback, index_omitted = (
-                public.index, public.index_title_tokens, public.index_fallback, public.index_omitted,
-            )
-        else:
-            index, title_tokens, fallback, index_omitted = _topic_index(self.visible_sections())
+        # Titles and file counts are evidence under the same destination boundary.
+        access.update(section.visibility for section in visible if section.visibility != "public")
+        index, title_tokens, fallback, index_omitted = _topic_index(visible)
         return KnowledgePrompt(core, frozenset(access), estimate_tokens(core), tuple(omitted),
                                index, estimate_tokens(index), title_tokens, fallback, index_omitted)
 
@@ -191,16 +219,21 @@ class KnowledgeCatalog:
 def _topic_index(sections):
     files = {}
     for section in sections:
-        files.setdefault(section.file_name, []).append(section.title)
+        titles = files.setdefault(section.file_name, {})
+        titles[section.title] = titles.get(section.title, 0) + 1
     if not files:
         return "", 0, False, ()
     heading = "Knowledge topics (search_approved_knowledge for details):"
-    text = "\n".join([heading, *(f"{name}:\n" + "\n".join(f"- {title}" for title in titles)
-                                  for name, titles in files.items())])
+    lines = [heading]
+    for name, titles in files.items():
+        lines.append(f"{name}:")
+        lines.extend(f"- {title}" + (f" ({parts} parts)" if parts > 1 else "")
+                     for title, parts in titles.items())
+    text = "\n".join(lines)
     title_tokens = estimate_tokens(text)
     if title_tokens <= TOPIC_INDEX_TOKEN_LIMIT:
         return text, title_tokens, False, ()
-    counts = [f"{name}: {len(titles)} sections" for name, titles in files.items()]
+    counts = [f"{name}: {sum(titles.values())} sections" for name, titles in files.items()]
     text = "\n".join([heading, *counts])
     if estimate_tokens(text) <= TOPIC_INDEX_TOKEN_LIMIT:
         return text, title_tokens, True, ()
@@ -247,7 +280,7 @@ class KnowledgeStore:
             try:
                 if path.is_symlink() or path.stat().st_size > 1024 * 1024:
                     raise ValueError("Knowledge file exceeds its size bound or is a symlink")
-                parsed = _parse(path)
+                parsed = tuple(_parse(path))
                 sections.extend(parsed)
                 counts[path.name] = len(parsed)
             except (OSError, UnicodeError, ValueError):
@@ -280,21 +313,71 @@ def _parse(path):
     if status != "approved":
         return ()
     sections = []
-    title = path.stem
+    headings = []
     body = []
-    fenced = False
+    fence = None
+
+    def flush():
+        content = "\n".join(body).strip()
+        if not content:
+            return
+        title = HEADING_SEPARATOR.join(heading for _, heading in headings) or path.stem
+        first_line = content.splitlines()[0]
+        applicability = first_line.removeprefix('Applies to:').strip() if first_line.startswith('Applies to:') else ''
+        chunks = _section_parts(title, content)
+        sections.extend(KnowledgeSection(title, chunk, visibility, path.name, always_loaded,
+                                         index, len(chunks), applicability)
+                        for index, chunk in enumerate(chunks, 1))
+
     for line in text.splitlines():
-        if line.lstrip().startswith(("```", "~~~")):
-            fenced = not fenced
-        heading = re.match(r"^#{1,3}\s+(.+?)\s*#*\s*$", line) if not fenced else None
+        marker = re.match(r"^\s{0,3}(`{3,}|~{3,})", line)
+        if marker:
+            if fence is None:
+                fence = marker[1]
+            elif marker[1][0] == fence[0] and len(marker[1]) >= len(fence):
+                fence = None
+            body.append(line)
+            continue
+        heading = re.match(r"^(#{1,6})\s+(.+?)\s*#*\s*$", line) if fence is None else None
         if heading:
-            if body or title != path.stem:
-                sections.append(KnowledgeSection(title, "\n".join(body).strip(), visibility,
-                                                 path.name, always_loaded))
-            title, body = heading[1], []
+            flush()
+            level = len(heading[1])
+            while headings and headings[-1][0] >= level:
+                headings.pop()
+            headings.append((level, heading[2]))
+            body = []
         else:
             body.append(line)
-    if body or title != path.stem:
-        sections.append(KnowledgeSection(title, "\n".join(body).strip(), visibility,
-                                         path.name, always_loaded))
-    return tuple(section for section in sections if section.body or section.title != path.stem)
+    flush()
+    return tuple(sections)
+
+
+def _section_parts(title, body):
+    """Keep paragraphs and fenced blocks whole, allowing one oversized block."""
+    paragraphs, lines, fence = [], [], None
+    for line in body.splitlines():
+        marker = re.match(r"^\s{0,3}(`{3,}|~{3,})", line)
+        if marker:
+            if fence is None:
+                fence = marker[1]
+            elif marker[1][0] == fence[0] and len(marker[1]) >= len(fence):
+                fence = None
+        if not line.strip() and fence is None:
+            if lines:
+                paragraphs.append("\n".join(lines))
+                lines = []
+        else:
+            lines.append(line)
+    if lines:
+        paragraphs.append("\n".join(lines))
+    chunks, current = [], ""
+    for paragraph in paragraphs:
+        combined = current + "\n\n" + paragraph if current else paragraph
+        if current and estimate_tokens(title + "\n" + combined) > SECTION_TOKEN_TARGET:
+            chunks.append(current)
+            current = paragraph
+        else:
+            current = combined
+    if current:
+        chunks.append(current)
+    return tuple(chunks)
