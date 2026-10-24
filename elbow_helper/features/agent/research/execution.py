@@ -75,7 +75,10 @@ async def advance_discord_research_job(
             page_messages = page.get("matches")
         else:
             if claimed.query:
-                page_arguments["text_filter"] = claimed.query
+                # A legacy filtered job cannot become a misleading complete
+                # transcript after resuming beyond messages it omitted.
+                await _release_job(repository, claimed, lease_owner, "legacy_history_filter")
+                return {"error": "Start a new unfiltered history job to read the complete discussion."}
             page = await read_discord_channel_history(context, page_arguments)
             page_messages = page.get("messages")
         if "error" in page:

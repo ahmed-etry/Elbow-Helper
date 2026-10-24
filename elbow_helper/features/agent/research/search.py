@@ -23,7 +23,7 @@ from .history import (
 
 async def search_discord_messages(
     context: AgentRequestContext,
-    arguments: Mapping[str, Any],
+    arguments: Mapping[str, Any], *, complete_content: bool = False,
 ) -> Mapping[str, Any]:
     scope = await _search_scope(context, arguments)
     if "error" in scope:
@@ -34,7 +34,8 @@ async def search_discord_messages(
     if isinstance(found, dict):
         return found
     page, raw_results = found
-    matches = await _search_matches(context, arguments, scope, raw_results)
+    matches = await _search_matches(context, arguments, scope, raw_results,
+                                    **({"complete_content": True} if complete_content else {}))
     result = {
         "query": scope["query"], "matches": matches,
         "search_is_exhaustive": False,
@@ -68,7 +69,7 @@ async def _search_scope(context, arguments):
         for channel_id in explicit_ids:
             channel = await accessible_message_channel(context, channel_id)
             if channel is None:
-                return {"error": "The asker cannot access every requested conversation."}
+                return {"error": "Every requested conversation must be available here."}
             channels.append(channel)
         channel_ids = explicit_ids
     else:
@@ -77,10 +78,10 @@ async def _search_scope(context, arguments):
                 "A continuation cursor requires one explicit channel so "
                 "the source scope stays stable."
             )}
-        channel_ids = searchable_channel_ids(context)
+        channel_ids = await searchable_channel_ids(context)
     paged_channel = channel_ids[0] if len(explicit_ids) == 1 else None
     if paged_channel is not None and channels[0] is None:
-        return {"error": "The asker cannot access that conversation."}
+        return {"error": "That conversation is not available here."}
     try:
         after = search_date(arguments.get("after"))
         before = search_date(arguments.get("before"))
@@ -131,7 +132,7 @@ async def _search_raw(context, arguments, scope):
             **({"mentions": arguments["mentions"]} if arguments.get("mentions") else {}),
         )
         if await accessible_message_channel(context, paged) is None:
-            return {"error": "The asker cannot access that conversation."}
+            return {"error": "That conversation is not available here."}
         if any(
             result.channel_id != paged
             or (arguments.get("author_id") is not None
@@ -152,14 +153,14 @@ async def _search_raw(context, arguments, scope):
     if scope["explicit_ids"]:
         for channel_id in scope["explicit_ids"]:
             if await accessible_message_channel(context, channel_id) is None:
-                return {"error": "The asker cannot access every requested conversation."}
+                return {"error": "Every requested conversation must be available here."}
         if any(result.channel_id not in scope["explicit_ids"] for result in raw):
             return {"error": "Discord returned results outside the requested search scope."}
         context.state.source_channels.update(scope["explicit_ids"])
     return None, raw
 
 
-async def _search_matches(context, arguments, scope, raw_results):
+async def _search_matches(context, arguments, scope, raw_results, *, complete_content=False):
     matches: list[dict[str, Any]] = []
     for result in raw_results:
         if result.channel_id not in scope["channel_ids"]:
@@ -179,9 +180,11 @@ async def _search_matches(context, arguments, scope, raw_results):
             "channel": getattr(channel, "name", str(result.channel_id)),
             "author_id": result.author_id, "author": result.author_name,
             "timestamp": result.timestamp,
-            "content": bounded_text(search_message_text(result, context.guild), 1_600),
+            "content": result.content if complete_content else bounded_text(search_message_text(result, context.guild), 1_600),
             "source": jump_url(context.guild.id, result.channel_id, result.message_id),
         }
+        if complete_content:
+            entry.update(embeds=list(result.embeds), attachment_names=list(result.attachment_names), content_complete=True)
         if result.reply_to_message_id is not None:
             entry["reply_to_message_id"] = result.reply_to_message_id
         matches.append(entry)

@@ -18,7 +18,7 @@ from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgent
 from .execution import advance_discord_research_job
 from .report import DiscordResearchReport
 from .history import (
-    HISTORY_PAGE_LIMIT, SEARCH_RESULT_LIMIT, history_text_filter,
+    HISTORY_PAGE_LIMIT, SEARCH_RESULT_LIMIT,
 )
 from .batches import research_batch_tools
 
@@ -101,7 +101,6 @@ def research_tools() -> tuple[RegisteredAgentTool, ...]:
                 "after": {"type": "string", "maxLength": 40},
                 "before": {"type": "string", "maxLength": 40},
                 "author_id": {"type": "integer", "minimum": 1},
-                "text_filter": {"type": "string", "minLength": 1, "maxLength": 1024},
                 "page_size": {
                     "type": "integer", "minimum": 1,
                     "maximum": HISTORY_PAGE_LIMIT,
@@ -163,7 +162,7 @@ def research_tools() -> tuple[RegisteredAgentTool, ...]:
                 name=name,
                 description=description,
                 usage_note=(
-                    "For bot logs, text_filter matches full message text case-insensitively."
+                    "Read whole history chunks and select relevant messages by meaning."
                     if name == "start_discord_history_job" else ""
                 ),
                 parameters={
@@ -195,7 +194,7 @@ async def start_discord_research_job(
         return {"error": "A valid channel ID is required."}
     source = await accessible_message_channel(context, channel_id)
     if source is None:
-        return {"error": "The asker cannot access that conversation."}
+        return {"error": "That conversation is not available here."}
     query = str(arguments.get("query") or "").strip()
     author_id = arguments.get("author_id")
     if author_id is not None and (type(author_id) is not int or author_id <= 0):
@@ -258,17 +257,15 @@ async def start_discord_history_job(
         return {"error": "Durable research jobs are not available."}
     channel_id = arguments.get("channel_id")
     author_id = arguments.get("author_id")
-    try:
-        text_filter = history_text_filter(arguments.get("text_filter"))
-    except ValueError as error:
-        return {"error": str(error)}
+    if "text_filter" in arguments:
+        return {"error": "Read conversation chunks without a text filter; select relevant messages by meaning."}
     if type(channel_id) is not int or channel_id <= 0:
         return {"error": "A valid channel ID is required."}
     if author_id is not None and (type(author_id) is not int or author_id <= 0):
         return {"error": "A valid author ID is required."}
     source = await accessible_message_channel(context, channel_id)
     if source is None:
-        return {"error": "The asker cannot access that conversation."}
+        return {"error": "That conversation is not available here."}
     try:
         after = _search_date(arguments.get("after"))
         before = _search_date(arguments.get("before")) or _message_time(context)
@@ -290,8 +287,7 @@ async def start_discord_history_job(
         conversation_root_id=context.conversation_root_id,
         requester_id=context.member.id,
         source_channel_id=channel_id,
-        # The existing query column stores the history filter for history jobs.
-        query=text_filter,
+        query="",
         author_id=author_id,
         after=after.isoformat(),
         before=before.isoformat(),

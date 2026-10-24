@@ -260,7 +260,7 @@ def validate_research_message(value: Any) -> dict[str, Any]:
         "message_id", "channel_id", "channel", "author_id", "author",
         "timestamp", "content", "source",
     }
-    if not required <= value.keys() or not value.keys() <= required | {"reply_to_message_id"}:
+    if not required <= value.keys() or not value.keys() <= required | {"reply_to_message_id", "content_complete"}:
         raise ValueError("Invalid persisted research message")
     for key in ("message_id", "channel_id", "author_id"):
         positive_int(value[key])
@@ -270,7 +270,9 @@ def validate_research_message(value: Any) -> dict[str, Any]:
         "message_id", "channel_id", "author_id",
     }):
         raise ValueError("Invalid persisted research message")
-    if len(value["content"]) > 1_600:
+    if "content_complete" in value and type(value["content_complete"]) is not bool:
+        raise ValueError("Invalid persisted research content status")
+    if len(value["content"]) > (32_000 if value.get("content_complete") else 1_600):
         raise ValueError("Persisted research message exceeds its bound")
     for key, limit in (
         ("channel", 100), ("author", 100), ("timestamp", 64), ("source", 200),
@@ -354,11 +356,13 @@ def _validate_history_coverage(value: dict[str, Any]) -> dict[str, Any]:
     }
     optional = {
         "retained_storage_limit_reached", "retained_message_limit_reached",
-        "repeated_cursor_detected",
+        "repeated_cursor_detected", "stopped_at_message_budget",
     }
     counts = {"scanned_count", "matched_count"}
-    if not required <= value.keys() or not value.keys() <= required | optional | counts | {"order"}:
+    if not required <= value.keys() or not value.keys() <= required | optional | counts | {"order", "pages_scanned"}:
         raise ValueError("Invalid research job history coverage")
+    if "pages_scanned" in value and (type(value["pages_scanned"]) is not int or not 1 <= value["pages_scanned"] <= 8):
+        raise ValueError("Invalid research job history batch count")
     if "order" in value and value["order"] != "newest_first":
         raise ValueError("Invalid research job history order")
     cursor = value["next_cursor"]

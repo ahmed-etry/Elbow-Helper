@@ -611,12 +611,12 @@ class _Channel:
         self.id = channel_id
         self.name = name
         self.type = discord.ChannelType.text
-        self.overwrites = {}
+        self.overwrites = {discord.Object(10): discord.PermissionOverwrite(view_channel=True)}
         self.denied = set()
         self.guild = None
 
     def permissions_for(self, actor):
-        allowed = actor.id not in self.denied
+        allowed = actor.id != 1 and actor.id not in self.denied
         return SimpleNamespace(
             view_channel=allowed, read_message_history=allowed,
         )
@@ -660,7 +660,7 @@ class ResearchJobToolTests(unittest.IsolatedAsyncioTestCase):
             search=AsyncMock(return_value=()),
             history_page=AsyncMock(),
         )
-        self.context = AgentRequestContext(
+        self.context = AgentRequestContext(private_pass=True,
             bot=SimpleNamespace(fetch_channel=AsyncMock(return_value=None)),
             guild=guild, member=self.member,
             source_message=SimpleNamespace(
@@ -839,7 +839,7 @@ class ResearchJobToolTests(unittest.IsolatedAsyncioTestCase):
         denied = await start_discord_research_batch(self.context, {
             "channel_ids": [100, 200], "kind": "search", "query": "decision",
         })
-        self.assertIn("cannot access every", denied["error"])
+        self.assertIn("not available here", denied["error"])
         with self.repository.connect() as connection:
             count = connection.execute(
                 "SELECT COUNT(*) FROM research_jobs",
@@ -976,19 +976,15 @@ class ResearchJobToolTests(unittest.IsolatedAsyncioTestCase):
             self.context, {"job_id": started["job_id"]},
         )
         self.channel.denied.add(self.member.id)
-        denied = await retain_discord_research_report(
-            self.context, {"job_id": started["job_id"]},
-        )
-        self.assertIn("no longer accessible", denied["error"])
+        with self.assertRaises(AgentAccessLost):
+            await retain_discord_research_report(self.context, {"job_id": started["job_id"]})
         self.assertEqual(self.context.state.reports, {})
 
     async def test_source_revocation_before_or_during_page_returns_no_content(self):
         started = await self.start()
         self.channel.denied.add(self.member.id)
-        denied = await continue_discord_research_job(
-            self.context, {"job_id": started["job_id"]},
-        )
-        self.assertIn("error", denied)
+        with self.assertRaises(AgentAccessLost):
+            await continue_discord_research_job(self.context, {"job_id": started["job_id"]})
         self.search.search_page.assert_not_awaited()
         self.channel.denied.clear()
 

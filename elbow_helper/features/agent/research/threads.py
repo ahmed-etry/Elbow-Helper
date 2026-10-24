@@ -76,7 +76,7 @@ async def find_discord_threads(
         return {"error": "Discord thread discovery is not available."}
     parent = await accessible_message_channel(context, parent_id)
     if parent is None:
-        return {"error": "The asker cannot access that conversation."}
+        return {"error": "That conversation is not available here."}
     archived_threads = getattr(parent, "archived_threads", None)
     if not callable(archived_threads):
         return {"error": "That Discord location cannot contain discoverable threads."}
@@ -101,7 +101,7 @@ async def find_discord_threads(
     if state == "active":
         threads = await context.thread_discovery.active_threads(context.guild)
         if not await can_access_message_channel(context, parent):
-            return {"error": "The asker cannot access that conversation."}
+            return {"error": "That conversation is not available here."}
         candidates = sorted(
             (
                 thread for thread in threads
@@ -126,7 +126,7 @@ async def find_discord_threads(
             limit=THREAD_ARCHIVE_SCAN_LIMIT,
         )
         if page.mode != mode or not await can_access_message_channel(context, parent):
-            return {"error": "The asker cannot access that conversation."}
+            return {"error": "That conversation is not available here."}
         accessible = await _matching_threads(context, page.threads, scope["query"])
         returned = accessible[:limit]
         complete = (

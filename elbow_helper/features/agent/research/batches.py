@@ -157,7 +157,7 @@ async def start_discord_research_batch(
     for channel_id in ordered_channel_ids:
         source = await accessible_message_channel(context, channel_id)
         if source is None:
-            return {"error": "The asker cannot access every research source."}
+            return {"error": "Some research sources are not available here."}
     definitions = tuple(ResearchJobDefinition(
         source_channel_id=channel_id,
         query=query,

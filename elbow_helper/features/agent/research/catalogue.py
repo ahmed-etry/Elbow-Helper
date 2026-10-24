@@ -64,9 +64,8 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                     "additionalProperties": False,
                 },
                 usage_note=(
-                    "Search misses embeds; filter history for bot logs. Omit query for author "
-                    "history; respect scope, continue cursors. ISO dates: after inclusive, "
-                    "before exclusive."
+                    "Search misses embeds. Read history chunks for discussions or bot logs. "
+                    "Omit query for author history. ISO dates: after inclusive, before exclusive."
                 ),
             ),
             search_discord_messages,
@@ -86,7 +85,7 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
             AgentToolDefinition(
                 name="read_discord_channel_history",
                 description=(
-                    "Read channel history from the required after date to an optional before date."
+                    "Read channel history chunks for semantic review; cursors retain the window."
                 ),
                 parameters={
                     "type": "object",
@@ -99,7 +98,7 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                             "type": "string", "maxLength": 40,
                         },
                         "author_id": {"type": "integer", "minimum": 1},
-                        "text_filter": {"type": "string", "minLength": 1, "maxLength": 1024},
+                        "pages": {"type": "integer", "minimum": 1, "maximum": 8, "default": 1},
                         "cursor": {
                             "type": "string", "maxLength": 64,
                         },
@@ -109,12 +108,12 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                             "default": HISTORY_PAGE_LIMIT,
                         },
                     },
-                    "required": ["channel_id", "after"],
+                    "required": ["channel_id"],
                     "additionalProperties": False,
                 },
                 usage_note=(
-                    "text_filter matches full text (content, embeds, attachment names), "
-                    "case-insensitively. For bot logs, continue cursors. Dates default to UTC."
+                    "Select relevance by meaning. Omit after for unknown start. pages batches scans. "
+                    "Continue channel_id+cursor for older context within budget."
                 ),
             ),
             read_discord_channel_history,
@@ -131,7 +130,7 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
             AgentToolDefinition(
                 name="read_message_context",
                 description=(
-                    "Read messages around a visible Discord message."
+                    "Read a Discord message's context and its explicit reply target."
                 ),
                 parameters={
                     "type": "object",

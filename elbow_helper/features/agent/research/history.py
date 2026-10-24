@@ -12,11 +12,10 @@ from types import SimpleNamespace
 import discord
 
 
-from ..access import accessible_message_channel
+from ..access import accessible_message_channel, can_access_message_channel
 from ..models import AgentRequestContext
 from ..text import message_text
 from ..capabilities.validation import bounded_int
-from ..capabilities.validation import bounded_text
 from ..capabilities.validation import positive_int
 
 
@@ -24,18 +23,8 @@ SEARCH_RESULT_LIMIT = 25
 CONTEXT_MESSAGE_LIMIT = 50
 HISTORY_PAGE_LIMIT = 25
 INTERACTIVE_HISTORY_PAGE_LIMIT = 100
-HISTORY_MESSAGE_CHARACTER_BUDGET = 44_000
-HISTORY_FILTER_ERROR = "Use a non-empty text filter of up to 1,024 characters."
-
-
-def history_text_filter(value: Any) -> str:
-    if value is None:
-        return ""
-    if not isinstance(value, str) or not value.strip() or len(value) > 1024:
-        raise ValueError(HISTORY_FILTER_ERROR)
-    return value.strip()
-
-
+HISTORY_MESSAGE_CHARACTER_BUDGET = 12_000
+COMPLETE_HISTORY_CHARACTER_BUDGET = 48_000
 def search_message_text(message, guild) -> str:
     return message_text(SimpleNamespace(
         content=message.content,
@@ -47,28 +36,71 @@ def search_message_text(message, guild) -> str:
 
 async def read_discord_channel_history(
     context: AgentRequestContext,
-    arguments: Mapping[str, Any],
+    arguments: Mapping[str, Any], *, complete_content: bool = False,
 ) -> Mapping[str, Any]:
+    # A cursor already issued in this request carries its original window and
+    # author selection. Omitting them avoids copying or changing the window.
+    if "text_filter" in arguments:
+        return {"error": "Read conversation chunks without a text filter; select relevant messages by meaning."}
+    token = arguments.get("cursor")
+    saved = context.state.history_cursors.get(token) if isinstance(token, str) else None
+    if saved is not None:
+        arguments = {**saved, **arguments}
+    pages = arguments.get("pages", 1)
+    if type(pages) is not int or not 1 <= pages <= 8:
+        return {"error": "Choose between one and eight history pages."}
+    result = None
+    remaining = COMPLETE_HISTORY_CHARACTER_BUDGET if complete_content else HISTORY_MESSAGE_CHARACTER_BUDGET
+    page_arguments = dict(arguments)
+    for _ in range(pages):
+        page = await _read_history_page(context, page_arguments, character_budget=remaining,
+                                        **({"complete_content": True} if complete_content else {}))
+        if "error" in page:
+            # Access failures must discard earlier pages, too.
+            return page
+        batch = page["messages"]
+        remaining -= sum(len(json.dumps(list(readable_history_row(row).values()) if complete_content else row,
+            ensure_ascii=False, separators=(",", ":"))) + 1 for row in batch)
+        if result is None:
+            result = page
+        else:
+            result["messages"].extend(batch)
+            previous = result["coverage"]
+            coverage = page["coverage"]
+            for field in ("scanned_messages_in_window", "returned_messages", "scanned_count", "matched_count"):
+                previous[field] += coverage[field]
+            for field in ("next_cursor", "reached_requested_start", "stopped_at_message_budget"):
+                previous[field] = coverage[field]
+        cursor = page["coverage"]["next_cursor"]
+        if (cursor is None or remaining <= 0 or page["coverage"]["scanned_count"] == 0
+                or page["coverage"]["stopped_at_message_budget"]):
+            break
+        page_arguments["cursor"] = cursor
+    cursor = result["coverage"]["next_cursor"]
+    if cursor is not None:
+        context.state.history_cursors[cursor] = {
+            key: value for key, value in arguments.items()
+            if key in ("channel_id", "after", "before", "author_id")
+        }
+    result["coverage"]["pages_scanned"] = _ + 1
+    return result
+
+
+async def _read_history_page(context, arguments, *, character_budget, complete_content=False):
     channel_id = positive_int(arguments.get("channel_id"))
     author_id = arguments.get("author_id")
-    try:
-        text_filter = history_text_filter(arguments.get("text_filter"))
-    except ValueError as error:
-        return {"error": str(error)}
     if channel_id is None or (
         author_id is not None and positive_int(author_id) is None
     ):
         return {"error": "Valid channel and author IDs are required."}
     channel = await accessible_message_channel(context, channel_id)
     if channel is None:
-        return {"error": "The asker cannot access that conversation."}
+        return {"error": "That conversation is not available here."}
     try:
         after = search_date(arguments.get("after"))
         before = search_date(arguments.get("before"))
-        if after is None:
-            raise ValueError("Missing history start")
         effective_before = before or _request_time(context)
-        if after >= effective_before:
+        if after is not None and after >= effective_before:
             raise ValueError("Invalid history period")
     except ValueError:
         return {
@@ -76,11 +108,11 @@ async def read_discord_channel_history(
                 "Use a valid ISO 8601 start before the requested history end."
             )
         }
-    after_id = discord.utils.time_snowflake(after) - 1
+    after_id = discord.utils.time_snowflake(after) - 1 if after is not None else 0
     requested_before_id = (
         discord.utils.time_snowflake(before) if before is not None else None
     )
-    if after_id <= 0:
+    if after_id < 0:
         return {"error": "The requested history start is outside Discord history."}
     base_scope = {
         "guild_id": context.guild.id,
@@ -89,8 +121,6 @@ async def read_discord_channel_history(
         "after_id": after_id,
         "requested_before_id": requested_before_id,
     }
-    if text_filter:
-        base_scope["text_filter"] = text_filter.casefold()
     try:
         page_before_id, cursor_scope = _historycursor_state(
             arguments.get("cursor"), base_scope,
@@ -112,7 +142,7 @@ async def read_discord_channel_history(
         after_id=after_id, limit=limit,
     )
     if await accessible_message_channel(context, channel_id) is None:
-        return {"error": "The asker cannot access that conversation."}
+        return {"error": "That conversation is not available here."}
     if (
         page.before_id != page_before_id
         or page.after_id != after_id
@@ -134,15 +164,13 @@ async def read_discord_channel_history(
     messages = []
     message_characters = 0
     scanned_messages = 0
+    stopped_at_message_budget = False
     next_before_id = page.next_before_id
     for message in page.messages:
         if author_id is not None and message.author_id != author_id:
             scanned_messages += 1
             continue
-        content = search_message_text(message, context.guild)
-        if text_filter and text_filter.casefold() not in content.casefold():
-            scanned_messages += 1
-            continue
+        content = message.content if complete_content else search_message_text(message, context.guild)
         entry = {
             "message_id": message.message_id,
             "channel_id": channel_id,
@@ -150,17 +178,30 @@ async def read_discord_channel_history(
             "author_id": message.author_id,
             "author": message.author_name,
             "timestamp": message.timestamp,
-            "content": bounded_text(content, 1_600),
+            "content": content,
+            "content_complete": True,
             "source": jump_url(context.guild.id, channel_id, message.message_id),
         }
+        if complete_content:
+            entry.update(embeds=readable_embeds(message.embeds),
+                         attachment_names=list(message.attachment_names),
+                         attachment_contents_read=False, content_complete=True,
+                         reply_to_message_id=message.reply_to_message_id)
         if message.reply_to_message_id is not None:
             entry["reply_to_message_id"] = message.reply_to_message_id
-        entry_characters = len(json.dumps(entry, ensure_ascii=False, separators=(",", ":"))) + 1
-        if messages and message_characters + entry_characters > HISTORY_MESSAGE_CHARACTER_BUDGET:
+        # Complete family chunks use a uniform record shape, encoded as columns
+        # and rows for the model. Budget that readable representation rather
+        # than repeating every JSON field name for every short chat message.
+        entry_characters = len(json.dumps(list(readable_history_row(entry).values()) if complete_content else entry,
+                                          ensure_ascii=False, separators=(",", ":"))) + 1
+        if (message_characters + entry_characters > character_budget
+                and (messages or character_budget < HISTORY_MESSAGE_CHARACTER_BUDGET)):
             # Discord pages are newest first. Resume immediately before the
             # last examined message, including filtered-out authors, so no
             # omitted matching message is skipped when a large page is cut.
-            next_before_id = page.messages[scanned_messages - 1].message_id
+            next_before_id = (page.messages[scanned_messages - 1].message_id
+                              if scanned_messages else page_before_id)
+            stopped_at_message_budget = True
             break
         messages.append(entry)
         message_characters += entry_characters
@@ -172,7 +213,7 @@ async def read_discord_channel_history(
         "messages": messages,
         "coverage": {
             "order": "newest_first",
-            "requested_after": after.isoformat(),
+            "requested_after": after.isoformat() if after is not None else None,
             "requested_before": before.isoformat() if before is not None else None,
             "window_after_message_id": after_id,
             "snapshot_before_message_id": cursor_scope["effective_before_id"],
@@ -181,6 +222,7 @@ async def read_discord_channel_history(
             "returned_messages": len(messages),
             "scanned_count": scanned_messages,
             "matched_count": len(messages),
+            "stopped_at_message_budget": stopped_at_message_budget,
             "next_cursor": (
                 _history_cursor(next_before_id, cursor_scope)
                 if next_before_id is not None else None
@@ -189,6 +231,28 @@ async def read_discord_channel_history(
             "covers_currently_available_messages_only": True,
         },
     }
+
+
+def readable_embeds(embeds):
+    """Keep all embed text, excluding binary placeholders and media transport metadata."""
+    rows = []
+    for embed in embeds:
+        row = {key: embed[key] for key in ("title", "description") if key in embed}
+        for key, field in (("author", "name"), ("footer", "text")):
+            if field in embed.get(key, {}):
+                row[key] = {field: embed[key][field]}
+        if embed.get("fields"):
+            row["fields"] = [{key: field[key] for key in ("name", "value") if key in field}
+                             for field in embed["fields"]]
+        if row:
+            rows.append(row)
+    return rows
+
+
+def readable_history_row(row):
+    """Channel and content-status metadata are shared by the whole chunk."""
+    return {key: value for key, value in row.items()
+            if key not in ("channel_id", "channel", "content_complete", "attachment_contents_read")}
 
 
 def cursor_state(
@@ -308,18 +372,19 @@ async def find_discord_channels(context: AgentRequestContext, arguments: Mapping
         context.state.source_channels.add(channel.id)
         return {"channels": [{"channel_id": channel.id, "name": channel.name}], "matched_count": 1, "truncated": False}
     channels = []
-    for channel_id in searchable_channel_ids(context, limit=None):
-        channel = context.guild.get_channel_or_thread(channel_id)
+    for channel in (*context.guild.channels, *context.guild.threads):
         name = str(getattr(channel, "name", ""))
-        if str(channel_id) == numeric or query.lstrip("#") in name.casefold():
-            channels.append({"channel_id": channel_id, "name": name})
+        if query.lstrip("#") in name.casefold() and await can_access_message_channel(
+            context, channel, relevant=bool(query),
+        ):
+            channels.append({"channel_id": channel.id, "name": name})
     context.state.source_channels.update(item["channel_id"] for item in channels[:20])
     return {"channels": channels[:20], "matched_count": len(channels), "truncated": len(channels) > 20}
 
 
 async def read_message_context(
     context: AgentRequestContext,
-    arguments: Mapping[str, Any],
+    arguments: Mapping[str, Any], *, complete_content: bool = False,
 ) -> Mapping[str, Any]:
     channel_id = positive_int(arguments.get("channel_id"))
     message_id = positive_int(arguments.get("message_id"))
@@ -327,7 +392,7 @@ async def read_message_context(
         return {"error": "Valid channel_id and message_id values are required."}
     channel = await accessible_message_channel(context, channel_id)
     if channel is None:
-        return {"error": "The asker cannot access that conversation."}
+        return {"error": "That conversation is not available here."}
     history = getattr(channel, "history", None)
     if not callable(history):
         return {"error": "That Discord location does not expose message history."}
@@ -362,68 +427,83 @@ async def read_message_context(
         messages = [message async for message in history(
             limit=limit, around=discord.Object(id=message_id), oldest_first=True,
         )]
+    anchor = next((message for message in messages if message.id == message_id), None)
+    reply_target = await _read_reply_target(
+        context.guild.id, channel, anchor, messages, after=after, before=before, complete_content=complete_content,
+    ) if anchor is not None else None
     if await accessible_message_channel(context, channel_id) is None:
-        return {"error": "The asker cannot access that conversation."}
+        return {"error": "That conversation is not available here."}
     context.state.source_channels.add(channel_id)
     return {
         "channel_id": channel_id,
         "channel": getattr(channel, "name", str(channel_id)),
         "requested_message_id": message_id,
+        "requested_message_found": anchor is not None,
+        "reply_target": reply_target,
         "messages": [
-            {**discord_message_evidence(context.guild.id, message),
+            {**discord_message_evidence(context.guild.id, message, complete_content=complete_content),
              "is_requested_message": message.id == message_id}
             for message in messages
         ],
     }
 
 
-def searchable_channel_ids(context: AgentRequestContext, *, limit: int | None = 500) -> tuple[int, ...]:
-    bot_member = context.guild.me
-    if bot_member is None:
-        return ()
-    channels = [*context.guild.channels, *context.guild.threads]
-    allowed: list[int] = []
-    for channel in channels:
-        if isinstance(
-            channel,
-            (discord.CategoryChannel, discord.StageChannel, discord.VoiceChannel),
-        ):
+async def _read_reply_target(guild_id, channel, anchor, messages, *, after, before, complete_content=False):
+    """Resolve one explicit same-channel reply, independently of nearby topics."""
+    target_id = discord_message_evidence(guild_id, anchor).get("reply_to_message_id")
+    if target_id is None:
+        return None
+    if after is not None and not (
+        discord.utils.time_snowflake(after) - 1 < target_id < discord.utils.time_snowflake(before)
+    ):
+        return {"message_id": target_id, "status": "outside_requested_period"}
+    target = next((message for message in messages if message.id == target_id), None)
+    if target is None:
+        fetch = getattr(channel, "fetch_message", None)
+        if callable(fetch):
+            try:
+                target = await fetch(target_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                target = None
+    if (target is None or target.id != target_id
+            or target.channel.id != channel.id):
+        return {"message_id": target_id, "status": "unavailable"}
+    return {**discord_message_evidence(guild_id, target, complete_content=complete_content), "status": "read"}
+
+
+async def searchable_channel_ids(context: AgentRequestContext, *, limit: int | None = 500) -> tuple[int, ...]:
+    allowed = []
+    for channel in (*context.guild.channels, *context.guild.threads):
+        if isinstance(channel, (discord.CategoryChannel, discord.StageChannel, discord.VoiceChannel)):
             continue
-        permissions_for = getattr(channel, "permissions_for", None)
-        if not callable(permissions_for):
-            continue
-        asker_permissions = permissions_for(context.member)
-        bot_permissions = permissions_for(bot_member)
-        if not (
-            asker_permissions.view_channel
-            and asker_permissions.read_message_history
-            and bot_permissions.view_channel
-            and bot_permissions.read_message_history
-        ):
-            continue
-        if isinstance(channel, discord.Thread) and channel.is_private():
-            get_member = getattr(channel, "get_member", None)
-            if not callable(get_member) or get_member(context.member.id) is None:
-                continue
-        allowed.append(channel.id)
-        if limit is not None and len(allowed) >= limit:
-            break
+        if await can_access_message_channel(context, channel, relevant=False):
+            allowed.append(channel.id)
+            if limit is not None and len(allowed) >= limit:
+                break
     return tuple(allowed)
 
 
-def discord_message_evidence(guild_id: int, message: discord.Message) -> dict[str, Any]:
-    content = message_text(message)
+def discord_message_evidence(guild_id: int, message: discord.Message, *, complete_content=False) -> dict[str, Any]:
+    content = getattr(message, "content", "") if complete_content else message_text(message)
     entry = {
         "message_id": message.id,
         "author_id": message.author.id,
         "author": message.author.display_name,
         "timestamp": message.created_at.isoformat(),
-        "content": bounded_text(content, 1_600),
+        "content": content,
+        "content_complete": True,
         "source": jump_url(guild_id, message.channel.id, message.id),
     }
+    if complete_content:
+        entry.update(content_complete=True, mentioned_member_ids=list(getattr(message, "raw_mentions", ())),
+                     embeds=readable_embeds(embed.to_dict() for embed in getattr(message, "embeds", ())),
+                     attachment_contents_read=False,
+                     attachments=[{"filename": item.filename, "url": getattr(item, "url", None),
+                                   "size": getattr(item, "size", None)}
+                                  for item in getattr(message, "attachments", ())])
     reference = getattr(message, "reference", None)
     target = getattr(reference, "message_id", None)
-    reference_channel = getattr(reference, "channel_id", message.channel.id)
+    reference_channel = getattr(reference, "channel_id", None) or message.channel.id
     reference_type = getattr(reference, "type", discord.MessageReferenceType.default)
     if (type(target) is int and target > 0 and reference_channel == message.channel.id
             and reference_type == discord.MessageReferenceType.default):

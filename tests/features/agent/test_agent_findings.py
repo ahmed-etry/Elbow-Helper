@@ -68,10 +68,13 @@ class FindingTests(unittest.IsolatedAsyncioTestCase):
             player = await self.read({"%23P0": {"attackWins": 0, "trophies": 0}},
                                      kind="player", tags=["#P0"], detail=detail)
             self.assertIn("war_participation", player["field_meanings"]["attackWins"]["does_not_establish"])
+            self.assertIn("cwl_participation", player["field_meanings"]["clan"]["does_not_establish"])
+            self.assertIn("cwl_eligibility", player["field_meanings"]["heroes"]["does_not_establish"])
             clan = await self.read({"%23P0": {"members": 48, "memberList": [{"clanRank": 48}]}},
                                    kind="clan", tags=["#P0"], detail=detail)
             self.assertIn("hard_cap", clan["field_meanings"]["members"]["does_not_establish"])
             self.assertIn("join_time", clan["field_meanings"]["memberList[].clanRank"]["does_not_establish"])
+            self.assertIn("eligibility_standard", clan["field_meanings"]["warLeague"]["does_not_establish"])
 
     async def test_aggregate_rejects_non_battle_requests(self):
         result = await self.read({}, kind="player", tags=["#P0"], aggregate="ranked_attacks")
