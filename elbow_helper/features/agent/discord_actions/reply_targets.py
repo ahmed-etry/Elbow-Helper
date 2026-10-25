@@ -8,13 +8,18 @@ from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool
 from .messages import _reply_target
 from .safety import DiscordActionRefused
+from ..research.member_provenance import member_target_issue
 
 
 async def set_reply_target(context, arguments):
     await require_evidence_access(context)
     channel = getattr(context, "delivery_channel", None) or context.source_message.channel
     try:
-        await _reply_target(context, channel, arguments["message_id"])
+        target = await _reply_target(context, channel, arguments["message_id"])
+        if arguments.get("ping_author") and (
+            issue := member_target_issue(context, f"<@{target.author.id}>")
+        ):
+            raise DiscordActionRefused(issue)
     except DiscordActionRefused as error:
         return {"error": str(error)}
     await require_evidence_access(context)
@@ -31,7 +36,10 @@ async def answer_reply_target(context, channel):
     if channel.id != current.id:
         return None
     await require_evidence_access(context)
-    return await _reply_target(context, channel, context.state.reply_to)
+    target = await _reply_target(context, channel, context.state.reply_to)
+    if context.state.ping_author and (issue := member_target_issue(context, f"<@{target.author.id}>")):
+        raise DiscordActionRefused(issue)
+    return target
 
 
 def reply_target_tools():

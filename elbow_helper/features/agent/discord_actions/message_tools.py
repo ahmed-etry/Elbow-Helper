@@ -26,7 +26,7 @@ def discord_message_tools() -> tuple[RegisteredAgentTool, ...]:
         RegisteredAgentTool(AgentToolDefinition(
             name="post_discord_message",
             description=(
-                "Post text and optional files in an accessible channel."
+                "Prepare a Discord post for confirmation; answers here use normal reply delivery."
             ),
             parameters={"type": "object", "properties": {
                 "channel_id": {"type": "integer", "minimum": 1},

@@ -25,7 +25,7 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
         messages = {}
         channel = SimpleNamespace(id=2, mention="#place")
         channel.guild = SimpleNamespace(id=3)
-        channel.permissions_for = lambda _: SimpleNamespace(view_channel=True, send_messages=True)
+        channel.permissions_for = lambda _: SimpleNamespace(view_channel=True, send_messages=True, read_message_history=True)
         async def send(text, **kwargs):
             message_id = 100 + len(messages)
             message = SimpleNamespace(id=message_id, content=text, author=bot_member,
@@ -44,7 +44,7 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
         channel.send = AsyncMock(side_effect=send)
         channel.fetch_message = AsyncMock(side_effect=fetch)
         guild = SimpleNamespace(
-            id=3, me=bot_member, get_channel_or_thread=lambda _: channel,
+            id=3, me=bot_member, chunked=True, get_channel_or_thread=lambda _: channel,
             get_role=lambda _: None,
         )
         self.context = SimpleNamespace(
@@ -60,6 +60,7 @@ class DiscordMessageActionTests(unittest.IsolatedAsyncioTestCase):
             ) for identifier in (7, 8)
         }
         targets[4] = self.context.member
+        guild.members = [*targets.values(), bot_member]
         self.context.guild.get_member = targets.get
         self.channel = channel
         self.messages = messages

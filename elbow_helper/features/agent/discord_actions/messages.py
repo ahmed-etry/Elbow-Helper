@@ -36,6 +36,7 @@ from .safety import (DiscordActionRefused, check_post_access,
                              check_view_access, resolve_channel)
 from .message_parts import outgoing_parts
 from .member_labels import member_label, mentioned_member_labels
+from ..research.member_provenance import member_target_issue
 
 LOGGER = logging.getLogger(__name__)
 
@@ -104,6 +105,8 @@ async def find_agent_files(context: AgentRequestContext,
 
 
 def post_mentions(context: Any, arguments: Mapping[str, Any], text: str) -> discord.AllowedMentions:
+    if issue := member_target_issue(context, text):
+        raise DiscordActionRefused(issue)
     roles = []
     for role_id in arguments.get("ping_role_ids", ()):
         if f"<@&{role_id}>" not in text:
@@ -135,10 +138,10 @@ def _ping_line(context: Any, arguments: Mapping[str, Any], *,
     members = dict.fromkeys(int(value) for value in re.findall(r"<@!?([0-9]+)>", text))
     if reply is not None and arguments.get("ping_author"):
         members[reply.author.id] = None
-    targets.extend(
-        member_label(reply.author) if reply is not None and member_id == reply.author.id
-        else member_labels[member_id] for member_id in members
-    )
+    for member_id in members:
+        label = (member_label(reply.author, guild=context.guild) if reply is not None and member_id == reply.author.id
+                 else member_labels[member_id])
+        targets.append(label)
     return (ACTION_PINGS_LINE.format(targets=", ".join(targets)),) if targets else ()
 
 
@@ -160,8 +163,8 @@ async def _reply_target(context: AgentRequestContext, channel: Any, message_id: 
     return message
 
 
-def _reply_line(message: Any, *, ping_author: bool) -> str:
-    author = member_label(message.author)
+def _reply_line(message: Any, *, ping_author: bool, guild: Any) -> str:
+    author = member_label(message.author, guild=guild)
     excerpt = " ".join(message.content.split())[:120] or ACTION_PREVIEW_BLANK
     excerpt = discord.utils.escape_markdown(excerpt).replace("]", "\\]")
     wording = ACTION_REPLY_WITH_PING if ping_author else ACTION_REPLY_NO_PING
@@ -215,6 +218,10 @@ async def prepare_post(context: AgentRequestContext,
             if channel is None:
                 raise DiscordActionRefused("That message is unavailable.")
             reply = await _reply_target(context, channel, arguments["reply_to"])
+            if arguments.get("ping_author") and (
+                issue := member_target_issue(context, f"<@{reply.author.id}>")
+            ):
+                raise DiscordActionRefused(issue)
             reply = SimpleNamespace(
                 id=reply.id, author=reply.author, content=reply.content, jump_url=reply.jump_url,
             )
@@ -224,7 +231,7 @@ async def prepare_post(context: AgentRequestContext,
         attachment = await resolve_post_attachment(context, arguments)
     except DiscordActionRefused as error:
         return {"error": str(error)}
-    parts = outgoing_parts(arguments["text"])
+    parts = outgoing_parts(arguments["text"], attachment=attachment)
     if not parts:
         return {"error": "The message has no text."}
     if deferred:
@@ -241,16 +248,11 @@ async def prepare_post(context: AgentRequestContext,
             and "@everyone" not in arguments["text"] and "@here" not in arguments["text"]
             and not re.search(r"<@&\d+>", arguments["text"])):
         async with context.state.reply_delivery.lock:
-            from ..engine.grounding import GroundingError, ground_answer
-            from ..engine.factual_answers import narrow_answer
+            from ..engine.grounding import GroundingError, ground_answer, partial_answer
             try:
-                text = narrow_answer(context.state.request_text, context.state.grounding_evidence)
-                if text is None:
-                    text = ground_answer(arguments["text"], context.state.grounding_evidence)
+                text = ground_answer(arguments["text"], context.state.grounding_evidence)
             except GroundingError as error:
-                return {"error": "The answer needs message sources read in this request.",
-                        "source_issue": str(error), "missing_result": error.kind,
-                        "instruction": "Correct only the unresolved reference or claim, preserving useful supported content."}
+                text = partial_answer(arguments["text"], context.state.grounding_evidence, error)
             context.state.reply_to = arguments.get("reply_to")
             context.state.ping_author = arguments.get("ping_author", False)
             context.state.source_channels.add(channel.id)
@@ -430,7 +432,7 @@ def _post_part(context: AgentRequestContext, channel_id: int, text: str,
     lines = (ACTION_POST_LINE.format(channel=label), *ping_line)
     details = tuple(text.splitlines())
     if reply is not None:
-        details = (_reply_line(reply, ping_author=mentions.replied_user), *details)
+        details = (_reply_line(reply, ping_author=mentions.replied_user, guild=context.guild), *details)
     if attachment is not None:
         details += (ACTION_ATTACH_LINE.format(filename=attachment.filename),)
     return PreparedAction(
@@ -560,7 +562,7 @@ def _edit_action(context: AgentRequestContext, channel_id: int, message_id: int,
         "undo_agent_message_edit" if undo else "edit_agent_message",
         {"channel_id": channel_id, "message_id": message_id, "text": new_text},
         ChangePreview(lines, recheck, summary=ACTION_EDIT_LABEL,
-                      details=tuple(new_text.splitlines()),
+                      details=tuple(part for part, _ in parts),
                       detail_sources=frozenset({channel_id}), before={"content": old_text}),
         run, verify=verify, permission="Send Messages",
     )

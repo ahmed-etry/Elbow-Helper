@@ -14,9 +14,10 @@ from features.agent.discord_actions.helpers import register_requester
 
 class CheckedActionScopeTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        role = SimpleNamespace(id=12, mention="<@&12>", position=1, managed=False,
+        role = SimpleNamespace(id=12, name="Synthetic role", mention="<@&12>", position=1, managed=False,
                                permissions=SimpleNamespace(), is_default=lambda: False)
         members = {identifier: SimpleNamespace(id=identifier, mention=f"<@{identifier}>",
+                    display_name=f"Synthetic member {identifier}",
                     roles=[], top_role=SimpleNamespace(position=1)) for identifier in (4, 5, 6)}
         channel = SimpleNamespace(id=20, mention="<#20>", guild=SimpleNamespace(id=1),
             permissions_for=lambda _: SimpleNamespace(view_channel=True, send_messages=True))

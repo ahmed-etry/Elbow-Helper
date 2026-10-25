@@ -92,12 +92,8 @@ async def _deliver_dms(context, identifiers, text, attachment, delivery,
             if member.id != context.member.id else ""
         )
         delivered = True
-        parts = outgoing_parts(text)
-        if footer and any(is_gif for _, is_gif in parts):
-            body = "\n".join(part for part, is_gif in parts if not is_gif)
-            parts = (*((part, False) for part in chunk_response(body + footer)),
-                     *((part, True) for part, is_gif in parts if is_gif))
-        elif footer:
+        parts = outgoing_parts(text, attachment=attachment)
+        if footer and not any(is_gif for _, is_gif in parts):
             parts = tuple((part, False) for part in chunk_response(text + footer))
         try:
             for part_index, (part, is_gif) in enumerate(parts):
@@ -149,6 +145,7 @@ async def prepare_direct_messages(context, arguments):
     if not isinstance(text, str) or not 1 <= len(text) <= 4000:
         raise ActionRefused("The DM text must be 1 to 4,000 characters.")
     attachment = await resolve_post_attachment(context, arguments)
+    text = '\n'.join(part for part, _ in outgoing_parts(text, attachment=attachment))
     labels = await mentioned_member_labels(context.guild, text)
     if any(member.id != context.member.id for member in members):
         context.state.required_access.add(ACCESS_LEAD)
@@ -167,7 +164,7 @@ async def prepare_direct_messages(context, arguments):
         "send_direct_messages",
         dict(arguments),
         ChangePreview(
-            (ACTION_DM_LINE.format(members=", ".join(member_label(member) for member in members)),
+            (ACTION_DM_LINE.format(members=", ".join(member_label(member, guild=context.guild) for member in members)),
              *((ACTION_PINGS_LINE.format(targets=", ".join(labels.values())),) if labels else ())),
             recheck,
             summary=ACTION_DM_LABEL,

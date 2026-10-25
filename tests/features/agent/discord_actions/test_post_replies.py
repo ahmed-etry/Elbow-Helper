@@ -21,6 +21,9 @@ class PostReplyTests(unittest.IsolatedAsyncioTestCase):
             content="Synthetic question", jump_url="https://discord.com/channels/3/2/55",
         )
         self.messages[55] = self.target
+        self.context.guild.members = [self.target.author, self.context.member]
+        self.context.state.request_text = "Reply to <@7>."
+        self.context.source_message.raw_mentions = [7]
         self.guard = patch(
             "elbow_helper.features.agent.discord_actions.messages.require_evidence_access",
             new_callable=AsyncMock,
@@ -32,7 +35,7 @@ class PostReplyTests(unittest.IsolatedAsyncioTestCase):
         await prepare_post(self.context, {"channel_id": 2, "text": "Answer", "reply_to": 55})
         action = self.context.state.proposed_changes.pop()
         self.assertEqual(action.preview.details[0],
-                         "Reply to Example (@example.7), no ping: [Synthetic question]"
+                         "Reply to Example, no ping: [Synthetic question]"
                          "(https://discord.com/channels/3/2/55)")
         self.assertEqual(action.preview.detail_sources, frozenset({2}))
         await action.run()
@@ -47,7 +50,7 @@ class PostReplyTests(unittest.IsolatedAsyncioTestCase):
         for action in self.context.state.proposed_changes:
             await action.run()
         self.assertIn(
-            "Reply to Example (@example.7), with ping: [Synthetic question]"
+            "Reply to Example, with ping: [Synthetic question]"
             "(https://discord.com/channels/3/2/55)",
             self.context.state.proposed_changes[0].preview.details,
         )
