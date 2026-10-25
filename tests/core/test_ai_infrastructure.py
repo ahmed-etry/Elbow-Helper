@@ -7,6 +7,8 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from openai import OpenAIError
+from openai import AsyncOpenAI
+import httpx
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from elbow_helper.infrastructure.ai import AgentToolResult
@@ -19,6 +21,23 @@ from elbow_helper.infrastructure.ai.client import DEEPSEEK_MODEL
 
 
 class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
+    async def test_agent_timeout_is_single_attempt_and_keeps_long_reasoning_headroom(self):
+        attempts = []
+        async def timeout(request):
+            attempts.append(request)
+            raise httpx.ReadTimeout('Provider response timed out', request=request)
+        api = AsyncOpenAI(api_key='test-key',
+            http_client=httpx.AsyncClient(transport=httpx.MockTransport(timeout)))
+        with patch('elbow_helper.infrastructure.ai.client.AsyncOpenAI', return_value=api):
+            async with DeepSeekTextClient('test-key') as client:
+                session = client.create_agent_session(system_prompt='Instructions',
+                    prompt='Request', tools=(), max_output_tokens=32768)
+                self.assertEqual(session._client.max_retries, 0)
+                self.assertEqual(session._client.timeout, 300.0)
+                with self.assertRaises(TextGenerationError):
+                    await session.advance(reasoning_effort=AgentReasoningEffort.MAX)
+        self.assertEqual(len(attempts), 1)
+
     @staticmethod
     def _response(
         content: str,
@@ -55,6 +74,7 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_routine_request_uses_deepseek_non_thinking_chat_completion(self) -> None:
         transport = MagicMock()
+        transport.with_options.return_value = transport
         transport.chat.completions.create = AsyncMock(
             return_value=self._response("  generated text  ")
         )
@@ -90,6 +110,7 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_complex_tier_uses_the_current_deepseek_model(self) -> None:
         transport = MagicMock()
+        transport.with_options.return_value = transport
         transport.chat.completions.create = AsyncMock(
             return_value=self._response("answer")
         )
@@ -125,6 +146,7 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_provider_error_preserves_useful_diagnostics(self) -> None:
         transport = MagicMock()
+        transport.with_options.return_value = transport
         transport.chat.completions.create = AsyncMock(
             side_effect=OpenAIError("insufficient balance")
         )
@@ -148,6 +170,7 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         transport = MagicMock()
+        transport.with_options.return_value = transport
         transport.chat.completions.create = AsyncMock(
             return_value=self._response(
                 "",
@@ -172,8 +195,9 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
                     temperature=0.2,
                 )
 
-    async def test_agent_session_reports_output_limit_and_accepts_continuation(self):
+    async def test_agent_session_reports_output_limit_and_accepts_non_thinking_continuation(self):
         transport = MagicMock()
+        transport.with_options.return_value = transport
         transport.chat.completions.create = AsyncMock(side_effect=[
             self._response("First part", finish_reason="length"),
             self._response("Last part", finish_reason="stop"),
@@ -188,11 +212,14 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
             first = await session.advance(max_output_tokens=8_000)
             second = await session.advance(
                 max_output_tokens=8_000,
+                reasoning_effort=AgentReasoningEffort.NONE,
                 continuation_instruction="Continue without repeating.",
             )
         self.assertTrue(first.output_limit_reached)
         self.assertFalse(second.output_limit_reached)
         request = transport.chat.completions.create.await_args_list[1].kwargs
+        self.assertEqual(request['reasoning_effort'], 'none')
+        self.assertEqual(request['extra_body'], {'thinking': {'type': 'disabled'}})
         self.assertEqual(request["messages"][-1]["content"],
                          "Continue without repeating.")
 
@@ -252,6 +279,7 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
         transport = MagicMock()
+        transport.with_options.return_value = transport
         transport.chat.completions.create = AsyncMock(
             side_effect=[first_response, second_response]
         )
@@ -342,6 +370,7 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
         second_response.id = "second"
         second_response.model = DEEPSEEK_MODEL
         transport = MagicMock()
+        transport.with_options.return_value = transport
         transport.chat.completions.create = AsyncMock(
             side_effect=[first_response, second_response],
         )
@@ -382,6 +411,7 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
             '</｜｜DSML｜｜ parameter></｜｜DSML｜｜ invoke></｜｜DSML｜｜ calls>',
         )
         transport = MagicMock()
+        transport.with_options.return_value = transport
         transport.chat.completions.create = AsyncMock(return_value=response)
         with patch(
             "elbow_helper.infrastructure.ai.client.AsyncOpenAI",
@@ -406,6 +436,7 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
             '</｜｜DSML｜｜ invoke></｜｜DSML｜｜ calls>',
         )
         transport = MagicMock()
+        transport.with_options.return_value = transport
         transport.chat.completions.create = AsyncMock(return_value=response)
         with patch(
             "elbow_helper.infrastructure.ai.client.AsyncOpenAI",
@@ -432,6 +463,7 @@ class DeepSeekTextClientTests(unittest.IsolatedAsyncioTestCase):
             '</||DSML|| calls>',
         )
         transport = MagicMock()
+        transport.with_options.return_value = transport
         transport.chat.completions.create = AsyncMock(return_value=response)
         with patch(
             "elbow_helper.infrastructure.ai.client.AsyncOpenAI",

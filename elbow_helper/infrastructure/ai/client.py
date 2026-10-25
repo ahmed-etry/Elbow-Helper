@@ -35,6 +35,10 @@ DEEPSEEK_MODEL = "deepseek-flash"
 DEEPSEEK_CONTEXT_WINDOW_TOKENS = 1_000_000
 DEFAULT_TIMEOUT_SECONDS = 60.0
 DEFAULT_MAX_RETRIES = 2
+# Agent calls have an outer request deadline and their own bounded recovery.
+# A non-streaming reasoning response may legitimately take over one minute.
+# SDK timeout retries can start the same expensive generation three times.
+AGENT_TIMEOUT_SECONDS = 300.0
 PROVIDER_ERROR_MESSAGE_LIMIT = 500
 _FINAL_ANSWER_INSTRUCTION = (
     "Research for this request has ended. Do not request or simulate any more "
@@ -109,6 +113,10 @@ class DeepSeekTextClient:
     @property
     def configured(self) -> bool:
         return self._client is not None
+
+    @property
+    def supports_images(self) -> bool:
+        return False
 
     async def complete(
         self,
@@ -201,8 +209,7 @@ class DeepSeekTextClient:
         if self._client is None:
             return None
         return _DeepSeekAgentSession(
-            client=(self._client if image_failure_fallback else
-                    self._client.with_options(max_retries=0)),
+            client=self._client.with_options(timeout=AGENT_TIMEOUT_SECONDS, max_retries=0),
             system_prompt=system_prompt,
             prompt=prompt,
             tools=tools,
@@ -274,6 +281,7 @@ class _DeepSeekAgentSession:
                     "image_url": {
                         "url": "data:" + item.mime_type + ";base64,"
                         + base64.b64encode(item.data).decode("ascii"),
+                        "detail": "high",
                     },
                 },
             ])
@@ -335,7 +343,7 @@ class _DeepSeekAgentSession:
             "model": DEEPSEEK_MODEL,
             "messages": request_messages,
             "reasoning_effort": reasoning_effort.value,
-            "extra_body": {"thinking": {"type": "enabled"}},
+            "extra_body": {"thinking": {"type": "disabled" if reasoning_effort == AgentReasoningEffort.NONE else "enabled"}},
         }
         # Keep the tools parameter so DeepSeek retains earlier reasoning in
         # context. Disable calls explicitly when the research phase has ended.

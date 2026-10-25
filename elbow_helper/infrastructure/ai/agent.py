@@ -57,6 +57,7 @@ class AgentUsage:
 class AgentReasoningEffort(StrEnum):
     """Provider-neutral reasoning budget for one agent generation."""
 
+    NONE = "none"
     LOW = "low"
     HIGH = "high"
     MAX = "max"
@@ -99,6 +100,9 @@ class AgentModel(Protocol):
 
     @property
     def configured(self) -> bool: ...
+
+    @property
+    def supports_images(self) -> bool: ...
 
     def create_agent_session(
         self,
