@@ -8,6 +8,10 @@ from typing import Any
 
 
 class ClanHealthWarReads:
+    def attendance(self, **selection):
+        from ..attendance import attendance_snapshot
+        return attendance_snapshot(self.path, **selection)
+
     def regular_war_history(
         self, *, clan_code: str, history_limit: int,
         before_war_id: str | None = None,
