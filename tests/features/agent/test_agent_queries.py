@@ -61,6 +61,22 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([row["id"] for row in result["rows"]], [1, 3])
         self.assertEqual(touched, {"lead"})
 
+    def test_positional_bindings_have_actionable_feedback_then_named_retry_works(self):
+        for placeholder in ("?", "@id", "$id"):
+            result, touched = self.query(
+                f"SELECT name FROM first.accounts WHERE id = {placeholder}", {"1": 3},
+            )
+            self.assertEqual(result["cause"], "invalid_arguments")
+            self.assertEqual(result["invalid_fields"], ["sql", "params"])
+            self.assertIn(":id", result["instruction"])
+            self.assertFalse(touched)
+        result, _ = self.query("SELECT name FROM first.accounts WHERE id = :id", {"id": 3})
+        self.assertEqual(result["rows"], [{"name": "Synthetic 3"}])
+
+    def test_placeholder_characters_inside_literals_and_comments_are_not_bindings(self):
+        result, _ = self.query("SELECT '? @id $id' AS text FROM first.accounts WHERE id = :id -- ?", {"id": 2})
+        self.assertEqual(result["rows"], [{"text": "? @id $id"}])
+
     def test_state_json_and_truncation(self):
         result, _ = self.query(
             "SELECT value FROM state.selection,json_each(json_extract(doc,'$.ids'))", max_rows=1,
@@ -112,6 +128,44 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["rows"], [{"n": n} for n in range(1, 5)])
         self.assertFalse(touched)
 
+    def test_truncated_count_uses_one_execution_and_export_retains_the_complete_set(self):
+        statements = []
+        connect = sqlite3.connect
+
+        def traced(*args, **kwargs):
+            connection = connect(*args, **kwargs)
+            connection.set_trace_callback(statements.append)
+            return connection
+
+        sql = 'SELECT id FROM first.accounts ORDER BY id'
+        with patch('elbow_helper.features.agent.datasets.query.sqlite3.connect', traced):
+            result, _ = self.query(sql, max_rows=2)
+        self.assertEqual(result['rows'], [{'id': 0}, {'id': 1}])
+        self.assertEqual(result['total_rows'], 5)
+        self.assertEqual(statements.count(sql), 1)
+        self.assertFalse(any('COUNT(*) FROM (' in query for query in statements))
+        result, _ = self.query('WITH RECURSIVE n(i) AS (VALUES(1) UNION ALL SELECT i+1 FROM n WHERE i<1500) SELECT i FROM n', max_rows=None)
+        self.assertEqual(result['rows'], [{'i': i} for i in range(1, 1501)])
+        self.assertEqual(result['row_count'], 1500)
+        self.assertFalse(result['truncated'])
+
+    def test_sqlite_rejects_an_oversized_scalar_before_allocating_it(self):
+        from elbow_helper.features.agent.datasets.query import MAX_QUERY_VALUE_BYTES
+        result, touched = self.query('SELECT zeroblob(:size) AS value',
+                                     {'size': MAX_QUERY_VALUE_BYTES + 1})
+        self.assertEqual(result['cause'], 'capacity')
+        self.assertFalse(touched)
+
+    def test_interactive_and_export_results_share_the_fetch_memory_bound(self):
+        for max_rows in (200, None):
+            with self.subTest(max_rows=max_rows), patch(
+                'elbow_helper.features.agent.datasets.query.MAX_QUERY_RESULT_BYTES', 128):
+                result, touched = self.query('SELECT :value AS text FROM first.accounts',
+                                             {'value': 'x' * 100}, max_rows=max_rows)
+            self.assertEqual(result['cause'], 'capacity')
+            self.assertNotIn('rows', result)
+            self.assertFalse(touched)
+
     def test_empty_columns_and_large_cells(self):
         self.assertEqual(
             self.query("SELECT name FROM first.accounts WHERE id=999")[0]["columns"], ["name"],
@@ -120,6 +174,17 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
             self.query("SELECT X'FF' AS blob, :text AS text", {"text": "x" * 4001})[0]["rows"],
             [{"blob": "ff", "text": "x" * 4000 + "\u2026"}],
         )
+
+    def test_guides_and_schema_recovery_expose_composite_primary_keys(self):
+        from dataclasses import replace
+        with closing(sqlite3.connect(self.paths.project_root / 'first.sqlite3')) as connection:
+            connection.execute('CREATE TABLE observations (event_id TEXT, side TEXT, amount INT, PRIMARY KEY(event_id, side))')
+        sources = (replace(self.sources[0], tables=(('observations', 'none', 'Synthetic observations'),)),)
+        guide = DataGuide(self.paths, sources).for_levels(set())
+        self.assertIn('event_id TEXT PK1', guide)
+        self.assertIn('side TEXT PK2', guide)
+        result, _ = run_query(sources, self.paths, set(), 'SELECT missing FROM first.observations')
+        self.assertEqual(result['available_schema']['first.observations']['primary_key'], ['event_id', 'side'])
 
     def test_quoted_source_refusal_and_duplicate_columns(self):
         self.assertEqual(
@@ -143,7 +208,7 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
                 "elbow_helper.features.agent.datasets.query.require_evidence_access", AsyncMock(),
             ),
             patch(
-                "elbow_helper.features.agent.datasets.query.has_access_requirements",
+                "elbow_helper.features.agent.datasets.query.has_reader_access_requirements",
                 side_effect=lambda guild, member, levels: levels <= access,
             ),
         ):
@@ -152,8 +217,8 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(context.state.required_access, {"lead"})
             context.state.required_access.clear()
 
-            async def read_and_revoke(function, *args):
-                result = function(*args)
+            async def read_and_revoke(function, *args, **kwargs):
+                result = function(*args, **kwargs)
                 access.clear()
                 return result
 

@@ -59,7 +59,7 @@ SOURCES = (
         DB_PATH,
         tables=(
             (
-                "leadership_records", "lead_plus",
+                "leadership_records", "none",
                 "Optional, often-empty case log; read only for records questions or "
                 "specific logged cases. Absence is not evidence. "
                 "status active/removed (historical). "

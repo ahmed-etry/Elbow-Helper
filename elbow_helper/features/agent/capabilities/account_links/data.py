@@ -11,14 +11,14 @@ SOURCES = (
         DB_PATH,
         tables=(
             (
-                "links", "lead",
+                "links", "none",
                 "Links Clash account tags to Discord members. One member can have "
                 "multiple linked accounts. Includes the last recorded account name, "
                 "clan and clan role. These links are separate from ClashPerk's.",
             ),
-            ("ignored_tags", "lead", "One ignored account tag."),
+            ("ignored_tags", "recruiter_or_core", "One ignored account tag."),
             (
-                "suggestions", "lead",
+                "suggestions", "recruiter_or_core",
                 "One account awaiting link review; proposed_discord_user_id and "
                 "proposed_display_name are account links' stored owner verdict, "
                 "not verified ownership.",

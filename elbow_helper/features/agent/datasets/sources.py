@@ -16,6 +16,8 @@ class DataSource:
     note: str = ""
     config_constant: str = ""
     coverage: Callable[[sqlite3.Connection, dict, int], dict] | None = None
+    channel_keyed: bool = False
+    evidence_channels: Callable[[object], set[int]] | None = None
 
     def resolve(self, paths):
         if self.alias == "achievements":

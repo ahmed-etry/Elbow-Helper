@@ -12,7 +12,7 @@ SOURCES = (
         "state",
         Path(STATE_FILE),
         state_name="event_stats",
-        level="lead",
+        level="none",
         note=(
             "{schema_version:int,events:[{key:string,source:preset|custom,enabled:bool,name:string,"
             "start:string,end:string,timezone:string,grace_period_hours:int,category_id:int,"

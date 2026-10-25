@@ -41,24 +41,24 @@ SOURCES = (
                 "source=capitalraidseasons_api.",
             ),
             (
-                "player_directory", "lead_plus",
+                "player_directory", "none",
                 "Latest known account identity; first_seen_ts and last_seen_ts "
                 "are UTC Unix seconds when observed by this bot, not join dates or proof of new recruitment.",
             ),
             (
-                "player_snapshots", "lead_plus",
+                "player_snapshots", "none",
                 "One periodic account snapshot at captured_ts; sums are total upgrade levels; "
                 "games_total is lifetime games points. Changes between captures do not provide "
                 "a login timestamp or identify who accessed the account.",
             ),
             (
-                "report_runs", "lead_plus",
+                "report_runs", "none",
                 "One health computation; partial=1 means incomplete clan coverage; "
                 "use partial=0 and latest created_ts for complete runs; "
                 "cycle bounds are UTC Unix seconds.",
             ),
             (
-                "report_players", "lead_plus",
+                "report_players", "none",
                 "One account verdict per run_id; "
                 "status Good/Watch/Needs Review/Insufficient data/Not tracked; "
                 "status, flags_json and note are clan health's stored verdicts, not raw facts; "
@@ -67,15 +67,15 @@ SOURCES = (
                 "Not tracked excluded; deltas compare cycle snapshots.",
             ),
             (
-                "clan_clan_health_config", "lead_plus",
+                "clan_clan_health_config", "none",
                 "One clan health override per clan; payload_json holds expectation blocks.",
             ),
             (
-                "clan_player_health_config", "lead_plus",
+                "clan_player_health_config", "none",
                 "One player health override per clan; payload_json holds expectation blocks.",
             ),
             (
-                "clan_health_config_audit", "lead_plus",
+                "clan_health_config_audit", "none",
                 "One configuration edit; actor_discord_id is the member who edited; "
                 "ts_utc is ISO UTC.",
             ),
@@ -89,7 +89,7 @@ from elbow_helper.features.clan_health.player_health_config import PLAYER_HEALTH
 SOURCES += (
     DataSource(
         "state", PLAYER_HEALTH_CONFIG_FILE,
-        state_name="player_health_config", level="lead_plus",
+        state_name="player_health_config", level="none",
         note=(
             "{profiles:{<profile_name>:{war:{wars_to_join:int,missed_attack_rate_percent:number},"
             "raids:{minimum_capital_gold_per_event:int},"
