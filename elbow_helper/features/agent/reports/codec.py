@@ -1,6 +1,7 @@
 """Select typed reconstruction for a retained conversation report."""
 
 from typing import Any
+from ..families.core import decode_family
 
 from .community_codec import (
     decode_achievement_progress,
@@ -31,6 +32,7 @@ def decode_report(row: dict[str, Any], *, guild_id: int) -> Any:
 
 
 _DECODERS = {
+    "family": decode_family,
     "achievement_progress": decode_achievement_progress,
     "event_schedule": decode_event_schedule,
     "member_lifecycle": decode_member_lifecycle,
