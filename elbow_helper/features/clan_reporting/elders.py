@@ -48,7 +48,6 @@ class ClanReportingElderMixin:
         lock = self._get_board_repost_lock(clan_code)
         async with lock:
             embed = await self._build_missing_elder_embed(clan_code)
-            view = MissingElderBoardView(self, clan_code)
             board_messages = self.state.setdefault("missing_elder_messages", {})
             message = None
             message_id = board_messages.get(clan_code)
@@ -60,7 +59,7 @@ class ClanReportingElderMixin:
                 )
                 if not fetch_completed:
                     return False
-            if message is None:
+            if message is None and not (clan_code in board_messages and message_id is None):
                 recovered_message, is_buried, recovery_completed = await self._find_missing_elder_board_in_history(
                     channel,
                     clan_code,
@@ -71,16 +70,20 @@ class ClanReportingElderMixin:
                     board_messages[clan_code] = recovered_message.id
                     save_state(self.state)
                     message = recovered_message
-                    if reposition_if_buried and is_buried:
+                    if embed is not None and reposition_if_buried and is_buried:
                         await self._repost_missing_elder_message(
                             channel,
                             clan_code,
                             old_message=recovered_message,
                             embed=embed,
-                            view=view,
+                            view=MissingElderBoardView(self, clan_code),
                         )
                         return True
 
+            if embed is None:
+                return await self._delete_missing_elder_message(clan_code, message)
+
+            view = MissingElderBoardView(self, clan_code)
             if message is None:
                 new_message = await self._run_discord_http_operation(
                     clan_code,
@@ -134,6 +137,39 @@ class ClanReportingElderMixin:
                 LOGGER.warning("Failed to edit missing-elder board for %s: %s", clan_code, exc)
                 return False
             return updated is not None
+
+    async def _delete_missing_elder_message(
+        self,
+        clan_code: str,
+        message: Optional[discord.Message],
+    ) -> bool:
+        if message is not None:
+            async def delete_message() -> bool:
+                await message.delete()
+                return True
+
+            try:
+                deleted = await self._run_discord_http_operation(
+                    clan_code,
+                    "delete empty missing-elder board",
+                    delete_message,
+                )
+            except discord.NotFound:
+                pass
+            except (discord.Forbidden, discord.HTTPException) as exc:
+                LOGGER.warning("Failed to delete empty missing-elder board for %s: %s", clan_code, exc)
+                return False
+            else:
+                if not deleted:
+                    return False
+
+        # A missing key needs recovery; None records a deliberately absent board.
+        board_messages = self.state.setdefault("missing_elder_messages", {})
+        if clan_code not in board_messages or board_messages[clan_code] is not None:
+            board_messages[clan_code] = None
+            save_state(self.state)
+        self._board_last_repost_at.pop(clan_code, None)
+        return True
 
     def _get_board_repost_lock(self, clan_code: str) -> asyncio.Lock:
         lock = self._board_repost_locks.get(clan_code)
@@ -284,6 +320,8 @@ class ClanReportingElderMixin:
         async with lock:
             board_messages = self.state.setdefault("missing_elder_messages", {})
             board_message_id = board_messages.get(clan_code)
+            if clan_code in board_messages and board_message_id is None:
+                return False
             old_message = None
             should_repost = False
 
@@ -321,6 +359,8 @@ class ClanReportingElderMixin:
                 return False
 
             embed = await self._build_missing_elder_embed(clan_code)
+            if embed is None:
+                return await self._delete_missing_elder_message(clan_code, old_message)
             view = MissingElderBoardView(self, clan_code)
             await self._repost_missing_elder_message(
                 channel,
@@ -331,11 +371,13 @@ class ClanReportingElderMixin:
             )
             return True
 
-    async def _build_missing_elder_embed(self, clan_code: str) -> discord.Embed:
+    async def _build_missing_elder_embed(self, clan_code: str) -> Optional[discord.Embed]:
         rows = self.account_links.get_missing_elder_rows(clan_code)
+        if not rows:
+            return None
 
         title_base = f"Missing Elder Rank — {clan_code}"
-        title = title_base if not rows else f"{title_base} ({len(rows)})"
+        title = f"{title_base} ({len(rows)})"
 
         embed = discord.Embed(
             title=title,
@@ -343,10 +385,6 @@ class ClanReportingElderMixin:
             timestamp=datetime.now(timezone.utc),
         )
         embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
-
-        if not rows:
-            embed.description = "No members are missing the Elder rank in-game."
-            return embed
 
         lines = [
             f"- <@{int(row['discord_user_id'])}> - {row['player_name']}"

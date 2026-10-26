@@ -17,7 +17,7 @@ ClanReportingState = dict[str, Any]
 
 
 def load_state() -> ClanReportingState:
-    """Load persisted missing-elder-board and war-summary message IDs."""
+    """Load message IDs; a missing-elder ID of None means intentionally absent."""
     try:
         data = read_json(STATE_FILE)
     except FileNotFoundError:
