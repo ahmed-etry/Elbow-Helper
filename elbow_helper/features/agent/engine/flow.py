@@ -14,7 +14,7 @@ from elbow_helper.infrastructure.ai import AgentToolResult
 from elbow_helper.infrastructure.ai import TextGenerationError
 from ..actions.contracts import ActionClass
 from ..access import (
-    ACCESS_LEAD_PLUS_OR_CORE, has_reader_access_requirements,
+    leadership_asker,
     require_access, require_evidence_access,
 )
 from ..plan.checker import check_plan, step_dependencies
@@ -279,14 +279,9 @@ class AnswerFlow:
         await require_evidence_access(self.context)
         return partial_answer(answer, self.context.state.grounding_evidence, failure)
 
-    def _leadership_asker(self):
-        return has_reader_access_requirements(
-            self.context.guild, self.context.member.id, {ACCESS_LEAD_PLUS_OR_CORE},
-        )
-
     def _limit_plan(self, plan):
         """Apply member limits before checking either an initial or revised plan."""
-        if not isinstance(plan, dict) or self._leadership_asker():
+        if not isinstance(plan, dict) or leadership_asker(self.context):
             return plan
         if "assessment" not in plan and plan.get("effort") != "max":
             return plan
@@ -303,7 +298,7 @@ class AnswerFlow:
         requested = AgentReasoningEffort(getattr(self, "plan", {}).get("effort", "low"))
         floor = getattr(self.rounder, "request_effort", AgentReasoningEffort.HIGH)
         effort = max((requested, floor), key=list(AgentReasoningEffort).index)
-        return (effort if self._leadership_asker()
+        return (effort if leadership_asker(self.context)
                 else min((effort, AgentReasoningEffort.HIGH), key=list(AgentReasoningEffort).index))
 
     async def _advance_answer(self, results=(), **options):
@@ -703,7 +698,7 @@ class AnswerFlow:
         self.revisions = 0
         self._reserve_answer()
         while self.rounder.rounds < limits.MAX_MODEL_ROUNDS:
-            self.assessment_requested = self._leadership_asker() and (
+            self.assessment_requested = leadership_asker(self.context) and (
                 self.assessment_requested or self.plan.get('assessment', False))
             if self.assessment_requested and self.budget.request_limits is not None:
                 self.budget.request_limits = limits.ASSESSMENT_LIMITS

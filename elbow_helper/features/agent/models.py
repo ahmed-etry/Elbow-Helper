@@ -192,6 +192,7 @@ class AgentTurnState:
     outcomes: list[Any] = field(default_factory=list)
     has_read_answer: bool = False
     provider_failed: bool = False
+    member_limit_refused: bool = False
     terminal_cause: str | None = None
     family_catalogue: bool = False
     proposed_changes: list[Any] = field(default_factory=list)

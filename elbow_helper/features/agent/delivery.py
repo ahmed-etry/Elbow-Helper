@@ -95,6 +95,10 @@ class AgentDeliveryMixin:
 
     async def send_response(self, message, response, referenced, attachments=(), conversation=None,
                             *, delivery=None, context=None, **options):
+        if context is not None and context.state.member_limit_refused and not response:
+            if context.stop_typing is not None:
+                await context.stop_typing()
+            return
         active = delivery or AgentDelivery()
         gif = context.state.gif_url if context is not None else None
         media = context.state.gif_attachment if context is not None else None

@@ -250,6 +250,11 @@ async def read_social_reply(flow):
             return (FAILURE_MESSAGE if flow.context.state.provider_failed else "That reply ran out of time."), None
         if not flow.rounder.social_route:
             return None, step
+        if flow.rounder.expansion_refused and step.tool_calls:
+            return await text_only_reply(
+                flow, step, "Research is unavailable for this reply. Keep the social response; "
+                "do not answer factual questions, promise research or mention internal limits.",
+            ), None
         issue = SOCIAL_REPLY_INSTRUCTION
         plan = None
         if len(step.tool_calls) == 1 and step.tool_calls[0].name == SOCIAL_REPLY_NAME:

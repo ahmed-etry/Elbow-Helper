@@ -72,6 +72,7 @@ class ModelRounds:
         self.social_route = False
         self.game_advice_route = False
         self.expand_context = None
+        self.expansion_refused = False
         self.last_allow_tools = True
         self.budget_limited = False
         self.request_effort = AgentReasoningEffort.HIGH
@@ -108,6 +109,11 @@ class ModelRounds:
                 await require_evidence_access(self.context)
                 instructions = await self.expand_context()
                 self.expand_context = None
+                if instructions is None:
+                    # Keep any authored banter. Without text, the social reply
+                    # path can finish once without research or further expansion.
+                    self.expansion_refused = True
+                    return replace(step, tool_calls=()) if step.content.strip() else step
                 return await self.advance(
                     (AgentToolResult(call.call_id, instructions),),
                     **{**kwargs, "reasoning_effort": AgentReasoningEffort.HIGH},

@@ -111,6 +111,13 @@ def has_reader_access_requirements(guild, member_id, requirements):
     return _has_role_requirements(guild, member_id, requirements, READ_ACCESS_ROLE_SETS)
 
 
+def leadership_asker(context):
+    """Share the leadership allowance, including sleeping leaders, across agent limits."""
+    return has_reader_access_requirements(
+        context.guild, context.member.id, {ACCESS_LEAD_PLUS_OR_CORE},
+    )
+
+
 def _has_role_requirements(guild, member_id, requirements, role_sets):
     if not requirements <= KNOWN_ACCESS_REQUIREMENTS:
         return False

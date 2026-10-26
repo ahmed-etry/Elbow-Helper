@@ -63,6 +63,15 @@ class PrivateAnswerView(PrivateResultView):
                     self.result = await self.context.state.private_answer_run()
                 answer, attachments, private = self.result
                 await assert_answer_scope(private, answer)
+                if private.state.member_limit_refused:
+                    # A refusal is not a reusable answer. Recheck the allowance
+                    # on the next click so notices stay singular and can expire.
+                    self.result = None
+                    if answer:
+                        await interaction.followup.send(answer, ephemeral=True)
+                    else:
+                        await interaction.delete_original_response()
+                    return
             except AgentAccessLost:
                 await interaction.followup.send(ACTION_RESULT_EXPIRED, ephemeral=True)
                 return

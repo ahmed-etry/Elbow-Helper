@@ -21,6 +21,7 @@ from ..actions.contracts import ActionClass
 from ..discord_actions.roles import role_change_access
 from ..access import (
     AgentAccessLost,
+    leadership_asker,
     require_evidence_access,
 )
 from ..conversation.context import (
@@ -35,6 +36,7 @@ from .registry import build_agent_tools
 from .self_knowledge import capability_context
 from ..families.catalogue import discovery_tool, FAMILY_INSTRUCTION
 from .usage import RequestUsage
+from .member_usage import MemberUsageLimit, MemberUsageLimiter
 from .budgets import ContextBudget
 from .routing import (
     EXPAND_DEFINITION,
@@ -69,6 +71,7 @@ class AgentService:
     def __init__(self, model: AgentModel, *, data_guide=None) -> None:
         self._model = model
         self._data_guide = data_guide
+        self._member_usage = MemberUsageLimiter()
 
     execute_tool = staticmethod(execute_tool)
 
@@ -124,6 +127,7 @@ class AgentService:
         route: RouteDecision | None = None,
         research_history=None,
         research_checkpoint=None,
+        member_usage_entry=None,
     ):
         context.state.grounding_evidence.clear()
         if context.state.local_messages:
@@ -301,6 +305,10 @@ class AgentService:
         rounder.request_effort = AgentReasoningEffort.LOW if social or game_advice else AgentReasoningEffort.HIGH
         if social:
             async def expand_context():
+                if not leadership_asker(context) and not self._member_usage.promote(
+                    context.guild.id, context.member.id, member_usage_entry,
+                ):
+                    return None
                 if not context.state.channel_directory:
                     context.state.channel_directory = await scoped_channel_directory(context)
                 instructions = research_instructions()
@@ -410,6 +418,12 @@ class AgentService:
             answer = scoped_answer(context, answer)
             record.answer = answer
             return answer
+        except MemberUsageLimit as error:
+            context.state.member_limit_refused = True
+            context.state.scope_audit.offered = False
+            record.status = "member_limit"
+            record.answer = error.reply
+            return error.reply
         except asyncio.CancelledError:
             record.status = "cancelled"
             raise
@@ -451,6 +465,12 @@ class AgentService:
             # The research session sees the scoped index and can open relevant
             # sections before deciding whether tactical advice remains to decline.
             route = replace(route, game_advice=False)
+        member_usage_entry = None
+        if not leadership_asker(context):
+            member_usage_entry = self._member_usage.acquire(
+                context.guild.id, context.member.id,
+                question=not (route.social or route.game_advice),
+            )
         research_history = context.state.authorized_history
         research_checkpoint = context.state.authorized_checkpoint
         if route.social and research_history is not None:
@@ -475,6 +495,7 @@ class AgentService:
             route=route,
             research_history=research_history,
             research_checkpoint=research_checkpoint,
+            member_usage_entry=member_usage_entry,
         )
         status = "incomplete"
         rounder = flow.rounder
