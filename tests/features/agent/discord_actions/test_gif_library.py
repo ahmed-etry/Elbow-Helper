@@ -1,5 +1,6 @@
 """Library coverage, stable prompts and exact joke selection."""
 from types import SimpleNamespace
+from urllib.parse import urlsplit
 import unittest
 from unittest.mock import patch
 
@@ -23,6 +24,28 @@ def _choice(**overrides):
 
 
 class GifLibraryTests(unittest.IsolatedAsyncioTestCase):
+    def test_klipy_library_items_use_share_pages_for_discord_previews(self):
+        klipy_items = [item for item in LIBRARY
+                       if (urlsplit(item['media']).hostname or '').endswith('klipy.com')]
+        self.assertTrue(klipy_items)
+        for item in klipy_items:
+            with self.subTest(meme_id=item['id']):
+                url = urlsplit(item['media'])
+                self.assertEqual(url.scheme, 'https')
+                self.assertEqual(url.hostname, 'klipy.com')
+                self.assertTrue(url.path.startswith('/gifs/'))
+
+    def test_tenor_library_items_use_share_pages_for_discord_previews(self):
+        tenor_items = [item for item in LIBRARY
+                       if (urlsplit(item['media']).hostname or '').endswith('tenor.com')]
+        self.assertTrue(tenor_items)
+        for item in tenor_items:
+            with self.subTest(meme_id=item['id']):
+                url = urlsplit(item['media'])
+                self.assertEqual(url.scheme, 'https')
+                self.assertEqual(url.hostname, 'tenor.com')
+                self.assertTrue(url.path.startswith('/view/'))
+
     def test_all_34_original_media_remain_with_real_use_and_screen_descriptions(self):
         local_items = [item for item in LIBRARY if not item['media'].startswith('https://')]
         self.assertEqual({item['media'] for item in local_items}, ORIGINAL_MEDIA)
