@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import json
-from dataclasses import replace
+from dataclasses import asdict, replace
 
 import asyncio
 from datetime import datetime, timezone
@@ -87,6 +87,12 @@ class AgentService:
         status: str,
         elapsed_ms: int,
     ) -> None:
+        if context.operator_debug is not None:
+            context.operator_debug.usage = {
+                **asdict(usage), "rounds": rounds,
+                "unknown_token_rounds": usage.unknown_token_rounds,
+                "unknown_cache_rounds": usage.unknown_cache_rounds,
+            }
         LOGGER.info(
             (
                 (
@@ -335,12 +341,16 @@ class AgentService:
                 context.state.family_catalogue = family_catalogue
                 budget.request_limits = limits.FAMILY_LIMITS if family_catalogue else limits.RESEARCH_LIMITS
                 rounder.social_route = False
+                if context.operator_debug is not None:
+                    context.operator_debug.route = "research"
                 LOGGER.info("Agent route expanded: request=%s rounds=%s", request_id, rounder.rounds)
                 return instructions
 
             rounder.expand_context = expand_context
-        LOGGER.info("Agent route: request=%s route=%s", request_id,
-                    "game_advice" if game_advice else "social" if social else "research")
+        route_name = "game_advice" if game_advice else "social" if social else "research"
+        if context.operator_debug is not None:
+            context.operator_debug.route = route_name
+        LOGGER.info("Agent route: request=%s route=%s", request_id, route_name)
 
         runner = PlanRunner(
             service=self,
@@ -382,6 +392,7 @@ class AgentService:
         context: AgentRequestContext,
         conversation_history: str = "",
     ) -> str:
+        context.state.research_answer_completed = False
         await request_scope(context, refresh=True)
         await require_evidence_access(context)
         if context.history:
@@ -417,6 +428,10 @@ class AgentService:
                 record.status = "incomplete"
             answer = scoped_answer(context, answer)
             record.answer = answer
+            context.state.research_answer_completed = (
+                record.route == "research" and record.status == "completed"
+                and not record.error and not context.state.terminal_cause
+            )
             return answer
         except MemberUsageLimit as error:
             context.state.member_limit_refused = True
@@ -427,11 +442,13 @@ class AgentService:
         except asyncio.CancelledError:
             record.status = "cancelled"
             raise
-        except Exception:
+        except Exception as error:
+            record.error = str(error)
             if record.status == "incomplete":
                 record.status = "failed"
             raise
         finally:
+            record.terminal_cause = context.state.terminal_cause
             log_scope(context)
             if context.transcript_archive is not None:
                 try:
@@ -455,6 +472,7 @@ class AgentService:
             self._model, question=question, local_context=local_context,
             conversation_history=conversation_history, context=context, images=images,
         )
+        context.operator_debug.route = "game_advice" if route.game_advice else "social" if route.social else "research"
         if images and route.social:
             local_context += '\n<image_observation>\n' + json.dumps({
                 'observation': route.image_observation,
@@ -505,6 +523,7 @@ class AgentService:
             status = "completed"
             return answer
         except AgentGracefulEnd as error:
+            context.operator_debug.error = str(error)
             await require_evidence_access(flow.context)
             status = "incomplete"
             if context.state.family_catalogue and isinstance(error, AgentLimitReached):
@@ -512,12 +531,14 @@ class AgentService:
                 return unfinished_answer(question, context.state.grounding_evidence)
             return str(error)
         except TextGenerationError as error:
+            context.operator_debug.error = str(error)
             status = "provider_error"
             await require_evidence_access(context)
             if flow.read_results:
                 return unfinished_answer(question, flow.model_results(flow.completed_results))
             raise AgentUnavailableError(str(error)) from error
         except PlanNotSettled as error:
+            context.operator_debug.error = str(error)
             LOGGER.warning(
                 "Agent plan not settled: request=%s reason=%s",
                 getattr(flow.context.source_message, "id", None),

@@ -16,6 +16,11 @@ from .access import require_access, require_evidence_access, assert_answer_scope
 from .disclosure import log_scope
 from .knowledge.answers import private_check_offered, scoped_answer, scope_reply_issue
 from .wording import AGENT_PRIVATE_OFFER, ACTION_PREVIEW_HEADER, FAILURE_MESSAGE, LONG_REPLY_FILENAME
+from .wording import (
+    ACTION_NOT_PREPARED, ACTION_PRIVATE_ANSWER, ACTION_PRIVATE_NOTE, ACTION_UNAVAILABLE,
+    AGENT_ANSWER_UNFINISHED, AGENT_PLAN_UNFINISHED, AGENT_RESEARCH_UNFINISHED,
+    RESEARCH_FEEDBACK_HINT,
+)
 from .engine.unfinished import unfinished_answer
 from .conversation.state import Conversation
 from .models import AgentAttachment, AgentDelivery, AgentRequestContext
@@ -41,6 +46,7 @@ from .text import chunk_response as _chunk_response
 
 LOGGER = logging.getLogger(__name__)
 MAX_RESPONSE_CHARACTERS = 12_000
+RESEARCH_FEEDBACK_HINT_INTERVAL = 5
 _USER_MENTION = re.compile(r"<@!?(\d+)>")
 
 
@@ -66,6 +72,7 @@ class AgentDeliveryMixin:
         delivery = context.state.reply_delivery.delivery
         answer_context = replace(context, state=replace(
             context.state, proposed_changes=[], preview_reply=None, outcomes=[],
+            research_answer_completed=False,
         ))
         first = len(delivery.message_ids)
         parts = outgoing_parts(text)
@@ -161,7 +168,8 @@ class AgentDeliveryMixin:
         if conversation is not None:
             self._conversations.register_reply(conversation, sent.id)
         if getattr(message, "archive_reply", True):
-            await self._archive_reply(message.id, sent.id, url)
+            await self._archive_reply(message.id, sent.id, url,
+                                      attachment_names=(media.filename,) if file else ())
         delivery.complete = True
 
     async def _send_response(
@@ -179,6 +187,7 @@ class AgentDeliveryMixin:
         _nonce_seed: int | None = None,
         _post_mentions: bool = False,
     ) -> None:
+        has_answer_text = bool(response.strip())
         if context is not None and (stop_typing := getattr(context, "stop_typing", None)):
             await stop_typing()
         response = discord_text(response)
@@ -249,6 +258,13 @@ class AgentDeliveryMixin:
             chunks = [None]
         else:
             chunks = _chunk_response(response)
+        if has_answer_text and self._research_feedback_hint_due(context, response, chunks):
+            # Split the original answer first. Never create a message for the hint,
+            # move answer text, or change the existing file fallback decision.
+            suffix = "\n" + RESEARCH_FEEDBACK_HINT
+            if len(chunks[-1]) + len(suffix) <= DISCORD_MESSAGE_LIMIT:
+                chunks[-1] += suffix
+                response = response.rstrip() + suffix
         if not chunks and not files and not any(item.google_link for item in attachments):
             response = "What result do you need?"
             chunks = [response]
@@ -274,6 +290,40 @@ class AgentDeliveryMixin:
             for file in files:
                 file.close()
 
+    def _research_feedback_hint_due(self, context, response, chunks):
+        if (context is None or not context.state.research_answer_completed
+                or not chunks or chunks[-1] is None or not response.strip()
+                or context.state.proposed_changes or context.state.preview_reply is not None
+                or context.private_pass or context.dm_delivery or context.state.scope_audit.offered
+                or any(outcome.visibility == "private" for outcome in context.state.outcomes)
+                or response in (FAILURE_MESSAGE, AGENT_ANSWER_UNFINISHED,
+                                AGENT_PLAN_UNFINISHED, AGENT_RESEARCH_UNFINISHED,
+                                ACTION_NOT_PREPARED, ACTION_UNAVAILABLE,
+                                ACTION_PRIVATE_NOTE, ACTION_PRIVATE_ANSWER)
+                or context.state.provider_failed or context.state.member_limit_refused
+                or context.state.terminal_cause
+                # Keep hints out of follow-up repairs by omitting conversation follow-ups.
+                or context.history or context.state.reply_context.get("conversation")
+                or context.state.reply_context.get("author", {}).get("member_id", 0)
+                   == getattr(getattr(context.guild, "me", None), "id", None)):
+            return False
+        # An unfinished fence must never swallow the Discord small-text line.
+        fence = None
+        for line in response.splitlines():
+            marker = re.match(r"^[ \t]*(`{3,}|~{3,})(.*)$", line)
+            if marker:
+                run, rest = marker.groups()
+                if fence is None:
+                    fence = run
+                elif run[0] == fence[0] and len(run) >= len(fence) and not rest.strip():
+                    fence = None
+        if fence is not None:
+            return False
+        # Per delivery surface, reset on restart; ineligible replies do not advance it.
+        count = getattr(self, "_research_feedback_answers", 0) + 1
+        self._research_feedback_answers = count
+        return count % RESEARCH_FEEDBACK_HINT_INTERVAL == 0
+
     async def _send_mixed_response(
         self, message, response, referenced, attachments, conversation, context,
         active, preview_timeout, mention_requester,
@@ -281,6 +331,7 @@ class AgentDeliveryMixin:
         response = spreadsheet_response(response, attachments)
         answer_context = replace(context, state=replace(
             context.state, proposed_changes=[], preview_reply=None,
+            research_answer_completed=False,
         ))
         preview_context = replace(context, state=replace(
             context.state, outcomes=[], attachments=[], preview_reply=None, gif_url=None,
@@ -353,7 +404,8 @@ class AgentDeliveryMixin:
         if conversation is not None:
             self._conversations.register_reply(conversation, sent.id)
         if getattr(message, "archive_reply", True):
-            await self._archive_reply(message.id, sent.id, content)
+            await self._archive_reply(message.id, sent.id, content,
+                                      attachment_names=tuple(file.filename for file in files))
 
     async def _send_split_response(
         self, message, response, referenced, attachments, conversation, answer_context,
@@ -448,7 +500,8 @@ class AgentDeliveryMixin:
                             )
                             await self._save_reply_conversation(conversation, context.source_message.id)
                     if getattr(context.source_message, "archive_reply", True):
-                        await self._archive_reply(context.source_message.id, edited.id, response)
+                        await self._archive_reply(context.source_message.id, edited.id, response,
+                                                  attachment_names=tuple(file.filename for file in files))
                     await target.edit(content="", view=None)
                     delivery.complete = True
                 else:
@@ -470,11 +523,15 @@ class AgentDeliveryMixin:
                 if getattr(context.source_message, "archive_reply", True):
                     await self._archive_reply(
                         context.source_message.id, edited.id, response, previous_content=previous,
+                        attachment_names=tuple(file.filename for file in files),
                     )
                 if conversation is not None:
                     async with conversation.lock:
                         conversation.replace_reply_content(context.source_message.id, edited.id, response)
                         await self._save_reply_conversation(conversation, context.source_message.id)
+            elif not media_reply and getattr(context.source_message, "archive_reply", True):
+                await self._archive_reply_delivery(context.source_message.id, target.id, response,
+                                                   tuple(file.filename for file in files))
             if target.id in delivery.message_ids:
                 index = delivery.message_ids.index(target.id)
                 delivery.text_parts[index] = (target.reply.render() if combined else response)
@@ -525,6 +582,8 @@ class AgentDeliveryMixin:
         if getattr(message, "archive_reply", True):
             await self._archive_reply(
                 message.id, sent.id, response if chunks == [None] else (chunks[0] if chunks else ""),
+                attachment_names=tuple(file.filename for file in options.get("files", ())),
+                is_answer=not bool(context and context.state.proposed_changes),
             )
         if target is not None:
             allowed_mentions = allowed_mentions.merge(discord.AllowedMentions(replied_user=False))
@@ -548,7 +607,8 @@ class AgentDeliveryMixin:
             if conversation is not None:
                 self._conversations.register_reply(conversation, sent.id)
             if getattr(message, "archive_reply", True):
-                await self._archive_reply(message.id, sent.id, chunk)
+                await self._archive_reply(message.id, sent.id, chunk,
+                                          is_answer=not bool(context and context.state.proposed_changes))
         if delivery is not None:
             delivery.complete = True
 
@@ -634,6 +694,7 @@ class AgentDeliveryMixin:
             self._conversations.register_reply(conversation, sent.id)
             await self._archive_reply(
                 record.request_message_id, sent.id, part,
+                attachment_names=tuple(item.filename for item in getattr(sent, "attachments", ())),
             )
             reconciled_count += 1
         return reconciled_count
@@ -641,6 +702,7 @@ class AgentDeliveryMixin:
     async def _archive_reply(
         self, request_id: int, reply_id: int, content: str,
         *, previous_content: str | None = None,
+        attachment_names: tuple[str, ...] | None = None, is_answer: bool = True,
     ) -> None:
         if self.transcript_archive is None:
             return
@@ -649,11 +711,23 @@ class AgentDeliveryMixin:
                          else self.transcript_archive.record_reply)
             self.transcript_archive.enqueue_write(operation, message_id=reply_id,
                 request_message_id=request_id, content=content,
-                **({"previous_content": previous_content} if previous_content is not None else {}))
+                **({"previous_content": previous_content, "attachment_names": attachment_names}
+                   if previous_content is not None else
+                   {"attachment_names": attachment_names or (), "is_answer": is_answer}))
         except Exception:
             # The reply is already visible. Do not send a misleading generation
             # failure or duplicate it because archival failed.
             LOGGER.exception("Agent transcript reply write failed: request=%s reply=%s", request_id, reply_id)
+
+    async def _archive_reply_delivery(self, request_id, reply_id, answer, attachment_names):
+        archive = getattr(self, "transcript_archive", None)
+        if archive is None:
+            return
+        try:
+            archive.enqueue_write(archive.record_reply_delivery, request_id=request_id,
+                                  reply_id=reply_id, answer=answer, attachment_names=attachment_names)
+        except Exception:
+            LOGGER.exception("Agent transcript reply metadata write failed: request=%s reply=%s", request_id, reply_id)
 
     @staticmethod
     async def _send_failure(message: discord.Message, text: str = FAILURE_MESSAGE) -> None:

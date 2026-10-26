@@ -369,7 +369,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 confirm = combined.views["preview"]
                 self.assertIsInstance(confirm, ConfirmationView)
                 self.assertIsNone(confirm.private_result)
-                self.cog._archive_reply.assert_any_await(message.id, answer_message.id, combined.render())
+                self.cog._archive_reply.assert_any_await(message.id, answer_message.id, combined.render(), attachment_names=())
                 conversation = self.cog._conversations.find(GUILD_ID, 100, answer_message.id)
                 record = conversation.turns[0].record
                 self.assertEqual(record.reply_ids, (1501,))

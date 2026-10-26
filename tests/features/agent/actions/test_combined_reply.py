@@ -109,7 +109,7 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(delivery.attempted_nonces, [_delivery_nonce(421, 0)])
                 self.assertTrue(delivery.complete)
                 self.assertIs(self.surface._conversations.find(321, 221, sent.id), self.conversation)
-                self.surface._archive_reply.assert_any_await(421, sent.id, sent.content)
+                self.surface._archive_reply.assert_any_await(421, sent.id, sent.content, attachment_names=())
 
     async def test_image_answer_is_separate_from_confirmation_and_has_no_caption(self):
         delivery = AgentDelivery()

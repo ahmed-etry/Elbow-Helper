@@ -9,6 +9,7 @@ from pathlib import Path
 import sqlite3
 
 from elbow_helper.infrastructure.persistence import SQLiteMigration, run_sqlite_migrations, sqlite_connection, sqlite_transaction
+from .feedback import ReplyReportArchiveMixin, feedback_schema, store_diagnostics
 
 LOGGER = logging.getLogger(__name__)
 DEBUG_RETENTION_DAYS = 30
@@ -41,7 +42,7 @@ def _schema(connection: sqlite3.Connection) -> None:
     connection.execute("CREATE INDEX transcript_replies ON replies(request_message_id, message_id)")
 
 
-class TranscriptArchive:
+class TranscriptArchive(ReplyReportArchiveMixin):
     def __init__(self, path: Path):
         self.path = path
         self._write_tasks: set[asyncio.Task] = set()
@@ -50,7 +51,8 @@ class TranscriptArchive:
             run_sqlite_migrations(connection, (
                 SQLiteMigration(1, "visible chat transcripts", _schema),
                 SQLiteMigration(2, "operator request diagnostics", _debug_schema),
-            ), target_version=2)
+                SQLiteMigration(3, "reply reports and retained request summaries", feedback_schema),
+            ), target_version=3)
 
     def enqueue_debug(self, context, record) -> None:
         """Schedule best-effort diagnostics without waiting on SQLite or serialization."""
@@ -82,6 +84,11 @@ class TranscriptArchive:
         while self._write_tasks:
             await asyncio.gather(*self._write_tasks)
 
+    async def report_reply(self, **values):
+        await self.drain()
+        async with self._write_lock:
+            return await archive_write(self.record_reply_report, **values)
+
     def record_debug(self, *, record, request_message_id, guild_id, channel_id,
                      root_message_id, member_id) -> None:
         now = datetime.now(timezone.utc)
@@ -92,6 +99,8 @@ class TranscriptArchive:
                 member_id, created_at, record_json) VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (request_message_id, guild_id, channel_id, root_message_id,
                  member_id, now.isoformat(), encoded))
+            if request_message_id is not None:
+                store_diagnostics(connection, request_message_id, json.loads(encoded))
             self._prune_debug(connection, now)
 
     @staticmethod
@@ -108,30 +117,34 @@ class TranscriptArchive:
 
     def record_request(self, *, message_id: int, guild_id: int, channel_id: int,
                        root_message_id: int, member_id: int, created_at: str,
-                       content: str, replied_to_message_id: int | None) -> None:
+                       content: str, replied_to_message_id: int | None,
+                       attachment_names: tuple[str, ...] = ()) -> None:
         values = (message_id, guild_id, channel_id, root_message_id, member_id,
-                  created_at, content, replied_to_message_id)
+                  created_at, content, replied_to_message_id,
+                  json.dumps(list(attachment_names), ensure_ascii=False))
         with self.connect() as connection, sqlite_transaction(connection, immediate=True):
             row = connection.execute("SELECT * FROM requests WHERE message_id=?", (message_id,)).fetchone()
             if row is not None:
                 if tuple(row) != values:
                     raise ValueError("Archived request identity conflicts with existing content")
                 return
-            connection.execute("INSERT INTO requests VALUES (?, ?, ?, ?, ?, ?, ?, ?)", values)
+            connection.execute("INSERT INTO requests VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", values)
 
-    def record_reply(self, *, message_id: int, request_message_id: int, content: str) -> None:
+    def record_reply(self, *, message_id: int, request_message_id: int, content: str,
+                     attachment_names: tuple[str, ...] = (), is_answer: bool = True) -> None:
+        values = (request_message_id, content, json.dumps(list(attachment_names), ensure_ascii=False), int(is_answer))
         with self.connect() as connection, sqlite_transaction(connection, immediate=True):
-            row = connection.execute("SELECT request_message_id, content FROM replies WHERE message_id=?", (message_id,)).fetchone()
+            row = connection.execute("SELECT request_message_id, content, attachment_names_json, is_answer FROM replies WHERE message_id=?", (message_id,)).fetchone()
             if row is not None:
-                if tuple(row) != (request_message_id, content):
+                if tuple(row) != values:
                     raise ValueError("Archived reply identity conflicts with existing content")
                 return
-            connection.execute("INSERT INTO replies(message_id, request_message_id, content) VALUES (?, ?, ?)",
-                               (message_id, request_message_id, content))
+            connection.execute("INSERT INTO replies(message_id, request_message_id, content, attachment_names_json, is_answer) VALUES (?, ?, ?, ?, ?)",
+                               (message_id, *values))
 
     def replace_reply(
         self, *, message_id: int, request_message_id: int,
-        previous_content: str, content: str,
+        previous_content: str, content: str, attachment_names: tuple[str, ...] | None = None,
     ) -> None:
         """Archive an edited notice only when its original identity still matches."""
         with self.connect() as connection, sqlite_transaction(connection, immediate=True):
@@ -140,15 +153,18 @@ class TranscriptArchive:
             ).fetchone()
             if row is None:
                 connection.execute(
-                    "INSERT INTO replies(message_id, request_message_id, content) VALUES (?, ?, ?)",
+                    "INSERT INTO replies(message_id, request_message_id, content, is_answer) VALUES (?, ?, ?, 1)",
                     (message_id, request_message_id, content),
                 )
             elif tuple(row) == (request_message_id, content):
-                return
+                pass
             elif tuple(row) == (request_message_id, previous_content):
                 connection.execute("UPDATE replies SET content=? WHERE message_id=?", (content, message_id))
             else:
                 raise ValueError("Archived reply identity conflicts with the edited notice")
+            if attachment_names is not None:
+                connection.execute("UPDATE replies SET attachment_names_json=? WHERE message_id=?",
+                                   (json.dumps(list(attachment_names), ensure_ascii=False), message_id))
 
     def read_page(self, *, guild_id: int, channel_id: int, root_message_id: int,
                   after_message_id: int = 0, limit: int = 50) -> tuple[dict, ...]:
@@ -169,11 +185,11 @@ class TranscriptArchive:
         return tuple(result)
 
 
-async def archive_write(operation, **values) -> None:
+async def archive_write(operation, **values):
     """Do not abandon a started SQLite write during handler cancellation."""
     task = asyncio.create_task(asyncio.to_thread(operation, **values))
     try:
-        await asyncio.shield(task)
+        return await asyncio.shield(task)
     except asyncio.CancelledError:
         await task
         raise

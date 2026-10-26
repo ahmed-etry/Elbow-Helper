@@ -191,6 +191,7 @@ class AgentTurnState:
     used_gif_urls: set[str] = field(default_factory=set)
     outcomes: list[Any] = field(default_factory=list)
     has_read_answer: bool = False
+    research_answer_completed: bool = False
     provider_failed: bool = False
     member_limit_refused: bool = False
     terminal_cause: str | None = None

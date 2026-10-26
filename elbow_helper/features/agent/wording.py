@@ -1,6 +1,7 @@
 """Fixed text shown by the agent."""
 
 FAILURE_MESSAGE = "I couldn't finish that right now. Try again in a moment."
+RESEARCH_FEEDBACK_HINT = "-# React 👎 if this answer was off"
 AGENT_PLAN_UNFINISHED = "I couldn't finish that request."
 ACTION_NOT_PREPARED = "I couldn't prepare that change for confirmation."
 AGENT_RESEARCH_UNFINISHED = "I couldn't finish checking everything."

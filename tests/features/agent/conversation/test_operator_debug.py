@@ -73,6 +73,10 @@ class OperatorDebugTests(unittest.IsolatedAsyncioTestCase):
             "prompt_cache_hit_tokens": 30, "prompt_cache_miss_tokens": 70})
         self.assertTrue(all(round_["elapsed_ms"] >= 0 for round_ in record["rounds"]))
         self.assertEqual(record["status"], "completed")
+        self.assertEqual(record["route"], "research")
+        self.assertEqual(record["usage"]["rounds"], len(record["rounds"]))
+        self.assertGreaterEqual(record["usage"]["prompt_tokens"], 100)
+        self.assertIsNone(record["terminal_cause"])
         self.assertEqual(self.archive.read_page(guild_id=3, channel_id=91, root_message_id=71), ())
         self.assertTrue(all("transcripts" not in str(source.path) for source in SOURCES))
 
@@ -124,6 +128,7 @@ class OperatorDebugTests(unittest.IsolatedAsyncioTestCase):
                 question="Synthetic question", local_context="", context=self.context)
         record, = await self.records()
         self.assertEqual(record["status"], "failed")
+        self.assertEqual(record["error"], "The AI backend is not configured")
         self.assertEqual(record["rounds"][0]["phase"], "routing")
         self.assertEqual(record["rounds"][0]["outcome"], "failed")
         self.assertIsNone(record["rounds"][0]["usage"])
@@ -136,6 +141,7 @@ class OperatorDebugTests(unittest.IsolatedAsyncioTestCase):
                 question="Synthetic question", local_context="", context=self.context)
         record, = await self.records()
         self.assertEqual(record["status"], "cancelled")
+        self.assertGreaterEqual(record["usage"]["unknown_token_rounds"], 1)
         self.assertIsNone(record["rounds"][-1]["usage"])
 
     async def test_version_one_migrates_and_only_old_diagnostics_are_pruned(self):
@@ -155,6 +161,6 @@ class OperatorDebugTests(unittest.IsolatedAsyncioTestCase):
         archive.record_debug(**values)
         archive.prune_debug()
         with archive.connect() as connection:
-            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 2)
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 3)
             self.assertEqual(connection.execute("SELECT count(*) FROM operator_debug_records").fetchone()[0], 1)
         self.assertEqual(len(archive.read_page(guild_id=3, channel_id=91, root_message_id=1)), 1)

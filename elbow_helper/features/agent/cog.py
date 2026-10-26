@@ -34,6 +34,7 @@ from .discord_actions.reactions import channel_reaction_history
 from .discord_actions.reaction_pacing import channel_combo_history
 from .conversation.transcripts import TranscriptArchive
 from .conversation.persistence import ConversationPersistence
+from .feedback import AgentFeedbackMixin
 
 
 LOGGER = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ AGENT_CONCURRENCY = 4
 MAX_PENDING_REQUESTS = 64
 
 
-class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
+class AgentCog(AgentFeedbackMixin, AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, commands.Cog):
     """Answer eligible mentions and run confirmed member requests."""
 
     def __init__(
@@ -117,6 +118,7 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
         self._previews: WeakValueDictionary[int, object] = WeakValueDictionary()
         self._tasks: set[asyncio.Task] = set()
         self._active_contexts: dict[int, AgentRequestContext] = {}
+        self._request_finished: dict[int, asyncio.Event] = {}
         self._semaphore = asyncio.Semaphore(AGENT_CONCURRENCY)
         self._application_owner: AgentIdentity | None = None
         self._application_owner_loaded = False
@@ -241,6 +243,7 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
             return
         task = asyncio.current_task()
         self._tasks.add(task)
+        finished = self._request_finished.setdefault(message.id, asyncio.Event())
         conversation = None
         queued_at = time.monotonic()
         try:
@@ -252,6 +255,7 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
                 message, member, question, conversation, queued_at,
             )
         except AgentAccessLost as error:
+            self._archive_request_failure(message.id, str(error), "access_lost")
             LOGGER.warning(
                 "Agent access lost: request=%s invoker=%s channel=%s error=%s",
                 message.id, member.id, message.channel.id, error,
@@ -262,12 +266,14 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
                 pass
             else:
                 await self._send_failure(message, "You no longer have access to this request here.")
-        except AgentDeliveryUnknown:
+        except AgentDeliveryUnknown as error:
+            self._archive_request_failure(message.id, str(error), "delivery_unknown")
             LOGGER.warning(
                 "Agent delivery outcome unknown: request=%s invoker=%s",
                 message.id, member.id,
             )
         except TimeoutError:
+            self._archive_request_failure(message.id, "Agent request timed out", "timeout")
             LOGGER.warning(
                 "Agent request timed out: request=%s invoker=%s channel=%s elapsed_ms=%s",
                 message.id, member.id, message.channel.id,
@@ -275,13 +281,15 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
             )
             await self._recover_stopped_request(message, "That request ran out of time.")
         except asyncio.CancelledError:
+            self._archive_request_failure(message.id, "Agent request cancelled", "cancelled")
             LOGGER.warning(
                 "Agent request cancelled: request=%s invoker=%s channel=%s elapsed_ms=%s",
                 message.id, member.id, message.channel.id,
                 int((time.monotonic() - queued_at) * 1_000),
             )
             raise
-        except Exception:
+        except Exception as error:
+            self._archive_request_failure(message.id, f"{type(error).__name__}: {error}", "failed")
             # This is the Discord event boundary: unexpected failures need the
             # same reply as known failures, without restarting paid generation.
             LOGGER.exception(
@@ -294,6 +302,8 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
                 conversation.pending -= 1
             self._tasks.discard(task)
             self._active_contexts.pop(message.id, None)
+            finished.set()
+            self._request_finished.pop(message.id, None)
 
     async def _recover_stopped_request(self, message, reason):
         """Retain authorized findings without duplicating a started delivery."""
@@ -429,6 +439,7 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
                         root_message_id=root_id, member_id=member.id, created_at=message.created_at.isoformat(),
                         content=message.content,
                         replied_to_message_id=getattr(message.reference, "message_id", None),
+                        attachment_names=tuple(item.filename for item in getattr(message, "attachments", ())),
                     )
                 except Exception:
                     LOGGER.exception("Agent transcript request enqueue failed: request=%s", message.id)

@@ -293,6 +293,8 @@ class PostHereTests(unittest.IsolatedAsyncioTestCase):
         for full in ("Full facts", "Full facts\n" * 250):
             with self.subTest(full_length=len(full)):
                 self.setUp()
+                self.message.archive_reply = True
+                self.delivery._archive_reply_delivery = AsyncMock()
                 action = PreparedAction(
                     "synthetic_change", {}, ChangePreview(("Synthetic change",), AsyncMock(return_value=True)),
                     AsyncMock(),
@@ -312,6 +314,9 @@ class PostHereTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(self.sent.files, [(LONG_REPLY_FILENAME, full.encode("utf-8"))])
                 else:
                     self.assertIn(full, self.sent.content)
+                self.delivery._archive_reply_delivery.assert_awaited_once_with(
+                    1000, self.sent.id, full, (LONG_REPLY_FILENAME,) if len(full) > 2000 else (),
+                )
                 await preview.cancel(self.interaction())
                 self.assertIn(ACTION_CANCELLED, self.sent.content)
                 self.assertIsNone(combined.views["answer"])
@@ -334,6 +339,7 @@ class PostHereTests(unittest.IsolatedAsyncioTestCase):
             await post.post_here(self.interaction())
         self.delivery._archive_reply.assert_awaited_with(
             1000, 999, self.sent.content, previous_content=previous,
+            attachment_names=(),
         )
         self.assertEqual(conversation.turns[-1].record.delivered_answer, self.sent.content)
         self.assertEqual(conversation.turns[-1].record.reply_ids, (999,))

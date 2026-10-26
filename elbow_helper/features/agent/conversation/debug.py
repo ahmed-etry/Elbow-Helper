@@ -16,6 +16,10 @@ class OperatorDebugRecord:
     rounds: list[dict[str, Any]] = field(default_factory=list)
     answer: str | None = None
     status: str = "incomplete"
+    usage: dict[str, Any] | None = None
+    route: str | None = None
+    error: str | None = None
+    terminal_cause: str | None = None
 
     def submitted(self, calls):
         for call in calls:
