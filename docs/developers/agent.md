@@ -9,10 +9,12 @@ saved data; shared infrastructure handles Clash and AI requests.
 
 - `cog.py` receives messages and gathers nearby messages and conversation
   history. Requests from the same member or conversation run one at a time.
-- `engine/service.py` starts non-social requests with the full tool list,
-  data guide, and channel-readable community knowledge in a stable system
-  prefix. Short social replies use a smaller route that can expand. A bare,
-  fully matched single-clan member count can use one read without a model.
+- `engine/service.py` uses a model judgment to separate social replies,
+  community research and game advice. Clan rules, role duties and member
+  account checks use research. Tactical game advice gets a generated decline;
+  with a knowledge store configured, it first goes through research to check
+  approved references. Short social replies can expand into research. A truncated
+  short reply gets one complete rewrite within the same request limits.
 - `plan/planning.py` reads the model's answer or proposed steps.
   `plan/checker.py` checks tool names, arguments, and references to earlier
   results. `PlanRunner` in `engine/steps.py` checks access and runs the steps.
@@ -23,7 +25,30 @@ Request timeouts are set in `cog.py`; model usage and result size limits are
 in `engine/budgets.py`. When investigating an unfinished request, check the
 `Agent usage` log for its status and usage.
 
+`engine/member_usage.py` keeps rolling allowances in memory: 30 banter
+requests per hour, and 10 questions per hour and 40 per day, per member and
+server. Expanding banter into research counts as a question instead.
+Lead Plus, Core and sleeping Co-Leaders and Cross-Leaders are exempt.
+`AnswerFlow._limit_plan` reserves deep analysis (assessment mode and `max`
+effort) for those same members, including on revised and corrected plans.
+
+The meme catalogue is `discord_actions/gif_library.json`; local media lives
+in `data/agent/gifs/`. In `engine/social_reply.py`, the model shortlists three
+items with fit scores. Ordinary banter sends at fit 4 or higher, or 5 if the
+bot's previous channel reply was a meme. `discord_actions/gif_library.py`
+avoids clips already seen in the channel context, using an unused clip of
+the same joke when possible. Explicit meme requests bypass the fit threshold
+and may repeat a clip. `discord_actions/meme_usage.py` records delivered memes
+across the server and prefers fresh jokes.
+
 ## Adding tools and actions
+
+Research starts with about 20 abilities marked `default_visible` in
+`engine/registry.py`. The rest are opened through `families/catalogue.py`
+discovery, which installs tool definitions without running them or granting
+access. `engine/self_knowledge.py` supplies the complete registered list,
+including hidden abilities and their permission requirements, when the bot
+answers questions or makes claims about its own abilities.
 
 `RegisteredAgentTool` connects a tool's name and arguments to its handler.
 Its `CapabilityContract` describes the data it can read, the source channels,
@@ -39,14 +64,13 @@ definitions and calls the feature adapters.
 ## Access and sharing
 
 Core leadership and members with the Agent Tester role can use the agent.
-`access.py` checks their roles and channel permissions for each source. Both
-the member and the bot must be able to read a source channel; the member must
-also belong to any private thread being read. These checks apply again when
-using saved history or reports and before sending an answer.
-
-`disclosure.py` checks whether everyone who can see the destination can read
-the answer's sources. When that cannot be established, `PrivateAnswerView`
-lets the requesting member view the answer privately. See
+`access.py` checks each source against the destination scope from
+`disclosure.py` before reading it. Role-classified sources use the member's
+reader roles; other sources require the member's channel permissions and,
+for private threads, membership or Manage Threads. The bot must be able to
+read every source. These checks apply again when using saved history or
+reports and before sending an answer. Excluded evidence stays out of the
+shared answer; the private check is described under Community knowledge. See
 [Privacy and AI](../users/privacy-and-ai.md#agent) for the sharing controls and
 the audit-log restriction.
 
@@ -58,14 +82,27 @@ references; it does not judge the meaning of prose by matching English words.
 The answer model must distinguish sourced statements from its recommendations,
 using message authors, chronology and explicit reply targets. A correct citation
 alone does not establish that an interpretation is faithful.
-`factual_answers.py` and `strict_answers.py` build supported answers, such as
-counts and tag lists, directly from lookup results.
+When the family catalogue is not active, `factual_answers.py` checks explicit
+clan member counts, count-only query results and battle-log figures against
+typed results for the same subject and metric. A conflict gets one answer-only
+repair with the verified value. A repeated conflict or unavailable repair keeps
+the prose and appends the verified figure. Single-clan member counts also use
+checked model plans. Filtered counts and list requests go through an answer
+round, including requests for names and explanations.
 
 An unresolved message reference gets one answer-only repair. If repair cannot
-finish, the reply retains referenced source messages that were actually read
-and identifies the missing result. Valid measured figures and completed command
-outcomes survive failures in independent results. Access checks still apply
-before delivery, including recovery replies.
+finish, the reply drops the unresolved citation and keeps the prose and valid
+citations. Claims explicitly attributed to a missing message receive a short
+qualifier. Visible local messages are also available as citation evidence, and
+oversized results retain whole records rather than raw JSON excerpts.
+Valid measured figures and completed command outcomes survive failures in
+independent results. Access checks still apply before delivery, including
+recovery replies.
+
+`AnswerFlow._advance_answer` normally uses low effort for writing and grounding
+repairs, independently of planning effort. Assessment composition uses max
+effort, further read rounds use high, and later repairs use none. Private
+passes follow the same policy.
 
 Unit tests check source integrity, numeric results and recovery. To assess
 interpretation with the actual answer model, run
@@ -96,45 +133,33 @@ troubleshooting records are kept.
 
 ## Community knowledge
 
-`KnowledgeStore` supplies approved reference sections that the asker can
-read. Research requests load short `always_loaded` sections only when the
-channel audience may read them. The topic list contains public titles and
-filenames.
+`KnowledgeStore` supplies approved reference sections within the destination's
+scope. Research starts with a visible title and filename index, without
+preloading section bodies, including those marked `always_loaded`.
 
 Use `titles` to open a clearly matching topic from the index, or a word search
-when no title clearly matches. Searches cover the asker's access groups.
-The first answer pass receives channel-readable bodies and a title, section ID
-and `available_privately` note for other matches. Sections outside the asker's
-access are absent, including their titles. Legacy `scope` arguments do not
-release private bodies.
+when no title clearly matches. Searches return bodies and titles only within
+the active scope. Relevant matches outside that scope may set
+`available_privately` when the asker can read them, without returning their
+titles, section IDs or bodies. Legacy `scope` arguments cannot widen access.
 
-When channel-readable material suffices, the answer stays public. The model can
-request needed bodies with `{"needs_restricted_knowledge":true,"section_ids":["..."]}`.
-One additional answer pass receives only those sections and cannot run tools.
-The older boolean-only signal opens a single withheld section directly; ambiguous
-or invalid selections get one answer-only correction before any bodies are opened.
-Malformed internal signals, including extra fields or wrong value types, are
-recognized as protocol rather than delivered as answer text. Only a valid
-selection can open bodies; an invalid correction stops with the existing failure reply.
-Unused private matches do not trigger another answer pass.
+`knowledge/answers.py` accepts `{"needs_private_evidence":true,"answer":"..."}`
+to keep the supported channel answer and offer **Show full answer** when
+relevant excluded evidence is available to the asker. The old
+`needs_restricted_knowledge` key is rejected. No excluded evidence is opened
+until the asker clicks the button in `actions/answer_view.py`.
+`private_answer_pass` then starts fresh tools, evidence and a model session
+at the asker's current clearance, retaining visible causal conversation
+history. It can run reads and create artifacts, but cannot make changes.
 
-Access is rechecked before using bodies or titles and before delivery. If the
-destination audience cannot read the evidence, the answer uses the private-result
-controls. An explicit **Post here** decision can cover later answers for the same
-requester and channel, with access rechecked. Knowledge section IDs include their
-contents, so a different or revised section needs its own decision. Audit results
-remain private. Retained evidence, generated artifacts and change details also
-keep their source restrictions.
+The private result is shown only to the asker. **Post here** can share that
+result after access is rechecked; it does not authorize later answers.
+Audit results remain private. Retained evidence, generated artifacts and
+change details keep their source restrictions. Knowledge reads use section
+pages and continuation offsets within the request's evidence limits.
 
-The private pass receives complete selected sections within the existing
-evidence limits. If they do not fit, the request stops with the existing
-shorter-request response rather than answering from clipped sections.
-
-For a private answer, check the `Agent audience decision` log for the request ID.
-`failed_requirement` names the rejected access group or source permission;
-`reader_kind` distinguishes a role group, a bot, or an unknown member, without
-member names. An incomplete-cache reason means the requirement could not be
-proved from channel permissions, rather than identifying an unauthorized person.
+The `Agent evidence scope` log records the request ID, destination clearance,
+active scope, excluded sources and whether a private check was offered.
 See [Agent knowledge files](../operators/agent-knowledge.md) for editing and
 reload instructions.
 

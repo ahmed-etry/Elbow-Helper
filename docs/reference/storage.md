@@ -13,7 +13,8 @@ retain older feature names because existing deployments depend on them.
 | Agent | `data/agent/agent.sqlite3` | Conversations and reply IDs used to continue after a restart |
 | Agent | `data/agent/transcripts.sqlite3` | Request and reply text, plus troubleshooting records |
 | Agent | `data/agent/research_jobs.sqlite3` | Progress and results for Discord searches and history reads |
-| Agent | `data/agent/actions.sqlite3` | Action history, progress, tracked messages, scheduled requests, watched conditions, and member timezones |
+| Agent | `data/agent/actions.sqlite3` | Action history, progress, tracked messages, scheduled requests, watched conditions, member timezones, and memes the bot posted (30 days, up to 500 per server) |
+| Agent | `data/agent/gifs/` | Local image files for the meme library; copy on deploy |
 | Agent | `data/agent/knowledge/*.md` | [Community reference files](../operators/agent-knowledge.md) |
 | Clan health | `data/clan_health/clan_health.db` | Snapshots, activity, movement, wars, and report evidence |
 | Clan health | `data/clan_health/player_health_config.json` | Health-report expectations |
