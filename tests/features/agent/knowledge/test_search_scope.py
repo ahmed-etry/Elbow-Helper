@@ -123,7 +123,9 @@ class SearchScopeTests(unittest.IsolatedAsyncioTestCase):
         with patch("elbow_helper.features.agent.disclosure.discord.Thread", Thread):
             result = await search_approved_knowledge(self.context, {})
             self.assertIn("lead", {s.get("visibility") for s in result["sections"]})
-            destination.fetch_members.assert_awaited_once()
+            # Knowledge checks access before and after loading; each recheck
+            # must resolve current private-thread members and moderators.
+            self.assertEqual(destination.fetch_members.await_count, 2)
             self.channel.moderators.add(self.reader.id)
             self.context = replace(self.context, state=AgentTurnState())
             self.context.disclosure_thread_members.clear()

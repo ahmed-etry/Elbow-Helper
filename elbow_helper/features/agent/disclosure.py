@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from collections import Counter
+import asyncio
+from dataclasses import dataclass
 import logging
 from typing import Any
 
@@ -18,6 +20,20 @@ from elbow_helper.configuration import channels as channel_ids
 from elbow_helper.configuration.roles import MEMBERS
 
 LOGGER = logging.getLogger(__name__)
+
+# Integer keys remain reserved for fetched thread memberships. All derived
+# audiences share their lifetime, including when an access recheck clears it.
+_AUDIENCE_CACHE = object()
+_PERMISSION_METHODS = {
+    discord.TextChannel: discord.TextChannel.permissions_for,
+    discord.ForumChannel: discord.ForumChannel.permissions_for,
+    discord.Thread: discord.Thread.permissions_for,
+}
+
+
+def _audience_key(cache, kind, destination, guild):
+    generation = cache.setdefault(_AUDIENCE_CACHE, object())
+    return (generation, kind, guild.id, getattr(destination, "id", None))
 
 
 def _read_audience_signature(channel: Any) -> tuple[tuple[int, bool | None, bool | None], ...] | None:
@@ -173,6 +189,13 @@ async def _thread_member_ids(thread, cache):
 
 
 async def _destination_viewers(destination, guild, cache):
+    key = _audience_key(cache, "viewers", destination, guild)
+    if key not in cache:
+        cache[key] = await _compute_destination_viewers(destination, guild, cache)
+    return cache[key]
+
+
+async def _compute_destination_viewers(destination, guild, cache):
     if not getattr(guild, "chunked", False):
         return None
     if isinstance(destination, discord.Thread):
@@ -183,15 +206,116 @@ async def _destination_viewers(destination, guild, cache):
             members = tuple(guild.get_member(identifier) for identifier in identifiers)
             if any(member is None for member in members):
                 return None
-            moderators = tuple(member for member in guild.members
-                               if (permissions := destination.permissions_for(member)).view_channel
-                               and getattr(permissions, "manage_threads", False))
+            moderators = []
+            for index, member in enumerate(guild.members, 1):
+                permissions = destination.permissions_for(member)
+                if permissions.view_channel and getattr(permissions, "manage_threads", False):
+                    moderators.append(member)
+                if index % 128 == 0:
+                    await asyncio.sleep(0)
             return (*members, *moderators)
         destination = destination.parent
     if destination is None:
         return None
-    return tuple(member for member in guild.members
-                 if destination.permissions_for(member).view_channel)
+    viewers = []
+    for index, member in enumerate(guild.members, 1):
+        if destination.permissions_for(member).view_channel:
+            viewers.append(member)
+        if index % 128 == 0:
+            await asyncio.sleep(0)
+    return tuple(viewers)
+
+
+async def _destination_humans(destination, guild, cache):
+    key = _audience_key(cache, "humans", destination, guild)
+    if key not in cache:
+        viewers = await _destination_viewers(destination, guild, cache)
+        cache[key] = (None if viewers is None else tuple(
+            member for member in viewers if not getattr(member, "bot", False)
+            and member.id != getattr(guild.me, "id", None)
+        ))
+    return cache[key]
+
+
+@dataclass
+class _ViewerGroups:
+    members: dict[int, discord.Member]
+    groups: tuple[dict[int, discord.Member], ...]
+
+
+async def _viewer_groups(destination, guild, humans, cache):
+    key = _audience_key(cache, "groups", destination, guild)
+    if key not in cache:
+        groups = {}
+        for index, member in enumerate(humans, 1):
+            # Custom member/permission implementations must use the exact scan.
+            if type(member) is not discord.Member or member.guild is not guild:
+                cache[key] = None
+                return None
+            # GuildChannel.permissions_for depends on roles, owner identity,
+            # timeout and the source's member overwrites (handled separately).
+            group = (tuple(role.id for role in member.roles), member.id == guild.owner_id,
+                     member.timed_out_until)
+            groups.setdefault(group, {})[member.id] = member
+            if index % 128 == 0:
+                await asyncio.sleep(0)
+        cache[key] = _ViewerGroups({member.id: member for member in humans}, tuple(groups.values()))
+    return cache[key]
+
+
+def _standard_permissions(source, guild):
+    method = _PERMISSION_METHODS.get(type(source))
+    return (method is not None and getattr(source.permissions_for, "__func__", None) is method
+            and source.guild is guild and guild.default_role is not None)
+
+
+async def _source_readable_by_viewers(source, destination, guild, humans, identifiers, cache):
+    groups = None
+    overwrites = {}
+    if _standard_permissions(source, guild):
+        parent = source.parent if isinstance(source, discord.Thread) else source
+        overwrites = parent.overwrites
+        # Member.roles omits uncached roles. Their source overwrites can still
+        # affect permissions, so that case must retain the individual scan.
+        unknown_role = any(isinstance(target, discord.Object) and target.type is discord.Role
+                           for target in overwrites)
+        if not unknown_role:
+            groups = await _viewer_groups(destination, guild, humans, cache)
+    if groups is None:
+        for index, member in enumerate(humans, 1):
+            permissions = source.permissions_for(member)
+            if not (permissions.view_channel and permissions.read_message_history
+                    and (identifiers is None or member.id in identifiers
+                         or getattr(permissions, "manage_threads", False))):
+                return False
+            if index % 128 == 0:
+                await asyncio.sleep(0)
+        return True
+
+    # Only actual viewers with a member overwrite need individual resolution.
+    exceptions = {target.id for target in overwrites
+                  if not isinstance(target, discord.Role) and target.id in groups.members}
+    for index, identifier in enumerate(exceptions, 1):
+        permissions = source.permissions_for(groups.members[identifier])
+        if not (permissions.view_channel and permissions.read_message_history
+                and (identifiers is None or identifier in identifiers or permissions.manage_threads)):
+            return False
+        if index % 128 == 0:
+            await asyncio.sleep(0)
+    joined_or_exception = identifiers | exceptions if identifiers is not None else None
+    for index, group in enumerate(groups.groups, 1):
+        member = next((member for identifier, member in group.items() if identifier not in exceptions), None)
+        if member is None:
+            continue
+        permissions = source.permissions_for(member)
+        if not (permissions.view_channel and permissions.read_message_history):
+            return False
+        if (joined_or_exception is not None and not permissions.manage_threads
+                and not group.keys() <= joined_or_exception):
+            return False
+        if index % 128 == 0:
+            await asyncio.sleep(0)
+    return True
 
 
 async def destination_clearance(destination, guild, *, thread_members=None):
@@ -201,15 +325,16 @@ async def destination_clearance(destination, guild, *, thread_members=None):
         return member_clearance(guild, recipient.id) if recipient is not None else frozenset()
     if getattr(getattr(destination, "guild", None), "id", None) != guild.id:
         return frozenset()
-    viewers = await _destination_viewers(destination, guild, thread_members if thread_members is not None else {})
-    if viewers is not None:
-        humans = tuple(member for member in viewers if not getattr(member, "bot", False)
-                       and member.id != getattr(guild.me, "id", None))
+    humans = await _destination_humans(destination, guild, thread_members if thread_members is not None else {})
+    if humans is not None:
         if humans:
             # Audit entries always require requester-only delivery.
-            return frozenset.intersection(*(member_clearance(guild, member.id) for member in humans)) - {
-                ACCESS_VIEW_AUDIT_LOG,
-            }
+            clearance = KNOWN_ACCESS_REQUIREMENTS
+            for index, member in enumerate(humans, 1):
+                clearance = clearance & member_clearance(guild, member.id)
+                if index % 128 == 0:
+                    await asyncio.sleep(0)
+            return clearance - {ACCESS_VIEW_AUDIT_LOG}
         return frozenset()
     # An incomplete cache must prove the audience from permission structure.
     if isinstance(destination, discord.Thread) and destination.is_private():
@@ -334,11 +459,9 @@ async def personal_source_allowed(destination, source, guild, *, thread_members=
     if source.id == getattr(destination, "id", None):
         return True
     cache = thread_members if thread_members is not None else {}
-    viewers = await _destination_viewers(destination, guild, cache)
-    if viewers is None:
+    humans = await _destination_humans(destination, guild, cache)
+    if humans is None:
         return _source_audience_contains_destination(source, destination, guild)
-    humans = tuple(member for member in viewers if not getattr(member, "bot", False)
-                   and member.id != getattr(guild.me, "id", None))
     if not humans:
         return False
     identifiers = None
@@ -346,13 +469,12 @@ async def personal_source_allowed(destination, source, guild, *, thread_members=
         identifiers = await _thread_member_ids(source, cache)
         if identifiers is None:
             return False
-    return all((permissions := source.permissions_for(member)).view_channel
-               and permissions.read_message_history
-               and (identifiers is None or member.id in identifiers
-                    or getattr(permissions, "manage_threads", False)) for member in humans)
+    return await _source_readable_by_viewers(source, destination, guild, humans, identifiers, cache)
 
 
 async def request_scope(context, *, refresh=False):
+    if refresh:
+        getattr(context, "disclosure_thread_members", {}).clear()
     destination = getattr(context, "delivery_channel", None) or getattr(
         getattr(context, "source_message", None), "channel", None,
     )

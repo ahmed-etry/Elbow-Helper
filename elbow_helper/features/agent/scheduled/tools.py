@@ -16,7 +16,7 @@ from ..engine.capability_contract import CapabilityContract
 from ..actions.contracts import ActionRefused, ActionClass, ChangePreview, PreparedAction
 from ..actions.outcomes import ActionOutcome
 from ..access import accessible_message_channel
-from ..disclosure import can_show
+from ..disclosure import can_show, request_scope
 from ..models import AgentCapabilityEffect, AgentRequestContext, RegisteredAgentTool
 from ..wording import (
     ACTION_STANDING_DESTINATION, ACTION_STANDING_MANAGE,
@@ -170,6 +170,7 @@ def _validate_watcher(values: Mapping[str, Any], actions, registry_factory) -> N
 
 
 async def _watcher_destination(context, values, destination, registry_factory) -> None:
+    await request_scope(context, refresh=True)
     sources = {}
     levels = set()
     registry = registry_factory()

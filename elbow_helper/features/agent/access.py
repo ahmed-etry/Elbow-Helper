@@ -280,7 +280,7 @@ async def require_evidence_access(context: AgentRequestContext) -> dict[int, Any
     """Fail closed before reusing evidence whose sources became inaccessible."""
     require_access(context.guild, context.member.id, context.source_message.channel)
     from .disclosure import request_scope
-    scope = await request_scope(context)
+    scope = await request_scope(context, refresh=True)
     require_access_requirements(context.guild, context.member.id, context.state.help_requester_access)
     if not has_reader_access_requirements(context.guild, context.member.id,
             context.state.required_access | context.state.knowledge_title_access):
@@ -301,9 +301,6 @@ async def require_evidence_access(context: AgentRequestContext) -> dict[int, Any
 
 async def assert_answer_scope(context, text=""):
     """Last cheap bug guard. Violations abort delivery, never become a private notice."""
-    from .disclosure import request_scope
-    getattr(context, "disclosure_thread_members", {}).clear()
-    await request_scope(context, refresh=True)
     await require_evidence_access(context)
     for guild_id, channel_id in re.findall(
         r"https?://(?:(?:canary|ptb)\.)?discord(?:app)?\.com/channels/(\d+)/(\d+)(?:/\d+)?", text or "",

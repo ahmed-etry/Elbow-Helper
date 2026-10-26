@@ -247,7 +247,8 @@ class AgentRequestContext:
     deadline_monotonic: float | None = None
     dm_delivery: bool = False
     private_pass: bool = False
-    disclosure_thread_members: dict[int, frozenset[int] | None] = field(default_factory=dict)
+    # Thread memberships and derived permission audiences; cleared on recheck.
+    disclosure_thread_members: dict[Any, Any] = field(default_factory=dict)
     application_owner: AgentIdentity | None = None
     transcript_archive: Any = None
     operator_debug: Any = None
