@@ -14,6 +14,7 @@ from ..wording import (
 )
 from ..models import AgentAttachment
 from ..files.delivery import attachment_files, spreadsheet_links, spreadsheet_warnings
+from ..discord_actions.message_parts import image_attachment, outgoing_parts
 from ..text import chunk_response
 from .message_cleanup import log_cleanup_failure
 
@@ -78,6 +79,13 @@ class PrivateResultView(discord.ui.View):
         files = attachment_files(self.attachments)
         links = spreadsheet_links(None, self.attachments)
         options = {"view": links} if links is not None else {}
+        parts = self.parts
+        if any(image_attachment(item) for item in self.attachments):
+            parts = ()
+        else:
+            selected = outgoing_parts("\n".join(parts))
+            if any(is_image for _, is_image in selected):
+                parts = tuple(part for part, _ in selected)
         try:
             if self.panels:
                 if len(self.panels) == 1:
@@ -88,15 +96,15 @@ class PrivateResultView(discord.ui.View):
                                                 self.panel_labels),
                         ephemeral=True,
                     )
-                if files or self.parts or links is not None:
+                if files or parts or links is not None:
                     await interaction.followup.send(
-                        self.parts[0] if self.parts else None,
+                        parts[0] if parts else None,
                         files=files, ephemeral=True, **options,
                     )
-                    for part in self.parts[1:]:
+                    for part in parts[1:]:
                         await interaction.followup.send(part, ephemeral=True)
                 return
-            for index, part in enumerate(self.parts or ("",)):
+            for index, part in enumerate(parts or ("",)):
                 if index == 0:
                     if files:
                         options["files"] = files

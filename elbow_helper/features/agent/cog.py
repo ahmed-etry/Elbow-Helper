@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import AsyncExitStack
+from dataclasses import replace
 import logging
-import re
 import sqlite3
 import time
 from weakref import WeakValueDictionary
@@ -18,15 +18,20 @@ from elbow_helper.configuration.guild import GUILD_ID
 from .conversation.preparation import ConversationContextMixin
 from .conversation.turns import AgentTurnMixin
 from .delivery import AgentDeliveryMixin, AgentDeliveryUnknown
+from .activity import reply_typing
 from .access import AgentAccessLost, require_evidence_access
 from .access import has_agent_entry_access
 from .access import require_access
 from .conversation.state import Conversation, ConversationStore
 from .text import message_text
-from .models import AgentRequestContext, AgentIdentity
+from .models import AgentRequestContext, AgentIdentity, ChannelReactions
 from .identity import agent_identity, member_identity
 from .engine.service import AgentUnavailableError
 from .engine.service import AgentService
+from .discord_actions.gifs import GIF_CONTEXT_MESSAGES, channel_gif_history
+from .discord_actions.gif_library import channel_gif_ids
+from .discord_actions.reactions import channel_reaction_history
+from .discord_actions.reaction_pacing import channel_combo_history
 from .conversation.transcripts import TranscriptArchive
 from .conversation.persistence import ConversationPersistence
 
@@ -71,6 +76,7 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
         research_runner=None,
         action_runner=None,
         action_repository=None,
+        meme_usage_repository=None,
         transcript_archive: TranscriptArchive | None = None,
         persistence: ConversationPersistence | None = None,
     ):
@@ -101,6 +107,7 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
         if self.action_runner is not None:
             self.action_runner.on_finish = self._record_action_outcome
         self.action_repository = action_repository
+        self.meme_usage_repository = meme_usage_repository
         self.transcript_archive = transcript_archive
         self.persistence = persistence
         self._cleanup_task: asyncio.Task | None = None
@@ -109,9 +116,11 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
         self._member_locks: WeakValueDictionary[int, asyncio.Lock] = WeakValueDictionary()
         self._previews: WeakValueDictionary[int, object] = WeakValueDictionary()
         self._tasks: set[asyncio.Task] = set()
+        self._active_contexts: dict[int, AgentRequestContext] = {}
         self._semaphore = asyncio.Semaphore(AGENT_CONCURRENCY)
         self._application_owner: AgentIdentity | None = None
         self._application_owner_loaded = False
+        self._channel_reactions: dict[int, ChannelReactions] = {}
 
     @property
     def application_owner(self) -> AgentIdentity | None:
@@ -228,7 +237,7 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
         if not question:
             return
         if len(self._tasks) >= MAX_PENDING_REQUESTS:
-            await self._send_failure(message)
+            await self._send_failure(message, "I'm handling several requests. Please try again shortly.")
             return
         task = asyncio.current_task()
         self._tasks.add(task)
@@ -252,7 +261,7 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
             except AgentAccessLost:
                 pass
             else:
-                await self._send_failure(message)
+                await self._send_failure(message, "You no longer have access to this request here.")
         except AgentDeliveryUnknown:
             LOGGER.warning(
                 "Agent delivery outcome unknown: request=%s invoker=%s",
@@ -264,7 +273,7 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
                 message.id, member.id, message.channel.id,
                 int((time.monotonic() - queued_at) * 1_000),
             )
-            await self._send_failure(message)
+            await self._recover_stopped_request(message, "That request ran out of time.")
         except asyncio.CancelledError:
             LOGGER.warning(
                 "Agent request cancelled: request=%s invoker=%s channel=%s elapsed_ms=%s",
@@ -279,11 +288,30 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
                 "Agent request failed: request=%s invoker=%s channel=%s",
                 message.id, member.id, message.channel.id,
             )
-            await self._send_failure(message)
+            await self._recover_stopped_request(message, "That request stopped before I could finish.")
         finally:
             if conversation is not None:
                 conversation.pending -= 1
             self._tasks.discard(task)
+            self._active_contexts.pop(message.id, None)
+
+    async def _recover_stopped_request(self, message, reason):
+        """Retain authorized findings without duplicating a started delivery."""
+        from .engine.unfinished import unfinished_answer
+        context = self._active_contexts.get(message.id)
+        if context is None or not context.state.grounding_evidence:
+            await self._send_failure(message, reason)
+            return
+        delivery = context.state.reply_delivery.delivery
+        if delivery.message_ids or delivery.unknown:
+            return
+        try:
+            await self._check_sources(context)
+            response = unfinished_answer(context.state.request_text, context.state.grounding_evidence)
+            await self.send_response(message, response, None, attachments=context.state.attachments,
+                                     context=context, delivery=delivery)
+        except AgentAccessLost:
+            return
 
     def cog_unload(self):
         if self._cleanup_task is not None:
@@ -348,9 +376,12 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
         bot_user = self.bot.user
         if bot_user is None:
             return ""
-        mention_pattern = re.compile(rf"<@!?{bot_user.id}>")
+        mention_forms = (f'<@{bot_user.id}>', f'<@!{bot_user.id}>')
         content = message.content or ""
-        if not mention_pattern.sub("", content).strip():
+        remaining = content
+        for mention in mention_forms:
+            remaining = remaining.replace(mention, '')
+        if not remaining.strip():
             from .files.gif_media import has_image_content
             if has_image_content(message):
                 return "Respond to the image, sticker or GIF in this message."
@@ -358,7 +389,9 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
         identity = agent_identity(self.bot, getattr(message, "guild", None))
         if identity is None:
             return content.strip()
-        return mention_pattern.sub(lambda _: f"@{identity.display_name}", content).strip()
+        for mention in mention_forms:
+            content = content.replace(mention, f'@{identity.display_name}')
+        return content.strip()
 
 
     async def _answer(
@@ -373,12 +406,19 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
         member = require_access(message.guild, member.id, message.channel)
         reply_activity = AsyncExitStack()
         try:
-            await reply_activity.enter_async_context(message.channel.typing())
-            referenced = await self._resolve_referenced_message(message)
+            await reply_activity.enter_async_context(reply_typing(message.channel))
             context, root_id = self._request_context(
-                message, member, referenced, conversation, deadline_monotonic,
+                message, member, None, conversation, deadline_monotonic,
             )
+            from .disclosure import request_scope
+            await request_scope(context)
+            referenced = await self._resolve_referenced_message(message)
+            context = replace(context, attachment_sources=tuple(
+                item for item in (message, referenced) if item is not None
+            ))
+            context = replace(context, stop_typing=reply_activity.aclose)
             context.state.request_text = question
+            self._active_contexts[message.id] = context
             await self._load_authorized_reports(conversation, context)
             await self._check_sources(context)
             if self.transcript_archive is not None:
@@ -392,7 +432,7 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
                     )
                 except Exception:
                     LOGGER.exception("Agent transcript request enqueue failed: request=%s", message.id)
-            local_context = await self._build_local_context(message, referenced, conversation)
+            local_context = await self._build_local_context(message, referenced, conversation, context=context)
             history = await self._conversation_history(conversation, context)
 
             response = await self.service.answer(
@@ -430,6 +470,7 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
                 message.channel.id,
                 error,
             )
+            await reply_activity.aclose()
             await self._send_failure(message)
         finally:
             await reply_activity.aclose()
@@ -443,19 +484,48 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
         message: discord.Message,
         referenced: discord.Message | None,
         conversation: Conversation | None = None,
+        *, context: AgentRequestContext | None = None,
     ) -> str:
         recent: list[discord.Message] = []
+        if context is not None:
+            context.state.channel_reactions = self._channel_reactions.setdefault(
+                message.channel.id, ChannelReactions(emojis=None),
+            )
         try:
-            anchor = referenced if referenced is not None else message
-            recent = [
-                item
-                async for item in message.channel.history(
-                    limit=LOCAL_CONTEXT_MESSAGES,
-                    before=anchor,
-                    oldest_first=False,
-                )
-            ]
-            recent.reverse()
+            if context is not None:
+                # Pacing spans conversations without exposing their text to the
+                # model. Always inspect the current channel, even for old replies.
+                channel_recent = [item async for item in message.channel.history(
+                    limit=GIF_CONTEXT_MESSAGES, before=message, oldest_first=False,
+                )]
+                channel_recent.reverse()
+                bot_id = getattr(getattr(self.bot, "user", None), "id", None)
+                context.state.channel_bot_gifs = channel_gif_history(channel_recent, bot_id)
+                context.state.channel_gif_ids = channel_gif_ids([
+                    item for item in channel_recent if item.author.id == bot_id
+                ])
+                channel = context.state.channel_reactions
+                async with channel.lock:
+                    reaction_message_id, emojis = channel_reaction_history(channel_recent)
+                    if channel.emojis is None or reaction_message_id > channel.message_id:
+                        channel.emojis = emojis
+                        channel.message_id = reaction_message_id
+                    context.state.channel_bot_combos = channel_combo_history(
+                        channel_recent, bot_id, last_combo_message_id=channel.combo_message_id,
+                    )
+                    context.state.reaction_combo_revision = channel.combo_revision
+                recent = channel_recent[-LOCAL_CONTEXT_MESSAGES:]
+            if context is None or referenced is not None:
+                anchor = referenced if referenced is not None else message
+                recent = [
+                    item
+                    async for item in message.channel.history(
+                        limit=LOCAL_CONTEXT_MESSAGES,
+                        before=anchor,
+                        oldest_first=False,
+                    )
+                ]
+                recent.reverse()
             if referenced is not None:
                 recent = [item for item in recent if item.id != referenced.id]
         except (discord.Forbidden, discord.HTTPException):
@@ -488,9 +558,18 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
             replies_to_agent = bot_id is not None and getattr(resolved_author, "id", None) == bot_id
             return not (is_request or is_agent_reply or replies_to_agent)
 
+        visible = [item for item in recent if include(item)]
+        if context is not None:
+            # Keep the same bounded text the model sees, with trusted IDs and
+            # links from Discord rather than parsing user-controlled prose.
+            context.state.local_messages = [
+                _local_message_record(item, identity=identity)
+                for item in (*visible, *((referenced,) if referenced is not None else ()))
+            ]
+            context.state.source_channels.add(message.channel.id)
         lines = [
             "Immediate channel conversation (oldest to newest):",
-            *(_render_local_message(item, identity=identity) for item in recent if include(item)),
+            *(_render_local_message(item, identity=identity) for item in visible),
         ]
         if referenced is not None:
             lines.extend(
@@ -538,16 +617,25 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
             return None
 
 
-def _render_local_message(
+def _local_message_record(
     message: discord.Message, *, identity: AgentIdentity | None = None,
-) -> str:
+) -> dict:
     content = message_text(message, identity=identity)
     if len(content) > LOCAL_MESSAGE_CHARACTER_LIMIT:
         content = f"{content[: LOCAL_MESSAGE_CHARACTER_LIMIT - 3]}..."
+    return {"message_id": message.id, "author_id": message.author.id,
+            "author": message.author.display_name, "content": content or "[no text]",
+            "source": message.jump_url, "timestamp": message.created_at.isoformat()}
+
+
+def _render_local_message(
+    message: discord.Message, *, identity: AgentIdentity | None = None,
+) -> str:
+    row = _local_message_record(message, identity=identity)
     author_type = ("you" if identity is not None and message.author.id == identity.member_id
                    else "bot" if message.author.bot else "member")
     return (
         f"- {message.author.display_name} ({author_type}, member_id={message.author.id}, "
         f"message_id={message.id}, timestamp={message.created_at.isoformat()}, "
-        f"source={message.jump_url}): {content or '[no text]'}"
+        f"source={message.jump_url}): {row['content']}"
     )

@@ -169,8 +169,6 @@ class AgentTurnState:
     history_cursors: dict[str, dict[str, Any]] = field(default_factory=dict)
     knowledge_title_access: set[str] = field(default_factory=set)
     knowledge_sources: set[str] = field(default_factory=set)
-    private_knowledge: dict[str, Any] = field(default_factory=dict)
-    private_knowledge_used: bool = False
     attachments: list[AgentAttachment] = field(default_factory=list)
     history_status: dict[str, int | bool] = field(default_factory=dict)
     authorized_history: tuple[ConversationTurn, ...] | None = None

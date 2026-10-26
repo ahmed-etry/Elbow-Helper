@@ -2,10 +2,9 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import unittest
-from elbow_helper.features.agent.access import LookupAccessDenied
 
-from elbow_helper.configuration.roles import CORE, LEAD
-from elbow_helper.features.agent.access import AgentAccessLost
+from elbow_helper.configuration.roles import CORE, LEAD, CO_APPLICANT_ROLE_ID
+from elbow_helper.features.agent.access import AgentAccessLost, require_evidence_access
 from elbow_helper.features.agent.models import AgentRequestContext
 from elbow_helper.features.agent.engine.registry import build_agent_tools
 from elbow_helper.features.agent.capabilities.role_connections.reads import read_role_connections
@@ -58,7 +57,7 @@ class AgentRoleConnectionTests(unittest.IsolatedAsyncioTestCase):
             },
             {"id": "broken", "target_role_id": False},
         ]
-        self.context = AgentRequestContext(
+        self.context = AgentRequestContext(private_pass=True,
             bot=SimpleNamespace(), guild=self.guild, member=self.requester,
             source_message=SimpleNamespace(
                 channel=self.channel, created_at=datetime.now(timezone.utc),
@@ -80,7 +79,7 @@ class AgentRoleConnectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["rules"][0]["rule_matches_member"])
         self.assertFalse(result["rules"][0]["member_currently_has_target"])
         self.assertEqual(result["rules"][0]["target_role_name"], "Role 10")
-        self.assertIn("lead", self.context.state.required_access)
+        self.assertEqual(self.context.state.required_access, {"lead"})
 
         second = await read_role_connections(self.context, {
             "member_id": self.target.id, "offset": result["next_offset"],
@@ -107,41 +106,37 @@ class AgentRoleConnectionTests(unittest.IsolatedAsyncioTestCase):
         })
         self.assertIn("changed", stale["error"])
 
-    async def test_current_lead_access_is_required_and_retained(self):
+    async def test_retained_role_connection_reads_require_current_lead(self):
         await read_role_connections(self.context, {})
-        self.requester.roles = [
-            role for role in self.requester.roles if role.id not in LEAD
-        ]
-        with self.assertRaises((AgentAccessLost, LookupAccessDenied)):
-            await read_role_connections(self.context, {})
+        self.requester.roles = [role for role in self.requester.roles if role.id not in LEAD]
+        with self.assertRaises(AgentAccessLost):
+            await require_evidence_access(self.context)
 
-        core_only = SimpleNamespace(
-            id=2, display_name="Core",
-            roles=[SimpleNamespace(id=next(iter(CORE)))],
-        )
-        self.guild.get_member = lambda member_id: {
-            core_only.id: core_only, self.bot_member.id: self.bot_member,
-        }.get(member_id)
-        context = AgentRequestContext(
-            bot=SimpleNamespace(), guild=self.guild, member=core_only,
-            source_message=SimpleNamespace(channel=self.channel),
-            account_links=None, message_search=None,
-            role_connection_queries=RoleConnectionQueries(lambda: self.state),
-        )
-        with self.assertRaises((AgentAccessLost, LookupAccessDenied)):
-            await read_role_connections(context, {})
+    async def test_direct_reads_require_lead_before_snapshot(self):
+        for role_id in (None, CO_APPLICANT_ROLE_ID, *LEAD):
+            with self.subTest(role_id=role_id):
+                self.context.state.required_access.clear()
+                self.context.state.scope = None
+                self.requester.roles = [self.roles[next(iter(CORE))]]
+                if role_id is not None:
+                    self.requester.roles.append(SimpleNamespace(id=role_id))
+                result = await read_role_connections(self.context, {})
+                self.assertEqual("error" not in result, role_id in LEAD)
 
-    async def test_lead_loss_during_snapshot_blocks_the_result(self):
+    async def test_lead_loss_during_snapshot_blocks_result(self):
         def revoke_while_reading():
-            self.requester.roles = [
-                role for role in self.requester.roles if role.id not in LEAD
-            ]
+            self.requester.roles = [self.roles[next(iter(CORE))]]
             return self.state
+        context = replace(self.context, role_connection_queries=RoleConnectionQueries(revoke_while_reading))
+        result = await read_role_connections(context, {})
+        self.assertIn("error", result)
+        self.assertNotIn("rules", result)
 
-        context = replace(
-            self.context,
-            role_connection_queries=RoleConnectionQueries(revoke_while_reading),
-        )
+    async def test_entry_loss_during_snapshot_blocks_result(self):
+        def revoke_while_reading():
+            self.requester.roles = []
+            return self.state
+        context = replace(self.context, role_connection_queries=RoleConnectionQueries(revoke_while_reading))
         with self.assertRaises(AgentAccessLost):
             await read_role_connections(context, {})
 

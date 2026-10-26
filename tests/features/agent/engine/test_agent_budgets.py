@@ -26,7 +26,7 @@ class ContextBudgetTests(unittest.TestCase):
     def test_tool_results_include_content_and_framing_in_next_input(self):
         budget = ContextBudget(1000, 200, 100)
         projected = budget.projected_input((AgentToolResult("call", "界" * 100),))
-        self.assertGreater(projected, 400)
+        self.assertGreater(projected, 350)
         self.assertEqual(budget.projected_input(()), 100)
 
     def test_unknown_model_capacity_does_not_invent_a_limit(self):

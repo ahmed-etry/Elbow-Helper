@@ -1,9 +1,10 @@
 """Fixed text shown by the agent."""
 
 FAILURE_MESSAGE = "I couldn't finish that right now. Try again in a moment."
-AGENT_PLAN_UNFINISHED = "I couldn't work out how to handle that. What should I focus on first?"
-AGENT_RESEARCH_UNFINISHED = "I couldn't finish checking everything. Ask me to continue."
-AGENT_ANSWER_UNFINISHED = "That got too long to finish in one go. Ask me for a shorter version or one part at a time."
+AGENT_PLAN_UNFINISHED = "I couldn't finish that request."
+ACTION_NOT_PREPARED = "I couldn't prepare that change for confirmation."
+AGENT_RESEARCH_UNFINISHED = "I couldn't finish checking everything."
+AGENT_ANSWER_UNFINISHED = "I couldn't finish writing that answer."
 ACTION_STANDING_SAVE = "{kind}: {request}"
 ACTION_STANDING_DESTINATION = "Send results to {channel}."
 ACTION_STANDING_POST_DESTINATION = "Post in {channel}."
@@ -50,7 +51,6 @@ SPREADSHEET_FILENAME_STEM = "spreadsheet"
 
 ACTION_PRIVATE_NOTE = "Result is ready. Open it privately below."
 ACTION_PRIVATE_ANSWER = "Not everyone here can see the info behind this, so only you can open it."
-ACTION_POST_HERE_BUTTON = "Post here"
 ACTION_PRIVATE_BUTTON = "View result"
 ACTION_PRIVATE_SELECT = "Choose a result"
 ACTION_EMPTY = "No results for that."
@@ -542,3 +542,9 @@ ACTION_SCHEDULE_DESTINATION_LIMIT = (
     "You can schedule at most one message a minute to the same member's DMs or channel, "
     "across all your reminders, requests and watchers."
 )
+
+# Destination-scoped evidence and the optional requester-only check.
+AGENT_SCOPE_EMPTY = "The details for this aren't visible to everyone here."
+AGENT_PRIVATE_OFFER = "Some details aren't visible to everyone here. You can see the full answer privately."
+AGENT_PRIVATE_CHECK_BUTTON = "Show full answer"
+ACTION_POST_HERE_BUTTON = "Post here"

@@ -9,7 +9,7 @@ from elbow_helper.configuration.channels import (
     EXAMINATION_ROOM,
     EXAMINATION_TICKET_CATEGORY,
 )
-from elbow_helper.configuration.roles import CORE
+from elbow_helper.configuration.roles import CORE, LEAD
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.actions.preview import preview_text
 from elbow_helper.features.agent.capabilities.examination.examiner_profile import prepare_examiner_leave
@@ -85,7 +85,7 @@ class AgentExaminationToolTests(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
         requester = SimpleNamespace(
-            id=10, roles=[SimpleNamespace(id=next(iter(CORE)))],
+            id=10, roles=[SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=next(iter(LEAD)))],
         )
         bot_member = SimpleNamespace(id=20)
         self.requester = requester
@@ -129,7 +129,7 @@ class AgentExaminationToolTests(unittest.IsolatedAsyncioTestCase):
             ),
             case_snapshot=MagicMock(side_effect=real_queries.case_snapshot),
         )
-        self.context = AgentRequestContext(
+        self.context = AgentRequestContext(private_pass=True,
             bot=SimpleNamespace(fetch_channel=AsyncMock(return_value=None)),
             guild=guild,
             member=requester,
@@ -224,7 +224,7 @@ class AgentExaminationToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.context.state.reports, {})
 
     async def test_routing_room_access_is_required_before_case_state_read(self):
-        for actor_id in (self.requester.id, self.bot_member.id):
+        for actor_id in (self.bot_member.id,):
             with self.subTest(actor_id=actor_id):
                 self.routing.denied_actor_ids.add(actor_id)
                 result = await read_accessible_examination_cases(self.context, {})
@@ -238,7 +238,7 @@ class AgentExaminationToolTests(unittest.IsolatedAsyncioTestCase):
 
         def revoke_after_projection(*, ticket_channel_ids):
             snapshot = project(ticket_channel_ids=ticket_channel_ids)
-            self.first.denied_actor_ids.add(self.requester.id)
+            self.first.denied_actor_ids.add(self.bot_member.id)
             return snapshot
 
         self.queries.case_snapshot.side_effect = revoke_after_projection
@@ -276,7 +276,7 @@ class AgentExaminationToolTests(unittest.IsolatedAsyncioTestCase):
         result = await read_accessible_examination_cases(self.context, {})
         report_id = result["report_id"]
 
-        self.first.denied_actor_ids.add(self.requester.id)
+        self.first.denied_actor_ids.add(self.bot_member.id)
         with self.assertRaises(AgentAccessLost):
             await read_examination_case_report(
                 self.context, {"report_id": report_id},
@@ -290,7 +290,7 @@ class AgentExaminationToolTests(unittest.IsolatedAsyncioTestCase):
             )
         self.second.denied_actor_ids.clear()
 
-        self.routing.denied_actor_ids.add(self.requester.id)
+        self.routing.denied_actor_ids.add(self.bot_member.id)
         with self.assertRaises(AgentAccessLost):
             await read_examination_case_report(
                 self.context, {"report_id": report_id},
@@ -307,14 +307,14 @@ class AgentExaminationToolTests(unittest.IsolatedAsyncioTestCase):
         finally:
             self.requester.roles = original_roles
 
-    async def test_wrong_category_is_not_projected(self):
+    async def test_registered_case_outside_examination_category_is_projected(self):
         self.second.category_id = 999
         result = await read_accessible_examination_cases(self.context, {})
-        self.assertEqual(result["accessible_selected_entry_count"], 1)
-        self.assertEqual(result["accessible_case_count"], 1)
+        self.assertEqual(result["accessible_selected_entry_count"], 2)
+        self.assertEqual(result["accessible_case_count"], 2)
         self.assertEqual(
             self.context.state.source_channels,
-            {EXAMINATION_ROOM, 200},
+            {EXAMINATION_ROOM, 200, 300},
         )
 
     async def test_budget_wrong_kind_foreign_guild_and_filters_fail_closed(self):

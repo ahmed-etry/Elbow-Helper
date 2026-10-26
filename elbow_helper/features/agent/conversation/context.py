@@ -3,7 +3,6 @@
 from dataclasses import asdict, dataclass
 from datetime import datetime
 import json
-import re
 from typing import Mapping, Sequence
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
@@ -15,10 +14,14 @@ from .state import (
 )
 from ..prompts import SYSTEM_PROMPT, build_request_prompt
 from ..identity import agent_identity, guild_identity
+from .reply_context import pinned_turns
+from elbow_helper.features.help.catalog import HELP_ENTRIES
+from elbow_helper.features.help.discovery import discover_commands
 
 
 # A soft working target, not a model limit or an estimate of billed tokens.
-INPUT_TARGET_TOKENS = 64_000
+INPUT_TARGET_TOKENS = 32_000
+SOCIAL_INPUT_TARGET_TOKENS = 16_000
 REQUEST_OVERHEAD_ESTIMATE = 512
 CHECKPOINT_MIN_OMITTED_TURNS = 8
 CHECKPOINT_MIN_GROWTH = 8
@@ -27,15 +30,80 @@ CHECKPOINT_TAIL_ENTRIES = 48
 
 
 def estimate_tokens(text: str) -> int:
-    """Conservative heuristic, pending calibration against deployed-model usage.
+    """Approximate DeepSeek input sizing fitted to archived round usage.
 
-    ASCII letters/spaces use two characters per token; punctuation, digits and
-    UTF-8 bytes use one per token. This intentionally differs from a tokenizer.
-    It can over/under-estimate and must never be used as a billing total.
+    ASCII prose uses five characters per token, syntax/digits five per three
+    tokens, and non-ASCII two UTF-8 bytes per token. See the offline calibration
+    in tests/features/agent/conversation/calibrate_tokens.py. This is a working
+    budget heuristic, never a billing total or a hard context-window bound.
     """
-    weighted = sum(1 if char.isascii() and (char.isalpha() or char.isspace())
-                   else 2 * len(char.encode("utf-8")) for char in text)
-    return (weighted + 1) // 2
+    weighted = sum((2 if char.isalpha() or char.isspace() else 6) if char.isascii()
+                   else 5 * len(char.encode("utf-8")) for char in text)
+    return (weighted + 9) // 10
+
+
+def bot_command_overview(context):
+    """Describe public tasks from canonical help, without exposing restricted commands."""
+    bot = getattr(context, "bot", None)
+    registered = (discover_commands(bot)
+                  if callable(getattr(getattr(bot, "tree", None), "get_commands", None)) else None)
+    return {"source": "/help", "commands": [
+        {"path": entry.path, "summary": entry.summary}
+        for entry in HELP_ENTRIES if entry.visible_to is None
+        and (registered is None or entry.path in registered)
+    ]}
+
+
+def requester_command_overview(context):
+    """Use /help's role visibility for registered command summaries.
+
+    Detailed command help still checks destination scope in its own reader.
+    Keep the public self-description separate from the requester's catalogue.
+    """
+    from ..access import ACCESS_ROLE_SETS
+
+    bot = getattr(context, 'bot', None)
+    registered = (discover_commands(bot)
+                  if callable(getattr(getattr(bot, 'tree', None), 'get_commands', None)) else None)
+    member = context.guild.get_member(context.member.id)
+    held = {role.id for role in member.roles} if member else set()
+    entries = [entry for entry in HELP_ENTRIES
+               if (entry.visible_to is None or held & entry.visible_to)
+               and (registered is None or entry.path in registered)]
+    # These summaries depend on requester roles, not restricted source records.
+    # Recheck those roles before sending the compiled context to any provider.
+    context.state.help_requester_access.update(level for level, roles in ACCESS_ROLE_SETS.items()
+        if any(entry.visible_to == roles for entry in entries))
+    return {'source': '/help', 'visibility': 'requester_roles',
+            'commands': [{'path': entry.path, 'summary': entry.summary} for entry in entries]}
+
+
+def bot_read_overview(context):
+    """Describe implemented family reads independently of slash-command help."""
+    from ..families import TOOLS
+    from ..access import has_access_requirements
+    levels = context.state.scope.levels if context.state.scope else None
+    reads = []
+    for tool in TOOLS:
+        required = frozenset(tool.contract.required_access if tool.contract else ())
+        if (has_access_requirements(context.guild, context.member.id, required)
+                and (levels is None or required <= levels)):
+            reads.append({'capability': tool.definition.name, 'summary': tool.definition.description})
+    return {'source': 'registered family reads', 'reads': reads,
+            'availability': 'Implemented read paths, not results. Each read checks current source availability and access; historical gaps remain explicit.'}
+
+
+def current_channel(context):
+    """Supply live room identity for model-selected clan policy reads, without routing prose."""
+    channel = getattr(context.source_message, 'channel', None)
+    if channel is None:
+        return {}
+    parent = getattr(channel, 'parent', None)
+    category = getattr(channel, 'category', None) or getattr(parent, 'category', None)
+    return {'channel_id': channel.id, 'name': getattr(channel, 'name', None),
+            'topic': getattr(channel, 'topic', None),
+            'parent': {'channel_id': parent.id, 'name': getattr(parent, 'name', None)} if parent else None,
+            'category': {'channel_id': category.id, 'name': getattr(category, 'name', None)} if category else None}
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +114,7 @@ class CompiledContext:
     selected_request_ids: tuple[int, ...]
     omitted_turns: int
     exceeds_target: bool
+    answer_context: str = ""
 
 
 def select_recent_turns(turns: Sequence[ConversationTurn], *, token_budget: int) -> tuple[ConversationTurn, ...]:
@@ -110,84 +179,6 @@ def model_evidence(encoded):
         return json.dumps(record, ensure_ascii=False, separators=(",", ":"))
     except (TypeError, ValueError, AttributeError):
         return encoded
-
-
-def _contextual_followup(text):
-    return bool(re.search(
-        r"\b(he|she|him|her|they|them|it|that|those|these|same|previous|recruits?|"
-        r"continue|again|correction|wrong|failed|asked|everyone|their|his|hers)\b",
-        text.casefold(),
-    ) or re.search(r"^(?:actually\b|instead\b|use\b|include\b|exclude\b|no[,!. ])", text.casefold()))
-
-
-def relevant_turns(question, turns):
-    """Keep resolved subjects for follow-ups without importing unrelated cases."""
-    text = question.casefold()
-    matched = set()
-    aliases = {}
-
-    def rows(value):
-        if isinstance(value, dict) and set(value) == {"columns", "rows"}:
-            return [dict(zip(value["columns"], row)) for row in value["rows"]]
-        return value if isinstance(value, list) else []
-
-    for turn in turns:
-        for encoded in turn.record.evidence if turn.record else ():
-            try:
-                record = json.loads(encoded)
-                result = json.loads(record["result"])
-                if record["tool"] == "find_discord_members":
-                    entries = rows(result.get("members"))
-                    keys = ("member_id", "display_name", "username")
-                elif record["tool"] == "read_linked_accounts":
-                    entries = rows(result.get("accounts"))
-                    keys = ("member_id", "player_tag", "player_name")
-                elif record["tool"] == "read_clash":
-                    entries = [{**item.get("data", {}), "tag": item.get("tag")}
-                               for item in rows(result.get("items")) if item.get("status") == "ok"]
-                    keys = ("tag", "name")
-                else:
-                    continue
-                for entry in entries:
-                    values = {str(entry[key]).casefold() for key in keys if entry.get(key) is not None}
-                    identities = values & {str(entry[key]).casefold() for key in ("member_id", "player_tag", "tag")
-                                           if entry.get(key) is not None}
-                    for identity in identities:
-                        aliases.setdefault(identity, set()).update(values)
-            except (KeyError, TypeError, ValueError, AttributeError):
-                continue
-    for identity, names in aliases.items():
-        if any(len(name) >= 3 and re.search(r"(?<!\w)" + re.escape(name) + r"(?!\w)", text) for name in names):
-            matched.add(identity)
-    if matched:
-        def subjects(document):
-            return {identity for identity, names in aliases.items() if any(
-                len(name) >= 3 and re.search(r"(?<!\w)" + re.escape(name) + r"(?!\w)", document.casefold())
-                for name in names)}
-
-        selected, active = [], False
-        for turn in turns:
-            if turn.record is None:
-                active = False
-                continue
-            record = turn.record
-            # A question's explicit subject takes priority over incidental names
-            # in a result set. Unnamed corrections inherit only the active task;
-            # another subject or standalone turn ends that continuity.
-            named = subjects(record.question) or subjects(record.delivered_answer + " " + " ".join(record.evidence))
-            if named:
-                active = bool(named & matched)
-            elif active:
-                active = _contextual_followup(record.question)
-            if active:
-                selected.append(turn)
-        return tuple(selected[-8:])
-    # Pronouns, cohort references and corrections depend on the ongoing task.
-    # A new explicit question can use its own resolution tools instead of
-    # loading a private case merely because it happened nearby.
-    referential = _contextual_followup(text)
-    standalone = re.search(r"^(?:@[^?]+?\s+)?(?:what(?:'s|’s| is)|who is|how does|tell me about)\b", text)
-    return () if standalone and not referential else turns
 
 
 def build_history_checkpoint(
@@ -266,6 +257,8 @@ def compile_context(
     target_tokens: int = INPUT_TARGET_TOKENS,
     report_filter_fields: Mapping[str, Sequence[str]] | None = None,
     system_prompt: str = SYSTEM_PROMPT,
+    answer_local_context: str | None = None,
+    social: bool = False,
 ) -> CompiledContext:
     """Preserve mandatory input and choose whole authorized recent records.
 
@@ -287,11 +280,15 @@ def compile_context(
         item["filter_fields"] = list((report_filter_fields or {}).get(item.get("kind", ""), ()))
         manifest.append(item)
     candidates = context.state.authorized_history
-    scoped = relevant_turns(question, candidates) if candidates is not None else None
-    checkpoint = context.state.authorized_checkpoint if scoped == candidates else None
-    candidates = scoped
+    checkpoint = context.state.authorized_checkpoint
     instructions = [asdict(instruction) for instruction in context.state.authorized_instructions]
+    from ..discord_actions.roles import role_change_access
+    role_access = role_change_access(context) if not social else None
     own_identity = agent_identity(getattr(context, "bot", None), context.guild)
+    command_overview = bot_command_overview(context) if not social else None
+    requester_commands = requester_command_overview(context) if not social else None
+    read_overview = bot_read_overview(context) if not social else None
+    channel = current_channel(context)
     owner = getattr(context, "application_owner", None)
     if owner is not None:
         owner = guild_identity(owner, context.guild)
@@ -302,7 +299,7 @@ def compile_context(
                 for encoded in turn.record.evidence]
     carried = []
 
-    def render(history: str, included: int, omitted: int, checkpoint_text: str = "") -> str:
+    def history_status(included: int, omitted: int) -> dict:
         status = {"included_turns": included, "older_retained_turns_available": omitted,
                   "history_may_be_incomplete": True}
         dropped = len(evidence) - len(carried)
@@ -312,18 +309,35 @@ def compile_context(
             status["evidence_omitted_from_requests"] = list(dict.fromkeys(
                 turn.record.request_message_id for turn, _ in evidence[:dropped]))
             status["evidence_recovery"] = "Whole lookup records were omitted. Re-read them before making claims."
-        return build_request_prompt(
+        return status
+
+    def render(history: str, included: int, omitted: int, checkpoint_text: str = "") -> str:
+        prompt = build_request_prompt(
             question=question, local_context=local_context, guild_name=context.guild.name,
             asker_name=context.member.display_name, asker_id=context.member.id,
             asked_at=context.source_message.created_at,
-            conversation_history=history, history_status=status, report_manifest=manifest,
+            conversation_history=history, history_status=history_status(included, omitted), report_manifest=manifest,
             task_instructions=instructions, history_checkpoint=checkpoint_text,
             agent_identity=asdict(own_identity) if own_identity is not None else None,
             application_owner=asdict(owner) if owner is not None else None,
             carried_evidence=carried,
+            reply_context=context.state.reply_context,
         )
+        prompt += "\n\n<current_channel>\n" + json.dumps(channel, ensure_ascii=False) + "\n</current_channel>"
+        if social:
+            return prompt
+        return (prompt + "\n\n<bot_command_overview>\n"
+                "Canonical public command help for describing your supported tasks. When asked "
+                "what you do, combine these summaries with bot_read_overview.\n"
+                + json.dumps(command_overview, ensure_ascii=False) + "\n</bot_command_overview>"
+                + "\n<requester_command_overview>\n"
+                + json.dumps(requester_commands, ensure_ascii=False) + "\n</requester_command_overview>"
+                + "\n<bot_read_overview>\n" + json.dumps(read_overview, ensure_ascii=False)
+                + "\n</bot_read_overview>\n<role_change_access>\n"
+                + json.dumps(role_access, ensure_ascii=False) + "\n</role_change_access>")
 
     selected = []
+    checkpoint_text = ""
     if candidates is None:
         # Compatibility for service callers supplying their own authorized text.
         prompt = render(conversation_history, 0, 0)
@@ -332,7 +346,15 @@ def compile_context(
         prompt = render("", 0, len(candidates))
         base = estimate_tokens(system_prompt) + estimate_tokens(tool_json) + REQUEST_OVERHEAD_ESTIMATE
         remaining = max(0, target_tokens - base - estimate_tokens(prompt))
+        # The working target is soft. Reserve a bounded whole-turn allowance
+        # even when the mandatory catalogue already exceeds it. Otherwise all
+        # follow-ups lose their history before the first result is read.
+        if base + estimate_tokens(prompt) >= target_tokens:
+            remaining = min(8_000, target_tokens // 8)
         selected = list(select_recent_turns(candidates, token_budget=remaining))
+        pinned = pinned_turns(context, candidates)
+        selected = [turn for turn in candidates
+                    if any(turn is item for item in (*pinned, *selected))]
         omitted = len(candidates) - len(selected)
         checkpoint_text = ""
         if checkpoint is not None and checkpoint.covered_turn_count <= omitted:
@@ -415,4 +437,29 @@ def compile_context(
         input_content_bytes=len((system_prompt + tool_json + prompt).encode("utf-8")),
         selected_request_ids=tuple(turn.record.request_message_id for turn in selected if turn.record),
         omitted_turns=omitted, exceeds_target=estimated > target_tokens,
+        answer_context=json.dumps({
+            "request": question,
+            "server": context.guild.name,
+            "asker": {"member_id": context.member.id, "display_name": context.member.display_name},
+            "role_change_access": role_access,
+            "current_channel": channel,
+            "asked_at": context.source_message.created_at.isoformat(),
+            "agent": asdict(own_identity) if own_identity is not None else None,
+            **({"bot_command_overview": {"commands": command_overview['commands']},
+                "requester_command_overview": {"commands": requester_commands['commands']},
+                "bot_read_overview": _member_read_overview(read_overview)} if not social else {}),
+            "application_owner": asdict(owner) if owner is not None else None,
+            "reply_context": context.state.reply_context,
+            "history_checkpoint": checkpoint_text,
+            "history_status": history_status(len(selected), omitted),
+            "conversation_history": ("\n".join(_history_text(turn) for turn in selected)
+                                     if candidates is not None else conversation_history),
+            "task_instructions": instructions,
+            "nearby_conversation": (local_context if answer_local_context is None else answer_local_context),
+        }, ensure_ascii=False),
     )
+
+
+def _member_read_overview(overview):
+    from ..engine.member_facts import read_topics
+    return read_topics(overview)

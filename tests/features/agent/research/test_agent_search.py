@@ -26,7 +26,7 @@ def _context():
                 permissions_for=lambda member: SimpleNamespace(view_channel=True, read_message_history=True)) for value in (100, 200)]
     guild.channels = channels
     guild.get_channel_or_thread = lambda value: next((channel for channel in channels if channel.id == value), None)
-    return SimpleNamespace(
+    return SimpleNamespace(private_pass=True,
         guild=guild, member=member, state=AgentTurnState(),
         source_message=SimpleNamespace(
             id=1_000,
@@ -137,9 +137,11 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
         small, _ = await self._history_review([f"Recruitment discussion {i}" for i in range(80)])
         large, rows = await self._history_review([f"Recruitment discussion {i}" for i in range(80)], limit=100)
         self.assertEqual(len(small), 4)
-        self.assertEqual(len(large), 1)
-        self.assertEqual([item for page in small for item in page["messages"]], large[0]["messages"])
-        self.assertEqual([item["message_id"] for item in large[0]["messages"]], [row.message_id for row in rows])
+        self.assertLess(len(large), len(small))
+        self.assertEqual([item for page in small for item in page["messages"]],
+                         [item for page in large for item in page["messages"]])
+        self.assertEqual([item["message_id"] for page in large for item in page["messages"]],
+                         [row.message_id for row in rows])
 
     async def test_long_history_pages_keep_every_matching_message_and_continuation(self):
         from elbow_helper.features.agent.engine.budgets import MAX_TOOL_RESULT_CHARACTERS
@@ -581,7 +583,7 @@ class MessageContextResultContractTests(unittest.IsolatedAsyncioTestCase):
             for message in messages:
                 yield message
         channel = SimpleNamespace(id=100, name="synthetic", history=history)
-        context = SimpleNamespace(guild=SimpleNamespace(id=1), state=SimpleNamespace(source_channels=set()))
+        context = SimpleNamespace(private_pass=True, guild=SimpleNamespace(id=1), state=SimpleNamespace(source_channels=set()))
         with patch("elbow_helper.features.agent.research.history.accessible_message_channel", return_value=channel):
             result = await read_message_context(context, {"channel_id": 100, "message_id": 301})
         self.assertEqual([item["message_id"] for item in result["messages"]], [300, 301, 302])

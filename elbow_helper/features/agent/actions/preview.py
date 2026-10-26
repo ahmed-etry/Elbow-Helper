@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import replace
 from typing import Any
 
 import discord
@@ -28,7 +29,13 @@ from .message_cleanup import log_cleanup_failure
 
 LOGGER = logging.getLogger(__name__)
 CONFIRMATION_TIMEOUT = 300.0
-__all__ = ["ConfirmationView", "preview_text"]
+__all__ = ["ConfirmationView", "is_preview_reply", "preview_text"]
+
+
+def is_preview_reply(context, answer: str) -> bool:
+    """Recognize trusted action text before checking model-authored mentions."""
+    proposals = context.state.proposed_changes
+    return bool(proposals and answer == preview_text(proposals))
 
 
 def preview_text(proposals: list[PreparedAction]) -> str:
@@ -123,7 +130,10 @@ class ConfirmationView(discord.ui.View):
                     self.context.guild, self.owner_id, action.preview.detail_access,
                 )
                 for identifier in action.preview.detail_sources:
-                    if await accessible_message_channel(self.context, identifier) is None:
+                    if await accessible_message_channel(replace(
+                        self.context, private_pass=True,
+                        state=replace(self.context.state, scope=None, source_access={}),
+                    ), identifier) is None:
                         raise AgentAccessLost("Preview source is no longer readable")
         except AgentAccessLost:
             self.details_expired = True

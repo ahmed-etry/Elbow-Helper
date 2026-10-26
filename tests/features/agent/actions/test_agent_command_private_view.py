@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import discord
 
@@ -17,6 +17,11 @@ from elbow_helper.features.agent.wording import (
 
 
 class PrivateCommandViewTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        guard = patch("elbow_helper.features.agent.delivery.assert_answer_scope", new_callable=AsyncMock)
+        guard.start()
+        self.addCleanup(guard.stop)
+
     async def test_long_private_results_are_chunked_with_files_only_once(self):
         for with_panel in (False, True):
             with self.subTest(panel=with_panel):
@@ -69,6 +74,31 @@ class PrivateCommandViewTests(unittest.IsolatedAsyncioTestCase):
         sent = member.response.send_message.await_args.kwargs
         self.assertTrue(sent["ephemeral"])
         self.assertEqual(len(sent["files"]), 1)
+
+    async def test_private_image_result_suppresses_all_text_parts(self):
+        for with_panel in (False, True):
+            with self.subTest(panel=with_panel):
+                member = self.interaction(101)
+                view = PrivateResultView(101, ('Synthetic caption.', 'More caption.'),
+                    (AgentAttachment('synthetic.png', b'media'),),
+                    panel=AsyncMock() if with_panel else None)
+                self.addCleanup(view.stop)
+                await view.open_result(member)
+                sender = member.followup.send if with_panel else member.response.send_message
+                sender.assert_awaited_once()
+                self.assertIsNone(sender.await_args.args[0])
+                self.assertEqual(len(sender.await_args.kwargs['files']), 1)
+                if not with_panel:
+                    member.followup.send.assert_not_awaited()
+
+    async def test_private_media_link_result_drops_caption_parts(self):
+        member = self.interaction(101)
+        image = 'https://example.invalid/synthetic.png'
+        view = PrivateResultView(101, ('Synthetic caption.', image, 'More caption.'))
+        self.addCleanup(view.stop)
+        await view.open_result(member)
+        member.response.send_message.assert_awaited_once_with(image, ephemeral=True)
+        member.followup.send.assert_not_awaited()
 
     async def test_expired_view_disables_button_and_refuses_open(self):
         view = PrivateResultView(101, ("synthetic private data",))

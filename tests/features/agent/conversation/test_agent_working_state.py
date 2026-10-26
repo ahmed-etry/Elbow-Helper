@@ -1,7 +1,10 @@
 from datetime import datetime, timezone
+from features.agent.engine.helpers import LegacyCatalogueMixin
+
 import json
 from types import SimpleNamespace
 import unittest
+from features.agent.engine.test_agent_service import _AgentModel
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from elbow_helper.configuration.roles import CORE
@@ -70,7 +73,7 @@ class WorkingStateTests(unittest.TestCase):
         self.assertEqual(state.instructions, (first,))
 
 
-class WorkingInstructionIntegrationTests(unittest.IsolatedAsyncioTestCase):
+class WorkingInstructionIntegrationTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
     def context(self):
         member = SimpleNamespace(id=42, display_name="Tester", roles=[SimpleNamespace(id=next(iter(CORE)))])
         guild = SimpleNamespace(id=1, name="Brown Elbow", me=member, get_member=lambda _: member)
@@ -91,7 +94,7 @@ class WorkingInstructionIntegrationTests(unittest.IsolatedAsyncioTestCase):
             AgentStep("", (plan_call(lookup),), AgentUsage()),
             AgentStep("I will keep those accounts together in this draft.", (), AgentUsage()),
         ]))
-        model = SimpleNamespace(create_agent_session=lambda **kwargs: session)
+        model = _AgentModel(session)
         await AgentService(model).answer(question="Keep these accounts together", local_context="", context=context)
         self.assertEqual(context.state.working.instructions[0].quote, "Keep these accounts together")
         result = json.loads(session.advance.await_args_list[1].args[0][-1].content)

@@ -148,6 +148,7 @@ def fixed_results(seed):
     rule = synthetic_value(RoleConnectionRule, seed)
     ass = asdict(synthetic_value(CwlAssWarsSnapshot, seed))
     ass["players"] = list(ass.pop("rows"))
+    ass["ranking"] = {"account_count": len(ass["players"]), "complete": True, "text": "Synthetic ranking"}
     ass["attack_sample"] = [{
         "war_id": "CWL:synthetic", "player_tag": "#P0", "player_name": "Synthetic",
         "attack_order": 1, "defender_tag": "#P2", "defender_townhall": 18,
@@ -224,6 +225,7 @@ def fixed_results(seed):
         },
         "read_message_context": {
             "channel_id": 100, "channel": "Synthetic", "requested_message_id": seed,
+            "requested_message_found": True,
             "messages": [{**{key: value for key, value in message(seed).items()
                              if key not in {"channel_id", "channel"}}, "is_requested_message": True}],
         },
@@ -372,6 +374,15 @@ class AgentResultHintTests(unittest.TestCase):
         registry = build_agent_tools()
         for seed in range(1, 4):
             results = {name: model_result(value) for name, value in fixed_results(seed).items()}
+            results['read_discord_role_change_preview'] = {
+                'role_id': seed, 'role_name': 'Synthetic role', 'preview_only': True,
+                'members': [{'member_id': seed, 'member_name': 'Synthetic member', 'current_role_ids': [seed + 1],
+                             'add_role_ids': [seed], 'remove_role_ids': [],
+                             'allowed': True, 'refusal': None}]}
+            for role_change in ('add_discord_roles', 'remove_discord_roles'):
+                results[role_change] = {'status': 'confirmation_required', 'role_id': seed,
+                    'role_name': 'Synthetic role', 'requested_has_role': role_change == 'add_discord_roles',
+                    'members': [{'member_id': seed, 'display_name': 'Synthetic member', 'has_role': False}]}
             for name, kind in READ_KINDS.items():
                 results[name] = report_page(kind, seed)
             for name, field in {
@@ -399,10 +410,15 @@ class AgentResultHintTests(unittest.TestCase):
                         else:
                             self.assertEqual(tool.returns, format_returns(RESULT_FIELDS[name]))
                         self.assert_fields(RESULT_FIELDS[name], results[name])
-                    else:
-                        self.assertIs(tool.effect, AgentCapabilityEffect.COMMAND)
+                    elif tool.effect is AgentCapabilityEffect.COMMAND:
                         self.assertEqual(tool.returns, "status")
                         self.assert_fields({"status": ""}, {"status": "confirmation_required"})
+                    elif tool.default_visible:
+                        # Family serializers have dedicated end-to-end snapshot tests.
+                        self.assertEqual(tool.returns, format_returns(RESULT_FIELDS[name]))
+                        self.assertIn("rows", RESULT_FIELDS[name])
+                    else:
+                        self.fail(f"Missing synthetic result contract for {name}")
 
     def test_dataclass_fields_are_not_handpicked(self):
         for value_type in (CwlAssWarsSnapshot, CwlBonusWarsSnapshot, TaskInstruction):
@@ -467,12 +483,12 @@ class AgentResultHintExecutionTests(unittest.IsolatedAsyncioTestCase):
                 {"id": "export", "capability": "prepare_spreadsheet", "depends_on": [],
                  "arguments": {"title": "Synthetic export", "sheets": [{
                      "name": "Members", "rows_from": {"step": "lookup", "path": ["members"]},
-                     "columns": [{"field": "username", "heading": "Username"},
+                     "columns": [{"field": "display_name", "heading": "Member"},
                                  {"field": "joined_at", "heading": "Joined"}],
                  }]}},
             ],
         }
-        self.assertIn("username", registry["read_discord_members"].returns)
+        self.assertIn("display_name", registry["read_discord_members"].returns)
         self.assertIn("joined_at", registry["read_discord_members"].returns)
         self.assertTrue(check_plan(plan, registry).ok)
         with TemporaryDirectory() as directory:
@@ -491,7 +507,7 @@ class AgentResultHintExecutionTests(unittest.IsolatedAsyncioTestCase):
             workbook = load_workbook(BytesIO(context.state.attachments[0].data))
             try:
                 self.assertEqual(list(workbook["Members"].values), [
-                    ("Username", "Joined"), ("synthetic-handle", "2026-01-01T00:00:00+00:00"),
+                    ("Member", "Joined"), ("Synthetic member", "2026-01-01T00:00:00+00:00"),
                 ])
             finally:
                 workbook.close()

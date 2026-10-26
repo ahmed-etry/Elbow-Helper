@@ -1,29 +1,34 @@
 """Synthetic GIF replies retain one link and use separate tracked Discord messages."""
 
 from dataclasses import replace
-import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin, _without_reply_gif
 from elbow_helper.features.agent.discord_actions.gifs import find_gif
+from elbow_helper.features.agent.discord_actions.gif_library import ITEM_BY_ID
 from elbow_helper.features.agent.engine.service import AgentService
-from elbow_helper.features.agent.engine.registry import build_agent_tools
 from elbow_helper.features.agent.models import AgentDelivery
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
 from elbow_helper.infrastructure.gifs.giphy import GifCandidate
 from features.agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
 from tests.features.agent_plan_helpers import plan_call
+from features.agent.engine.helpers import social_step
+from features.agent.engine.test_banter_gifs import gif_context
 
 
 def candidate_client(search):
-    async def candidates(query):
+    async def candidates(query, *, limit=8):
         url = await search(query)
-        return [GifCandidate(url, None)] if url else []
-    return SimpleNamespace(configured=True, search=search,
+        return [GifCandidate(url, None, title="Synthetic reaction")] if url else []
+    from features.agent.discord_actions.test_gif_choice import png
+    vision = SimpleNamespace(advance=AsyncMock(return_value=AgentStep("1", (), AgentUsage())))
+    model = SimpleNamespace(create_agent_session=MagicMock(return_value=vision),
+                            complete=AsyncMock(return_value="1"))
+    return SimpleNamespace(configured=True, search=search, agent_model=model,
                            search_candidates=AsyncMock(side_effect=candidates),
-                           download_still=AsyncMock(return_value=None))
+                           download_still=AsyncMock(return_value=png("blue")))
 
 
 class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
@@ -66,19 +71,15 @@ class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
                 with (
                     patch("elbow_helper.features.agent.delivery.require_evidence_access",
                           AsyncMock()),
-                    patch("elbow_helper.features.agent.delivery.can_show",
+                    patch("elbow_helper.features.agent.delivery.assert_answer_scope",
                           AsyncMock(return_value=True)),
                 ):
                     await surface.send_response(message, response, None, context=context,
                                                 delivery=delivery)
-                if expected:
-                    self.assertEqual(surface._send_response.await_args.args[1], expected)
-                    channel.send.assert_awaited_once()
-                    self.assertEqual(delivery.text_parts, [expected, url])
-                else:
-                    surface._send_response.assert_not_awaited()
-                    message.reply.assert_awaited_once()
-                    self.assertEqual(delivery.text_parts, [url])
+                surface._send_response.assert_not_awaited()
+                message.reply.assert_awaited_once()
+                self.assertEqual(delivery.text_parts, [url])
+                self.assertEqual(context.state.gif_fallback_text, expected)
                 self.assertTrue(delivery.complete)
 
     async def test_link_is_kept_when_no_separate_gif_is_pending(self):
@@ -87,12 +88,12 @@ class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
         surface = AgentDeliveryMixin()
         surface._send_response = AsyncMock()
         await surface.send_response(object(), response, None, context=context)
-        self.assertEqual(surface._send_response.await_args.args[1], response)
+        self.assertEqual(surface._send_response.await_args.args[1], "https://giphy.com/gifs/synthetic")
 
     async def test_later_search_replaces_the_retained_gif(self):
         context = _context()
         client = candidate_client(AsyncMock(side_effect=["first", "second"]))
-        context = replace(context, bot=SimpleNamespace(gif_client=client))
+        context = replace(context, bot=SimpleNamespace(gif_client=client, agent_model=client.agent_model))
         await find_gif(context, {"query": "synthetic first"})
         await find_gif(context, {"query": "synthetic second"})
         self.assertEqual(context.state.gif_url, "second")
@@ -109,18 +110,16 @@ class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
             surface = AgentDeliveryMixin()
             surface._send_response = AsyncMock()
             delivery = AgentDelivery()
-            if response:
-                delivery.record(700, response)
             conversation = MagicMock()
             surface._conversations = MagicMock()
             with (
                 patch("elbow_helper.features.agent.delivery.require_evidence_access", AsyncMock()),
-                patch("elbow_helper.features.agent.delivery.can_show",
+                patch("elbow_helper.features.agent.delivery.assert_answer_scope",
                       AsyncMock(return_value=True)),
             ):
                 await surface.send_response(message, response, None, conversation=conversation,
                                             context=context, delivery=delivery)
-            call = (channel.send if response else message.reply).await_args
+            call = message.reply.await_args
             self.assertEqual(call.args, (context.state.gif_url,))
             self.assertFalse(call.kwargs["allowed_mentions"].users)
             self.assertFalse(call.kwargs["allowed_mentions"].replied_user)
@@ -128,7 +127,7 @@ class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(delivery.complete)
             surface._conversations.register_reply.assert_called_once_with(conversation, 800)
 
-    async def test_gif_replies_with_optional_text_and_reactions_finish_in_one_model_round(self):
+    async def test_gif_replies_ignore_legacy_caption_flag_without_another_round(self):
         for react in (False, True):
             for caption in ("", "Synthetic banter."):
                 with self.subTest(react=react, caption=caption):
@@ -136,85 +135,57 @@ class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
                     context.source_message.id = 300
                     context.source_message.add_reaction = AsyncMock()
                     client = candidate_client(AsyncMock(return_value="synthetic-link"))
-                    context = replace(context, bot=SimpleNamespace(gif_client=client))
-                    registry = build_agent_tools(client)
-                    calls = [AgentToolCall("gif", "find_gif", json.dumps({"query": "synthetic"}))]
-                    if react:
-                        calls.append(AgentToolCall("reaction", "react_to_request", json.dumps({"emoji": "👍"})))
-                    step = AgentStep(caption, (plan_call(*calls),), AgentUsage())
-                    session = _AgentSession([step])
-                    service = AgentService(_AgentModel(session))
-                    with patch("elbow_helper.features.agent.engine.service.build_agent_tools",
-                               return_value=registry):
-                        answer = await service.answer(question="Synthetic request", local_context="",
-                                                      context=context)
-                    self.assertEqual(answer, caption)
+                    context = replace(context, bot=SimpleNamespace(gif_client=client, agent_model=client.agent_model))
+                    context = gif_context(context)
+                    step = social_step(caption or "Synthetic fallback.",
+                        meme_id="synthetic", gif_with_text=bool(caption),
+                        form="text_reactions" if react else "text",
+                        reactions=["\U0001f44d"] if react else [])
+                    session = _AgentSession([step, AgentStep(caption, (), AgentUsage())])
+                    service = AgentService(_AgentModel(session, route="social"))
+                    with patch.dict(ITEM_BY_ID, synthetic={'id': 'synthetic', 'media': 'https://tenor.com/view/synthetic-123',
+                            'use': 'Synthetic reaction', 'shows': 'Synthetic image', 'group': 'win'}):
+                        answer = await service.answer(question="Synthetic request", local_context="", context=context)
+                    self.assertEqual(answer, "")
+                    self.assertEqual(context.state.gif_fallback_text, caption or "Synthetic fallback.")
                     self.assertEqual(len(session.calls), 1)
-                    self.assertEqual(context.state.gif_url, "synthetic-link")
+                    self.assertEqual(context.state.gif_url, "https://tenor.com/view/synthetic-123")
                     self.assertEqual(context.source_message.add_reaction.await_count, int(react))
 
-    async def test_empty_gif_search_with_a_reaction_still_generates_a_text_reply(self):
+    async def test_no_meme_with_a_reaction_still_generates_a_text_reply(self):
         context = _context()
         context.source_message.id = 300
         context.source_message.add_reaction = AsyncMock()
         client = candidate_client(AsyncMock(return_value=None))
-        context = replace(context, bot=SimpleNamespace(gif_client=client))
-        session = _AgentSession([
-            AgentStep("", (plan_call(
-                AgentToolCall("reaction", "react_to_request", json.dumps({"emoji": "👍"})),
-                AgentToolCall("gif", "find_gif", json.dumps({"query": "synthetic"})),
-            ),), AgentUsage()),
-            AgentStep("Synthetic text reply.", (), AgentUsage()),
-        ])
-        answer = await AgentService(_AgentModel(session)).answer(
+        context = replace(context, bot=SimpleNamespace(gif_client=client, agent_model=client.agent_model))
+        context = gif_context(context)
+        session = _AgentSession([social_step("Synthetic text reply.", form="text_reactions",
+                                            reactions=["\U0001f44d"]),
+                                 AgentStep("Synthetic text reply.", (), AgentUsage())])
+        answer = await AgentService(_AgentModel(session, route="social")).answer(
             question="Synthetic request", local_context="", context=context,
         )
         self.assertEqual(answer, "Synthetic text reply.")
-        self.assertEqual(len(session.calls), 2)
+        self.assertEqual(len(session.calls), 1)
         self.assertIsNone(context.state.gif_url)
         context.source_message.add_reaction.assert_awaited_once()
 
-    async def test_plan_searches_replace_in_step_order(self):
+    async def test_research_plan_cannot_search_for_a_reply_gif(self):
         context = _context()
-        client = candidate_client(AsyncMock(side_effect=["first", "second"]))
-        context = replace(context, bot=SimpleNamespace(gif_client=client))
+        client = candidate_client(AsyncMock(return_value="synthetic-link"))
+        context = replace(gif_context(context), bot=SimpleNamespace(gif_client=client))
         session = _AgentSession([
-            AgentStep("", (plan_call(
-                AgentToolCall("first", "find_gif", json.dumps({"query": "synthetic first"})),
-                AgentToolCall("second", "find_gif", json.dumps({"query": "synthetic second"})),
-            ),), AgentUsage()),
+            AgentStep("", (plan_call(AgentToolCall("gif", "find_gif", '{"query":"synthetic"}')),), AgentUsage()),
             AgentStep("Synthetic answer", (), AgentUsage()),
         ])
-        await AgentService(_AgentModel(session)).answer(question="Synthetic request",
-                                                       local_context="", context=context)
-        self.assertEqual(context.state.gif_url, "second")
-        self.assertEqual([call.args[0] for call in client.search.await_args_list],
-                         ["synthetic first", "synthetic second"])
+        answer = await AgentService(_AgentModel(session)).answer(question="Synthetic request",
+                                                               local_context="", context=context)
+        self.assertEqual(answer, "Synthetic answer")
+        self.assertIsNone(context.state.gif_url)
+        client.search_candidates.assert_not_awaited()
 
-    async def test_previous_disclosure_applies_to_the_gif_part(self):
-        context = _context()
-        context.state.gif_url = "https://giphy.com/gifs/synthetic"
-        channel = context.source_message.channel
-        channel.send = AsyncMock(return_value=SimpleNamespace(id=800))
-        message = SimpleNamespace(id=300, channel=channel, archive_reply=False)
-        surface = AgentDeliveryMixin()
-        surface._send_response = AsyncMock()
-        surface._conversations = MagicMock()
-        conversation = MagicMock()
-        conversation.can_reuse_answer_disclosure.return_value = True
-        delivery = AgentDelivery()
-        delivery.record(700, "Synthetic answer")
-        with (
-            patch("elbow_helper.features.agent.delivery.require_evidence_access", AsyncMock()),
-            patch("elbow_helper.features.agent.delivery.can_show", AsyncMock(return_value=False)),
-        ):
-            await surface.send_response(message, "Synthetic answer", None,
-                                        conversation=conversation, context=context,
-                                        delivery=delivery)
-        channel.send.assert_awaited_once()
-        self.assertTrue(delivery.complete)
 
-    async def test_interruption_after_text_keeps_delivery_incomplete(self):
+    async def test_access_loss_before_media_sends_no_text_and_keeps_delivery_incomplete(self):
         from elbow_helper.features.agent.access import AgentAccessLost
         context = _context()
         context.state.gif_url = "https://giphy.com/gifs/synthetic"
@@ -232,5 +203,6 @@ class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(AgentAccessLost):
                 await surface.send_response(message, "Synthetic answer", None,
                                             context=context, delivery=delivery)
-        self.assertEqual(delivery.message_ids, [700])
+        self.assertEqual(delivery.message_ids, [])
+        surface._send_response.assert_not_awaited()
         self.assertFalse(delivery.complete)

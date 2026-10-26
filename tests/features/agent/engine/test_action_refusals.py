@@ -4,6 +4,7 @@ import json
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from elbow_helper.features.agent.prompts import RESULT_ANSWER_INSTRUCTION
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -85,8 +86,7 @@ class ActionRefusalTests(unittest.IsolatedAsyncioTestCase):
                     self.assertIn("timezone", feedback["missing_hints"])
                 else:
                     self.assertEqual(feedback["instruction"],
-                        "Answer now from these results. "
-                        "Submit another plan only for a remaining gap.")
+                        RESULT_ANSWER_INSTRUCTION)
                 if status == "refused":
                     self.assertEqual(feedback["results"]["202"]["error"], "Synthetic target unavailable")
 

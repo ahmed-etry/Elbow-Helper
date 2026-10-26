@@ -3,6 +3,8 @@ from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from features.agent.engine.helpers import LegacyCatalogueMixin
+
 import json
 from types import SimpleNamespace
 import unittest
@@ -133,7 +135,7 @@ def _large_selection_queries():
     return queries, [war["war_id"] for war in dataset["wars"]]
 
 
-class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
+class AgentCwlTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
 
     async def test_ass_read_and_result_sheet_build_workbook_in_one_round(self):
         await self._ass_result_sheet_builds_workbook(wrapped=False)
@@ -198,7 +200,7 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
         ))
         guild.get_channel_or_thread = lambda value: channel if value == 100 else None
         self.queries = _Queries()
-        self.context = AgentRequestContext(
+        self.context = AgentRequestContext(private_pass=True,
             bot=SimpleNamespace(fetch_channel=AsyncMock(return_value=None)), guild=guild, member=member,
             source_message=SimpleNamespace(
                 id=500, channel=channel, created_at=datetime.now(timezone.utc),
@@ -237,13 +239,20 @@ class AgentCwlTests(unittest.IsolatedAsyncioTestCase):
         content = json.dumps(view, ensure_ascii=False, default=str, separators=(",", ":"))
         bounded = bound_tool_result(content, MAX_TOOL_RESULT_CHARACTERS)
         self.assertLessEqual(len(bounded), MAX_TOOL_RESULT_CHARACTERS)
-        excerpt = json.loads(bounded)["result_excerpt"]
-        self.assertIn(json.dumps(view[row_field], ensure_ascii=False, default=str,
-                                 separators=(",", ":")), excerpt)
+        bounded_view = json.loads(bounded)
+        self.assertEqual(bounded_view[row_field], view[row_field])
+        self.assertNotIn("result_excerpt", bounded_view)
+        self.assertLess(len(bounded_view["attack_sample"]["rows"]), 56 * 30)
         result = json.loads(session.calls[1][0][0].content)["results"]["scores"]
-        self.assertEqual(result["result_excerpt"], excerpt)
+        self.assertEqual(result[row_field], bounded_view[row_field])
         self.assertEqual(result["flags"]["status"], "partial")
         self.assertTrue(result["flags"]["truncated"])
+        if capability == "cwl_ass_scores":
+            self.assertEqual(result["ranking"], payload["ranking"])
+            self.assertEqual(result["ranking"]["account_count"], 30)
+            self.assertTrue(result["ranking"]["complete"])
+            for player in payload["players"]:
+                self.assertIn(player["player_tag"], result["ranking"]["text"])
         self.assertFalse(record["result_complete"])
 
     async def test_ass_keeps_all_30_player_scores_when_56_wars_exceed_the_result_limit(self):

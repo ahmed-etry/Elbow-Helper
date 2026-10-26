@@ -96,8 +96,8 @@ class CommandRegistryTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             guide = DataGuide(synthetic_datasets(directory)).for_levels(KNOWN_ACCESS_REQUIREMENTS)
         # Fill both knowledge budgets, independent of the deployed knowledge files.
-        core = "k" * 8_000
-        index = "t" * 28_000
+        core = "k" * 20_000
+        index = "t" * 70_000
         self.assertEqual(estimate_tokens(core), 4_000)
         self.assertEqual(estimate_tokens(index), 14_000)
         prompt = system_instructions(

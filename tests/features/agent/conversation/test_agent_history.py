@@ -1,8 +1,11 @@
 from datetime import datetime, timezone
+from features.agent.engine.helpers import LegacyCatalogueMixin
+
 import json
 from tests.features.agent_plan_helpers import plan_call
 from types import SimpleNamespace
 import unittest
+from features.agent.engine.test_agent_service import _AgentModel
 import discord
 from unittest.mock import AsyncMock
 
@@ -52,13 +55,13 @@ def _context(*turns):
     return context, allowed
 
 
-class AgentHistoryTests(unittest.IsolatedAsyncioTestCase):
-    async def test_search_finds_full_record_not_only_recent_excerpt(self):
+class AgentHistoryTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
+    async def test_chunks_include_all_turns_without_term_selection(self):
         context, _ = _context(_turn(1, "Only players available all seven days"), _turn(2, "Unrelated"))
-        result = await read_conversation_history(context, {"query": "SEVEN DAYS"})
-        self.assertEqual(result["matching_retained_turns"], 1)
-        self.assertEqual(result["results"][0]["request_message_id"], 1)
-        self.assertIn("all seven days", result["results"][0]["content"])
+        result = await read_conversation_history(context, {})
+        self.assertEqual(result["matching_retained_turns"], 2)
+        self.assertEqual([row["request_message_id"] for row in result["results"]], [2, 1])
+        self.assertIn("all seven days", result["results"][1]["content"])
         self.assertTrue(result["history_may_be_incomplete"])
 
     async def test_permissions_filter_results_and_counts_and_are_checked_on_every_call(self):
@@ -100,26 +103,26 @@ class AgentHistoryTests(unittest.IsolatedAsyncioTestCase):
             offset = next_offset
         self.assertEqual("".join(fragments), _document(turn))
 
-    async def test_unicode_search_excerpt_contains_late_match(self):
+    async def test_late_content_requires_sequential_content_paging(self):
         context, _ = _context(_turn(1, "ß" * 5000 + "important restriction"))
-        page = await read_conversation_history(context, {"query": "important restriction"})
-        self.assertIn("important restriction", page["results"][0]["content"])
+        page = await read_conversation_history(context, {})
+        self.assertEqual(page["results"][0]["content_offset"], 0)
+        self.assertIsNotNone(page["results"][0]["next_content_offset"])
 
     async def test_undelivered_generated_answer_is_neither_searchable_nor_returned(self):
         context, _ = _context(_turn(1, answer="sent", generated="sent and undelivered-secret"))
-        result = await read_conversation_history(context, {"query": "undelivered-secret"})
-        self.assertEqual(result["results"], [])
         result = await read_conversation_history(context, {"request_message_id": 1})
         content = json.loads(result["results"][0]["content"])
         self.assertEqual(content["answer"], "sent")
         self.assertFalse(content["delivery_complete"])
+        self.assertNotIn("undelivered-secret", result["results"][0]["content"])
 
     async def test_unknown_id_cannot_read_a_different_conversation(self):
         context, _ = _context(_turn(1))
         result = await read_conversation_history(context, {"request_message_id": 2})
         self.assertEqual(result["results"], [])
         schema = build_agent_tools()["read_conversation_history"].definition.parameters
-        for arguments in ({"conversation_id": 2}, {"limit": 6}, {"offset": -1}, {"content_offset": -1}):
+        for arguments in ({"conversation_id": 2}, {"limit": 6}, {"offset": -1}, {"content_offset": -1}, {"query": "topic"}):
             self.assertFalse(valid_arguments(arguments, schema))
 
     async def test_excerpt_only_record_is_marked_incomplete(self):
@@ -131,12 +134,12 @@ class AgentHistoryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_actual_service_can_retrieve_history_and_continue_answer(self):
         context, _ = _context(_turn(1, "Keep these two accounts together", source=200))
-        lookup = AgentToolCall("lookup", "read_conversation_history", '{"query":"accounts"}')
+        lookup = AgentToolCall("lookup", "read_conversation_history", '{}')
         session = SimpleNamespace(advance=AsyncMock(side_effect=[
             AgentStep("", (plan_call(lookup),), AgentUsage()),
             AgentStep("I will keep those accounts together.", (), AgentUsage()),
         ]))
-        model = SimpleNamespace(create_agent_session=lambda **kwargs: session)
+        model = _AgentModel(session)
         answer = await AgentService(model).answer(question="Use the earlier restriction", local_context="", context=context)
         self.assertIn("together", answer)
         self.assertIn("Keep these two accounts together", session.advance.await_args_list[1].args[0][-1].content)

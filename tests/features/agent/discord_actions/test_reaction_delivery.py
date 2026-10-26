@@ -1,4 +1,4 @@
-"""An acknowledged reaction does not replace the requested reply."""
+"""Reactions require message delivery; pending replies retain their delivery state."""
 
 import unittest
 from unittest.mock import AsyncMock
@@ -10,7 +10,7 @@ from features.agent.engine.test_agent_service import _context
 
 
 class ReactionDeliveryTests(unittest.IsolatedAsyncioTestCase):
-    async def test_reaction_alone_does_not_mark_the_reply_complete(self):
+    async def test_reaction_acknowledgement_requires_message_delivery(self):
         context = _context()
         context.state.reactions.emojis.append("\U0001f44d")
         surface = AgentDeliveryMixin()

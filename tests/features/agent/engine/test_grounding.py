@@ -1,6 +1,7 @@
 """Source integrity and useful recovery; semantic quality is evaluated with a real model."""
 
 from types import SimpleNamespace
+import json
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -9,6 +10,7 @@ from elbow_helper.features.agent.engine.grounding import (
 )
 from elbow_helper.features.agent.engine.flow import AnswerFlow
 from elbow_helper.features.agent.engine.rounds import AgentLimitReached
+from elbow_helper.features.agent.engine.tool_call import bound_tool_result
 from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.features.agent.engine.capability_contract import CapabilityContract
 from elbow_helper.features.agent.models import RegisteredAgentTool
@@ -23,6 +25,24 @@ MESSAGE = {"message_id": 101, "author_id": 202, "author": "Member Alpha",
 
 
 class GroundingTests(unittest.TestCase):
+    def test_numeric_citations_render_linked_names_before_source_quotation(self):
+        for citation in ('[[101]]', '[101]'):
+            with self.subTest(citation=citation):
+                answer = ground_answer('See ' + citation, {'read': {'messages': [MESSAGE]}})
+                self.assertEqual(answer, f"See [Member Alpha]({MESSAGE['source']})")
+        # Exact source quotations are escaped, not scanned for citation syntax.
+        source = {**MESSAGE, 'content': 'A member wrote [[999]] as ordinary text.'}
+        self.assertIn('999', ground_answer('[[message:101]]', [source]))
+
+    def test_unknown_numeric_citation_uses_existing_repair_and_partial_recovery(self):
+        with self.assertRaises(GroundingError):
+            ground_answer('See [[999]].', [MESSAGE])
+        recovered = partial_answer('Keep this advice. [[999]] [[101]]', [MESSAGE], GroundingError('unknown'))
+        self.assertIn('Keep this advice.', recovered)
+        self.assertIn(MESSAGE['source'], recovered)
+        self.assertNotIn('[[', recovered)
+        self.assertNotIn('999', recovered)
+
     def test_ordinary_language_and_recommendations_are_not_word_filtered(self):
         for answer in (
             'I would not push. They said "I am not very social", rather than raising a complaint.',
@@ -80,16 +100,54 @@ class GroundingTests(unittest.TestCase):
         self.assertNotIn("@everyone", answer)
         self.assertIn("\n> First line\n> ", answer)
 
-    def test_partial_answer_keeps_actual_referenced_sources_once(self):
+    def test_partial_answer_keeps_prose_and_valid_referenced_sources(self):
         answer = partial_answer(
             "Do not preserve this unverified prose. [[message:101]] [[message:999]] " + MESSAGE["source"],
             {"read": {"messages": [MESSAGE]}}, GroundingError("unknown"),
         )
         self.assertIn(MESSAGE["content"], answer)
-        self.assertEqual(answer.count(MESSAGE["source"]), 1)
-        self.assertIn(GROUNDING_GAPS["source"], answer)
-        self.assertNotIn("unverified prose", answer)
+        self.assertIn(MESSAGE["source"], answer)
+        self.assertNotIn(GROUNDING_GAPS["source"], answer)
+        self.assertIn("unverified prose", answer)
         self.assertNotIn("999", answer)
+
+    def test_failed_attribution_gets_a_qualifier_but_independent_advice_does_not(self):
+        answer = partial_answer('They said "I will stay". [[message:999]] Keep feedback optional.',
+                                {}, GroundingError("unknown"))
+        self.assertIn('They said "I will stay".', answer)
+        self.assertIn("Keep feedback optional.", answer)
+        self.assertIn(GROUNDING_GAPS["source"], answer)
+        answer = partial_answer("Keep feedback optional. [[message:999]]", {}, GroundingError("unknown"))
+        self.assertEqual(answer, "Keep feedback optional.")
+
+    def test_malformed_citation_is_removed_without_losing_prose(self):
+        for citation in ("[[message:bad]]", "[[message:bad]", "[[message:bad"):
+            with self.subTest(citation=citation):
+                self.assertEqual(partial_answer("Keep feedback optional. " + citation, {},
+                                                GroundingError("invalid")), "Keep feedback optional.")
+
+    def test_oversized_results_keep_complete_citable_messages_and_table_rows(self):
+        rows = [{**MESSAGE, "message_id": identity,
+                 "source": f"https://discord.com/channels/3/91/{identity}"} for identity in range(101, 141)]
+        for payload in ({"messages": rows, "search_is_exhaustive": True},
+                        {"messages": compact_result(rows)}, rows,
+                        {"result": {"messages": rows}}):
+            with self.subTest(payload_type=type(payload).__name__):
+                bounded = bound_tool_result(json.dumps(payload), 1200)
+                self.assertLessEqual(len(bounded), 1200)
+                view = json.loads(bounded)
+                self.assertTrue(view["truncated"])
+                self.assertNotIn("result_excerpt", view)
+                self.assertIn(MESSAGE["content"], ground_answer("[[message:140]]", view))
+                with self.assertRaises(GroundingError):
+                    ground_answer("[[message:101]]", view)
+
+    def test_an_oversized_single_record_is_omitted_whole(self):
+        huge = {**MESSAGE, "content": "x" * 5000}
+        view = json.loads(bound_tool_result(json.dumps({"messages": [huge]}), 400))
+        self.assertEqual(view["messages"], [])
+        self.assertEqual(view["truncated_collections"]["messages"],
+                         {"total_records": 1, "returned_records": 0})
 
     def test_partial_answer_does_not_dump_unreferenced_or_failed_sources(self):
         for evidence in ({"read": {"messages": [MESSAGE]}},
@@ -99,7 +157,7 @@ class GroundingTests(unittest.TestCase):
 
 
 class GroundingFlowTests(unittest.IsolatedAsyncioTestCase):
-    async def answer(self, steps, *, payload=None, context=None):
+    async def answer(self, steps, *, payload=None, context=None, local_context=""):
         session = _Session(steps, [])
         registry = {"read_value": RegisteredAgentTool(
             AgentToolDefinition("read_value", "Read synthetic evidence.",
@@ -108,8 +166,18 @@ class GroundingFlowTests(unittest.IsolatedAsyncioTestCase):
         )}
         with patch("elbow_helper.features.agent.engine.service.build_agent_tools", return_value=registry):
             answer = await AgentService(_Model(session)).answer(
-                question="Would you push for feedback and why?", local_context="", context=context or _context())
+                question="Would you push for feedback and why?", local_context=local_context, context=context or _context())
         return answer, session
+
+    async def test_visible_local_message_is_citable_without_a_tool_or_repair(self):
+        context = _context()
+        context.state.local_messages = [MESSAGE]
+        answer, session = await self.answer([
+            AgentStep("Keep feedback optional. [[message:101]]", (), AgentUsage()),
+        ], context=context, local_context="Visible local message: " + json.dumps(MESSAGE))
+        self.assertIn("Keep feedback optional.", answer)
+        self.assertIn(MESSAGE["source"], answer)
+        self.assertEqual(len(session.calls), 1)
 
     async def test_recommendation_from_read_messages_needs_no_extra_model_call(self):
         draft = ('I would not push. They said "I am not very social" and plan to stay. '
@@ -155,8 +223,7 @@ class GroundingFlowTests(unittest.IsolatedAsyncioTestCase):
             _model_step(_plan([_step("read")])), bad, bad,
         ], payload={"messages": [MESSAGE]})
         self.assertIn(MESSAGE["content"], answer)
-        self.assertIn(GROUNDING_GAPS["source"], answer)
-        self.assertNotIn("Unverified prose", answer)
+        self.assertIn("Unverified prose", answer)
 
     async def test_repair_unavailable_still_keeps_read_sources(self):
         for error in (TimeoutError(), AgentLimitReached("Limit")):

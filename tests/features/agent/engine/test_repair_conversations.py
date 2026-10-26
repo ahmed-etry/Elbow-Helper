@@ -3,6 +3,8 @@
 from contextlib import closing
 from dataclasses import replace
 from datetime import datetime, timezone
+from features.agent.engine.helpers import LegacyCatalogueMixin
+
 import json
 from pathlib import Path
 import sqlite3
@@ -22,8 +24,6 @@ from elbow_helper.features.agent.datasets.query import run_query
 from elbow_helper.features.agent.datasets.sources import DataSource
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin
 from elbow_helper.features.agent.engine.budgets import RequestLimits
-from elbow_helper.features.agent.engine.factual_answers import narrow_answer, clan_count_tag
-from elbow_helper.features.agent.engine.grounding import GroundingError
 from elbow_helper.features.agent.engine.registry import build_agent_tools
 from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.features.agent.models import AgentTurnState
@@ -47,7 +47,7 @@ def unpack(items):
     return [dict(zip(items["columns"], row)) for row in items["rows"]] if isinstance(items, dict) else items
 
 
-class RepairConversationTests(unittest.IsolatedAsyncioTestCase):
+class RepairConversationTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
     def context(self, fetch):
         context = _context()
         context.member.roles.append(SimpleNamespace(id=next(iter(LEAD))))
@@ -73,41 +73,31 @@ class RepairConversationTests(unittest.IsolatedAsyncioTestCase):
                     planned("clan", "read_clash", {"kind": "clan", "tags": ["#P0"]}),
                     planned(corrected_id, "read_clash", {"kind": "clan", "tags": ["#Q0"]}),
                     AgentStep("49, full!", (), AgentUsage(1000, 100)),
+                    AgentStep("50 members. The clan is full.", (), AgentUsage(1000, 100)),
                 ], [])
                 answer = await AgentService(_Model(session)).answer(question="Member count?", local_context="", context=context)
-                self.assertEqual(answer, "50")
-                self.assertEqual(len(session.calls), 2)
+                self.assertEqual(answer, "50 members. The clan is full.")
+                self.assertEqual(len(session.calls), 4)
+                self.assertIn("#Q0 total members: 50", session.instructions[-1])
                 self.assertEqual(context.bot.clash_client.get.await_count, 2)
                 delivery = AgentDeliveryMixin()
                 delivery.bot = context.bot
                 await delivery.send_response(context.source_message, answer, None, context=context)
-                self.assertEqual(context.source_message.reply.await_args.args[0], "50")
+                self.assertEqual(context.source_message.reply.await_args.args[0], answer)
 
-    async def test_explicit_single_clan_count_uses_one_read_and_no_model(self):
+    async def test_explicit_single_clan_count_uses_checked_model_selection(self):
         context = self.context(lambda *_args, **_options: SimpleNamespace(
             ok=True, status=200, payload={"tag": "#Q0", "members": 50, "memberList": []}))
-        model = SimpleNamespace(create_agent_session=Mock(side_effect=AssertionError("Unneeded model")))
-        answer = await AgentService(model).answer(question="How many members in #Q0 currently?", local_context="", context=context)
+        session = _Session([
+            _model_step(_plan([{"id": "clan", "capability": "read_clash", "arguments": {"kind": "clan", "tags": ["#Q0"]}, "depends_on": []}])),
+            AgentStep("50", (), AgentUsage(1000, 100)),
+        ], [])
+        answer = await AgentService(_Model(session)).answer(
+            question="How many members in #Q0 currently?", local_context="", context=context)
         self.assertEqual(answer, "50")
         context.bot.clash_client.get.assert_awaited_once()
-        model.create_agent_session.assert_not_called()
-        for question in ("How many members in #Q0 have 300 trophies?", "How many members in #Q0 last month?",
-                         "How many members in #Q0 and #P0?", "Should we raise the member count for #Q0?"):
-            self.assertIsNone(clan_count_tag(question))
+        self.assertEqual(len(session.calls), 2)
 
-    def test_count_subject_and_successful_conflicts(self):
-        def observation(tag, value):
-            return {"source": "clash_api", "kind": "clan", "items": [{"tag": tag, "status": "ok", "data": {"members": value}}]}
-        good = observation("#Q0", 50)
-        self.assertEqual(narrow_answer("How many members in #Q0?", {"one": good, "duplicate": good,
-                                                                     "unrelated": observation("#P0", 40)}), "50")
-        with self.assertRaises(GroundingError):
-            narrow_answer("How many members in #Q0?", {"one": good, "conflict": observation("#Q0", 49)})
-        named = observation("#Q0", 50)
-        named["items"][0]["data"]["name"] = "Example clan"
-        self.assertEqual(narrow_answer("How many members in Example clan?", {"one": named}), "50")
-        with self.assertRaises(GroundingError):
-            narrow_answer("How many members in Different clan?", {"one": named})
 
     async def test_large_profiles_keep_every_ranked_league_in_model_and_retained_views(self):
         tags = ["#P" + str(index).replace("1", "Y").replace("3", "L").replace("4", "Q").replace("5", "V").replace("6", "G").replace("7", "R") for index in range(30)]
@@ -159,14 +149,21 @@ class RepairConversationTests(unittest.IsolatedAsyncioTestCase):
         context.state.report_access_requirements[report.report_id] = frozenset({"lead"})
         tool = build_agent_tools()["read_cohort_leagues"]
         first = await tool.handler(context, {"cohort_report_id": "cohort", "league": "Legend", "limit": 2})
-        second = await tool.handler(context, {"cohort_report_id": "cohort", "league": "Legend", "offset": first["next_offset"]})
+        second = await tool.handler(context, first["next_page_arguments"])
         self.assertEqual(first["member_ids"], [101, 102])
         self.assertEqual(first["account_count"], 3)
         rows = first["accounts"] + second["accounts"]
         self.assertEqual({row["player_tag"] for row in rows if row["matches"]}, {"#P0", "#Q0"})
         self.assertEqual({row["member_id"] for row in rows if row["matches"]}, {101, 102})
         self.assertFalse(first["complete"])
+        self.assertEqual(first["returned_account_count"], 2)
+        self.assertEqual(first["remaining_account_count"], 1)
+        self.assertEqual(first["next_page_arguments"], {
+            "cohort_report_id": "cohort", "league": "Legend", "limit": 2, "offset": 2})
+        self.assertIn("not a complete cohort count", first["instruction"])
         self.assertIsNone(second["next_offset"])
+        self.assertIsNone(second["next_page_arguments"])
+        self.assertEqual(second["remaining_account_count"], 0)
         self.assertEqual(context.bot.clash_client.get.await_count, 3)
         self.assertNotIn(103, context.account_links.get_links_for_members.call_args.args[0])
         complete = await tool.handler(context, {"cohort_report_id": "cohort", "league": "Legend League"})
@@ -183,9 +180,9 @@ class RepairConversationTests(unittest.IsolatedAsyncioTestCase):
             raise discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"), "denied")
         context.source_message.add_reaction = AsyncMock(side_effect=react)
         context.source_message.reply.side_effect = lambda *a, **kw: events.append("text") or SimpleNamespace(id=501)
-        session = _Session([planned("reaction", "react_to_request", {"emoji": "👍"}, reply="Still here.")], [])
+        session = _Session([planned("reaction", "react_to_request", {"emoji": "👍"}, reply="Synthetic acknowledgement.")], [])
         answer = await AgentService(_Model(session)).answer(question="u up?", local_context="", context=context)
-        self.assertEqual(answer, "Still here.")
+        self.assertEqual(answer, "Synthetic acknowledgement.")
         delivery = AgentDeliveryMixin()
         delivery.bot = context.bot
         await delivery.send_response(context.source_message, answer, None, context=context)
@@ -278,19 +275,19 @@ class RepairConversationTests(unittest.IsolatedAsyncioTestCase):
     async def test_text_only_social_plan_and_completed_budget_answer_have_no_continuation(self):
         context = self.context(lambda *_a, **_kw: None)
         plan = _plan([])
-        plan["reply"] = "Still here."
+        plan["reply"] = "Synthetic acknowledgement."
         session = _Session([replace(_model_step(plan), usage=AgentUsage(1000, 100))], [])
         service = AgentService(_Model(session))
         flow, _ = service._start_flow(question="u up?", local_context="", context=context, conversation_history="")
         answer = await flow.run()
-        self.assertEqual(answer, "Still here.")
+        self.assertEqual(answer, "Synthetic acknowledgement.")
         self.assertEqual(len(session.calls), 1)
         self.assertEqual(context.state.reactions.count, 0)
-        finished = _Session([AgentStep("Still here.", (), AgentUsage(1000, 100))], [])
+        finished = _Session([AgentStep("Synthetic acknowledgement.", (), AgentUsage(1000, 100))], [])
         flow, _ = AgentService(_Model(finished))._start_flow(
             question="u up?", local_context="", context=context, conversation_history="")
         flow.budget.request_limits = RequestLimits(1, 80_000, 12_000, 4096)
-        self.assertEqual(await flow.run(), "Still here.")
+        self.assertEqual(await flow.run(), "Synthetic acknowledgement.")
         self.assertTrue(flow.rounder.budget_limited)
         self.assertFalse(finished.calls[0][1])
 
@@ -310,7 +307,7 @@ class RepairConversationTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("available_schema", denied)
             self.assertEqual(denied["required_access"], ["lead"])
 
-    async def test_missing_history_date_is_repaired_once_and_identical_invalid_retry_stops(self):
+    async def test_invalid_history_limit_is_repaired_once_and_identical_invalid_retry_stops(self):
         for repeat in (False, True):
             with self.subTest(repeat=repeat):
                 context = self.context(lambda *_a, **_kw: SimpleNamespace(ok=True, status=200, payload={
@@ -320,12 +317,12 @@ class RepairConversationTests(unittest.IsolatedAsyncioTestCase):
                 search = SimpleNamespace(history_page=AsyncMock(side_effect=page))
                 context = replace(context, message_search=search)
                 context.source_message.id = discord.utils.time_snowflake(context.source_message.created_at, high=True)
-                arguments = {"channel_id": 91}
+                arguments = {"channel_id": 91, "limit": 0}
                 first = _plan([
                     {"id": "account", "capability": "read_clash", "arguments": {"kind": "player", "tags": ["#P0"]}, "depends_on": []},
                     {"id": "history", "capability": "read_discord_channel_history", "arguments": arguments, "depends_on": []},
                 ])
-                corrected = arguments if repeat else {**arguments, "after": "2025-12-01"}
+                corrected = arguments if repeat else {**arguments, "limit": 25}
                 session = _Session([
                     replace(_model_step(first), usage=AgentUsage(1000, 100)),
                     planned("history", "read_discord_channel_history", corrected),
@@ -333,7 +330,9 @@ class RepairConversationTests(unittest.IsolatedAsyncioTestCase):
                 ], [])
                 answer = await AgentService(_Model(session)).answer(question="Analyze the example case", local_context="", context=context)
                 errors = json.loads(session.calls[1][0][0].content)["results"]
-                self.assertIn("after", errors["history"]["argument_schema"]["required"])
+                schema = errors["history"]["argument_schema"]
+                self.assertEqual(schema["properties"]["limit"]["minimum"], 1)
+                self.assertNotIn("anyOf", schema)
                 self.assertEqual(errors["history"]["cause"], "invalid_arguments")
                 self.assertEqual(errors["account"]["items"][0]["data"]["leagueTier"]["name"], "Dragon League 30")
                 self.assertIn("Account checked.", answer)
@@ -342,21 +341,20 @@ class RepairConversationTests(unittest.IsolatedAsyncioTestCase):
                 if repeat:
                     self.assertFalse(session.calls[-1][1])
 
-    async def test_initial_missing_account_claim_recovers_on_original_lookup(self):
+    async def test_full_route_resolves_linked_account_before_answering(self):
         context = self.context(lambda *_a, **_kw: SimpleNamespace(ok=True, status=200, payload={
             "name": "Example", "leagueTier": {"name": "Dragon League 30"}, "league": {"name": "Silver III"}, "trophies": 0}))
         context = replace(context, account_links=SimpleNamespace(get_links_for_members=Mock(return_value={
             101: [{"player_tag": "#P0", "player_name_last_seen": "Example"}]})))
         session = _Session([
-            AgentStep("I don't have the player tag. Send it to me.", (), AgentUsage(1000, 100)),
             planned("links", "read_linked_accounts", {"member_ids": [101]}),
             planned("profile", "read_clash", {"kind": "player", "tags": ["#P0"]}),
             AgentStep("Dragon League 30.", (), AgentUsage(1000, 100)),
         ], [])
         answer = await AgentService(_Model(session)).answer(question="What's Example's trophy league?", local_context="Example is member 101.", context=context)
         self.assertEqual(answer, "Dragon League 30.")
-        self.assertEqual(len(session.calls), 4)
-        self.assertFalse(session.calls[-1][1])
+        self.assertEqual(len(session.calls), 3)
+        self.assertTrue(session.calls[-1][1])
         data = json.loads(session.calls[-1][0][0].content)["results"]["profile"]["items"][0]["data"]
         self.assertEqual(data["leagueTier"]["name"], "Dragon League 30")
         self.assertEqual(data["league"]["name"], "Silver III")
@@ -380,5 +378,5 @@ class RepairConversationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.state.source_channels, {91})
         fresh = replace(context, state=AgentTurnState(authorized_history=turns))
         scoped = compile_context(question="What's another member's league?", local_context="", context=fresh, tools=())
-        self.assertNotIn(correction, scoped.prompt)
+        self.assertIn(correction, scoped.prompt)
         self.assertFalse(fresh.state.required_access)

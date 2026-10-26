@@ -174,6 +174,7 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         context = SimpleNamespace(
+            private_pass=True, source_message=SimpleNamespace(channel=allowed),
             guild=guild,
             member=asker,
             bot=SimpleNamespace(fetch_channel=AsyncMock()),
@@ -228,7 +229,7 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("attack_sample", line)
         self.assertEqual(build_agent_tools()["cwl_bonus_scores"].action_class.value, "read")
 
-    def test_event_tools_preserve_role_and_read_only_boundaries(self) -> None:
+    def test_public_event_tools_preserve_read_only_boundaries(self) -> None:
         tools = build_agent_tools()
         current = tools["read_event_schedule"]
         from elbow_helper.features.agent.reports.tools import original_tool
@@ -236,10 +237,10 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
             "report_kind": "event_schedule",
         })
 
-        self.assertEqual(current.contract.required_access, frozenset({"lead"}))
+        self.assertEqual(current.contract.required_access, frozenset())
         self.assertEqual(current.action_class.value, "read")
         self.assertIn("does not refresh event channels", current.definition.usage_note)
-        self.assertEqual(retained.contract.required_access, frozenset({"lead"}))
+        self.assertEqual(retained.contract.required_access, frozenset())
 
 
 if __name__ == "__main__":

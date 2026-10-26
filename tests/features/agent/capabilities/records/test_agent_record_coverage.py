@@ -61,7 +61,7 @@ class RecordCoverageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(coverage["member_count"], 0)
         self.assertEqual(coverage["members"], [])
         self.assertEqual(coverage["window"], {"after_ts": None, "before_ts": None})
-        self.assertEqual(touched, {"lead_plus"})
+        self.assertFalse(touched)
 
     def test_sparse_window_counts_members_and_separates_removed_cases(self):
         self.seed()
@@ -151,19 +151,19 @@ class RecordCoverageTests(unittest.IsolatedAsyncioTestCase):
         result, _ = self.query("SELECT 'records.leadership_records' AS text", levels=set())
         self.assertNotIn("source_coverage", result)
         result, touched = self.query("SELECT * FROM records.leadership_records", levels=set())
-        self.assertEqual(result["required_access"], ["lead_plus"])
-        self.assertNotIn("source_coverage", result)
+        self.assertEqual(len(result["rows"]), 6)
+        self.coverage(result)
         self.assertFalse(touched)
 
     async def test_agent_query_retains_coverage_and_rechecks_access(self):
-        context = SimpleNamespace(
+        context = SimpleNamespace(private_pass=True,
             bot=SimpleNamespace(paths=self.paths), guild=object(), member=SimpleNamespace(id=1),
             state=AgentTurnState(),
         )
         with (
             patch("elbow_helper.features.agent.datasets.catalogue.SOURCES", self.sources),
             patch("elbow_helper.features.agent.datasets.query.require_evidence_access", AsyncMock()),
-            patch("elbow_helper.features.agent.datasets.query.has_access_requirements",
+            patch("elbow_helper.features.agent.datasets.query.has_reader_access_requirements",
                   side_effect=lambda guild, member, levels: levels <= {"lead_plus"}),
         ):
             result = await query_bot_data(context, {
@@ -172,7 +172,7 @@ class RecordCoverageTests(unittest.IsolatedAsyncioTestCase):
                 "params": self.window,
             })
         self.coverage(model_result(result))
-        self.assertEqual(context.state.required_access, {"lead_plus"})
+        self.assertEqual(context.state.required_access, set())
 
     def test_capability_catalogue_explains_optional_source_and_coverage(self):
         from elbow_helper.features.agent.engine.registry import build_agent_tools

@@ -18,8 +18,8 @@ from ..models import RegisteredAgentTool
 from ..actions.contracts import ActionClass
 from ..reports.tools import (COMPARE_NAME, READ_NAME, original_arguments, original_tool,
                             unsupported_fields, unsupported_field_error)
-from .format import output_forms
-from .arguments import argument_errors
+from .format import REPLY_CAPABILITIES, output_forms
+from .arguments import argument_errors, schema_variant
 
 LOGGER = logging.getLogger(__name__)
 
@@ -85,6 +85,11 @@ def valid_arguments(
 ) -> bool:
     if not isinstance(arguments, dict):
         return False
+    if "anyOf" in schema:
+        base = {key: value for key, value in schema.items() if key != "anyOf"}
+        return valid_arguments(arguments, base, dependencies) and any(
+            valid_arguments(arguments, schema_variant(base, choice), dependencies)
+            for choice in schema["anyOf"])
     properties = schema.get("properties", {})
     if not isinstance(properties, Mapping):
         return False
@@ -210,23 +215,36 @@ def check_plan(raw, registry, *, completed_steps=None):
     """Return a correctable structural error; data errors belong to execution."""
     try:
         required = {"goal", "effort", "output", "steps"}
-        if not isinstance(raw, dict) or not required <= set(raw) or set(raw) - required - {"reply"}:
+        if not isinstance(raw, dict) or not required <= set(raw) or set(raw) - required - {"reply", "self_target", "finish_after_reads", "assessment", "discussion_channels"}:
             return _error("Supply goal, effort, output and steps.")
         if not isinstance(raw["goal"], str) or not 1 <= len(raw["goal"].strip()) <= 240:
             return _error("Write a short goal.")
+        if "self_target" in raw and type(raw["self_target"]) is not bool:
+            return _error("Use a boolean self_target flag for a reference to the asker.")
+        if 'finish_after_reads' in raw and type(raw['finish_after_reads']) is not bool:
+            return _error('Use a boolean finish_after_reads flag.')
+        if 'assessment' in raw and type(raw['assessment']) is not bool:
+            return _error('Use a boolean assessment flag.')
         if raw["effort"] not in ("low", "high", "max"):
             return _error("Choose low, high or max effort.")
         if raw["output"] not in output_forms(registry):
             return _error("Choose an available output form.")
         if not isinstance(raw["steps"], list) or not 0 <= len(raw["steps"]) <= 48:
             return _error("List up to 48 steps.")
+        channels = raw.get('discussion_channels', [])
+        if (not isinstance(channels, list) or len(channels) > 4
+                or any(type(channel) is not int or channel <= 0 for channel in channels)
+                or len(set(channels)) != len(channels)):
+            return _error('Choose up to four distinct discussion channel IDs.')
+        if raw.get('assessment') and 'read_conversation_evidence' in registry and not channels:
+            return _error('Choose discussion_channels for the relevant discussion.')
         if "reply" in raw and (
             not isinstance(raw["reply"], str) or not 1 <= len(raw["reply"].strip()) <= 1800
             or raw["output"] != "text"
-            or any(step.get("capability") not in ("react_to_request", "find_gif")
+            or any(step.get("capability") not in REPLY_CAPABILITIES
                    for step in raw["steps"] if isinstance(step, dict))
         ):
-            return _error("Use reply only for social text with optional reactions or a GIF.")
+            return _error("Use reply with only a reply target, reactions or a GIF; complete reads and changes first.")
         if not raw["steps"] and not raw.get("reply"):
             return _error("Supply reply text or capability steps.")
         completed = completed_steps or {}

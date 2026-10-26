@@ -9,9 +9,10 @@ saved data; shared infrastructure handles Clash and AI requests.
 
 - `cog.py` receives messages and gathers nearby messages and conversation
   history. Requests from the same member or conversation run one at a time.
-- `engine/service.py` prepares the model request and available tools. Simple
-  lookups start with fewer tools and can expand to include the full tool list,
-  data guide, and community knowledge.
+- `engine/service.py` starts non-social requests with the full tool list,
+  data guide, and channel-readable community knowledge in a stable system
+  prefix. Short social replies use a smaller route that can expand. A bare,
+  fully matched single-clan member count can use one read without a model.
 - `plan/planning.py` reads the model's answer or proposed steps.
   `plan/checker.py` checks tool names, arguments, and references to earlier
   results. `PlanRunner` in `engine/steps.py` checks access and runs the steps.

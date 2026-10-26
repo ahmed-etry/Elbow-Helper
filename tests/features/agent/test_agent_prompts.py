@@ -5,6 +5,13 @@ from elbow_helper.features.agent.prompts import ACTION_SYSTEM_PROMPT, SYSTEM_PRO
 
 
 class RequestPromptTests(unittest.TestCase):
+    def test_router_keeps_unasked_game_claims_social(self):
+        from elbow_helper.features.agent.engine.routing import ROUTE_INSTRUCTION
+
+        self.assertIn('Game opinions, stories and claims stay social unless the member asks for facts or advice',
+                      ROUTE_INSTRUCTION)
+        self.assertIn('do not invent a question or correction to answer', ROUTE_INSTRUCTION)
+
     def test_records_do_not_support_judgments_from_absence_or_records_alone(self):
         for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
             self.assertIn("never as a default member lookup", prompt)
@@ -14,7 +21,8 @@ class RequestPromptTests(unittest.TestCase):
 
     def test_claims_and_opinions_require_read_evidence_and_unsupported_claims_are_withdrawn(self):
         for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
-            self.assertIn("opinions about real people need evidence", prompt)
+            self.assertIn("serious judgments about real people need evidence", prompt)
+            self.assertIn("Obvious shared bits and unmeasured playful praise are not factual judgments", prompt)
             self.assertIn("Your earlier replies are not evidence", prompt)
             self.assertIn("show it or withdraw the claim; never attribute it to the asker", prompt)
             self.assertNotIn("skip lookups for banter, opinions and writing help", prompt)
@@ -72,14 +80,13 @@ class RequestPromptTests(unittest.TestCase):
     def test_ambiguous_member_names_are_resolved_before_asking(self):
         for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
             self.assertIn(
-                "Look up ambiguous member names and use the full display name match; ask "
-                "if still unclear.", prompt,
+                "Resolve member and linked account names together, keeping every supplied qualifier", prompt,
             )
 
     def test_addressing_applies_only_to_something_said_to_someone(self):
         for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
             self.assertIn(
-                "Only when asked to say something to someone", prompt,
+                "When asked to speak to, tease, tag or answer another member", prompt,
             )
             self.assertIn("Post in their conversation's channel", prompt)
             self.assertIn(
@@ -88,7 +95,8 @@ class RequestPromptTests(unittest.TestCase):
             )
 
     def test_roasts_use_public_context_and_exclude_leadership_records(self):
-        for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
+        from elbow_helper.features.agent.plan.format import system_instructions
+        for prompt in (system_instructions({}, social=True),):
             self.assertIn("Roast with what the room can see: messages, names, roles and public Clash profiles", prompt)
             self.assertIn("never use leadership-only records for a joke.", prompt)
             self.assertNotIn("Never inspect a member's records just to make a joke", prompt)
@@ -123,7 +131,6 @@ class RequestPromptTests(unittest.TestCase):
             "otherwise calculate from the data and briefly explain how",
             "Ask only when missing information changes the result",
             "Generated files are presentation, never new evidence or approval.",
-            "never use leadership-only records for a joke",
         ):
             self.assertIn(rule, SYSTEM_PROMPT)
 
@@ -143,19 +150,24 @@ class RequestPromptTests(unittest.TestCase):
         ):
             self.assertIn(rule, catalogue)
 
-    def test_invited_banter_uses_the_approved_voice_without_invented_claims(self):
+    def test_banter_uses_the_approved_voice_without_invented_claims(self):
         for rule in (
-            "When banter or a roast is invited, be sharp, salty and funny",
+            "Keep banter short and natural",
             "Swear naturally when it fits",
-            "callbacks to what is actually happening",
-            "Shared memes and crude wordplay belong when relevant",
+            "The member has already supplied the setup: leave it out of your line",
+            "Use the server's slang as members do. Banter is crude by default: harder roasts, dark humor",
             "Keep banter to one coherent line unless asked for more; don't force a punchline",
             "Read meme targets from captions, sender and reply recipient",
-            "Never invent claims about real people",
-            "Keep teasing mutual; stop when someone is uncomfortable",
-            "No harassment, threats, slurs, discrimination or pile-ons",
+            "Never correct, censor or lecture members about their language",
+            "casual non-targeted use is not an attack on identity",
+            "Play along with obvious shared bits, absurd labels and playful praise",
+            "An unmistakable joke is not a factual assertion",
+            "Never invent believable factual claims about real people",
+            "An invited roast is banter, not a serious judgment of the target",
+            "Stop when someone is uncomfortable. Text, fitting reactions and the available GIFs",
         ):
-            for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
+            from elbow_helper.features.agent.plan.format import system_instructions
+            for prompt in (system_instructions({}, social=True),):
                 with self.subTest(rule=rule, actions=prompt is ACTION_SYSTEM_PROMPT):
                     self.assertIn(rule, prompt)
 
@@ -163,9 +175,25 @@ class RequestPromptTests(unittest.TestCase):
         for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
             self.assertIn("For facts, decisions and help, answer the request and stop", prompt)
             self.assertIn("Be concise; give detail when requested or needed", prompt)
-            self.assertIn("A light touch is optional, never a required closer", prompt)
+            self.assertIn("No trailing quips on factual replies", prompt)
             self.assertIn("Be calm and useful with distress", prompt)
             self.assertNotIn("then add salt if it fits", prompt)
+
+    def test_help_and_data_answers_lead_with_the_answer_in_both_modes(self):
+        from elbow_helper.features.agent.plan.format import system_instructions
+
+        for actions in (False, True):
+            for social in (False, True):
+                with self.subTest(actions=actions, social=social):
+                    prompt = system_instructions({}, actions_enabled=actions, social=social)
+                    self.assertIn("Help and data questions get the useful answer without a trailing jab.", prompt)
+                    if social:
+                        self.assertIn('call load_research_context', prompt)
+                        continue
+                    self.assertIn("For facts, decisions and help, answer the request and stop.", prompt)
+                    self.assertIn("Lead with the fact that settles the question", prompt)
+                    self.assertIn("No trailing quips on factual replies.", prompt)
+                    self.assertIn("This rule overrides every banter rule.", prompt)
 
     def test_persona_keeps_passing_mentions_brief_without_spelling_jabs(self):
         for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
@@ -200,16 +228,40 @@ class RequestPromptTests(unittest.TestCase):
 
     def test_corrections_are_repair_even_when_the_asker_insults_the_bot(self):
         for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
-            self.assertIn("Treat corrections as repair, even when the asker swears or insults you", prompt)
-            self.assertIn("give the corrected answer without a jab or defensive joke", prompt)
+            self.assertIn("Treat factual corrections and complaints about an incorrect or unfulfilled answer as repair", prompt)
+            self.assertIn("even when the asker swears or insults you", prompt)
+            self.assertIn("Give the corrected answer directly, honoring the requested scope and format", prompt)
+            self.assertIn("No blame story, excuses, self-pity, jab or defensive joke", prompt)
+            self.assertIn("This rule overrides every banter rule", prompt)
             self.assertIn("Resume banter only when invited again", prompt)
             self.assertNotIn("roast back or laugh it off", prompt)
 
+    def test_banter_criticism_stays_light_without_overriding_factual_repairs(self):
+        from elbow_helper.features.agent.plan.format import system_instructions
+        for prompt in (system_instructions({}, social=True),):
+            self.assertIn("a sharp one-line comeback at the critic", prompt)
+            self.assertIn("do not defend the joke, explain yourself or prolong a defensive argument", prompt)
+            self.assertIn("wrong fact or an unmet request instead follows the correction rule below", prompt)
+
+    def test_shared_bits_invite_personality_and_stay_consistent_across_followups(self):
+        from elbow_helper.features.agent.engine.routing import SOCIAL_INSTRUCTION
+        from elbow_helper.features.agent.plan.format import system_instructions
+
+        for prompt in (system_instructions({}, social=True),):
+            self.assertIn("Join the bit as a regular: a short reaction or agreement is enough", prompt)
+            self.assertIn("never require an extra twist", prompt)
+            self.assertIn("Carry a shared premise through follow-ups, but drop it when the member changes or ends the bit", prompt)
+            self.assertIn("honor genuine output-format constraints", prompt)
+        self.assertIn("A short reaction or agreement is enough; never force an extra twist", SOCIAL_INSTRUCTION)
+        self.assertIn("Follow the current turn and drop an earlier bit", SOCIAL_INSTRUCTION)
+        self.assertIn("Avoid a defensive argument or an explanation of the joke", SOCIAL_INSTRUCTION)
+
     def test_requested_formats_override_personality_without_inventing_results(self):
         for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
-            self.assertIn("Follow requested scope and format exactly, including tables, lists and files", prompt)
+            self.assertIn("Follow requested scope and format exactly", prompt)
+            self.assertIn("Discord messages do not render Markdown tables", prompt)
             self.assertIn("return only that output: no opener, apology, caption, joke or closer", prompt)
-            self.assertIn("State missing evidence briefly instead of inventing a result", prompt)
+            self.assertIn("State the specific unknown fact briefly instead of inventing a result", prompt)
             self.assertIn("Read informal spelling without mockery", prompt)
             self.assertNotIn("Do not use tables", prompt)
 

@@ -1,9 +1,12 @@
 import asyncio
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, call, patch
 
-from elbow_helper.features.agent.discord_actions.reactions import react_to_request, server_reaction_context
+import aiohttp
+
+from elbow_helper.features.agent.discord_actions.reactions import react_to_request, reaction_tools, server_reaction_context
+from elbow_helper.features.agent.plan.checker import valid_arguments
 from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
@@ -20,6 +23,94 @@ def _server_emoji(name, identifier, *, usable=True, animated=False):
 
 
 class ReactionTests(unittest.IsolatedAsyncioTestCase):
+    def test_selection_schema_accepts_short_ordered_lists_and_existing_single_reactions(self):
+        schema = reaction_tools()[0].definition.parameters
+        for selection in ("\U0001f914", ["\U0001f914"], ["\U0001f914", "\U0001f4a1"],
+                          ["syntheticThink", "\U0001f4a1", "syntheticLaunch"]):
+            with self.subTest(selection=selection):
+                self.assertTrue(valid_arguments({"emoji": selection}, schema))
+        for selection in ([], ["\U0001f914"] * 4, [None], [""], 3):
+            with self.subTest(selection=selection):
+                self.assertFalse(valid_arguments({"emoji": selection}, schema))
+
+    async def test_combo_applies_cached_and_unicode_reactions_in_order(self):
+        thinking = _server_emoji("syntheticThink", 101)
+        launching = _server_emoji("syntheticLaunch", 102, animated=True)
+        context = _context()
+        context.state.reaction_combo_due = True
+        context.guild.emojis = (thinking, launching)
+        context.guild.get_emoji = Mock(return_value=launching)
+        context.source_message.add_reaction = AsyncMock()
+        result = await react_to_request(context, {"emoji": ["syntheticThink", "\U0001f4a1", str(launching)]})
+        self.assertEqual(context.source_message.add_reaction.await_args_list,
+                         [call(thinking), call("\U0001f4a1"), call(launching)])
+        self.assertEqual(context.state.reactions.emojis, [str(thinking), "\U0001f4a1", str(launching)])
+        self.assertEqual(context.state.reactions.count, 3)
+        self.assertTrue(result["reacted"])
+        self.assertEqual(result["flags"]["status"], "complete")
+        self.assertEqual(result["results"], [{"reacted": True}] * 3)
+
+    async def test_failed_middle_reaction_keeps_successes_and_attempts_the_last(self):
+        import discord
+        for exception, cause in (
+            (discord.Forbidden(SimpleNamespace(status=403, reason="synthetic"), "synthetic"), "permission_denied"),
+            (discord.HTTPException(SimpleNamespace(status=500, reason="synthetic"), "synthetic"), "delivery_failed"),
+            (aiohttp.ClientConnectionError("Synthetic disconnect"), "delivery_failed"),
+            (OSError("Synthetic network failure"), "delivery_failed"),
+            (TimeoutError(), "delivery_failed"),
+        ):
+            with self.subTest(cause=cause):
+                context = _context()
+                context.state.reaction_combo_due = True
+                context.source_message.add_reaction = AsyncMock(side_effect=[None, exception, None])
+                result = await react_to_request(context, {"emoji": ["\U0001f914", "\U0001f4a1", "\U0001f680"]})
+                self.assertEqual(context.source_message.add_reaction.await_args_list,
+                                 [call("\U0001f914"), call("\U0001f4a1"), call("\U0001f680")])
+                self.assertEqual(context.state.reactions.emojis, ["\U0001f914", "\U0001f680"])
+                self.assertEqual(context.state.reactions.count, 2)
+                self.assertTrue(result["reacted"])
+                self.assertEqual(result["flags"]["status"], "partial")
+                self.assertEqual(result["results"][1]["cause"], cause)
+
+    async def test_unavailable_selection_does_not_block_later_valid_reactions(self):
+        context = _context()
+        context.state.reaction_combo_due = True
+        context.source_message.add_reaction = AsyncMock()
+        result = await react_to_request(context, {"emoji": ["missing_selection", "\U0001f4a1"]})
+        context.source_message.add_reaction.assert_awaited_once_with("\U0001f4a1")
+        self.assertEqual(context.state.reactions.emojis, ["\U0001f4a1"])
+        self.assertEqual(result["results"][0]["cause"], "invalid_selection")
+        self.assertEqual(result["flags"]["status"], "partial")
+
+    async def test_combos_do_not_interleave_and_share_the_request_cap(self):
+        context = _context()
+        context.state.reaction_combo_due = True
+        sent = []
+
+        async def add(value):
+            await asyncio.sleep(0)
+            sent.append(value)
+
+        context.source_message.add_reaction = AsyncMock(side_effect=add)
+        results = await asyncio.gather(
+            react_to_request(context, {"emoji": ["\U0001f914", "\U0001f4a1"]}),
+            react_to_request(context, {"emoji": ["\U0001f680", "\U0001f389"]}),
+        )
+        self.assertEqual(sent, ["\U0001f914", "\U0001f4a1"])
+        self.assertEqual(context.state.reactions.emojis, sent)
+        self.assertEqual(context.state.reactions.count, 2)
+        self.assertEqual(results[0]["flags"]["status"], "complete")
+        self.assertEqual(results[1]["cause"], "combo_not_offered")
+
+    async def test_handler_rejects_empty_or_oversized_combos_before_delivery(self):
+        for selections in ([], ["\U0001f914"] * 4):
+            with self.subTest(selections=selections):
+                context = _context()
+                context.source_message.add_reaction = AsyncMock()
+                result = await react_to_request(context, {"emoji": selections})
+                self.assertEqual(result["cause"], "invalid_selection")
+                context.source_message.add_reaction.assert_not_awaited()
+
     async def test_cached_names_shortcodes_and_markup_resolve_to_the_same_usable_emoji(self):
         item = _server_emoji("syntheticNod", 101)
         for value in ("syntheticNod", ":syntheticNod:", ":SYNTHETICNOD", "<:syntheticNod:101>"):
@@ -34,6 +125,7 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
     async def test_failure_causes_distinguish_selection_limit_permissions_and_delivery(self):
         import discord
         context = _context()
+        context.state.reaction_combo_due = True
         context.source_message.add_reaction = AsyncMock()
         self.assertEqual((await react_to_request(context, {"emoji": "missing_selection"}))["cause"], "invalid_selection")
         context.state.reactions.count = 3
@@ -58,11 +150,23 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
                 question="Synthetic banter", local_context="Synthetic context", context=context,
             )
         self.assertIn("Synthetic context", model.request["prompt"])
-        self.assertIn("Available server reaction emojis: <:syntheticNod:101> <a:syntheticSalute:102>",
-                      model.request["prompt"])
+        self.assertNotIn("syntheticNod", model.request["prompt"])
+        self.assertNotIn("syntheticSalute", model.request["prompt"])
         self.assertNotIn("syntheticLocked", model.request["prompt"])
         self.assertEqual(server_reaction_context(SimpleNamespace()), "")
         self.assertEqual(server_reaction_context(SimpleNamespace(emojis=(unavailable,))), "")
+
+    def test_known_meanings_and_unknown_names_do_not_invite_random_reactions(self):
+        from elbow_helper.features.agent.discord_actions.reaction_meanings import REACTION_MEANINGS
+        with patch.dict(REACTION_MEANINGS, {"syntheticnod": "agreement with a point"}, clear=True):
+            text = server_reaction_context(SimpleNamespace(emojis=(
+                _server_emoji("syntheticNod", 101), _server_emoji("syntheticMystery", 102),
+                _server_emoji("syntheticHidden", 103, usable=False),
+            )))
+        self.assertIn("<:syntheticNod:101>: agreement with a point", text)
+        self.assertNotIn("syntheticMystery", text)
+        self.assertIn("No fitting meaning means no reaction", text)
+        self.assertNotIn("syntheticHidden", text)
 
     async def test_server_reactions_resolve_cached_static_and_animated_emoji(self):
         for animated in (False, True):
@@ -99,7 +203,7 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
             results = await asyncio.gather(*(
                 react_to_request(context, {"emoji": "👍"}) for _ in range(4)
             ))
-        self.assertEqual(message.add_reaction.await_count, 3)
-        self.assertEqual(sum("error" in result for result in results), 1)
+        self.assertEqual(message.add_reaction.await_count, 1)
+        self.assertEqual(sum("error" in result for result in results), 3)
         context.source_message = SimpleNamespace(id=0)
         self.assertEqual((await react_to_request(context, {"emoji": "👍"}))["cause"], "missing_message")

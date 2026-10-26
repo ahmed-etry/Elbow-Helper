@@ -33,6 +33,39 @@ FEEDBACK = {"coverage": {"order": "newest_first"}, "messages": [
     message(101, 404, "Your trial ended. Will you stay? Any feedback?"),
 ]}
 CASES = (
+    ("discord_join_scope", "When did Member 202 join our Discord?", {
+        "members": [{"member_id": 202, "display_name": "Member 202",
+                     "joined_at": "2024-07-28T01:40:00+00:00"}],
+        "accounts": [{"member_id": 202, "player_tag": "#P0", "player_name": "Example"}],
+        "coverage": "Discord join time is available. Historical family-clan join dates are not recorded.",
+    }, "Answer the Discord join date only. Do not add account details, a clan-join discussion, "
+     "or an offer to check profiles for unavailable history."),
+    ("newest_qualifying_recruit", "Which newest recruit is promising enough for Champion III CWL?", {
+        "knowledge": "Synthetic test policy: Champion III requires TH18 and demonstrated reliable "
+                     "attacks against TH18. Home clans and CWL clans differ.",
+        "candidates": [
+            {"member": "Member 202", "discord_join": "2026-10-18", "th": 17,
+             "home_clan": "Example A", "home_clan_warLeague": "Champion II", "hero_progression": "high"},
+            {"member": "Member 303", "discord_join": "2026-10-17", "th": 18,
+             "performance": {"completed_attacks_against_TH18": 14, "triples": 13}},
+            {"member": "Member 404", "discord_join": "2026-10-16", "th": 18,
+             "performance": {"completed_attacks_against_TH18": 20, "triples": 20}},
+        ],
+        "other_clan": {"warLeague": "Champion III", "members": 8, "town_hall_range": [3, 15]},
+    }, "Recommend Member 303 as the newest supported qualifying candidate. Do not recommend "
+     "the TH17, equate home clan with CWL participation, discredit the sparse clan's label, "
+     "or expand into a report about everyone. No Markdown table. Test policy is fixture data, "
+     "not a production rule."),
+    ("different_participation_requirements", "Which newest recruit is ready for this event?", {
+        "knowledge": "Synthetic test policy: this event requires TH16 or higher and reliable TH16 attacks.",
+        "candidates": [
+            {"member": "Member 202", "discord_join": "2026-10-18", "th": 17,
+             "performance": {"completed_attacks_against_TH16": 12, "triples": 12}},
+            {"member": "Member 303", "discord_join": "2026-10-17", "th": 18,
+             "performance": {"completed_attacks_against_TH16": 14, "triples": 14}},
+        ],
+    }, "Member 202 qualifies under these different requirements and is newer. Do not reuse "
+     "a TH18 rule from another case, or select the older account merely because it is stronger."),
     ("feedback", "Would you push for feedback here, and why?", FEEDBACK,
      "Give a recommendation and reason. They agreed to stay and described being unsocial; "
      "do not invent irritation or treat ?? as a reply to the feedback request. "

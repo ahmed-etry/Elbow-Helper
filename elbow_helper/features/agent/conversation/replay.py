@@ -1,23 +1,15 @@
 """Replay retained answer text without planning or executing another request."""
 
 from dataclasses import replace
-import re
 
 from ..access import require_evidence_access
 from ..wording import ACTION_EMPTY, ACTION_PRIVATE_ANSWER
 from .context import retained_knowledge_sources
 
 
-REPLAY = re.compile(
-    r"(?:(?:please|can you|could you)\s+)?(?:resend(?:\s+(?:it|that|the (?:answer|result)))?(?:\s+again)?"
-    r"|(?:post|send|show|repeat)\s+(?:it|that|the (?:answer|result)|your (?:answer|result))"
-    r"(?:\s+again)?|say\s+that\s+again)(?:\s+please)?[.!?]*", re.I,
-)
-
-
-async def replay_answer(question, context):
+async def replay_answer(mode, context):
     """Return None for a fresh request; never regenerate a missing replay target."""
-    if not REPLAY.fullmatch(question.strip()):
+    if mode != "replay":
         return None
     await require_evidence_access(context)
     reference = getattr(context.source_message, "reference", None)
@@ -42,8 +34,6 @@ async def replay_answer(question, context):
     context.state.knowledge_sources.update(retained_knowledge_sources(turn))
     record = turn.record
     delivered = record.delivered_answer
-    # A restricted answer's notice is delivery metadata, not the requested result.
-    # Reuse its generated text through the ordinary audience-checked delivery path.
+    # Legacy private notices contain no public answer to replay.
     notice = delivered.removeprefix(f"<@{record.member_id}> ")
-    answer = record.generated_answer if notice == ACTION_PRIVATE_ANSWER else delivered
-    return answer or ACTION_EMPTY
+    return ACTION_EMPTY if notice == ACTION_PRIVATE_ANSWER else delivered or ACTION_EMPTY

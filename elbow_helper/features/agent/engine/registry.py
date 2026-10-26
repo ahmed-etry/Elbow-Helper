@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import replace
 
 from ..capabilities import FEATURES
+from ..families import TOOLS as FAMILY_TOOLS
+from ..families.catalogue import group_for
 from ..discord_actions import UNDO_HANDLERS as DISCORD_UNDO_HANDLERS
 from ..actions.undo import merge_undo_handlers, UndoHandler
 
@@ -55,6 +57,7 @@ def build_agent_tool_groups(gif_client=None) -> dict[str, tuple[RegisteredAgentT
     """Group the registered read capabilities."""
 
     return {
+        "families": FAMILY_TOOLS,
         "datasets": (*dataset_tools(), *clash_tools(), *ranked_tools(), *membership_tools()),
         "commands": command_tools(),
         "discord_research": (
@@ -87,8 +90,8 @@ def build_agent_tools(gif_client=None) -> dict[str, RegisteredAgentTool]:
     """Build the complete catalogue without exposing arbitrary capabilities."""
 
     originals = tuple(
-        tool
-        for group in build_agent_tool_groups(gif_client).values()
+        replace(tool, default_visible=owner == "families", specialist_group=group_for(owner, tool))
+        for owner, group in build_agent_tool_groups(gif_client).items()
         for tool in group
     )
     original_registry = {tool.definition.name: tool for tool in originals}
@@ -102,6 +105,9 @@ def build_agent_tools(gif_client=None) -> dict[str, RegisteredAgentTool]:
     validate_contract_catalogue(registry)
     return {name: replace(
         tool, handler=result_handler(tool.handler), returns=capability_returns(tool),
+        default_visible=name in {family.definition.name for family in FAMILY_TOOLS} or name in {
+            'read_bot_command_help', 'find_discord_roles', 'read_discord_role_change_preview',
+            'add_discord_roles', 'remove_discord_roles', 'post_discord_message', 'save_standing_rule'},
         action_class=(ActionClass.OUTPUT if tool.effect is AgentCapabilityEffect.ARTIFACT
                       else tool.action_class),
     )

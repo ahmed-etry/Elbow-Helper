@@ -23,6 +23,8 @@ class AnswerReplyTests(unittest.IsolatedAsyncioTestCase):
             author=SimpleNamespace(id=7, display_name="Synthetic member"),
             reply=AsyncMock(return_value=SimpleNamespace(id=70)),
         )
+        self.context.state.request_text = "Reply to <@7>."
+        self.context.source_message.raw_mentions = [7]
         self.messages[55] = self.target
         self.channel.send = AsyncMock(return_value=SimpleNamespace(id=71))
         self.request = SimpleNamespace(
@@ -72,6 +74,26 @@ class AnswerReplyTests(unittest.IsolatedAsyncioTestCase):
         options = self.channel.send.await_args.kwargs
         self.assertFalse(options["allowed_mentions"].replied_user)
 
+    async def test_reply_author_ping_cannot_substitute_a_different_member(self):
+        self.context.state.request_text = ""
+        self.context.source_message.raw_mentions = []
+        self.context.state.resolved_members = {8: "ahmad (amaj)"}
+        result = await set_reply_target(self.context, {"message_id": 55, "ping_author": True})
+        self.assertIn("error", result)
+        self.assertIsNone(self.context.state.reply_to)
+        self.target.reply.assert_not_awaited()
+
+    async def test_request_reply_author_grants_provenance_without_a_name_lookup(self):
+        self.context.state.request_text = "Could he get a nudge?"
+        self.context.source_message.raw_mentions = []
+        self.context.source_message.channel = self.channel
+        self.context.source_message.reference = SimpleNamespace(message_id=55, channel_id=2)
+        self.context.state.local_messages = [{"message_id": 55, "author_id": 7}]
+        result = await set_reply_target(self.context, {"message_id": 55, "ping_author": True})
+        self.assertNotIn("error", result)
+        await self.deliver(["Over here."])
+        self.assertTrue(self.target.reply.await_args.kwargs["allowed_mentions"].replied_user)
+
     async def test_unreadable_and_other_channel_targets_are_refused(self):
         self.target.channel = SimpleNamespace(id=999)
         result = await set_reply_target(self.context, {"message_id": 55})
@@ -100,7 +122,7 @@ class AnswerReplyTests(unittest.IsolatedAsyncioTestCase):
         self.target.reply.assert_not_awaited()
         second.reply.assert_not_awaited()
 
-    async def test_backstop_delivery_splits_gifs_and_records_the_actual_messages(self):
+    async def test_backstop_delivery_keeps_only_media_and_records_the_actual_message(self):
         self.request.mentions = []
         self.request.guild = self.context.guild
         self.surface.bot = SimpleNamespace(user=None)
@@ -111,27 +133,27 @@ class AnswerReplyTests(unittest.IsolatedAsyncioTestCase):
         )
         context.state.reply_to = 55
         context.state.ping_author = True
+        context.state.request_text = "Reply to <@7>."
+        context.source_message.raw_mentions = [7]
         url = "https://giphy.com/gifs/synthetic"
         with patch(
-            "elbow_helper.features.agent.delivery.can_show", new_callable=AsyncMock,
+            "elbow_helper.features.agent.delivery.assert_answer_scope", new_callable=AsyncMock,
             return_value=True,
         ):
             result = await self.surface.send_post_reply(
                 self.request, f"Synthetic answer <@7>\n{url}", None, context, None,
             )
-        self.assertEqual(result, {"channel_id": 2, "message_ids": [70, 71]})
+        self.assertEqual(result, {"channel_id": 2, "message_ids": [70]})
         options = self.target.reply.await_args.kwargs
         self.assertTrue(options["mention_author"])
-        self.assertTrue(options["allowed_mentions"].users)
+        self.assertFalse(options["allowed_mentions"].users)
         self.assertFalse(options["allowed_mentions"].everyone)
         self.assertFalse(options["allowed_mentions"].roles)
-        self.assertEqual(self.target.reply.await_args.args[0], "Synthetic answer <@7>")
-        self.assertEqual(self.channel.send.await_args.args[0], url)
-        self.assertEqual(self.channel.send.await_args.kwargs["allowed_mentions"].to_dict(),
-                         {"parse": []})
+        self.assertEqual(self.target.reply.await_args.args[0], url)
+        self.channel.send.assert_not_awaited()
         self.assertEqual(context.state.reply_delivery.delivery.text_parts,
-                         ["Synthetic answer <@7>", url])
-        for identifier in (70, 71):
+                         [url])
+        for identifier in (70,):
             recorded = self.context.action_repository.agent_message(
                 message_id=identifier, guild_id=3, channel_id=2,
             )
@@ -143,27 +165,6 @@ class AnswerReplyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tool.action_class, ActionClass.OUTPUT)
         self.assertIsNone(AgentTurnState().reply_to)
 
-    async def test_backstop_keeps_restricted_gifs_in_the_existing_answer_disclosure(self):
-        context = AgentRequestContext(
-            bot=None, guild=self.context.guild, member=self.context.member,
-            source_message=self.request, account_links=None, message_search=None,
-        )
-        text = "Synthetic restricted answer\nhttps://giphy.com/gifs/synthetic"
-
-        async def notice(*args, **kwargs):
-            kwargs["delivery"].record(72, "Synthetic disclosure notice")
-
-        self.surface._send_response = AsyncMock(side_effect=notice)
-        self.surface._send_gif = AsyncMock()
-        with patch(
-            "elbow_helper.features.agent.delivery.can_show", new_callable=AsyncMock,
-            return_value=False,
-        ):
-            result = await self.surface.send_post_reply(self.request, text, None, context, None)
-        self.assertEqual(result["message_ids"], [72])
-        self.assertEqual(self.surface._send_response.await_args.args[1], text)
-        self.assertTrue(self.surface._send_response.await_args.kwargs["_suppress_mentions"])
-        self.surface._send_gif.assert_not_awaited()
 
     async def test_same_channel_post_mentions_uncached_members_without_reply_ping(self):
         self.request.mentions = []
@@ -174,7 +175,9 @@ class AnswerReplyTests(unittest.IsolatedAsyncioTestCase):
             source_message=self.request, account_links=None, message_search=None,
         )
         context.state.reply_to = 55
-        with patch("elbow_helper.features.agent.delivery.can_show", new_callable=AsyncMock,
+        context.state.request_text = "Post to <@12345> and <@54321>."
+        context.source_message.raw_mentions = [12345, 54321]
+        with patch("elbow_helper.features.agent.delivery.assert_answer_scope", new_callable=AsyncMock,
                    return_value=True):
             await self.surface.send_post_reply(
                 self.request, "Synthetic answer <@12345> <@!54321>", None, context, None,

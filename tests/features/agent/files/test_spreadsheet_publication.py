@@ -17,11 +17,11 @@ from elbow_helper.features.agent.engine.tool_call import (
     clone_tool_state, merge_tool_state, tool_state_snapshot,
 )
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin
+from elbow_helper.features.agent.files.delivery import delivery_manifest
 from elbow_helper.features.agent.files.spreadsheet_tools import (
     prepare_spreadsheet, spreadsheet_tools,
 )
 from elbow_helper.features.agent.plan import capability_list
-from elbow_helper.features.agent.wording import ACTION_PRIVATE_ANSWER
 
 
 GOOGLE_LINK = "https://docs.google.com/spreadsheets/d/synthetic-sheet/edit"
@@ -85,6 +85,12 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(context.state.attachments), 2)
                 self.assertIs(context.state.attachments[0], feature_file)
                 context.bot.google_publisher.upload_workbook.assert_not_called()
+                manifest = delivery_manifest(context.state.attachments)['files']
+                self.assertEqual([item['filename'] for item in manifest],
+                                 [item.filename for item in context.state.attachments])
+                self.assertEqual(manifest[1]['delivery'], 'publish_or_attach')
+                self.assertEqual(manifest[1]['total_rows'], 2)
+                self.assertEqual(manifest[1]['sheets'], [{'name': 'Items', 'rows': 2}])
             uploaded = []
 
             async def upload(path, title):
@@ -93,7 +99,7 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
 
             context.bot.google_publisher.upload_workbook.side_effect = upload
             surface, message, _, context = self.surface(context)
-            with patch("elbow_helper.features.agent.delivery.can_show",
+            with patch("elbow_helper.features.agent.delivery.assert_answer_scope",
                        AsyncMock(return_value=True)):
                 await surface.send_response(message, "Synthetic export", None,
                                             context.state.attachments, context=context)
@@ -103,6 +109,9 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
             self.assert_links(message.reply.await_args.kwargs["view"])
             files = message.reply.await_args.kwargs["files"]
             self.assertEqual([file.filename for file in files], [feature_file.filename])
+            manifest = delivery_manifest(context.state.attachments)['files']
+            self.assertEqual(manifest[1]['delivery'], 'link')
+            self.assertEqual(manifest[1]['url'], GOOGLE_LINK)
 
     async def test_ten_sheets_fit_and_eleven_are_refused(self):
         with TemporaryDirectory() as directory:
@@ -147,7 +156,7 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
             context.bot.google_publisher.upload_workbook.assert_not_called()
 
             surface, message, _, context = self.surface(context)
-            with patch("elbow_helper.features.agent.delivery.can_show",
+            with patch("elbow_helper.features.agent.delivery.assert_answer_scope",
                        AsyncMock(return_value=True)):
                 await surface.send_response(message, "Synthetic workbook ready", None,
                                             context.state.attachments, context=context)
@@ -161,7 +170,7 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("files", call.kwargs)
             self.assert_links(call.kwargs["view"])
             message.reply.reset_mock()
-            with patch("elbow_helper.features.agent.delivery.can_show",
+            with patch("elbow_helper.features.agent.delivery.assert_answer_scope",
                        AsyncMock(return_value=True)):
                 await surface.send_response(message, "", None,
                                             context.state.attachments, context=context)
@@ -183,7 +192,7 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
             context.bot.google_publisher.upload_workbook.assert_not_called()
             self.assertEqual(list(Path(directory).iterdir()), [])
             surface, message, _, context = self.surface(context)
-            with patch("elbow_helper.features.agent.delivery.can_show",
+            with patch("elbow_helper.features.agent.delivery.assert_answer_scope",
                        AsyncMock(return_value=True)):
                 await surface.send_response(message, "Synthetic workbook ready", None,
                                             context.state.attachments, context=context)
@@ -198,36 +207,6 @@ class SpreadsheetPublicationTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 workbook.close()
 
-    async def test_restricted_reply_keeps_links_behind_the_private_button_and_post_override(self):
-        with TemporaryDirectory() as directory:
-            context = _context(directory)
-            context.bot.google_publisher = SimpleNamespace(
-                upload_workbook=AsyncMock(return_value=(GOOGLE_LINK, None)),
-            )
-            await prepare_spreadsheet(context, _arguments())
-            surface, message, sent, context = self.surface(context)
-            with patch("elbow_helper.features.agent.delivery.can_show",
-                       AsyncMock(return_value=False)):
-                await surface.send_response(message, "Synthetic workbook ready", None,
-                                            context.state.attachments, context=context)
-            self.assertEqual(message.reply.await_args.args[0], ACTION_PRIVATE_ANSWER)
-            view = message.reply.await_args.kwargs["view"]
-            self.addCleanup(view.stop)
-            self.assertTrue(all(getattr(button, "url", None) is None for button in view.children))
-            interaction = SimpleNamespace(
-                id=601, user=context.member,
-                response=SimpleNamespace(send_message=AsyncMock(), defer=AsyncMock()),
-                followup=SimpleNamespace(send=AsyncMock()),
-            )
-            await view.open_result(interaction)
-            call = interaction.response.send_message.await_args
-            self.assertTrue(call.kwargs["ephemeral"])
-            self.assertNotIn("files", call.kwargs)
-            self.assert_links(call.kwargs["view"])
-            await view.post_here(interaction)
-            self.assert_links(sent.edit.await_args.kwargs["view"])
-            self.assertEqual(sent.edit.await_args.kwargs["attachments"], [])
-            context.bot.google_publisher.upload_workbook.assert_awaited_once()
 
     async def test_size_and_access_failures_do_not_publish(self):
         with TemporaryDirectory() as directory:

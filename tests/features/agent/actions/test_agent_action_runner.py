@@ -14,6 +14,7 @@ from elbow_helper.features.agent.actions.contracts import (
     ActionClass, ChangePreview, PreparedAction, check_bundle,
 )
 from elbow_helper.features.agent.actions.store import AgentActionRepository
+from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.agent.actions.runner import AgentActionRunner, StopActionRunView
 from elbow_helper.features.agent.actions.outcomes import ActionOutcome
 from elbow_helper.features.agent.actions.preview import preview_text
@@ -320,6 +321,7 @@ class ActionRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.context = SimpleNamespace(
             guild=self.guild, member=SimpleNamespace(id=4),
             source_message=SimpleNamespace(id=3, channel=self.channel),
+            state=AgentTurnState(),
         )
         self.runner = AgentActionRunner(
             bot=self.bot, repository=self.repository, guild_id=1,

@@ -4,73 +4,73 @@ from __future__ import annotations
 import logging
 
 from ..access import accessible_message_channel
-from ..access import has_access_requirements
+from ..access import has_lookup_access
 from ..models import AgentRequestContext, AgentTurnState
+from ..disclosure import request_scope
 from ..reports.base import retain_report
 from .state import Conversation
 from .history_tool import _document
 from .context import CHECKPOINT_MIN_GROWTH, CHECKPOINT_MIN_OMITTED_TURNS, build_history_checkpoint
-from ..engine.routing import social_candidate
-from ..disclosure import can_disclose_provenance
 
 LOGGER = logging.getLogger("elbow_helper.features.agent.cog")
+
+
+async def prepare_history(context: AgentRequestContext, turns, checkpoint=None) -> str:
+    await request_scope(context)
+    access: dict[int, bool] = {}
+    retained = []
+    context.state.authorized_checkpoint = None
+    for turn in turns:
+        for channel_id in turn.source_channels:
+            if channel_id not in access:
+                access[channel_id] = await accessible_message_channel(context, channel_id) is not None
+        if (all(access[channel_id] for channel_id in turn.source_channels)
+                and (not turn.required_access or has_lookup_access(
+                    context, turn.required_access,
+                ))):
+            retained.append(turn)
+    context.state.authorized_history = tuple(retained)
+    if checkpoint is not None:
+        for channel_id in checkpoint.source_channels:
+            if channel_id not in access:
+                access[channel_id] = (
+                    await accessible_message_channel(context, channel_id)
+                    is not None
+                )
+        if (
+            all(access[channel_id] for channel_id in checkpoint.source_channels)
+            and has_lookup_access(
+                context,
+                checkpoint.required_access,
+            )
+        ):
+            context.state.authorized_checkpoint = checkpoint
+    instructions = []
+    for instruction in context.state.working.instructions:
+        if not instruction.active:
+            continue
+        channel_id = instruction.source_channel_id
+        if channel_id not in access:
+            access[channel_id] = await accessible_message_channel(context, channel_id) is not None
+        if access[channel_id]:
+            instructions.append(instruction)
+    context.state.authorized_instructions = tuple(instructions)
+    context.state.history_status = {
+        "included_turns": len(retained),
+        "older_retained_turns_available": 0,
+        "history_may_be_incomplete": True,
+    }
+    # Compilation selects whole records using all request components. Keep
+    # this authorized transcript available to alternate service callers.
+    return "\n".join(_document(turn) for turn in retained)
+
 
 
 class ConversationContextMixin:
     """Agent context preparation; never calls the provider or sends replies."""
 
     async def _conversation_history(self, conversation: Conversation, context: AgentRequestContext) -> str:
-        access: dict[int, bool] = {}
-        retained = []
-        social = social_candidate(context.state.request_text, getattr(context, "source_message", None))
-        for turn in conversation.turns[-4:] if social else conversation.turns:
-            for channel_id in turn.source_channels:
-                if channel_id not in access:
-                    access[channel_id] = await accessible_message_channel(context, channel_id) is not None
-            if (all(access[channel_id] for channel_id in turn.source_channels)
-                    and (not turn.required_access or has_access_requirements(
-                        context.guild, context.member.id, turn.required_access,
-                    ))):
-                if social and not await can_disclose_provenance(
-                    context, turn.source_channels, turn.required_access,
-                ):
-                    continue
-                retained.append(turn)
-        context.state.authorized_history = tuple(retained)
-        checkpoint = conversation.checkpoint
-        if checkpoint is not None:
-            for channel_id in checkpoint.source_channels:
-                if channel_id not in access:
-                    access[channel_id] = (
-                        await accessible_message_channel(context, channel_id)
-                        is not None
-                    )
-            if (
-                all(access[channel_id] for channel_id in checkpoint.source_channels)
-                and has_access_requirements(
-                    context.guild, context.member.id,
-                    checkpoint.required_access,
-                )
-            ):
-                context.state.authorized_checkpoint = checkpoint
-        instructions = []
-        for instruction in context.state.working.instructions:
-            if not instruction.active:
-                continue
-            channel_id = instruction.source_channel_id
-            if channel_id not in access:
-                access[channel_id] = await accessible_message_channel(context, channel_id) is not None
-            if access[channel_id]:
-                instructions.append(instruction)
-        context.state.authorized_instructions = tuple(instructions)
-        context.state.history_status = {
-            "included_turns": len(retained),
-            "older_retained_turns_available": 0,
-            "history_may_be_incomplete": True,
-        }
-        # Compilation selects whole records using all request components. Keep
-        # this authorized transcript available to alternate service callers.
-        return "\n".join(_document(turn) for turn in retained)
+        return await prepare_history(context, conversation.turns, conversation.checkpoint)
 
     @staticmethod
     def _refresh_history_checkpoint(
@@ -105,6 +105,7 @@ class ConversationContextMixin:
         context: AgentRequestContext,
     ) -> None:
         """Expose retained artifacts only while all original access still holds."""
+        await request_scope(context)
         access: dict[int, bool] = {}
         for report_id, report in conversation.reports.items():
             sources = conversation.report_sources.get(report_id)
@@ -123,8 +124,8 @@ class ConversationContextMixin:
                     )
             authorized = (
                 all(access[channel_id] for channel_id in sources)
-                and has_access_requirements(
-                    context.guild, context.member.id, requirements,
+                and has_lookup_access(
+                    context, requirements,
                 )
             )
             if authorized:

@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID, LEAD
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin
 from elbow_helper.features.agent.knowledge.store import KnowledgeCatalog, KnowledgeSection
-from elbow_helper.features.agent.knowledge.tools import knowledge_tools, search_approved_knowledge, _section_id
-from elbow_helper.features.agent.models import AgentRequestContext
+from elbow_helper.features.agent.knowledge.tools import knowledge_tools, search_approved_knowledge
+from elbow_helper.features.agent.models import AgentRequestContext, AgentTurnState
 from tests.features.agent.test_agent_audiences import Channel, Member, Role, Thread
 
 
@@ -62,14 +62,13 @@ class SearchScopeTests(unittest.IsolatedAsyncioTestCase):
                 self.context, {"query": "Brown Elbow founding history"},
             )
         self.assertEqual({s.visibility for s in ranked}, {"public", "lead", "recruiter"})
-        notes = [s for s in result["sections"] if s.get("available_privately")]
-        self.assertCountEqual(notes, [
-            {"title": "Returning applicants", "section_id": _section_id(self.catalog.active_sections[2]), "available_privately": True},
-            {"title": "Alliance policies", "section_id": _section_id(self.catalog.active_sections[1]), "available_privately": True},
-        ])
-        self.assertEqual(result["scope"], "requester")
+        self.assertEqual([section["visibility"] for section in result["sections"]], ["public"])
+        self.assertFalse(result["available_privately"])
+        self.assertNotIn("Alliance policies", str(result))
+        self.assertNotIn("Returning applicants", str(result))
+        self.assertEqual(result["scope"], "channel")
         self.assertEqual(self.context.state.required_access, set())
-        self.assertEqual(self.context.state.knowledge_title_access, {"lead", "recruiter"})
+        self.assertFalse(self.context.state.knowledge_title_access)
         self.assertEqual(await self.deliver(), "Synthetic answer")
 
     async def test_legacy_scope_cannot_release_private_bodies(self):
@@ -77,10 +76,10 @@ class SearchScopeTests(unittest.IsolatedAsyncioTestCase):
             result = await search_approved_knowledge(
                 self.context, {"titles": ["Alliance policies"], "scope": scope},
             )
-            self.assertEqual(result["sections"], [
-                {"title": "Alliance policies", "section_id": _section_id(self.catalog.active_sections[1]), "available_privately": True},
-            ])
+            self.assertEqual(result["sections"], [])
+            self.assertTrue(result["available_privately"])
             self.assertEqual(self.context.state.required_access, set())
+            self.assertNotIn("Alliance policies", str(result))
 
     async def test_exact_public_title_stays_public(self):
         result = await search_approved_knowledge(
@@ -88,7 +87,7 @@ class SearchScopeTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual([s["visibility"] for s in result["sections"]], ["public"])
         self.assertEqual(result["coverage"]["method"], "exact_titles")
-        self.assertFalse(self.context.state.private_knowledge)
+        self.assertFalse(self.context.state.scope_audit.offered)
         self.assertEqual(await self.deliver(), "Synthetic answer")
         self.assertIn("Open matching titles first;", knowledge_tools()[0].definition.description)
 
@@ -104,7 +103,7 @@ class SearchScopeTests(unittest.IsolatedAsyncioTestCase):
                 self.context, {"titles": ["Unknown"], "scope": scope},
             )
             self.assertEqual(hidden, unknown)
-        self.assertFalse(self.context.state.private_knowledge)
+        self.assertFalse(self.context.state.scope_audit.offered)
         self.assertFalse(self.context.state.knowledge_title_access)
 
     async def test_channel_readable_restricted_bodies_keep_paging(self):
@@ -116,7 +115,7 @@ class SearchScopeTests(unittest.IsolatedAsyncioTestCase):
         })
         self.assertEqual(section["body"] + rest["sections"][0]["body"], self.catalog.active_sections[1].body)
         self.assertEqual(self.context.state.required_access, {"lead"})
-        self.assertFalse(self.context.state.private_knowledge)
+        self.assertFalse(self.context.state.scope_audit.offered)
 
     async def test_private_thread_checks_unjoined_moderators_and_unknown_members(self):
         destination = Thread(11, self.channel, private=True, members=[self.requester])
@@ -126,11 +125,15 @@ class SearchScopeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("lead", {s.get("visibility") for s in result["sections"]})
             destination.fetch_members.assert_awaited_once()
             self.channel.moderators.add(self.reader.id)
+            self.context = replace(self.context, state=AgentTurnState())
+            self.context.disclosure_thread_members.clear()
             result = await search_approved_knowledge(self.context, {})
             self.assertEqual([s["visibility"] for s in result["sections"] if "body" in s], ["public"])
             self.channel.moderators.clear()
             self.context.disclosure_thread_members.clear()
             destination.fetch_members.return_value = [SimpleNamespace(id=404)]
+            self.context = replace(self.context, state=AgentTurnState())
+            self.context.disclosure_thread_members.clear()
             result = await search_approved_knowledge(self.context, {})
             self.assertEqual([s["visibility"] for s in result["sections"] if "body" in s], ["public"])
 

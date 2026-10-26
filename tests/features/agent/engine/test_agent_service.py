@@ -42,27 +42,39 @@ class _AgentSession:
         self.efforts: list[AgentReasoningEffort] = []
         self.output_limits: list[int | None] = []
         self.tool_replacements = []
+        self.instructions = []
 
     def replace_tools(self, tools):
         self.tool_replacements.append(tuple(tools))
 
     async def advance(self, tool_results=(), *, allow_tools=True,
-                      reasoning_effort=None, max_output_tokens=None):
+                      reasoning_effort=None, max_output_tokens=None, continuation_instruction=None):
         self.calls.append((tuple(tool_results), allow_tools))
         self.efforts.append(reasoning_effort)
         self.output_limits.append(max_output_tokens)
+        self.instructions.append(continuation_instruction)
         return self.steps.pop(0)
 
 
 class _AgentModel:
     configured = True
 
-    def __init__(self, session: _AgentSession):
+    def __init__(self, session: _AgentSession, *, route="research"):
         self.session = session
         self.request = None
+        self.route = route
+        self.routing_session = None
+        self.routing_request = None
 
     def create_agent_session(self, **kwargs):
-        self.request = kwargs
+        from elbow_helper.features.agent.engine.routing import ROUTE_INSTRUCTION
+        from features.agent.engine.helpers import RoutingSession
+        if kwargs["system_prompt"] == ROUTE_INSTRUCTION:
+            self.routing_request = kwargs
+            self.routing_session = RoutingSession(self.route)
+            return self.routing_session if self.session is not None else None
+        if self.request is None:
+            self.request = kwargs
         return self.session
 
 
@@ -78,7 +90,7 @@ def _context():
     )
     default_role = SimpleNamespace(id=1)
     guild = SimpleNamespace(
-        id=1, name="Brown Elbow", me=member,
+        id=1, name="Brown Elbow", me=SimpleNamespace(id=999, bot=True, roles=[]), chunked=True, members=[member],
         default_role=default_role, roles=[default_role, *member.roles],
         get_member=lambda member_id: member,
     )
@@ -94,9 +106,31 @@ def _context():
 
 class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
 
+    async def test_prior_private_candidate_does_not_relabel_an_unrelated_failure(self):
+        context = _context()
+        context.state.scope_audit.private_candidates.add('access:recruitment')
+        result = json.loads(await AgentService.execute_tool(
+            name='synthetic_read', handler=AsyncMock(return_value={
+                'error': 'Synthetic service unavailable.', 'cause': 'source_unavailable'}),
+            arguments={}, context=context,
+        ))
+        self.assertNotIn('available_privately', result)
+
+    async def test_lookup_marks_only_its_own_new_private_candidate(self):
+        context = _context()
+
+        async def refused(context, arguments):
+            context.state.scope_audit.private_candidates.add('synthetic-source')
+            return {'error': 'Synthetic restricted source.', 'cause': 'access_denied'}
+
+        result = json.loads(await AgentService.execute_tool(
+            name='synthetic_read', handler=refused, arguments={}, context=context,
+        ))
+        self.assertTrue(result['available_privately'])
+
     async def test_static_role_contract_blocks_handler_and_public_disclosure(self):
         tool = build_agent_tools()["read_role_connections"]
-        scope = compile_capability_call(tool, {})
+        scope = {**compile_capability_call(tool, {}), "required_access": ("lead",)}
         self.assertEqual(scope["required_access"], ("lead",))
         handler = AsyncMock(return_value={"rules": ["private"]})
         context = _context()
@@ -112,6 +146,7 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
         lead_role = SimpleNamespace(id=next(iter(LEAD)))
         context.member.roles.append(lead_role)
         context.guild.roles.append(lead_role)
+        context.state.scope = None
         result = await AgentService.execute_tool(
             name="read_role_connections", handler=handler, arguments={},
             capability_scope=scope, context=context,
@@ -122,13 +157,13 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_static_role_contract_marks_retained_report_without_handler_help(self):
         tool = build_agent_tools()["read_role_connections"]
-        scope = compile_capability_call(tool, {})
+        scope = {**compile_capability_call(tool, {}), "required_access": ("lead",)}
         context = _context()
         lead_role = SimpleNamespace(id=next(iter(LEAD)))
         context.member.roles.append(lead_role)
         context.guild.roles.append(lead_role)
         context.source_message.channel.permissions_for = lambda actor: SimpleNamespace(
-            view_channel=getattr(actor, "id", None) in {context.member.id, lead_role.id},
+            view_channel=getattr(actor, "id", None) in {context.member.id, context.guild.me.id, lead_role.id},
             read_message_history=True,
         )
         report = make_event_report("role-report", "2026-09-17")
@@ -149,6 +184,7 @@ class AgentServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_failed_tool_restores_request_local_state_exactly(self):
         context = _context()
+        context.member.roles.append(SimpleNamespace(id=next(iter(LEAD_PLUS))))
         original = make_event_report("original", "2026-09-17")
         replacement = make_event_report("replacement", "2026-09-18")
         context.state.source_channels = {100, 200}

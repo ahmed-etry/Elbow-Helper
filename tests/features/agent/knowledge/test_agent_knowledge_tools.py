@@ -24,10 +24,10 @@ class KnowledgeToolTests(unittest.IsolatedAsyncioTestCase):
         self.path = Path(directory.name)
         self.store = KnowledgeStore(self.path)
         self.member = SimpleNamespace(id=1, roles=[SimpleNamespace(id=AGENT_TESTER_ROLE_ID)])
-        channel = SimpleNamespace(permissions_for=lambda _: SimpleNamespace(
+        channel = SimpleNamespace(id=2, permissions_for=lambda _: SimpleNamespace(
             view_channel=True, read_message_history=True))
         guild = SimpleNamespace(id=3, chunked=True, members=[self.member],
-                                me=self.member, get_member=lambda _: self.member)
+                                me=SimpleNamespace(id=99, bot=True), get_member=lambda _: self.member)
         channel.guild = guild
         self.context = SimpleNamespace(
             knowledge_store=self.store, member=self.member, guild=guild,
@@ -37,6 +37,17 @@ class KnowledgeToolTests(unittest.IsolatedAsyncioTestCase):
 
     def write(self, name, text):
         (self.path / name).write_text(text, encoding="utf-8")
+
+    async def test_broad_search_starts_small_and_keeps_explicit_continuation(self):
+        self.write("many.md", "\n".join(f"# Topic {index}\nShared policy {index}." for index in range(9)))
+        arguments = {"query": "Shared policy"}
+        first = await search_approved_knowledge(self.context, arguments)
+        self.assertEqual(len(first["sections"]), 3)
+        self.assertEqual(first["next_offset"], 3)
+        second = await search_approved_knowledge(self.context, {**arguments, "offset": 3})
+        self.assertFalse({row["section_id"] for row in first["sections"]}
+                         & {row["section_id"] for row in second["sections"]})
+        self.assertEqual(len(second["sections"]), 3)
 
     def assert_sections(self, result, expected):
         self.assertEqual([
@@ -60,12 +71,28 @@ class KnowledgeToolTests(unittest.IsolatedAsyncioTestCase):
             {"title": "Beta guide", "body": "Beta body", "visibility": "public"},
             {"title": "Alpha guide", "body": "Alpha body", "visibility": "public"},
         ])
-        for title in ("alpha guide", "Alpha", "Alpha guides", "Missing"):
+        folded = await search_approved_knowledge(self.context, {"titles": ["alpha GUIDE"]})
+        self.assertEqual(folded["sections"][0]["title"], "Alpha guide")
+        for title in ("Alpha", "Alpha guides", "Missing"):
             with self.subTest(title=title):
                 missing = await search_approved_knowledge(self.context, {"titles": [title]})
                 self.assertEqual(missing["sections"], [])
                 self.assertEqual(missing["match_status"], "no_visible_match")
                 self.assertEqual(missing["coverage"]["method"], "exact_titles")
+
+    async def test_nested_paths_open_case_insensitively_and_reject_ambiguous_leaf_titles(self):
+        self.write("ranks.md", "# Rank rules\n## Elder\n### Requirements\nOne month.\n"
+                   "## Co-Leader\n### Requirements\nSix months.\n#### Evidence\nWar records.")
+        ranked = await search_approved_knowledge(self.context, {"query": "co-leader requirements"})
+        self.assertEqual(ranked["sections"][0]["title"], "Rank rules › Co-Leader › Requirements")
+        exact = await search_approved_knowledge(self.context, {
+            "titles": ["rank rules › CO-LEADER › requirements"],
+        })
+        self.assertEqual(exact["sections"][0]["body"], "Six months.")
+        unique = await search_approved_knowledge(self.context, {"titles": ["evidence"]})
+        self.assertEqual(unique["sections"][0]["body"], "War records.")
+        ambiguous = await search_approved_knowledge(self.context, {"titles": ["requirements"]})
+        self.assertEqual(ambiguous["sections"], [])
 
     async def test_hidden_titles_are_indistinguishable_from_unknown_titles(self):
         self.write("public.md", "# Shared title\nPublic body")

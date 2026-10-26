@@ -7,10 +7,16 @@ import discord
 
 
 MESSAGE = re.compile(r"\[\[message:(\d+)\]\]")
+# This syntax belongs to generated answer markup, never member source text.
+CITATION = re.compile(r"(?<!\[)\[\[?(\d+)\]\]?(?!\])")
 LINK = re.compile(r"https://discord(?:app)?\.com/channels/\d+/\d+/\d+")
 GROUNDING_INSTRUCTION = (
     "Answer the question from the evidence. Separate facts from recommendations and qualify "
-    "uncertain parts. [[message:ID]] optionally inserts an exact read message."
+    "uncertain parts only when they change the requested conclusion. Give the supported "
+    "verdict directly; missing measures do not erase observed results. "
+    "[[message:ID]] optionally inserts an exact read message. "
+    "Copy message source URLs exactly from evidence; never reconstruct channel or guild IDs."
+    " Use readable linked names for citations, never bracketed numeric message IDs."
 )
 GROUNDING_GAPS = {
     "source": "I couldn’t confirm the quoted message.",
@@ -85,20 +91,50 @@ def ground_answer(answer, evidence):
 
     if "[[message:" in MESSAGE.sub("", answer):
         raise GroundingError("invalid_message_binding")
+
+    def cite(match):
+        row = messages.get(match[1])
+        if row is None:
+            raise GroundingError('message_not_read_this_turn')
+        label = discord.utils.escape_mentions(discord.utils.escape_markdown(str(row.get('author') or 'message')))
+        label = label.replace('\n', ' ').replace(']', '\\]')
+        return f"[{label}]({row['source']})"
+
+    # Resolve before inserting exact quotations. Source content is never
+    # searched or rewritten as generated citation markup.
+    answer = CITATION.sub(cite, answer)
+    # Message identity is global. A model can preserve it while mistyping the
+    # channel or guild, including during a later repair. Bind every occurrence
+    # to the same observed source before the final scope guard sees it.
+    answer = LINK.sub(lambda match: messages.get(
+        match[0].rsplit("/", 1)[-1], {}).get("source", match[0]), answer)
     return MESSAGE.sub(render, answer)
 
 
-def referenced_sources(answer, evidence, *, limit=3):
-    """Retain usable evidence after a failed repair, without retaining unverified prose."""
-    messages = messages_from(evidence)
-    identities = [match[1] for match in MESSAGE.finditer(answer)]
-    identities.extend(match.group().rsplit("/", 1)[-1] for match in LINK.finditer(answer))
-    selected = list(dict.fromkeys(identity for identity in identities if identity in messages))[:limit]
-    return "\n\n".join(ground_answer(f"[[message:{identity}]]", evidence) for identity in selected)
 
 
 def partial_answer(answer, evidence, error):
-    """Keep referenced source material when generated source repair cannot finish."""
-    return "\n\n".join(filter(None, (
-        referenced_sources(answer, evidence), GROUNDING_GAPS[error.kind],
-    )))
+    """Drop unresolved bindings while retaining useful prose and valid citations."""
+    messages = messages_from(evidence)
+    binding = re.compile(r"\[\[message:([^\]\n]*)(?:\]\]?|(?=\n|$))")
+    dependent = False
+
+    def keep_or_drop(match):
+        nonlocal dependent
+        if match[1] in messages and MESSAGE.fullmatch(match[0]):
+            return match[0]
+        # A failed optional citation on advice does not undermine that advice.
+        # Explicit quotations and attributions do need a local uncertainty note.
+        preceding = binding.sub("", answer[:match.start()]).rsplit("\n", 1)[-1].rstrip()
+        preceding = re.split(r"(?<=[.!?])\s+(?=\S)", preceding)[-1]
+        if re.search(r'\b(?:said|says|wrote|posted|according|message|quoted?)\b|["“”]', preceding, re.I):
+            dependent = True
+        return ""
+
+    cleaned = binding.sub(keep_or_drop, answer).strip()
+    cleaned = CITATION.sub(lambda match: match[0] if match[1] in messages else '', cleaned).strip()
+    if not cleaned:
+        return GROUNDING_GAPS[error.kind]
+    rendered = ground_answer(cleaned, evidence)
+    dependent = dependent or not binding.sub("", answer).strip()
+    return "\n\n".join((rendered, GROUNDING_GAPS[error.kind])) if dependent else rendered

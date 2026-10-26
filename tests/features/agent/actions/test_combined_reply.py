@@ -7,21 +7,16 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.features.agent.actions.answer_view import PrivateAnswerView
 from elbow_helper.features.agent.actions.combined_reply import CombinedReplyView
 from elbow_helper.features.agent.actions.contracts import ChangePreview, PreparedAction
 from elbow_helper.features.agent.actions.preview import ConfirmationView, preview_text
-from elbow_helper.features.agent.access import AgentAccessLost, ACCESS_LEAD
+from elbow_helper.features.agent.access import ACCESS_LEAD
 from elbow_helper.features.agent.conversation.state import ConversationRecord, ConversationStore, ConversationTurn
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin, AgentDeliveryUnknown, _delivery_nonce
 from elbow_helper.features.agent.models import (
     AgentAttachment, AgentDelivery, AgentRequestContext, AgentTurnState,
 )
-from elbow_helper.features.agent.wording import (
-    ACTION_CANCELLED, ACTION_PRIVATE_ANSWER, ACTION_PREVIEW_EXPIRED,
-    ACTION_CONFIRM_BUTTON, ACTION_CANCEL_BUTTON, ACTION_PRIVATE_BUTTON, ACTION_POST_HERE_BUTTON,
-    ACTION_PREVIEW_DETAILS_BUTTON,
-)
+from elbow_helper.features.agent.wording import ACTION_CANCELLED, ACTION_PREVIEW_EXPIRED, ACTION_PREVIEW_DETAILS_BUTTON
 
 
 class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
@@ -67,7 +62,7 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
         )
         self.allowed = AsyncMock(return_value=True)
         for target, mock in (
-            ("elbow_helper.features.agent.delivery.can_show", self.allowed),
+            ("elbow_helper.features.agent.delivery.assert_answer_scope", self.allowed),
             ("elbow_helper.features.agent.delivery.require_evidence_access", AsyncMock(return_value=())),
             ("elbow_helper.features.agent.actions.answer_view.require_evidence_access", AsyncMock(return_value=())),
         ):
@@ -115,6 +110,22 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(delivery.complete)
                 self.assertIs(self.surface._conversations.find(321, 221, sent.id), self.conversation)
                 self.surface._archive_reply.assert_any_await(421, sent.id, sent.content)
+
+    async def test_image_answer_is_separate_from_confirmation_and_has_no_caption(self):
+        delivery = AgentDelivery()
+        self.context.state.preview_first = True
+        await self.surface.send_response(self.message, 'Synthetic fallback.', None,
+            [AgentAttachment('sample.png', b'media')], context=self.context, delivery=delivery)
+        calls = self.message.reply.await_args_list
+        self.assertEqual(len(calls), 2)
+        self.assertIsNotNone(calls[0].args[0])
+        self.assertNotIn('files', calls[0].kwargs)
+        self.assertIsNone(calls[1].args[0])
+        self.assertEqual(len(calls[1].kwargs['files']), 1)
+        self.assertTrue(delivery.complete)
+        for sent in self.sent:
+            if sent.view is not None:
+                sent.view.stop()
 
     async def test_published_workbook_keep_links_when_the_preview_changes(self):
         attachments = [AgentAttachment(
@@ -171,28 +182,6 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.conversation.turns[0].record.reply_ids, (521,))
         self.assertIn("Synthetic run report", self.conversation.turns[0].record.delivered_answer)
 
-    async def test_private_answer_has_four_buttons_and_posts_only_its_part_in_place(self):
-        self.allowed.return_value = False
-        self.context.state.preview_first = True
-        await self.deliver()
-        combined = self.sent[0].view
-        self.assertEqual([item.label for item in combined.children], [
-            ACTION_CONFIRM_BUTTON, ACTION_CANCEL_BUTTON, ACTION_PRIVATE_BUTTON, ACTION_POST_HERE_BUTTON,
-        ])
-        self.assertEqual(combined.parts["answer"], ACTION_PRIVATE_ANSWER)
-        private = combined.views["answer"]
-        await private.open_result(self.interaction())
-        preview = combined.parts["preview"]
-        await private.post_here(self.interaction())
-        self.assertEqual(self.message.reply.await_count, 1)
-        self.assertEqual(combined.parts, {"preview": preview, "answer": "Synthetic lookup answer"})
-        self.assertEqual([item.label for item in combined.children], [ACTION_CONFIRM_BUTTON, ACTION_CANCEL_BUTTON])
-        self.assertTrue(all(not item.disabled for item in combined.children))
-        self.assertEqual(self.conversation.turns[0].record.reply_ids, (521,))
-        self.assertEqual(self.conversation.turns[0].record.delivered_answer, combined.render())
-        self.surface._archive_reply.assert_any_await(
-            421, 521, combined.render(), previous_content=f"1. {preview}\n\n2. {ACTION_PRIVATE_ANSWER}",
-        )
 
     async def test_hidden_details_keep_their_control_beside_both_button_sets(self):
         self.allowed.return_value = False
@@ -207,7 +196,7 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
             await self.deliver()
         combined = self.sent[0].view
         self.assertIn(ACTION_PREVIEW_DETAILS_BUTTON, [item.label for item in combined.children])
-        self.assertEqual(len(combined.children), 5)
+        self.assertEqual(len(combined.children), 3)
         self.assertNotIn("Synthetic hidden detail", combined.render())
         self.assertNotIn("Synthetic hidden detail", self.context.state.preview_reply)
         with (patch("elbow_helper.features.agent.actions.preview.require_access"),
@@ -217,31 +206,7 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(interaction.response.send_message.await_args.args[0], "Synthetic hidden detail")
         self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
 
-    async def test_revoked_private_answer_access_expires_only_its_controls(self):
-        self.allowed.return_value = False
-        await self.deliver()
-        combined = self.sent[0].view
-        with patch("elbow_helper.features.agent.actions.answer_view.require_evidence_access",
-                   AsyncMock(side_effect=AgentAccessLost("Synthetic access loss"))):
-            await combined.views["answer"].post_here(self.interaction())
-        self.assertEqual(self.message.reply.await_count, 1)
-        self.assertEqual(combined.parts["answer"], ACTION_PRIVATE_ANSWER)
-        self.assertTrue(all(child.disabled for child in combined.views["answer"].children))
-        self.assertTrue(all(not child.disabled for child in combined.views["preview"].children))
 
-    async def test_private_ping_fallback_keeps_request_order_and_distinct_nonces(self):
-        self.allowed.return_value = False
-        for first in (True, False):
-            with self.subTest(preview_first=first):
-                self.context.state.preview_first = first
-                before = self.message.reply.await_count
-                await self.deliver("Synthetic answer <@121>")
-                calls = self.message.reply.await_args_list[before:]
-                expected = [self.context.state.preview_reply, ACTION_PRIVATE_ANSWER]
-                if not first:
-                    expected.reverse()
-                self.assertEqual([call.args[0] for call in calls], expected)
-                self.assertNotEqual(calls[0].kwargs["nonce"], calls[1].kwargs["nonce"])
 
     async def test_message_limit_includes_numbering_and_separator(self):
         self.context.state.preview_first = True
@@ -253,39 +218,7 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
         await self.deliver("x" * (2001 - overhead))
         self.assertEqual(self.message.reply.await_count - before, 2)
 
-    async def test_post_here_that_does_not_fit_posts_separately_and_keeps_confirmation(self):
-        self.allowed.return_value = False
-        await self.deliver("Synthetic answer " + "x" * 1950)
-        combined = self.sent[0].view
-        self.assertIsInstance(combined, CombinedReplyView)
-        await combined.views["answer"].post_here(self.interaction())
-        self.assertEqual(self.message.reply.await_count, 2)
-        self.assertTrue(all(not child.disabled for child in combined.views["preview"].children))
-        self.assertEqual(self.conversation.turns[0].record.reply_ids, (521, 522))
-        self.assertIn("x" * 1950, json.loads(self.conversation.turns[0].text)["answer"])
-        self.assertEqual(self.conversation.turns[0].record.attempted_nonces,
-                         (_delivery_nonce(421, 0), _delivery_nonce(721, 0)))
 
-    async def test_private_and_preview_controls_expire_independently(self):
-        for preview_first in (True, False):
-            with self.subTest(preview_expires_first=preview_first):
-                preview = ConfirmationView(121, (self.action,), self.context,
-                                           timeout=0.01 if preview_first else 0.1)
-                private = PrivateAnswerView(self.context, "Synthetic answer", (), AsyncMock(),
-                                            timeout=0.1 if preview_first else 0.01)
-                combined = CombinedReplyView(self.context.state.preview_reply, ACTION_PRIVATE_ANSWER,
-                                             preview, private, preview_first=True, on_change=AsyncMock())
-                self.addCleanup(combined.stop)
-                sent = await self.message.reply(combined.render())
-                combined.start(sent)
-                first, last = (preview, private) if preview_first else (private, preview)
-                await asyncio.wait_for(first.wait(), timeout=1)
-                self.assertTrue(all(child.disabled for child in first.children))
-                self.assertTrue(all(not child.disabled for child in last.children))
-                if not preview_first:
-                    self.assertEqual(combined.parts["preview"], self.context.state.preview_reply)
-                self.assertEqual(combined.parts["answer"], ACTION_PRIVATE_ANSWER)
-                await asyncio.wait_for(last.wait(), timeout=1)
 
     async def test_over_limit_and_ping_answers_fall_back_in_request_order(self):
         for first in (True, False):
@@ -315,7 +248,7 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.message.reply.await_count, 1)
         self.assertIsInstance(self.sent[0].view, ConfirmationView)
         self.assertEqual(self.sent[0].content, preview_text([self.action]))
-        self.allowed.assert_not_awaited()
+        self.allowed.assert_awaited_once()
 
     async def test_uncertain_combined_send_retains_one_nonce_and_complete_generated_part(self):
         self.message.reply.side_effect = OSError("Synthetic uncertain delivery")
@@ -330,13 +263,3 @@ class CombinedReplyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(delivery.attempted_nonces, [_delivery_nonce(421, 0)])
         self.assertEqual(delivery.generated_parts,
                          [f"1. Synthetic answer\n\n2. {self.context.state.preview_reply}"])
-
-    async def test_concurrent_answer_post_and_progress_preserve_both_edits(self):
-        self.allowed.return_value = False
-        await self.deliver()
-        combined = self.sent[0].view
-        private = combined.views["answer"]
-        await asyncio.gather(combined.views["preview"].message.edit(content="Synthetic progress"),
-                             private.post_here(self.interaction()))
-        self.assertEqual(combined.parts, {"preview": "Synthetic progress", "answer": "Synthetic lookup answer"})
-        self.assertEqual(self.sent[0].content, combined.render())

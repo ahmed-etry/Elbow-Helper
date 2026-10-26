@@ -12,13 +12,14 @@ from dataclasses import replace
 
 import discord
 
-from .access import ACCESS_VIEW_AUDIT_LOG, require_evidence_access
-from .disclosure import can_show
-from .wording import ACTION_PRIVATE_ANSWER, ACTION_PREVIEW_HEADER, FAILURE_MESSAGE, LONG_REPLY_FILENAME
+from .access import require_access, require_evidence_access, assert_answer_scope
+from .disclosure import log_scope
+from .knowledge.answers import private_check_offered, scoped_answer, scope_reply_issue
+from .wording import AGENT_PRIVATE_OFFER, ACTION_PREVIEW_HEADER, FAILURE_MESSAGE, LONG_REPLY_FILENAME
+from .engine.unfinished import unfinished_answer
 from .conversation.state import Conversation
 from .models import AgentAttachment, AgentDelivery, AgentRequestContext
-from .engine.service import AgentUnavailableError
-from .knowledge.answers import requires_private_knowledge_delivery
+
 from .actions.private_view import PrivateResultView
 from .actions.answer_view import PrivateAnswerView
 from .actions.preview import CONFIRMATION_TIMEOUT, ConfirmationView
@@ -31,9 +32,11 @@ from .files.delivery import (
 from .files.gif_media import URLS
 from .discord_actions.reply_targets import answer_reply_target
 from .discord_actions.reactions import render_server_emojis
-from .discord_actions.message_parts import outgoing_parts
+from .discord_actions.gif_library import upload_limit
+from .discord_actions.meme_usage import record_delivered_meme, usage_repository
+from .discord_actions.message_parts import outgoing_parts, image_attachment
 from .discord_actions.messages import post_mentions
-from .text import DISCORD_MESSAGE_LIMIT
+from .text import DISCORD_MESSAGE_LIMIT, discord_text
 from .text import chunk_response as _chunk_response
 
 LOGGER = logging.getLogger(__name__)
@@ -56,19 +59,10 @@ class AgentDeliveryUnknown(RuntimeError):
     """Discord may have accepted a send whose response was not observed."""
 
 
-async def _delivery_sources(context):
-    sources = await require_evidence_access(context)
-    # Generation may have cached private-thread membership before the audience
-    # changed. Publication needs a fresh audience proof, including new readers.
-    context.disclosure_thread_members.clear()
-    return sources
-
-
 class AgentDeliveryMixin:
     """Agent delivery; owns no conversation or provider lifecycle."""
 
     async def send_post_reply(self, message, text, referenced, context, conversation):
-        requires_private_knowledge_delivery(context, text)
         delivery = context.state.reply_delivery.delivery
         answer_context = replace(context, state=replace(
             context.state, proposed_changes=[], preview_reply=None, outcomes=[],
@@ -77,34 +71,15 @@ class AgentDeliveryMixin:
         parts = outgoing_parts(text)
         words = "\n".join(part for part, is_gif in parts if not is_gif)
         seed = message.id + 1_000_000 + len(context.state.reply_delivery.posts)
-        sources = await _delivery_sources(context)
-        audit_private = (ACCESS_VIEW_AUDIT_LOG in context.state.required_access
-                         and not isinstance(message.channel, discord.DMChannel))
-        audience_allowed = not audit_private and await can_show(
-            message.channel, sources, context.state.required_access, context.guild,
-            thread_members=context.disclosure_thread_members,
-            request_id=message.id,
-        )
-        if not audience_allowed and not audit_private and conversation is not None:
-            audience_allowed = conversation.can_reuse_answer_disclosure(
-                context.member.id, message.channel.id,
-                context.state.source_channels, context.state.required_access,
-                context.state.knowledge_sources,
-            )
-        if not audience_allowed:
-            await self._send_response(
-                message, text, referenced, conversation=conversation,
-                delivery=delivery, context=answer_context,
-                _nonce_seed=seed, _suppress_mentions=True,
-            )
-        elif words:
+        await assert_answer_scope(context, text)
+        if words:
             await self._send_response(
                 message, words, referenced, conversation=conversation,
                 delivery=delivery, context=answer_context,
                 _nonce_seed=seed, _post_mentions=True,
             )
         for index, (part, is_gif) in enumerate(parts):
-            if is_gif and audience_allowed:
+            if is_gif:
                 await self._send_gif(
                     message, part, context, conversation, delivery, nonce_seed=seed + index,
                 )
@@ -120,45 +95,35 @@ class AgentDeliveryMixin:
 
     async def send_response(self, message, response, referenced, attachments=(), conversation=None,
                             *, delivery=None, context=None, **options):
-        if context is not None:
-            requires_private_knowledge_delivery(context, response)
         active = delivery or AgentDelivery()
         gif = context.state.gif_url if context is not None else None
+        media = context.state.gif_attachment if context is not None else None
         if gif:
-            response = _without_reply_gif(response, gif)
-        if response or attachments or not gif:
-            await self._send_response(
-                message, response, referenced, attachments, conversation,
-                delivery=active, context=context, **options,
-            )
+            context.state.gif_fallback_text = _without_reply_gif(response, gif) or context.state.gif_fallback_text
+        if gif and media is not None and len(media.data) > upload_limit(context):
+            LOGGER.warning("Skipping agent GIF library file %s: Discord upload limit changed", media.filename)
+            gif = context.state.gif_url = None
+            context.state.gif_attachment = None
+            response = context.state.gif_fallback_text
         if gif:
             active.complete = False
-            sources = await _delivery_sources(context)
-            audit_private = (ACCESS_VIEW_AUDIT_LOG in context.state.required_access
-                             and not isinstance(message.channel, discord.DMChannel))
-            allowed = not audit_private and (options.get("_audience_override", False)
-                                            or await can_show(
-                message.channel, sources, context.state.required_access, context.guild,
-                thread_members=context.disclosure_thread_members,
-                request_id=message.id,
-            ))
-            if (not allowed and not audit_private
-                    and conversation is not None):
-                allowed = conversation.can_reuse_answer_disclosure(
-                    context.member.id, message.channel.id,
-                    context.state.source_channels, context.state.required_access,
-                    context.state.knowledge_sources,
-                )
-            if allowed:
+            await assert_answer_scope(context, context.state.gif_fallback_text)
+            try:
                 await self._send_gif(message, gif, context, conversation, active,
                                      nonce_seed=options.get("_nonce_seed"))
-            elif not response and not attachments:
-                await self._send_response(
-                    message, response, referenced, attachments, conversation,
-                    delivery=active, context=context, **options,
-                )
-            else:
-                active.complete = True
+                return
+            except discord.HTTPException:
+                # An uncertain send is raised as AgentDeliveryUnknown and must
+                # never trigger a second visible response.
+                if active.message_ids:
+                    raise
+                context.state.gif_url = context.state.gif_attachment = None
+                response = context.state.gif_fallback_text
+        parts = outgoing_parts(response)
+        if any(is_image for _, is_image in parts):
+            response = '\n'.join(part for part, _ in parts)
+        await self._send_response(message, response, referenced, attachments, conversation,
+                                  delivery=active, context=context, **options)
 
     async def _send_gif(self, message, url, context, conversation, delivery, *, nonce_seed=None):
         await require_evidence_access(context)
@@ -169,11 +134,26 @@ class AgentDeliveryMixin:
             if not delivery.message_ids else None
         )
         sender = message.channel.send if delivery.message_ids else (target or message).reply
-        sent = await self._send_delivery_part(
-            sender, message.channel, _delivery_nonce(nonce_seed or message.id, 2_000_001),
-            delivery, url, allowed_mentions=discord.AllowedMentions.none(),
-        )
+        ping_author = bool(target is not None and context.state.ping_author)
+        media = context.state.gif_attachment if url == context.state.gif_url else None
+        file = discord.File(io.BytesIO(media.data), filename=media.filename) if media is not None else None
+        try:
+            sent = await self._send_delivery_part(
+                sender, message.channel, _delivery_nonce(nonce_seed or message.id, 2_000_001),
+                delivery, None if file else url,
+                allowed_mentions=discord.AllowedMentions(
+                    everyone=False, roles=False, users=False, replied_user=ping_author),
+                **({"mention_author": True} if ping_author else {}),
+                **({"file": file} if file else {}),
+            )
+        finally:
+            if file is not None:
+                file.close()
+                file.fp.close()
         delivery.record(sent.id, url)
+        await record_delivered_meme(usage_repository(context), guild_id=context.guild.id,
+            channel_id=message.channel.id, url=url,
+            item_id=context.state.gif_item_id if url == context.state.gif_url else None)
         if conversation is not None:
             self._conversations.register_reply(conversation, sent.id)
         if getattr(message, "archive_reply", True):
@@ -192,23 +172,26 @@ class AgentDeliveryMixin:
         context: AgentRequestContext | None = None,
         preview_timeout: float = CONFIRMATION_TIMEOUT,
         mention_requester: bool = False,
-        _audience_override: bool = False,
         _nonce_seed: int | None = None,
-        _notice_message: discord.Message | None = None,
-        _notice_content: str | None = None,
-        _answer_disclosure: bool = False,
-        _suppress_mentions: bool = False,
         _post_mentions: bool = False,
     ) -> None:
+        if context is not None and (stop_typing := getattr(context, "stop_typing", None)):
+            await stop_typing()
+        response = discord_text(response)
         guild = getattr(context, "guild", None) or getattr(message, "guild", None)
-        knowledge_private = bool(context and requires_private_knowledge_delivery(context, response))
         response = render_server_emojis(response, guild)
-        audit_private = bool(context and ACCESS_VIEW_AUDIT_LOG in context.state.required_access
-                             and not isinstance(message.channel, discord.DMChannel))
-        if audit_private:
-            _audience_override = False
-            if context.state.proposed_changes and context.state.preview_reply is None:
-                context.state.preview_reply = preview_text(context.state.proposed_changes)
+        if not response.strip() and not attachments:
+            response = (preview_text(context.state.proposed_changes)
+                        if context is not None and context.state.proposed_changes
+                        else unfinished_answer(context.state.request_text, context.state.grounding_evidence)
+                          if context is not None else "What result do you need?")
+        if context is not None:
+            response = scoped_answer(context, response)
+            if scope_reply_issue(context, response):
+                response = unfinished_answer(context.state.request_text, context.state.grounding_evidence)
+        if context is not None:
+            await assert_answer_scope(context, response)
+            log_scope(context)
         if context is not None:
             attachments = await publish_spreadsheet(context, attachments)
         if context is not None and context.state.preview_reply is not None:
@@ -217,115 +200,16 @@ class AgentDeliveryMixin:
                 delivery or AgentDelivery(), preview_timeout, mention_requester,
             )
             return
-        reused_disclosure = False
-        if context is not None and _audience_override:
-            _log_visibility(message, context, "public", "requester_post_override")
-        if (context is not None and not context.state.proposed_changes
-                and (not context.state.outcomes or context.state.has_read_answer
-                     or _answer_disclosure or audit_private or knowledge_private)
-                and not _audience_override):
-            sources = await _delivery_sources(context)
-            audience_allowed = False if audit_private else await can_show(
-                message.channel, sources, context.state.required_access,
-                context.guild, thread_members=context.disclosure_thread_members,
-                request_id=message.id,
-            )
-            reused_disclosure = bool(
-                not audit_private
-                and not audience_allowed and conversation is not None
-                and conversation.can_reuse_answer_disclosure(
-                    context.member.id, message.channel.id,
-                    context.state.source_channels, context.state.required_access,
-                    context.state.knowledge_sources,
-                )
-            )
-            _log_visibility(
-                message, context, "public" if audience_allowed or reused_disclosure else "private",
-                "audit_log_requires_private_delivery" if audit_private else
-                "audience_authorized" if audience_allowed else
-                "prior_disclosure_reused" if reused_disclosure else
-                "private_knowledge_pass" if context.state.private_knowledge_used else
-                "private_knowledge_title" if knowledge_private else
-                "audience_not_proven",
-                controls=() if audience_allowed or reused_disclosure else
-                ("view_result",) if audit_private else ("view_result", "post_here"),
-            )
-            if not audience_allowed and not reused_disclosure:
-                async def post(interaction):
-                    async def deliver():
-                        posted = AgentDelivery()
-                        notice_reply_id = view.message.id
-                        try:
-                            await self.send_response(
-                                message, response, referenced, attachments, conversation,
-                                context=context, delivery=posted, _audience_override=True,
-                                _nonce_seed=interaction.id, _notice_message=view.message,
-                                _notice_content=notice,
-                            )
-                            if conversation is not None:
-                                conversation.remember_answer_disclosure(
-                                    context.member.id, message.channel.id,
-                                    context.state.source_channels, context.state.required_access,
-                                    context.state.knowledge_sources,
-                                )
-                        finally:
-                            if conversation is not None and posted.message_ids:
-                                conversation.record_answer_delivery(
-                                    message.id, "\n".join(posted.text_parts),
-                                    tuple(posted.message_ids), posted.complete,
-                                    posted.unknown, tuple(posted.attempted_nonces),
-                                    posted.uncertain_nonce,
-                                    replaced_reply_id=notice_reply_id if _answer_disclosure else None,
-                                    generated_parts=tuple(posted.generated_parts),
-                                )
-                                LOGGER.info(
-                                    "Agent posted answer delivery: request=%s replies=%s complete=%s unknown=%s",
-                                    message.id, posted.message_ids, posted.complete, posted.unknown,
-                                )
-                                persistence = getattr(self, "persistence", None)
-                                if persistence is not None:
-                                    try:
-                                        await persistence.save(self._conversations, conversation)
-                                    except (OSError, sqlite3.Error, RuntimeError, TypeError, ValueError):
-                                        LOGGER.exception("Agent checkpoint save failed: request=%s", message.id)
-                    if conversation is None:
-                        await deliver()
-                    else:
-                        async with conversation.lock:
-                            await deliver()
-                scheduled = mention_requester or getattr(message, "scheduled_run", False)
-                private_view, _ = build_reply_views(message, context, None)
-                view = PrivateAnswerView(context, response, attachments, post,
-                                         private_view=private_view,
-                                         timeout=3600.0 if scheduled else 600.0)
-                notice = ACTION_PRIVATE_ANSWER
-                if scheduled:
-                    notice = f"<@{message.author.id}> {notice}"
-                active = delivery or AgentDelivery()
-                active.generated_parts.append(notice)
-                sent = await self._send_delivery_part(
-                    message.reply, message.channel, _delivery_nonce(_nonce_seed or message.id, 0), active,
-                    notice, mention_author=False, view=view,
-                    allowed_mentions=discord.AllowedMentions(
-                        everyone=False, roles=False,
-                        users=[message.author] if scheduled else [], replied_user=False,
-                    ),
-                )
-                view.message = sent
-                if conversation is not None:
-                    self._conversations.register_reply(conversation, sent.id)
-                if delivery is not None:
-                    delivery.record(sent.id, notice)
-                    delivery.complete = True
-                if getattr(message, "archive_reply", True):
-                    await self._archive_reply(message.id, sent.id, notice)
-                return
+        if context is not None and private_check_offered(context):
+            response = "\n\n".join(filter(None, (response, AGENT_PRIVATE_OFFER)))
         if context is not None and context.state.proposed_changes:
             previous_preview = preview_text(context.state.proposed_changes)
             await prepare_preview(context)
             if response.startswith(previous_preview):
                 response = preview_text(context.state.proposed_changes) + response[len(previous_preview):]
         response = spreadsheet_response(response, attachments)
+        if any(image_attachment(item) for item in attachments):
+            response = ""
         has_preview = bool(context and context.state.proposed_changes)
         # A preview must not ping the people it names before the change is confirmed.
         allowed_users: dict[int, discord.abc.User] = {} if has_preview else {
@@ -342,7 +226,7 @@ class AgentDeliveryMixin:
                 member = get_member(member_id)
                 if member is not None and not getattr(member, "bot", False):
                     allowed_users[member.id] = member
-        if mention_requester:
+        if mention_requester and not any(image_attachment(item) for item in attachments):
             allowed_users[message.author.id] = message.author
             response = f"<@{message.author.id}> {response}"
         allowed_mentions = discord.AllowedMentions(
@@ -353,16 +237,17 @@ class AgentDeliveryMixin:
         )
         if _post_mentions:
             allowed_mentions = post_mentions(context, {}, response)
-        if _suppress_mentions:
-            allowed_mentions = discord.AllowedMentions.none()
         files = attachment_files(attachments)
-        if not has_preview and _needs_file(response):
+        if not has_preview and (_needs_file(response) or (
+                context is not None and context.state.scope_audit.offered
+                and len(response) > DISCORD_MESSAGE_LIMIT)):
             files.append(discord.File(io.BytesIO(response.encode("utf-8")), filename=LONG_REPLY_FILENAME))
             chunks = [None]
         else:
             chunks = _chunk_response(response)
         if not chunks and not files and not any(item.google_link for item in attachments):
-            raise AgentUnavailableError("The agent returned an empty answer")
+            response = "What result do you need?"
+            chunks = [response]
         active_delivery = delivery or AgentDelivery()
         active_delivery.generated_parts.extend(
             [response] if chunks == [None] else chunks
@@ -379,16 +264,8 @@ class AgentDeliveryMixin:
                 message, response, chunks, options, private_view, confirm_view,
                 allowed_mentions, active_delivery, delivery, context, conversation,
                 nonce_seed=_nonce_seed,
-                notice_message=_notice_message,
-                notice_content=_notice_content,
                 attachments=attachments,
             )
-            if reused_disclosure:
-                LOGGER.info(
-                    "Agent answer disclosure reused: requester=%s channel=%s sources=%s levels=%s",
-                    context.member.id, message.channel.id,
-                    sorted(context.state.source_channels), sorted(context.state.required_access),
-                )
         finally:
             for file in files:
                 file.close()
@@ -403,16 +280,8 @@ class AgentDeliveryMixin:
         ))
         preview_context = replace(context, state=replace(
             context.state, outcomes=[], attachments=[], preview_reply=None, gif_url=None,
+            scope_audit=replace(context.state.scope_audit, offered=False), private_answer_run=None,
         ))
-        if ACCESS_VIEW_AUDIT_LOG in context.state.required_access:
-            preview_context = replace(preview_context, state=replace(
-                preview_context.state,
-                required_access=context.state.required_access - {ACCESS_VIEW_AUDIT_LOG},
-                proposed_changes=[replace(action, preview=replace(
-                    action.preview,
-                    detail_access=action.preview.detail_access | {ACCESS_VIEW_AUDIT_LOG},
-                )) for action in context.state.proposed_changes],
-            ))
         scheduled = getattr(message, "scheduled_run", False)
         if scheduled:
             await self._send_split_response(
@@ -423,35 +292,10 @@ class AgentDeliveryMixin:
         await prepare_preview(preview_context)
         preview = preview_text(preview_context.state.proposed_changes)
         context.state.preview_reply = preview
-        knowledge_private = requires_private_knowledge_delivery(answer_context, response)
-        sources = await _delivery_sources(answer_context)
-        audit_private = ACCESS_VIEW_AUDIT_LOG in answer_context.state.required_access
-        allowed = False if audit_private else await can_show(
-            message.channel, sources, answer_context.state.required_access, context.guild,
-            thread_members=context.disclosure_thread_members,
-            request_id=message.id,
-        )
-        reused_disclosure = False
-        if (not allowed and conversation is not None
-                and ACCESS_VIEW_AUDIT_LOG not in context.state.required_access):
-            reused_disclosure = conversation.can_reuse_answer_disclosure(
-                context.member.id, message.channel.id,
-                context.state.source_channels, context.state.required_access,
-                context.state.knowledge_sources,
-            )
-            allowed = reused_disclosure
-        _log_visibility(
-            message, answer_context, "public" if allowed else "private",
-            "audit_log_requires_private_delivery" if audit_private else
-            "prior_disclosure_reused" if reused_disclosure else
-            "audience_authorized" if allowed else
-            "private_knowledge_pass" if context.state.private_knowledge_used else
-            "private_knowledge_title" if knowledge_private else
-            "audience_not_proven",
-            controls=("confirmation",) + (() if allowed else
-                      ("view_result",) if audit_private else ("view_result", "post_here")),
-        )
-        answer = response if allowed else ACTION_PRIVATE_ANSWER
+        await assert_answer_scope(answer_context, response)
+        answer = response
+        if private_check_offered(context):
+            answer = "\n\n".join((answer, AGENT_PRIVATE_OFFER))
         private_view, _ = build_reply_views(message, answer_context, None)
         _, confirm_view = build_reply_views(
             message, preview_context, getattr(self, "action_runner", None), preview_timeout=preview_timeout,
@@ -464,70 +308,15 @@ class AgentDeliveryMixin:
                     conversation.replace_reply_content(message.id, sent.id, content)
                     await self._save_reply_conversation(conversation, message.id)
 
-        async def post(interaction):
-            await require_evidence_access(answer_context)
-            async with combined.lock:
-                fits = (len(combined.render(answer=response)) <= DISCORD_MESSAGE_LIMIT
-                        and not _answer_needs_ping(message, response, referenced, self.bot))
-                if fits:
-                    files = attachment_files(attachments)
-                    try:
-                        await combined.edit_part_locked(
-                            "answer", content=response,
-                            view=spreadsheet_links(private_view, attachments), attachments=files,
-                        )
-                    finally:
-                        for file in files:
-                            file.close()
-            if not fits:
-                posted = AgentDelivery()
-                try:
-                    await self.send_response(
-                        message, response, referenced, attachments, conversation,
-                        delivery=posted, context=answer_context, _audience_override=True,
-                        _nonce_seed=interaction.id,
-                    )
-                finally:
-                    if conversation is not None and posted.attempted_nonces:
-                        async with conversation.lock:
-                            conversation.record_additional_delivery(
-                                message.id, "\n".join(posted.text_parts), tuple(posted.message_ids),
-                                posted.complete, posted.unknown, tuple(posted.attempted_nonces),
-                                posted.uncertain_nonce, tuple(posted.generated_parts),
-                            )
-                            await self._save_reply_conversation(conversation, message.id)
-            elif answer_context.state.gif_url:
-                posted = AgentDelivery()
-                await self._send_gif(message, answer_context.state.gif_url, answer_context,
-                                     conversation, posted, nonce_seed=interaction.id)
-                if conversation is not None:
-                    async with conversation.lock:
-                        conversation.record_additional_delivery(
-                            message.id, "\n".join(posted.text_parts), tuple(posted.message_ids),
-                            posted.complete, posted.unknown, tuple(posted.attempted_nonces),
-                            posted.uncertain_nonce, tuple(posted.generated_parts),
-                        )
-            if conversation is not None:
-                async with conversation.lock:
-                    conversation.remember_answer_disclosure(
-                        context.member.id, message.channel.id,
-                        context.state.source_channels, context.state.required_access,
-                        context.state.knowledge_sources,
-                    )
-                    await self._save_reply_conversation(conversation, message.id)
-
-        answer_view = (
-            spreadsheet_links(private_view, attachments) if allowed else PrivateAnswerView(
-                answer_context, response, attachments, post, private_view=private_view,
-            )
-        )
+        answer_view = spreadsheet_links(private_view, attachments)
         combined = CombinedReplyView(
             preview, answer, confirm_view, answer_view,
             preview_first=context.state.preview_first, on_change=changed,
         )
         if (len(combined.render()) > DISCORD_MESSAGE_LIMIT or mention_requester
+                or any(image_attachment(item) for item in attachments)
                 or _answer_needs_ping(message, response, referenced, self.bot)
-                or allowed and _needs_file(response)):
+                or _needs_file(response)):
             combined.stop()
             await self._send_split_response(
                 message, response, referenced, attachments, conversation, answer_context,
@@ -535,7 +324,8 @@ class AgentDeliveryMixin:
                 preview_first=context.state.preview_first,
             )
             return
-        files = attachment_files(attachments if allowed else ())
+        self._bind_private_answer(private_view, active, conversation)
+        files = attachment_files(attachments)
         content = combined.render()
         active.generated_parts.append(content)
         try:
@@ -575,7 +365,6 @@ class AgentDeliveryMixin:
                 await self._send_response(
                     message, content, referenced, files, conversation, delivery=active, context=selected,
                     preview_timeout=preview_timeout, mention_requester=mention_requester,
-                    _answer_disclosure=answer,
                     _nonce_seed=None if index == 0 else _delivery_nonce(message.id, 1_000_001),
                 )
             except BaseException:
@@ -595,11 +384,106 @@ class AgentDeliveryMixin:
             except (OSError, sqlite3.Error, RuntimeError, TypeError, ValueError):
                 LOGGER.exception("Agent checkpoint save failed: request=%s", request_id)
 
+    def _bind_private_answer(self, view, delivery, conversation):
+        if not isinstance(view, PrivateAnswerView):
+            return
+
+        async def post(answer, attachments, private):
+            context = view.context
+            destination = context.delivery_channel or context.source_message.channel
+            response = spreadsheet_response(
+                render_server_emojis(discord_text(answer), context.guild), attachments,
+            )
+            image = next((item for item in attachments if image_attachment(item)), None)
+            parts = outgoing_parts(response, attachment=image)
+            media_reply = any(is_image for _, is_image in parts)
+            if media_reply:
+                response = "\n".join(part for part, _ in parts)
+            target = view.message
+            if target is None:
+                raise RuntimeError("Private answer has no public edit target")
+            previous = getattr(target, "content", "")
+            combined = getattr(target, "preserves_other_text", False)
+            content = response
+            fits = (len(target.reply.render(**{target.key: content})) <= DISCORD_MESSAGE_LIMIT
+                    if combined else len(content) <= DISCORD_MESSAGE_LIMIT)
+            files = attachment_files(attachments)
+            if not fits:
+                files.append(discord.File(io.BytesIO(response.encode("utf-8")), filename=LONG_REPLY_FILENAME))
+                content = ""
+            original = view.private_view
+            public_view = (PrivateResultView(
+                view.owner_id, original.parts, original.attachments,
+                panels=original.panels, panel_labels=original.panel_labels,
+            ) if original is not None else None)
+            public_view = spreadsheet_links(public_view, attachments)
+            try:
+                # Refresh the private evidence immediately before the authorized edit.
+                await assert_answer_scope(private, answer)
+                require_access(context.guild, view.owner_id, destination)
+                if combined and media_reply:
+                    # The confirmation remains independent text; the disclosed
+                    # image needs its own message rather than inheriting it.
+                    delivery.complete = False
+                    delivery.generated_parts.append(response)
+                    edited = await self._send_delivery_part(
+                        destination.send, destination,
+                        _delivery_nonce(context.source_message.id, 3_000_001), delivery,
+                        content or None, files=files, view=public_view,
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+                    delivery.record(edited.id, response)
+                    if public_view is not None:
+                        public_view.message = edited
+                    if conversation is not None:
+                        self._conversations.register_reply(conversation, edited.id)
+                        async with conversation.lock:
+                            conversation.record_additional_delivery(
+                                context.source_message.id, response, (edited.id,), True, False,
+                                tuple(delivery.attempted_nonces[-1:]), None, (response,),
+                            )
+                            await self._save_reply_conversation(conversation, context.source_message.id)
+                    if getattr(context.source_message, "archive_reply", True):
+                        await self._archive_reply(context.source_message.id, edited.id, response)
+                    await target.edit(content="", view=None)
+                    delivery.complete = True
+                else:
+                    edited = await target.edit(
+                        content=content, attachments=files, view=public_view,
+                        **({} if combined else {"allowed_mentions": discord.AllowedMentions.none()}),
+                    )
+            except BaseException:
+                if public_view is not None:
+                    public_view.stop()
+                raise
+            finally:
+                for file in files:
+                    file.close()
+            if not combined:
+                view.message = edited
+                if public_view is not None:
+                    public_view.message = edited
+                if getattr(context.source_message, "archive_reply", True):
+                    await self._archive_reply(
+                        context.source_message.id, edited.id, response, previous_content=previous,
+                    )
+                if conversation is not None:
+                    async with conversation.lock:
+                        conversation.replace_reply_content(context.source_message.id, edited.id, response)
+                        await self._save_reply_conversation(conversation, context.source_message.id)
+            if target.id in delivery.message_ids:
+                index = delivery.message_ids.index(target.id)
+                delivery.text_parts[index] = (target.reply.render() if combined else response)
+            view.stop()
+
+        view.post = post
+
     async def _send_response_parts(
         self, message, response, chunks, options, private_view, confirm_view,
         allowed_mentions, active_delivery, delivery, context, conversation,
-        *, nonce_seed=None, notice_message=None, notice_content=None, attachments=(),
+        *, nonce_seed=None, attachments=(),
     ) -> None:
+        self._bind_private_answer(private_view, active_delivery, conversation)
         if private_view is not None and confirm_view is None:
             options["view"] = private_view
         if confirm_view is not None and len(chunks) <= 1:
@@ -617,21 +501,13 @@ class AgentDeliveryMixin:
                 replied_user=ping_author,
             ))
         nonce = _delivery_nonce(nonce_seed or message.id, 0)
-        if notice_message is not None and not allowed_mentions.users:
-            active_delivery.attempt(nonce)
-            sent = await notice_message.edit(
-                content=chunks[0] if chunks else None,
-                attachments=options.get("files", []), view=options.get("view"),
-                allowed_mentions=allowed_mentions,
-            )
-        else:
-            sent = await self._send_delivery_part(
-                (target or message).reply, getattr(message, "channel", None), nonce,
-                active_delivery,
-                chunks[0] if chunks else None,
-                mention_author=ping_author, allowed_mentions=allowed_mentions,
-                **options,
-            )
+        sent = await self._send_delivery_part(
+            (target or message).reply, getattr(message, "channel", None), nonce,
+            active_delivery,
+            chunks[0] if chunks else None,
+            mention_author=ping_author, allowed_mentions=allowed_mentions,
+            **options,
+        )
         if private_view is not None:
             private_view.message = sent
         if confirm_view is not None and len(chunks) <= 1:
@@ -645,11 +521,7 @@ class AgentDeliveryMixin:
         if getattr(message, "archive_reply", True):
             await self._archive_reply(
                 message.id, sent.id, response if chunks == [None] else (chunks[0] if chunks else ""),
-                **({"previous_content": notice_content}
-                   if notice_message is not None and not allowed_mentions.users else {}),
             )
-        if notice_message is not None and allowed_mentions.users:
-            await notice_message.delete()
         if target is not None:
             allowed_mentions = allowed_mentions.merge(discord.AllowedMentions(replied_user=False))
         for index, chunk in enumerate(chunks[1:], start=1):
@@ -752,6 +624,9 @@ class AgentDeliveryMixin:
                 reply_id=sent.id, nonce=nonce, delivered_part=part,
                 delivery_complete=complete,
             )
+            if (repository := usage_repository(self)) is not None:
+                await record_delivered_meme(repository, guild_id=conversation.guild_id,
+                                           channel_id=channel.id, url=part)
             self._conversations.register_reply(conversation, sent.id)
             await self._archive_reply(
                 record.request_message_id, sent.id, part,
@@ -777,10 +652,10 @@ class AgentDeliveryMixin:
             LOGGER.exception("Agent transcript reply write failed: request=%s reply=%s", request_id, reply_id)
 
     @staticmethod
-    async def _send_failure(message: discord.Message) -> None:
+    async def _send_failure(message: discord.Message, text: str = FAILURE_MESSAGE) -> None:
         try:
             await message.reply(
-                FAILURE_MESSAGE,
+                text,
                 mention_author=False,
                 allowed_mentions=discord.AllowedMentions.none(),
                 nonce=_delivery_nonce(message.id, 1_000_000),
@@ -885,6 +760,8 @@ def build_reply_views(message, context, runner, *, preview_timeout=CONFIRMATION_
         message.author.id, private_parts, private_files,
         panels=private_panels, panel_labels=panel_labels,
     ) if private_parts or private_files or private_panels else None)
+    if context is not None and private_check_offered(context):
+        private_view = PrivateAnswerView(context, private_view=private_view)
     if private_view is not None:
         _log_visibility(message, context, "private", "feature_private_result", controls=("view_result",))
     confirm_view = (ConfirmationView(message.author.id,

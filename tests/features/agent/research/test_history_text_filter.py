@@ -1,10 +1,10 @@
-"""Synthetic full-text history filters preserve paging, scope and durable scan counts."""
+"""Unfiltered discussion chunks preserve paging, scope and durable scan counts."""
 
 from tempfile import TemporaryDirectory
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import discord
 
@@ -13,7 +13,6 @@ from elbow_helper.discord.message_search import (
 )
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.features.agent.engine.registry import build_agent_tools
-from elbow_helper.features.agent.plan.format import capability_list
 from elbow_helper.features.agent.research.history import discord_message_evidence, read_discord_channel_history
 from elbow_helper.features.agent.research.repository import ResearchJobRepository
 from elbow_helper.features.agent.research.tools import (
@@ -43,8 +42,48 @@ def history(context, records, *, reply_to_message_id=None):
     return rows
 
 
-class HistoryTextFilterTests(unittest.IsolatedAsyncioTestCase):
-    async def test_transport_retains_embed_text_and_attachment_names_for_filtering(self):
+class HistoryChunkTests(unittest.IsolatedAsyncioTestCase):
+    async def test_batched_pages_return_every_message_for_semantic_review(self):
+        context = _context()
+        rows = history(context, [(1, "Other", (), ()) for _ in range(4)]
+                       + [(1, "Synthetic target", (), ())])
+        result = await read_discord_channel_history(context, {
+            "channel_id": 100, "after": "2026-09-01", "limit": 2, "pages": 4,
+        })
+        self.assertEqual([row["message_id"] for row in result["messages"]], [row.message_id for row in rows])
+        self.assertEqual(result["coverage"]["scanned_count"], 5)
+        self.assertTrue(result["coverage"]["reached_requested_start"])
+        self.assertEqual(context.message_search.history_page.await_count, 3)
+
+    async def test_batched_budget_continuation_keeps_every_message_exactly_once(self):
+        context = _context()
+        rows = history(context, [(1, "target " + '"\\' * 500, (), ()) for _ in range(40)])
+        arguments = {"channel_id": 100, "after": "2026-09-01", "limit": 4, "pages": 8}
+        found = []
+        for _ in range(50):
+            result = await read_discord_channel_history(context, arguments)
+            found.extend(row["message_id"] for row in result["messages"])
+            cursor = result["coverage"]["next_cursor"]
+            if cursor is None:
+                break
+            arguments["cursor"] = cursor
+        else:
+            self.fail("Batched history failed to advance")
+        self.assertEqual(found, [row.message_id for row in rows])
+
+    async def test_batched_access_loss_discards_all_earlier_messages(self):
+        context = _context()
+        history(context, [(1, "Sensitive", (), ()), (1, "Other", (), ())])
+        channel = context.guild.get_channel_or_thread(100)
+        with patch("elbow_helper.features.agent.research.history.accessible_message_channel",
+                   AsyncMock(side_effect=[channel, channel, None])):
+            result = await read_discord_channel_history(context, {
+                "channel_id": 100, "after": "2026-09-01", "limit": 1, "pages": 2,
+            })
+        self.assertIn("error", result)
+        self.assertNotIn("messages", result)
+
+    async def test_transport_retains_embed_text_and_attachment_names(self):
         context = _context()
         context.member.display_name = "Synthetic Member"
         upper = discord.utils.time_snowflake(context.source_message.created_at)
@@ -59,17 +98,17 @@ class HistoryTextFilterTests(unittest.IsolatedAsyncioTestCase):
             "attachments": [{"filename": "synthetic-transcript.html"}],
         }]))
         context.message_search = DiscordMessageSearch(http)
-        for text_filter in ("SUBJECT @SYNTHETIC MEMBER", "synthetic footer", "TRANSCRIPT.HTML"):
-            with self.subTest(text_filter=text_filter):
-                result = await read_discord_channel_history(context, {
-                    "channel_id": 100, "after": "2026-09-01", "text_filter": text_filter,
-                })
-                self.assertEqual(len(result["messages"]), 1)
-                self.assertIn("Subject @Synthetic Member", result["messages"][0]["content"])
-                self.assertEqual(result["coverage"]["scanned_count"], 1)
-                self.assertEqual(result["coverage"]["matched_count"], 1)
-                self.assertEqual(result["messages"][0]["reply_to_message_id"], upper - 2)
-                self.assertEqual(result["coverage"]["order"], "newest_first")
+        result = await read_discord_channel_history(context, {
+            "channel_id": 100, "after": "2026-09-01",
+        })
+        self.assertEqual(len(result["messages"]), 1)
+        self.assertIn("Subject @Synthetic Member", result["messages"][0]["content"])
+        self.assertIn("Synthetic Footer", result["messages"][0]["content"])
+        self.assertIn("synthetic-transcript.html", result["messages"][0]["content"])
+        self.assertEqual(result["coverage"]["scanned_count"], 1)
+        self.assertEqual(result["coverage"]["matched_count"], 1)
+        self.assertEqual(result["messages"][0]["reply_to_message_id"], upper - 2)
+        self.assertEqual(result["coverage"]["order"], "newest_first")
 
     def test_message_context_keeps_reply_metadata_without_treating_forwards_as_replies(self):
         from datetime import datetime, timezone
@@ -88,15 +127,15 @@ class HistoryTextFilterTests(unittest.IsolatedAsyncioTestCase):
                 result = discord_message_evidence(10, message)
                 self.assertEqual(result.get("reply_to_message_id"), expected)
 
-    async def test_filter_scans_full_text_and_pages_without_skipping_matches_at_the_budget(self):
+    async def test_author_selected_pages_do_not_skip_at_character_budget(self):
         context = _context()
         rows = history(context, [(1 + index % 2, "\"\\\n" * 500,
                                   ({"footer": {"text": "Straße"}},), ())
                                  for index in range(80)])
         arguments = {"channel_id": 100, "after": "2026-09-01", "limit": 100,
-                     "author_id": 1, "text_filter": "STRASSE"}
+                     "author_id": 1}
         found, scanned = [], 0
-        for _ in range(10):
+        for _ in range(len(rows) + 1):
             result = await read_discord_channel_history(context, arguments)
             self.assertNotIn("error", result)
             found.extend(item["message_id"] for item in result["messages"])
@@ -112,22 +151,19 @@ class HistoryTextFilterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(scanned, len(rows))
         self.assertGreater(context.message_search.history_page.await_count, 1)
 
-    async def test_nonmatching_page_keeps_cursor_and_filter_is_bound_to_it(self):
+    async def test_unknown_start_and_request_local_cursor_read_older_messages(self):
         context = _context()
-        history(context, [(1, "Other", (), ()), (1, "Synthetic target", (), ())])
-        arguments = {"channel_id": 100, "after": "2026-09-01", "limit": 1,
-                     "text_filter": "target"}
-        first = await read_discord_channel_history(context, arguments)
-        self.assertEqual(first["messages"], [])
-        self.assertEqual(first["coverage"]["scanned_count"], 1)
-        arguments["cursor"] = first["coverage"]["next_cursor"]
-        changed = await read_discord_channel_history(context, {**arguments, "text_filter": "other"})
-        self.assertIn("does not match", changed["error"])
-        second = await read_discord_channel_history(context, {**arguments, "text_filter": "TARGET"})
-        self.assertEqual(len(second["messages"]), 1)
-        self.assertEqual(context.message_search.history_page.await_count, 2)
+        rows = history(context, [(1, "Opening", (), ()), (2, "Follow-up", (), ())])
+        first = await read_discord_channel_history(context, {"channel_id": 100, "limit": 1})
+        second = await read_discord_channel_history(context, {
+            "channel_id": 100, "limit": 1, "cursor": first["coverage"]["next_cursor"],
+        })
+        self.assertEqual(first["messages"][0]["message_id"], rows[0].message_id)
+        self.assertEqual(second["messages"][0]["message_id"], rows[1].message_id)
+        self.assertIsNone(second["coverage"]["requested_after"])
+        self.assertEqual(context.message_search.history_page.await_args.kwargs["after_id"], 0)
 
-    async def test_filter_and_cumulative_counts_survive_job_restart(self):
+    async def test_all_messages_and_counts_survive_job_restart(self):
         with TemporaryDirectory() as directory:
             context = _context()
             context.source_message.channel = context.guild.get_channel_or_thread(100)
@@ -139,11 +175,10 @@ class HistoryTextFilterTests(unittest.IsolatedAsyncioTestCase):
             context.conversation_root_id = 500
             started = await start_discord_history_job(context, {
                 "channel_id": 100, "after": "2026-09-01", "page_size": 1,
-                "text_filter": "TARGET",
             })
-            self.assertEqual(started["query"], "TARGET")
+            self.assertEqual(started["query"], "")
             first = await continue_discord_research_job(context, {"job_id": started["job_id"]})
-            self.assertEqual(first["new_messages"], [])
+            self.assertEqual(len(first["new_messages"]), 1)
             context.research_jobs = ResearchJobRepository(path)
             second = await continue_discord_research_job(context, {"job_id": started["job_id"]})
             self.assertEqual(len(second["new_messages"]), 1)
@@ -151,26 +186,38 @@ class HistoryTextFilterTests(unittest.IsolatedAsyncioTestCase):
             last = await continue_discord_research_job(context, {"job_id": started["job_id"]})
             self.assertEqual(last["status"], "completed")
             self.assertEqual(last["coverage"]["scanned_count"], 2)
-            self.assertEqual(last["coverage"]["matched_count"], 1)
-            self.assertEqual(last["retained_message_count"], 1)
+            self.assertEqual(last["coverage"]["matched_count"], 2)
+            self.assertEqual(last["retained_message_count"], 2)
 
-    async def test_invalid_filters_do_not_scan(self):
+    async def test_legacy_text_selection_is_rejected_without_scanning(self):
         context = _context()
-        for value in ("", " ", 7, "x" * 1025):
-            with self.subTest(value=value):
-                result = await read_discord_channel_history(context, {
-                    "channel_id": 100, "after": "2026-09-01", "text_filter": value,
-                })
-                self.assertEqual(result["error"],
-                                 "Use a non-empty text filter of up to 1,024 characters.")
+        result = await read_discord_channel_history(context, {
+            "channel_id": 100, "text_filter": "topic",
+        })
+        self.assertIn("without a text filter", result["error"])
         context.message_search.history_page.assert_not_awaited()
 
-    def test_catalogue_explains_embed_search_and_both_history_filters(self):
+    async def test_complete_content_keeps_all_embed_text_without_transport_noise(self):
+        context = _context()
+        text = "Original text " + "x" * 1800
+        history(context, [(1, text, ({
+            "title": "Subject", "description": "Details", "author": {"name": "Speaker"},
+            "footer": {"text": "Footer", "icon_url": "unused"},
+            "fields": [{"name": "Field", "value": "Value", "inline": True}],
+            "image": {"url": "unused", "placeholder": "x" * 16000},
+        },), ("image.png",))])
+        result = await read_discord_channel_history(context, {"channel_id": 100}, complete_content=True)
+        row = result["messages"][0]
+        self.assertEqual(row["content"], text)
+        self.assertEqual(row["embeds"], [{"title": "Subject", "description": "Details",
+            "author": {"name": "Speaker"}, "footer": {"text": "Footer"},
+            "fields": [{"name": "Field", "value": "Value"}]}])
+        self.assertEqual(row["attachment_names"], ["image.png"])
+        self.assertFalse(row["attachment_contents_read"])
+        self.assertTrue(row["content_complete"])
+
+    def test_catalogue_offers_chunks_without_text_filters(self):
         tools = build_agent_tools()
-        lines = capability_list(tools).splitlines()
         for name in ("read_discord_channel_history", "start_discord_history_job"):
-            line = next(line for line in lines if line.startswith(name + ":"))
-            self.assertIn("text_filter:str", line)
-            self.assertIn("case-insensitively", line)
-        self.assertIn("Search misses embeds; filter history for bot logs",
-                      tools["search_discord_messages"].definition.usage_note)
+            self.assertNotIn("text_filter", tools[name].definition.parameters["properties"])
+            self.assertIn("meaning", tools[name].definition.usage_note)

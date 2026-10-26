@@ -3,6 +3,7 @@
 import asyncio
 from dataclasses import replace
 from types import SimpleNamespace
+from elbow_helper.features.agent.wording import AGENT_ANSWER_UNFINISHED
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -12,11 +13,10 @@ from elbow_helper.features.agent.actions.contracts import ActionClass, ChangePre
 from elbow_helper.features.agent.access import AgentAccessLost
 from elbow_helper.features.agent.engine.budgets import ContextBudget, RequestLimits, LOOKUP_LIMITS, RESEARCH_LIMITS
 from elbow_helper.features.agent.engine.rounds import AgentLimitReached
-from elbow_helper.features.agent.engine.routing import EXPAND_CONTEXT, simple_lookup
+from elbow_helper.features.agent.engine.routing import EXPAND_CONTEXT, RouteDecision
 from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.features.agent.models import AgentCapabilityEffect, RegisteredAgentTool
 from elbow_helper.features.agent.knowledge.store import KnowledgePrompt
-from elbow_helper.features.agent.wording import AGENT_RESEARCH_UNFINISHED
 from features.agent.engine.test_agent_plan_flow import _context, _Session, _Model, _model_step, _plan, _step
 
 
@@ -48,38 +48,50 @@ class RequestCostTests(unittest.IsolatedAsyncioTestCase):
             flow, usage = AgentService(model, data_guide=guide)._start_flow(
                 question=question, local_context="", context=context or _context(),
                 conversation_history="",
+                route=RouteDecision(social=True, usage=AgentUsage(100, 1, 0, 100)) if question == "thanks" else None,
             )
         return flow, session, model, usage
 
-    def test_conservative_routing(self):
-        for question in ("How many members?", "BE member count", "Extract tags from this message",
-                         "No, names only", "What is this account's league?"):
-            self.assertTrue(simple_lookup(question), question)
-        for question in ("Compare war and ranked activity", "Should we remove this player?",
-                         "Count changes across sources", "Why was that count wrong?",
-                         "Count members and give them a role", "Count only; run the command",
-                         "Export a spreadsheet with the count", "an unspecified task"):
-            self.assertFalse(simple_lookup(question), question)
-
-    async def test_lookup_omits_broad_context_and_starts_low(self):
-        knowledge = Mock()
-        guide = Mock()
-        context = replace(_context(), knowledge_store=knowledge)
-        flow, session, model, _ = self.flow([plan(), response()], context=context, guide=guide)
-        self.assertEqual(await flow.run(), "Checked.")
-        knowledge.load.assert_not_called()
-        guide.for_levels.assert_not_called()
-        self.assertNotIn("<data_guide>", model.request["system_prompt"])
-        self.assertEqual(session.calls[0][2], AgentReasoningEffort.LOW)
-        self.assertTrue(all(limit <= 4096 for limit in session.output_limits))
-        self.assertEqual(flow.budget.spent_rounds, 2)
+    async def test_non_social_wording_always_gets_the_same_full_prefix(self):
+        prefixes = []
+        for question in (
+            "How many members?", "Extract tags from this message", "No, names only",
+            "What is this account's league?", "What's the CWL bonus rule?",
+            "What is our policy on kicking inactive members?", "Summarise the war results",
+            "Who missed attacks?", "Which recruit is promising?", "An unspecified task",
+            "Compare war and ranked activity", "x" * 400,
+        ):
+            with self.subTest(question=question):
+                guide = Mock()
+                guide.for_levels.return_value = "Synthetic data schema"
+                knowledge = Mock()
+                knowledge.load.return_value.prompt.return_value = KnowledgePrompt(
+                    "Synthetic knowledge", frozenset(), 0, index="Synthetic topic index",
+                )
+                context = replace(_context(), knowledge_store=knowledge)
+                flow, session, model, _ = self.flow([response()], question=question,
+                                                   context=context, guide=guide)
+                await flow.run()
+                prefix = model.request["system_prompt"]
+                prefixes.append(prefix)
+                self.assertIn("Synthetic data schema", model.request['prompt'])
+                self.assertIn("Synthetic topic index", model.request['prompt'])
+                self.assertNotIn("Synthetic data schema", prefix)
+                self.assertNotIn("Synthetic topic index", prefix)
+                self.assertNotIn("Synthetic knowledge", prefix)
+                self.assertEqual(session.calls[0][2], AgentReasoningEffort.HIGH)
+                self.assertEqual(flow.budget.request_limits, RESEARCH_LIMITS)
+                self.assertEqual([tool.name for tool in model.request["tools"]], ["submit_request_plan"])
+                knowledge.load.assert_called_once()
+                guide.for_levels.assert_called_once()
+        self.assertTrue(all(prefix == prefixes[0] for prefix in prefixes))
 
     async def test_expansion_loads_full_context_once_without_resetting_spending(self):
         guide = Mock()
         guide.for_levels.return_value = "Synthetic data schema"
         knowledge = Mock()
         knowledge.load.return_value.prompt.return_value = KnowledgePrompt(
-            "Synthetic community knowledge", frozenset(), 0,
+            "Synthetic community knowledge", frozenset(), 0, index="Synthetic knowledge topics",
         )
         context = replace(_context(), knowledge_store=knowledge)
         tool = RegisteredAgentTool(AgentToolDefinition(
@@ -87,16 +99,18 @@ class RequestCostTests(unittest.IsolatedAsyncioTestCase):
         ), AsyncMock(return_value={"value": 7}))
         expand = response("", (AgentToolCall("expand", EXPAND_CONTEXT, "{}"),))
         flow, session, model, _ = self.flow(
-            [expand, plan("read_value"), response()], registry={"read_value": tool},
+            [expand, plan("read_value"), response()], question="thanks", registry={"read_value": tool},
             context=context, guide=guide,
         )
         self.assertNotIn("read_value:", model.request["system_prompt"])
         self.assertEqual(await flow.run(), "Checked.")
         self.assertEqual(flow.budget.request_limits, RESEARCH_LIMITS)
         self.assertEqual((flow.budget.spent_rounds, flow.budget.spent_input,
-                          flow.budget.spent_output), (3, 3000, 300))
+                          flow.budget.spent_output), (4, 3100, 301))
         self.assertIn("Synthetic data schema", session.calls[1][0][0].content)
-        self.assertIn("Synthetic community knowledge", session.calls[1][0][0].content)
+        self.assertIn("Synthetic knowledge topics", session.calls[1][0][0].content)
+        self.assertNotIn("Synthetic community knowledge", session.calls[1][0][0].content)
+        self.assertNotIn("Synthetic community knowledge", flow.answer_context)
         self.assertIn("read_value:", session.calls[1][0][0].content)
         self.assertEqual(session.calls[1][2], AgentReasoningEffort.HIGH)
         self.assertEqual([tool.name for tool in session.tools], ["submit_request_plan"])
@@ -110,7 +124,7 @@ class RequestCostTests(unittest.IsolatedAsyncioTestCase):
             [response()], question="Compare multiple sources", guide=guide,
         )
         await flow.run()
-        self.assertIn("Synthetic data schema", model.request["system_prompt"])
+        self.assertIn("Synthetic data schema", model.request["prompt"])
         self.assertEqual(flow.budget.request_limits, RESEARCH_LIMITS)
         self.assertEqual(session.calls[0][2], AgentReasoningEffort.HIGH)
 
@@ -121,7 +135,7 @@ class RequestCostTests(unittest.IsolatedAsyncioTestCase):
         )
         context = replace(_context(), knowledge_store=knowledge)
         expand = response("", (AgentToolCall("expand", EXPAND_CONTEXT, "{}"),))
-        flow, session, _, _ = self.flow([expand], context=context)
+        flow, session, _, _ = self.flow([expand], question="thanks", context=context)
         with self.assertRaises(AgentAccessLost):
             await flow.run()
         self.assertEqual(context.state.required_access, {"lead"})
@@ -131,8 +145,7 @@ class RequestCostTests(unittest.IsolatedAsyncioTestCase):
         invalid = plan("not_in_catalogue")
         flow, session, _, _ = self.flow([invalid, plan()])
         flow.budget.request_limits = RequestLimits(2, 80_000, 12_000, 4096)
-        with self.assertRaises(AgentLimitReached):
-            await flow.run()
+        self.assertIn(AGENT_ANSWER_UNFINISHED, await flow.run())
         self.assertEqual(len(session.calls), 2)
         self.assertEqual(flow.runner.tool_calls, 0)
         self.assertEqual(flow.budget.spent_rounds, 2)
@@ -142,8 +155,10 @@ class RequestCostTests(unittest.IsolatedAsyncioTestCase):
             response("Part", output_limit_reached=True), response("More", output_limit_reached=True),
         ])
         flow.budget.request_limits = RequestLimits(2, 80_000, 12_000, 4096)
-        with self.assertRaises(AgentLimitReached):
-            await flow.run()
+        answer = await flow.run()
+        self.assertIn("Part", answer)
+        self.assertIn("More", answer)
+        self.assertIn(AGENT_ANSWER_UNFINISHED, answer)
         self.assertEqual(flow.budget.spent_rounds, 2)
         self.assertEqual(len(session.calls), 2)
 
@@ -151,17 +166,19 @@ class RequestCostTests(unittest.IsolatedAsyncioTestCase):
         flow, session, _, _ = self.flow([
             replace(plan(), usage=AgentUsage(79_500, 100)),
         ])
+        flow.budget.request_limits = LOOKUP_LIMITS
         # Read admission is isolated here to exercise a provider usage correction
         # that leaves no room to send the already completed evidence back.
         with patch.object(ContextBudget, "can_continue_tools", return_value=True):
             answer = await flow.run()
-        self.assertEqual(answer, AGENT_RESEARCH_UNFINISHED)
+        self.assertEqual(answer, AGENT_ANSWER_UNFINISHED)
+        self.assertNotIn("What league is this account in?", answer)
         self.assertEqual(len(session.calls), 1)
         self.assertEqual(flow.budget.spent_input, 79_500)
 
     async def test_final_output_is_capped_by_total_remaining_allowance(self):
         flow, session, _, _ = self.flow([response()])
-        flow.budget.spent_output = LOOKUP_LIMITS.output_tokens - 1500
+        flow.budget.spent_output = flow.budget.request_limits.output_tokens - 1500
         await flow.rounder.advance(allow_tools=False, final=True)
         self.assertEqual(session.output_limits, [1500])
 
@@ -179,7 +196,7 @@ class RequestCostTests(unittest.IsolatedAsyncioTestCase):
         context = replace(_context(), bot=SimpleNamespace(tree=object()))
         with patch("elbow_helper.features.agent.engine.service.build_command_tools", return_value=({}, {})):
             flow, session, _, _ = self.flow(
-                [expand, plan("change")], registry={"change": tool}, context=context,
+                [expand, plan("change")], question="thanks", registry={"change": tool}, context=context,
             )
         self.assertIn("Synthetic change", await flow.run())
         self.assertEqual(len(context.state.proposed_changes), 1)
@@ -201,7 +218,8 @@ class RequestCostTests(unittest.IsolatedAsyncioTestCase):
         flow, session, _, _ = self.flow([plan(), plan(identity="extra")])
         flow.budget.request_limits = RequestLimits(2, 80_000, 12_000, 4096)
         answer = await flow.run()
-        self.assertEqual(answer, AGENT_RESEARCH_UNFINISHED)
+        self.assertEqual(answer, AGENT_ANSWER_UNFINISHED)
+        self.assertIn(AGENT_ANSWER_UNFINISHED, answer)
         self.assertEqual(flow.runner.tool_calls, 1)
         self.assertEqual(len(session.calls), 2)
 
@@ -214,7 +232,7 @@ class RequestCostTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_output_exhaustion_does_not_call_provider(self):
         flow, session, _, _ = self.flow([])
-        flow.budget.spent_output = LOOKUP_LIMITS.output_tokens
+        flow.budget.spent_output = flow.budget.request_limits.output_tokens
         with self.assertRaises(AgentLimitReached):
             await flow.rounder.advance(final=True, allow_tools=False)
         self.assertEqual(session.calls, [])
@@ -273,7 +291,7 @@ class RequestCostTests(unittest.IsolatedAsyncioTestCase):
         # Allow preparation to test exhaustion specifically at the feedback call.
         with patch.object(ContextBudget, "can_continue_tools", return_value=True):
             answer = await flow.run()
-        self.assertIn(AGENT_RESEARCH_UNFINISHED, answer)
+        self.assertIn(AGENT_ANSWER_UNFINISHED, answer)
         self.assertIn("Synthetic change", context.state.preview_reply)
         self.assertEqual(len(context.state.proposed_changes), 1)
         execute.assert_not_awaited()

@@ -29,7 +29,8 @@ class CombinedReplyView(discord.ui.View):
 
     def render(self, **changes: str) -> str:
         parts = {**self.parts, **changes}
-        return "\n\n".join(f"{index}. {parts[key]}" for index, key in enumerate(self.order, 1))
+        visible = [parts[key] for key in self.order if parts[key]]
+        return "\n\n".join(f"{index}. {part}" for index, part in enumerate(visible, 1))
 
     def _rebuild(self) -> None:
         self.clear_items()

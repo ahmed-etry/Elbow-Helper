@@ -1,6 +1,7 @@
 """Command plans invoke adapters and expose only status to the model."""
 
 from types import SimpleNamespace
+from dataclasses import replace
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -14,6 +15,7 @@ from elbow_helper.features.agent.models import AgentTurnState, AgentCapabilityEf
 from elbow_helper.features.agent.models import AgentAttachment
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
 from elbow_helper.features.agent.wording import ACTION_EMPTY, ACTION_PRIVATE_NOTE
+from elbow_helper.features.agent.engine.capability_contract import compile_capability_call
 
 
 class CommandBridgeTests(unittest.IsolatedAsyncioTestCase):
@@ -35,6 +37,14 @@ class CommandBridgeTests(unittest.IsolatedAsyncioTestCase):
                   return_value={self.path: command}),
             patch("elbow_helper.features.agent.commands.registry.HELP_ENTRIES", (help_entry,)),
         )
+
+    def test_declared_member_options_keep_their_target_identity_in_the_runtime_scope(self):
+        adapter = replace(self.adapter, entity_options=(("target", "discord_member"),))
+        with self.patches[0], self.patches[1]:
+            tools, _ = build_command_tools(object(), (adapter,))
+        tool = next(iter(tools.values()))
+        scope = compile_capability_call(tool, {"target": 101})
+        self.assertEqual(scope["entities"], [{"kind": "discord_member", "field": "target", "key": 101}])
 
     async def test_missing_input_asks_without_running(self):
         with self.patches[0], self.patches[1]:

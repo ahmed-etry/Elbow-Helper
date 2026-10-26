@@ -3,6 +3,7 @@ from dataclasses import replace
 import json
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from elbow_helper.features.agent.conversation.context import (
     build_history_checkpoint, compile_context, estimate_tokens,
@@ -16,8 +17,10 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 
 def _context(turns=()):
+    member = SimpleNamespace(display_name="Tester", id=7, roles=[])
     return SimpleNamespace(
-        guild=SimpleNamespace(name="Brown Elbow"), member=SimpleNamespace(display_name="Tester", id=7),
+        guild=SimpleNamespace(name="Brown Elbow", get_member=lambda key: member if key == member.id else None),
+        member=member,
         source_message=SimpleNamespace(created_at=datetime(2026, 9, 17, tzinfo=timezone.utc)),
         state=AgentTurnState(authorized_history=tuple(turns)),
     )
@@ -50,6 +53,53 @@ def _compile(context, **changes):
 
 
 class AgentContextTests(unittest.TestCase):
+    def test_current_room_and_thread_identity_reach_planner_and_writer_intact(self):
+        context = _context()
+        category = SimpleNamespace(id=12, name='Cat clan')
+        parent = SimpleNamespace(id=13, name='bec-war-discussion', category=category)
+        context.source_message.channel = SimpleNamespace(id=14, name='Today\'s war',
+            parent=parent, category=None, topic='Use the clan plan')
+        compiled = _compile(context)
+        expected = {'channel_id': 14, 'name': "Today's war", 'topic': 'Use the clan plan',
+            'parent': {'channel_id': 13, 'name': 'bec-war-discussion'},
+            'category': {'channel_id': 12, 'name': 'Cat clan'}}
+        planner = compiled.prompt.split('<current_channel>\n', 1)[1].split('\n</current_channel>', 1)[0]
+        self.assertEqual(json.loads(planner), expected)
+        self.assertEqual(json.loads(compiled.answer_context)['current_channel'], expected)
+        self.assertEqual(context.state.source_channels, set())
+
+
+    def test_purpose_context_uses_registered_public_command_help(self):
+        context = _context()
+        context.bot = SimpleNamespace(tree=SimpleNamespace(get_commands=lambda **_: []))
+        registered = {"/plan": object(), "/grant coins": object()}
+        with patch("elbow_helper.features.agent.conversation.context.discover_commands", return_value=registered):
+            compiled = _compile(context)
+        expected = {"source": "/help", "commands": [
+            {"path": "/plan", "summary": "Get help planning an attack."}]}
+        self.assertEqual(json.loads(compiled.answer_context)["bot_command_overview"],
+                         {"commands": expected['commands']})
+        self.assertIn(json.dumps(expected), compiled.prompt)
+
+    def test_referential_and_named_followups_keep_all_recent_authorized_turns(self):
+        turns = tuple(replace(turn, record=replace(turn.record, question=question))
+                      for turn, question in zip((_turn(1), _turn(2), _turn(3)), (
+                          "List Alpha and Beta", "Use last season's data", "Check Alpha's accounts",
+                      )))
+        for question in ("what is the league of the second one?",
+                         "what's the TH of the last guy you listed?",
+                         "tell me about the other clan", "What is Alpha's league?",
+                         "What's another member's league?"):
+            with self.subTest(question=question):
+                compiled = _compile(_context(turns), question=question)
+                self.assertEqual(compiled.selected_request_ids, (1, 2, 3))
+                self.assertIn("Use last season's data", compiled.prompt)
+
+    def test_calibrated_estimate_keeps_structured_data_cost_above_prose(self):
+        prose = "A member can link several accounts. " * 100
+        structured = json.dumps([{"member_id": 123456789012345678, "tag": "#P0Y"}] * 100)
+        self.assertTrue(len(prose) / 6 < estimate_tokens(prose) < len(prose) / 3)
+        self.assertTrue(len(structured) / 4 < estimate_tokens(structured) < len(structured) / 2)
 
     def test_complete_lookup_records_survive_followups_beyond_old_excerpt_limits(self):
         records = tuple(json.dumps({"call_id": f"lookup-{index}", "tool": "synthetic_read",
@@ -74,7 +124,7 @@ class AgentContextTests(unittest.TestCase):
         turn = replace(turn, record=replace(turn.record, evidence=records))
         context = _context((turn,))
         baseline = _compile(_context((replace(turn, record=replace(turn.record, evidence=())),)))
-        compiled = _compile(context, target_tokens=baseline.estimated_input_tokens + 1500)
+        compiled = _compile(context, target_tokens=baseline.estimated_input_tokens + 700)
         carried = json.loads(compiled.prompt.split("<carried_evidence>\n")[1].split("\n</carried_evidence>")[0])
         self.assertGreater(len(carried), 0)
         self.assertLess(len(carried), len(records))
@@ -83,6 +133,7 @@ class AgentContextTests(unittest.TestCase):
         self.assertEqual(status["omitted_evidence_records"], len(records) - len(carried))
         self.assertEqual(status["evidence_omitted_from_requests"], [1])
         self.assertIn("Re-read", status["evidence_recovery"])
+        self.assertEqual(json.loads(compiled.answer_context)["history_status"], status)
         self.assertFalse(compiled.exceeds_target)
         self.assertEqual(context.state.authorized_history[0].record.evidence, records)
 
@@ -112,7 +163,7 @@ class AgentContextTests(unittest.TestCase):
         turn = replace(turn, record=replace(turn.record, evidence=("x" * 10_000,)))
         context = _context((turn,))
         baseline = _compile(context, target_tokens=20_000)
-        larger = _compile(_context((turn,)), target_tokens=20_000, system_prompt="x" * 35_000)
+        larger = _compile(_context((turn,)), target_tokens=20_000, system_prompt="x" * 90_000)
         self.assertGreater(larger.estimated_input_tokens - baseline.estimated_input_tokens, 0)
         self.assertEqual(larger.prompt.split("<carried_evidence>\n")[1].split("\n</carried_evidence>")[0], "[]")
 
@@ -146,7 +197,7 @@ class AgentContextTests(unittest.TestCase):
         context = _context(turns)
         context.state.authorized_checkpoint = checkpoint
         base = _compile(_context()).estimated_input_tokens
-        result = _compile(context, target_tokens=base + 14_000)
+        result = _compile(context, target_tokens=base + 6_000)
         self.assertGreaterEqual(result.omitted_turns, 8)
         self.assertIn(checkpoint.summary, result.prompt)
         self.assertEqual(context.state.source_channels, {100})
@@ -198,20 +249,23 @@ class AgentContextTests(unittest.TestCase):
                       for index in range(1, 5))
         context = _context(turns)
         base = _compile(_context()).estimated_input_tokens
-        result = _compile(context, target_tokens=base + 1200)
+        result = _compile(context, target_tokens=base + 600)
         history = result.prompt.split("<conversation_history>\n", 1)[1].split("\n</conversation_history>", 1)[0]
         records = [json.loads(line) for line in history.splitlines()]
         self.assertEqual([record["question"] for record in records], ["3", "4"])
         self.assertEqual(result.omitted_turns, 2)
         self.assertEqual(context.state.authorized_history, turns)
         self.assertEqual(context.state.source_channels, {3, 4})
-        self.assertLessEqual(result.estimated_input_tokens, base + 1200)
+        self.assertLessEqual(result.estimated_input_tokens, base + 600)
 
     def test_tools_and_local_context_reduce_history_allowance(self):
         turns = tuple(ConversationTurn("x" * 1000, frozenset()) for _ in range(20))
-        baseline = _compile(_context(turns), target_tokens=10_000)
+        target_tokens = _compile(_context()).estimated_input_tokens + 2_000
+        baseline = _compile(_context(turns), target_tokens=target_tokens)
         tool = AgentToolDefinition("lookup", "z" * 6000, {"type": "object", "properties": {}})
-        larger = _compile(_context(turns), tools=(tool,), local_context="y" * 4000, target_tokens=10_000)
+        larger = _compile(_context(turns), tools=(tool,), local_context="y" * 4000, target_tokens=target_tokens)
+        self.assertGreater(baseline.omitted_turns, 0)
+        self.assertLess(baseline.omitted_turns, len(turns))
         self.assertGreater(larger.omitted_turns, baseline.omitted_turns)
 
     def test_oversized_mandatory_request_is_retained_and_flagged(self):

@@ -1,4 +1,6 @@
 from dataclasses import replace
+from features.agent.engine.helpers import LegacyCatalogueMixin
+
 import json
 from types import SimpleNamespace
 import unittest
@@ -12,7 +14,7 @@ from tests.features.agent_plan_helpers import plan_call
 from . import test_agent_discord_messages as fixtures
 
 
-class CurrentChannelPostTests(unittest.IsolatedAsyncioTestCase):
+class CurrentChannelPostTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         await fixtures.DiscordMessageActionTests.asyncSetUp(self)
         self.context.source_message.channel = self.channel
@@ -23,6 +25,8 @@ class CurrentChannelPostTests(unittest.IsolatedAsyncioTestCase):
             author=SimpleNamespace(id=7, display_name="Synthetic member", name="synthetic.7"),
         )
         self.messages[55] = self.target
+        self.context.state.request_text = "Reply to <@7>."
+        self.context.source_message.raw_mentions = [7]
         self.channel.permissions_for = lambda _: SimpleNamespace(
             view_channel=True, send_messages=True, read_message_history=True,
         )
@@ -53,15 +57,13 @@ class CurrentChannelPostTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("Synthetic answer", "\n".join(logs.output))
                 self.assertIn("messages=[200]", "\n".join(logs.output))
 
-    async def test_unknown_source_reference_is_rejected_before_sending(self):
+    async def test_unknown_source_reference_is_dropped_without_losing_the_answer(self):
         result = await prepare_post(self.context, {
             "channel_id": 2, "text": "My recommendation: keep them. [[message:999]]",
         })
-        self.assertIn("error", result)
-        self.assertEqual(result["source_issue"], "message_not_read_this_turn")
-        self.assertEqual(result["missing_result"], "source")
-        self.context.send_reply.assert_not_awaited()
-        self.assertEqual(self.context.state.reply_delivery.posts, [])
+        self.assertTrue(result["delivered_as_reply"])
+        self.context.send_reply.assert_awaited_once_with(self.context, "My recommendation: keep them.")
+        self.assertEqual(len(self.context.state.reply_delivery.posts), 1)
 
     async def test_natural_recommendation_can_be_sent_without_mandatory_quotations(self):
         text = 'I wouldn\'t push for feedback. Saying "I am not very social" isn\'t a complaint.'

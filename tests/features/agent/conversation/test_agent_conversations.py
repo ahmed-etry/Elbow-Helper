@@ -235,7 +235,7 @@ class ConversationStoreTests(unittest.TestCase):
         conversation = ConversationStore().create(1, 10, 100)
         for index in range(100):
             conversation.append(ConversationTurn(str(index) + "x" * 1000, frozenset({10})))
-        selected = select_recent_turns(conversation.turns, token_budget=30_000)
+        selected = select_recent_turns(conversation.turns, token_budget=12_000)
         self.assertEqual(len(conversation.turns), 100)
         self.assertLess(len(selected), 100)
         self.assertLessEqual(sum(len(turn.text) + 1 for turn in selected), 60_000)
@@ -246,13 +246,13 @@ class ConversationStoreTests(unittest.TestCase):
         conversation = ConversationStore().create(1, 10, 100)
         for _ in range(100):
             conversation.append(ConversationTurn("small", frozenset({10})))
-        self.assertEqual(len(select_recent_turns(conversation.turns, token_budget=30_000)), 100)
+        self.assertEqual(len(select_recent_turns(conversation.turns, token_budget=12_000)), 100)
 
     def test_large_record_is_not_sliced_to_fit_model_context(self):
         conversation = ConversationStore().create(1, 10, 100)
         conversation.append(ConversationTurn("x" * 100_000, frozenset({10})))
         self.assertEqual(conversation.turns[0].text, "x" * 100_000)
-        self.assertEqual(select_recent_turns(conversation.turns, token_budget=30_000), ())
+        self.assertEqual(select_recent_turns(conversation.turns, token_budget=12_000), ())
 
     def test_retention_enforces_encoded_byte_budget(self):
         conversation = ConversationStore().create(1, 10, 100)

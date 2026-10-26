@@ -5,6 +5,19 @@ from __future__ import annotations
 import json
 
 
+def schema_variant(base, choice):
+    """Inherit typed properties when an object alternative only adds constraints."""
+    result = {**base, **choice}
+    if "required" in base or "required" in choice:
+        result["required"] = list(dict.fromkeys((*base.get("required", ()), *choice.get("required", ()))))
+    if "properties" in choice:
+        properties = dict(base.get("properties", {}))
+        for name, detail in choice["properties"].items():
+            properties[name] = schema_variant(properties.get(name, {}), detail)
+        result["properties"] = properties
+    return result
+
+
 def argument_errors(arguments, schema, dependencies, valid_value):
     properties = schema.get("properties", {})
     issues = []
@@ -12,6 +25,9 @@ def argument_errors(arguments, schema, dependencies, valid_value):
     unknown = set(arguments) - set(properties)
     if missing:
         issues.append("Missing fields: " + ", ".join(sorted(missing)))
+    alternatives = [set(choice.get("required", ())) for choice in schema.get("anyOf", ())]
+    if alternatives and not any(fields <= arguments.keys() for fields in alternatives):
+        issues.append("Supply one of: " + " or ".join(", ".join(sorted(fields)) for fields in alternatives))
     if unknown and schema.get("additionalProperties") is not True:
         issues.append("Unsupported fields: " + ", ".join(sorted(unknown)))
     for field, value in arguments.items():

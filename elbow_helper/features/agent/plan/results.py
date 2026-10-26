@@ -51,17 +51,41 @@ def model_view(
 ) -> dict[str, Any]:
     """Omit an unchanged retained page summary already included in this request."""
     data = dict(payload)
+    if data.get('kind') == 'family':
+        from ..families.model_view import family_model_view
+        data = family_model_view(data)
+    if data.get("kind") == "active_hibernation" and isinstance(data.get("records"), list):
+        # The ISO timestamp and status repeat started_ts (null means unavailable).
+        # Keep the retained report intact; only its model view needs compact rows.
+        data["records"] = [{key: row[key] for key in ("member_id", "started_ts")}
+                           for row in data["records"]]
+        data["included_fields"] = ["member_id", "started_ts"]
+    if "member_limits" in data and isinstance(data.get("accounts"), list):
+        data["accounts"] = [{key: value for key, value in row.items()
+                             if "poll" not in key} if isinstance(row, Mapping) else row
+                            for row in data["accounts"]]
+        if isinstance(data.get("history_coverage"), Mapping):
+            data["history_coverage"] = {key: value for key, value in data["history_coverage"].items()
+                                        if key != "reasons"}
+            data["history_coverage"]["message"] = data["member_limits"][0]
+        if isinstance(data.get("flags"), Mapping):
+            data["flags"] = dict(data["flags"])
+            data["flags"]["limits"] = [value for value in data["flags"].get("limits", ())
+                                       if "poll" not in value]
     report_id = data.get("report_id")
+    paging_fields = PAGING_FIELDS
+    if data.get('kind') == 'family':
+        paging_fields = paging_fields | {'kind', 'family', 'requester_id', 'selection', 'returned_rows'}
     if (summaries is not None and isinstance(report_id, str) and row_fields
             and ("next_offset" in data or "next_cursor" in data) and "error" not in data):
         summary = {key: value for key, value in data.items()
-                   if key not in PAGING_FIELDS and key not in row_fields}
+                   if key not in paging_fields and key not in row_fields}
         signature = json.dumps(summary, ensure_ascii=False, sort_keys=True, default=str,
                                separators=(",", ":"))
         sent = summaries.setdefault(report_id, set())
         if signature in sent:
             data = {key: value for key, value in data.items()
-                    if key in PAGING_FIELDS or key in row_fields}
+                    if key in paging_fields or key in row_fields}
         sent.add(signature)
     return compact_result(data)
 
@@ -103,6 +127,9 @@ def model_result(
     truncated: bool = False,
 ) -> dict[str, Any]:
     data = dict(payload)
+    member_limits = coverage_limits(data)
+    if member_limits:
+        data["member_limits"] = member_limits
     existing = data.pop("flags", {})
     if not isinstance(existing, Mapping):
         data["data_flags"] = existing
@@ -124,7 +151,7 @@ def model_result(
     truncated = truncated or data.get("truncated") is True or existing.get("truncated") is True
     complete = not truncated and error is None and existing.get("status") not in ("failed", "partial", "refused") and all(
         data.get(field) is not False for field in (
-            "complete", "complete_snapshot", "coverage_complete", "search_complete", "search_is_exhaustive",
+            "complete", "complete_snapshot", "count_complete", "selection_complete", "coverage_complete", "search_complete", "search_is_exhaustive",
         )
     ) and data.get("status") != "partial" and all(
         data.get(field) is None for field in ("next_offset", "next_cursor")
@@ -139,6 +166,38 @@ def model_result(
         flags["limits"] = sorted(set(limits))
     data["flags"] = flags
     return data
+
+
+def coverage_limits(data):
+    """Expose dates and missing evidence instead of collection mechanics."""
+    limits = []
+    coverage = data.get("history_coverage")
+    if isinstance(coverage, Mapping):
+        limits.append("No ranked battle history is available for this period."
+                      if coverage.get("status") == "empty" else
+                      "Some ranked battles may be missing from this period.")
+        for row in data.get("accounts", ()):
+            if not isinstance(row, Mapping):
+                continue
+            dates = [day["date"] for day in row.get("daily", ())
+                     if isinstance(day, Mapping) and isinstance(day.get("date"), str)]
+            if dates:
+                limits.append({"player_tag": row.get("player_tag"),
+                               "available_battles_from": min(dates),
+                               "available_battles_through": max(dates)})
+    for item in data.get("items", ()) if isinstance(data.get("items"), list) else ():
+        coverage = item.get("coverage", {}) if isinstance(item, Mapping) else {}
+        if not isinstance(coverage, Mapping):
+            continue
+        available = coverage.get("available_range", {})
+        if not isinstance(available, Mapping):
+            continue
+        if available.get("oldest") and available.get("newest"):
+            limits.append({"player_tag": item.get("tag"),
+                           "history_from": available["oldest"],
+                           "history_through": available["newest"],
+                           "message": "Earlier battles are not available here."})
+    return limits
 
 
 def result_handler(handler):

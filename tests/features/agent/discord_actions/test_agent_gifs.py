@@ -1,5 +1,6 @@
 """GIF search uses a configured application client and returns page links."""
 import unittest
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from elbow_helper.infrastructure.gifs import GiphyClient
@@ -7,6 +8,7 @@ from elbow_helper.core.settings import RuntimeSettings
 from elbow_helper.features.agent.engine.registry import build_agent_tools
 from elbow_helper.features.agent.discord_actions.gifs import find_gif
 from elbow_helper.features.agent.plan.format import system_instructions
+from features.agent.engine.test_agent_service import _context
 
 
 class GifTests(unittest.IsolatedAsyncioTestCase):
@@ -37,12 +39,15 @@ class GifTests(unittest.IsolatedAsyncioTestCase):
     async def test_conditional_registration_prompt_and_no_result(self):
         disabled = build_agent_tools(GiphyClient(None))
         enabled = build_agent_tools(GiphyClient("synthetic"))
-        self.assertNotIn("find_gif", disabled)
+        self.assertIn("find_gif", disabled)
         self.assertIn("find_gif", enabled)
-        self.assertIn("never paste GIF links", enabled["find_gif"].definition.description)
-        self.assertIn("alone or with a few words", enabled["find_gif"].definition.description)
-        self.assertIn("A fitting GIF can be the whole reply", system_instructions(enabled))
-        context = SimpleNamespace(bot=SimpleNamespace(
+        self.assertIn("images are sent without text", enabled["find_gif"].definition.description)
+        self.assertIn("visual reaction beats text", enabled["find_gif"].definition.description)
+        self.assertIn("never paste GIF links", enabled["find_gif"].definition.usage_note)
+        self.assertIn("Social replies name a library meme in submit_social_reply", enabled["find_gif"].definition.usage_note)
+        self.assertNotIn("paces", enabled["find_gif"].definition.usage_note)
+        self.assertIn("A selected image is the whole reply", system_instructions(enabled, social=True))
+        context = replace(_context(), bot=SimpleNamespace(
             gif_client=SimpleNamespace(search_candidates=AsyncMock(return_value=[])),
         ))
         self.assertEqual(await find_gif(context, {"query":"empty"}), {"error":"No GIF found."})

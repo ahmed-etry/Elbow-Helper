@@ -49,9 +49,9 @@ def scenarios():
     policy = planned("search_approved_knowledge", {"query": "Example rules"}, "rules")
     return (
         ("count", "How many members are in #P0Y?", "", [read, "2"], "2"),
-        ("extraction", "Extract names from #P0Y, names only", "", [read], "Alpha\nBeta"),
+        ("extraction", "Extract names from #P0Y, names only", "", [read, "Alpha\nBeta"], "Alpha\nBeta"),
         ("correction", "No, names only for #P0Y", "Earlier request asked for names without commentary.",
-         [read], "Alpha\nBeta"),
+         [read, "Alpha\nBeta"], "Alpha\nBeta"),
         ("multi-source", "Compare the clan roster with the activity rules", "", [read, policy,
          "The roster lists Alpha and Beta. Activity decisions still need war evidence."],
          "The roster lists Alpha and Beta. Activity decisions still need war evidence."),
@@ -68,9 +68,18 @@ class MeasuredModel:
         self.rounds = []
         self.history = ""
         self.tools = ()
+        self.system_characters = 0
+        self.router = None
+        self.is_routing = False
 
     def create_agent_session(self, **request):
+        from elbow_helper.features.agent.engine.routing import ROUTE_INSTRUCTION
+        if request["system_prompt"] == ROUTE_INSTRUCTION and not self.is_routing:
+            self.router = MeasuredModel([AgentStep("research", (), AgentUsage())])
+            self.router.is_routing = True
+            return self.router.create_agent_session(**request)
         self.history = request["system_prompt"] + "\n" + request["prompt"]
+        self.system_characters = len(request["system_prompt"])
         self.tools = request["tools"]
         return self
 
@@ -81,9 +90,10 @@ class MeasuredModel:
                       max_output_tokens=None, continuation_instruction=None):
         self.history += json.dumps([asdict(result) for result in results], ensure_ascii=False)
         self.history += continuation_instruction or ""
-        prompt = estimate_tokens(self.history + json.dumps(
+        serialized_input = self.history + json.dumps(
             [asdict(tool) for tool in self.tools], ensure_ascii=False,
-        )) + 512
+        )
+        prompt = estimate_tokens(serialized_input) + 512
         step = self.steps.pop(0)
         if isinstance(step, str):
             step = AgentStep(step, (), AgentUsage())
@@ -94,6 +104,7 @@ class MeasuredModel:
         assert completion <= max_output_tokens
         self.history += serialized
         self.rounds.append({"input": prompt, "output": completion,
+                            "input_characters": len(serialized_input),
                             "effort": reasoning_effort.value})
         return replace(step, usage=AgentUsage(prompt, completion))
 
@@ -132,10 +143,14 @@ async def measure():
         assert not model.steps or (name == "count" and model.steps == [expected]), (
             name, "unexpected unused scripted responses",
         )
+        all_rounds = [*(model.router.rounds if model.router else ()), *model.rounds]
         measurements[name] = {
-            "input_tokens_estimated": sum(item["input"] for item in model.rounds),
-            "output_tokens_estimated": sum(item["output"] for item in model.rounds),
-            "rounds": len(model.rounds), "first_effort": model.rounds[0]["effort"],
+            "system_characters": model.system_characters,
+            "first_input_characters": model.rounds[0]["input_characters"],
+            "input_characters": sum(item["input_characters"] for item in all_rounds),
+            "input_tokens_estimated": sum(item["input"] for item in all_rounds),
+            "output_tokens_estimated": sum(item["output"] for item in all_rounds),
+            "rounds": len(all_rounds), "first_effort": model.rounds[0]["effort"],
             "answer": answer,
         }
     return measurements

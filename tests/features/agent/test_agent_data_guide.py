@@ -57,6 +57,6 @@ class DataGuideTests(unittest.TestCase):
                 if source.state_name:
                     self.assertIn("state." + source.state_name + " [", guide)
             self.assertLessEqual(estimate_tokens(guide), 10_000)
-            self.assertNotIn(
+            self.assertIn(
                 "state.cwl_router", DataGuide(paths).for_levels(set()).split("Not available")[0],
             )

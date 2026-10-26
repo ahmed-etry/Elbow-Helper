@@ -41,7 +41,7 @@ def _context(export_directory: str):
         ),
     )
     guild.get_channel_or_thread = lambda value: channel if value == 100 else None
-    return AgentRequestContext(
+    return AgentRequestContext(private_pass=True,
         bot=SimpleNamespace(
             fetch_channel=AsyncMock(return_value=None),
             local_exports=LocalExportStore(Path(export_directory)),

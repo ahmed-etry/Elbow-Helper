@@ -261,6 +261,7 @@ class PreviewDetailTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(item.disabled for item in view.children))
 
     async def test_preparation_provenance_is_attached_without_widening_answer_state(self):
+        self.context = replace(self.context, private_pass=True)
         self.context.state.proposed_changes.clear()
 
         async def prepare(context, arguments):
@@ -280,27 +281,17 @@ class PreviewDetailTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(proposal.preview.detail_sources, frozenset({20}))
         self.assertEqual(proposal.preview.detail_access, frozenset({ACCESS_LEAD}))
 
-    async def test_model_authored_preview_keeps_private_title_access(self):
+    async def test_model_cannot_reuse_out_of_scope_titles_in_preview(self):
+        from elbow_helper.features.agent.access import AgentAccessLost
         self.context.state.proposed_changes.clear()
         self.context.state.knowledge_title_access = {"recruiter"}
-        action = replace(self.action, preview=replace(
-            self.action.preview, details=("Returning applicants",),
-            detail_sources=frozenset(), detail_access=frozenset(),
-        ))
-
-        async def prepare(context, arguments):
-            context.state.proposed_changes.append(action)
-            return {"status": "confirmation_required"}
-
-        await AgentService.execute_tool(
-            name="synthetic_change", handler=prepare, arguments={}, context=self.context,
-            action_class=ActionClass.CHANGE,
-        )
-        await prepare_preview(self.context)
-        proposal, = self.context.state.proposed_changes
-        self.assertEqual(proposal.preview.detail_access, {"recruiter"})
-        self.assertTrue(proposal.details_hidden)
-        self.assertFalse(self.context.state.required_access)
+        prepare = AsyncMock()
+        with self.assertRaises(AgentAccessLost):
+            await AgentService.execute_tool(name="synthetic_change", handler=prepare,
+                                           arguments={}, context=self.context,
+                                           action_class=ActionClass.CHANGE)
+        prepare.assert_not_awaited()
+        self.assertFalse(self.context.state.proposed_changes)
 
     def test_unfinished_report_contains_labels_and_no_preview_text(self):
         report = AgentActionRunner._report({"steps": [{

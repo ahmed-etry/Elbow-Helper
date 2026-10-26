@@ -1,8 +1,11 @@
 """Anonymous reproductions of gaps found by independent repair verification."""
 
 from dataclasses import replace
+from features.agent.engine.helpers import LegacyCatalogueMixin
+
 import json
 from types import SimpleNamespace
+from elbow_helper.features.agent.wording import AGENT_ANSWER_UNFINISHED
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -11,16 +14,15 @@ from elbow_helper.features.agent.conversation.context import compile_context
 from elbow_helper.features.agent.conversation.state import ConversationRecord, ConversationTurn
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin
 from elbow_helper.features.agent.engine.service import AgentService
-from elbow_helper.features.agent.wording import FAILURE_MESSAGE
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from features.agent.engine import test_repair_conversations as repairs
 from features.agent.engine.test_agent_plan_flow import _Model, _Session
 
 
-class VerificationFixTests(unittest.IsolatedAsyncioTestCase):
+class VerificationFixTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
     context = repairs.RepairConversationTests.context
 
-    def test_named_and_pronoun_followups_keep_the_same_correction_without_another_private_case(self):
+    def test_named_and_pronoun_followups_keep_all_authorized_cases_and_their_access(self):
         correction = "I asked about competitive promotion, not CWL. Use regular wars and same TH or +1 triples."
 
         def turn(identity, name, question, answer, *, restricted=False):
@@ -48,12 +50,12 @@ class VerificationFixTests(unittest.IsolatedAsyncioTestCase):
         context = self.context(lambda *_a, **_kw: None)
         context.state.authorized_history = (*relevant, *unrelated)
         compiled = compile_context(question="Does Example meet that bar?", local_context="", context=context, tools=())
-        self.assertEqual(compiled.selected_request_ids, (1, 2))
+        self.assertEqual(compiled.selected_request_ids, (1, 2, 3, 4))
         self.assertIn(correction, compiled.prompt)
-        self.assertNotIn("private_case_marker", compiled.prompt)
-        self.assertNotIn("private_correction_marker", compiled.prompt)
-        self.assertEqual(context.state.source_channels, {91})
-        self.assertFalse(context.state.required_access)
+        self.assertIn("private_case_marker", compiled.prompt)
+        self.assertIn("private_correction_marker", compiled.prompt)
+        self.assertEqual(context.state.source_channels, {91, 92})
+        self.assertEqual(context.state.required_access, {"lead"})
 
     async def test_identical_semantic_member_errors_stop_before_a_third_plan(self):
         context = self.context(lambda *_a, **_kw: None)
@@ -67,7 +69,7 @@ class VerificationFixTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(session.calls[-1][1])
         error = json.loads(session.calls[1][0][0].content)["results"]["members"]
         self.assertEqual(error["cause"], "invalid_arguments")
-        self.assertEqual(set(error["invalid_fields"]), {"member_ids", "role_ids"})
+        self.assertEqual(set(error["invalid_fields"]), {"member_ids", "role_ids", "sort"})
         self.assertIn("member_ids", error["argument_schema"]["properties"])
 
     async def test_additional_key_private_signal_without_withheld_evidence_never_reaches_delivery(self):
@@ -79,9 +81,10 @@ class VerificationFixTests(unittest.IsolatedAsyncioTestCase):
         delivery = AgentDeliveryMixin()
         delivery.bot = context.bot
         await delivery.send_response(context.source_message, answer, None, context=context)
-        self.assertEqual(context.source_message.reply.await_args.args[0], FAILURE_MESSAGE)
+        self.assertEqual(context.source_message.reply.await_args.args[0],
+                         AGENT_ANSWER_UNFINISHED)
         self.assertNotIn("needs_restricted_knowledge", context.source_message.reply.await_args.args[0])
-        self.assertFalse(context.state.private_knowledge_used)
+        self.assertFalse(context.state.scope_audit.offered)
         self.assertEqual(len(session.calls), 1)
 
     async def test_semantic_errors_allow_a_valid_correction_and_retain_independent_results(self):
@@ -174,6 +177,7 @@ class VerificationFixTests(unittest.IsolatedAsyncioTestCase):
         delivery = AgentDeliveryMixin()
         delivery.bot = context.bot
         await delivery.send_response(context.source_message, answer, None, context=context)
-        self.assertEqual(context.source_message.reply.await_args.args[0], FAILURE_MESSAGE)
+        self.assertEqual(context.source_message.reply.await_args.args[0],
+                         AGENT_ANSWER_UNFINISHED)
         self.assertNotIn("internal_reason_marker", answer)
         self.assertEqual(len(session.calls), 2)

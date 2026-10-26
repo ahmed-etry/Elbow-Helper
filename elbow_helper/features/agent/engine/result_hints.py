@@ -22,20 +22,19 @@ from ..discord_actions.polls import PollSnapshot
 from ..discord_actions.audit_log import AuditSnapshot
 from ..datasets.clash import (
     BATTLE_LOG_FIELDS, CLAN_FIELDS, CLAN_MEMBER_FIELDS, CWL_CLAN_FIELDS, CWL_GROUP_FIELDS, CWL_MEMBER_FIELDS,
-    HERO_FIELDS, LEAGUE_FIELDS, RANKED_LEAGUE_FIELDS, PLAYER_CLAN_FIELDS, PLAYER_FIELDS, WAR_CLAN_FIELDS,
-    WAR_LOG_FIELDS, WAR_SIDE_FIELDS,
+    LEAGUE_FIELDS, RANKED_LEAGUE_FIELDS, PLAYER_CLAN_FIELDS, PLAYER_FIELDS, WAR_CLAN_FIELDS,
+    WAR_FIELDS, WAR_LOG_FIELDS, WAR_MEMBER_FIELDS, WAR_SIDE_FIELDS,
 )
 from ..plan.results import LIMIT_FIELDS
 from .result_fields import format_returns, names, result_fields
 
 
-MESSAGE = names("message_id,channel_id,channel,author_id,author,timestamp,content,source")
-CONTEXT_MESSAGE = names("message_id,author_id,author,timestamp,content,source,is_requested_message")
+MESSAGE = names("message_id,channel_id,channel,author_id,author,timestamp,content,source,reply_to_message_id?")
+CONTEXT_MESSAGE = names("message_id,author_id,author,timestamp,content,source,is_requested_message,reply_to_message_id?")
 CLASH_SUMMARIES = {
     "player": {**dict.fromkeys(PLAYER_FIELDS, ""), "clan": dict.fromkeys(PLAYER_CLAN_FIELDS, ""),
                "league": dict.fromkeys(LEAGUE_FIELDS, ""),
-               "leagueTier": dict.fromkeys(RANKED_LEAGUE_FIELDS, ""),
-               "heroes": [dict.fromkeys(HERO_FIELDS, "")]},
+               "leagueTier": dict.fromkeys(RANKED_LEAGUE_FIELDS, "")},
     "clan": {**dict.fromkeys(CLAN_FIELDS, ""), "warLeague": dict.fromkeys(LEAGUE_FIELDS, ""),
              "capitalLeague": dict.fromkeys(LEAGUE_FIELDS, ""),
              "memberList": [dict.fromkeys(CLAN_MEMBER_FIELDS, "")]},
@@ -47,10 +46,18 @@ CLASH_SUMMARIES = {
                            "opponent": dict.fromkeys(WAR_SIDE_FIELDS, "")}]},
     "battle_log": {"items": [dict.fromkeys(BATTLE_LOG_FIELDS, "")]},
 }
+for _war_kind in ("current_war", "cwl_war"):
+    CLASH_SUMMARIES[_war_kind] = {
+        **dict.fromkeys(WAR_FIELDS, ""),
+        **{side: {**dict.fromkeys((*WAR_CLAN_FIELDS, "clanLevel"), ""),
+                  "members": [dict.fromkeys(WAR_MEMBER_FIELDS, "")]}
+           for side in ("clan", "opponent")},
+    }
 HISTORY_COVERAGE = names(
     "requested_after,requested_before,window_after_message_id,snapshot_before_message_id,"
     "page_before_message_id,scanned_messages_in_window,returned_messages,next_cursor,"
-    "reached_requested_start,covers_currently_available_messages_only,scanned_count,matched_count"
+    "reached_requested_start,covers_currently_available_messages_only,scanned_count,matched_count,"
+    "pages_scanned,stopped_at_message_budget"
 )
 SEARCH_COVERAGE = names(
     "offset,requested_page_size,returned_indexed_matches,returned_accessible_matches,"
@@ -190,6 +197,7 @@ REPORT_FIELDS = {
 
 ASS = result_fields(CwlAssWarsSnapshot)
 ASS["players"] = ASS.pop("rows")
+ASS["ranking"] = names("account_count,complete,text")
 ASS["attack_sample"] = [names(
     "war_id,player_tag,player_name,attack_order,defender_tag,defender_townhall,"
     "defender_map_position,stars,destruction,clan_code"
@@ -205,6 +213,7 @@ RESULT_FIELDS = {
         "source_coverage?": "{records:{window,record_count,member_count,members[],note}}",
     },
     "read_clash": {"items": [{**names("tag,status"), "data?": "{endpoint fields}",
+                               "member_cohort?": "{clan_code,basis,status,excluded_fields,instruction}",
                                **names("observed_at?,reused?,row_counts?,truncated?"),
                                "coverage?": "{rolling history scope, date ranges, counts, selection}"}],
                    "observed_at": ""},
@@ -222,11 +231,12 @@ RESULT_FIELDS = {
     "find_discord_channels": {"channels": [names("channel_id,name")],
                               **names("matched_count,truncated")},
     "find_discord_members": {
-        "query": "", "members": [names("member_id,display_name,username,joined_at,mention,roles")],
+        "query": "", "members": [names("member_id,display_name,username?,joined_at,mention,roles")],
     },
     "read_discord_members": {
         **names("total_members,missing_member_ids,offset,limit,next_offset"),
-        "members": [{**names("member_id,display_name,username,joined_at,bot"),
+        "cohort?": names("source,report_id,observed_at,record_count,unknown_join_member_ids"),
+        "members": [{**names("member_id,display_name,username?,joined_at,bot"),
                      "roles?": [names("role_id,name")]}],
     },
     "read_linked_accounts": {
@@ -234,6 +244,8 @@ RESULT_FIELDS = {
         "accounts": [names("member_id,player_tag,player_name")],
     },
     "read_cohort_leagues": {
+        **names("returned_account_count,remaining_account_count,instruction"),
+        "next_page_arguments": "{cohort_report_id,after?,before?,league?,limit?,offset} or null",
         **names("source,cohort_report_id,cohort,after,before,metric,league,member_ids,member_count,account_count,unlinked_member_ids,unknown_account_tags,matching_members_in_page,matching_accounts_in_page,offset,next_offset,complete"),
         "accounts": [{**names("member_id,player_tag,player_name,status,ranked_league,legacy_league,trophies,best_trophies,matches"),
                       "leagueTier": dict.fromkeys(RANKED_LEAGUE_FIELDS, "")}],
@@ -259,7 +271,9 @@ RESULT_FIELDS = {
         **names("channel_id,channel"), "messages": [MESSAGE], "coverage": HISTORY_COVERAGE,
     },
     "read_message_context": {
-        **names("channel_id,channel,requested_message_id"), "messages": [CONTEXT_MESSAGE],
+        **names("channel_id,channel,requested_message_id,requested_message_found"),
+        "messages": [CONTEXT_MESSAGE],
+        "reply_target?": names("message_id,status,author_id?,author?,timestamp?,content?,source?,reply_to_message_id?"),
     },
     "read_discord_research_job": {
         **JOB, "matched_count": "", "messages": [MESSAGE], "next_offset": "",
@@ -400,7 +414,7 @@ RESULT_FIELDS["read_member_history"] = {**names("member_id,channel_id,search_is_
 RESULT_FIELDS["read_ranked_stats"] = {"accounts": [result_fields(RankedAccount)]}
 
 RESULT_FIELDS = {
-    name: shape if name in ("read_clash", "read_membership_history", "search_approved_knowledge")
+    name: shape if name in ("read_clash", "read_membership_history", "search_approved_knowledge", "read_message_context")
     else _returned_fields(shape) for name, shape in RESULT_FIELDS.items()
 }
 REPORT_FIELDS = {kind: _returned_fields(shape) for kind, shape in REPORT_FIELDS.items()}
@@ -413,6 +427,8 @@ for _role_change in ('add_discord_roles', 'remove_discord_roles'):
     RESULT_FIELDS[_role_change] = {
         **names('status,role_id,role_name,requested_has_role'),
         'members': [names('member_id,display_name,has_role')]}
+from ..families.shapes import RESULT_FIELDS as FAMILY_RESULT_FIELDS
+RESULT_FIELDS.update(FAMILY_RESULT_FIELDS)
 RETURN_HINTS = {name: format_returns(shape) for name, shape in RESULT_FIELDS.items()}
 
 

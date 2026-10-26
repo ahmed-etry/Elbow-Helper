@@ -68,7 +68,7 @@ class RoleVisibilityTests(unittest.IsolatedAsyncioTestCase):
                 expected.add("lead")
             cases.append(((role,), expected))
         for identifiers, expected in cases:
-            for arguments in ({}, {"query": "Reference"}):
+            for arguments in ({}, {"query": "Reference", "limit": 8}):
                 with self.subTest(roles=identifiers, arguments=arguments):
                     self.set_roles(identifiers)
                     result = await search_approved_knowledge(self.context, arguments)
@@ -126,7 +126,7 @@ class RoleVisibilityTests(unittest.IsolatedAsyncioTestCase):
                     for level in VISIBILITIES:
                         self.assertEqual(f"Reference {level} body" in prompt.core,
                                          level == "public" or level in profile)
-                        self.assertEqual(f"Topic {level}" in prompt.index, level == "public")
+                        self.assertEqual(f"- Topic {level}" in prompt.index.splitlines(), level == "public" or level in profile)
                     self.assertIs(prompt, catalog.prompt(reversed(profile)))
 
     async def test_service_prepares_department_prompts_and_retains_each_requirement(self):
@@ -138,7 +138,7 @@ class RoleVisibilityTests(unittest.IsolatedAsyncioTestCase):
         service = AgentService(model)
         for identifiers, expected in (
             *((roles, {level}) for level, roles in DEPARTMENTS.items()),
-            (LEAD_PLUS, set(DEPARTMENTS)),
+            (LEAD_PLUS, set(DEPARTMENTS) | {"lead", "lead_plus"}),
             ((next(iter(RECRUITERS)), next(iter(EXAMINERS))), {"recruiter", "examiner"}),
         ):
             with self.subTest(expected=expected):
@@ -146,9 +146,10 @@ class RoleVisibilityTests(unittest.IsolatedAsyncioTestCase):
                 self.context.state.knowledge_channel_access = await channel_knowledge_access(self.context)
                 service._start_flow(question="Analyze community processes", local_context="",
                                     context=self.context, conversation_history="")
-                prompt = model.create_agent_session.call_args.kwargs["system_prompt"]
+                prompt = model.create_agent_session.call_args.kwargs["prompt"]
                 for level in DEPARTMENTS:
-                    self.assertEqual(f"Reference {level} body" in prompt, level in expected)
+                    self.assertEqual(f"- Topic {level}" in prompt, level in expected)
+                    self.assertNotIn(f"Reference {level} body", prompt)
                 self.assertEqual(self.context.state.required_access, expected)
                 self.member.roles = [SimpleNamespace(id=AGENT_TESTER_ROLE_ID)]
                 with self.assertRaises(AgentAccessLost):

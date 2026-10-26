@@ -66,7 +66,8 @@ class OperatorDebugTests(unittest.IsolatedAsyncioTestCase):
         call, = record["tool_calls"]
         self.assertEqual(call["arguments"], {"value": 7})
         self.assertEqual(call["result"]["evidence"], "Synthetic restricted evidence")
-        self.assertEqual([round_["effort"] for round_ in record["rounds"]], ["high", "high", "high"])
+        self.assertEqual([round_["effort"] for round_ in record["rounds"]], ["low", "high", "high", "low"])
+        self.assertEqual(record["rounds"][0]["phase"], "routing")
         self.assertEqual(record["rounds"][-1]["usage"], {
             "prompt_tokens": 100, "completion_tokens": 20,
             "prompt_cache_hit_tokens": 30, "prompt_cache_miss_tokens": 70})
@@ -123,7 +124,9 @@ class OperatorDebugTests(unittest.IsolatedAsyncioTestCase):
                 question="Synthetic question", local_context="", context=self.context)
         record, = await self.records()
         self.assertEqual(record["status"], "failed")
-        self.assertEqual(record["rounds"], [])
+        self.assertEqual(record["rounds"][0]["phase"], "routing")
+        self.assertEqual(record["rounds"][0]["outcome"], "failed")
+        self.assertIsNone(record["rounds"][0]["usage"])
 
     async def test_cancelled_round_is_archived_without_invented_token_usage(self):
         session = _Session([], [])
@@ -133,7 +136,7 @@ class OperatorDebugTests(unittest.IsolatedAsyncioTestCase):
                 question="Synthetic question", local_context="", context=self.context)
         record, = await self.records()
         self.assertEqual(record["status"], "cancelled")
-        self.assertIsNone(record["rounds"][0]["usage"])
+        self.assertIsNone(record["rounds"][-1]["usage"])
 
     async def test_version_one_migrates_and_only_old_diagnostics_are_pruned(self):
         legacy = Path(self.directory.name) / "legacy.sqlite3"

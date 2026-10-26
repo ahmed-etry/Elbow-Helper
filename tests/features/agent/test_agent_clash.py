@@ -80,7 +80,7 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
                 "elbow_helper.features.agent.datasets.clash.budgets.TOOL_TIMEOUT_SECONDS", 1.02,
             ):
                 result = await read_clash(self.context, {"kind": kind, "tags": ["#P0", "#P2"]})
-                self.assertEqual([item["status"] for item in result["items"]], ["ok", "unavailable"])
+                self.assertEqual([item["status"] for item in result["items"]], ["ok", "timeout"])
 
     async def test_battle_log_is_registered_and_uses_account_tags_without_clan_aliases(self):
         kinds = clash_tools()[0].definition.parameters["properties"]["kind"]["enum"]
@@ -88,9 +88,36 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
         with patch("elbow_helper.features.agent.datasets.clash.CLANS", {"P0": SimpleNamespace(tag="#Q0")}):
             result = await read_clash(self.context, {"kind": "battle_log", "tags": ["p0"]})
         self.assertEqual(self.client.get.await_args.args[0], "/players/%23P0/battlelog")
-        self.assertEqual(self.client.get.await_args.kwargs["attempts"], 1)
+        self.assertEqual(self.client.get.await_args.kwargs["attempts"], 2)
         self.assertEqual(result["items"][0]["tag"], "#P0")
         self.assertEqual(self.require_access.await_count, 2)
+
+    async def test_roster_get_retries_transient_failure_without_losing_successful_siblings(self):
+        from elbow_helper.infrastructure.clash import ClashClient
+        from core.test_clash_infrastructure import _FakeResponse, _FakeSession
+        client = ClashClient('synthetic-key')
+        session = _FakeSession([_FakeResponse(503, {}), _FakeResponse(200, {
+            'tag': '#P0', 'members': 1, 'memberList': [{'tag': '#Q0'}]})])
+        client._session = session
+        self.context.bot.clash_client = client
+        try:
+            result = await read_clash(self.context, {'kind': 'clan', 'tags': ['#P0'], 'detail': 'full'})
+        finally:
+            await client.close()
+        self.assertEqual(result['items'][0]['status'], 'ok')
+        self.assertEqual(result['items'][0]['data']['members'], 1)
+        self.assertEqual(len(session.urls), 2)
+
+    async def test_failed_task_is_explicit_and_does_not_hide_other_clan_results(self):
+        async def get(path, **kwargs):
+            if path.endswith('%23P2'):
+                raise ValueError('Synthetic transport failure')
+            return SimpleNamespace(ok=True, status=200, payload={'members': 1})
+        self.client.get.side_effect = get
+        result = await read_clash(self.context, {'kind': 'clan', 'tags': ['#P0', '#P2']})
+        self.assertEqual(result['items'][0]['status'], 'ok')
+        self.assertEqual(result['items'][1]['error_type'], 'ValueError')
+        self.assertEqual(result['flags']['status'], 'partial')
 
     async def test_battle_log_summary_preserves_modes_directions_losses_and_timestamps(self):
         entries = [{"battleType": mode, "attack": attack, "stars": 0,
@@ -153,7 +180,7 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
             "memberList": [{"tag": "#P2", "name": "Synthetic", "secret": 2}],
         })
         self.assertNotIn("secret", result)
-        self.assertEqual(len(result["description"]), 300)
+        self.assertEqual(len(result["description"]), 400)
         self.assertNotIn("secret", result["memberList"][0])
         self.assertEqual(
             summary("capital_raids", {"items": [{

@@ -1,16 +1,21 @@
-"""Numeric answers use tool numerators and denominators, without generated extras."""
+"""Supported numeric checks compare typed measurements without replacing prose."""
 
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
-from elbow_helper.features.agent.engine.factual_answers import narrow_answer
-from elbow_helper.features.agent.engine.grounding import GROUNDING_GAPS, GroundingError
+from elbow_helper.features.agent.engine.factual_answers import numeric_conflicts, clan_count_tag
 from elbow_helper.features.agent.datasets.findings import metrics
 from elbow_helper.features.agent.engine.flow import AnswerFlow
 from features.agent.engine.test_agent_plan_flow import _context
 from features.agent.discord_actions import test_current_channel_posts as posts
 from elbow_helper.features.agent.discord_actions.messages import prepare_post
+from elbow_helper.infrastructure.ai import AgentStep, AgentUsage, AgentToolDefinition
+from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
+from elbow_helper.features.agent.engine.service import AgentService
+from elbow_helper.features.agent.models import RegisteredAgentTool
+from unittest.mock import patch
+from features.agent.engine.test_agent_plan_flow import _Model, _Session, _model_step, _plan, _step
 
 
 def clan(count=48):
@@ -29,73 +34,61 @@ def sample():
             "requested_before": "2026-10-15T00:00:00+00:00"}}}
 
 
-class FactualAnswerTests(unittest.TestCase):
-    def test_count_is_only_validated_field(self):
-        self.assertEqual(narrow_answer("How many members in #P0?", {"read": clan()}), "48")
-        for value in (True, -1, "48", None):
-            with self.subTest(value=value), self.assertRaises(GroundingError):
-                narrow_answer("Member count?", {"read": clan(value)})
-
-    def test_ambiguous_missing_and_wrong_account_counts_are_rejected(self):
-        for evidence in ({}, {"one": clan(), "two": clan(49)},
-                         {"read": {**clan(), "error": "denied"}}):
-            with self.subTest(evidence=evidence), self.assertRaises(GroundingError):
-                narrow_answer("Member count?", evidence)
-        with self.assertRaises(GroundingError):
-            narrow_answer("How many members in #P2?", {"read": clan()})
-
-    def test_average_is_rendered_from_ratio_with_coverage(self):
-        payload = sample()
-        payload["aggregate"]["average_stars"]["display"] = "2.34"
-        payload["aggregate"]["average_stars"]["value"] = 2.34
-        answer = narrow_answer("Average stars, triple rate and average destruction for ranked defenses?",
-                               {"read": payload})
-        self.assertIn("2.3333", answer)
-        self.assertIn("33.33%", answer)
-        self.assertIn("90.00%", answer)
-        self.assertIn("3 measured battles", answer)
-        self.assertIn("full history is not established", answer)
-        self.assertIn("Unavailable accounts: 1", answer)
-        self.assertIn("2026-10-10", answer)
-
-    def test_wrong_selection_and_raw_rows_are_not_aggregates(self):
-        for question, payload in (("Average stars for ranked attacks?", sample()),
-                                  ("Average stars?", {key: value for key, value in sample().items()
-                                                      if key != "aggregate"})):
-            with self.subTest(question=question), self.assertRaises(GroundingError):
-                narrow_answer(question, {"read": payload})
-
-    def test_missing_metric_does_not_erase_other_measured_results(self):
-        for invalid in ({}, None, {"numerator": True, "denominator": 3}):
-            with self.subTest(invalid=invalid):
-                payload = sample()
-                payload["aggregate"]["triple_rate_percent"] = invalid
-                answer = narrow_answer("Average stars and triple rate for ranked defenses?", {"read": payload})
-                self.assertIn("Average stars: 2.3333", answer)
-                self.assertIn(GROUNDING_GAPS["figures"], answer)
-                self.assertNotIn("Triple rate:", answer)
-
-    def test_missing_results_identify_the_kind_without_a_model_rewrite(self):
-        for question, kind in (("Member count?", "count"), ("Average stars?", "figures")):
-            with self.subTest(question=question), self.assertRaises(GroundingError) as caught:
-                narrow_answer(question, {})
-            self.assertEqual(caught.exception.kind, kind)
-
-    def test_judgement_request_retains_synthesis(self):
-        self.assertIsNone(narrow_answer("Should we recruit more, given the member count?", {"read": clan()}))
-
-
 class FactualFlowTests(unittest.IsolatedAsyncioTestCase):
-    async def test_wrong_generated_number_and_hard_cap_never_reach_answer(self):
+    async def test_wrong_generated_number_gets_one_repair_with_verified_value(self):
         context = _context()
         context.state.request_text = "How many members in #P0?"
         context.state.grounding_evidence = {"read": clan()}
-        rounder = SimpleNamespace(advance=AsyncMock())
+        rounder = SimpleNamespace(advance=AsyncMock(return_value=AgentStep(
+            "There are 48 members. Recruitment can continue.", (), AgentUsage())))
         flow = AnswerFlow(context=context, session=None, registry={}, budget=None,
                           rounder=rounder, runner=None, request_id=1)
         answer = await flow._grounded_reply("49, the hard cap. Nobody else can join.")
-        self.assertEqual(answer, "48")
-        rounder.advance.assert_not_awaited()
+        self.assertEqual(answer, "There are 48 members. Recruitment can continue.")
+        rounder.advance.assert_awaited_once()
+        self.assertIn("#P0 total members: 48", rounder.advance.await_args.kwargs["continuation_instruction"])
+        self.assertEqual(rounder.advance.await_args.kwargs["reasoning_effort"], AgentReasoningEffort.LOW)
+
+    async def test_repeated_contradiction_appends_figure_without_replacing_prose(self):
+        context = _context()
+        context.state.request_text = "How many members in #P0?"
+        context.state.grounding_evidence = {"read": clan()}
+        draft = "#P0 has 49 members. Keep recruiting."
+        rounder = SimpleNamespace(advance=AsyncMock(return_value=AgentStep(draft, (), AgentUsage())))
+        flow = AnswerFlow(context=context, session=None, registry={}, budget=None,
+                          rounder=rounder, runner=None, request_id=1)
+        answer = await flow._grounded_reply(draft)
+        self.assertTrue(answer.startswith(draft))
+        self.assertIn("Verified figures: #P0 total members: 48.", answer)
+        rounder.advance.assert_awaited_once()
+
+    async def test_unavailable_repair_preserves_prose_and_appends_figure(self):
+        context = _context()
+        context.state.request_text = "How many members in #P0?"
+        context.state.grounding_evidence = {"read": clan()}
+        rounder = SimpleNamespace(advance=AsyncMock(side_effect=TimeoutError))
+        flow = AnswerFlow(context=context, session=None, registry={}, budget=None,
+                          rounder=rounder, runner=None, request_id=1)
+        answer = await flow._grounded_reply("#P0 has 49 members. Keep recruiting.")
+        self.assertIn("Keep recruiting.", answer)
+        self.assertIn("#P0 total members: 48.", answer)
+
+    async def test_filtered_member_question_always_reaches_answer_round(self):
+        for level in (16, 17):
+            with self.subTest(level=level):
+                question = f"How many members in #P0 are TH{level}?"
+                self.assertIsNone(clan_count_tag(question))
+                draft = f"12 members are TH{level}."
+                session = _Session([_model_step(_plan([_step("read")])),
+                                    AgentStep(draft, (), AgentUsage())], [])
+                registry = {"read_value": RegisteredAgentTool(AgentToolDefinition(
+                    "read_value", "Read synthetic evidence.", {"type": "object", "properties": {}}),
+                    AsyncMock(return_value=clan()))}
+                with patch("elbow_helper.features.agent.engine.service.build_agent_tools", return_value=registry):
+                    answer = await AgentService(_Model(session)).answer(
+                        question=question, context=_context(), local_context="")
+                self.assertEqual(answer, draft)
+                self.assertEqual(len(session.calls), 2)
 
     async def test_already_posted_answer_is_not_rendered_twice(self):
         context = _context()
@@ -110,9 +103,46 @@ class FactualPostTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         await posts.CurrentChannelPostTests.asyncSetUp(self)
 
-    async def test_immediate_reply_cannot_bypass_numeric_renderer(self):
+    async def test_immediate_reply_preserves_authored_prose(self):
         self.context.state.request_text = "How many members in #P0?"
         self.context.state.grounding_evidence = {"read": clan()}
         result = await prepare_post(self.context, {"channel_id": 2, "text": "49, the hard cap."})
         self.assertTrue(result["delivered_as_reply"])
-        self.context.send_reply.assert_awaited_with(self.context, "48")
+        self.context.send_reply.assert_awaited_with(self.context, "49, the hard cap.")
+
+
+class FigureCheckTests(unittest.TestCase):
+    def test_count_comparison_requires_matching_subject_and_metric(self):
+        for answer in ("#P0 has 48 members.", "#P0 has 12 TH16 members.",
+                       "#P0 has 12 members who missed attacks.", "#P2 has 49 members."):
+            with self.subTest(answer=answer):
+                self.assertFalse(numeric_conflicts("Review these clans", answer, {"read": clan()}))
+        self.assertEqual(numeric_conflicts("Review #P0", "#P0 has 49 members. Keep recruiting.",
+                                          {"read": clan()}), ("#P0 total members: 48.",))
+
+    def test_ambiguous_failed_or_quoted_numeric_sources_cannot_force_a_rewrite(self):
+        for evidence in ({"one": clan(), "two": clan(49)},
+                         {"read": {**clan(), "error": "denied"}},
+                         {"message": {"content": str(clan())}}):
+            self.assertFalse(numeric_conflicts("How many members in #P0?", "49", evidence))
+
+    def test_figures_compare_ratios_with_display_rounding_and_selection(self):
+        for answer in ("Average stars: 2.33", "Average stars: 2.3333", "Triple rate: 33.33%",
+                       "Ranked attack average stars: 1.5", "#P2 average stars: 1.5"):
+            with self.subTest(answer=answer):
+                self.assertFalse(numeric_conflicts("Average stars for ranked defenses?", answer, {"read": sample()}))
+        conflicts = numeric_conflicts("Average stars for ranked defenses?",
+                                      "#P0 average stars: 2.5. Keep practising.", {"read": sample()})
+        self.assertEqual(len(conflicts), 1)
+        self.assertIn("2.3333", conflicts[0])
+
+    def test_figures_do_not_compare_different_requested_selections(self):
+        self.assertFalse(numeric_conflicts("Average stars for ranked attacks?", "Average stars: 1.5",
+                                          {"read": sample()}))
+
+    def test_bare_figure_and_query_count_claims_are_checked(self):
+        self.assertTrue(numeric_conflicts("Average stars for ranked defenses?", "1.5", {"read": sample()}))
+        query = {"rows": [{"count": 2}], "row_count": 1, "truncated": False}
+        self.assertEqual(numeric_conflicts("Count only", "3", {"read": query}), ("Requested count: 2.",))
+        self.assertFalse(numeric_conflicts("Count only", "2", {"read": query}))
+        self.assertFalse(numeric_conflicts("Count only", "3", {"read": {**query, "truncated": True}}))

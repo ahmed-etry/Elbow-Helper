@@ -17,7 +17,6 @@ from unittest.mock import ANY
 
 from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import CORE, LEAD_PLUS
-from elbow_helper.discord.interactions import DEFAULT_FAILURE_MESSAGE
 from elbow_helper.features.agent.access import ACCESS_LEAD_PLUS, AgentAccessLost
 from elbow_helper.features.agent.cog import AgentCog
 from elbow_helper.features.agent.delivery import _delivery_nonce, _needs_file
@@ -33,7 +32,6 @@ from elbow_helper.features.agent.conversation.codec import decode_conversation
 from elbow_helper.features.agent.conversation.persistence import ConversationPersistence
 from elbow_helper.features.agent.conversation.context import build_history_checkpoint
 from elbow_helper.features.agent.engine.service import AgentService
-from elbow_helper.features.agent.wording import AGENT_PLAN_UNFINISHED
 from elbow_helper.infrastructure.ai.client import DeepSeekTextClient
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from elbow_helper.features.agent.models import RegisteredAgentTool
@@ -78,11 +76,9 @@ def _message(*, author: _Member, bot_id: int, content: str):
 class AgentCogTests(unittest.IsolatedAsyncioTestCase):
     async def test_real_typing_refresh_stops_before_recording_public_or_private_terminal_delivery(self):
         from discord.context_managers import Typing
-        from elbow_helper.features.agent.wording import ACTION_PRIVATE_ANSWER
 
-        for mode in ("public", "private_post", "private_timeout"):
+        for mode in ("public",):
             with self.subTest(mode=mode):
-                private = mode != "public"
                 self.setUp()
                 member = _Member(121, (next(iter(CORE)),))
                 message = self._real_handler_scenario(member)(member, 501, "<@999> synthetic question")
@@ -93,6 +89,12 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 channel.typing = lambda: typing
                 sent = message.reply.return_value
                 sent.edit = AsyncMock(return_value=sent)
+                async def send_after_typing(*args, **kwargs):
+                    self.assertTrue(typing.task.done())
+                    self.assertTrue(typing.task.cancelled())
+                    return sent
+
+                message.reply.side_effect = send_after_typing
                 recording, finish = asyncio.Event(), asyncio.Event()
                 original = self.cog._record_turn
 
@@ -103,29 +105,15 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
 
                 self.cog._record_turn = record
                 with (patch("elbow_helper.features.agent.cog.discord.Member", _Member),
-                      patch("elbow_helper.features.agent.delivery.can_show", AsyncMock(return_value=not private))):
+                      patch("elbow_helper.features.agent.delivery.assert_answer_scope", AsyncMock())):
                     task = asyncio.create_task(self.cog.on_message(message))
                     await asyncio.wait_for(recording.wait(), 2)
                     self.assertTrue(typing.task.done())
                     self.assertTrue(typing.task.cancelled())
                     self.assertEqual(channel._state.http.send_typing.await_count, 1)
-                    if private:
-                        self.assertEqual(message.reply.await_args.args[0], ACTION_PRIVATE_ANSWER)
+                    self.assertEqual(message.reply.await_args.args[0], "Answer")
                     finish.set()
                     await task
-                if private:
-                    view = message.reply.await_args.kwargs["view"]
-                    interaction = SimpleNamespace(id=801, user=member, response=SimpleNamespace(
-                        send_message=AsyncMock(), defer=AsyncMock()), followup=SimpleNamespace(send=AsyncMock()))
-                    await view.open_result(interaction)
-                    self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
-                    if mode == "private_post":
-                        await view.post_here(interaction)
-                        self.assertEqual(sent.edit.await_args.kwargs["content"], "Answer")
-                    else:
-                        await view.on_timeout()
-                    self.assertTrue(typing.task.cancelled())
-                    self.assertEqual(channel._state.http.send_typing.await_count, 1)
 
     async def test_real_typing_refresh_is_cancelled_on_timeout_access_loss_and_request_cancellation(self):
         from discord.context_managers import Typing
@@ -167,7 +155,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 events.append("typing ended")
 
         message.channel.typing = MagicMock(side_effect=typing)
-        self.cog._build_local_context.side_effect = lambda *args: events.append("context") or "Synthetic context"
+        self.cog._build_local_context.side_effect = lambda *args, **kwargs: events.append("context") or "Synthetic context"
         session = _Session([AgentStep("Synthetic answer", (), AgentUsage())], events)
         self.cog.service = AgentService(_Model(session))
         with (
@@ -200,7 +188,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(conversation.turns[-1].record.delivered_answer, "Synthetic posted answer")
         self.assertTrue(conversation.turns[-1].record.delivery_complete)
 
-    async def test_lookup_starts_typing_before_first_round_and_keeps_it_through_delivery(self):
+    async def test_lookup_starts_typing_before_first_round_and_stops_before_delivery(self):
         from features.agent.engine.test_agent_plan_flow import (
             _Model, _Session, _model_step, _plan, _step,
         )
@@ -247,7 +235,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         ):
             await self.cog.on_message(message)
         self.assertEqual(events, [
-            "typing", "model", "lookup", "model", "delivery", "typing ended",
+            "typing", "model", "lookup", "model", "typing ended", "delivery",
         ])
         message.channel.typing.assert_called_once()
 
@@ -300,6 +288,8 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 fallback = mode not in ("text", "failed", "partial")
                 if fallback:
                     rounds.append(AgentStep("" if mode == "empty" else "Normal answer.", (), AgentUsage()))
+                if mode == "empty":
+                    rounds.append(AgentStep("Normal answer.", (), AgentUsage()))
                 session = _Session(rounds, [])
                 message.channel.typing = MagicMock(return_value=nullcontext())
                 self.cog.service = AgentService(_Model(session))
@@ -310,18 +300,17 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 ):
                     await self.cog.on_message(message)
                 message.channel.typing.assert_called_once()
-                self.assertEqual(len(session.calls), 2 if fallback else 1)
+                self.assertEqual(len(session.calls), 3 if mode == "empty" else 2 if fallback else 1)
                 if mode not in ("reaction_only", "empty"):
                     self.assertEqual(message.add_reaction.await_args_list[0].args, ("👍",))
                 self.assertEqual(message.add_reaction.await_count,
-                                 0 if mode in ("reaction_only", "empty") else 2 if mode == "partial" else 1)
+                                 0 if mode in ("reaction_only", "empty") else 1)
                 message.channel.send.assert_not_awaited()
                 conversation = self.cog._conversations.get(message.id)
                 self.assertEqual(len(conversation.turns), 1)
                 answer = json.loads(conversation.turns[0].text)["answer"]
                 message.reply.assert_awaited_once()
-                expected = ("You're welcome." if mode == "text" else
-                            AGENT_PLAN_UNFINISHED if mode == "empty" else "Normal answer.")
+                expected = "You're welcome." if mode == "text" else "Normal answer."
                 self.assertIn(expected, message.reply.await_args.args[0])
                 self.assertIn(expected, answer)
                 self.assertEqual("Reactions: 👍" in answer, mode not in ("reaction_only", "failed", "empty"))
@@ -332,13 +321,11 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
     async def test_mixed_answer_and_preview_share_delivery_and_records(self):
         from elbow_helper.features.agent.actions.contracts import PreparedAction, ChangePreview
         from elbow_helper.features.agent.actions.preview import ConfirmationView, preview_text
-        from elbow_helper.features.agent.actions.answer_view import PrivateAnswerView
         from elbow_helper.features.agent.actions.private_view import PrivateResultView
         from elbow_helper.features.agent.actions.combined_reply import CombinedReplyView
         from elbow_helper.features.agent.actions.outcomes import ActionOutcome
-        from elbow_helper.features.agent.wording import ACTION_PRIVATE_ANSWER
 
-        for allowed in (True, False):
+        for allowed in (True,):
             with self.subTest(allowed=allowed):
                 self.setUp()
                 member = _Member(121, (next(iter(CORE)),))
@@ -367,17 +354,17 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
 
                 self.cog.service.answer.side_effect = answer
                 with (patch("elbow_helper.features.agent.cog.discord.Member", _Member),
-                      patch("elbow_helper.features.agent.delivery.can_show", AsyncMock(return_value=allowed))):
+                      patch("elbow_helper.features.agent.delivery.assert_answer_scope", AsyncMock(return_value=allowed))):
                     await self.cog.on_message(message)
                 calls = message.reply.await_args_list
                 self.assertEqual(len(calls), 1)
                 combined = calls[0].kwargs["view"]
                 self.addCleanup(combined.stop)
                 self.assertIsInstance(combined, CombinedReplyView)
-                answer_part = "Synthetic lookup answer" if allowed else ACTION_PRIVATE_ANSWER
+                answer_part = "Synthetic lookup answer"
                 self.assertEqual(calls[0].args[0], f"1. {preview}\n\n2. {answer_part}")
                 answer_view = combined.views["answer"]
-                self.assertIsInstance(answer_view, PrivateResultView if allowed else PrivateAnswerView)
+                self.assertIsInstance(answer_view, PrivateResultView)
                 self.assertIn("Synthetic command result", answer_view.parts)
                 confirm = combined.views["preview"]
                 self.assertIsInstance(confirm, ConfirmationView)
@@ -395,15 +382,6 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(progress.preserves_other_text)
                 self.assertEqual(progress.id, 1501)
                 answer_message.edit.assert_not_awaited()
-                if not allowed:
-                    interaction.id = 601
-                    await answer_view.post_here(interaction)
-                    record = conversation.turns[0].record
-                    self.assertEqual(record.reply_ids, (1501,))
-                    self.assertIn("Synthetic lookup answer", record.delivered_answer)
-                    self.assertIn(preview, record.delivered_answer)
-                    self.assertEqual(record.generated_parts, (combined.render(),))
-                    self.assertIsInstance(combined.views["answer"], PrivateResultView)
 
     def test_discord_registers_only_the_message_handler(self):
         self.assertIn(("on_message", "on_message"), AgentCog.__cog_listeners__)
@@ -425,7 +403,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                     await self.cog.on_message(message)
                 self.cog.service.answer.assert_awaited_once()
                 message.reply.assert_awaited_once()
-                self.assertEqual(message.reply.await_args.args, (DEFAULT_FAILURE_MESSAGE,))
+                self.assertEqual(message.reply.await_args.args, ('That request stopped before I could finish.',))
                 self.assertTrue(any("request=1" in line for line in logs.output))
                 self.assertFalse(self.cog._tasks)
                 conversation = next(value for _, value in self.cog._conversations.entries())
@@ -449,7 +427,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
             await self.cog.on_message(message)
         self.cog.service.answer.assert_awaited_once()
         message.reply.assert_awaited_once()
-        self.assertEqual(message.reply.await_args.args, (DEFAULT_FAILURE_MESSAGE,))
+        self.assertEqual(message.reply.await_args.args, ('That request ran out of time.',))
         self.assertTrue(any("Agent request timed out: request=1" in line for line in logs.output))
         self.assertFalse(self.cog._tasks)
 
@@ -524,7 +502,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                     },
                 }])
                 answer = "Both selected values are ready."
-                responses = [planned]
+                responses = [response(content="research"), planned]
                 if extra_final_call:
                     responses.append(response(tool_calls=[{
                         "id": "extra", "function": {
@@ -534,6 +512,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 responses.append(response(content=answer))
                 create = AsyncMock(side_effect=responses)
                 transport = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+                transport.with_options = lambda **kwargs: transport
                 with (
                     patch("elbow_helper.infrastructure.ai.client.AsyncOpenAI", return_value=transport),
                     patch("elbow_helper.features.agent.cog.discord.Member", _Member),
@@ -546,16 +525,18 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
                 message.reply.assert_awaited_once()
                 self.assertEqual(message.reply.await_args.args, (answer,))
                 self.assertEqual(sorted(calls), [200, 300])
-                self.assertEqual(create.await_count, 3 if extra_final_call else 2)
-                self.assertEqual(create.await_args_list[0].kwargs["reasoning_effort"], "high")
+                self.assertEqual(create.await_count, 4 if extra_final_call else 3)
+                self.assertEqual(create.await_args_list[0].kwargs["reasoning_effort"], "low")
+                self.assertEqual(create.await_args_list[1].kwargs["reasoning_effort"], "high")
                 self.assertEqual([
                     item["function"]["name"]
-                    for item in create.await_args_list[0].kwargs["tools"]
+                    for item in create.await_args_list[1].kwargs["tools"]
                 ], ["submit_request_plan"])
-                answer_request = create.await_args_list[1].kwargs
+                answer_request = create.await_args_list[2].kwargs
                 self.assertEqual(answer_request["tool_choice"], "none")
-                result = next(item["content"] for item in answer_request["messages"]
-                              if item.get("role") == "tool")
+                self.assertNotIn("tools", answer_request)
+                result = answer_request["messages"][1]["content"]
+                self.assertIn("Available evidence:", result)
                 self.assertIn('"200"', result)
                 self.assertIn('"300"', result)
                 conversation = self.cog._conversations.find(GUILD_ID, 100, 2000)
@@ -574,7 +555,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         ):
             await self.cog.on_message(message)
         message.reply.assert_awaited_once()
-        self.assertEqual(message.reply.await_args.args, (DEFAULT_FAILURE_MESSAGE,))
+        self.assertEqual(message.reply.await_args.args, ('You no longer have access to this request here.',))
         self.cog.service.answer.assert_awaited_once()
 
     async def test_restricted_report_survives_temporary_role_loss_in_private_channel(self):
@@ -725,7 +706,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         guild = SimpleNamespace(
             id=GUILD_ID,
             name="Brown Elbow",
-            me=SimpleNamespace(id=999),
+            me=SimpleNamespace(id=999, bot=True), chunked=True, members=list(members),
             default_role=default_role,
             roles=[default_role, *(
                 SimpleNamespace(id=role_id)
@@ -899,7 +880,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
             await self.cog.on_message(message)
 
         self.cog._answer.assert_not_awaited()
-        self.cog._send_failure.assert_awaited_once_with(message)
+        self.cog._send_failure.assert_awaited_once_with(message, "I'm handling several requests. Please try again shortly.")
         self.assertFalse(self.cog._tasks)
 
     async def test_every_delivered_chunk_can_continue_the_conversation(self):
@@ -1233,7 +1214,8 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.cog._tasks)
         self.assertEqual(conversation.pending, 0)
 
-    async def test_history_from_newly_inaccessible_sources_is_not_replayed(self):
+    @patch("elbow_helper.features.agent.conversation.preparation.request_scope", new_callable=AsyncMock)
+    async def test_history_from_newly_inaccessible_sources_is_not_replayed(self, _scope):
         conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
         conversation.turns = [ConversationTurn("permitted", frozenset({100})),
                               ConversationTurn("private evidence", frozenset({200}))]
@@ -1251,7 +1233,8 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.state.history_status["included_turns"], 1)
         self.assertEqual(context.state.history_status["older_retained_turns_available"], 0)
 
-    async def test_history_requiring_a_removed_role_is_not_replayed(self):
+    @patch("elbow_helper.features.agent.conversation.preparation.request_scope", new_callable=AsyncMock)
+    async def test_history_requiring_a_removed_role_is_not_replayed(self, _scope):
         core_only = _Member(42, (next(iter(CORE)),))
         conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
         conversation.turns = [
@@ -1276,7 +1259,8 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
             context.state.authorized_history, (conversation.turns[0],),
         )
 
-    async def test_checkpoint_requires_every_source_and_role_at_use_time(self):
+    @patch("elbow_helper.features.agent.conversation.preparation.request_scope", new_callable=AsyncMock)
+    async def test_checkpoint_requires_every_source_and_role_at_use_time(self, _scope):
         core_only = _Member(42, (next(iter(CORE)),))
         conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
         conversation.turns = [
@@ -1371,7 +1355,8 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIs(conversation.checkpoint, second)
 
-    async def test_report_from_revoked_source_is_hidden_without_erasure(self):
+    @patch("elbow_helper.features.agent.conversation.preparation.request_scope", new_callable=AsyncMock)
+    async def test_report_from_revoked_source_is_hidden_without_erasure(self, _scope):
         member = _Member(42, (next(iter(CORE)),))
         conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
         report = make_event_report("report", "2026-09-17")
@@ -1394,7 +1379,8 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(conversation.reports["report"], report)
 
 
-    async def test_history_preparation_preserves_all_authorized_candidates_for_compilation(self):
+    @patch("elbow_helper.features.agent.conversation.preparation.request_scope", new_callable=AsyncMock)
+    async def test_history_preparation_preserves_all_authorized_candidates_for_compilation(self, _scope):
         conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
         conversation.turns = [ConversationTurn("older " + "x" * 60_000, frozenset({100})),
                               ConversationTurn("latest", frozenset({100}))]
@@ -1405,7 +1391,8 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.state.authorized_history, tuple(conversation.turns))
         self.assertEqual(len(conversation.turns), 2)
 
-    async def test_inaccessible_task_instruction_is_not_prepared_for_model(self):
+    @patch("elbow_helper.features.agent.conversation.preparation.request_scope", new_callable=AsyncMock)
+    async def test_inaccessible_task_instruction_is_not_prepared_for_model(self, _scope):
         conversation = self.cog._conversations.create(GUILD_ID, 100, 90)
         working, instruction = WorkingState().remember(
             label="Constraint", quote="Keep together", request_text="Keep together",
@@ -1491,6 +1478,117 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("text-19", result)
         self.assertNotIn("text-0", result)
         self.assertLess(result.index("text-12"), result.index("text-19"))
+
+    async def test_local_context_records_the_same_visible_text_for_citations(self):
+        from elbow_helper.features.agent.engine.grounding import ground_answer
+        local = SimpleNamespace(
+            id=101, content="Synthetic point " * 200, attachments=[], embeds=[],
+            author=SimpleNamespace(id=42, bot=False, display_name="Member"),
+            created_at=datetime.now(timezone.utc), jump_url="https://discord.com/channels/3/100/101",
+        )
+
+        async def history(**kwargs):
+            yield local
+
+        message = SimpleNamespace(channel=SimpleNamespace(id=100, history=history), mentions=[])
+        context = SimpleNamespace(state=AgentTurnState())
+        shown = await self.cog._build_local_context(message, None, context=context)
+        row = context.state.local_messages[0]
+        self.assertIn(row["content"], shown)
+        self.assertLessEqual(len(row["content"]), 1200)
+        self.assertIn(row["content"], ground_answer("[[message:101]]", context.state.local_messages))
+        self.assertEqual(context.state.source_channels, {100})
+
+    async def test_channel_gif_pacing_includes_bot_messages_hidden_from_other_conversations(self):
+        other = self.cog._conversations.create(GUILD_ID, 100, 20)
+        self.cog._conversations.register_reply(other, 21)
+        now = datetime.now(timezone.utc)
+        bot = SimpleNamespace(id=999, bot=True, display_name="Elbow Helper")
+        member = SimpleNamespace(id=42, bot=False, display_name="Member")
+        rows = [SimpleNamespace(
+            id=index, content="https://giphy.com/gifs/synthetic" if index == 21 else f"text-{index}",
+            attachments=[], embeds=[], author=bot if index == 21 else member,
+            created_at=now, jump_url=f"source/{index}",
+        ) for index in range(21, 40)]
+        anchors = []
+
+        async def history(*, limit, before, oldest_first):
+            anchors.append(before)
+            for row in reversed(rows[-limit:]):
+                yield row
+
+        message = SimpleNamespace(id=40, guild=SimpleNamespace(id=GUILD_ID),
+                                  channel=SimpleNamespace(id=100, history=history), mentions=[])
+        context = SimpleNamespace(state=AgentTurnState())
+        shown = await self.cog._build_local_context(message, None, context=context)
+        self.assertEqual(context.state.channel_bot_gifs, (True,))
+        self.assertEqual(context.state.channel_gif_ids, {"synthetic"})
+        self.assertNotIn("giphy", shown)
+        self.assertEqual(len(context.state.local_messages), 8)
+        self.assertEqual(anchors, [message])
+
+        # An old reply changes the model's excerpt, never the pacing anchor.
+        old = rows[0]
+        await self.cog._build_local_context(message, old, context=context)
+        self.assertEqual(context.state.channel_bot_gifs, (True,))
+        self.assertEqual(anchors, [message, message, old])
+        self.assertEqual(context.state.channel_gif_ids, {"synthetic"})
+
+    async def test_successful_sparse_channel_history_remains_diagnostic(self):
+
+        for bot_count in range(5):
+            with self.subTest(bot_count=bot_count):
+                rows = [SimpleNamespace(
+                    id=index, content=f"text-{index}", attachments=[], embeds=[],
+                    author=SimpleNamespace(id=999 if index < bot_count else 42,
+                                           bot=index < bot_count, display_name="Member"),
+                    created_at=datetime.now(timezone.utc), jump_url=f"source/{index}",
+                ) for index in range(50)]
+
+                async def history(**kwargs):
+                    for row in reversed(rows):
+                        yield row
+
+                message = SimpleNamespace(channel=SimpleNamespace(id=100, history=history), mentions=[])
+                context = SimpleNamespace(state=AgentTurnState())
+                await self.cog._build_local_context(message, None, context=context)
+                self.assertEqual(context.state.channel_bot_gifs, (False,) * min(bot_count, 3))
+
+    async def test_channel_reactions_restore_from_metadata_and_share_successful_state(self):
+        row = SimpleNamespace(
+            id=101, content="Synthetic member line", attachments=[], embeds=[],
+            author=SimpleNamespace(id=42, bot=False, display_name="Member"),
+            created_at=datetime.now(timezone.utc), jump_url="source/101",
+            reactions=[SimpleNamespace(emoji="\U0001f914", me=True),
+                       SimpleNamespace(emoji="\U0001f680", me=False)],
+        )
+
+        async def history(**kwargs):
+            yield row
+
+        message = SimpleNamespace(channel=SimpleNamespace(id=100, history=history), mentions=[])
+        first = SimpleNamespace(state=AgentTurnState())
+        await self.cog._build_local_context(message, None, context=first)
+        self.assertEqual(first.state.channel_reactions.emojis, ("\U0001f914",))
+        first.state.channel_reactions.message_id = 102
+        first.state.channel_reactions.emojis = ("\U0001f389",)
+        second = SimpleNamespace(state=AgentTurnState())
+        await self.cog._build_local_context(message, None, context=second)
+        self.assertIs(first.state.channel_reactions, second.state.channel_reactions)
+        self.assertEqual(second.state.channel_reactions.emojis, ("\U0001f389",))
+
+    async def test_unavailable_channel_history_remains_diagnostic(self):
+
+        for status, error_type in ((403, discord.Forbidden), (503, discord.HTTPException)):
+            with self.subTest(status=status):
+                async def history(**kwargs):
+                    yield SimpleNamespace(author=SimpleNamespace(id=999), content="Bot text")
+                    raise error_type(SimpleNamespace(status=status, reason="Synthetic"), "synthetic")
+
+                message = SimpleNamespace(channel=SimpleNamespace(id=100, history=history), mentions=[])
+                context = SimpleNamespace(state=AgentTurnState())
+                await self.cog._build_local_context(message, None, context=context)
+                self.assertIsNone(context.state.channel_bot_gifs)
 
     async def test_local_context_anchors_old_reply_at_referenced_message(self):
         anchors = []
