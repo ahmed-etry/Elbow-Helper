@@ -63,7 +63,7 @@ definitions and calls the feature adapters.
 
 ## Access and sharing
 
-Core leadership and members with the Agent Tester role can use the agent.
+Lead Plus, Core leadership and members with the Agent Tester role can use the agent.
 `access.py` checks each source against the destination scope from
 `disclosure.py` before reading it. Role-classified sources use the member's
 reader roles; other sources require the member's channel permissions and,

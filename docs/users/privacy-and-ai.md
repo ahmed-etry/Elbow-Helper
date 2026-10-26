@@ -33,9 +33,9 @@ for how DeepSeek handles API data.
 
 ## Agent
 
-Core leadership and members with the Agent Tester role can mention Elbow
-Helper to ask a question or request an action. Reply to its answer to continue
-the conversation. Your roles and channel permissions determine what you can
+Lead Plus, Core leadership and members with the Agent Tester role can
+mention Elbow Helper to ask a question or request an action. Reply to its
+answer to continue the conversation. Your roles and channel permissions determine what you can
 ask it to read or do. For changes such as assigning roles, the bot shows a
 preview and asks you to confirm.
 
