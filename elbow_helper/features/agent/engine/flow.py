@@ -28,7 +28,7 @@ from ..knowledge.answers import scoped_answer, scope_reply_issue, MEMBER_REPLY_I
 from ..actions.outcomes import command_reply
 from ..actions.preview import is_preview_reply, preview_text
 from ..actions.details import prepare_preview
-from ..research.member_provenance import member_target_issue
+from ..research.member_provenance import member_target_issue, harmless_member_mentions
 from ..wording import (
     AGENT_ANSWER_UNFINISHED,
     AGENT_PLAN_UNFINISHED,
@@ -154,26 +154,36 @@ class AnswerFlow:
         answer = scoped_answer(self.context, answer)
         if self.append_commands and not self.context.state.reply_delivery.posts:
             answer = "\n\n".join(filter(None, (answer, command_reply(self.context.state.outcomes, has_findings=bool(answer.strip())))))
-        # Previews are rendered from checked actions, not generated reply text.
-        if not is_preview_reply(self.context, answer) and (issue := member_target_issue(self.context, answer)):
-            # A late answer may follow reads, command feedback or grounding repair.
-            # Give the model one chance to ask for the missing identity itself.
-            repaired = await self._advance_answer(
-                self._repair_results(), allow_tools=False,
-                max_output_tokens=limits.FINAL_MAX_OUTPUT_TOKENS,
-                continuation_instruction=issue,
-            )
-            if (repaired.tool_calls or not repaired.content
-                    or member_target_issue(self.context, repaired.content)):
-                raise AgentGracefulEnd("Which member do you mean? Please mention them.")
-            answer = scoped_answer(self.context, await self._grounded_reply(repaired.content))
-            if member_target_issue(self.context, answer):
-                raise AgentGracefulEnd("Which member do you mean? Please mention them.")
-            answer = await self._checked_changes(answer)
+        answer = await self._checked_member_reply(answer)
         answer = await self._checked_scope_reply(answer)
         if getattr(self.rounder, "social_route", False):
             answer = correct_social_counts(answer, self.context.state.request_text)
         return named_reply(answer, self.context)
+
+    async def _checked_member_reply(self, answer):
+        # Previews already have checked action targets. Unavailable prose
+        # repairs must not discard a finished answer or its prepared files.
+        issue = '' if is_preview_reply(self.context, answer) else member_target_issue(self.context, answer)
+        if not issue:
+            return answer
+        try:
+            repaired = await self._advance_answer(
+                self._repair_results(), allow_tools=False,
+                max_output_tokens=limits.FINAL_MAX_OUTPUT_TOKENS, continuation_instruction=issue)
+            if repaired.content and not repaired.tool_calls and not member_target_issue(self.context, repaired.content):
+                checked = scoped_answer(self.context, await self._grounded_reply(repaired.content))
+                checked = await self._checked_changes(checked)
+                if not member_target_issue(self.context, checked):
+                    return checked
+        except (AgentGracefulEnd, TextGenerationError, TimeoutError) as error:
+            LOGGER.info("Agent member reply repair unavailable: request=%s reason=%s",
+                        self.request_id, type(error).__name__)
+        else:
+            raise AgentGracefulEnd("Which member do you mean? Please mention them.")
+        await require_evidence_access(self.context)
+        safe = harmless_member_mentions(self.context, answer)
+        LOGGER.info("Agent unverified member mentions neutralized: request=%s", self.request_id)
+        return safe
 
     async def _checked_scope_reply(self, answer):
         issue = scope_reply_issue(self.context, answer)

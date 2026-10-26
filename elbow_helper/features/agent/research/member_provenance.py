@@ -3,6 +3,8 @@
 from collections.abc import Mapping
 import re
 
+import discord
+
 
 MEMBER_PROVENANCE_INSTRUCTION = (
     "Before targeting a member in an action or reply (including pings and roasts), "
@@ -76,11 +78,8 @@ def request_reply_author_id(context):
     return None
 
 
-def member_target_issue(context, arguments, scope=None, *, self_target=None):
-    """Return a model-facing refusal before a non-read action targets anyone."""
-    identifiers = member_target_ids(arguments, scope)
-    if not identifiers:
-        return ""
+def allowed_member_ids(context, *, self_target=None):
+    """Share request-scoped identity authorization without granting new targets."""
     state = getattr(context, "state", None)
     message = getattr(context, "source_message", None)
     allowed = {identifier for identifier in getattr(message, "raw_mentions", ())
@@ -92,7 +91,30 @@ def member_target_issue(context, arguments, scope=None, *, self_target=None):
     flag = getattr(state, "member_self_target", False) if self_target is None else self_target
     if flag is True:
         allowed.add(context.member.id)
-    missing = identifiers - allowed
+    return allowed
+
+
+def harmless_member_mentions(context, answer):
+    """Replace unverified output mentions with escaped server names, or nothing."""
+    allowed = allowed_member_ids(context)
+
+    def replace(match):
+        identifier = int(match[1])
+        if identifier in allowed:
+            return match[0]
+        member = context.guild.get_member(identifier)
+        if member is None or getattr(member, 'id', None) != identifier:
+            return ''
+        name = getattr(member, 'display_name', None)
+        return (discord.utils.escape_mentions(discord.utils.escape_markdown(name).replace('@', '@\u200b'))
+                if isinstance(name, str) else '')
+
+    return _MENTION.sub(replace, answer)
+
+
+def member_target_issue(context, arguments, scope=None, *, self_target=None):
+    """Return a model-facing refusal before a non-read action targets anyone."""
+    missing = member_target_ids(arguments, scope) - allowed_member_ids(context, self_target=self_target)
     if missing:
         return (f"Member IDs {sorted(missing)} have no target provenance in this request. "
                 "Resolve them first with find_discord_members (status=resolved), or ask "
