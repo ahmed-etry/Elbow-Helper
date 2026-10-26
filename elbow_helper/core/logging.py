@@ -23,7 +23,6 @@ CONSOLE_LOG_LEVEL = logging.WARNING
 FILE_LOG_LEVEL = logging.INFO
 CONSOLE_INFO_ALLOWLIST = {
     "elbow.boot",
-    "elbow_helper.features.agent",
     "elbow_helper.features.member_lifecycle",
 }
 TRANSIENT_LOG_DETAIL_MAX_CHARS = 260

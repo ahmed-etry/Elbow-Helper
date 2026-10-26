@@ -91,27 +91,40 @@ class CollectionHealthTests(unittest.TestCase):
         with self.assertNoLogs(LOGGER, level="INFO"):
             self.poll({"#P0": 503})
 
-    def test_missing_player_warns_once_across_endpoints_until_validated_recovery(self):
+    def test_missing_profile_warns_once_until_validated_profile_recovery(self):
         with self.assertLogs(LOGGER) as logs:
             for _ in range(4):
-                self.health.record("#P0", "player snapshot", 404)
-                self.poll({"#P0": 404})
+                self.poll({"#P0": 404}, "player snapshot")
         self.assertEqual(len(logs.output), 1)
-        self.assertIn("does not exist (status 404)", logs.output[0])
+        self.assertIn("profile not found for #P0 (status 404)", logs.output[0])
         with self.assertNoLogs(LOGGER, level="INFO"):
-            self.poll({"#P0": 200}, "player snapshot")
-            self.poll({"#P0": None})  # A different failure is not recovery.
+            self.poll({"#P0": 200})  # Battle success cannot validate a profile.
+            self.poll({"#P0": None}, "player snapshot")
         with self.assertLogs(LOGGER, level="INFO") as logs:
-            self.poll({"#P0": 200})
-            self.poll({"#P0": 200})
+            self.poll({"#P0": 200}, "player snapshot")
+            self.poll({"#P0": 200}, "player snapshot")
         self.assertEqual(len(logs.output), 1)
         with self.assertLogs(LOGGER) as logs:
-            self.poll({"#P0": 404})
+            self.poll({"#P0": 404}, "player snapshot")
         self.assertEqual(len(logs.output), 1)
+
+    def test_battle_log_404_with_valid_profile_warns_once_without_missing_player_claim(self):
+        with self.assertLogs(LOGGER, level="WARNING") as logs:
+            for _ in range(4):
+                self.health.record("#P0", "player snapshot", 200, ok=True)
+                self.poll({"#P0": 404})
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("battle log unavailable for #P0", logs.output[0])
+        self.assertIn("status 404", logs.output[0])
+        self.assertFalse(self.health.missing_players)
+        with self.assertLogs(LOGGER, level="INFO") as logs:
+            self.poll({"#P0": 200})
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("battle log recovered", logs.output[0])
 
     def test_missing_players_do_not_trigger_outage(self):
         with self.assertLogs(LOGGER) as logs:
-            self.poll({"#P0": 404, "#P2": 404, "#P8": 404})
+            self.poll({"#P0": 404, "#P2": 404, "#P8": 404}, "player snapshot")
         self.assertEqual(len(logs.output), 3)
         self.assertFalse(any("outage" in line for line in logs.output))
 

@@ -49,7 +49,7 @@ class CollectionHealth:
             failure = self.failures.setdefault(key, Failure())
             failure.consecutive += 1
             failure.status = status
-            if status == 404:
+            if status == 404 and kind == "player snapshot":
                 failure.warned = False
                 failure.missing = True
             detail = "no response" if status is None else f"status {status}"
@@ -63,7 +63,7 @@ class CollectionHealth:
                                  kind, len(tags), _sample(tags))
         missing = {tag for (tag, _), failure in self.failures.items() if failure.missing}
         for tag in sorted(missing - self.missing_players):
-            self.logger.warning("Ranked player %s does not exist (status 404)", tag)
+            self.logger.warning("Ranked player profile not found for %s (status 404)", tag)
         for tag in sorted(self.missing_players - missing):
             self.logger.info("Ranked player %s recovered after status 404", tag)
         self.missing_players = missing

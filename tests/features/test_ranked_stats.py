@@ -252,6 +252,23 @@ class PlayerFieldTests(unittest.TestCase):
 
 
 class RankedCollectorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_battle_log_404_preserves_valid_profiles_and_reports_endpoint_once(self):
+        def response(path, **kwargs):
+            if path.endswith("/battlelog"):
+                return SimpleNamespace(ok=False, status=404, payload=None)
+            return self.response(path, **kwargs)
+
+        self.client.get.side_effect = response
+        with self.assertLogs("elbow_helper.features.ranked_stats.cog", level="WARNING") as logs:
+            await self.collect_at(0)
+            await self.collect_at(600)
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("battle log unavailable for 2 accounts", logs.output[0])
+        self.assertIn("status 404", logs.output[0])
+        self.assertFalse(self.cog._health.missing_players)
+        self.assertEqual(self.cog._schedules["#P0"].player_name, "Synthetic account")
+        self.assertEqual(self.cog._schedules["#P0"].battle_interval, 1200)
+
     async def test_transport_timeouts_stay_debug_and_preserve_backoff(self):
         self.client.get.side_effect = TimeoutError("synthetic timeout")
         logger = "elbow_helper.features.ranked_stats.cog"
