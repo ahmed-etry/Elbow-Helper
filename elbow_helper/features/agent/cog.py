@@ -29,7 +29,7 @@ from .identity import agent_identity, member_identity
 from .engine.service import AgentUnavailableError
 from .engine.service import AgentService
 from .discord_actions.gifs import GIF_CONTEXT_MESSAGES, channel_gif_history
-from .discord_actions.gif_library import channel_gif_ids
+from .discord_actions.gif_library import channel_gif_urls
 from .discord_actions.reactions import channel_reaction_history
 from .discord_actions.reaction_pacing import channel_combo_history
 from .conversation.transcripts import TranscriptArchive
@@ -501,7 +501,7 @@ class AgentCog(AgentTurnMixin, ConversationContextMixin, AgentDeliveryMixin, com
                 channel_recent.reverse()
                 bot_id = getattr(getattr(self.bot, "user", None), "id", None)
                 context.state.channel_bot_gifs = channel_gif_history(channel_recent, bot_id)
-                context.state.channel_gif_ids = channel_gif_ids([
+                context.state.channel_gif_urls = channel_gif_urls([
                     item for item in channel_recent if item.author.id == bot_id
                 ])
                 channel = context.state.channel_reactions

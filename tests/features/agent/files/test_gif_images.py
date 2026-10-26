@@ -12,7 +12,8 @@ from PIL import Image
 from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.features.agent.cog import AgentCog
 from elbow_helper.features.agent.files.images import request_images
-from features.agent.discord_actions.test_gif_choice import png
+from elbow_helper.features.agent.files.gif_media import PROVIDERS
+from features.agent.files.image_helpers import png
 
 
 def animation():
@@ -49,9 +50,9 @@ class GifImageTests(unittest.IsolatedAsyncioTestCase):
                              (original * 30, 0, 0))
 
     async def test_each_provider_link_resolves_animation_from_its_page(self):
-        for provider in ("klipy", "giphy", "tenor"):
-            page = f"https://{provider}.com/gifs/synthetic"
-            media = f"https://media.{provider}.com/synthetic.gif"
+        for provider in PROVIDERS:
+            page = f"https://{provider}/gifs/synthetic"
+            media = f"https://media.{provider}/synthetic.gif"
             message = source(content=page)
             selected = context(source(2), message)
             selected.bot.http.get_from_cdn.side_effect = lambda url: (
@@ -97,7 +98,7 @@ class GifImageTests(unittest.IsolatedAsyncioTestCase):
         selected.bot.http.get_from_cdn.assert_not_called()
 
     async def test_several_gifs_and_missing_embed_metadata_are_supported(self):
-        links = [f"https://giphy.com/synthetic-{index}.gif" for index in range(2)]
+        links = [f"https://tenor.com/synthetic-{index}.gif" for index in range(2)]
         selected = context(SimpleNamespace(id=1, content=" ".join(links), attachments=[]))
         selected.bot.http.get_from_cdn.return_value = animation()
         images = await request_images(selected)

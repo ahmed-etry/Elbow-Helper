@@ -1,5 +1,1 @@
-"""Application-owned GIF search transport."""
-
-from .giphy import GiphyClient
-
-__all__ = ["GiphyClient"]
+"""GIF frame helpers for reading animated images."""

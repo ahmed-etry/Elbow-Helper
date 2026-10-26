@@ -16,7 +16,7 @@ from elbow_helper.features.agent.files.images import MAX_IMAGE_BYTES, request_im
 from elbow_helper.features.agent.text import message_text
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from features.agent.discord_actions.management_helpers import fixture
-from features.agent.discord_actions.test_gif_choice import png
+from features.agent.files.image_helpers import png
 from features.agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
 from features.agent.files.test_gif_images import animation
 

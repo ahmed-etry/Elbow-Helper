@@ -11,29 +11,15 @@ from elbow_helper.features.agent.discord_actions.gif_library import ITEM_BY_ID
 from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.features.agent.models import AgentDelivery
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage
-from elbow_helper.infrastructure.gifs.giphy import GifCandidate
 from features.agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
 from tests.features.agent_plan_helpers import plan_call
 from features.agent.engine.helpers import social_step
 from features.agent.engine.test_banter_gifs import gif_context
 
 
-def candidate_client(search):
-    async def candidates(query, *, limit=8):
-        url = await search(query)
-        return [GifCandidate(url, None, title="Synthetic reaction")] if url else []
-    from features.agent.discord_actions.test_gif_choice import png
-    vision = SimpleNamespace(advance=AsyncMock(return_value=AgentStep("1", (), AgentUsage())))
-    model = SimpleNamespace(create_agent_session=MagicMock(return_value=vision),
-                            complete=AsyncMock(return_value="1"))
-    return SimpleNamespace(configured=True, search=search, agent_model=model,
-                           search_candidates=AsyncMock(side_effect=candidates),
-                           download_still=AsyncMock(return_value=png("blue")))
-
-
 class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
     def test_link_removal_preserves_labels_and_other_urls(self):
-        url = "https://giphy.com/gifs/synthetic"
+        url = "https://tenor.com/view/synthetic"
         for text, expected in (
             (f"Synthetic answer\n{url}", "Synthetic answer"),
             (f"Synthetic answer\n<{url}>", "Synthetic answer"),
@@ -47,7 +33,7 @@ class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(_without_reply_gif(text, url), expected)
 
     async def test_pasted_reply_link_is_removed_before_text_delivery(self):
-        url = "https://giphy.com/gifs/synthetic"
+        url = "https://tenor.com/view/synthetic"
         for response, expected in (
             (f"Synthetic answer\n{url}", "Synthetic answer"),
             (url, ""), (f"<{url}>", ""),
@@ -84,24 +70,25 @@ class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_link_is_kept_when_no_separate_gif_is_pending(self):
         context = _context()
-        response = "Synthetic answer\nhttps://giphy.com/gifs/synthetic"
+        response = "Synthetic answer\nhttps://tenor.com/view/synthetic"
         surface = AgentDeliveryMixin()
         surface._send_response = AsyncMock()
         await surface.send_response(object(), response, None, context=context)
-        self.assertEqual(surface._send_response.await_args.args[1], "https://giphy.com/gifs/synthetic")
+        self.assertEqual(surface._send_response.await_args.args[1], "https://tenor.com/view/synthetic")
 
-    async def test_later_search_replaces_the_retained_gif(self):
+    async def test_later_library_selection_replaces_the_retained_gif(self):
         context = _context()
-        client = candidate_client(AsyncMock(side_effect=["first", "second"]))
-        context = replace(context, bot=SimpleNamespace(gif_client=client, agent_model=client.agent_model))
-        await find_gif(context, {"query": "synthetic first"})
-        await find_gif(context, {"query": "synthetic second"})
-        self.assertEqual(context.state.gif_url, "second")
+        clips = {key: {'id': key, 'media': f'https://tenor.com/view/{key}'}
+                 for key in ('first', 'second')}
+        with patch.dict(ITEM_BY_ID, clips, clear=True):
+            await find_gif(context, {'query': 'first'})
+            await find_gif(context, {'query': 'second'})
+        self.assertEqual(context.state.gif_url, clips['second']['media'])
 
     async def test_delivery_is_link_only_after_text_or_on_its_own(self):
         for response in ("Synthetic answer", ""):
             context = _context()
-            context.state.gif_url = "https://giphy.com/gifs/synthetic"
+            context.state.gif_url = "https://tenor.com/view/synthetic"
             sent = SimpleNamespace(id=800)
             channel = context.source_message.channel
             channel.send = AsyncMock(return_value=sent)
@@ -134,8 +121,8 @@ class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
                     context = _context()
                     context.source_message.id = 300
                     context.source_message.add_reaction = AsyncMock()
-                    client = candidate_client(AsyncMock(return_value="synthetic-link"))
-                    context = replace(context, bot=SimpleNamespace(gif_client=client, agent_model=client.agent_model))
+
+                    context = replace(context, bot=SimpleNamespace())
                     context = gif_context(context)
                     step = social_step(caption or "Synthetic fallback.",
                         meme_id="synthetic", gif_with_text=bool(caption),
@@ -156,8 +143,8 @@ class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
         context = _context()
         context.source_message.id = 300
         context.source_message.add_reaction = AsyncMock()
-        client = candidate_client(AsyncMock(return_value=None))
-        context = replace(context, bot=SimpleNamespace(gif_client=client, agent_model=client.agent_model))
+
+        context = replace(context, bot=SimpleNamespace())
         context = gif_context(context)
         session = _AgentSession([social_step("Synthetic text reply.", form="text_reactions",
                                             reactions=["\U0001f44d"]),
@@ -172,8 +159,8 @@ class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_research_plan_cannot_search_for_a_reply_gif(self):
         context = _context()
-        client = candidate_client(AsyncMock(return_value="synthetic-link"))
-        context = replace(gif_context(context), bot=SimpleNamespace(gif_client=client))
+
+        context = replace(gif_context(context), bot=SimpleNamespace())
         session = _AgentSession([
             AgentStep("", (plan_call(AgentToolCall("gif", "find_gif", '{"query":"synthetic"}')),), AgentUsage()),
             AgentStep("Synthetic answer", (), AgentUsage()),
@@ -182,13 +169,12 @@ class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
                                                                local_context="", context=context)
         self.assertEqual(answer, "Synthetic answer")
         self.assertIsNone(context.state.gif_url)
-        client.search_candidates.assert_not_awaited()
 
 
     async def test_access_loss_before_media_sends_no_text_and_keeps_delivery_incomplete(self):
         from elbow_helper.features.agent.access import AgentAccessLost
         context = _context()
-        context.state.gif_url = "https://giphy.com/gifs/synthetic"
+        context.state.gif_url = "https://tenor.com/view/synthetic"
         message = SimpleNamespace(id=300, channel=context.source_message.channel)
         delivery = AgentDelivery()
 

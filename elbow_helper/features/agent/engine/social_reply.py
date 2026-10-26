@@ -257,7 +257,7 @@ async def read_social_reply(flow):
             try:
                 choice = salvage_choice(json.loads(call.arguments), flow.registry,
                                         combo_due=flow.context.state.reaction_combo_due)
-                tool, = gif_tools(None, library_only=True)
+                tool, = gif_tools()
                 registry = {**flow.registry, "find_gif": replace(tool, handler=result_handler(tool.handler))}
                 plan = social_plan(choice, call.call_id, gif_available="find_gif" in registry,
                                    channel_bot_gifs=flow.context.state.channel_bot_gifs, context=flow.context)

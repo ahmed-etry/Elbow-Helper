@@ -91,8 +91,7 @@ class CommandRegistryTests(unittest.TestCase):
         from features.agent.dataset_helpers import synthetic_datasets
         from elbow_helper.features.agent.datasets.guide import DataGuide
         from elbow_helper.features.agent.access import KNOWN_ACCESS_REQUIREMENTS
-        from elbow_helper.infrastructure.gifs import GiphyClient
-        registry.update(build_agent_tools(GiphyClient("synthetic")))
+        registry.update(build_agent_tools())
         with TemporaryDirectory() as directory:
             guide = DataGuide(synthetic_datasets(directory)).for_levels(KNOWN_ACCESS_REQUIREMENTS)
         # Fill both knowledge budgets, independent of the deployed knowledge files.

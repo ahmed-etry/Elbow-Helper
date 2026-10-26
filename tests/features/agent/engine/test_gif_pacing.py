@@ -31,7 +31,6 @@ class GifMatchTests(unittest.IsolatedAsyncioTestCase):
                         session = _AgentSession([social_step('Fallback line.', meme_id='synthetic', fit=fit,
                             gif_requested=requested, form='text_reactions', reactions=['\U0001f44d'])])
                         with (patch.dict(ITEM_BY_ID, synthetic=item),
-                              patch('elbow_helper.features.agent.discord_actions.gifs.choose_gif') as search,
                               self.assertLogs('elbow_helper.features.agent.engine.social_reply', level='INFO') as logs):
                             answer = await AgentService(_AgentModel(session, route='social')).answer(
                                 question='Synthetic exchange', local_context='', context=context)
@@ -42,7 +41,6 @@ class GifMatchTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(len(session.calls), 1)
                         self.assertTrue(any(f"'id': 'synthetic', 'fit': {fit}" in line
                                             and f"sent={'synthetic' if sent else None}" in line for line in logs.output))
-                        search.assert_not_called()
                         message.add_reaction.assert_awaited_once_with('\U0001f44d')
                         delivery = AgentDelivery()
                         surface = AgentDeliveryMixin()
@@ -58,7 +56,7 @@ class GifMatchTests(unittest.IsolatedAsyncioTestCase):
         def message(content='', *, author=999, embeds=(), attachments=()):
             return SimpleNamespace(author=SimpleNamespace(id=author), content=content,
                                    embeds=embeds, attachments=attachments)
-        gif = 'https://giphy.com/gifs/synthetic'
+        gif = 'https://tenor.com/view/synthetic'
         rows = [message(gif), message(gif, author=42), message(gif, author=998),
                 message('Synthetic text.'), message('https://[invalid'),
                 message(embeds=[SimpleNamespace(type='gifv')]),

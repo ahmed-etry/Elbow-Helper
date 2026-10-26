@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from elbow_helper.features.agent.discord_actions.gif_library import (
-    GROUPS, LIBRARY, ITEM_BY_ID, catalogue_text, channel_gif_ids, library_gif,
+    GROUPS, LIBRARY, ITEM_BY_ID, catalogue_text, channel_gif_urls, library_gif,
 )
 from elbow_helper.features.agent.discord_actions.gifs import find_gif
 from elbow_helper.features.agent.engine.social_reply import MEME_SEND_FIT, social_reply_definition, salvage_choice, social_plan
@@ -40,15 +40,13 @@ class GifLibraryTests(unittest.IsolatedAsyncioTestCase):
     async def test_community_links_deliver_the_exact_chosen_clip_without_search(self):
         community_items = [item for item in LIBRARY if item['media'].startswith('https://')]
         self.assertTrue(community_items)
-        with patch('elbow_helper.features.agent.discord_actions.gifs.choose_gif') as search:
-            for item in community_items:
-                with self.subTest(meme_id=item['id']):
-                    context = _context()
-                    self.assertEqual(await find_gif(context, {'query': item['id']}, library_only=True),
-                                     {'url': item['media']})
-                    self.assertEqual(context.state.gif_url, item['media'])
-                    self.assertIsNone(context.state.gif_attachment)
-        search.assert_not_called()
+        for item in community_items:
+            with self.subTest(meme_id=item['id']):
+                context = _context()
+                self.assertEqual(await find_gif(context, {'query': item['id']}),
+                                 {'url': item['media']})
+                self.assertEqual(context.state.gif_url, item['media'])
+                self.assertIsNone(context.state.gif_attachment)
 
     def test_enum_and_catalogue_are_identical_across_requests(self):
         first = social_reply_definition({}).parameters
@@ -154,31 +152,32 @@ class GifLibraryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(choice['reactions'], [])
         self.assertEqual(social_plan(choice, 'synthetic', gif_available=True)['steps'][0]['capability'], 'find_gif')
 
-    def test_channel_snapshot_normalizes_giphy_and_attachments(self):
-        rows = [SimpleNamespace(content='https://giphy.com/gifs/reaction-Abc123', embeds=[]),
-                SimpleNamespace(content='', embeds=[SimpleNamespace(url='https://media.giphy.com/media/Def456/giphy.gif')]),
+    def test_channel_snapshot_keeps_full_urls_and_attachments(self):
+        rows = [SimpleNamespace(content='https://tenor.com/view/reaction-Abc123', embeds=[]),
+                SimpleNamespace(content='', embeds=[SimpleNamespace(url='https://media.tenor.com/Def456.gif')]),
                 SimpleNamespace(content='', attachments=[SimpleNamespace(filename='reaction.jpg')])]
-        self.assertEqual(channel_gif_ids(rows), {'Abc123', 'Def456', 'attachment://reaction.jpg'})
-        self.assertEqual(channel_gif_ids([SimpleNamespace(content='https://[', embeds=[])]), set())
+        self.assertEqual(channel_gif_urls(rows), {'https://tenor.com/view/reaction-Abc123', 'https://media.tenor.com/Def456.gif', 'attachment://reaction.jpg'})
+        self.assertEqual(channel_gif_urls([SimpleNamespace(content='https://[', embeds=[])]), set())
 
     async def test_repeated_item_uses_unused_clip_of_same_joke_then_returns_nothing(self):
         clips = {key: {'id': key, 'media': media} for key, media in (
-            ('joke', 'https://giphy.com/gifs/Seen123'), ('joke_2', 'https://tenor.com/view/fresh-456'),
-            ('different', 'https://giphy.com/gifs/Other789'))}
+            ('joke', 'https://tenor.com/view/Seen123'), ('joke_2', 'https://tenor.com/view/fresh-456'),
+            ('different', 'https://tenor.com/view/Other789'))}
         context = _context()
         with patch.dict(ITEM_BY_ID, clips, clear=True):
             self.assertEqual(library_gif(context, 'joke'), clips['joke']['media'])
-            context.state.channel_gif_ids.add('Seen123')
+            context.state.channel_gif_urls.add(clips['joke']['media'])
             self.assertEqual(library_gif(context, 'joke'), clips['joke_2']['media'])
             context.state.used_gif_urls.add(clips['joke_2']['media'])
             self.assertIsNone(library_gif(context, 'joke'))
             context.state.used_gif_urls.add(clips['joke']['media'])
             self.assertIsNone(library_gif(context, 'joke'))
-            self.assertEqual(await find_gif(context, {'query': 'different'}, library_only=True),
+            self.assertEqual(await find_gif(context, {'query': 'different'}),
                              {'url': clips['different']['media']})
 
-    async def test_library_only_tool_never_searches_unknown_items(self):
+    async def test_unknown_item_leaves_gif_unselected(self):
         context = _context()
-        with patch('elbow_helper.features.agent.discord_actions.gifs.choose_gif') as search:
-            self.assertIn('error', await find_gif(context, {'query': 'not_a_meme'}, library_only=True))
-        search.assert_not_called()
+        self.assertEqual(await find_gif(context, {'query': 'not_a_meme'}),
+                         {'error': 'No fitting GIF in the library.'})
+        self.assertIsNone(context.state.gif_url)
+        self.assertIsNone(context.state.gif_attachment)

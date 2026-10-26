@@ -9,7 +9,6 @@ from pathlib import Path
 import discord
 
 from elbow_helper.core.paths import ApplicationPaths
-from elbow_helper.infrastructure.gifs.giphy import gif_id
 from ..models import AgentAttachment
 from ..files.gif_media import provider_url
 
@@ -20,7 +19,7 @@ GROUPS = (
 )
 LIBRARY = json.loads(files(__package__).joinpath("gif_library.json").read_text(encoding="utf-8"))
 ITEM_BY_ID = {item["id"]: item for item in LIBRARY}
-LOGGER = logging.getLogger(__package__ + ".gif_choice")
+LOGGER = logging.getLogger(__name__)
 MEDIA_EXTENSIONS = {".gif", ".png", ".jpg", ".webp"}
 
 
@@ -52,7 +51,7 @@ def _entry_key(entry):
         return "attachment://" + entry
     try:
         if provider_url(entry):
-            return gif_id(entry) or entry
+            return entry
     except ValueError:
         pass
     return None
@@ -85,8 +84,7 @@ def clip_family(item_id):
 def library_gif(context, item_id):
     """Deliver the chosen item, an unused clip of its joke if it was already posted here, or nothing."""
     chosen = ITEM_BY_ID[item_id]
-    used = {gif_id(url) or url for url in context.state.used_gif_urls}
-    seen = set(context.state.channel_gif_ids) | used
+    seen = context.state.channel_gif_urls | context.state.used_gif_urls
     family = clip_family(item_id)
     clips = []
     if _entry_key(chosen["media"]) in seen:
@@ -113,12 +111,12 @@ def library_gif(context, item_id):
 
 
 def channel_used_items(context):
-    seen = set(context.state.channel_gif_ids) | {gif_id(url) or url for url in context.state.used_gif_urls}
+    seen = context.state.channel_gif_urls | context.state.used_gif_urls
     return {item_id for item_id, item in ITEM_BY_ID.items() if _entry_key(item["media"]) in seen}
 
 
-def channel_gif_ids(messages):
-    """Reuse the authorized channel read, including GIFs embedded with a slug."""
+def channel_gif_urls(messages):
+    """Reuse GIF URLs and attachment names from the authorized channel read."""
     from ..files.gif_media import gif_links
     urls = []
     for message in messages:
@@ -128,7 +126,7 @@ def channel_gif_ids(messages):
             continue
     urls.extend(getattr(embed, "url", None) for message in messages
                 for embed in getattr(message, "embeds", ()))
-    seen = set(filter(None, (gif_id(url) or url for url in urls)))
+    seen = set(filter(None, urls))
     seen.update("attachment://" + item.filename for message in messages
                 for item in getattr(message, "attachments", ())
                 if Path(item.filename).suffix.lower() in MEDIA_EXTENSIONS)

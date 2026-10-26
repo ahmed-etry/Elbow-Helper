@@ -18,7 +18,6 @@ from elbow_helper.features.agent.conversation.state import ConversationTurn
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolCall, AgentUsage, TextGenerationError
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from features.agent.engine.test_agent_service import _AgentSession, _AgentModel, _context
-from features.agent.discord_actions.test_gif_delivery import candidate_client
 from tests.features.agent_plan_helpers import plan_call
 from features.agent.engine.helpers import social_step
 from features.agent.engine.test_banter_gifs import gif_context
@@ -57,7 +56,7 @@ class SocialRouteTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
     async def test_optional_gif_failure_keeps_planned_text_without_another_round(self):
         context = _context()
         context.source_message.id = 300
-        context = replace(gif_context(context), bot=SimpleNamespace(gif_client=candidate_client(AsyncMock(return_value=None))))
+        context = replace(gif_context(context), bot=SimpleNamespace())
         call = plan_call(AgentToolCall("gif", "find_gif", '{"query":"synthetic acknowledgement"}'))
         plan = json.loads(call.arguments)
         plan["reply"] = "Synthetic acknowledgement."
@@ -126,32 +125,29 @@ class SocialRouteTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
                                       conversation_history="", context=_context())
             self.assertFalse(route.social)
 
-    async def test_gif_availability_tracks_configuration_on_both_routes(self):
+    async def test_library_meme_shortlist_is_social_only(self):
         for route in ("social", "research"):
-            for configured in (False, True):
-                context = replace(_context(), bot=SimpleNamespace(
-                    gif_client=SimpleNamespace(configured=configured),
-                ))
-                session = _AgentSession([social_step("Synthetic acknowledgement.") if route == "social"
-                                         else AgentStep("Synthetic acknowledgement.", (), AgentUsage())])
-                model = _AgentModel(session, route=route)
-                await AgentService(model).answer(
-                    question="Synthetic conversational moment", local_context="", context=context,
-                )
-                definition = model.request["tools"][0]
-                if route == "social":
-                    forms = definition.parameters["properties"]["reply_form"]["enum"]
-                    self.assertNotIn("gif", forms)
-                    self.assertIn("meme_shortlist", definition.parameters["required"])
-                    self.assertIn("text_reactions", forms)
-                    self.assertEqual(definition.name, "submit_social_reply")
-                else:
-                    offered = definition.parameters["properties"]["steps"]["items"]["properties"]["capability"]["enum"]
-                    self.assertNotIn("find_gif", offered)
-                self.assertEqual({tool.name for tool in model.request["tools"][1:]},
-                                 {"load_research_context"} if route == "social" else set())
-                if configured and route == "social":
-                    self.assertNotIn("system paces GIF selection", model.request["system_prompt"])
+            context = _context()
+            session = _AgentSession([social_step("Synthetic acknowledgement.") if route == "social"
+                                     else AgentStep("Synthetic acknowledgement.", (), AgentUsage())])
+            model = _AgentModel(session, route=route)
+            await AgentService(model).answer(
+                question="Synthetic conversational moment", local_context="", context=context,
+            )
+            definition = model.request["tools"][0]
+            if route == "social":
+                forms = definition.parameters["properties"]["reply_form"]["enum"]
+                self.assertNotIn("gif", forms)
+                self.assertIn("meme_shortlist", definition.parameters["required"])
+                self.assertIn("text_reactions", forms)
+                self.assertEqual(definition.name, "submit_social_reply")
+            else:
+                offered = definition.parameters["properties"]["steps"]["items"]["properties"]["capability"]["enum"]
+                self.assertNotIn("find_gif", offered)
+            self.assertEqual({tool.name for tool in model.request["tools"][1:]},
+                             {"load_research_context"} if route == "social" else set())
+            if route == "social":
+                self.assertNotIn("system paces GIF selection", model.request["system_prompt"])
 
     async def test_routing_tokens_are_included_in_completion_accounting(self):
         session = _AgentSession([replace(social_step(), usage=AgentUsage(400, 20, 0, 400))])
@@ -168,9 +164,9 @@ class SocialRouteTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
                 context = _context()
                 context.source_message.id = 300
                 context.source_message.add_reaction = AsyncMock()
-                client = candidate_client(AsyncMock(return_value="https://giphy.com/gifs/synthetic"))
+
                 knowledge = Mock()
-                context = replace(context, bot=SimpleNamespace(gif_client=client, agent_model=client.agent_model), knowledge_store=knowledge)
+                context = replace(context, bot=SimpleNamespace(), knowledge_store=knowledge)
                 text = "" if form == "gif" else "Synthetic acknowledgement."
                 session = _AgentSession([social_step(text, form=form,
                     meme_id=None,

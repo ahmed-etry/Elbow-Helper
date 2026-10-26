@@ -154,7 +154,7 @@ class AgentTurnState:
     channel_bot_combos: tuple[bool, ...] | None = None
     reaction_combo_due: bool = False
     reaction_combo_revision: int = 0
-    channel_gif_ids: set[str] = field(default_factory=set)
+    channel_gif_urls: set[str] = field(default_factory=set)
     reports: dict[str, ReportArtifact] = field(default_factory=dict)
     report_sources: dict[str, frozenset[int]] = field(default_factory=dict)
     report_access_requirements: dict[str, frozenset[str]] = field(default_factory=dict)

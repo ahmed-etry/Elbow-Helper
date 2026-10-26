@@ -55,7 +55,7 @@ class PersonaVoiceInstructionTests(unittest.TestCase):
                 self.assertIn("A celebration reaction requires a celebratory line", prompt)
                 self.assertIn("never pair it with a jab that undercuts the win", prompt)
 
-    def test_schema_binds_line_reactions_and_both_gif_choices_to_one_mood(self):
+    def test_schema_binds_line_reactions_and_both_image_choices_to_one_mood(self):
         for registry, combo_due in (({}, False), ({"react_to_request": object()}, False),
                                     ({"react_to_request": object()}, True)):
             with self.subTest(reactions=bool(registry), combo_due=combo_due):

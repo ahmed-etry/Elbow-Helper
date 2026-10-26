@@ -130,7 +130,7 @@ class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
                 context.state.channel_bot_gifs = (True,) if outcome == 'optional' else ()
                 requests = []
                 selected = outcome in ('selected', 'optional')
-                url = 'https://giphy.com/gifs/synthetic-media'
+                url = 'https://tenor.com/view/synthetic-media'
                 media = 'missing.gif' if outcome == 'missing' else url
                 requested = outcome not in ('no_fit', 'optional')
                 final = 'Synthetic initial draft.'

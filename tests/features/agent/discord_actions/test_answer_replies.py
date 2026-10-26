@@ -135,7 +135,7 @@ class AnswerReplyTests(unittest.IsolatedAsyncioTestCase):
         context.state.ping_author = True
         context.state.request_text = "Reply to <@7>."
         context.source_message.raw_mentions = [7]
-        url = "https://giphy.com/gifs/synthetic"
+        url = "https://tenor.com/view/synthetic"
         with patch(
             "elbow_helper.features.agent.delivery.assert_answer_scope", new_callable=AsyncMock,
             return_value=True,

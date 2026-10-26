@@ -52,8 +52,8 @@ class SocialMemberTests(unittest.IsolatedAsyncioTestCase):
     async def test_qualified_third_party_gets_own_identity_before_rewriting(self):
         target = context()
         target.source_message.add_reaction = AsyncMock()
-        client = SimpleNamespace(configured=True, search_candidates=AsyncMock(return_value=[]))
-        target = replace(gif_context(target), bot=SimpleNamespace(gif_client=client))
+
+        target = replace(gif_context(target), bot=SimpleNamespace())
         session = _AgentSession([
             social_step("You built me.", member_query="ahmad amaj", form="text_reactions",
                         reactions=["\U0001f44d"]),
@@ -75,7 +75,6 @@ class SocialMemberTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("not facts about this one", result["instruction"])
         self.assertIn("creator identity", result["instruction"])
         target.source_message.add_reaction.assert_not_awaited()
-        client.search_candidates.assert_not_awaited()
 
     async def test_third_party_ambiguity_returns_safe_clarification_before_any_media(self):
         target = context()
@@ -85,8 +84,8 @@ class SocialMemberTests(unittest.IsolatedAsyncioTestCase):
         target.guild.members.extend(others)
         target.guild.get_member = {item.id: item for item in target.guild.members}.get
         target.source_message.add_reaction = AsyncMock()
-        client = SimpleNamespace(configured=True, search_candidates=AsyncMock())
-        target = replace(gif_context(target), bot=SimpleNamespace(gif_client=client))
+
+        target = replace(gif_context(target), bot=SimpleNamespace())
         session = _AgentSession([social_step("Synthetic roast.", member_query="Alex",
             form="text_reactions", reactions=["\U0001f44d"])])
         answer = await AgentService(_AgentModel(session, route="social")).answer(
@@ -101,7 +100,6 @@ class SocialMemberTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("ID", answer)
         self.assertEqual(len(session.calls), 1)
         target.source_message.add_reaction.assert_not_awaited()
-        client.search_candidates.assert_not_awaited()
 
     async def test_identity_rewrite_cannot_switch_to_another_member(self):
         target = context()

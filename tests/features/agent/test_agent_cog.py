@@ -1506,7 +1506,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         bot = SimpleNamespace(id=999, bot=True, display_name="Elbow Helper")
         member = SimpleNamespace(id=42, bot=False, display_name="Member")
         rows = [SimpleNamespace(
-            id=index, content="https://giphy.com/gifs/synthetic" if index == 21 else f"text-{index}",
+            id=index, content="https://tenor.com/view/synthetic" if index == 21 else f"text-{index}",
             attachments=[], embeds=[], author=bot if index == 21 else member,
             created_at=now, jump_url=f"source/{index}",
         ) for index in range(21, 40)]
@@ -1522,8 +1522,8 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         context = SimpleNamespace(state=AgentTurnState())
         shown = await self.cog._build_local_context(message, None, context=context)
         self.assertEqual(context.state.channel_bot_gifs, (True,))
-        self.assertEqual(context.state.channel_gif_ids, {"synthetic"})
-        self.assertNotIn("giphy", shown)
+        self.assertEqual(context.state.channel_gif_urls, {"https://tenor.com/view/synthetic"})
+        self.assertNotIn("https://tenor.com/view/synthetic", shown)
         self.assertEqual(len(context.state.local_messages), 8)
         self.assertEqual(anchors, [message])
 
@@ -1532,7 +1532,7 @@ class AgentCogTests(unittest.IsolatedAsyncioTestCase):
         await self.cog._build_local_context(message, old, context=context)
         self.assertEqual(context.state.channel_bot_gifs, (True,))
         self.assertEqual(anchors, [message, message, old])
-        self.assertEqual(context.state.channel_gif_ids, {"synthetic"})
+        self.assertEqual(context.state.channel_gif_urls, {"https://tenor.com/view/synthetic"})
 
     async def test_successful_sparse_channel_history_remains_diagnostic(self):
 

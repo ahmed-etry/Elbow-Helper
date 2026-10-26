@@ -12,7 +12,7 @@ from elbow_helper.features.agent.engine.routing import judge_route
 from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage, TextGenerationError
 from elbow_helper.infrastructure.ai.agent import AgentImage
-from features.agent.discord_actions.test_gif_choice import png
+from features.agent.files.image_helpers import png
 from features.agent.engine.helpers import social_step
 from features.agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
 

@@ -53,7 +53,7 @@ from ..plan.results import result_handler
 from .result_hints import capability_returns
 
 
-def build_agent_tool_groups(gif_client=None) -> dict[str, tuple[RegisteredAgentTool, ...]]:
+def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
     """Group the registered read capabilities."""
 
     return {
@@ -66,7 +66,7 @@ def build_agent_tool_groups(gif_client=None) -> dict[str, tuple[RegisteredAgentT
         "discord_actions": (
             *discord_message_tools(), *discord_thread_tools(), *discord_message_control_tools(),
             *discord_nickname_tools(), *discord_role_tools(), *direct_message_tools(),
-            *reaction_tools(), *reply_target_tools(), *gif_tools(gif_client),
+            *reaction_tools(), *reply_target_tools(), *gif_tools(),
             *channel_permission_tools(),
             *cleanup_tools(),
             *channel_tools(),
@@ -86,12 +86,12 @@ def build_agent_tool_groups(gif_client=None) -> dict[str, tuple[RegisteredAgentT
     }
 
 
-def build_agent_tools(gif_client=None) -> dict[str, RegisteredAgentTool]:
+def build_agent_tools() -> dict[str, RegisteredAgentTool]:
     """Build the complete catalogue without exposing arbitrary capabilities."""
 
     originals = tuple(
         replace(tool, default_visible=owner == "families", specialist_group=group_for(owner, tool))
-        for owner, group in build_agent_tool_groups(gif_client).items()
+        for owner, group in build_agent_tool_groups().items()
         for tool in group
     )
     original_registry = {tool.definition.name: tool for tool in originals}

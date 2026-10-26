@@ -19,7 +19,6 @@ from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from elbow_helper.features.agent.wording import FAILURE_MESSAGE
 from features.agent.engine.test_agent_service import _AgentModel, _AgentSession, _context
 from features.agent.engine.helpers import social_step
-from features.agent.discord_actions.test_gif_delivery import candidate_client
 from features.agent.engine.test_banter_gifs import gif_context
 
 
@@ -33,14 +32,6 @@ class NativeSocialTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
             calls = []
             if system == ROUTE_INSTRUCTION:
                 content = "social"
-            elif system.startswith("Choose the GIF"):
-                self.assertEqual(options["max_tokens"], 8)
-                self.assertEqual(options["extra_body"], {"thinking": {"type": "disabled"}})
-                self.assertNotIn("tools", options)
-                self.assertIsInstance(options["messages"][1]["content"], str)
-                self.assertIn("Synthetic astonished cat 1", options["messages"][1]["content"])
-                self.assertIn("A cat looks surprised", options["messages"][1]["content"])
-                content = "2"
             else:
                 names = {tool["function"]["name"] for tool in options["tools"]}
                 self.assertIn("submit_social_reply", names)
@@ -67,39 +58,20 @@ class NativeSocialTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
         transport.with_options = lambda **_: transport
         model = DeepSeekTextClient(None)
         model._client = transport
-        from elbow_helper.infrastructure.gifs import GiphyClient
-        from unittest.mock import MagicMock
-
-        client = GiphyClient("synthetic-key")
-        response = SimpleNamespace(status=200, json=AsyncMock(return_value={"data": [
-            {"url": f"https://giphy.com/gifs/synthetic-{index}",
-             "title": f"Synthetic astonished cat {index}", "alt_text": "A cat looks surprised",
-             "images": {
-                "original_still": {"url": f"https://media.giphy.com/synthetic-{index}.png"},
-            }} for index in range(2)
-        ]}))
-        request = MagicMock()
-        request.__aenter__ = AsyncMock(return_value=response)
-        request.__aexit__ = AsyncMock(return_value=None)
-        http = SimpleNamespace(closed=False, get=MagicMock(return_value=request), close=AsyncMock())
-        client._session = http
-        client.download_still = AsyncMock()
         archive = SimpleNamespace(enqueue_debug=Mock())
-        context = replace(gif_context(), bot=SimpleNamespace(gif_client=client, agent_model=model),
+        context = replace(gif_context(), bot=SimpleNamespace(agent_model=model),
                           transcript_archive=archive)
         context.source_message.id = 300
         context.source_message.reply = AsyncMock(return_value=SimpleNamespace(id=301))
         try:
             with patch.dict(ITEM_BY_ID, ts_lowkey_tuff={**ITEM_BY_ID['ts_lowkey_tuff'],
-                            'media': 'https://giphy.com/gifs/synthetic-1'}):
+                            'media': 'https://tenor.com/view/synthetic-1'}):
                 answer = await AgentService(model).answer(
                     question="The imaginary crown melted again.", local_context="Synthetic mutual banter.", context=context,
                 )
             self.assertEqual(answer, "")
-            url = "https://giphy.com/gifs/synthetic-1"
+            url = "https://tenor.com/view/synthetic-1"
             self.assertEqual(context.state.gif_url, url)
-            http.get.assert_not_called()
-            client.download_still.assert_not_awaited()
             self.assertEqual(len(requests), 2)  # Routing and native output.
             record = archive.enqueue_debug.call_args.args[1]
             self.assertEqual([item["capability"] for item in record.tool_calls], ["find_gif"])
@@ -121,7 +93,6 @@ class NativeSocialTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
             self.assertTrue(delivery.complete)
             surface._send_response.assert_not_awaited()
         finally:
-            await client.close()
             await model.close()
 
     async def test_reaction_only_choice_keeps_reactions_and_gets_one_plain_text_line(self):
@@ -178,15 +149,14 @@ class NativeSocialTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
                         social_step("Synthetic salvaged line.", form="gif", meme_id=""),
                         social_step("Synthetic salvaged line.", meme_id=""),
                         AgentStep("Synthetic salvaged line.", (), AgentUsage())):
-            client = candidate_client(AsyncMock())
-            context = replace(gif_context(), bot=SimpleNamespace(gif_client=client))
+
+            context = replace(gif_context(), bot=SimpleNamespace())
             session = _AgentSession([invalid])
             answer = await AgentService(_AgentModel(session, route="social")).answer(
                 question="Synthetic shared joke", local_context="", context=context,
             )
             self.assertEqual(answer, "Synthetic salvaged line.")
             self.assertEqual(len(session.calls), 1)
-            client.search_candidates.assert_not_awaited()
 
     async def test_bad_reaction_fields_do_not_discard_valid_reactions_or_text(self):
         context = _context()
@@ -240,8 +210,8 @@ class NativeSocialTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
         surface._send_response.assert_awaited_once()
 
     async def test_failed_native_outputs_report_every_call_id_before_text_fallback(self):
-        client = candidate_client(AsyncMock(return_value=None))
-        context = replace(_context(), bot=SimpleNamespace(gif_client=client, agent_model=client.agent_model))
+
+        context = replace(_context(), bot=SimpleNamespace())
         context.source_message.id = 300
         context.source_message.add_reaction = AsyncMock()
         session = _AgentSession([
@@ -257,12 +227,11 @@ class NativeSocialTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(context.state.gif_url)
         context.source_message.add_reaction.assert_not_awaited()
 
-    async def test_native_calls_respect_configuration_cooldown_research_and_schema(self):
-        for mode in ("unconfigured", "cooldown", "research", "expanded", "invalid"):
+    async def test_native_calls_respect_cooldown_research_and_schema(self):
+        for mode in ("cooldown", "research", "expanded", "invalid"):
             with self.subTest(mode=mode):
-                client = candidate_client(AsyncMock(return_value="https://giphy.com/gifs/synthetic"))
-                client.configured = mode != "unconfigured"
-                context = replace(_context(), bot=SimpleNamespace(gif_client=client, agent_model=client.agent_model))
+
+                context = replace(_context(), bot=SimpleNamespace())
                 if mode == "cooldown":
                     context = gif_context(context, recent=(True,))
                 arguments = '{"query":""}' if mode == "invalid" else '{"query":"synthetic"}'
@@ -275,9 +244,8 @@ class NativeSocialTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
                 model = _AgentModel(session, route="research" if mode == "research" else "social")
                 answer = await AgentService(model).answer(question="Synthetic exchange", local_context="", context=context)
                 self.assertEqual(answer, "Synthetic acknowledgement.")
-                client.search_candidates.assert_not_awaited()
                 self.assertIsNone(context.state.gif_url)
-                if mode in ("unconfigured", "cooldown", "research"):
+                if mode in ("cooldown", "research"):
                     self.assertNotIn("find_gif", {definition.name for definition in model.request["tools"]})
                 if mode == "expanded":
                     self.assertEqual([definition.name for definition in session.tool_replacements[0]],

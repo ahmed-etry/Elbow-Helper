@@ -128,7 +128,7 @@ class AgentService:
         if context.state.local_messages:
             context.state.grounding_evidence["local_context"] = {"messages": context.state.local_messages}
         game_advice = route is not None and route.game_advice
-        registry = {} if game_advice else build_agent_tools(getattr(context.bot, "gif_client", None))
+        registry = {} if game_advice else build_agent_tools()
         gif_tool = registry.pop("find_gif", None)
         social = route is not None and route.social
         if social and gif_tool is not None:
@@ -213,9 +213,8 @@ class AgentService:
             (social_reply_definition(registry, combo_due=context.state.reaction_combo_due), EXPAND_DEFINITION)
             if social else (definition,)
         )
-        LOGGER.info("Agent social outputs: request=%s gif_configured=%s direct_tools=%s",
+        LOGGER.info("Agent social outputs: request=%s direct_tools=%s",
                     getattr(context.source_message, "id", None),
-                    bool(getattr(getattr(context.bot, "gif_client", None), "configured", False)),
                     [tool.name for tool in definitions])
         system_prompt = VOICE_RULES + '\n\n' + GAME_ADVICE_RULES if game_advice else (
             system_instructions(registry, actions_enabled=actions_available, social=True)

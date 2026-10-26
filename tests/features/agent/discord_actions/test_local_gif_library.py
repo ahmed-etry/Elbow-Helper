@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.core.paths import ApplicationPaths
 from elbow_helper.features.agent.delivery import AgentDeliveryMixin
-from elbow_helper.features.agent.discord_actions.gif_library import ITEM_BY_ID, channel_gif_ids
+from elbow_helper.features.agent.discord_actions.gif_library import ITEM_BY_ID, channel_gif_urls
 from elbow_helper.features.agent.discord_actions.gifs import channel_gif_history, find_gif, gif_tools
 from elbow_helper.features.agent.engine.service import AgentService
 from elbow_helper.features.agent.models import AgentDelivery
@@ -27,7 +27,7 @@ class LocalGifLibraryTests(unittest.IsolatedAsyncioTestCase):
         paths = ApplicationPaths.from_project_root(temporary)
         self.directory = paths.data_root / "agent" / "gifs"
         self.directory.mkdir(parents=True)
-        self.context = replace(gif_context(), bot=SimpleNamespace(paths=paths, gif_client=None))
+        self.context = replace(gif_context(), bot=SimpleNamespace(paths=paths))
         self.context.guild.filesize_limit = 16
         self.context.source_message.id = 300
         self.context.source_message.archive_reply = False
@@ -47,29 +47,27 @@ class LocalGifLibraryTests(unittest.IsolatedAsyncioTestCase):
             name = "synthetic." + extension
             (self.directory / name).write_bytes(b"synthetic media")
             with self.library([name]):
-                self.assertTrue(gif_tools(None))
+                self.assertTrue(gif_tools())
                 result = await find_gif(self.context, {"query": "synthetic"})
             self.assertEqual(result, {"url": "attachment://" + name})
             self.assertEqual(self.context.state.gif_attachment.data, b"synthetic media")
             row = SimpleNamespace(author=SimpleNamespace(id=999), content="",
                                   attachments=[SimpleNamespace(filename=name)])
             self.assertEqual(channel_gif_history([row], 999), (True,))
-            self.assertIn("attachment://" + name, channel_gif_ids([row]))
-            self.context.state.channel_gif_ids = channel_gif_ids([row])
+            self.assertIn("attachment://" + name, channel_gif_urls([row]))
+            self.context.state.channel_gif_urls = channel_gif_urls([row])
             self.context.state.gif_url = None
             with self.library([name]):
-                for library_only in (False, True):
-                    self.assertIn('error', await find_gif(self.context, {"query": "synthetic"},
-                                                         library_only=library_only))
-                    self.assertIsNone(self.context.state.gif_url)
-            self.context.state.channel_gif_ids.clear()
+                self.assertIn('error', await find_gif(self.context, {"query": "synthetic"}))
+                self.assertIsNone(self.context.state.gif_url)
+            self.context.state.channel_gif_urls.clear()
 
     async def test_missing_empty_oversized_and_unreadable_files_log_and_leave_text(self):
         for name, data in (("missing.gif", None), ("empty.png", b""), ("huge.jpg", b"x" * 17)):
             if data is not None:
                 (self.directory / name).write_bytes(data)
             with self.library([name]), self.assertLogs(
-                "elbow_helper.features.agent.discord_actions.gif_choice", level="WARNING",
+                "elbow_helper.features.agent.discord_actions.gif_library", level="WARNING",
             ):
                 answer = await AgentService(_AgentModel(
                     _AgentSession([social_step("Synthetic fallback.", meme_id="synthetic")]), route="social",
@@ -78,13 +76,13 @@ class LocalGifLibraryTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(self.context.state.gif_url)
         (self.directory / "denied.gif").write_bytes(b"synthetic")
         with (self.library(["denied.gif"]), patch.object(Path, "open", side_effect=PermissionError("Synthetic denial")),
-              self.assertLogs("elbow_helper.features.agent.discord_actions.gif_choice", level="WARNING")):
+              self.assertLogs("elbow_helper.features.agent.discord_actions.gif_library", level="WARNING")):
             self.assertIn("error", await find_gif(self.context, {"query": "synthetic"}))
 
     async def test_missing_chosen_file_and_unsafe_paths_do_not_select_a_different_clip(self):
         (self.directory / "good.gif").write_bytes(b"synthetic")
         with self.library(["missing.gif", "good.gif"]), self.assertLogs(
-                "elbow_helper.features.agent.discord_actions.gif_choice", level="WARNING"):
+                "elbow_helper.features.agent.discord_actions.gif_library", level="WARNING"):
             self.assertIn('error', await find_gif(self.context, {"query": "synthetic"}))
         for media in ("../outside.gif", "D:\\outside.gif", "script.exe", "https://example.com/file.gif",
                       "https://klipy.com.example.com/file.gif", "https://fakeklipy.com/file.gif",
@@ -97,7 +95,7 @@ class LocalGifLibraryTests(unittest.IsolatedAsyncioTestCase):
         (self.directory / "good.gif").write_bytes(b"synthetic")
         with self.library(["good.gif"]):
             await find_gif(self.context, {"query": "synthetic"})
-        for link in ("https://giphy.com/gifs/Synthetic123", "https://tenor.com/view/synthetic-123",
+        for link in ("https://tenor.com/view/synthetic-123",
                      "https://klipy.com/gifs/synthetic", "https://static2.klipy.com/synthetic.gif"):
             with self.library([link]):
                 self.assertEqual(await find_gif(self.context, {"query": "synthetic"}), {"url": link})

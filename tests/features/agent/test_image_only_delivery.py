@@ -46,7 +46,7 @@ class ImageOnlyDeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.message.reply.await_args.args, ('Synthetic explanation.',))
 
     async def test_selected_image_sends_no_prose_even_if_caller_supplies_it(self):
-        self.context.state.gif_url = 'https://giphy.com/gifs/Synthetic'
+        self.context.state.gif_url = 'https://tenor.com/view/Synthetic'
         await self.send('Synthetic fallback.')
         self.message.reply.assert_awaited_once()
         self.assertEqual(self.message.reply.await_args.args, (self.context.state.gif_url,))
@@ -54,7 +54,7 @@ class ImageOnlyDeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.context.state.gif_fallback_text, 'Synthetic fallback.')
 
     async def test_definite_media_rejection_sends_only_the_authored_fallback(self):
-        self.context.state.gif_url = 'https://giphy.com/gifs/Synthetic'
+        self.context.state.gif_url = 'https://tenor.com/view/Synthetic'
         rejected = discord.HTTPException(SimpleNamespace(status=400, reason='Synthetic rejection'), 'invalid file')
         self.message.reply.side_effect = [rejected, SimpleNamespace(id=701)]
         await self.send('Synthetic fallback.')
@@ -64,7 +64,7 @@ class ImageOnlyDeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.delivery.unknown)
 
     async def test_uncertain_media_send_never_sends_a_caption_or_fallback(self):
-        self.context.state.gif_url = 'https://giphy.com/gifs/Synthetic'
+        self.context.state.gif_url = 'https://tenor.com/view/Synthetic'
         self.message.reply.side_effect = OSError('Synthetic disconnect')
         self.surface._find_delivery_nonce = AsyncMock(return_value=None)
         with self.assertRaises(AgentDeliveryUnknown):
@@ -74,8 +74,8 @@ class ImageOnlyDeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.delivery.text_parts, [])
 
     async def test_raw_provider_link_cannot_smuggle_a_caption(self):
-        await self.send('Synthetic caption.\nhttps://giphy.com/gifs/Synthetic')
-        self.assertEqual(self.message.reply.await_args.args, ('https://giphy.com/gifs/Synthetic',))
+        await self.send('Synthetic caption.\nhttps://tenor.com/view/Synthetic')
+        self.assertEqual(self.message.reply.await_args.args, ('https://tenor.com/view/Synthetic',))
 
     async def test_direct_image_link_cannot_smuggle_a_caption(self):
         await self.send('Synthetic caption.\nhttps://example.invalid/image.PNG?version=2')

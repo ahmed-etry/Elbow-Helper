@@ -13,7 +13,7 @@ from elbow_helper.features.agent.discord_actions.messages import (
 )
 
 
-GIF = "https://giphy.com/gifs/synthetic-example"
+GIF = "https://tenor.com/view/synthetic-example"
 
 
 class OutgoingGifTests(unittest.IsolatedAsyncioTestCase):
