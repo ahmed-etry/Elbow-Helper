@@ -877,6 +877,12 @@ class AnswerFlow:
         if not self.plan.get('finish_after_reads') or not results:
             return False
         for value in results.values():
+            if (value.get('family') == 'read_member_accounts'
+                    and value.get('selection', {}).get('after')):
+                from ..families.account_activity import HISTORY_KINDS
+                history = value.get('history_reads', {})
+                if any(history.get(kind, {}).get('read_ran') is not True for kind in HISTORY_KINDS):
+                    return False
             if access_refused(value):
                 # A refused source is terminal, not an incomplete page to
                 # pursue again. The writer decides whether it was requested.

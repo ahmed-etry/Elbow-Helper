@@ -85,6 +85,24 @@ def member_fields(member, identifier):
 
 async def member_accounts(context, arguments):
     roster_clans, roster_names = {}, {}
+    name_selection = {}
+    if arguments.get('after') or arguments.get('before'):
+        from .war_reads import period
+        try:
+            period({**arguments, 'before': arguments.get('before')
+                    or context.source_message.created_at.isoformat()})
+        except ValueError as error:
+            return {'error': str(error), 'cause': 'invalid_arguments'}
+    if arguments.get('account_names'):
+        if any(arguments.get(key) for key in ('member_ids', 'account_tags', 'name', 'cohort_ref')):
+            return {'error': 'Which members, accounts or exact name do you want?', 'cause': 'invalid_arguments'}
+        from .account_names import resolve_account_names
+        name_selection = await resolve_account_names(context, arguments['account_names'])
+        roster_names = {tag: row['player_name'] for tag, row in name_selection['accounts'].items()}
+        if not roster_names:
+            return {'rows': [], 'status': 'needs_input', **{key: value for key, value in name_selection.items()
+                    if key != 'accounts'}}
+        arguments = {**arguments, 'account_tags': sorted(roster_names)}
     if arguments.get('cohort_ref'):
         selection = await cohort_selection(context,arguments['cohort_ref'],'member_ids')
         if 'error' in selection:
@@ -159,6 +177,10 @@ async def member_accounts(context, arguments):
                            'profile_status': 'unlinked' if context.account_links else 'links_unavailable'})
     await require_evidence_access(context)
     matched = [row for row in result if account_matches(row,arguments)]
+    history_reads = {}
+    if arguments.get('after'):
+        from .account_activity import account_activity
+        history_reads = await account_activity(context, matched, arguments)
     from .domain_facts import clan_profile
     current_clans = {row.get('clan', {}).get('tag') for row in matched if row.get('clan')}
     return {'rows': sorted(matched, key=lambda row: (row['member_id'] is None,
@@ -172,7 +194,11 @@ async def member_accounts(context, arguments):
                     'member_id', 'member_name', 'player_tag', 'player_name',
                     'membership_status', 'home_role_checks')} for row in matched],
                 'role_comparison_complete': len(matched) == len(roster_clans)} if roster_clans else {}),
-            'coverage': 'all bot-linked accounts for selected members; missing profiles remain unknown'}
+            **{key: value for key, value in name_selection.items() if key != 'accounts'},
+            **({'history_reads': history_reads} if arguments.get('after') else {}),
+            'coverage': ('selected game accounts only; owners do not expand the account selection'
+                         if arguments.get('account_tags') else
+                         'all bot-linked accounts for selected members; missing profiles remain unknown')}
 
 
 async def seasonal_tags(context, code, season):
@@ -440,12 +466,16 @@ async def member_cohort(context, arguments):
 
 
 TOOLS = (
- family_tool('read_member_accounts', 'Join accounts to Discord owners, home-clan roles, current TH, in-game clan and ranked league.',
+ family_tool('read_member_accounts', 'Resolve named game accounts, profiles and dated war/CWL/ranked activity, or join Discord owners.',
      {'member_ids': IDS, 'account_tags': TAGS, 'cohort_ref':COHORT_REF, **ACCOUNT_FILTERS,
+      'account_names': {'type': 'array', 'minItems': 1, 'maxItems': 200, 'uniqueItems': True,
+          'items': {'type': 'string', 'minLength': 1, 'maxLength': 100},
+          'description': 'Game account subjects of stats requests. Search all family rosters and stored names; tolerate spacing/case/typos; return ambiguity by tag.'},
+      'after': DATE, 'before': DATE,
       'include_roles': {'type': 'boolean', 'default': False},
       'name': {'type': 'string', 'minLength': 1, 'maxLength': 100,
-               'description': 'Complete Discord identity or linked account name; keep all supplied qualifiers.'}}, member_accounts,
-     usage_note='home_clans: current Discord member roles, separate from in-game clan. include_roles=true retains roster home_role_checks. Multiple home roles remain explicit.'),
+               'description': 'Explicit Discord-member identity; expands to every linked account of that owner. For game account stats use account_names.'}}, member_accounts,
+     usage_note='Stats names use account_names unless explicitly Discord members. after/before reads REG, CWL and ranked history for those tags. home_clans: Discord roles.'),
  family_tool('read_clan_rosters', 'Read every selected clan roster, TH distribution, capacity and donations.',
      {'clan_codes': CLANS_INPUT, 'basis': ROSTER_BASIS,
       'season': {'type': 'string', 'maxLength': 20}, **ACCOUNT_FILTERS,

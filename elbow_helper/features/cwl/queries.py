@@ -23,6 +23,8 @@ MAX_HISTORY_SEASONS = 12
 class CwlHistorySource(Protocol):
     def attendance(self, **selection) -> dict[str, Any]: ...
 
+    def account_names(self) -> list[dict[str, str]]: ...
+
     def scoring_wars(
         self, clan_code: str, war_ids: list[str],
     ) -> list[dict[str, Any]]: ...
@@ -251,6 +253,10 @@ class CwlQueries:
     def attendance(self, **selection):
         """Read stored regular/CWL participation, including incomplete seasons."""
         return self._history.attendance(**selection)
+
+    def account_names(self):
+        """Game account names from the stored directory and historical lineups."""
+        return self._history.account_names()
 
     def latest_season(self, *, clan_code: str) -> str | None:
         """Latest stored season with completed wars for this clan, not one war."""

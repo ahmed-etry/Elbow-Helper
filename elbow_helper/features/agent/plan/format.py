@@ -197,7 +197,7 @@ REFERENCE_RETURNS = {
     "read_war_attendance": "report_id,total_rows,rows:[{member_id,player_tag,attacks_used,missed}]",
     "read_cwl_results": "report_id,total_rows,rows:[{member_id,player_tag,clan_code,season,rank,ass_score}]",
     "read_current_war": "report_id,rows:[{clan_code,members:[{player_tag}]}]",
-    "read_member_accounts": "report_id,total_rows,rows:[{member_id,player_tag,home_clans,roles}]",
+    "read_member_accounts": "report_id,total_rows,name_resolutions,history_reads,rows:[{member_id,player_tag,home_clans,roles,activity:{regular_war,cwl,ranked}}]",
     "read_clan_rosters": "report_id,total_rows,rows:[{clan_code,player_tag,member_id}],clans:[{clan_code,entry_settings:{type,requiredTownhallLevel,requiredTrophies,requiredBuilderBaseTrophies}}]",
     "read_member_cohort": "report_id,total_rows,selected_role_ids,selection_window,rows:[{member_id,joined_at,family_membership_roles,has_elbow_helper_links,home_clans,accounts:[{player_tag,clan,profile_status}]}],activity_coverage",
     "read_recruitment_pipeline": "report_id,total_rows,source_next_cursor,rows:[{member_id,ticket_channel_id,accepted_clan_codes,acceptance_decision,accounts}]",
