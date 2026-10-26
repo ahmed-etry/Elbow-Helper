@@ -19,7 +19,7 @@ class OperatorDebugRecord:
 
     def submitted(self, calls):
         for call in calls:
-            if call.name != PLAN_TOOL_NAME:
+            if call.name not in (PLAN_TOOL_NAME, "submit_social_reply"):
                 continue
             try:
                 plan = json.loads(call.arguments)

@@ -8,7 +8,7 @@ from typing import Any, Mapping
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..engine.capability_contract import CapabilityContract
-from ..access import accessible_message_channel, require_evidence_access, has_access_requirements
+from ..access import accessible_message_channel, require_evidence_access, has_lookup_access
 from .context import retained_knowledge_sources, model_evidence
 from .state import ConversationTurn
 from ..models import AgentRequestContext, RegisteredAgentTool
@@ -23,12 +23,11 @@ def history_tools() -> tuple[RegisteredAgentTool, ...]:
         AgentToolDefinition(
             name="read_conversation_history",
             description=(
-                "Read earlier turns in this conversation."
+                "Read earlier conversation chunks; select relevant turns by meaning."
             ),
             parameters={
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "maxLength": 200},
                     "request_message_id": {"type": "integer", "minimum": 1},
                     "offset": {"type": "integer", "minimum": 0},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 5},
@@ -87,7 +86,8 @@ async def read_conversation_history(
     context: AgentRequestContext, arguments: Mapping[str, Any],
 ) -> Mapping[str, Any]:
     await require_evidence_access(context)
-    query = str(arguments.get("query") or "").casefold()
+    if "query" in arguments:
+        return {"error": "Read conversation chunks without a query; select relevant turns by meaning."}
     request_id = arguments.get("request_message_id")
     offset = arguments.get("offset", 0)
     limit = arguments.get("limit", 3)
@@ -95,7 +95,7 @@ async def read_conversation_history(
     matches: list[tuple[ConversationTurn, str]] = []
     # The request receives an immutable turn tuple for this conversation only.
     for turn in reversed(context.history):
-        if not has_access_requirements(context.guild, context.member.id, turn.required_access):
+        if not has_lookup_access(context, turn.required_access):
             continue
         if request_id is not None and (
             turn.record is None or turn.record.request_message_id != request_id
@@ -107,23 +107,10 @@ async def read_conversation_history(
         if not all(access[channel_id] for channel_id in turn.source_channels):
             continue
         document = _document(turn)
-        if query and query not in document.casefold():
-            continue
         matches.append((turn, document))
     results = []
     for turn, document in matches[offset:offset + limit]:
         start = min(arguments.get("content_offset", 0), len(document))
-        if query and "content_offset" not in arguments:
-            # Search excerpts start near the hit; explicit offsets read sequentially.
-            folded = document.casefold()
-            match = folded.find(query)
-            # Casefold can change length. Convert its index back to the original.
-            position = 0
-            for index, character in enumerate(document):
-                if position >= match:
-                    start = max(0, index - 200)
-                    break
-                position += len(character.casefold())
         results.append(_excerpt(turn, document, start))
         context.state.source_channels.update(turn.source_channels)
         context.state.required_access.update(turn.required_access)

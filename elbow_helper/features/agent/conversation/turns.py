@@ -78,6 +78,7 @@ class AgentTurnMixin:
             knowledge_store=self.knowledge_store,
             research_jobs=self.research_jobs,
             action_repository=self.action_repository,
+            meme_usage_repository=self.meme_usage_repository,
             action_runner=self.action_runner,
             conversation_root_id=root_id,
             attachment_sources=tuple(item for item in (message, referenced) if item is not None),
@@ -102,6 +103,15 @@ class AgentTurnMixin:
             delivered_answer = "\n".join(filter(None, (*delivery.text_parts, reaction_reply)))
             visible_previews = tuple(action.preview for action in context.state.proposed_changes
                                      if not action.details_hidden)
+            entity_ids = set(context.state.resolved_members)
+            replied_author = context.state.reply_context.get('author', {}).get('member_id')
+            if type(replied_author) is int and replied_author != getattr(getattr(context.guild, 'me', None), 'id', None):
+                entity_ids.add(replied_author)
+            resolved_entities = []
+            for identifier in sorted(entity_ids):
+                entity = context.guild.get_member(identifier)
+                if entity is not None and entity.id == identifier:
+                    resolved_entities.append({'kind': 'member', 'id': identifier, 'display_name': entity.display_name})
             conversation.append(ConversationTurn(
                 text=json.dumps({
                     "asker": member.display_name, "member_id": member.id,
@@ -109,6 +119,7 @@ class AgentTurnMixin:
                     "answer_truncated": len(delivered_answer) > 16_000,
                     "local_context": local_context[:12_000],
                     "report_ids": list(context.state.reports),
+                    "resolved_entities": resolved_entities,
                 }, ensure_ascii=False),
                 source_channels=frozenset(context.state.source_channels).union(
                     *(preview.detail_sources for preview in visible_previews)),
