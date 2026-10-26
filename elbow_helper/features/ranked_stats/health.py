@@ -55,8 +55,12 @@ class CollectionHealth:
             detail = "no response" if status is None else f"status {status}"
             self.logger.debug("Ranked %s unavailable for %s (%s)", kind, tag, detail)
 
-        for tag, kind in recovered:
-            self.logger.info("Ranked %s recovered for %s", kind, tag)
+        for kind, tags in _by_kind(recovered).items():
+            if len(tags) == 1:
+                self.logger.info("Ranked %s recovered for %s", kind, tags[0])
+            else:
+                self.logger.info("Ranked %s recovered for %s accounts: %s",
+                                 kind, len(tags), _sample(tags))
         missing = {tag for (tag, _), failure in self.failures.items() if failure.missing}
         for tag in sorted(missing - self.missing_players):
             self.logger.warning("Ranked player %s does not exist (status 404)", tag)
@@ -78,13 +82,40 @@ class CollectionHealth:
                                  kind, failed, len(statuses))
                 self.outages.remove(kind)
 
+        # A partial outage can cross the threshold for many accounts at once; one line per kind.
+        newly_failed = {}
         for (tag, kind), failure in self.failures.items():
             if failure.missing or failure.warned or kind in self.outages:
                 continue
             transient = failure.status is None or failure.status == 429 or failure.status >= 500
             if transient and failure.consecutive < FAILURE_POLL_THRESHOLD:
                 continue
-            detail = "no response" if failure.status is None else f"status {failure.status}"
-            self.logger.warning("Ranked %s unavailable for %s after %s consecutive polls (%s)",
-                                kind, tag, failure.consecutive, detail)
+            newly_failed.setdefault(kind, []).append((tag, failure))
             failure.warned = True
+        for kind, items in newly_failed.items():
+            if len(items) == 1:
+                tag, failure = items[0]
+                self.logger.warning("Ranked %s unavailable for %s after %s consecutive polls (%s)",
+                                    kind, tag, failure.consecutive, _detail(failure.status))
+                continue
+            details = sorted({_detail(failure.status) for _, failure in items})
+            self.logger.warning(
+                "Ranked %s unavailable for %s accounts after %s+ consecutive polls (%s): %s",
+                kind, len(items), min(failure.consecutive for _, failure in items),
+                ", ".join(details), _sample([tag for tag, _ in items]))
+
+
+def _detail(status):
+    return "no response" if status is None else f"status {status}"
+
+
+def _by_kind(keys):
+    grouped = {}
+    for tag, kind in keys:
+        grouped.setdefault(kind, []).append(tag)
+    return grouped
+
+
+def _sample(tags, limit=5):
+    shown = ", ".join(sorted(tags)[:limit])
+    return shown + (f" and {len(tags) - limit} more" if len(tags) > limit else "")

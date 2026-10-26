@@ -264,13 +264,16 @@ class RankedCollectorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.cog._schedules["#P0"].battle_interval, 1200)
         with self.assertLogs(logger, level="WARNING") as logs:
             await self.collect_at(1800)
-        self.assertEqual(len(logs.output), 2)
-        self.assertTrue(all("3 consecutive polls" in line for line in logs.output))
+        # Accounts crossing the threshold together are summarised in one line.
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("2 accounts after 3+ consecutive polls", logs.output[0])
         self.assertEqual(self.cog._schedules["#P0"].battle_interval, 2400)
         self.client.get.side_effect = self.response
         with self.assertLogs(logger, level="INFO") as logs:
             await self.collect_at(4200)
-        self.assertEqual(sum("recovered" in line for line in logs.output), 2)
+        recovered = [line for line in logs.output if "recovered" in line]
+        self.assertEqual(len(recovered), 1)
+        self.assertIn("recovered for 2 accounts", recovered[0])
 
     async def test_invalid_link_warning_is_once_until_repaired(self):
         self.links["invalid"] = {"discord_user_id": 0}
