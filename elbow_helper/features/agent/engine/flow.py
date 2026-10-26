@@ -50,7 +50,7 @@ from .named_replies import named_reply
 from .evidence_delta import EvidenceDelta, access_refused
 from .answer_inputs import answer_evidence, read_handles, bounded_answer_evidence, serialized_answer_evidence
 from .cohort_evidence import complete_activity_reads, cohort_writer_evidence, cohort_review_evidence, restorable_reference
-from .assessment import DECISION_ANSWER_INSTRUCTION, assessment_limits, decision_answer, discussion_ids, read_decision_discussions
+from .assessment import DECISION_ANSWER_INSTRUCTION, assessment_limits, deliver_decision_answer, discussion_ids, read_decision_discussions
 from .account_lists import account_index
 from ..research.directory import scoped_channel_directory
 from ..files.delivery import delivery_manifest
@@ -138,12 +138,13 @@ class AnswerFlow:
                 answer = final
         if self.assessment_requested:
             try:
-                answer = decision_answer(answer, self.discussion_message_ids, accounts=self.answer_accounts)
+                answer = await deliver_decision_answer(self.context, answer, self.discussion_message_ids,
+                                                       accounts=self.answer_accounts)
             except ValueError as error:
                 repaired = await self._repair_decision_format(answer, error)
                 try:
-                    answer = decision_answer(repaired.content, self.discussion_message_ids,
-                                             accounts=self.answer_accounts)
+                    answer = await deliver_decision_answer(self.context, repaired.content,
+                        self.discussion_message_ids, accounts=self.answer_accounts)
                 except ValueError as invalid:
                     raise TextGenerationError('Decision response could not be validated.') from invalid
         self.decision_composed = self.assessment_requested

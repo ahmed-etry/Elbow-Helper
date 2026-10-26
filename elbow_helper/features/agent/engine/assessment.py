@@ -10,7 +10,10 @@ from ..access import require_evidence_access
 from ..conversation.context import estimate_tokens
 from ..plan.checker import valid_arguments
 from ..research.directory import scoped_channel_directory
-from .account_lists import ACCOUNT_LISTS_INSTRUCTION, ACCOUNT_LISTS_SCHEMA, insert_account_lists
+from .account_lists import (
+    ACCOUNT_LISTS_INSTRUCTION, ACCOUNT_LISTS_SCHEMA, insert_resolved_lists, resolve_account_lists,
+)
+from .account_list_spreadsheets import prepare_account_list_spreadsheet
 from .rounds import AgentGracefulEnd
 
 
@@ -27,6 +30,7 @@ DECISION_SCHEMA = {'type': 'object', 'properties': {
     'question': {'type': 'string', 'minLength': 0, 'maxLength': 500},
     'recommendation': {'type': 'string', 'minLength': 0, 'maxLength': 16000},
     'account_lists': ACCOUNT_LISTS_SCHEMA,
+    'account_lists_spreadsheet': {'type': 'string', 'minLength': 1, 'maxLength': 80},
     'needs_private_evidence': {'type': 'boolean'}},
     'required': ['intent', 'intent_source', 'discussion_message_ids', 'settled_choices', 'open_choices',
                  'facts', 'question', 'recommendation'],
@@ -102,7 +106,9 @@ when available. If intent and the governing approach are established, use reques
 or discussion according to its actual source and leave question empty. Apply a policy only
 within the applicability stated in its definition. Never infer the intended plan from
 metrics alone. State the useful facts without narrating this response format.
-""" + ACCOUNT_LISTS_INSTRUCTION
+""" + ACCOUNT_LISTS_INSTRUCTION + """
+Use account_lists_spreadsheet as the workbook title only for requested files or rows too long for one message.
+Keep file claims out of facts, recommendation and question. Prepared workbooks remove list markers; failures render inline."""
 
 
 def assessment_limits(evidence):
@@ -134,8 +140,8 @@ def assessment_limits(evidence):
             'in affected advice.'}
 
 
-def decision_answer(content, discussion_message_ids, *, accounts=None):
-    """An unresolved decision delivers facts and a question, never its proposed advice."""
+def _decision_parts(content, discussion_message_ids, accounts):
+    """Validate the entire decision before preparing any deliverable."""
     result = json.loads(content)
     if not valid_arguments(result, DECISION_SCHEMA):
         raise ValueError('Invalid decision answer')
@@ -156,11 +162,35 @@ def decision_answer(content, discussion_message_ids, *, accounts=None):
         if result['question'].strip():
             raise ValueError('A resolved intent cannot have an unresolved question')
         parts = (result['facts'], result['recommendation'])
-    parts = insert_account_lists(parts, lists, accounts or {})
+    return result, parts, resolve_account_lists(lists, accounts)
+
+
+def _render_decision(result, parts, lists, accounts, *, delivered=False):
+    parts = insert_resolved_lists(parts, lists, accounts, delivered=delivered)
     answer = '\n\n'.join(part.strip() for part in parts if part.strip())
-    if not answer:
+    if not answer and not delivered:
         raise ValueError('Empty decision answer')
     return json.dumps({'answer': answer, 'needs_private_evidence': True}) if result.get('needs_private_evidence') else answer
+
+
+def decision_answer(content, discussion_message_ids, *, accounts=None):
+    """Render the validated inline answer, including the private-answer envelope."""
+    accounts = accounts or {}
+    result, parts, lists = _decision_parts(content, discussion_message_ids, accounts)
+    return _render_decision(result, parts, lists, accounts)
+
+
+async def deliver_decision_answer(context, content, discussion_message_ids, *, accounts=None):
+    """Use the same resolved lists for the fallback and the prepared workbook."""
+    accounts = accounts or {}
+    result, parts, lists = _decision_parts(content, discussion_message_ids, accounts)
+    fallback = _render_decision(result, parts, lists, accounts)
+    if lists and result.get('account_lists_spreadsheet'):
+        prepared = await prepare_account_list_spreadsheet(
+            context, result['account_lists_spreadsheet'], lists, accounts)
+        if prepared:
+            return _render_decision(result, parts, lists, accounts, delivered=True)
+    return fallback
 
 
 def discussion_ids(results):

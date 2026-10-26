@@ -11,25 +11,36 @@ import discord
 from elbow_helper.configuration.clans import CLANS
 from ..families.model_view import record_rows
 
+FACT_FIELDS = ('name', 'town_hall', 'current_clan', 'player_tag', 'flags')
+COLUMN_SCHEMA = {'anyOf': [
+    {'type': 'object', 'properties': {
+        'heading': {'type': 'string', 'minLength': 1, 'maxLength': 120},
+        'fact': {'type': 'string', 'enum': list(FACT_FIELDS)}},
+     'required': ['heading', 'fact'], 'additionalProperties': False},
+    {'type': 'object', 'properties': {
+        'heading': {'type': 'string', 'minLength': 1, 'maxLength': 120},
+        'value': {'type': 'string', 'pattern': '^[a-z0-9_-]{1,32}$'}},
+     'required': ['heading', 'value'], 'additionalProperties': False}]}
+
 ACCOUNT_LISTS_SCHEMA = {'type': 'array', 'maxItems': 12, 'items': {
     'type': 'object', 'properties': {
         'id': {'type': 'string', 'pattern': '^[a-z0-9_-]{1,32}$'},
         'title': {'type': 'string', 'minLength': 0, 'maxLength': 120},
         'current_clan': {'type': 'string', 'enum': list(CLANS)},
+        'columns': {'type': 'array', 'minItems': 1, 'maxItems': 20, 'items': COLUMN_SCHEMA},
         'accounts': {'type': 'array', 'minItems': 1, 'maxItems': 300, 'items': {
             'type': 'object', 'properties': {
                 'account': {'type': 'string', 'minLength': 1, 'maxLength': 60},
-                'estimate': {'type': 'string', 'minLength': 0, 'maxLength': 40},
-                'note': {'type': 'string', 'minLength': 0, 'maxLength': 160}},
+                'values': {'type': 'object', 'additionalProperties': {
+                    'type': 'string', 'minLength': 0, 'maxLength': 160}}},
             'required': ['account'], 'additionalProperties': False}}},
-    'required': ['id', 'accounts'], 'additionalProperties': False}}
+    'required': ['id', 'columns', 'accounts'], 'additionalProperties': False}}
 
-ACCOUNT_LISTS_INSTRUCTION = """Account lists: when the answer lists accounts from the evidence, put them
-in account_lists instead of writing their rows yourself. Refer to each account by its player_tag
-from the evidence, since names can repeat, and give only your estimate or a short note; code
-writes its name, Town Hall and current clan from the data. Put
-[[accounts:ID]] in facts or recommendation where each list belongs. Set current_clan when a list
-says its accounts are currently in one clan. Do not repeat listed rows in prose."""
+ACCOUNT_LISTS_INSTRUCTION = """Use account_lists for account selections, referencing evidence player_tags.
+Choose column headings/order for the request: fact selects verified data; value selects a
+judgement key in each account's values. Never put verified facts in values. Include fact=flags
+when qualifications matter. Put each [[accounts:ID]] marker on its own line, without repeating
+its title or rows in prose. Set current_clan only for lists claiming current membership."""
 
 
 def _current_clans(result):
@@ -44,7 +55,7 @@ def _current_clans(result):
 def account_index(evidence, limits=None):
     """Map player tags to the facts code can state about them.
 
-    Current clan comes only from current in-game roster or roster-cohort rows; historical
+    Live profiles and current in-game rosters supply current membership; historical
     war, CWL or ranking rows supply a name or Town Hall when nothing current does.
     """
     index = {}
@@ -63,7 +74,8 @@ def account_index(evidence, limits=None):
             for account in accounts:
                 if not isinstance(account, Mapping) or not account.get('player_tag'):
                     continue
-                current = (account.get('basis', row.get('basis')) == 'current_in_game'
+                profile = account.get('profile_status') == 'ok'
+                current = (profile or account.get('basis', row.get('basis')) == 'current_in_game'
                            or account.get('clan_code') in cohort_current)
                 entry = index.setdefault(account['player_tag'], {})
                 name = account.get('player_name')
@@ -72,7 +84,17 @@ def account_index(evidence, limits=None):
                     entry['name'] = name
                 if type(level) is int and (current or 'town_hall' not in entry):
                     entry['town_hall'] = level
-                if current and account.get('clan_code'):
+                if profile:
+                    clan = account.get('clan')
+                    code = (next((code for code, configured in CLANS.items()
+                                  if configured.tag == clan.get('tag')),
+                                 clan.get('name') or clan.get('tag'))
+                            if isinstance(clan, Mapping) else None)
+                    if code:
+                        entry['current_clan'] = code
+                    else:
+                        entry.pop('current_clan', None)
+                elif current and account.get('clan_code'):
                     entry['current_clan'] = account['clan_code']
     for account in (limits or {}).get('unverified_selection', ()):
         if account.get('player_tag') in index:
@@ -83,10 +105,6 @@ def account_index(evidence, limits=None):
 def _text(value):
     """Account names are member-controlled; they cannot format or mention."""
     return discord.utils.escape_mentions(discord.utils.escape_markdown(str(value)))
-
-
-def _plain(value):
-    return discord.utils.escape_mentions(str(value))
 
 
 AMBIGUOUS = 'several accounts share this name'
@@ -113,46 +131,66 @@ def resolve_account(reference, index, clan=None):
     return None, UNVERIFIED
 
 
-def render_list(declaration, index):
-    lines = []
-    for item in declaration['accounts']:
-        if item.get('player_tag') is None:
-            # An unresolved name stays visible and flagged rather than sinking the answer.
-            parts = [_text(item['account'].strip())]
-            if item.get('estimate', '').strip():
-                parts.append(_plain(item['estimate'].strip()))
-            lines.append(' — '.join(parts) + ' (' + item['unresolved'] + ')')
-            continue
-        facts = index[item['player_tag']]
-        parts = [_text(facts.get('name') or item['player_tag'])]
-        if facts.get('town_hall'):
-            parts.append('TH' + str(facts['town_hall']))
-        if item.get('estimate', '').strip():
-            parts.append(_plain(item['estimate'].strip()))
-        line = ' — '.join(parts)
-        flags = [_plain(item['note'].strip())] if item.get('note', '').strip() else []
-        expected = declaration.get('current_clan')
-        if expected and facts.get('current_clan') != expected:
-            flags.append('currently in ' + facts['current_clan'] if facts.get('current_clan')
-                         else 'current clan unknown')
-        if facts.get('unverified_owner'):
-            flags.append('owner unverified')
-        lines.append(line + (' (' + '; '.join(flags) + ')' if flags else ''))
+def account_values(declaration, item, index):
+    """Materialize the chosen cells without accepting model copies of facts."""
+    facts = index.get(item.get('player_tag'), {})
+    flags = '; '.join(account_flags(declaration, item, index))
+    verified = {**facts, 'name': facts.get('name') or item.get('player_tag') or item['account'].strip(),
+                'player_tag': item.get('player_tag') or '', 'flags': flags}
+    cells = [verified.get(column['fact'], '') if 'fact' in column
+             else item.get('values', {}).get(column['value'], '').strip()
+             for column in declaration['columns']]
+    if flags and not any(column.get('fact') == 'flags' for column in declaration['columns']):
+        cells[-1] = str(cells[-1]) + ' (' + flags + ')'
+    return tuple(cells)
+
+
+def list_title(declaration):
     # Code states the count; drop one the title already carries.
-    title = re.sub(r'\s*(?:\(\d+\)|[—–-]\s*\d+)\s*$', '', declaration.get('title', '').strip())
-    header = [_plain(title) + ' (' + str(len(lines)) + ')'] if title else []
+    return re.sub(r'\s*(?:\(\d+\)|[—–-]\s*\d+)\s*$', '', declaration.get('title', '').strip())
+
+
+def render_list(declaration, index):
+    lines = [' — '.join(_text(value) if column.get('fact') in ('name', 'current_clan', 'flags')
+                        else discord.utils.escape_mentions(str(value))
+                        for column, value in zip(declaration['columns'], account_values(declaration, item, index))
+                        if str(value).strip()) for item in declaration['accounts']]
+    title = list_title(declaration)
+    header = ['**' + _text(title) + ' (' + str(len(lines)) + ')**'] if title else []
     return '\n'.join(header + lines)
 
 
-def insert_account_lists(parts, declarations, index):
-    """Replace [[accounts:ID]] markers; a list without a marker follows the first part."""
+def account_flags(declaration, item, index):
+    """Share the existing row qualifications with workbook delivery."""
+    if item.get('player_tag') is None:
+        return [item['unresolved']]
+    facts = index[item['player_tag']]
+    flags = []
+    expected = declaration.get('current_clan')
+    if expected and facts.get('current_clan') != expected:
+        flags.append('currently in ' + facts['current_clan'] if facts.get('current_clan')
+                     else 'current clan unknown')
+    if facts.get('unverified_owner'):
+        flags.append('owner unverified')
+    return flags
+
+
+def resolve_account_lists(declarations, index):
+    """Resolve and deduplicate once for either text or workbook delivery."""
     identities = [declaration['id'] for declaration in declarations or ()]
     if len(set(identities)) != len(identities):
         raise ValueError('Use distinct account list IDs.')
     resolved = []
     for declaration in declarations or ():
+        columns = declaration['columns']
+        keys = [column['value'] for column in columns if 'value' in column]
+        if (len(set(column['heading'].casefold() for column in columns)) != len(columns)
+                or len(set(keys)) != len(keys) or set(keys) & set(FACT_FIELDS)):
+            raise ValueError('Use distinct headings and judgement keys, separate from account facts.')
         accounts, seen = [], set()
         for item in declaration['accounts']:
+            if set(item.get('values', {})) - set(keys):
+                raise ValueError('Account values must belong to declared judgement columns.')
             tag, reason = resolve_account(item['account'], index, declaration.get('current_clan'))
             key = tag or item['account'].strip().casefold()
             if key in seen:
@@ -160,18 +198,53 @@ def insert_account_lists(parts, declarations, index):
             seen.add(key)
             accounts.append({**item, 'player_tag': tag, **({'unresolved': reason} if reason else {})})
         resolved.append({**declaration, 'accounts': accounts})
-    declarations = resolved
+    return resolved
+
+
+def insert_account_lists(parts, declarations, index):
+    """Replace [[accounts:ID]] markers; a list without a marker follows the first part."""
+    return insert_resolved_lists(parts, resolve_account_lists(declarations, index), index)
+
+
+def insert_resolved_lists(parts, declarations, index, *, delivered=False):
+    """Give inline lists block boundaries; prepared workbooks leave no marker text."""
     parts = list(parts)
+    placements = [[] for part in parts]
+    unmarked = []
+    remaining = list(parts)
     for declaration in declarations:
         marker = '[[accounts:' + declaration['id'] + ']]'
-        rendered = render_list(declaration, index)
         found = [position for position, part in enumerate(parts) if marker in part]
         if sum(part.count(marker) for part in parts) > 1:
             raise ValueError('Place each account list once: ' + declaration['id'])
         if found:
-            parts[found[0]] = parts[found[0]].replace(marker, rendered)
-        else:
-            parts[0] = '\n\n'.join(filter(None, (parts[0].strip(), rendered)))
-    if any('[[accounts:' in part for part in parts):
+            position = found[0]
+            placements[position].append((parts[position].index(marker), marker, declaration))
+            remaining[position] = remaining[position].replace(marker, '')
+        elif not delivered:
+            unmarked.append(declaration)
+    if any('[[accounts:' in part for part in remaining):
         raise ValueError('Use a declared account list ID in each [[accounts:ID]] marker.')
+    for position, locations in enumerate(placements):
+        if not locations:
+            continue
+        original, cursor, chunks = parts[position], 0, []
+        for offset, marker, declaration in sorted(locations):
+            before = original[cursor:offset]
+            if not delivered:
+                title = list_title(declaration)
+                if title:
+                    # Inspect only the original model prose, before inserting
+                    # any source account names or previously rendered rows.
+                    repeated = r'(?<!\w)(?:\*\*)?' + re.escape(title) + r'(?:\s*\(\d+\))?(?:\*\*)?\s*[:：—–-]?\s*$'
+                    before = re.sub(repeated, '', before, flags=re.IGNORECASE)
+            chunks.append(before)
+            if not delivered:
+                chunks.append(render_list(declaration, index))
+            cursor = offset + len(marker)
+        chunks.append(original[cursor:])
+        parts[position] = (''.join(chunks) if delivered else
+                           '\n\n'.join(chunk.strip() for chunk in chunks if chunk.strip()))
+    for declaration in unmarked:
+        parts[0] = '\n\n'.join(filter(None, (parts[0].strip(), render_list(declaration, index))))
     return parts

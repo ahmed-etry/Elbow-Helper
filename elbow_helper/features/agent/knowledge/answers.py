@@ -177,6 +177,8 @@ def scoped_answer(context, answer):
     if (needs_private and not getattr(context, "private_pass", False)
             and audit.private_candidates):
         audit.offered = True
+    if prose == AGENT_SCOPE_EMPTY and context.state.attachments:
+        return ''
     return fallback if not prose or prose in (FAILURE_MESSAGE, AGENT_SCOPE_EMPTY) else prose
 
 
