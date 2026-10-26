@@ -6,7 +6,7 @@ from ..plan.executor import resolve_arguments, UnresolvedReferenceError
 MESSAGE_CAPABILITIES = {"post_discord_message", "edit_agent_message", "send_direct_messages"}
 
 
-def consume_gifs(state, steps, results):
+def consume_gifs(state, steps, results, *, allow_repeats=False):
     found = {identity: results[identity]["url"] for identity, step in steps.items()
              if step["capability"] == "find_gif" and identity in results
              and results[identity].get("url")}
@@ -24,5 +24,5 @@ def consume_gifs(state, steps, results):
                 continue
             if isinstance(text, str):
                 state.used_gif_urls.update(url for url in found.values() if url in text)
-    if state.gif_url in state.used_gif_urls:
+    if state.gif_url in state.used_gif_urls and not allow_repeats:
         state.gif_url = None

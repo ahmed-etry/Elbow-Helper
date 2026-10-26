@@ -14,6 +14,32 @@ LOGGER = logging.getLogger(__name__)
 class GifCandidate:
     url: str
     still_url: str | None
+    title: str = ""
+    description: str = ""
+    id: str = ""
+    preview_url: str | None = None
+
+
+def gif_id(url):
+    """Normalize GIPHY page and media URLs to the provider's alphanumeric id."""
+    if not isinstance(url, str):
+        return None
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return None
+    host = parsed.hostname or ""
+    if parsed.scheme != "https" or not (host == "giphy.com" or host.endswith(".giphy.com")):
+        return None
+    parts = parsed.path.strip("/").split("/")
+    if "media" in parts:
+        index = parts.index("media") + 1
+        if index < len(parts) and parts[index].startswith("v1."):
+            index += 1
+        value = parts[index] if index < len(parts) else ""
+    else:
+        value = parts[-1].rsplit("-", 1)[-1]
+    return value if value.isascii() and value.isalnum() else None
 
 
 class GiphyClient:
@@ -48,7 +74,7 @@ class GiphyClient:
         candidates = await self.search_candidates(query, limit=1)
         return candidates[0].url if candidates else None
 
-    async def search_candidates(self, query, *, limit=6) -> list[GifCandidate]:
+    async def search_candidates(self, query, *, limit=8) -> list[GifCandidate]:
         if not self.configured or not isinstance(query, str) or not query.strip():
             return []
         try:
@@ -68,16 +94,32 @@ class GiphyClient:
                 payload = await response.json()
             data = payload.get("data") if isinstance(payload, dict) else None
             candidates = []
-            for item in data[:limit] if isinstance(data, list) else ():
+            seen = set()
+            for item in data if isinstance(data, list) else ():
                 if not isinstance(item, dict):
                     continue
                 url = item.get("url")
                 if (not isinstance(url, str) or urlsplit(url).scheme != "https"
                         or urlsplit(url).hostname not in {"giphy.com", "www.giphy.com"}):
                     continue
-                images = item.get("images") or {}
-                still = (images.get("original_still") or {}).get("url")
-                candidates.append(GifCandidate(url, still))
+                if url in seen:
+                    continue
+                images = item.get("images")
+                still_image = images.get("original_still") if isinstance(images, dict) else None
+                still = still_image.get("url") if isinstance(still_image, dict) else None
+                title = item.get("title")
+                description = item.get("alt_text") or item.get("description")
+                preview = (images.get("fixed_height") or images.get("original")) if isinstance(images, dict) else None
+                candidates.append(GifCandidate(
+                    url, still,
+                    title.strip()[:200] if isinstance(title, str) else "",
+                    description.strip()[:500] if isinstance(description, str) else "",
+                    gif_id(url) or "",
+                    preview.get("url") if isinstance(preview, dict) else None,
+                ))
+                seen.add(url)
+                if len(candidates) >= limit:
+                    break
             return candidates
         except (aiohttp.ClientError, TimeoutError, ValueError):
             LOGGER.warning("GIF search is unavailable")

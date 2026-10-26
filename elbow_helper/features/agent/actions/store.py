@@ -17,11 +17,12 @@ from elbow_helper.infrastructure.persistence import (
 from .codec import encode_record
 from .schema import create_schema
 from ..scheduled.store import ScheduledStore
+from ..discord_actions.meme_usage import MemeUsageStore, create_meme_usage
 
 ACTION_LOG_RETENTION_SECONDS = 90 * 24 * 60 * 60
 
 
-class AgentActionRepository(ScheduledStore):
+class AgentActionRepository(ScheduledStore, MemeUsageStore):
     """Persist each transition before an external change is attempted."""
 
     def __init__(self, path: Path) -> None:
@@ -29,8 +30,9 @@ class AgentActionRepository(ScheduledStore):
         with self.connect() as connection:
             run_sqlite_migrations(
                 connection,
-                (SQLiteMigration(1, "Agent action state", create_schema),),
-                target_version=1,
+                (SQLiteMigration(1, "Agent action state", create_schema),
+                 SQLiteMigration(2, "Delivered meme usage", create_meme_usage)),
+                target_version=2,
             )
 
     def record_message(
@@ -302,7 +304,8 @@ class AgentActionRepository(ScheduledStore):
         return True
 
     def set_step_values(
-        self, run_id: str, index: int, *, owner: str, values: Mapping[str, Any]
+        self, run_id: str, index: int, *, owner: str, values: Mapping[str, Any],
+        preview: Mapping[str, Any] | None = None,
     ) -> bool:
         encoded = encode_record(values)
         with self.connect() as connection, sqlite_transaction(connection, immediate=True):
@@ -321,6 +324,11 @@ class AgentActionRepository(ScheduledStore):
             )
             if changed.rowcount != 1:
                 return False
+            if preview is not None:
+                connection.execute(
+                    "UPDATE action_steps SET preview_json=? WHERE run_id=? AND step_index=?",
+                    (encode_record(preview), run_id, index),
+                )
             connection.execute(
                 """
                 UPDATE action_log SET targets_json=?
@@ -424,8 +432,12 @@ class AgentActionRepository(ScheduledStore):
         with self.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT * FROM action_log WHERE requester_id=?
-                ORDER BY executed_at DESC LIMIT ? OFFSET ?
+                SELECT l.*, r.guild_id, r.channel_id, s.preview_json
+                FROM action_log l
+                LEFT JOIN action_runs r ON r.run_id=l.run_id
+                LEFT JOIN action_steps s ON s.run_id=l.run_id AND s.step_index=l.step_index
+                WHERE l.requester_id=?
+                ORDER BY l.executed_at DESC LIMIT ? OFFSET ?
             """,
                 (requester_id, limit, offset),
             ).fetchall()

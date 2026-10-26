@@ -65,13 +65,13 @@ class ActionRepositoryTests(unittest.TestCase):
 
     def test_initial_schema_is_complete_and_reopens_without_a_transition(self):
         with self.repository.connect() as connection:
-            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 1)
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 2)
             tables = {row[0] for row in connection.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'"
             )}
             self.assertEqual(tables, {
                 "action_runs", "action_steps", "action_log", "agent_messages",
-                "saved_requests", "watchers", "member_timezones",
+                "saved_requests", "watchers", "member_timezones", "meme_usage",
             })
             for table in tables:
                 with self.subTest(table=table):
