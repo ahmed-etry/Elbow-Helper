@@ -32,6 +32,7 @@ from ..discord_actions.reaction_pacing import reply_combo_due, combo_slot_contex
 from ..discord_actions.meme_usage import recent_meme_context
 from ..disclosure import can_disclose_provenance, request_scope, log_scope
 from .registry import build_agent_tools
+from .self_knowledge import capability_context
 from ..families.catalogue import discovery_tool, FAMILY_INSTRUCTION
 from .usage import RequestUsage
 from .budgets import ContextBudget
@@ -129,6 +130,7 @@ class AgentService:
             context.state.grounding_evidence["local_context"] = {"messages": context.state.local_messages}
         game_advice = route is not None and route.game_advice
         registry = {} if game_advice else build_agent_tools()
+        capability_registry = dict(registry)
         gif_tool = registry.pop("find_gif", None)
         social = route is not None and route.social
         if social and gif_tool is not None:
@@ -147,6 +149,7 @@ class AgentService:
                 context.bot,
                 enabled_adapters(),
             )
+            capability_registry.update(command_tools)
             current_member = context.guild.get_member(context.member.id)
             held_roles = {role.id for role in current_member.roles} if current_member else set()
             command_tools = {name: tool for name, tool in command_tools.items()
@@ -167,6 +170,7 @@ class AgentService:
             full_registry["open_capability_group"] = discovery_tool(
                 specialist_registry, registry, lambda: (session.replace_tools((plan_definition(registry),)),
                                                       setattr(budget, "request_limits", limits.RESEARCH_LIMITS)))
+        capability_registry.update(full_registry)
         if not social:
             registry.clear()
             registry.update(full_registry)
@@ -288,6 +292,10 @@ class AgentService:
             session=session,
             request_id=request_id,
         )
+        if capability_registry:
+            rounder.capability_context = lambda: capability_context(
+                capability_registry, context, command_capabilities,
+            )
         rounder.social_route = social
         rounder.game_advice_route = game_advice
         rounder.request_effort = AgentReasoningEffort.LOW if social or game_advice else AgentReasoningEffort.HIGH

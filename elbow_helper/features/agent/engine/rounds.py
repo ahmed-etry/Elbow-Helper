@@ -19,6 +19,7 @@ from ..models import AgentRequestContext
 from .budgets import ContextBudget
 from .usage import RequestUsage
 from .routing import EXPAND_CONTEXT
+from .self_knowledge import ability_claim, capability_question
 from elbow_helper.infrastructure.ai.agent import AgentSession
 from ..prompts import (
     REPEAT_TOOL_CALL_INSTRUCTION,
@@ -75,8 +76,22 @@ class ModelRounds:
         self.budget_limited = False
         self.request_effort = AgentReasoningEffort.HIGH
         self.partial_content = ""
+        self.capability_context = None
+        self.capability_session = None
+        self.capabilities_checked = False
 
     async def advance(self, results=(), **kwargs):
+        if (self.capability_context is not None and self.capability_session is not self.session
+                and (self.capabilities_checked or not self.social_route
+                     and capability_question(self.context.state.request_text))):
+            # Isolated writers do not inherit the planning transcript. Supply
+            # the index again after a session change, with fresh access facts.
+            await require_evidence_access(self.context)
+            kwargs["continuation_instruction"] = "\n\n".join(filter(None, (
+                kwargs.get("continuation_instruction"), self.capability_context(),
+            )))
+            self.capability_session = self.session
+            self.capabilities_checked = True
         step = await self._advance(results, **kwargs)
         if step.tool_calls and not self.last_allow_tools and self.budget_limited:
             raise AgentLimitReached(AGENT_RESEARCH_UNFINISHED)
@@ -97,6 +112,27 @@ class ModelRounds:
                     (AgentToolResult(call.call_id, instructions),),
                     **{**kwargs, "reasoning_effort": AgentReasoningEffort.HIGH},
                 )
+        if (not self.social_route and self.capability_context is not None
+                and self.capability_session is not self.session
+                and ability_claim(step, self.context.state.request_text,
+                                  has_results=self.results_available)):
+            # Read only for a proposed self-description. Routine lookups and
+            # banter keep their original prompts, tools and model round count.
+            await require_evidence_access(self.context)
+            instruction = ("The previous draft was not delivered or executed. Rewrite it using "
+                           "the complete index below; resubmit any needed plan.\n"
+                           + self.capability_context())
+            self.capability_session = self.session
+            self.capabilities_checked = True
+            pending = tuple(AgentToolResult(call.call_id, json.dumps({
+                "error": "Draft not executed. Consult the complete capability index before replying.",
+            })) for call in step.tool_calls)
+            return await self.advance(pending, **{**kwargs,
+                "final": False,
+                "continuation_instruction": "\n\n".join(filter(None, (
+                    kwargs.get("continuation_instruction"), instruction,
+                ))),
+            })
         return step
 
     async def _advance(
