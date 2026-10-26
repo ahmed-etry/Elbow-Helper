@@ -21,6 +21,7 @@ from .battles import INITIAL_POLL_SECONDS, MAX_POLL_SECONDS, MIN_POLL_SECONDS, b
 
 LOGGER = logging.getLogger(__name__)
 PROFILE_INTERVAL_SECONDS = 3600
+MISSING_PROFILE_INTERVAL_SECONDS = 24 * 3600
 REQUESTS_PER_SECOND = 5
 SCHEDULE_CHECK_SECONDS = 60
 
@@ -33,6 +34,7 @@ class AccountSchedule:
     clan_tag: str | None = None
     player_name: str | None = None
     previous_battles: set[str] | None = None
+    missing: bool = False
 
 
 class RankedStats(commands.Cog):
@@ -47,6 +49,7 @@ class RankedStats(commands.Cog):
         self._health = CollectionHealth(LOGGER)
         self._collect_lock = asyncio.Lock()
         self._schedules = {}
+        self._linked_accounts = None
         self._request_lock = asyncio.Lock()
         self._request_times = deque(maxlen=REQUESTS_PER_SECOND)
 
@@ -93,6 +96,12 @@ class RankedStats(commands.Cog):
             self._health.retain(tags)
             self._schedules = {tag: schedule for tag, schedule in self._schedules.items() if tag in tags}
             await self._restore_schedules(tags - self._schedules.keys())
+            if self._linked_accounts is not None:
+                for tag, member_id in accounts.items():
+                    if self._schedules[tag].missing and self._linked_accounts.get(tag) != member_id:
+                        # A newly linked or reassigned missing tag deserves an immediate retry.
+                        self._schedules[tag].profile_due = 0
+            self._linked_accounts = accounts
             semaphore = asyncio.Semaphore(4)
 
             async def collect(tag, member_id):
@@ -103,12 +112,22 @@ class RankedStats(commands.Cog):
                     snapshot, poll, battles = None, None, []
                     if monotonic() >= schedule.profile_due:
                         snapshot = await self._collect_profile(row)
-                        schedule.profile_due = monotonic() + PROFILE_INTERVAL_SECONDS
                         if snapshot["status"] == "ok":
+                            if schedule.missing:
+                                schedule.battle_due = 0
+                                schedule.battle_interval = INITIAL_POLL_SECONDS
+                                schedule.previous_battles = None
+                            schedule.missing = False
                             schedule.clan_tag = snapshot["clan_tag"]
                             schedule.player_name = snapshot["player_name"]
+                        elif snapshot["status"] == "not_found":
+                            schedule.missing = True
+                        interval = MISSING_PROFILE_INTERVAL_SECONDS if schedule.missing else PROFILE_INTERVAL_SECONDS
+                        schedule.profile_due = monotonic() + interval
                         row.update(clan_tag=schedule.clan_tag, player_name=schedule.player_name)
-                    if monotonic() >= schedule.battle_due:
+                    if schedule.missing:
+                        schedule.battle_due = schedule.profile_due
+                    elif monotonic() >= schedule.battle_due:
                         row["observed_at"] = datetime.now(timezone.utc).isoformat(timespec="microseconds")
                         # The log remains useful when the profile request fails or is not due.
                         poll, battles = await self._collect_battles(row, schedule.battle_interval)
@@ -123,7 +142,8 @@ class RankedStats(commands.Cog):
                 await asyncio.to_thread(self.store.append,
                     [row for row, _, _ in completed if row is not None],
                     polls=[poll for _, poll, _ in completed if poll is not None],
-                    battles=[battle for _, _, battles in completed for battle in battles])
+                    battles=[battle for _, _, battles in completed for battle in battles],
+                    profile_health=self._health.missing_state())
             # Wake for the next deadline, checking at least once a minute for link changes.
             now = monotonic()
             next_due = min((min(s.profile_due, s.battle_due) for s in self._schedules.values()),
@@ -136,18 +156,23 @@ class RankedStats(commands.Cog):
         if not tags:
             return
         latest = await asyncio.to_thread(self.store.latest_collection, tags)
+        states = await asyncio.to_thread(self.store.profile_health, tags)
+        self._health.restore_missing(states)
         now, wall_now = monotonic(), datetime.now(timezone.utc)
         for tag, (profile, poll) in latest.items():
-            schedule = AccountSchedule()
+            schedule = AccountSchedule(missing=states.get(tag, False))
             if profile:
-                remaining = PROFILE_INTERVAL_SECONDS - (wall_now - battle_time(profile["observed_at"])).total_seconds()
-                schedule.profile_due = now + max(0, min(PROFILE_INTERVAL_SECONDS, remaining))
+                interval = MISSING_PROFILE_INTERVAL_SECONDS if schedule.missing else PROFILE_INTERVAL_SECONDS
+                remaining = interval - (wall_now - battle_time(profile["observed_at"])).total_seconds()
+                schedule.profile_due = now + max(0, min(interval, remaining))
                 if profile["status"] == "ok":
                     schedule.clan_tag, schedule.player_name = profile["clan_tag"], profile["player_name"]
             if poll:
                 schedule.battle_interval = max(MIN_POLL_SECONDS, min(MAX_POLL_SECONDS, poll["poll_interval_seconds"]))
                 remaining = schedule.battle_interval - (wall_now - battle_time(poll["observed_at"])).total_seconds()
                 schedule.battle_due = now + max(0, min(schedule.battle_interval, remaining))
+            if schedule.missing:
+                schedule.battle_due = schedule.profile_due
             self._schedules[tag] = schedule
 
     async def _get(self, path):
@@ -184,6 +209,8 @@ class RankedStats(commands.Cog):
                     self._report_field(tag, "clan.tag", row["clan_tag"] is None)
                 self._health.record(tag, "player snapshot", 200, ok=True)
             else:
+                if response.status == 404:
+                    row["status"] = "not_found"
                 self._report_failure(tag, "player snapshot", response.status)
         except (TimeoutError, aiohttp.ClientError, OSError):
             self._report_failure(tag, "player snapshot", None)

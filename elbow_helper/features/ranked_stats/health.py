@@ -23,6 +23,17 @@ class CollectionHealth:
         self.pending = {}
         self.outages = set()
         self.missing_players = set()
+        self.reported_missing_players = set()
+
+    def restore_missing(self, states):
+        self.reported_missing_players.update(states)
+        for tag, missing in states.items():
+            if missing:
+                self.missing_players.add(tag)
+                self.failures[tag, "player snapshot"] = Failure(missing=True)
+
+    def missing_state(self):
+        return {tag: tag in self.missing_players for tag in self.reported_missing_players}
 
     def record(self, tag, kind, status, *, ok=False):
         # Success requires a validated result, not merely a successful HTTP response.
@@ -33,6 +44,7 @@ class CollectionHealth:
         self.latest = {key: value for key, value in self.latest.items() if key[0] in tags}
         self.pending = {key: value for key, value in self.pending.items() if key[0] in tags}
         self.missing_players.intersection_update(tags)
+        self.reported_missing_players.intersection_update(tags)
         self.outages.intersection_update(kind for _, kind in self.latest)
 
     def report(self):
@@ -62,14 +74,16 @@ class CollectionHealth:
                 self.logger.info("Ranked %s recovered for %s accounts: %s",
                                  kind, len(tags), _sample(tags))
         missing = {tag for (tag, _), failure in self.failures.items() if failure.missing}
-        for tag in sorted(missing - self.missing_players):
+        for tag in sorted(missing - self.reported_missing_players):
             self.logger.warning("Ranked player profile not found for %s (status 404)", tag)
+            self.reported_missing_players.add(tag)
         for tag in sorted(self.missing_players - missing):
             self.logger.info("Ranked player %s recovered after status 404", tag)
         self.missing_players = missing
 
-        for kind in sorted({kind for _, kind in pending}):
-            statuses = [status for (_, endpoint), status in self.latest.items() if endpoint == kind]
+        for kind in sorted({kind for _, kind in self.latest}):
+            statuses = [result for (tag, endpoint), result in self.latest.items()
+                        if endpoint == kind and tag not in missing and result[1] != 404]
             # A missing player is an account problem, not evidence of an outage.
             failed = sum(not ok and status != 404 for ok, status in statuses)
             outage = len(statuses) >= OUTAGE_MIN_ACCOUNTS and failed * 2 > len(statuses)
@@ -85,7 +99,7 @@ class CollectionHealth:
         # A partial outage can cross the threshold for many accounts at once; one line per kind.
         newly_failed = {}
         for (tag, kind), failure in self.failures.items():
-            if failure.missing or failure.warned or kind in self.outages:
+            if tag in missing or failure.warned or kind in self.outages:
                 continue
             transient = failure.status is None or failure.status == 429 or failure.status >= 500
             if transient and failure.consecutive < FAILURE_POLL_THRESHOLD:

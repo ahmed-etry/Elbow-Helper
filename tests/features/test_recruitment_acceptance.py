@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
@@ -10,11 +12,13 @@ from unittest.mock import patch
 
 import discord
 
+from elbow_helper.features.account_links.cog import AccountLinks
 from elbow_helper.features.recruitment import commands
 from elbow_helper.features.recruitment import trials
 from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin
 from elbow_helper.features.recruitment.trials import TrialMixin
 from elbow_helper.features.recruitment.trials import TrialStartResult
+from elbow_helper.infrastructure.clash import ClashResponse
 
 
 class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
@@ -136,6 +140,75 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             user.id,
             "fresh_recruit",
         )
+        interaction.followup.send.assert_not_awaited()
+
+    async def test_accept_rejects_404_and_saves_temporary_failures_and_named_players(self) -> None:
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                owner, interaction, user, target_channel, *_ = self._flow()
+                links = object.__new__(AccountLinks)
+                tags = ["#P0Y", "#LQG", "#2PP", "#2PQ", "#2PR"]
+                links.clash_client = SimpleNamespace(
+                    configured=True,
+                    get=AsyncMock(side_effect=[
+                        ClashResponse(404, {"reason": "notFound"}, {}, 1, 0),
+                        ClashResponse(None, None, {}, 3, 0, TimeoutError()),
+                        ClashResponse(503, {"reason": "maintenance"}, {}, 3, 0),
+                        ClashResponse(429, {"reason": "requestThrottled"}, {}, 3, 0),
+                        ClashResponse(200, {"name": "Alpha"}, {}, 1, 0),
+                    ]),
+                )
+                links.refresh_linked_boards = AsyncMock()
+                owner.account_links = links
+
+                with tempfile.TemporaryDirectory() as directory:
+                    with patch("elbow_helper.features.account_links.database.DB_PATH", Path(directory) / "links.db"):
+                        links._init_db()
+                        with self._config():
+                            arguments = dict(
+                                user=user, valid_clans=["BEH"], nickname="Ahmad",
+                                days=7, target_channel=target_channel,
+                                additional_notes=None, player_tags=tags,
+                            )
+                            if prepared:
+                                rows = await links.lookup_players(tags)
+                                result = await owner.perform_accept(**arguments, player_rows=rows)
+                                self.assertEqual(result["failures"], ("Clash accounts were not linked: `#P0Y`.",))
+                            else:
+                                await owner._perform_accept_flow(interaction, **arguments)
+                                interaction.followup.send.assert_awaited_once_with(
+                                    "Acceptance is incomplete for <@42>:\n"
+                                    "- Clash accounts were not linked: `#P0Y`.\n"
+                                    "\nOther acceptance steps were completed.",
+                                    ephemeral=True,
+                                )
+                        saved = links.get_all_links()
+
+                self.assertEqual(set(saved), set(tags[1:]))
+                self.assertTrue(all(row["discord_user_id"] == user.id for row in saved.values()))
+                for tag in tags[1:4]:
+                    self.assertEqual(saved[tag]["player_name_last_seen"], tag)
+                self.assertEqual(saved[tags[4]]["player_name_last_seen"], "Alpha")
+                owner.start_trial_for_accept.assert_awaited_once()
+                owner.achievement_rewards.award_achievement.assert_awaited_once()
+
+    async def test_accept_without_clash_setup_still_saves_the_tag(self) -> None:
+        owner, interaction, user, target_channel, *_ = self._flow()
+        links = object.__new__(AccountLinks)
+        links.clash_client = SimpleNamespace(configured=False, get=AsyncMock())
+        links.refresh_linked_boards = AsyncMock()
+        owner.account_links = links
+        with tempfile.TemporaryDirectory() as directory:
+            with patch("elbow_helper.features.account_links.database.DB_PATH", Path(directory) / "links.db"):
+                links._init_db()
+                with self._config():
+                    await owner._perform_accept_flow(
+                        interaction, user=user, valid_clans=["BEH"], nickname="Ahmad",
+                        days=7, target_channel=target_channel,
+                        additional_notes=None, player_tags=["#P0Y"],
+                    )
+                self.assertEqual(links.get_link_by_tag("#P0Y")["player_name_last_seen"], "#P0Y")
+        links.clash_client.get.assert_not_awaited()
         interaction.followup.send.assert_not_awaited()
 
     async def test_acceptance_reports_each_failure_and_continues_other_steps(self) -> None:

@@ -366,6 +366,100 @@ class RankedCollectorTests(unittest.IsolatedAsyncioTestCase):
         await self.cog.collect_once()
         return [call.args[0] for call in self.client.get.await_args_list]
 
+    def restart_collector(self):
+        self.cog = RankedStats(self.bot, self.cog.account_links)
+        self.cog.store.initialize()
+
+    async def test_missing_profile_backs_off_both_endpoints_and_resumes_on_success(self):
+        self.links = {"#P0": {"discord_user_id": 42}}
+        status = 404
+
+        def response(path, **kwargs):
+            if status != 200:
+                return SimpleNamespace(ok=False, status=500 if path.endswith("/battlelog") else status,
+                                       payload=None)
+            return self.response(path, **kwargs)
+
+        self.client.get.side_effect = response
+        logger = "elbow_helper.features.ranked_stats.cog"
+        with self.assertLogs(logger, level="WARNING") as logs:
+            self.assertEqual(await self.collect_at(0), ["/players/%23P0"])
+        self.assertEqual(len(logs.output), 1)
+        self.assertEqual(self.cog._schedules["#P0"].profile_due, 86400)
+        for seconds in (60, 3600, 86399):
+            self.assertEqual(await self.collect_at(seconds), [])
+        with self.assertLogs(logger, level="DEBUG") as logs:
+            self.assertEqual(await self.collect_at(86400), ["/players/%23P0"])
+        self.assertTrue(all(record.levelname == "DEBUG" for record in logs.records))
+        status = 200
+        with self.assertLogs(logger, level="INFO") as logs:
+            self.assertEqual(await self.collect_at(172800), ["/players/%23P0", "/players/%23P0/battlelog"])
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("recovered after status 404", logs.output[0])
+        self.assertFalse(self.cog._schedules["#P0"].missing)
+        self.assertEqual(self.cog._schedules["#P0"].profile_due, 176400)
+        self.assertEqual(await self.collect_at(173100), ["/players/%23P0/battlelog"])
+
+    async def test_missing_warning_cooldown_and_recovery_survive_restarts(self):
+        self.links = {"#P0": {"discord_user_id": 42}}
+        status = 404
+        self.client.get.side_effect = lambda path, **kwargs: (
+            self.response(path, **kwargs) if status == 200 else
+            SimpleNamespace(ok=False, status=status, payload=None))
+        logger = "elbow_helper.features.ranked_stats.cog"
+        with self.assertLogs(logger, level="WARNING") as logs:
+            await self.collect_at(0)
+        self.assertEqual(len(logs.output), 1)
+        self.restart_collector()
+        with self.assertNoLogs(logger, level="INFO"):
+            self.assertEqual(await self.collect_at(60), [])
+        self.assertEqual(self.cog._schedules["#P0"].profile_due, 86400)
+        with self.assertLogs(logger, level="DEBUG") as logs:
+            self.assertEqual(await self.collect_at(86400), ["/players/%23P0"])
+        self.assertTrue(all(record.levelname == "DEBUG" for record in logs.records))
+        status = 503  # An unvalidated retry must preserve the missing-player state.
+        with self.assertLogs(logger, level="DEBUG"):
+            await self.collect_at(172800)
+        self.restart_collector()
+        self.assertEqual(await self.collect_at(172860), [])
+        self.assertTrue(self.cog._schedules["#P0"].missing)
+        self.assertEqual(self.cog._schedules["#P0"].profile_due, 259200)
+        status = 200
+        with self.assertLogs(logger, level="INFO") as logs:
+            await self.collect_at(259200)
+        self.assertEqual(len(logs.output), 1)
+        self.restart_collector()
+        with self.assertNoLogs(logger, level="INFO"):
+            await self.collect_at(259260)
+            # A later 404 for this same tag stays DEBUG, including after restart.
+            status = 404
+            self.assertEqual(await self.collect_at(262800), ["/players/%23P0"])
+        self.assertTrue(self.cog._schedules["#P0"].missing)
+        self.assertEqual(self.cog.store.profile_health({"#P0"}), {"#P0": True})
+
+    async def test_link_changes_retry_missing_tags_and_collect_corrected_tags_immediately(self):
+        self.links = {"#P0": {"discord_user_id": 42}}
+        missing = True
+        self.client.get.side_effect = lambda path, **kwargs: (
+            SimpleNamespace(ok=False, status=404, payload=None)
+            if path.endswith("P0") and missing else self.response(path, **kwargs))
+        logger = "elbow_helper.features.ranked_stats.cog"
+        with self.assertLogs(logger, level="WARNING"):
+            await self.collect_at(0)
+        self.links.clear()
+        self.assertEqual(await self.collect_at(60), [])
+        self.links["#P8"] = {"discord_user_id": 42}
+        self.assertEqual(await self.collect_at(120), ["/players/%23P8", "/players/%23P8/battlelog"])
+        self.links["#P0"] = {"discord_user_id": 42}
+        with self.assertLogs(logger, level="DEBUG") as logs:
+            self.assertEqual(await self.collect_at(180), ["/players/%23P0"])
+        self.assertTrue(all(record.levelname == "DEBUG" for record in logs.records))
+        missing = False
+        self.links["#P0"] = {"discord_user_id": 43}
+        with self.assertLogs(logger, level="INFO") as logs:
+            self.assertEqual(await self.collect_at(240), ["/players/%23P0", "/players/%23P0/battlelog"])
+        self.assertEqual(len(logs.output), 1)
+
     async def test_all_linked_accounts_use_the_owned_client_and_partial_fields_are_logged(self):
         profile = SimpleNamespace(ok=True, status=200,
             payload={"trophies": 100, "attackWinsRenamed": 20,

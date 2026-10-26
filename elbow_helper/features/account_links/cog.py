@@ -373,19 +373,24 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
             )
 
     async def lookup_players(self, player_tags: list[str]) -> list[dict[str, str]]:
+        """Return linkable players, omitting only confirmed nonexistent tags."""
         out: list[dict[str, str]] = []
         if not self.clash_client.configured:
             return [{"player_tag": tag, "player_name": tag} for tag in player_tags]
         for player_tag in player_tags:
             path = f"/players/{encode_clash_tag(player_tag)}"
             player_name = player_tag
-            payload = await self._fetch_coc_json(
+            response = await self.clash_client.get(
                 path,
-                warning_key=f"player:{player_tag}",
-                warning_label=f"player name for {player_tag}",
-                log_failure=False,
+                attempts=CLAN_FETCH_RETRIES,
+                timeout_seconds=COC_HTTP_TOTAL_TIMEOUT_SECONDS,
+                backoff_seconds=CLAN_FETCH_BACKOFF_SECONDS,
+                maximum_backoff_seconds=10.0,
             )
-            if payload is not None:
+            if response.status == 404:
+                continue
+            payload = response.payload_object
+            if response.ok and payload is not None:
                 player_name = str(payload.get("name") or player_tag)
             out.append({"player_tag": player_tag, "player_name": player_name})
         return out
@@ -446,9 +451,11 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         if not valid_tags:
             return {"error": "None of those player tags were recognized. Check the tags and try again."}
         player_rows = await self.lookup_players(valid_tags)
+        linkable_tags = {row["player_tag"] for row in player_rows}
+        invalid_tags.extend(tag for tag in valid_tags if tag not in linkable_tags)
         member_links = self.get_links_for_user(member.id)
         existing_links = self.get_all_links()
-        before = {tag: existing_links.get(tag) for tag in valid_tags}
+        before = {row["player_tag"]: existing_links.get(row["player_tag"]) for row in player_rows}
         lines: list[str] = []
         link_rows: list[dict[str, object]] = []
         for row in player_rows:
@@ -465,7 +472,7 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
                 )
             else:
                 lines.append(f"- Linked {row['player_name']} (`{tag}`) to {member.mention}")
-        if commit:
+        if commit and link_rows:
             self.upsert_links(link_rows)
             await self._try_refresh_linked_boards()
         if invalid_tags:

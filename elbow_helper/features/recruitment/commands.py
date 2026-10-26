@@ -492,7 +492,9 @@ class RecruitmentCommandMixin:
                     user.id,
                 )
                 player_rows = []
-                failed_tags.extend(player_tags)
+
+        linkable_tags = {row["player_tag"] for row in player_rows}
+        failed_tags.extend(tag for tag in player_tags if tag not in linkable_tags)
 
         for row in player_rows:
             tag = str(row["player_tag"])

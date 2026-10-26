@@ -56,9 +56,13 @@ class RankedStore:
             )""")
             conn.execute("CREATE INDEX IF NOT EXISTS polls_member ON battle_log_polls(member_id, observed_at)")
             conn.execute("CREATE INDEX IF NOT EXISTS polls_clan ON battle_log_polls(clan_tag, observed_at)")
+            # A row also records that this tag has already had its 404 warning.
+            conn.execute("""CREATE TABLE IF NOT EXISTS profile_health (
+                player_tag TEXT PRIMARY KEY, missing INTEGER NOT NULL
+            )""")
             conn.commit()
 
-    def append(self, observations, *, battles=(), polls=()):
+    def append(self, observations, *, battles=(), polls=(), profile_health=None):
         with closing(sqlite3.connect(self.path, timeout=30)) as conn:
             conn.executemany("""INSERT OR IGNORE INTO snapshots
                 (player_tag, observed_at, member_id, clan_tag, player_name, status, fields_json)
@@ -83,7 +87,17 @@ class RankedStore:
                  row["skipped_entries"], row["poll_interval_seconds"])
                 for row in polls
             ])
+            conn.executemany("""INSERT INTO profile_health VALUES (?, ?)
+                ON CONFLICT(player_tag) DO UPDATE SET missing=excluded.missing""",
+                list((profile_health or {}).items()))
             conn.commit()
+
+    def profile_health(self, tags):
+        """Read durable 404 warning and recovery state for the linked accounts."""
+        with closing(sqlite3.connect(self.path, timeout=30)) as conn:
+            return {tag: bool(row[0]) for tag in tags
+                    if (row := conn.execute("SELECT missing FROM profile_health WHERE player_tag = ?",
+                                            (tag,)).fetchone()) is not None}
 
     def read_battle_window(self, *, after, before, selector, values):
         column = {"member_ids": "member_id", "account_tags": "player_tag", "clan_tags": "clan_tag"}[selector]

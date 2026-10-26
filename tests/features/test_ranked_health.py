@@ -91,7 +91,7 @@ class CollectionHealthTests(unittest.TestCase):
         with self.assertNoLogs(LOGGER, level="INFO"):
             self.poll({"#P0": 503})
 
-    def test_missing_profile_warns_once_until_validated_profile_recovery(self):
+    def test_missing_profile_warns_once_per_tag_and_logs_validated_recovery(self):
         with self.assertLogs(LOGGER) as logs:
             for _ in range(4):
                 self.poll({"#P0": 404}, "player snapshot")
@@ -104,9 +104,34 @@ class CollectionHealthTests(unittest.TestCase):
             self.poll({"#P0": 200}, "player snapshot")
             self.poll({"#P0": 200}, "player snapshot")
         self.assertEqual(len(logs.output), 1)
-        with self.assertLogs(LOGGER) as logs:
+        with self.assertLogs(LOGGER, level="DEBUG") as logs:
             self.poll({"#P0": 404}, "player snapshot")
         self.assertEqual(len(logs.output), 1)
+        self.assertEqual(logs.records[0].levelname, "DEBUG")
+
+    def test_missing_profiles_exclude_battle_500s_from_both_sides_of_outage_ratio(self):
+        # Stale log failures can predate the profile's first 404.
+        with self.assertLogs(LOGGER, level="DEBUG"):
+            self.poll({"#P0": 500, "#P2": 500})
+            self.poll({"#P0": 404, "#P2": 404}, "player snapshot")
+        with self.assertNoLogs(LOGGER, level="WARNING"):
+            for _ in range(4):
+                self.poll({"#P0": 500, "#P2": 500, "#P8": 200})
+        self.assertNotIn(KIND, self.health.outages)
+
+        # Excluding missing tags from the denominator must not hide real outages.
+        with self.assertLogs(LOGGER) as logs:
+            self.poll({"#P8": 503, "#P9": 503, "#PY": 200})
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("battle log outage: 2 of 3", logs.output[0])
+
+    def test_missing_profiles_do_not_dilute_profile_outage_ratio(self):
+        with self.assertLogs(LOGGER):
+            self.poll({"#P0": 404, "#P2": 404}, "player snapshot")
+        with self.assertLogs(LOGGER) as logs:
+            self.poll({"#P8": 500, "#P9": 500, "#PY": 200}, "player snapshot")
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("player snapshot outage: 2 of 3", logs.output[0])
 
     def test_battle_log_404_with_valid_profile_warns_once_without_missing_player_claim(self):
         with self.assertLogs(LOGGER, level="WARNING") as logs:
