@@ -30,6 +30,12 @@ from ..prompts import (
 
 LOGGER = logging.getLogger(__name__)
 
+SHORT_REPLY_REWRITE_INSTRUCTION = (
+    "Discard the unfinished draft. Write a fresh, complete reply in one short line using "
+    "the required reply format. Do not continue the fragment or discuss generation limits. "
+    "If community facts or work are needed, call load_research_context alone when offered."
+)
+
 
 class AgentGracefulEnd(RuntimeError):
     """Return a bounded response when planning or answering cannot continue."""
@@ -62,12 +68,13 @@ class ModelRounds:
         self.pending_calls = ()
         self.final_attempted = False
         self.results_available = False
-        self.lookup_route = False
-        self.factual_lookup = False
         self.social_route = False
+        self.game_advice_route = False
         self.expand_context = None
         self.last_allow_tools = True
         self.budget_limited = False
+        self.request_effort = AgentReasoningEffort.HIGH
+        self.partial_content = ""
 
     async def advance(self, results=(), **kwargs):
         step = await self._advance(results, **kwargs)
@@ -84,7 +91,7 @@ class ModelRounds:
                 valid = False
             if valid:
                 await require_evidence_access(self.context)
-                instructions = self.expand_context()
+                instructions = await self.expand_context()
                 self.expand_context = None
                 return await self.advance(
                     (AgentToolResult(call.call_id, instructions),),
@@ -97,12 +104,19 @@ class ModelRounds:
         results=(),
         *,
         allow_tools=True,
-        reasoning_effort=AgentReasoningEffort.LOW,
+        reasoning_effort=None,
         max_output_tokens=limits.INITIAL_MAX_OUTPUT_TOKENS,
         continuation_instruction=None,
         continued=False,
         final=False,
     ):
+        # Planning, continuations and repairs share a floor. A plan can ask
+        # for more reasoning, but cannot downgrade a later answer or repair.
+        reasoning_effort = max(
+            (self.request_effort, reasoning_effort or self.request_effort),
+            key=list(AgentReasoningEffort).index,
+        )
+        self.request_effort = reasoning_effort
         self.pending_results = tuple(results)
         try:
             await require_evidence_access(self.context)
@@ -130,6 +144,12 @@ class ModelRounds:
             continuation_instruction or ""
         )
         if allow_tools and not self.budget.request_can_research(projected):
+            if self.budget.request_limits and self.budget.request_limits.final_output_tokens:
+                # Assessment reviews contain pages, not the final tables or
+                # decision protocol. Let AnswerFlow prepare its full final;
+                # never silently bill this review as a short answer instead.
+                self.budget_limited = True
+                raise AgentLimitReached(AGENT_RESEARCH_UNFINISHED)
             allow_tools = False
             self.budget_limited = True
             continuation_instruction = "\n".join(filter(None, (
@@ -138,7 +158,7 @@ class ModelRounds:
             projected += estimate_tokens(LIMIT_ANSWER_INSTRUCTION)
         self.last_allow_tools = allow_tools
         request_output = self.budget.request_output_limit(
-            projected, allow_tools=allow_tools,
+            projected, allow_tools=allow_tools, final=final,
         )
         max_output_tokens = min(max_output_tokens, request_output)
         remaining = (
@@ -210,6 +230,26 @@ class ModelRounds:
                 model_step.usage.prompt_cache_miss_tokens,
             )
             if model_step.output_limit_reached:
+                if self.social_route or self.game_advice_route:
+                    # Short replies must be complete, never a fragment followed by
+                    # the research writer's unfinished-answer notice. One rewrite
+                    # shares the existing request budget and deadline.
+                    self.partial_content = ""
+                    if continued or final:
+                        raise AgentLimitReached(AGENT_ANSWER_UNFINISHED)
+                    pending = tuple(AgentToolResult(call.call_id, json.dumps({
+                        "error": SHORT_REPLY_REWRITE_INSTRUCTION,
+                    })) for call in model_step.tool_calls)
+                    return await self.advance(
+                        pending, allow_tools=allow_tools, reasoning_effort=reasoning_effort,
+                        max_output_tokens=1024, continuation_instruction=SHORT_REPLY_REWRITE_INSTRUCTION,
+                        continued=True,
+                    )
+                if model_step.content and not model_step.tool_calls:
+                    self.partial_content = (
+                        self.partial_content + "\n" + model_step.content
+                        if continued and self.partial_content else model_step.content
+                    )
                 LOGGER.warning(
                     "Agent model output limit reached: request=%s round=%s limit=%s",
                     self.request_id,
@@ -217,6 +257,8 @@ class ModelRounds:
                     remaining,
                 )
                 if continued or final or self.results_available:
+                    if continued or final:
+                        self.final_attempted = True
                     raise AgentLimitReached(AGENT_ANSWER_UNFINISHED)
                 incomplete_calls = tuple(
                     (

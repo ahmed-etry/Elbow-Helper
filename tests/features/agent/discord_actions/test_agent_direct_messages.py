@@ -79,6 +79,7 @@ class DirectMessageTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(json.loads(result), {
                 "error": "DMs to other members need lead access.",
                 "required_access": ["lead"],
+                "available_privately": False,
             })
             self.members[2].bot = True
             result = await execute_tool(
@@ -109,7 +110,7 @@ class DirectMessageTests(unittest.IsolatedAsyncioTestCase):
             for identifier in (1, 2)
         }
         self.context = SimpleNamespace(
-            guild=SimpleNamespace(get_member=self.members.get), member=self.members[1],
+            guild=SimpleNamespace(get_member=self.members.get, members=list(self.members.values())), member=self.members[1],
             state=AgentTurnState(),
         )
 
@@ -140,7 +141,7 @@ class DirectMessageTests(unittest.IsolatedAsyncioTestCase):
             )
             action = self.context.state.proposed_changes[0]
             self.assertEqual(action.preview.lines, (
-                "DM Synthetic 1 (@synthetic.1), Synthetic 2 (@synthetic.2):",
+                "DM Synthetic 1, Synthetic 2:",
             ))
             self.assertEqual(action.preview.details, ("Synthetic message",))
             self.assertEqual(action.preview.count, 2)

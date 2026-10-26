@@ -16,7 +16,7 @@ from ..models import AgentCapabilityEffect, AgentRequestContext
 from ..actions.contracts import ActionClass, PreparedAction
 from ..wording import ACTION_UNAVAILABLE
 from ..access import AgentAccessLost
-from ..access import require_access, accessible_message_channel, has_access_requirements
+from ..access import require_access, accessible_message_channel, has_lookup_access
 from ..access import require_evidence_access
 from ..reports.tools import original_tool
 from ..plan.checker import check_plan, check_step
@@ -67,12 +67,16 @@ async def disclosure_issue(
             channels.add(value)
         elif isinstance(value, list):
             channels.update(item for item in value if type(item) is int)
-    if not has_access_requirements(context.guild, context.member.id, contract.required_access):
+    await require_evidence_access(context)
+    if not has_lookup_access(context, contract.required_access):
         return {"error": "This needs " + ", ".join(sorted(contract.required_access)) + " access.",
-                "required_access": sorted(contract.required_access)}
+                "required_access": sorted(contract.required_access), "cause": "access_denied"}
     for channel_id in channels:
         if await accessible_message_channel(context, channel_id) is None:
-            return {"error": "The asker cannot access that conversation."}
+            return {"error": "That conversation is not available here.",
+                    "cause": ("access_denied" if str(channel_id) in context.state.scope_audit.excluded
+                              else "unavailable"),
+                    "available_privately": bool(context.state.scope_audit.private_candidates)}
 
     return {}
 
@@ -106,9 +110,13 @@ class PlanRunner:
         self.state_lock = asyncio.Lock()
         self.reads = {}
         self.results = {}
+        # Conversation retention can evict a report while this request still
+        # needs its complete rows. These snapshots live only with this runner.
+        self.report_snapshots = {}
         self.completed_steps = {}
         self.source_identities = dict(context.state.report_sources)
-        for turn in context.state.authorized_history or context.history:
+        for turn in (context.history if context.state.authorized_history is None
+                     else context.state.authorized_history):
             if turn.record is None:
                 continue
             for encoded in turn.record.evidence:
@@ -122,8 +130,16 @@ class PlanRunner:
                     continue
         self.tool_calls = 0
         self.evidence_characters = 0
+        self.discussion_reads = False
         self.model_results = {}
         self.sent_summaries = {}
+
+    @property
+    def evidence_limit(self):
+        # Conversations carry many speakers and citation envelopes. Their
+        # chunks still share the existing token, round and deadline budgets.
+        return (limits.MAX_DISCUSSION_EVIDENCE_CHARACTERS if self.discussion_reads
+                else limits.MAX_EVIDENCE_CHARACTERS)
 
     def _remember_sources(self, payload, scope, arguments):
         channels = set(scope.get("bound_source_channels", ()))
@@ -245,9 +261,13 @@ class PlanRunner:
 
     async def _reserve_tool(self, step, arguments, tool, plan_state: PlanExecutionState):
         async with self.state_lock:
+            if step['capability'] in (
+                'read_conversation_evidence', 'read_discord_channel_history', 'read_conversation_history',
+            ):
+                self.discussion_reads = True
             if self.tool_calls >= limits.MAX_TOOL_CALLS:
                 return {"error": "The request reached its lookup limit."}
-            if self.evidence_characters >= limits.MAX_EVIDENCE_CHARACTERS:
+            if self.evidence_characters >= self.evidence_limit:
                 return {"error": "The request reached its evidence limit."}
             timeout = (
                 limits.COMMAND_TIMEOUT_SECONDS
@@ -324,7 +344,7 @@ class PlanRunner:
         if payload.get("cause") == "invalid_arguments":
             payload.update(capability=step["capability"], argument_schema=tool.definition.parameters)
         if tool.effect is AgentCapabilityEffect.ARTIFACT and "error" not in payload:
-            # Model-authored tables and labels may include withheld titles.
+            # Retained legacy title provenance remains part of artifact access.
             local.state.required_access.update(local.state.knowledge_title_access)
         payload = model_result(payload)
         return await self._record_result(
@@ -344,30 +364,50 @@ class PlanRunner:
     ):
         async with self.state_lock:
             summaries = {key: values.copy() for key, values in self.sent_summaries.items()}
-            view = model_view(
-                payload,
-                summaries=summaries if payload.get("report_id") in local.state.reports else None,
-                row_fields={field for field, value in payload.items() if isinstance(value, list)},
-            )
-            model_content = json.dumps(view, ensure_ascii=False, default=str, separators=(",", ":"))
             structured_content = json.dumps(payload, ensure_ascii=False, default=str, separators=(",", ":"))
             limit = self.budget.result_character_limit(
                 plan_state.emitted,
                 pending_call_ids=(step["id"],),
                 maximum=min(
                     limits.MAX_TOOL_RESULT_CHARACTERS,
-                    limits.MAX_EVIDENCE_CHARACTERS - self.evidence_characters,
+                    self.evidence_limit - self.evidence_characters,
                 ),
             )
+            # Bound a complete family envelope before suppressing its repeated
+            # summary. Continuations must address the rows actually delivered.
+            delivery = payload
+            page_bounded = False
+            if payload.get('kind') == 'family':
+                complete = json.dumps(model_view(payload), ensure_ascii=False,
+                                      default=str, separators=(',', ':'))
+                bounded_page = bound_tool_result(complete, limit)
+                page_bounded = bounded_page != complete
+                delivery = model_result(json.loads(bounded_page or '{}'))
+            view = model_view(
+                delivery,
+                summaries=summaries if delivery.get("report_id") in local.state.reports else None,
+                row_fields={field for field, value in payload.items() if isinstance(value, list)},
+            )
+            model_content = json.dumps(view, ensure_ascii=False, default=str, separators=(",", ":"))
             content = bound_tool_result(model_content, limit)
+            bounded = json.loads(content) if content else {}
+            family_page = (bounded.get('kind') == 'family' and bounded.get('report_id') == payload.get('report_id')
+                           and not bounded.get('truncated') and 'error' not in bounded)
             self.model_results[step["id"]] = (
                 json.loads(content) if content == model_content else
-                model_result(json.loads(content) if content else {}, truncated=True)
+                model_result(bounded, truncated=not family_page)
             )
             if content == model_content:
                 self.sent_summaries = summaries
             plan_state.emitted.append(AgentToolResult(step["id"], content))
             self.evidence_characters += len(content) if content else max(0, limit)
+            identifier = payload.get('report_id')
+            if identifier in local.state.reports:
+                self.report_snapshots[identifier] = (
+                    local.state.reports[identifier],
+                    local.state.report_sources.get(identifier, frozenset()),
+                    local.state.report_access_requirements.get(identifier, frozenset()),
+                )
             merge_tool_state(self.context, local, previous)
             self.source_identities.update(local.state.report_sources)
             self._remember_sources(payload, scope, arguments)
@@ -380,7 +420,7 @@ class PlanRunner:
                             and content != model_content else structured_content),
                     model_result_content=content,
                     raw_result_characters=len(structured_content),
-                    result_complete=content == model_content,
+                    result_complete=content == model_content and not page_bounded,
                     capability_scope=scope,
                     context=self.context,
                 )
@@ -425,7 +465,8 @@ class PlanRunner:
                          and not any(item.get("status") == "ok"
                                      for item in result[step["id"]].get("items", ())))
             })
-            consume_gifs(self.context.state, self.completed_steps, self.results)
+            consume_gifs(self.context.state, self.completed_steps, self.results,
+                         allow_repeats=self.rounder.social_route)
             self.rounder.unpublished = plan_state.original
             return result
         except AgentAccessLost:

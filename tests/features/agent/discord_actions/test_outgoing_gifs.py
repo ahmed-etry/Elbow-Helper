@@ -1,4 +1,4 @@
-"""Confirmed posts, edits and DMs separate GIF embeds from their text."""
+"""Confirmed posts, edits and DMs send images without captions."""
 
 from types import SimpleNamespace
 import unittest
@@ -19,6 +19,8 @@ GIF = "https://giphy.com/gifs/synthetic-example"
 class OutgoingGifTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         await fixtures.DiscordMessageActionTests.asyncSetUp(self)
+        self.context.state.request_text = "Reply to <@7> with a GIF."
+        self.context.source_message.raw_mentions = [7]
         self.guard = patch(
             "elbow_helper.features.agent.discord_actions.messages.require_evidence_access",
             new_callable=AsyncMock,
@@ -26,20 +28,18 @@ class OutgoingGifTests(unittest.IsolatedAsyncioTestCase):
         self.guard.start()
         self.addCleanup(self.guard.stop)
 
-    async def test_mixed_post_has_one_preview_and_returns_the_text_message(self):
+    async def test_mixed_post_preview_and_delivery_contain_only_the_image(self):
         await prepare_post(self.context, {"channel_id": 2, "text": "Hello <@7>\n" + GIF})
         self.assertEqual(len(self.context.state.proposed_changes), 1)
         action = self.context.state.proposed_changes.pop()
         outcome = await action.run()
         self.assertTrue(await action.verify())
-        text, gif = self.channel.send.await_args_list
-        self.assertEqual(text.args, ("Hello <@7>",))
+        gif, = self.channel.send.await_args_list
         self.assertEqual(gif.args, (GIF,))
         self.assertEqual(gif.kwargs["allowed_mentions"].to_dict()["parse"], [])
-        self.assertEqual(outcome.result["message_id"], outcome.result["message_ids"][0])
-        self.assertEqual(len(outcome.result["message_ids"]), 2)
+        self.assertIsInstance(outcome.result["message_id"], int)
 
-    async def test_reply_is_only_on_text_and_gif_only_can_be_a_reply(self):
+    async def test_image_only_reply_keeps_the_reply_target(self):
         self.context.guild.get_member = lambda _: self.context.member
         self.channel.permissions_for = lambda _: SimpleNamespace(
             view_channel=True, send_messages=True, read_message_history=True,
@@ -60,10 +60,9 @@ class OutgoingGifTests(unittest.IsolatedAsyncioTestCase):
             last = self.channel.send.await_args_list[-1]
             self.assertEqual(last.args, (GIF,))
             self.assertFalse(last.kwargs["allowed_mentions"].replied_user)
-            if text != GIF:
-                self.assertNotIn("reference", last.kwargs)
+            self.assertEqual(self.channel.send.await_count, 1)
 
-    async def test_edit_splits_gif_and_undo_removes_the_companion(self):
+    async def test_edit_uses_only_gif_and_undo_restores_previous_text(self):
         await prepare_post(self.context, {"channel_id": 2, "text": "Before"})
         posted = await self.context.state.proposed_changes.pop().run()
         identity = posted.result["message_id"]
@@ -73,9 +72,8 @@ class OutgoingGifTests(unittest.IsolatedAsyncioTestCase):
         action = self.context.state.proposed_changes.pop()
         result = await action.run()
         self.assertTrue(await action.verify())
-        self.assertEqual(self.messages[identity].content, "After")
-        companion_id = int(next(iter(result.after["gif_messages"])))
-        self.assertEqual(self.messages[companion_id].content, GIF)
+        self.assertEqual(self.messages[identity].content, GIF)
+        self.assertEqual(result.after["gif_messages"], {})
         undo = await prepare_edit_undo(self.context, {
             "targets": action.values, "before": action.preview.before, "after": result.after,
         })
@@ -83,9 +81,8 @@ class OutgoingGifTests(unittest.IsolatedAsyncioTestCase):
         await undo.run()
         self.assertTrue(await undo.verify())
         self.assertEqual(self.messages[identity].content, "Before")
-        self.assertNotIn(companion_id, self.messages)
 
-    async def test_dm_splits_links_and_keeps_the_existing_attribution_on_text(self):
+    async def test_image_dm_omits_caption_and_text_attribution(self):
         dm_fixtures.DirectMessageTests.setUp(self)
         with patch(
             "elbow_helper.features.agent.discord_actions.direct_messages.has_access_requirements",
@@ -93,8 +90,7 @@ class OutgoingGifTests(unittest.IsolatedAsyncioTestCase):
         ):
             result = await deliver_dms(self.context, [2], "Hello <@7>\n" + GIF)
         self.assertTrue(result[0]["delivered"])
-        text, gif = self.members[2].send.await_args_list
-        self.assertEqual(text.args, ("Hello <@7>\n\nSynthetic 1 asked me to send this.",))
+        gif, = self.members[2].send.await_args_list
         self.assertEqual(gif.args, (GIF,))
         self.assertEqual(gif.kwargs["allowed_mentions"].to_dict()["parse"], [])
 
@@ -122,15 +118,15 @@ class OutgoingGifTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(OSError):
             await action.run()
         self.assertFalse(await action.verify())
-        self.assertEqual(self.channel.send.await_count, 2)
+        self.assertEqual(self.channel.send.await_count, 1)
 
-    def test_providers_and_markdown_preserve_text_without_raw_links(self):
+    def test_provider_links_discard_captions_and_markdown_labels(self):
         for host in ("giphy.com", "tenor.com", "klipy.com"):
             link = f"https://{host}/synthetic"
             self.assertEqual(outgoing_parts(link), ((link, True),))
             self.assertEqual(outgoing_parts("Text <" + link + ">"),
-                             (("Text", False), (link, True)))
+                             ((link, True),))
             self.assertEqual(outgoing_parts("[Text](" + link + ")"),
-                             (("Text", False), (link, True)))
+                             ((link, True),))
         self.assertEqual(outgoing_parts("https://example.com/page"),
                          (("https://example.com/page", False),))
