@@ -54,6 +54,8 @@ class AgentAttachment:
     google_warning: str | None = None
     spreadsheet_title: str = ""
     publication_attempted: bool = False
+    total_rows: int | None = None
+    sheet_rows: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(slots=True)
@@ -86,6 +88,17 @@ class AgentDelivery:
 
 
 @dataclass(slots=True)
+class ChannelReactions:
+    """Successful bot reactions shared across members and conversations."""
+
+    emojis: tuple[str, ...] | None = ()
+    message_id: int = 0
+    combo_message_id: int = 0
+    combo_revision: int = 0
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+
+@dataclass(slots=True)
 class RequestReactions:
     count: int = 0
     emojis: list[str] = field(default_factory=list)
@@ -106,15 +119,42 @@ class RequestReplyDelivery:
 
 
 @dataclass(slots=True)
+class ScopeAudit:
+    excluded: dict[str, str] = field(default_factory=dict)
+    private_candidates: set[str] = field(default_factory=set)
+    offered: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceScope:
+    destination_id: int
+    destination_levels: frozenset[str]
+    levels: frozenset[str]
+    requester: bool = False
+
+
+@dataclass(slots=True)
 class AgentTurnState:
     """Evidence provenance and reports retained independently of model text."""
 
     reactions: RequestReactions = field(default_factory=RequestReactions)
+    channel_reactions: ChannelReactions = field(default_factory=ChannelReactions)
     direct_messages: DirectMessageDelivery = field(default_factory=DirectMessageDelivery)
     reply_delivery: RequestReplyDelivery = field(default_factory=RequestReplyDelivery)
     source_channels: set[int] = field(default_factory=set)
+    source_access: dict[int, frozenset[str]] = field(default_factory=dict)
+    scope: EvidenceScope | None = None
+    scope_audit: ScopeAudit = field(default_factory=ScopeAudit)
+    private_answer_run: Callable[[], Awaitable[Any]] | None = None
     evidence: list[str] = field(default_factory=list)
     grounding_evidence: dict[str, Any] = field(default_factory=dict)
+    local_messages: list[dict[str, Any]] = field(default_factory=list)
+    reply_context: dict[str, Any] = field(default_factory=dict)
+    channel_bot_gifs: tuple[bool, ...] | None = None
+    channel_bot_combos: tuple[bool, ...] | None = None
+    reaction_combo_due: bool = False
+    reaction_combo_revision: int = 0
+    channel_gif_ids: set[str] = field(default_factory=set)
     reports: dict[str, ReportArtifact] = field(default_factory=dict)
     report_sources: dict[str, frozenset[int]] = field(default_factory=dict)
     report_access_requirements: dict[str, frozenset[str]] = field(default_factory=dict)
@@ -122,8 +162,11 @@ class AgentTurnState:
     preserved_report_sources: dict[str, frozenset[int]] = field(default_factory=dict)
     preserved_report_access_requirements: dict[str, frozenset[str]] = field(default_factory=dict)
     required_access: set[str] = field(default_factory=set)
+    help_requester_access: set[str] = field(default_factory=set)
     knowledge_channel_access: set[str] = field(default_factory=set)
     knowledge_core_available: bool = False
+    channel_directory: str = ""
+    history_cursors: dict[str, dict[str, Any]] = field(default_factory=dict)
     knowledge_title_access: set[str] = field(default_factory=set)
     knowledge_sources: set[str] = field(default_factory=set)
     private_knowledge: dict[str, Any] = field(default_factory=dict)
@@ -135,14 +178,24 @@ class AgentTurnState:
     working: WorkingState = field(default_factory=WorkingState)
     authorized_instructions: tuple[TaskInstruction, ...] = ()
     request_text: str = ""
+    resolved_members: dict[int, str] = field(default_factory=dict)
+    member_self_target: bool = False
     image_sources: list[tuple[int, int]] = field(default_factory=list)
     image_source_status: list[str] = field(default_factory=list)
     gif_url: str | None = None
+    gif_item_id: str | None = None
+    gif_skipped_recent: list[str] = field(default_factory=list)
+    gif_requested: bool = False
+    gif_attachment: AgentAttachment | None = None
+    gif_fallback_text: str = ""
     reply_to: int | None = None
     ping_author: bool = False
     used_gif_urls: set[str] = field(default_factory=set)
     outcomes: list[Any] = field(default_factory=list)
     has_read_answer: bool = False
+    provider_failed: bool = False
+    terminal_cause: str | None = None
+    family_catalogue: bool = False
     proposed_changes: list[Any] = field(default_factory=list)
     preview_reply: str | None = None
     preview_first: bool = False
@@ -168,6 +221,7 @@ class AgentRequestContext:
     state: AgentTurnState = field(default_factory=AgentTurnState)
     delivery_channel: Any = None
     send_reply: Callable[["AgentRequestContext", str], Awaitable[Mapping[str, Any]]] | None = None
+    stop_typing: Callable[[], Awaitable[None]] | None = None
     history: tuple[ConversationTurn, ...] = ()
     roster_queries: RosterQueries | None = None
     cwl_queries: CwlQueries | None = None
@@ -187,11 +241,13 @@ class AgentRequestContext:
     knowledge_store: KnowledgeStore | None = None
     research_jobs: ResearchJobRepository | None = None
     action_repository: AgentActionRepository | None = None
+    meme_usage_repository: AgentActionRepository | None = None
     action_runner: AgentActionRunner | None = None
     conversation_root_id: int | None = None
     attachment_sources: tuple[discord.Message, ...] = ()
     deadline_monotonic: float | None = None
     dm_delivery: bool = False
+    private_pass: bool = False
     disclosure_thread_members: dict[int, frozenset[int] | None] = field(default_factory=dict)
     application_owner: AgentIdentity | None = None
     transcript_archive: Any = None
@@ -222,3 +278,5 @@ class RegisteredAgentTool:
     action_class: ActionClass = ActionClass.READ
     contract: CapabilityContract | None = None
     returns: str | None = None
+    default_visible: bool = True
+    specialist_group: str = "records"
