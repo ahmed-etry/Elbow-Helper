@@ -13,7 +13,10 @@ from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 from elbow_helper.infrastructure.ai import AgentToolResult
 from elbow_helper.infrastructure.ai import TextGenerationError
 from ..actions.contracts import ActionClass
-from ..access import require_access, require_evidence_access
+from ..access import (
+    ACCESS_LEAD_PLUS_OR_CORE, has_reader_access_requirements,
+    require_access, require_evidence_access,
+)
 from ..plan.checker import check_plan, step_dependencies
 from ..plan.format import PLAN_TOOL_NAME, REPLY_CAPABILITIES, answer_instructions, plan_definition
 from ..plan.planning import PlanNotSettled, read_request, request_plan, reuse_reply_target, social_reply_issue
@@ -104,6 +107,7 @@ class AnswerFlow:
         self.scope_repair_attempted = False
         self.evidence_delta = EvidenceDelta()
         self.assessment_requested = False
+        self.plan_limit_logged = False
         self.discussion_message_ids = set()
         self.decision_composed = False
         self.answer_session_inputs = None
@@ -275,10 +279,32 @@ class AnswerFlow:
         await require_evidence_access(self.context)
         return partial_answer(answer, self.context.state.grounding_evidence, failure)
 
+    def _leadership_asker(self):
+        return has_reader_access_requirements(
+            self.context.guild, self.context.member.id, {ACCESS_LEAD_PLUS_OR_CORE},
+        )
+
+    def _limit_plan(self, plan):
+        """Apply member limits before checking either an initial or revised plan."""
+        if not isinstance(plan, dict) or self._leadership_asker():
+            return plan
+        if "assessment" not in plan and plan.get("effort") != "max":
+            return plan
+        plan = dict(plan)
+        plan.pop("assessment", None)
+        if plan.get("effort") == "max":
+            plan["effort"] = "high"
+        if not self.plan_limit_logged:
+            LOGGER.info("Agent plan limited to member effort: request=%s", self.request_id)
+            self.plan_limit_logged = True
+        return plan
+
     def _planning_effort(self):
         requested = AgentReasoningEffort(getattr(self, "plan", {}).get("effort", "low"))
         floor = getattr(self.rounder, "request_effort", AgentReasoningEffort.HIGH)
-        return max((requested, floor), key=list(AgentReasoningEffort).index)
+        effort = max((requested, floor), key=list(AgentReasoningEffort).index)
+        return (effort if self._leadership_asker()
+                else min((effort, AgentReasoningEffort.HIGH), key=list(AgentReasoningEffort).index))
 
     async def _advance_answer(self, results=(), **options):
         """Keep lookups cheap and give assessments the final reasoning allowance.
@@ -667,6 +693,7 @@ class AnswerFlow:
             ),
             direct_capabilities=self._direct_capabilities,
             initial_step=initial_step,
+            limit_plan=self._limit_plan,
         )
         self.context.state.member_self_target = self.decision.self_target
         if self.decision.answer is not None:
@@ -676,7 +703,8 @@ class AnswerFlow:
         self.revisions = 0
         self._reserve_answer()
         while self.rounder.rounds < limits.MAX_MODEL_ROUNDS:
-            self.assessment_requested |= self.plan.get('assessment', False)
+            self.assessment_requested = self._leadership_asker() and (
+                self.assessment_requested or self.plan.get('assessment', False))
             if self.assessment_requested and self.budget.request_limits is not None:
                 self.budget.request_limits = limits.ASSESSMENT_LIMITS
             discussion_results = await read_decision_discussions(self)
@@ -1037,6 +1065,7 @@ class AnswerFlow:
         next_plan = reuse_reply_target(request_plan(model_step, self._direct_capabilities()),
                                       self.runner.completed_steps, reply_to=self.context.state.reply_to,
                                       ping_author=self.context.state.ping_author)
+        next_plan = self._limit_plan(next_plan)
         if next_plan is None and (len(model_step.tool_calls) != 1 or model_step.tool_calls[0].name != PLAN_TOOL_NAME):
             raise PlanNotSettled("The revision did not supply a request plan.")
         check = check_plan(next_plan, self.registry, completed_steps=self.runner.completed_steps)
@@ -1076,6 +1105,7 @@ class AnswerFlow:
             next_plan = reuse_reply_target(request_plan(corrected, self._direct_capabilities()),
                                           self.runner.completed_steps, reply_to=self.context.state.reply_to,
                                           ping_author=self.context.state.ping_author)
+            next_plan = self._limit_plan(next_plan)
             if next_plan is None and (len(corrected.tool_calls) != 1 or corrected.tool_calls[0].name != PLAN_TOOL_NAME):
                 raise PlanNotSettled("The correction did not supply a request plan.")
             check = check_plan(

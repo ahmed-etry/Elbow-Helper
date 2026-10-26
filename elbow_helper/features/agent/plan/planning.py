@@ -120,6 +120,7 @@ async def read_request(
     validate_answer: Callable[[str, Mapping[str, Any] | None], str] | None = None,
     direct_capabilities: Callable[[], frozenset[str]] | None = None,
     initial_step: Any = None,
+    limit_plan: Callable[[Any], Any] | None = None,
 ) -> ReadDecision:
     rounds = []
     pending: tuple[AgentToolResult, ...] = ()
@@ -144,6 +145,8 @@ async def read_request(
             raise PlanNotSettled("A corrected plan is required.")
         available = direct_capabilities() if direct_capabilities is not None else frozenset()
         plan = request_plan(step, available)
+        if limit_plan is not None:
+            plan = limit_plan(plan)
         if plan is None and (len(step.tool_calls) != 1 or step.tool_calls[0].name != PLAN_TOOL_NAME):
             issue = ONE_PLAN_INSTRUCTION
             step_id, offered = "", ()
