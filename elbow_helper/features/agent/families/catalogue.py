@@ -204,7 +204,7 @@ def discovery_tool(available, active, on_expand):
                     if name != 'query_bot_data' and tool.specialist_group == group
                     and (arguments['intent'] == 'prepare_change'
                          or tool.action_class in (ActionClass.READ, ActionClass.OUTPUT))
-                    and has_lookup_access(context, tool.contract.required_access if tool.contract else ())}
+                    and has_lookup_access(context, tool.contract.required_access if tool.contract else frozenset())}
         role_changes = ('read_discord_role_change_preview', 'add_discord_roles', 'remove_discord_roles')
         names = sorted(selected, key=lambda name: (name not in role_changes, name)) if group == 'changes' else list(selected)
         offset = int(cursor)
@@ -221,7 +221,7 @@ def discovery_tool(available, active, on_expand):
                 tool = available.get(name)
                 if tool is not None and (arguments['intent'] == 'prepare_change'
                         or tool.action_class in (ActionClass.READ, ActionClass.OUTPUT)) and has_lookup_access(
-                            context, tool.contract.required_access if tool.contract else ()):
+                            context, tool.contract.required_access if tool.contract else frozenset()):
                     page[name] = tool
         active.update(page)
         on_expand()
