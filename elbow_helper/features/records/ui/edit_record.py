@@ -9,8 +9,10 @@ from typing import Any
 
 import discord
 
+from elbow_helper.discord.interactions import deny
 from elbow_helper.discord.views import BaseErrorModal
 from elbow_helper.discord.views import BaseTimeoutView
+from elbow_helper.configuration.roles import LEAD_PLUS
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
 from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
 
@@ -99,6 +101,9 @@ class NoteModal(BaseErrorModal, title="Edit Record Details"):
             max_length=1000,
         )
         self.add_item(self.note_input)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return await self.view_ref.interaction_check(interaction)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         self.view_ref.note = str(self.note_input.value or "").strip()
@@ -202,7 +207,10 @@ class RecordEditView(BaseTimeoutView):
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id == self.owner_id:
-            return True
+            if any(getattr(role, "id", None) in LEAD_PLUS for role in getattr(interaction.user, "roles", [])):
+                return True
+            await deny(interaction)
+            return False
         await interaction.response.send_message("This record editor was opened by someone else.", ephemeral=True)
         return False
 

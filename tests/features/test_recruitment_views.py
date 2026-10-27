@@ -1,10 +1,71 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
+from elbow_helper.configuration.roles import CORE
+from elbow_helper.configuration.roles import LEAD
+from elbow_helper.configuration.roles import RECRUITERS
+from elbow_helper.features.recruitment.views import AcceptConfirmationView
 from elbow_helper.features.recruitment.views import PersistentEndTrialView
+
+
+class AcceptConfirmationPermissionTests(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _confirmation(role_id: int):
+        cog = SimpleNamespace(complete_accept_confirmation=AsyncMock())
+        view = AcceptConfirmationView(cog, payload={"user_id": 456})
+        interaction = SimpleNamespace(
+            user=SimpleNamespace(id=789, roles=[SimpleNamespace(id=role_id)]),
+            response=SimpleNamespace(
+                is_done=MagicMock(return_value=False),
+                send_message=AsyncMock(),
+                edit_message=AsyncMock(),
+            ),
+        )
+        return view, interaction, cog
+
+    async def test_losing_accept_access_blocks_an_open_confirmation(self) -> None:
+        for role_id in LEAD | RECRUITERS:
+            with self.subTest(role_id=role_id):
+                view, interaction, cog = self._confirmation(role_id)
+                interaction.user.roles = []
+
+                await view._confirm(interaction)
+
+                cog.complete_accept_confirmation.assert_not_awaited()
+                interaction.response.edit_message.assert_not_awaited()
+                interaction.response.send_message.assert_awaited_once_with(
+                    "You don't have permission to use this command.", ephemeral=True,
+                )
+
+    async def test_core_alone_cannot_confirm_acceptance(self) -> None:
+        for role_id in CORE:
+            with self.subTest(role_id=role_id):
+                view, interaction, cog = self._confirmation(role_id)
+
+                await view._confirm(interaction)
+
+                cog.complete_accept_confirmation.assert_not_awaited()
+                interaction.response.edit_message.assert_not_awaited()
+                interaction.response.send_message.assert_awaited_once_with(
+                    "You don't have permission to use this command.", ephemeral=True,
+                )
+
+    async def test_each_accept_role_can_confirm(self) -> None:
+        for role_id in LEAD | RECRUITERS:
+            with self.subTest(role_id=role_id):
+                view, interaction, cog = self._confirmation(role_id)
+
+                await view._confirm(interaction)
+
+                cog.complete_accept_confirmation.assert_awaited_once_with(
+                    interaction, view.payload,
+                )
+                interaction.response.edit_message.assert_awaited_once_with(view=None)
+                interaction.response.send_message.assert_not_awaited()
 
 
 class PersistentEndTrialViewTests(unittest.IsolatedAsyncioTestCase):

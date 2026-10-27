@@ -5,6 +5,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import discord
+from elbow_helper.configuration.roles import LEAD
+from elbow_helper.configuration.roles import RECRUITERS
+from elbow_helper.discord.interactions import deny
 from elbow_helper.discord.views import BaseTimeoutView
 
 
@@ -107,6 +110,9 @@ class AcceptConfirmationView(BaseTimeoutView):
         self.add_item(cancel_button)
 
     async def _confirm(self, interaction: discord.Interaction) -> None:
+        if not any(role.id in (LEAD | RECRUITERS) for role in getattr(interaction.user, "roles", [])):
+            await deny(interaction)
+            return
         await interaction.response.edit_message(view=None)
         await self.cog.complete_accept_confirmation(interaction, self.payload)
 

@@ -7,6 +7,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 from unittest.mock import patch
 from uuid import UUID
 
@@ -15,6 +17,9 @@ from elbow_helper.features.records.commands import RecordCommandMixin
 from elbow_helper.features.records.database import RecordRepository
 from elbow_helper.features.records.export_service import RecordExportService
 from elbow_helper.features.records.service import RecordService
+from elbow_helper.features.records.ui.edit_record import NoteModal
+from elbow_helper.features.records.ui.edit_record import RecordEditView
+from elbow_helper.features.records.ui.edit_record import SaveButton
 from elbow_helper.infrastructure.exports import LocalExportStore
 
 
@@ -187,6 +192,97 @@ class RecordAutocompleteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(choices), 1)
         self.assertEqual(choices[0].value, "1")
         self.assertIn("Missed Attack", choices[0].name)
+
+
+class RecordEditorPermissionTests(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _editor(role_id: int):
+        service = MagicMock()
+        service.edit.return_value = {"id": 1}
+        service.edit_confirmation.return_value = "Saved."
+        interaction = SimpleNamespace(
+            user=SimpleNamespace(id=20, roles=[SimpleNamespace(id=role_id)]),
+            data={},
+            response=SimpleNamespace(
+                is_done=MagicMock(return_value=False),
+                send_message=AsyncMock(),
+                edit_message=AsyncMock(),
+            ),
+        )
+        view = RecordEditView(
+            service,
+            member=SimpleNamespace(id=10, display_name="Member"),
+            records=[{
+                "id": 1,
+                "category_key": "war",
+                "incident_type_key": "war_missed_attacks",
+                "note": "Original details.",
+            }],
+            owner_id=interaction.user.id,
+        )
+        view.select_record(1)
+        return view, interaction, service
+
+    async def test_losing_record_access_blocks_save_in_an_open_editor(self) -> None:
+        view, interaction, service = self._editor(next(iter(LEAD_PLUS)))
+        self.assertTrue(await view.interaction_check(interaction))
+        interaction.user.roles = []
+        save = next(child for child in view.children if isinstance(child, SaveButton))
+
+        await view._scheduled_task(save, interaction)
+
+        service.edit.assert_not_called()
+        interaction.response.edit_message.assert_not_awaited()
+        interaction.response.send_message.assert_awaited_once_with(
+            "You don't have permission to use this command.", ephemeral=True,
+        )
+
+    async def test_each_record_role_can_save(self) -> None:
+        for role_id in LEAD_PLUS:
+            with self.subTest(role_id=role_id):
+                view, interaction, service = self._editor(role_id)
+                save = next(child for child in view.children if isinstance(child, SaveButton))
+
+                await view._scheduled_task(save, interaction)
+
+                service.edit.assert_called_once_with(
+                    record_id=1, member_id=10, category_key="war",
+                    incident_type_key="war_missed_attacks",
+                    note="Original details.", editor=interaction.user,
+                )
+                interaction.response.edit_message.assert_awaited_once()
+                interaction.response.send_message.assert_not_awaited()
+
+    async def test_another_leader_cannot_use_the_record_editor(self) -> None:
+        view, interaction, service = self._editor(next(iter(LEAD_PLUS)))
+        interaction.user.id = 30
+        save = next(child for child in view.children if isinstance(child, SaveButton))
+
+        await view._scheduled_task(save, interaction)
+
+        service.edit.assert_not_called()
+        interaction.response.send_message.assert_awaited_once_with(
+            "This record editor was opened by someone else.", ephemeral=True,
+        )
+
+    async def test_losing_record_access_blocks_an_open_details_modal(self) -> None:
+        view, interaction, _ = self._editor(next(iter(LEAD_PLUS)))
+        modal = NoteModal(view)
+        interaction.user.roles = []
+
+        await modal._scheduled_task(interaction, [{
+            "type": 1,
+            "components": [{
+                "type": 4, "custom_id": modal.note_input.custom_id,
+                "value": "Changed details.",
+            }],
+        }], {})
+
+        self.assertEqual(view.note, "Original details.")
+        interaction.response.edit_message.assert_not_awaited()
+        interaction.response.send_message.assert_awaited_once_with(
+            "You don't have permission to use this command.", ephemeral=True,
+        )
 
 
 class RecordExportTests(unittest.IsolatedAsyncioTestCase):
