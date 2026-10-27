@@ -46,12 +46,12 @@ class PlanningView(BaseTimeoutView):
             )
 
     async def _show(self, interaction: discord.Interaction) -> None:
+        self._update_controls()
+        current_embeds = self._current_embeds()
         try:
             if not interaction.response.is_done():
                 await interaction.response.defer()
 
-            self._update_controls()
-            current_embeds = self._current_embeds()
             if interaction.message:
                 await interaction.message.edit(embeds=current_embeds, view=self)
             else:

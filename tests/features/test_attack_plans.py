@@ -277,6 +277,48 @@ class PlanEmojiTests(unittest.TestCase):
 
 
 class PlanNavigationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_expired_interaction_updates_the_selected_page(self) -> None:
+        pages = [
+            discord.Embed(title="Overview"),
+            discord.Embed(title="Hero Kit"),
+            discord.Embed(title="Army Kit"),
+        ]
+        overview_extra = discord.Embed(title="Overview Base")
+        view = PlanningView(
+            PlanningEmbeds(pages=pages, overview_extras=(overview_extra,)),
+        )
+        response = SimpleNamespace(
+            is_done=lambda: False,
+            defer=AsyncMock(side_effect=discord.NotFound(
+                SimpleNamespace(status=404, reason="Not Found"),
+                {"code": 10062, "message": "Unknown interaction"},
+            )),
+        )
+        message = SimpleNamespace(edit=AsyncMock())
+        interaction = SimpleNamespace(response=response, message=message)
+
+        for selected_index in (1, 2, 0):
+            with self.subTest(page=selected_index):
+                response.defer.reset_mock()
+                message.edit.reset_mock()
+
+                await view.children[selected_index].callback(interaction)
+
+                response.defer.assert_awaited_once_with()
+                expected_embeds = [pages[selected_index]]
+                if selected_index == 0:
+                    expected_embeds.append(overview_extra)
+                message.edit.assert_awaited_once_with(embeds=expected_embeds, view=view)
+                self.assertEqual(
+                    [item.style for item in view.children],
+                    [
+                        discord.ButtonStyle.primary
+                        if index == selected_index
+                        else discord.ButtonStyle.secondary
+                        for index in range(len(pages))
+                    ],
+                )
+
     async def test_category_buttons_switch_directly_to_the_selected_page(self) -> None:
         pages = [
             discord.Embed(title="Overview"),
