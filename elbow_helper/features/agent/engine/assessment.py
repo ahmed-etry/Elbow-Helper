@@ -15,6 +15,7 @@ from .account_lists import (
 )
 from .account_list_spreadsheets import prepare_account_list_spreadsheet
 from .rounds import AgentGracefulEnd
+from .recommended_actions import RECOMMENDED_ACTIONS_INSTRUCTION, RECOMMENDED_ACTIONS_SCHEMA
 
 
 DECISION_SCHEMA = {'type': 'object', 'properties': {
@@ -29,6 +30,7 @@ DECISION_SCHEMA = {'type': 'object', 'properties': {
     'facts': {'type': 'string', 'minLength': 0, 'maxLength': 16000},
     'question': {'type': 'string', 'minLength': 0, 'maxLength': 500},
     'recommendation': {'type': 'string', 'minLength': 0, 'maxLength': 16000},
+    'recommended_actions': RECOMMENDED_ACTIONS_SCHEMA,
     'account_lists': ACCOUNT_LISTS_SCHEMA,
     'account_lists_spreadsheet': {'type': 'string', 'minLength': 1, 'maxLength': 80},
     'needs_private_evidence': {'type': 'boolean'}},
@@ -106,7 +108,7 @@ when available. If intent and the governing approach are established, use reques
 or discussion according to its actual source and leave question empty. Apply a policy only
 within the applicability stated in its definition. Never infer the intended plan from
 metrics alone. State the useful facts without narrating this response format.
-""" + ACCOUNT_LISTS_INSTRUCTION + """
+""" + RECOMMENDED_ACTIONS_INSTRUCTION + '\n' + ACCOUNT_LISTS_INSTRUCTION + """
 Use account_lists_spreadsheet as the workbook title only for requested files or rows too long for one message.
 Keep file claims out of facts, recommendation and question. Prepared workbooks remove list markers; failures render inline."""
 

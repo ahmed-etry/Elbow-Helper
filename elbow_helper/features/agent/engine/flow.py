@@ -52,6 +52,7 @@ from .answer_inputs import answer_evidence, read_handles, bounded_answer_evidenc
 from .cohort_evidence import complete_activity_reads, cohort_writer_evidence, cohort_review_evidence, restorable_reference
 from .assessment import DECISION_ANSWER_INSTRUCTION, assessment_limits, deliver_decision_answer, discussion_ids, read_decision_discussions
 from .account_lists import account_index
+from .recommended_actions import action_catalogue, prepare_recommended_actions
 from ..research.directory import scoped_channel_directory
 from ..files.delivery import delivery_manifest
 from ..conversation.context import estimate_tokens
@@ -85,10 +86,12 @@ class AnswerFlow:
         final_session_factory=None,
         answer_context="",
         answer_images=(),
+        recommendation_registry=None,
     ) -> None:
         self.context = context
         self.session = session
         self.registry = registry
+        self.recommendation_registry = recommendation_registry if recommendation_registry is not None else registry
         self.budget = budget
         self.rounder = rounder
         self.runner = runner
@@ -123,6 +126,8 @@ class AnswerFlow:
         return SOCIAL_CAPABILITIES.intersection(self.registry) if self.rounder.social_route else frozenset()
 
     async def run(self) -> str:
+        assessed_decision = None
+        assessed_answer = None
         try:
             answer = await self._run()
         except AgentLimitReached as error:
@@ -137,16 +142,23 @@ class AnswerFlow:
             if final is not None:
                 answer = final
         if self.assessment_requested:
+            self.answer_accounts = self.answer_accounts or account_index({
+                **self.context.state.grounding_evidence, **self.model_results(self.completed_results)})
+            decision_content = answer
             try:
                 answer = await deliver_decision_answer(self.context, answer, self.discussion_message_ids,
                                                        accounts=self.answer_accounts)
             except ValueError as error:
                 repaired = await self._repair_decision_format(answer, error)
+                decision_content = repaired.content
                 try:
                     answer = await deliver_decision_answer(self.context, repaired.content,
                         self.discussion_message_ids, accounts=self.answer_accounts)
                 except ValueError as invalid:
                     raise TextGenerationError('Decision response could not be validated.') from invalid
+            assessed_decision = json.loads(decision_content)
+            assessed_answer = (json.loads(answer)['answer']
+                               if assessed_decision.get('needs_private_evidence') else answer)
         self.decision_composed = self.assessment_requested
         answer = await self._checked_scope_reply(answer)
         answer = await self._grounded_reply(answer)
@@ -158,6 +170,9 @@ class AnswerFlow:
         answer = await self._checked_scope_reply(answer)
         if getattr(self.rounder, "social_route", False):
             answer = correct_social_counts(answer, self.context.state.request_text)
+        if assessed_decision is not None and answer == assessed_answer:
+            refusals = await prepare_recommended_actions(self, assessed_decision)
+            answer = '\n\n'.join((answer, *refusals))
         return named_reply(answer, self.context)
 
     async def _checked_member_reply(self, answer):
@@ -312,6 +327,9 @@ class AnswerFlow:
         return (effort if leadership_asker(self.context)
                 else min((effort, AgentReasoningEffort.HIGH), key=list(AgentReasoningEffort).index))
 
+    def _decision_instruction(self):
+        return DECISION_ANSWER_INSTRUCTION + '\n' + action_catalogue(self.recommendation_registry)
+
     async def _advance_answer(self, results=(), **options):
         """Keep lookups cheap and give assessments the final reasoning allowance.
 
@@ -330,7 +348,7 @@ class AnswerFlow:
         if self.assessment_requested:
             if not options.get('allow_tools', True) and not self.decision_composed:
                 options['continuation_instruction'] = '\n'.join(filter(None, (
-                    options.get('continuation_instruction'), DECISION_ANSWER_INSTRUCTION)))
+                    options.get('continuation_instruction'), self._decision_instruction())))
             elif self.decision_composed:
                 options['continuation_instruction'] = '\n'.join(filter(None, (
                     options.get('continuation_instruction'),
@@ -363,10 +381,10 @@ class AnswerFlow:
         if self.final_session_factory is not None:
             prompt = json.dumps({'request': self.context.state.request_text, 'draft': answer,
                 'verified_discussion_message_ids': sorted(self.discussion_message_ids)}, ensure_ascii=False)
-            projected = estimate_tokens(DECISION_ANSWER_INSTRUCTION + prompt + instruction) + 512
+            projected = estimate_tokens(self._decision_instruction() + prompt + instruction) + 512
             if self.budget.request_output_limit(projected, allow_tools=False) > 0:
                 await require_evidence_access(self.context)
-                session = self.final_session_factory(system_prompt=DECISION_ANSWER_INSTRUCTION,
+                session = self.final_session_factory(system_prompt=self._decision_instruction(),
                     prompt=prompt, tools=(), max_output_tokens=limits.FINAL_MAX_OUTPUT_TOKENS)
                 if session is not None and session is not self.rounder.session:
                     self.rounder.session = session
@@ -511,7 +529,7 @@ class AnswerFlow:
         if not allow_more:
             room -= estimate_tokens(LIMIT_ANSWER_INSTRUCTION)
         if self.assessment_requested and not self.decision_composed and not review_only:
-            room -= estimate_tokens(DECISION_ANSWER_INSTRUCTION)
+            room -= estimate_tokens(self._decision_instruction())
         if room <= 0:
             return False
         # Local/replied messages are independent evidence, including on a late repair.
@@ -547,7 +565,7 @@ class AnswerFlow:
             self.budget.final_input_estimate = (
                 estimate_tokens(final_system + final_prompt) + estimate_tokens('[]') + 512
                 + estimate_tokens(LIMIT_ANSWER_INSTRUCTION)
-                + estimate_tokens(LIMIT_ANSWER_INSTRUCTION + '\n' + DECISION_ANSWER_INSTRUCTION))
+                + estimate_tokens(LIMIT_ANSWER_INSTRUCTION + '\n' + self._decision_instruction()))
         if review_only:
             evidence = answer_evidence(review_evidence, guild=self.context.guild, subjects=subjects)
             evidence.update(supplementary)

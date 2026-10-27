@@ -54,6 +54,7 @@ def discord_role_tools() -> tuple[RegisteredAgentTool, ...]:
             contract=CapabilityContract(
                 entity_fields=(("role_id", "discord_role"), ("member_ids", "discord_member_set")),
                 source_scope="request_context",
+                filter_fields=("role_name",),
             ),
         ),
         RegisteredAgentTool(AgentToolDefinition(
@@ -65,6 +66,7 @@ def discord_role_tools() -> tuple[RegisteredAgentTool, ...]:
             contract=CapabilityContract(
                 entity_fields=(("role_id", "discord_role"), ("member_ids", "discord_member_set")),
                 source_scope="request_context",
+                filter_fields=("role_name",),
             ),
         ),
     )

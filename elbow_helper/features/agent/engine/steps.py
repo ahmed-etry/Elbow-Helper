@@ -86,6 +86,7 @@ class PlanExecutionState:
     plan: Mapping[str, Any]
     original: dict[str, Any]
     emitted: list[AgentToolResult]
+    answer_complete: bool = False
 
 
 class PlanRunner:
@@ -277,12 +278,15 @@ class PlanRunner:
             if self.context.deadline_monotonic is not None and (
                 time.monotonic()
                 + timeout
-                + limits.FINAL_ANSWER_TIME_RESERVE_SECONDS
+                + (0 if plan_state.answer_complete else limits.FINAL_ANSWER_TIME_RESERVE_SECONDS)
                 + limits.DELIVERY_TIME_RESERVE_SECONDS
                 >= self.context.deadline_monotonic
             ):
                 return {"error": "The request has no time for another lookup."}
-            if not self.budget.can_continue_tools(
+            # A finished assessment needs no further provider input/output or
+            # composition reserve. Preparation still shares tool/evidence caps,
+            # the hard deadline, and every normal action/access check.
+            if not plan_state.answer_complete and not self.budget.can_continue_tools(
                 self.budget.projected_input(plan_state.emitted),
                 result_reserve=8192,
             ):
@@ -427,13 +431,17 @@ class PlanRunner:
             )
         return payload
 
-    async def run(self, plan: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    async def run(self, plan: Mapping[str, Any], *, answer_complete=False) -> dict[str, Mapping[str, Any]]:
+        if answer_complete and any(self.registry[step['capability']].action_class not in (
+                ActionClass.CHANGE, ActionClass.IRREVERSIBLE) for step in plan['steps']):
+            raise ValueError('Only change previews may follow a completed answer')
         self.model_results = {}
         original_summaries = {key: values.copy() for key, values in self.sent_summaries.items()}
         plan_state = PlanExecutionState(
             plan=plan,
             original=tool_state_snapshot(self.context),
             emitted=[],
+            answer_complete=answer_complete,
         )
         try:
             result = await execute_plan(
