@@ -15,6 +15,7 @@ from .state import (
 from ..prompts import SYSTEM_PROMPT, build_request_prompt
 from ..identity import agent_identity, guild_identity
 from .reply_context import pinned_turns
+from .findings import FINDINGS_INSTRUCTION, retained_finding
 from elbow_helper.features.help.catalog import HELP_ENTRIES
 from elbow_helper.features.help.discovery import discover_commands
 
@@ -117,11 +118,12 @@ class CompiledContext:
     answer_context: str = ""
 
 
-def select_recent_turns(turns: Sequence[ConversationTurn], *, token_budget: int) -> tuple[ConversationTurn, ...]:
+def select_recent_turns(turns: Sequence[ConversationTurn], *, token_budget: int,
+                        render_turn=None) -> tuple[ConversationTurn, ...]:
     selected = []
     remaining = token_budget
     for turn in reversed(turns):
-        cost = estimate_tokens(_history_text(turn)) + 1
+        cost = estimate_tokens((render_turn or _history_text)(turn)) + 1
         if cost > remaining:
             break
         selected.append(turn)
@@ -295,8 +297,25 @@ def compile_context(
     for instruction in context.state.authorized_instructions:
         context.state.source_channels.add(instruction.source_channel_id)
 
-    evidence = [(turn, model_evidence(encoded)) for turn in candidates or () if turn.record is not None
-                for encoded in turn.record.evidence]
+    findings_by_turn = {}
+    evidence = []
+    for turn in candidates or ():
+        if turn.record is None:
+            continue
+        for encoded in turn.record.evidence:
+            finding = retained_finding(context, encoded)
+            if finding is not None:
+                findings_by_turn.setdefault(id(turn), []).append(json.loads(finding))
+            else:
+                evidence.append((turn, model_evidence(encoded)))
+    def history_text(turn):
+        rendered = _history_text(turn)
+        findings = findings_by_turn.get(id(turn))
+        if findings:
+            value = json.loads(rendered)
+            value['prior_findings'] = findings
+            return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
+        return rendered
     carried = []
 
     def history_status(included: int, omitted: int) -> dict:
@@ -324,6 +343,8 @@ def compile_context(
             reply_context=context.state.reply_context,
         )
         prompt += "\n\n<current_channel>\n" + json.dumps(channel, ensure_ascii=False) + "\n</current_channel>"
+        if findings_by_turn:
+            prompt += '\n\n' + FINDINGS_INSTRUCTION
         if social:
             return prompt
         return (prompt + "\n\n<bot_command_overview>\n"
@@ -351,7 +372,7 @@ def compile_context(
         # follow-ups lose their history before the first result is read.
         if base + estimate_tokens(prompt) >= target_tokens:
             remaining = min(8_000, target_tokens // 8)
-        selected = list(select_recent_turns(candidates, token_budget=remaining))
+        selected = list(select_recent_turns(candidates, token_budget=remaining, render_turn=history_text))
         pinned = pinned_turns(context, candidates)
         selected = [turn for turn in candidates
                     if any(turn is item for item in (*pinned, *selected))]
@@ -360,13 +381,13 @@ def compile_context(
         if checkpoint is not None and checkpoint.covered_turn_count <= omitted:
             checkpoint_text = checkpoint.summary
         prompt = render(
-            "\n".join(_history_text(turn) for turn in selected), len(selected), omitted,
+            "\n".join(history_text(turn) for turn in selected), len(selected), omitted,
             checkpoint_text,
         )
         if checkpoint_text and base + estimate_tokens(prompt) > target_tokens:
             checkpoint_text = ""
             prompt = render(
-                "\n".join(_history_text(turn) for turn in selected), len(selected), omitted,
+                "\n".join(history_text(turn) for turn in selected), len(selected), omitted,
                 checkpoint_text,
             )
         elif checkpoint_text:
@@ -386,13 +407,13 @@ def compile_context(
                 break
             carried.insert(0, item)
             remaining -= cost
-        prompt = render("\n".join(_history_text(turn) for turn in selected),
+        prompt = render("\n".join(history_text(turn) for turn in selected),
                         len(selected), omitted, checkpoint_text)
         if len(carried) < len(evidence):
             partial = list(carried)
             carried[:] = [{"request_message_id": turn.record.request_message_id, "record": encoded}
                           for turn, encoded in evidence]
-            complete = render("\n".join(_history_text(turn) for turn in selected),
+            complete = render("\n".join(history_text(turn) for turn in selected),
                               len(selected), omitted, checkpoint_text)
             if base + estimate_tokens(complete) <= target_tokens:
                 prompt = complete
@@ -403,7 +424,7 @@ def compile_context(
         while len(carried) < len(evidence):
             turn, encoded = evidence[len(evidence) - len(carried) - 1]
             carried.insert(0, {"request_message_id": turn.record.request_message_id, "record": encoded})
-            candidate = render("\n".join(_history_text(turn) for turn in selected),
+            candidate = render("\n".join(history_text(turn) for turn in selected),
                                len(selected), omitted, checkpoint_text)
             if base + estimate_tokens(candidate) > target_tokens:
                 carried.pop(0)
@@ -411,7 +432,7 @@ def compile_context(
             prompt = candidate
         while carried and base + estimate_tokens(prompt) > target_tokens:
             carried.pop(0)
-            prompt = render("\n".join(_history_text(turn) for turn in selected),
+            prompt = render("\n".join(history_text(turn) for turn in selected),
                             len(selected), omitted, checkpoint_text)
         for turn, _ in evidence[len(evidence) - len(carried):] if carried else ():
             context.state.source_channels.update(turn.source_channels)
@@ -422,6 +443,8 @@ def compile_context(
     estimated = (estimate_tokens(system_prompt) + estimate_tokens(tool_json)
                  + estimate_tokens(prompt) + REQUEST_OVERHEAD_ESTIMATE)
     retained = {}
+    prior_findings = [{'request_message_id': turn.record.request_message_id, **finding}
+                      for turn in selected for finding in findings_by_turn.get(id(turn), ())]
     for index, item in enumerate(carried):
         try:
             record = json.loads(item["record"])
@@ -455,6 +478,8 @@ def compile_context(
             "conversation_history": ("\n".join(_history_text(turn) for turn in selected)
                                      if candidates is not None else conversation_history),
             "task_instructions": instructions,
+            **({'prior_findings': prior_findings,
+                'findings_instruction': FINDINGS_INSTRUCTION} if prior_findings else {}),
             "nearby_conversation": (local_context if answer_local_context is None else answer_local_context),
         }, ensure_ascii=False),
     )

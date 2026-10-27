@@ -206,7 +206,9 @@ class PlanRunner:
             checked["tool"].effect is AgentCapabilityEffect.READ
             and checked["tool"].action_class is ActionClass.READ
             # These handlers recheck freshness and project request-scoped raw reads.
-            and step["capability"] not in ("read_clash", "read_ranked_stats")
+            and step["capability"] not in ("read_clash", "read_ranked_stats", "read_current_war")
+            and not arguments.get('fresh')
+            and 'fresh' not in checked['tool'].definition.parameters.get('properties', {})
         ):
             async with self.state_lock:
                 if key in self.reads:
@@ -427,6 +429,7 @@ class PlanRunner:
                     result_complete=content == model_content and not page_bounded,
                     capability_scope=scope,
                     context=self.context,
+                    plan=plan_state.plan if len(plan_state.emitted) == 1 else None,
                 )
             )
         return payload

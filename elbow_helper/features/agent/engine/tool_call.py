@@ -179,6 +179,7 @@ def evidence_record(
     model_result_content: str | None = None,
     capability_scope: Mapping[str, Any] | None = None,
     context: AgentRequestContext,
+    plan: Mapping[str, Any] | None = None,
 ) -> str:
     """Keep the model view's exact scope and access provenance for reuse."""
     try:
@@ -199,6 +200,7 @@ def evidence_record(
     return json.dumps(
         {
             "call_id": call_id,
+            **({'plan': plan} if plan is not None else {}),
             "tool": tool,
             "arguments": arguments,
             "result": result,

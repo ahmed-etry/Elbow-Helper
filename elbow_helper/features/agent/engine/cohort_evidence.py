@@ -170,6 +170,11 @@ async def cohort_writer_evidence(context, evidence, *, snapshots=None):
                                    'cause': 'report_unavailable'}
             continue
         count = report.manifest()['total_rows']
+        if (result.get('evidence_projection') == 'complete_requested_file'
+                and result.get('artifact_status') == 'complete' and not result.get('rows')):
+            # The reader has prepared the whole requested file. Its manifest
+            # and earlier findings suffice for an export-only continuation.
+            continue
         page = report.page(limit=max(1, count))
         if rosters:
             signature = json.dumps({'rows': page['rows'], 'clans': page.get('clans')},

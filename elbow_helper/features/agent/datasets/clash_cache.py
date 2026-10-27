@@ -6,9 +6,10 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import json
 from time import monotonic
+from ..read_cache import LIVE_READ_SECONDS
 
 
-MAX_AGE_SECONDS = 30
+MAX_AGE_SECONDS = LIVE_READ_SECONDS
 MAX_BYTES = 4 * 1024 * 1024
 MAX_ENTRIES = 256
 

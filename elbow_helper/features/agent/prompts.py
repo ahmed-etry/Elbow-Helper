@@ -442,7 +442,12 @@ Use depends_on for ordering without references. Pass {"step": "<id>", "path": [.
 earlier results, including earlier plans in this request. Paths use result field names; "*" \
 collects a field from every item, as in ["rows", "*", "player_tag"].
 
-Use the smallest evidence set that can answer the question. For recruit judgments, start with \
+Use the smallest evidence set that can answer the question. Start with \
+the supplied earlier findings, plan, dated final answer and valid retained reports on a follow-up. \
+Read only missing facts or the rows needed for the requested file or subset. For a requested \
+fresh recheck, use fresh=true on a new family selection, or max_age_seconds=0 on read_clash. \
+Keep reused live figures dated: if older than three minutes, say "as of <time>" with their observation time. \
+For recruit judgments, start with \
 applicable requirements, account links, join records, Clash profiles and relevant performance. \
 Read Discord history only for a specific claim or unresolved conversation reference; never \
 trawl channels for a gameplay judgment. Plan independent reads together. Once the requested \

@@ -234,7 +234,7 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
         self.context.guild = SimpleNamespace(id=1)
         self.context.member = SimpleNamespace(id=2)
 
-    async def test_batches_subsets_details_and_nested_ranked_reads_reuse_raw_accounts(self):
+    async def test_live_battle_log_batches_and_nested_ranked_reads_always_fetch(self):
         self.enable_cache()
         self.client.get.return_value.payload = {"items": [
             {"battleTimestamp": f"202610{day:02d}T120000.000Z", "army": [day], "attack": True}
@@ -244,13 +244,13 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(json.loads(bounded)["items"], [])
         full = await read_clash(self.context, {"kind": "battle_log", "tags": ["p2"], "detail": "full", "limit": 2})
         item = full["items"][0]
-        self.assertTrue(item["reused"])
+        self.assertFalse(item["reused"])
         self.assertEqual(item["data"]["items"][0]["army"], [18])
         self.assertEqual(item["row_counts"]["/items"], {"returned_rows": 2, "total_rows": 18})
         nested = await _live_batch(self.context, "battle_log", ["#P0", "#P2"])
         self.assertEqual(len(nested["items"][0]["data"]["items"]), 18)
-        self.assertEqual(self.client.get.await_count, 2)
-        self.assertEqual(full["observed_at"], result["items"][1]["observed_at"])
+        self.assertEqual(self.client.get.await_count, 5)
+        self.assertNotEqual(full["observed_at"], result["items"][1]["observed_at"])
         item["data"]["items"][0]["army"].append("mutated")
         repeated = await read_clash(self.context, {"kind": "battle_log", "tags": ["#P2"], "detail": "full"})
         self.assertEqual(repeated["items"][0]["data"]["items"][0]["army"], [18])
@@ -261,7 +261,7 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0)
             return SimpleNamespace(ok=True, status=200, payload={"items": []})
         self.client.get.side_effect = fetch
-        await asyncio.gather(*(read_clash(self.context, {"kind": "battle_log", "tags": ["#P0"], "limit": limit})
+        await asyncio.gather(*(read_clash(self.context, {"kind": "player", "tags": ["#P0"], "limit": limit})
                                for limit in (12, 25, 50)))
         self.client.get.assert_awaited_once()
 
@@ -289,7 +289,7 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.client.get.await_count, 1)
             await read_clash(self.context, {**args, "max_age_seconds": 1})
             self.assertEqual(self.client.get.await_count, 2)
-            now[0] = 32
+            now[0] = 902
             await read_clash(self.context, args)
             self.assertEqual(self.client.get.await_count, 3)
             await read_clash(self.context, {**args, "max_age_seconds": 0})

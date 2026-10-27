@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from types import SimpleNamespace
+from dataclasses import replace
 
 import discord
 
@@ -17,6 +18,7 @@ from ..models import AgentRequestContext
 from ..text import message_text
 from ..capabilities.validation import bounded_int
 from ..capabilities.validation import positive_int
+from .history_cache import history_page
 
 
 SEARCH_RESULT_LIMIT = 25
@@ -38,6 +40,8 @@ async def read_discord_channel_history(
     context: AgentRequestContext,
     arguments: Mapping[str, Any], *, complete_content: bool = False,
 ) -> Mapping[str, Any]:
+    if arguments.get('fresh'):
+        context = replace(context, fresh_reads=True)
     # A cursor already issued in this request carries its original window and
     # author selection. Omitting them avoids copying or changing the window.
     if "text_filter" in arguments:
@@ -137,9 +141,9 @@ async def _read_history_page(context, arguments, *, character_budget, complete_c
         arguments.get("limit"), default=HISTORY_PAGE_LIMIT,
         minimum=1, maximum=INTERACTIVE_HISTORY_PAGE_LIMIT,
     )
-    page = await context.message_search.history_page(
+    page = await history_page(context,
         channel_id=channel_id, before_id=page_before_id,
-        after_id=after_id, limit=limit,
+        after_id=after_id, limit=limit, refresh_head=not arguments.get('cursor'),
     )
     if await accessible_message_channel(context, channel_id) is None:
         return {"error": "That conversation is not available here."}

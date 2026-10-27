@@ -40,6 +40,10 @@ class RankedQueries:
     def __init__(self, store):
         self.store = store
 
+    def cache_revision(self):
+        from elbow_helper.infrastructure.persistence.revisions import sqlite_revision
+        return sqlite_revision(self.store.path)
+
     def window(self, *, after, before, selector, values, offset=0, limit=25, include_battles=False):
         parameters = dict(after=after, before=before, selector=selector, values=values)
         rows, truncated = self.store.read_window(**parameters)

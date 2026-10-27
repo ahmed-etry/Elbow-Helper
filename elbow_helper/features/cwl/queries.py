@@ -254,6 +254,16 @@ class CwlQueries:
         """Read stored regular/CWL participation, including incomplete seasons."""
         return self._history.attendance(**selection)
 
+    def cache_revision(self):
+        from elbow_helper.infrastructure.persistence.revisions import sqlite_revision
+        path = getattr(self._history, 'path', None)
+        version = sqlite_revision(path) if path is not None else None
+        if self._bonus_config is not None:
+            revision = getattr(self._bonus_config, 'cache_revision', None)
+            settings = revision() if callable(revision) else None
+            return version + ':' + settings if version and isinstance(settings, str) else None
+        return version
+
     def account_names(self):
         """Game account names from the stored directory and historical lineups."""
         return self._history.account_names()

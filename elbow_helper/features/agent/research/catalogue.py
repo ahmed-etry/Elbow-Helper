@@ -90,6 +90,7 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                 parameters={
                     "type": "object",
                     "properties": {
+                        "fresh": {"type": "boolean", "description": "Fetch this page again, bypassing retained pages."},
                         "channel_id": {"type": "integer", "minimum": 1},
                         "after": {
                             "type": "string", "maxLength": 40,

@@ -13,6 +13,7 @@ from .core import family_tool, IDS, TAGS, DATE
 from ..datasets.clash import read_clash
 from .war_metrics import aggregate_performance
 from .cwl_summary import cwl_analysis
+from ..read_cache import stored_read
 
 CLANS_INPUT = {'type': 'array', 'minItems': 1, 'maxItems': 9, 'uniqueItems': True,
                'items': {'type': 'string', 'enum': list(CLANS)}}
@@ -77,7 +78,7 @@ async def selected_wars(context, arguments, war_type):
         if not (after is not None or season or arguments.get('season_keys') or arguments.get('history_limit')
                 or arguments.get('war_ids') or arguments.get('latest_completed')):
             return {'error': 'Which season, wars or date window do you want?', 'cause': 'needs_input'}
-        return await asyncio.to_thread(context.cwl_queries.attendance,
+        return await stored_read(context, context.cwl_queries, 'attendance',
             clan_codes=arguments.get('clan_codes', list(CLANS)), war_type=war_type,
             after_ts=after, before_ts=before, season=season,
             war_ids=arguments.get('war_ids', ()),
@@ -334,7 +335,7 @@ async def cwl_results(context, arguments):
                 return {'error': 'Which clan should I score?', 'cause': 'needs_input'}
             if not any(arguments.get(key) for key in (
                     'season', 'after', 'before', 'war_ids', 'latest_completed')):
-                season = await asyncio.to_thread(context.cwl_queries.latest_season, clan_code=clan[0])
+                season = await stored_read(context, context.cwl_queries, 'latest_season', clan_code=clan[0])
                 if season is None:
                     return {'rows': [], 'metric': metric, 'seasons': [],
                             'coverage': 'No stored completed CWL wars for the selected clan.'}
@@ -344,8 +345,8 @@ async def cwl_results(context, arguments):
                 return selected
             if not selected['war_ids']:
                 return {'rows': [], 'coverage': selected['coverage'], 'metric': metric}
-            scorer = context.cwl_queries.ass_wars if metric == 'ass' else context.cwl_queries.bonus_wars
-            snapshot = await asyncio.to_thread(scorer, clan_code=clan[0], war_ids=selected['war_ids'])
+            snapshot = await stored_read(context, context.cwl_queries,
+                'ass_wars' if metric == 'ass' else 'bonus_wars', clan_code=clan[0], war_ids=selected['war_ids'])
             data = asdict(snapshot)
             rows = data.pop('rows' if metric == 'ass' else 'summaries')
             data.pop('attacks', None)
@@ -355,7 +356,7 @@ async def cwl_results(context, arguments):
             if arguments.get('after') or arguments.get('before') or arguments.get('war_ids') or arguments.get('latest_completed'):
                 return {'error': 'Choose ASS or bonus for an explicit subset of wars.', 'cause': 'invalid_arguments',
                         'current_clan_leagues': league_rows}
-            snapshot = await asyncio.to_thread(context.cwl_queries.performance,
+            snapshot = await stored_read(context, context.cwl_queries, 'performance',
                 history_limit=arguments.get('history_limit', 3), season=arguments.get('season'),
                 clan_code=clan[0] if len(clan) == 1 else None)
             data = asdict(snapshot)

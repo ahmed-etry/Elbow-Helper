@@ -13,6 +13,7 @@ from ..models import RegisteredAgentTool
 from ..research.history import search_date
 from ..capabilities.validation import invalid_arguments
 from .clash import read_clash
+from ..read_cache import stored_read
 
 
 def history_coverage(result, after, before):
@@ -118,7 +119,7 @@ async def read_ranked_stats(context, arguments, *, maximum=25, include_battles=F
         return invalid_arguments("Use ISO dates for a window of up to ninety days and a valid page.",
                                  "after", "before", "offset", "limit")
     try:
-        result = await asyncio.to_thread(context.ranked_queries.window,
+        result = await stored_read(context, context.ranked_queries, 'window',
             after=after.isoformat(timespec="microseconds"), before=before.isoformat(timespec="microseconds"), selector=selector,
             values=tuple(dict.fromkeys(values)), offset=offset, limit=limit,
             **({'include_battles': True} if include_battles else {})) if context.ranked_queries else {

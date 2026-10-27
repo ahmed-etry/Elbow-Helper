@@ -112,6 +112,7 @@ async def ranked_activity(context, arguments):
         rows.append({**account,'observed_attacks':attacks,'observed_defenses':defenses,
             'ranked_league':account.get('ranking',{}).get('leagueTier'),
             'live_status':source['status'], 'duplicate_copies_removed':duplicates,
+            'observed_at':source.get('observed_at'),
             'conflicting_battles':conflicts, 'unreadable_ranked_rows':unreadable,
             'historical_counts_complete':False,
             **({'battles':merged} if arguments.get('include_battles') else {})})

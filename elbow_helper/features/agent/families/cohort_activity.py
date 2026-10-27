@@ -1,5 +1,6 @@
 """Complete roster cohorts with account donations, war evidence and chat metadata."""
 import asyncio
+from dataclasses import replace
 from datetime import datetime
 import json
 import time
@@ -68,6 +69,7 @@ async def roster_cohort(context, arguments):
             'count_complete': roster['count_complete'],
             **({'leadership_filter': roster['leadership_filter']} if 'leadership_filter' in roster else {}),
             'clans': [{key: clan[key] for key in ('clan_code', 'name', 'tag', 'basis', 'status',
+                        'observed_at',
                         'cohort_accounts', 'included_accounts', 'excluded_accounts', 'unknown_filter_accounts',
                         'in_game_members', 'in_game_capacity', 'open_in_game_slots') if key in clan}
                       for clan in roster['clans']],
@@ -77,6 +79,12 @@ async def roster_cohort(context, arguments):
 
 
 async def continue_activity(context, arguments, deadline):
+    if context.fresh_reads:
+        selection = await fresh_activity_selection(context, arguments)
+        if 'error' in selection:
+            return selection
+        from .identity_reads import member_cohort
+        return await member_cohort(context, selection)
     identifier = arguments['activity_ref']
     report = context.state.reports.get(identifier)
     if (set(arguments) - {'basis', 'activity_ref'} or not isinstance(report, FamilyReport)
@@ -96,6 +104,35 @@ async def continue_activity(context, arguments, deadline):
     summary['activity_coverage'] = {**coverage, 'chat_coverage': chat}
     activity_fields(snapshot['rows'])
     return {**summary, 'rows': snapshot['rows']}
+
+
+async def fresh_activity_selection(context, arguments):
+    """Resolve the original selection, authorizing every historical reference.
+
+    Older continuation reports may themselves point at a continuation. Follow
+    that chain without inheriting its metrics or revisions into the fresh read.
+    """
+    if set(arguments) - {'basis', 'activity_ref'}:
+        return {'error': 'Read a new cohort for this request.', 'cause': 'report_unavailable'}
+    selected, seen = dict(arguments), set()
+    while selected.get('activity_ref'):
+        identifier = selected['activity_ref']
+        report = context.state.reports.get(identifier)
+        if (identifier in seen or not isinstance(report, FamilyReport)
+                or report.guild_id != context.guild.id or report.family != 'read_member_cohort'
+                or not await authorize_report(replace(context, read_dependencies=None), identifier)):
+            return {'error': 'That cohort is no longer available here. Read it again.', 'cause': 'report_unavailable'}
+        seen.add(identifier)
+        summary = json.loads(report.payload)['summary']
+        if (summary.get('requester_id') != context.member.id
+                or summary.get('basis') != arguments.get('basis')
+                or not isinstance(summary.get('activity_coverage'), dict)):
+            return {'error': 'Read a new cohort for this request.', 'cause': 'report_unavailable'}
+        original = summary.get('resolved_inputs', summary.get('selection'))
+        if not isinstance(original, dict) or original.get('basis') != arguments.get('basis'):
+            return {'error': 'Read a new cohort for this request.', 'cause': 'report_unavailable'}
+        selected = dict(original)
+    return selected
 
 
 def activity_fields(rows):

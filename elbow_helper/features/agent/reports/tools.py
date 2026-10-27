@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
+import json
 from typing import Any
 
 from elbow_helper.infrastructure.ai import AgentToolDefinition
@@ -30,6 +31,10 @@ async def authorize_report(context, report_id):
         if turn.record is not None and any(report_id in encoded for encoded in turn.record.evidence):
             context.state.knowledge_sources.update(retained_knowledge_sources(turn))
     await require_evidence_access(context)
+    dependencies = getattr(context, 'read_dependencies', None)
+    report = context.state.reports.get(report_id)
+    if dependencies is not None and getattr(report, 'family', None) is not None:
+        dependencies.inherit(json.loads(report.payload)['summary'].get('source_versions'))
     return True
 
 

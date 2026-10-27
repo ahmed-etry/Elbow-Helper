@@ -85,6 +85,7 @@ class AgentTurnMixin:
             deadline_monotonic=deadline_monotonic,
             application_owner=self.application_owner,
             transcript_archive=self.transcript_archive,
+            read_cache=self.read_cache,
         )
         async def send_reply(local, text):
             return await self.send_post_reply(message, text, referenced, local, conversation)

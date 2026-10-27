@@ -35,6 +35,7 @@ from .discord_actions.reaction_pacing import channel_combo_history
 from .conversation.transcripts import TranscriptArchive
 from .conversation.persistence import ConversationPersistence
 from .feedback import AgentFeedbackMixin
+from .read_cache import ReadCache
 
 
 LOGGER = logging.getLogger(__name__)
@@ -114,6 +115,9 @@ class AgentCog(AgentFeedbackMixin, AgentTurnMixin, ConversationContextMixin, Age
         self._cleanup_task: asyncio.Task | None = None
         self.service = AgentService(bot.agent_model, data_guide=data_guide)
         self._conversations = ConversationStore()
+        self.read_cache = ReadCache()
+        if self.research_runner is not None:
+            self.research_runner.read_cache = self.read_cache
         self._member_locks: WeakValueDictionary[int, asyncio.Lock] = WeakValueDictionary()
         self._previews: WeakValueDictionary[int, object] = WeakValueDictionary()
         self._tasks: set[asyncio.Task] = set()
@@ -220,6 +224,18 @@ class AgentCog(AgentFeedbackMixin, AgentTurnMixin, ConversationContextMixin, Age
                     message, member, question, conversation,
                     deadline_monotonic=request_started_at + AGENT_REQUEST_TIMEOUT_SECONDS,
                 )
+
+    @commands.Cog.listener()
+    async def on_raw_message_edit(self, payload: discord.RawMessageUpdateEvent) -> None:
+        self.read_cache.invalidate_history(payload.channel_id)
+
+    @commands.Cog.listener()
+    async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent) -> None:
+        self.read_cache.invalidate_history(payload.channel_id)
+
+    @commands.Cog.listener()
+    async def on_raw_bulk_message_delete(self, payload: discord.RawBulkMessageDeleteEvent) -> None:
+        self.read_cache.invalidate_history(payload.channel_id)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:

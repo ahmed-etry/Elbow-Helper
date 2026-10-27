@@ -19,6 +19,7 @@ from ..engine.capability_contract import CapabilityContract
 from ..engine.budgets import TOOL_TIMEOUT_SECONDS
 from ..clan_roles import clan_role_purposes
 from .member_context import owner_context
+from ..read_cache import stored_read
 
 CLAN_ROLES = {'leadership': 'leadership_role_id', 'member': 'member_role_id',
               'war': 'war_role_id', 'cwl': 'cwl_role_id', 'cwl_helper': 'cwl_helper_role_id'}
@@ -208,9 +209,10 @@ async def seasonal_tags(context, code, season):
         if data.get('season') and (season is None or season == data['season']):
             clan = next((row for row in data.get('clans', []) if row['tag'] == CLANS[code].tag), None)
             if clan:
-                return sorted({row['tag'] for row in clan.get('members', [])}), data['season'], 'league_group_cohort'
+                return (sorted({row['tag'] for row in clan.get('members', [])}), data['season'],
+                        'league_group_cohort', source.get('observed_at'))
     if context.cwl_queries:
-        snapshot = await asyncio.to_thread(context.cwl_queries.performance, history_limit=1,
+        snapshot = await stored_read(context, context.cwl_queries, 'performance', history_limit=1,
                                             season=season, clan_code=code)
         if not snapshot.rows and not snapshot.seasons:
             return [], season, 'season_cohort_unavailable'
@@ -238,16 +240,23 @@ async def clan_rosters(context, arguments):
         item = by_tag.get(clan.tag, {'status': 'unavailable'})
         data = item.get('data', {})
         selected_season, source_basis = arguments.get('season'), 'current_in_game'
-        roster = data.get('memberList', [])
+        cohort_observed_at = item.get('observed_at')
+        roster = [dict(row, observed_at=item.get('observed_at')) for row in data.get('memberList', [])]
         if basis == 'seasonal_cwl' or clan.cwl_only and basis == 'community':
-            tags, selected_season, source_basis = await seasonal_tags(context, code, selected_season)
+            seasonal = await seasonal_tags(context, code, selected_season)
+            tags, selected_season, source_basis = seasonal[:3]
+            cohort_observed_at = seasonal[3] if len(seasonal) > 3 else None
             found = await profiles(context, tags)
-            roster = [dict(found[tag].get('data', {}), tag=tag, profile_status=found[tag]['status']) for tag in tags]
+            roster = [dict(found[tag].get('data', {}), tag=tag, profile_status=found[tag]['status'],
+                           observed_at=min((value for value in (found[tag].get('observed_at'),
+                               cohort_observed_at) if value), default=None)) for tag in tags]
         original_count = len(roster)
         if (arguments.get('include_war_stars') or arguments.get('ranked_tier_ids') or arguments.get('ranked_tier_prefix')) and source_basis=='current_in_game':
             found = await profiles(context,[row['tag'] for row in roster])
             roster = [dict(row,warStars=found.get(row['tag'],{}).get('data',{}).get('warStars'),
-                ranked_league=found.get(row['tag'],{}).get('data',{}).get('leagueTier')) for row in roster]
+                ranked_league=found.get(row['tag'],{}).get('data',{}).get('leagueTier'),
+                observed_at=min((value for value in (row.get('observed_at'),
+                    found.get(row['tag'], {}).get('observed_at')) if value), default=None)) for row in roster]
         roster = [dict(row,ranked_league=row.get('ranked_league',row.get('leagueTier'))) for row in roster]
         leadership_tags.update(row['tag'] for row in roster
                                if row.get('role') in ('leader', 'coLeader'))
@@ -258,6 +267,8 @@ async def clan_rosters(context, arguments):
         # Clash clan profiles omit capacity; the game's clan limit is 50.
         capacity = data.get('capacity', 50) if item['status'] == 'ok' else None
         summaries.append({'clan_code': code, 'name': data.get('name'), 'tag': clan.tag,
+            'observed_at': min((value for value in (item.get('observed_at'), cohort_observed_at)
+                                if value), default=None),
             'entry_settings': entry_settings(data, item['status']),
             'profile':clan_profile(code), 'basis': source_basis, 'season': selected_season,
             'status': item['status'] if source_basis == 'current_in_game' else source_basis,
@@ -277,6 +288,7 @@ async def clan_rosters(context, arguments):
                 'player_tag': row['tag'], 'player_name': row.get('name'), 'townHallLevel': row.get('townHallLevel'),
                 'role': row.get('role'), 'donations': row.get('donations'),
                 'donations_received':row.get('donationsReceived'),'war_stars':row.get('warStars'),
+                'observed_at': row.get('observed_at'),
                 'profile_status': row.get('profile_status', 'ok')})
     sort = arguments.get('sort','town_hall')
     tags = sorted({row['player_tag'] for row in result if row.get('player_tag')})

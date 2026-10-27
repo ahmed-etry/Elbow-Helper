@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from hashlib import sha256
 import json
 import logging
 import math
@@ -39,6 +40,13 @@ class BonusConfigValidationError(ValueError):
 
 class BonusConfigRepository:
     """Own validated CWL bonus configuration and its audit history."""
+
+    def cache_revision(self) -> str | None:
+        """Observe settings without initializing or changing the configuration."""
+        try:
+            return sha256(BONUS_CONFIG_FILE.read_bytes()).hexdigest()
+        except OSError:
+            return None
 
     @staticmethod
     def _default_bonus_clan_config() -> Dict[str, Any]:

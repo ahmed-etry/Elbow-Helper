@@ -15,6 +15,7 @@ from ..access import AgentAccessLost, has_agent_entry_access
 from .repository import ResearchJobBusy, ResearchJobConflict, ResearchJobRepository
 from ..models import AgentRequestContext
 from .execution import advance_discord_research_job
+from ..read_cache import ReadCache
 
 
 LOGGER = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ class ResearchJobRunner:
         self.message_search = message_search
         self.guild_id = guild_id
         self.poll_seconds = poll_seconds
+        self.read_cache = ReadCache()
         self._task: asyncio.Task | None = None
         self._scan_after_job_id: str | None = None
 
@@ -125,6 +127,7 @@ class ResearchJobRunner:
             thread_discovery=None,
             research_jobs=self.repository,
             conversation_root_id=scope.conversation_root_id,
+            read_cache=self.read_cache,
         )
 
 

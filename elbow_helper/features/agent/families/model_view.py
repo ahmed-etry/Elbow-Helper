@@ -17,7 +17,7 @@ def record_rows(value):
 
 def account_view(row, *, nested=False):
     result = pick(row, ('player_tag', 'player_name', 'townHallLevel', 'clan', 'clan_code', 'donations', 'war_stars', 'ranked_league', 'role',
-                       'profile_status', 'war_activity', 'account_purpose')) if nested else dict(row)
+                       'profile_status', 'war_activity', 'account_purpose', 'observed_at')) if nested else dict(row)
     if isinstance(result.get('roles'), list):
         result['roles'] = [role for role in result['roles'] if role.get('role_id') != AGENT_TESTER_ROLE_ID]
     for field in ('ranked_league', 'legacy_league'):
@@ -41,6 +41,7 @@ def ranked_view(row):
         'duplicate_copies_removed', 'conflicting_battles', 'unreadable_ranked_rows',
         'historical_counts_complete')
     result = {field: row.get(field) for field in fields}
+    result.update(pick(row, ('observed_at', 'ranking_observed_at')))
     for field in ('observed_attacks', 'observed_defenses'):
         metric = row.get(field)
         if isinstance(metric, dict):
@@ -137,7 +138,7 @@ def family_model_view(payload):
                                     for account in item['accounts']]
                 if family == 'read_member_cohort' and data.get('basis') == 'clan_rosters':
                     item['accounts'] = [pick(account, ('clan_code', 'player_tag', 'player_name', 'donations',
-                        'townHallLevel', 'role', 'account_purpose', 'war_activity'))
+                        'townHallLevel', 'role', 'account_purpose', 'war_activity', 'observed_at'))
                                         for account in item['accounts']]
             if family == 'read_member_cohort' and data.get('basis') == 'role_holders':
                 selected_roles = set(data.get('selected_role_ids', ()))

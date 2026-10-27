@@ -17,8 +17,11 @@ from ..engine.capability_contract import CapabilityContract
 from ..access import require_evidence_access
 from ..reports.base import retain_report, ArtifactCapacityError
 from ..reports.tools import authorize_report
+from ..conversation.findings import family_revisions
+from ..read_cache import ReadDependencies
 
 COMMON = {
+    'fresh': {'type': 'boolean', 'description': 'Force fresh source reads, including nested reads. Use for a requested recheck.'},
     'report_id': {'type': 'string', 'minLength': 1, 'maxLength': 32},
     'offset': {'type': 'integer', 'minimum': 0},
     'limit': {'type': 'integer', 'minimum': 1, 'maximum': 500},
@@ -169,7 +172,7 @@ def family_tool(name, description, properties, reader, *, required=(), contract=
             if (not isinstance(report, FamilyReport) or report.guild_id != context.guild.id
                     or report.family != name or not await authorize_report(context, identifier)):
                 return {'error': 'That report is no longer available here.', 'cause': 'report_unavailable'}
-            if set(arguments) - set(COMMON):
+            if arguments.get('fresh') or set(arguments) - set(COMMON):
                 return {'error': 'Read a new snapshot to change its selection.', 'cause': 'invalid_arguments'}
             if json.loads(report.payload)['summary'].get('requester_id', context.member.id) != context.member.id:
                 return {'error': 'Read a new snapshot for this request.', 'cause': 'report_unavailable'}
@@ -183,6 +186,12 @@ def family_tool(name, description, properties, reader, *, required=(), contract=
                 return {'error': 'Continue with the report ID to keep the same snapshot.',
                         'cause': 'missing_report'}
             selected = {key: value for key, value in arguments.items() if key not in COMMON}
+            fresh = context.fresh_reads or arguments.get('fresh', False)
+            if name == 'read_member_cohort' and selected.get('activity_ref') and fresh:
+                from .cohort_activity import fresh_activity_selection
+                selected = await fresh_activity_selection(context, selected)
+                if 'error' in selected:
+                    return selected
             if 'account_tags' in selected:
                 values = selected['account_tags']
                 tags = [normalize_player_tag(value) for value in values] if isinstance(values, list) else []
@@ -198,7 +207,10 @@ def family_tool(name, description, properties, reader, *, required=(), contract=
             # before the executor's hard deadline cancels the entire report.
             from ..engine.budgets import TOOL_TIMEOUT_SECONDS
             deadline = time.monotonic() + max(0, TOOL_TIMEOUT_SECONDS - 5)
-            read_context = replace(context, deadline_monotonic=min(deadline, context.deadline_monotonic)
+            continuation = bool(selected.get('activity_ref'))
+            dependencies = ReadDependencies(() if continuation else family_revisions(context, name))
+            read_context = replace(context, fresh_reads=fresh, read_dependencies=dependencies,
+                                   deadline_monotonic=min(deadline, context.deadline_monotonic)
                                    if context.deadline_monotonic is not None else deadline)
             result = await reader(read_context, selected)
             await require_evidence_access(context)
@@ -207,10 +219,16 @@ def family_tool(name, description, properties, reader, *, required=(), contract=
             if not isinstance(result.get('rows'), list):
                 raise ValueError('Family reader must return complete rows')
             summary = {key: value for key, value in result.items() if key != 'rows'}
-            summary.update(schema_version=1, selection=selected, resolved_inputs=selected,
-                requester_id=context.member.id, observed_at=datetime.now(timezone.utc).isoformat(),
+            versions = result.get('source_versions') if continuation else dependencies.checked(context)
+            selection = result.get('selection', selected) if continuation else selected
+            summary.update(schema_version=1, selection=selection, resolved_inputs=selection,
+                requester_id=context.member.id,
+                observed_at=result.get('observed_at') if continuation else datetime.now(timezone.utc).isoformat(),
+                source_versions=versions,
                 provenance={'source_channels': sorted(context.state.source_channels),
                             'required_access': sorted(context.state.required_access)})
+            if context.read_dependencies is not None:
+                context.read_dependencies.inherit(versions)
             report = FamilyReport(uuid4().hex, context.guild.id, name, json.dumps(
                 {'rows': result['rows'], 'summary': summary}, ensure_ascii=False, allow_nan=False))
             try:
@@ -259,6 +277,10 @@ def family_tool(name, description, properties, reader, *, required=(), contract=
             result['artifact'] = ({'report_id': report.report_id, 'filename': artifact.filename,
                                    'total_rows': report.manifest()['total_rows']} if artifact else None)
             result['artifact_status'] = 'complete' if artifact else 'unavailable'
+            if artifact and arguments.get('view') == 'count':
+                # Export-only follow-ups need the manifest, not another full
+                # table in the writer prompt. The artifact still has all rows.
+                result['evidence_projection'] = 'complete_requested_file'
             if artifact and delivery == 'xlsx' and artifact.filename.endswith('.csv'):
                 result['artifact_note'] = 'XLSX cell limit exceeded; supplied the complete result as lossless CSV.'
         # Page complete records before the generic transport size boundary.

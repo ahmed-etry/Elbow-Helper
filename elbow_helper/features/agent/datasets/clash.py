@@ -1,6 +1,7 @@
 """Live Clash reads through the application-owned transport."""
 
 import asyncio
+from copy import deepcopy
 from datetime import datetime, timezone
 import re
 import time
@@ -17,6 +18,7 @@ from ..research.history import search_date
 from ..capabilities.validation import invalid_arguments
 from .battle_logs import select_battles
 from .clash_cache import MAX_AGE_SECONDS
+from ..read_cache import LIVE_READ_SECONDS, read_scope
 from .findings import AGGREGATES, FIELD_MEANINGS, battle_aggregate, cohort_aggregate
 
 
@@ -186,10 +188,10 @@ async def read_clash(context, arguments, *, complete_battle_log=False):
     if client is None or not client.configured:
         return {"error": "The Clash API is not set up."}
     if cache is not None:
-        cache.bind((id(client), context.guild.id, context.member.id))
-    max_age = arguments.get("max_age_seconds", MAX_AGE_SECONDS)
-    if type(max_age) is not int or not 0 <= max_age <= MAX_AGE_SECONDS:
-        return invalid_arguments("Clash freshness must be between zero and thirty seconds.", "max_age_seconds")
+        cache.bind((id(client), *read_scope(context)))
+    max_age = arguments.get("max_age_seconds", LIVE_READ_SECONDS)
+    if type(max_age) is not int or not 0 <= max_age <= LIVE_READ_SECONDS:
+        return invalid_arguments("Clash freshness must be between zero and nine hundred seconds.", "max_age_seconds")
     kind, tags = arguments["kind"], arguments["tags"]
     member_scope = arguments.get("member_scope", "community")
     if member_scope not in ("community", "current"):
@@ -259,13 +261,23 @@ async def read_clash(context, arguments, *, complete_battle_log=False):
                     timeout_seconds=max(0.1, (deadline - time.monotonic() - 0.2) / 2),
                     backoff_seconds=0.1, maximum_backoff_seconds=0.1,
                 )
-            if cache is None:
+            shared = getattr(context, 'read_cache', None)
+            live_war = kind in ('current_war', 'cwl_war', 'battle_log')
+            fresh = getattr(context, 'fresh_reads', False) or max_age == 0
+            lifetime = max_age
+            if live_war or cache is None and shared is None:
                 response = await fetch()
                 observed_at, reused = datetime.now(timezone.utc).isoformat(), False
+            elif shared is not None:
+                response, observed_at, reused = await shared.get(
+                    ('clash', id(client), read_scope(context), kind, tag), fetch,
+                    max_age=lifetime, fresh=fresh)
             else:
-                response, observed_at, reused = await cache.get((kind, tag), fetch, max_age=max_age)
+                response, observed_at, reused = await cache.get((kind, tag), fetch,
+                    max_age=0 if fresh else min(lifetime, MAX_AGE_SECONDS))
             if response.ok and isinstance(response.payload, dict):
-                original = payload = response.payload
+                original = payload = (deepcopy(response.payload)
+                    if live_war or cache is None and shared is None else response.payload)
                 coverage = None
                 if kind == "battle_log":
                     # The battle-log route has no verified server-side limit parameter.
@@ -391,8 +403,8 @@ def clash_tools():
                     "after": {"type": "string", "maxLength": 40},
                     "before": {"type": "string", "maxLength": 40},
                     "aggregate": {"type": "string", "enum": list(AGGREGATES)},
-                    "max_age_seconds": {"type": "integer", "minimum": 0, "maximum": 30,
-                                        "default": 30},
+                    "max_age_seconds": {"type": "integer", "minimum": 0, "maximum": LIVE_READ_SECONDS,
+                                        "default": LIVE_READ_SECONDS},
                 },
                 "required": ["kind", "tags"], "additionalProperties": False,
             },

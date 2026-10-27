@@ -254,6 +254,9 @@ class AgentRequestContext:
     transcript_archive: Any = None
     operator_debug: Any = None
     clash_reads: RequestClashReads = field(default_factory=RequestClashReads, compare=False)
+    read_cache: Any = None
+    fresh_reads: bool = False
+    read_dependencies: Any = None
 
 
 AgentToolHandler = Callable[
