@@ -32,6 +32,7 @@ retain older feature names because existing deployments depend on them.
 | Events | `data/event_stats/event_stats.json` | Event definitions, order, and messages |
 | Examinations | `data/examination/examination_state.json` | Examiners, cases, availability, panel, and cleanup state |
 | Hibernation | `data/hibernation/hibernation.json` | Saved roles and hibernating members |
+| Leadership news | `data/leadership_news/state.json` | Published updates and pending publish prompts |
 | Member lifecycle | `data/snapshot_intel/snapshot_intel.json` | Invites, ticket index, departures, and reports |
 | Records | `data/records/records.sqlite3` | Leadership incident history |
 | Recruitment | `data/recruitment/trial_data.json` | Active trials |
