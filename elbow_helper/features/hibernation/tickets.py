@@ -32,6 +32,7 @@ from .state import (
     set_fallback_info_message_id,
     set_fallback_thread_entry,
     load_hibernation_state,
+    save_hibernation_member,
     save_hibernation_state,
 )
 
@@ -350,9 +351,12 @@ class HibernationTicketMixin:
         if not isinstance(thread_id, int):
             return
 
-        thread = await self._fetch_fallback_thread(thread_id)
+        thread = self.bot.get_channel(thread_id)
         if thread is None:
-            return
+            try:
+                thread = await self.bot.fetch_channel(thread_id)
+            except discord.NotFound:
+                return
 
         if thread.archived:
             return
@@ -361,6 +365,7 @@ class HibernationTicketMixin:
             await thread.edit(archived=True, reason=reason)
         except (discord.Forbidden, discord.HTTPException):
             LOGGER.warning("Failed archiving fallback thread %s for user %s", thread_id, user_id)
+            raise
 
     async def _delete_fallback_thread_for_member(
         self,
@@ -419,11 +424,11 @@ class HibernationTicketMixin:
         snapshot_role_ids: list[int], unix_ts: int,
     ) -> None:
         if guild is None:
-            return
+            raise RuntimeError("Hibernation guild is unavailable")
         log_channel = guild.get_channel(HIBERNATION_LOG)
         if log_channel is None:
             LOGGER.warning("Hibernation log channel %s not found", HIBERNATION_LOG)
-            return
+            raise RuntimeError("Hibernation log channel is unavailable")
 
         snapshot_clans = [
             HIBERNATION_CLAN_NAMES[role_id]
@@ -458,7 +463,8 @@ class HibernationTicketMixin:
         try:
             await user.send(message, view=self._build_reactivate_view())
         except (discord.Forbidden, discord.HTTPException):
-            await self._post_hibernation_notice_in_fallback_thread(user)
+            if not await self._post_hibernation_notice_in_fallback_thread(user):
+                raise RuntimeError("Hibernation notice could not be delivered")
 
     def prepare_reactivation_ticket(
         self, guild: discord.Guild,
@@ -528,33 +534,54 @@ class HibernationTicketMixin:
         prepared = self.prepare_reactivation_ticket(
             guild, actor, target, hibernation_info,
         )
-        ticket_channel = await guild.create_text_channel(
-            name=prepared["name"],
-            category=prepared["category"],
-            overwrites=prepared["overwrites"],
-        )
-        await ticket_channel.edit(topic=prepared["topic"])
-        await ticket_channel.send(prepared["welcome"])
+        progress = hibernation_info["reactivation_progress"]
+        ticket_id = progress.get("ticket_channel_id")
+        ticket_channel = None
+        if ticket_id is not None:
+            ticket_channel = guild.get_channel(ticket_id)
+            if ticket_channel is None:
+                try:
+                    ticket_channel = await guild.fetch_channel(ticket_id)
+                except discord.NotFound:
+                    for key in ("ticket_channel_id", "welcome_sent", "ticket_registered", "controls_sent"):
+                        progress.pop(key, None)
+                    save_hibernation_member(target.id, hibernation_info)
+        if ticket_channel is None:
+            ticket_channel = await guild.create_text_channel(
+                name=prepared["name"],
+                category=prepared["category"],
+                overwrites=prepared["overwrites"],
+                topic=prepared["topic"],
+            )
+            progress["ticket_channel_id"] = ticket_channel.id
+            save_hibernation_member(target.id, hibernation_info)
+        if not progress.get("welcome_sent"):
+            await ticket_channel.send(prepared["welcome"])
+            progress["welcome_sent"] = True
+            save_hibernation_member(target.id, hibernation_info)
 
-        CREATED_TICKETS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            tickets = read_json(CREATED_TICKETS_FILE)
-        except (FileNotFoundError, json.JSONDecodeError, OSError):
-            tickets = {}
+        if not progress.get("ticket_registered"):
+            CREATED_TICKETS_FILE.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                tickets = read_json(CREATED_TICKETS_FILE)
+            except (FileNotFoundError, json.JSONDecodeError):
+                tickets = {}
 
-        tickets[str(ticket_channel.id)] = {
-            "created_by": str(actor.id),
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "source": "reactivation",
-        }
-        try:
+            tickets.setdefault(str(ticket_channel.id), {
+                "created_by": str(actor.id),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "source": "reactivation",
+            })
             write_json_atomic(CREATED_TICKETS_FILE, tickets, indent=4)
-        except OSError:
-            LOGGER.exception("Failed writing %s", CREATED_TICKETS_FILE)
+            progress["ticket_registered"] = True
+            save_hibernation_member(target.id, hibernation_info)
 
-        await ticket_channel.send(
-            embed=prepared["embed"], view=self._build_close_ticket_view(),
-        )
+        if not progress.get("controls_sent"):
+            await ticket_channel.send(
+                embed=prepared["embed"], view=self._build_close_ticket_view(),
+            )
+            progress["controls_sent"] = True
+            save_hibernation_member(target.id, hibernation_info)
         return ticket_channel
 
     async def _close_reactivation_ticket(self, interaction: discord.Interaction) -> None:

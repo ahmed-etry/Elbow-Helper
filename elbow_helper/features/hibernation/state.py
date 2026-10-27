@@ -45,6 +45,16 @@ def save_hibernation_state(data: dict[str, Any]) -> None:
         raise
 
 
+def save_hibernation_member(member_id: int, info: dict[str, Any] | None) -> None:
+    """Checkpoint one member without overwriting fallback metadata saved by a step."""
+    data = load_hibernation_state()
+    if info is None:
+        data.pop(str(member_id), None)
+    else:
+        data[str(member_id)] = info
+    save_hibernation_state(data)
+
+
 def get_fallback_info_message_id(data: dict[str, Any]) -> int | None:
     raw = data.get(FALLBACK_INFO_MESSAGE_KEY)
     return raw if isinstance(raw, int) else None
