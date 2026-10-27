@@ -139,6 +139,7 @@ class ExaminationFollowupMixin:
             for case_id, case in list(cases.items()):
                 ticket_channel_id = case.get("ticket_channel_id")
                 ticket_channel = None
+                ticket_deleted = False
                 if ticket_channel_id:
                     ticket_channel = self.bot.get_channel(ticket_channel_id)
                     if not ticket_channel:
@@ -146,10 +147,12 @@ class ExaminationFollowupMixin:
                             fetched = await self.bot.fetch_channel(ticket_channel_id)
                             if isinstance(fetched, discord.TextChannel):
                                 ticket_channel = fetched
-                        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                            ticket_channel = None
-                if not ticket_channel:
-                    # Stop follow-ups for deleted or missing tickets.
+                        except discord.NotFound:
+                            ticket_deleted = True
+                        except discord.HTTPException:
+                            continue
+                if ticket_deleted:
+                    # Only retire cases when Discord confirms the ticket was deleted.
                     routing_msg_id = case.get("routing_message_id")
                     if routing_msg_id:
                         try:
@@ -159,6 +162,8 @@ class ExaminationFollowupMixin:
                             pass
                     cases.pop(case_id, None)
                     self._save()
+                    continue
+                if not ticket_channel:
                     continue
                 if case.get("type") == "clan_promo" and case.get("intake_state") != "complete":
                     await self._update_promo_intake_message(ticket_channel.id)
@@ -182,15 +187,18 @@ class ExaminationFollowupMixin:
                     self._save()
                 case_age = now - waiting_since
                 if case_age >= FALLBACK_DELAY and case.get("stage") in {"initial", "reminder"}:
-                    await self._send_followup(case, routing_channel, fallback=True)
-                    case["stage"] = "fallback"
-                    case["last_ping_at"] = now.isoformat()
-                    self._save()
+                    next_stage = "fallback"
                 elif case_age >= RESPONSE_DELAY and case.get("stage") == "initial":
-                    await self._send_followup(case, routing_channel, fallback=False)
-                    case["stage"] = "reminder"
-                    case["last_ping_at"] = now.isoformat()
-                    self._save()
+                    next_stage = "reminder"
+                else:
+                    continue
+                try:
+                    await self._send_followup(case, routing_channel, fallback=next_stage == "fallback")
+                except discord.HTTPException:
+                    continue
+                case["stage"] = next_stage
+                case["last_ping_at"] = now.isoformat()
+                self._save()
 
     async def _send_followup(
         self,
