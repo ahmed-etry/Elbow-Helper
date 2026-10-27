@@ -5,6 +5,8 @@ from typing import Any
 
 import discord
 
+from .usage import mark_outcome
+
 
 _MISSING = discord.utils.MISSING
 LOGGER = logging.getLogger("elbow.interactions")
@@ -112,6 +114,7 @@ async def fail(
     *,
     public: bool = False,
 ) -> None:
+    mark_outcome(interaction, "failed")
     await _send_feedback(interaction, message, public=public)
 
 
@@ -178,6 +181,7 @@ async def deny(
     action: str = "use this command",
     public: bool = False,
 ) -> None:
+    mark_outcome(interaction, "denied")
     if action == "use this command":
         message = "You don't have permission to use this command."
     else:

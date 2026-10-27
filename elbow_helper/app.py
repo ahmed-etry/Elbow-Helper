@@ -11,6 +11,9 @@ from elbow_helper.discord.interactions import deny
 from elbow_helper.discord.interactions import fail
 from elbow_helper.discord.interactions import log_interaction_error
 from elbow_helper.discord.interactions import warn
+from elbow_helper.discord.usage import log_command_usage
+from elbow_helper.discord.usage import on_app_command_completion
+from elbow_helper.discord.usage import on_interaction
 from elbow_helper.configuration.guild import GUILD_ID
 
 from .core.errors import install_asyncio_exception_handler
@@ -40,11 +43,10 @@ async def handle_app_command_error(
 
     command_name = interaction.command.qualified_name if interaction.command else "unknown"
     root_error = getattr(error, "original", error)
+    denied = isinstance(error, app_commands.CheckFailure) or isinstance(root_error, app_commands.CheckFailure)
+    log_command_usage(interaction, "denied" if denied else "failed")
 
-    if isinstance(error, app_commands.CheckFailure) or isinstance(
-        root_error,
-        app_commands.CheckFailure,
-    ):
+    if denied:
         await deny(interaction)
         return
 
@@ -88,6 +90,8 @@ def create_bot(
         workbook_writer=workbook_writer,
     )
     bot.tree.error(handle_app_command_error)
+    bot.add_listener(on_app_command_completion)
+    bot.add_listener(on_interaction)
     return bot
 
 
