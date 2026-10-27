@@ -133,7 +133,7 @@ HELP_ENTRIES: tuple[HelpEntry, ...] = (
             "The reason appears in their coin history."
         ),
         category=CAT_ECONOMY,
-        visible_to=LEAD_PLUS,
+        visible_to=LEAD_PLUS | CORE,
         examples=(
             "/grant coins user:@User category:cwl amount:5 reason:Top CWL performance",
             "/grant coins user:@User category:encouragement amount:3 reason:Great improvement",
@@ -148,7 +148,7 @@ HELP_ENTRIES: tuple[HelpEntry, ...] = (
             "A member can hold one ticket per month, and leadership cannot receive one."
         ),
         category=CAT_ECONOMY,
-        visible_to=LEAD_PLUS,
+        visible_to=LEAD_PLUS | CORE,
         examples=("/grant ticket user:@User reason:Special contribution",),
         notes=(MANAGEMENT_GUIDE_NOTE,),
     ),
@@ -168,7 +168,7 @@ HELP_ENTRIES: tuple[HelpEntry, ...] = (
         summary="See who has raffle tickets right now.",
         details="Shows every member holding a raffle ticket for the current month.",
         category=CAT_ECONOMY,
-        visible_to=LEAD_PLUS,
+        visible_to=LEAD_PLUS | CORE,
         notes=(MANAGEMENT_GUIDE_NOTE,),
     ),
     HelpEntry(
@@ -179,7 +179,7 @@ HELP_ENTRIES: tuple[HelpEntry, ...] = (
             "Leave the month empty for the current month, or enter an earlier month as YYYY-MM."
         ),
         category=CAT_ECONOMY,
-        visible_to=LEAD_PLUS,
+        visible_to=LEAD_PLUS | CORE,
         examples=("/raffle draw", "/raffle draw month:2025-09"),
         notes=(MANAGEMENT_GUIDE_NOTE,),
     ),
@@ -188,7 +188,7 @@ HELP_ENTRIES: tuple[HelpEntry, ...] = (
         summary="Draw this month's raffle winners again.",
         details="Runs this month's raffle draw again and announces the result.",
         category=CAT_ECONOMY,
-        visible_to=LEAD_PLUS,
+        visible_to=LEAD_PLUS | CORE,
         examples=("/raffle reroll",),
         notes=(MANAGEMENT_GUIDE_NOTE,),
     ),
@@ -199,7 +199,7 @@ HELP_ENTRIES: tuple[HelpEntry, ...] = (
             "Shows the selected month's prize and winners. Leave the month empty to view the current month."
         ),
         category=CAT_ECONOMY,
-        visible_to=LEAD_PLUS,
+        visible_to=LEAD_PLUS | CORE,
         examples=("/raffle history", "/raffle history month:2025-09"),
         notes=(MANAGEMENT_GUIDE_NOTE,),
     ),
@@ -483,7 +483,7 @@ HELP_ENTRIES: tuple[HelpEntry, ...] = (
     ),
     HelpEntry(
         path="/roster post",
-        summary="Post and manage roster signups in this channel.",
+        summary="Post a roster in this channel.",
         details=(
             "Posts the roster with Signup, Opt-out, refresh, and a gear menu. Every post of the "
             "same roster stays in sync. The gear menu handles account changes, signup controls, "

@@ -1,17 +1,67 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
+from elbow_helper.configuration.roles import CORE, LEAD_PLUS, MEMBER_ROLE_ID, RECRUITERS
 from elbow_helper.features.achievements.commands import AchievementCommandMixin
+from elbow_helper.features.achievements.economy import AchievementEconomyMixin
 from elbow_helper.features.help.catalog import HELP_ENTRIES
 from elbow_helper.features.help.catalog import HELP_INDEX
 from elbow_helper.features.help.catalog import CAT_CWL
 from elbow_helper.features.help.catalog import CAT_ROSTERS
 from elbow_helper.features.help.catalog import HelpEntry
+from elbow_helper.features.help.cog import HelpCog
 from elbow_helper.features.help.discovery import DiscoveredCommand
 from elbow_helper.features.help.discovery import ParameterInfo
 from elbow_helper.features.help.rendering import build_detail_embed
 from elbow_helper.features.help.rendering import build_list_embed
+
+
+class HelpVisibilityTests(unittest.IsolatedAsyncioTestCase):
+    economy_commands = (
+        "/grant coins",
+        "/grant ticket",
+        "/raffle list",
+        "/raffle draw",
+        "/raffle reroll",
+        "/raffle history",
+    )
+
+    def test_economy_list_and_autocomplete_match_command_permission(self) -> None:
+        cog = HelpCog(bot=None)
+        economy = AchievementEconomyMixin()
+        for role_id in (*CORE, *LEAD_PLUS, *RECRUITERS, MEMBER_ROLE_ID, None):
+            interaction = SimpleNamespace(
+                user=SimpleNamespace(
+                    roles=[] if role_id is None else [SimpleNamespace(id=role_id)],
+                ),
+            )
+            allowed = economy._require_command_role(interaction)
+            visible = {entry.path for entry in cog._visible_entries(interaction)}
+            for path in self.economy_commands:
+                with self.subTest(role_id=role_id, path=path):
+                    self.assertEqual(path in visible, allowed)
+                    choices = cog._autocomplete_choices(interaction, current=path)
+                    self.assertEqual(path in {choice.value for choice in choices}, allowed)
+
+    async def test_core_can_open_economy_command_details(self) -> None:
+        cog = HelpCog(bot=None)
+        for role_id in CORE:
+            for path in self.economy_commands:
+                with self.subTest(role_id=role_id, path=path):
+                    interaction = SimpleNamespace(
+                        user=SimpleNamespace(roles=[SimpleNamespace(id=role_id)]),
+                        response=SimpleNamespace(send_message=AsyncMock()),
+                    )
+                    with patch("elbow_helper.features.help.cog.discover_commands", return_value={}):
+                        await cog._show_detail(interaction, path)
+                    interaction.response.send_message.assert_awaited_once()
+                    response = interaction.response.send_message.call_args.kwargs
+                    self.assertIn("embed", response)
+                    self.assertEqual(response["embed"].description, HELP_INDEX[path].details)
+                    self.assertTrue(response["ephemeral"])
 
 
 class HelpCatalogTests(unittest.TestCase):
@@ -184,7 +234,7 @@ class HelpCatalogTests(unittest.TestCase):
         self.assertIn("enabled:false", HELP_INDEX["/roster schedule"].examples[2])
         self.assertIn("before posting", HELP_INDEX["/roster schedule"].notes[2])
         self.assertIn("wherever the roster is posted", HELP_INDEX["/roster schedule"].notes[2])
-        self.assertEqual(HELP_INDEX["/roster post"].summary, "Post and manage roster signups in this channel.")
+        self.assertEqual(HELP_INDEX["/roster post"].summary, "Post a roster in this channel.")
         self.assertIn("same roster stays in sync", HELP_INDEX["/roster post"].details)
         self.assertIn("changed while cloning", HELP_INDEX["/roster clone"].details)
         self.assertIn("min_townhall:16", HELP_INDEX["/roster clone"].examples[1])

@@ -17,7 +17,8 @@ class LookupAccessTests(unittest.IsolatedAsyncioTestCase):
     def test_levels_equal_help_access_groups(self):
         mirrors = {
             "lead": ("/event list",),
-            "lead_plus": ("/raffle list", "/raffle history", "/health player", "/health clan"),
+            "lead_plus": ("/health player", "/health clan"),
+            "lead_plus_or_core": ("/raffle list", "/raffle history"),
             "core": ("/coinlog",),
             "recruiter_or_core": ("/account list",),
             "lead_plus_or_cwl_helper": ("/cwl bonus",),
