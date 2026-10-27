@@ -5,6 +5,19 @@ from __future__ import annotations
 import json
 
 
+def takes_single_value(schema):
+    """Only collapse collections when the schema rules out an array value."""
+    if schema.get("x-result-list"):
+        return False
+    kind = schema.get("type")
+    if isinstance(kind, list):
+        return bool(kind) and "array" not in kind
+    if kind is not None:
+        return kind != "array"
+    choices = schema.get("anyOf", ())
+    return bool(choices) and all(takes_single_value(choice) for choice in choices)
+
+
 def schema_variant(base, choice):
     """Inherit typed properties when an object alternative only adds constraints."""
     result = {**base, **choice}

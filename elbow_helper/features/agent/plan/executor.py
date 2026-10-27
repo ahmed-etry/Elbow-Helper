@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
 from .checker import _valid_value, step_dependencies
+from .arguments import takes_single_value
 from .results import is_record_table
 
 
@@ -21,6 +22,10 @@ class UnresolvedReferenceError(KeyError):
         super().__init__("Unresolved earlier result reference")
         self.step_id = step_id
         self.path = path
+
+
+class SingleValueReferenceError(ValueError):
+    """A collection cannot supply an unambiguous single argument value."""
 
 
 def _walk(source: Any, path: list[Any]) -> Any:
@@ -41,8 +46,9 @@ def resolve_arguments(
     arguments: Mapping[str, Any], results: Mapping[str, Mapping[str, Any]],
     *, schema: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    def resolve(value, detail):
-        if "anyOf" in detail and "type" not in detail:
+    def resolve(value, detail, field="arguments", *, expand=False):
+        reference = isinstance(value, dict) and set(value) == {"step", "path"}
+        if not reference and "anyOf" in detail and "type" not in detail:
             detail = next((choice for choice in detail["anyOf"]
                            if _valid_value(value, choice, set(results))), {})
         if (detail.get("x-result-list") and isinstance(value, list) and len(value) == 1
@@ -53,17 +59,30 @@ def resolve_arguments(
                 source = results[value["step"]]
                 if source.get("status") == "confirmation_required":
                     return value
-                return _walk(source, value["path"])
+                collected = _walk(source, value["path"])
             except (KeyError, IndexError, TypeError):
                 raise UnresolvedReferenceError(value["step"], value["path"]) from None
+            if "*" in value["path"] and not expand and takes_single_value(detail):
+                if not collected or any(type(item) is not type(collected[0]) or item != collected[0]
+                                        for item in collected[1:]):
+                    reason = "several distinct values" if collected else "no values"
+                    raise SingleValueReferenceError(
+                        f"{field} takes one value, but its result reference collected {reason}. "
+                        "Choose one value or ask for clarification."
+                    )
+                return collected[0]
+            return collected
         if isinstance(value, dict):
             properties = detail.get("properties", {})
-            return {field: resolve(item, properties.get(field, {}))
-                    for field, item in value.items()}
+            additional = detail.get("additionalProperties", {})
+            return {name: resolve(item, properties.get(
+                        name, additional if isinstance(additional, Mapping) else {}),
+                        name if field == "arguments" else f"{field}.{name}")
+                    for name, item in value.items()}
         if isinstance(value, list):
             items = []
-            for item in value:
-                resolved = resolve(item, detail.get("items", {}))
+            for index, item in enumerate(value):
+                resolved = resolve(item, detail.get("items", {}), f"{field}[{index}]", expand=True)
                 expanded = (isinstance(item, dict) and set(item) == {"step", "path"}
                             and "*" in item["path"] and isinstance(resolved, list))
                 items.extend(resolved) if expanded else items.append(resolved)
@@ -113,6 +132,12 @@ async def execute_plan(
             LOGGER.warning("Agent step %s has unresolved reference to step %s path %s",
                            step["id"], error.step_id, error.path)
             return step["id"], {"error": "A required earlier result is unavailable."}
+        except SingleValueReferenceError as error:
+            return step["id"], {
+                "error": str(error), "cause": "invalid_arguments",
+                "capability": step["capability"],
+                **({"argument_schema": argument_schema(step)} if argument_schema else {}),
+            }
         async with semaphore:
             return step["id"], await run(step, arguments, results)
 
