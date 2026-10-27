@@ -8,7 +8,7 @@ from typing import Any
 
 from elbow_helper.infrastructure.persistence import read_json
 from elbow_helper.infrastructure.persistence import write_json_atomic
-from .config import STATE_FILE
+from .config import CLANS, STATE_FILE
 
 
 LOGGER = logging.getLogger(__name__)
@@ -29,6 +29,11 @@ def load_state() -> ClanReportingState:
     data.setdefault("missing_elder_messages", {})
     data.setdefault("war_summaries", {})
     data.setdefault("last_summary_month", None)
+    # Legacy state only recorded a completed month for the whole clan set.
+    data.setdefault("last_summary_month_by_clan", {
+        clan_code: data["last_summary_month"]
+        for clan_code in CLANS if data["last_summary_month"]
+    })
     return data
 
 

@@ -32,30 +32,40 @@ class ClanReportingWarMixin:
         target_time = datetime(now.year, now.month, 1, 8, 0, tzinfo=timezone.utc)
         if now < target_time:
             return
-        if self.state.get("last_summary_month") == month_key:
-            return
-
-        await self._post_monthly_war_summaries(month_start, month_end)
-        self.state["last_summary_month"] = month_key
-        save_state(self.state)
+        completed = await self._post_monthly_war_summaries(month_start, month_end)
+        if completed and self.state.get("last_summary_month") != month_key:
+            self.state["last_summary_month"] = month_key
+            save_state(self.state)
 
     async def _post_monthly_war_summaries(
         self, month_start: datetime, month_end: datetime
-    ) -> None:
+    ) -> bool:
+        month_key = month_start.strftime("%Y-%m")
+        completed_months = self.state.setdefault("last_summary_month_by_clan", {})
         for clan_code in CLANS:
-            await self._post_war_summary_for_clan(clan_code, month_start, month_end)
+            if completed_months.get(clan_code) == month_key:
+                continue
+            try:
+                completed = await self._post_war_summary_for_clan(clan_code, month_start, month_end)
+            except discord.HTTPException as exc:
+                LOGGER.warning("Failed to post monthly war summary for %s: %s", clan_code, exc)
+            else:
+                if completed:
+                    completed_months[clan_code] = month_key
+                    save_state(self.state)
             await asyncio.sleep(0.5)
+        return all(completed_months.get(clan_code) == month_key for clan_code in CLANS)
 
     async def _post_war_summary_for_clan(
         self, clan_code: str, month_start: datetime, month_end: datetime
-    ) -> None:
+    ) -> bool:
         thread = await self._get_thread(clan_code)
         if not thread:
-            return
+            return False
 
         clan_tag = CLAN_TAGS.get(clan_code)
         if not clan_tag:
-            return
+            return False
 
         war_log = await self._fetch_war_log(clan_tag, limit=50)
         wins, losses, ties = self._count_war_results(war_log, month_start, month_end)
@@ -83,7 +93,7 @@ class ClanReportingWarMixin:
             chart_file = build_war_summary_chart(clan_label, month_label, wins, losses, ties)
             if not chart_file:
                 LOGGER.warning("Skipping monthly war summary for %s because chart rendering is unavailable", clan_code)
-                return
+                return False
 
         summaries = self.state.setdefault("war_summaries", {})
         old_message_id = summaries.get(clan_code)
@@ -101,10 +111,11 @@ class ClanReportingWarMixin:
             new_message = await thread.send(embed=embed)
         else:
             LOGGER.warning("Nothing to post for %s monthly summary", clan_code)
-            return
+            return False
 
         summaries[clan_code] = new_message.id
         save_state(self.state)
+        return war_log is not None
 
     def _count_war_results(
         self, war_log: Optional[list[dict[str, Any]]], month_start: datetime, month_end: datetime
