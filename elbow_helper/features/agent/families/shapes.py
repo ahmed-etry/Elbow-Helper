@@ -31,7 +31,10 @@ RESULT_FIELDS['read_member_accounts']['rows'][0].update(names('nickname,war_star
 RESULT_FIELDS['read_member_accounts'].update(
     history_reads={kind: names('read_ran,status,after,before,error,cause,coverage,history_coverage')
                    for kind in ('regular_war', 'cwl', 'ranked')},
-    name_resolutions=[{**names('query,status'), 'candidates': [names('player_tag,player_name,names,sources')]}])
+    name_resolutions=[{**names('query,status,account_status,member_status'),
+        'matching_members': [{**names('member_id,member_name,username,nickname,match_sources,account_links_status'),
+                              'accounts': [names('player_tag,player_name')]}],
+        'candidates': [names('player_tag,player_name,names,sources,member_id,member_name,membership_status')]}])
 for family in ('read_clan_rosters', 'read_member_accounts', 'read_war_attendance'):
     RESULT_FIELDS[family]['rows'][0].update(
         leadership={'status': None, 'roles': [names('role_id,name')]})

@@ -265,7 +265,7 @@ class CwlQueries:
         return version
 
     def account_names(self):
-        """Game account names from the stored directory and historical lineups."""
+        """Game account names recorded for family clans, excluding opponents."""
         return self._history.account_names()
 
     def latest_season(self, *, clan_code: str) -> str | None:

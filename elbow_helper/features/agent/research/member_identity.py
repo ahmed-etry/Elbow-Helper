@@ -55,7 +55,7 @@ def matches_discord_identity(member, query):
     )
 
 
-async def matching_members(context, query):
+async def matching_members(context, query, *, prefer_exact=True):
     """Each name part must match the same member, across their known names."""
     guild = context.guild
     if getattr(guild, "chunked", True) is False:
@@ -91,7 +91,7 @@ async def matching_members(context, query):
             score = 0 if parts in aliases else 1
             matches.append((score, member.display_name.casefold(), member.id, member))
     exact = [item for item in matches if item[0] == 0]
-    return [item[-1] for item in sorted(exact if len(exact) == 1 else matches)]
+    return [item[-1] for item in sorted(exact if prefer_exact and len(exact) == 1 else matches)]
 
 
 def clarification(query, members, *, limit=8):

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.features.agent.families import identity_reads as reads
+from elbow_helper.features.agent.families import account_names
 from elbow_helper.features.agent.families import reference_reads
 from elbow_helper.features.agent.families.model_view import family_model_view
 from elbow_helper.features.agent.engine.answer_inputs import answer_evidence
@@ -47,16 +48,26 @@ class IdentityFamilyTests(unittest.IsolatedAsyncioTestCase):
         target.display_name, target.name = 'Vega (Pilot)', 'pilot'
         context.guild.members = [target]
         context.guild.get_member = lambda identifier: target if identifier == 42 else context.member
-        context = replace(context, account_links=SimpleNamespace(get_links_for_members=lambda ids: {
+        linked = {
             42: [{'player_tag': '#P0', 'player_name_last_seen': 'Moon Knight'},
-                 {'player_tag': '#Q0', 'player_name_last_seen': 'Side Account'}]}))
+                 {'player_tag': '#Q0', 'player_name_last_seen': 'Side Account'}]}
+        all_links = {row['player_tag']: {**row, 'discord_user_id': identifier}
+                     for identifier, rows in linked.items() for row in rows}
+        context = replace(context, account_links=SimpleNamespace(
+            get_links_for_members=lambda ids: {value: linked.get(value, []) for value in ids},
+            get_all_links=lambda: all_links,
+            get_links_by_tags=lambda tags: {tag: all_links.get(tag) for tag in tags}))
         profiles = {'#P0': {'status': 'ok', 'data': {'name': 'Moon Knight'}},
                     '#Q0': {'status': 'ok', 'data': {'name': 'Side Account'}}}
-        with patch.object(reads, 'profiles', AsyncMock(return_value=profiles)):
+        with patch.object(reads, 'profiles', AsyncMock(return_value=profiles)), \
+             patch.object(account_names, 'read_clash', AsyncMock(return_value={'items': []})):
             for name in ('Moon Knight', 'Vega Pilot'):
                 result = await reads.member_accounts(context, {'name': name})
                 self.assertEqual(result['status'], 'resolved')
-                self.assertEqual({row['player_tag'] for row in result['rows']}, {'#P0', '#Q0'})
+                self.assertEqual({row['player_tag'] for row in result['rows']},
+                                 {'#P0'} if name == 'Moon Knight' else {'#P0', '#Q0'})
+                self.assertEqual({row['player_tag'] for row in
+                    result['name_resolutions'][0]['matching_members'][0]['accounts']}, {'#P0', '#Q0'})
                 self.assertEqual(result['member_count'], 1)
                 self.assertIn(42, context.state.resolved_members)
 
@@ -193,13 +204,17 @@ class IdentityFamilyTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_colliding_exact_names_ask_once_without_selecting_a_subject(self):
         context = _context()
-        context.guild.members = [member(41),member(42)]
+        context.guild.members = [member(42),member(43)]
         for actor in context.guild.members:
             actor.display_name = 'Same name'
-        context.guild.get_member=lambda identifier: next(row for row in context.guild.members if row.id==identifier)
-        result = await reads.member_accounts(context, {'name':'Same name'})
+        context.guild.get_member=lambda identifier: context.member if identifier == context.member.id else next(
+            (row for row in context.guild.members if row.id==identifier), None)
+        with patch.object(account_names, 'read_clash', AsyncMock(return_value={'items': []})):
+            result = await reads.member_accounts(context, {'name':'Same name'})
         self.assertEqual(result['status'], 'needs_input')
-        self.assertEqual([row['member_id'] for row in result['rows']], [41,42])
+        self.assertEqual(result['rows'], [])
+        self.assertEqual([row['member_id'] for row in
+            result['name_resolutions'][0]['matching_members']], [42,43])
         self.assertEqual(context.state.resolved_members, {})
 
     async def test_roster_filters_precede_cohort_counts_but_not_current_capacity(self):

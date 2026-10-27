@@ -1,14 +1,16 @@
-"""Resolve lookup labels against game accounts without expanding their owners."""
+"""Join named Discord members and family game accounts without choosing a side."""
 
 import asyncio
 import sqlite3
 import unicodedata
 
 from elbow_helper.configuration.clans import CLANS
+from elbow_helper.configuration.guild import TEST_ACCOUNT_IDS
 from elbow_helper.domain.player_tags import normalize_player_tag
 
 from ..access import require_evidence_access
 from ..datasets.clash import read_clash
+from ..research.member_identity import matching_members
 
 
 def normalized_name(value):
@@ -33,25 +35,44 @@ def edit_distance(left, right):
 
 
 def matching_accounts(query, accounts):
-    """Exact normalized names win; multiple plausible tags remain ambiguous."""
+    """Prefer exact names, then word prefixes; allow small edits per word."""
     if query.strip().startswith('#'):
         tag = normalize_player_tag(query)
         return [accounts[tag]] if tag in accounts else []
     target = normalized_name(query)
     if not target:
         return []
-    exact, fuzzy = [], []
+    exact, prefix, fuzzy = [], [], []
     for account in accounts.values():
         aliases = [normalized_name(name) for name in account['names']]
         if target in aliases:
             exact.append(account)
-        elif len(target) >= 4 and any(
-                min(len(target), len(name)) / max(len(target), len(name)) >= 0.65
-                and abs(len(target) - len(name)) <= min(3, max(1, max(len(target), len(name)) // 3))
-                and edit_distance(target, name) <= min(3, max(1, max(len(target), len(name)) // 3))
-                for name in aliases if name):
+        elif any(word_prefix(query, name) for name in account['names']):
+            prefix.append(account)
+        elif any(small_spelling_edit(query, name) for name in account['names']):
             fuzzy.append(account)
-    return sorted(exact or fuzzy, key=lambda row: row['player_tag'])
+    return sorted(exact or prefix or fuzzy, key=lambda row: row['player_tag'])
+
+
+def name_segments(value):
+    return ''.join(char if char.isalnum() else ' '
+                   for char in unicodedata.normalize('NFKC', value).casefold()).split()
+
+
+def word_prefix(query, name):
+    left, right = name_segments(query), name_segments(name)
+    return bool(left) and len(left) == len(right) and all(
+        other.startswith(part) for part, other in zip(left, right))
+
+
+def small_spelling_edit(query, name):
+    # Formatting-only changes resolve through normalized exact matching above.
+    # For spelling changes, align every word and budget its edits independently;
+    # a long word's allowance must not absorb another word or an initial.
+    left, right = name_segments(query), name_segments(name)
+    return bool(left) and len(left) == len(right) and all(
+        edit_distance(part, other) <= (1 if max(len(part), len(other)) <= 5 else 2)
+        for part, other in zip(left, right))
 
 
 async def resolve_account_names(context, queries):
@@ -107,5 +128,88 @@ async def resolve_account_names(context, queries):
         resolutions.append({'query': query, 'status': status, 'candidates': candidates})
         if status == 'resolved':
             selected[candidates[0]['player_tag']] = candidates[0]
+    # Ambiguity is useful evidence too: join its candidates before the caller
+    # returns for clarification, without selecting or expanding any owner.
+    candidates = {row['player_tag']: row for resolution in resolutions
+                  for row in resolution['candidates']}
+    links = (await asyncio.to_thread(context.account_links.get_links_by_tags, sorted(candidates))
+             if candidates and context.account_links else {})
+    await require_evidence_access(context)
+    for tag, candidate in candidates.items():
+        link = links.get(tag)
+        identifier = link['discord_user_id'] if link else None
+        member = context.guild.get_member(identifier) if identifier else None
+        candidate.update(member_id=identifier, member_name=member.display_name if member else None,
+                         membership_status=('links_unavailable' if context.account_links is None else
+                             'unlinked' if identifier is None else 'present' if member else 'not_in_guild'))
     return {'accounts': selected, 'name_resolutions': resolutions, 'missing_sources': missing,
             'selection_complete': all(row['status'] == 'resolved' for row in resolutions)}
+
+
+async def resolve_names(context, queries):
+    """Use the same two-sided lookup for singular and plural name selectors."""
+    await require_evidence_access(context)
+    # Account-name exactness must not suppress somebody else's nickname part.
+    member_matches = [await matching_members(context, query.strip(), prefer_exact=False) for query in queries]
+    members_complete = getattr(context.guild, 'chunked', True) is not False
+    result = await resolve_account_names(context, queries)
+    if not members_complete:
+        result['missing_sources'].append({'source': 'discord_members', 'cause': 'incomplete'})
+    members, sources_by_query = {}, []
+    for matches, resolution in zip(member_matches, result['name_resolutions']):
+        sources = {member.id: ['discord_or_linked_account_name'] for member in matches}
+        members.update((member.id, member) for member in matches)
+        for candidate in resolution['candidates']:
+            identifier = candidate['member_id']
+            member = context.guild.get_member(identifier) if identifier else None
+            if (member is None or member.id != identifier or identifier in TEST_ACCOUNT_IDS
+                    or getattr(member, 'bot', False)):
+                continue
+            members[identifier] = member
+            member_sources = sources.setdefault(identifier, [])
+            if 'bot_account_link' not in member_sources:
+                member_sources.append('bot_account_link')
+        sources_by_query.append(sources)
+    links = (await asyncio.to_thread(context.account_links.get_links_for_members, sorted(members))
+             if members and context.account_links else {})
+    await require_evidence_access(context)
+    selected, selected_members = {}, set()
+    for resolution, sources in zip(result['name_resolutions'], sources_by_query):
+        candidates = resolution['candidates']
+        account_status = resolution['status']
+        # An exact account match must never hide a Discord name belonging to
+        # somebody else, including when the account has no current guild owner.
+        collision = bool(candidates and sources and any(
+            candidate['member_id'] != identifier
+            for candidate in candidates for identifier in sources))
+        ambiguous = len(sources) > 1 or account_status == 'ambiguous' or collision
+        status = ('ambiguous' if ambiguous else 'unknown' if not members_complete else
+                  'resolved' if candidates or sources else account_status)
+        resolution.update(status=status, account_status=account_status,
+            member_status=('ambiguous' if ambiguous and sources else 'unknown' if not members_complete else
+                           'resolved' if sources else 'not_found'),
+            matching_members=[{
+                'member_id': identifier, 'member_name': members[identifier].display_name,
+                'username': getattr(members[identifier], 'name', None),
+                'nickname': getattr(members[identifier], 'nick', None),
+                'match_sources': sources[identifier],
+                'accounts': [{'player_tag': row['player_tag'],
+                              'player_name': row.get('player_name_last_seen')}
+                             for row in links.get(identifier, [])],
+                'account_links_status': 'available' if context.account_links else 'links_unavailable',
+            } for identifier in sorted(sources)])
+        if status != 'resolved':
+            continue
+        selected_members.update(sources)
+        if candidates:
+            selected.update((row['player_tag'], row) for row in candidates)
+        else:
+            # A Discord-only match selects that member's accounts. An account
+            # match selects only its own tag; other alts remain identity context.
+            for identifier in sources:
+                for row in links.get(identifier, []):
+                    selected[row['player_tag']] = {
+                        'player_tag': row['player_tag'], 'player_name': row.get('player_name_last_seen')}
+    return {'accounts': selected, 'member_ids': sorted(selected_members),
+            'name_resolutions': result['name_resolutions'], 'missing_sources': result['missing_sources'],
+            'selection_complete': all(row['status'] == 'resolved' for row in result['name_resolutions'])}

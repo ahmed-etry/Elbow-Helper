@@ -8,20 +8,26 @@ import sqlite3
 from typing import Any
 from typing import Iterable
 
+from elbow_helper.configuration.clans import CLANS
+
 
 class ClanHealthCwlReads:
     """Expose completed CWL data without leaking the database path or SQL."""
 
     def account_names(self) -> list[dict[str, str]]:
-        """Stored game identities, including unlinked and renamed participants."""
+        """Identities recorded on our clans' sides, including former members."""
         if not self.path.exists():
             return []
+        codes = tuple(CLANS)
+        placeholders = ','.join('?' for _ in codes)
         with closing(sqlite3.connect(self.path.resolve().as_uri() + '?mode=ro', uri=True, timeout=5)) as connection:
             connection.row_factory = sqlite3.Row
             return [dict(row) for row in connection.execute(
-                """SELECT player_tag, player_name FROM player_directory
-                   UNION SELECT player_tag, player_name FROM war_roster_members
-                   ORDER BY player_tag, player_name"""
+                f"""SELECT player_tag, player_name FROM player_directory
+                    WHERE clan_code IN ({placeholders})
+                    UNION SELECT player_tag, player_name FROM war_roster_members
+                    WHERE clan_code IN ({placeholders})
+                    ORDER BY player_tag, player_name""", codes + codes
             )]
 
 

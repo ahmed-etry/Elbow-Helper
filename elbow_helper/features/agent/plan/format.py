@@ -17,7 +17,7 @@ from ..prompts import (
 )
 from ..actions.contracts import ActionClass
 from ..engine.grounding import GROUNDING_INSTRUCTION
-from ..research.member_provenance import MEMBER_PROVENANCE_INSTRUCTION
+from ..research.member_provenance import MEMBER_PROVENANCE_INSTRUCTION, ACCOUNT_MEMBER_PROVENANCE_INSTRUCTION
 from ..community_data import COMMUNITY_DATA_CONTEXT
 
 
@@ -201,7 +201,7 @@ REFERENCE_RETURNS = {
     "read_war_attendance": "report_id,total_rows,rows:[{member_id,player_tag,attacks_used,missed}]",
     "read_cwl_results": "report_id,total_rows,rows:[{member_id,player_tag,clan_code,season,rank,ass_score}]",
     "read_current_war": "report_id,rows:[{clan_code,members:[{player_tag}]}]",
-    "read_member_accounts": "report_id,total_rows,name_resolutions,history_reads,rows:[{member_id,player_tag,home_clans,roles,activity:{regular_war,cwl,ranked}}]",
+    "read_member_accounts": "report_id,total_rows,name_resolutions:[{query,status,member_status,account_status,matching_members:[{member_id,member_name,match_sources,accounts:[{player_tag,player_name}]}],candidates:[{player_tag,player_name,member_id,member_name,membership_status}]}],history_reads,rows:[{member_id,player_tag,home_clans,roles,activity:{regular_war,cwl,ranked}}]",
     "read_clan_rosters": "report_id,total_rows,rows:[{clan_code,player_tag,member_id}],clans:[{clan_code,entry_settings:{type,requiredTownhallLevel,requiredTrophies,requiredBuilderBaseTrophies}}]",
     "read_member_cohort": "report_id,total_rows,selected_role_ids,selection_window,rows:[{member_id,joined_at,family_membership_roles,has_elbow_helper_links,home_clans,accounts:[{player_tag,clan,profile_status}]}],activity_coverage",
     "read_recruitment_pipeline": "report_id,total_rows,source_next_cursor,rows:[{member_id,ticket_channel_id,accepted_clan_codes,acceptance_decision,accounts}]",
@@ -243,7 +243,7 @@ def system_instructions(
             "defensive joke. This overrides every banter rule.", SOCIAL_PLANNING_RULES)) if social else
             ACTION_SYSTEM_PROMPT if actions_enabled else SYSTEM_PROMPT)
     parts = [base, GROUNDING_INSTRUCTION,
-             MEMBER_PROVENANCE_INSTRUCTION]
+             MEMBER_PROVENANCE_INSTRUCTION if social else ACCOUNT_MEMBER_PROVENANCE_INSTRUCTION]
     if not social:
         parts.extend((IMAGE_EVIDENCE_INSTRUCTION, COMMUNITY_DATA_CONTEXT))
     parts.append("<capabilities>\nArguments: trailing * is required; numeric [min..max] is inclusive; "
@@ -267,7 +267,7 @@ def answer_instructions(registry: Mapping[str, RegisteredAgentTool] | None = Non
         LIMIT_ANSWER_INSTRUCTION if registry is None else RESULT_ANSWER_INSTRUCTION,
     ]
     if registry is not None:
-        parts.extend((REPLANNING_INSTRUCTION, MEMBER_PROVENANCE_INSTRUCTION,
+        parts.extend((REPLANNING_INSTRUCTION, ACCOUNT_MEMBER_PROVENANCE_INSTRUCTION,
                       "<capabilities>\nArguments: trailing * is required; numeric [min..max] is inclusive; "
                       "array {min..max} counts items. Use listed return paths; reads supply other fields.\n"
                       + capability_list(registry, include_returns=False, descriptions=False) + "\n</capabilities>"))

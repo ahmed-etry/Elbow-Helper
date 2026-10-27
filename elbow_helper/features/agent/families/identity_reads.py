@@ -87,6 +87,7 @@ def member_fields(member, identifier):
 async def member_accounts(context, arguments):
     roster_clans, roster_names = {}, {}
     name_selection = {}
+    name_identifiers = []
     if arguments.get('after') or arguments.get('before'):
         from .war_reads import period
         try:
@@ -94,16 +95,23 @@ async def member_accounts(context, arguments):
                     or context.source_message.created_at.isoformat()})
         except ValueError as error:
             return {'error': str(error), 'cause': 'invalid_arguments'}
-    if arguments.get('account_names'):
-        if any(arguments.get(key) for key in ('member_ids', 'account_tags', 'name', 'cohort_ref')):
-            return {'error': 'Which members, accounts or exact name do you want?', 'cause': 'invalid_arguments'}
-        from .account_names import resolve_account_names
-        name_selection = await resolve_account_names(context, arguments['account_names'])
-        roster_names = {tag: row['player_name'] for tag, row in name_selection['accounts'].items()}
-        if not roster_names:
-            return {'rows': [], 'status': 'needs_input', **{key: value for key, value in name_selection.items()
-                    if key != 'accounts'}}
-        arguments = {**arguments, 'account_tags': sorted(roster_names)}
+    name_selector = 'account_names' if arguments.get('account_names') else 'name' if arguments.get('name') else None
+    if name_selector:
+        conflicts = [key for key in ('member_ids', 'account_tags', 'name', 'cohort_ref')
+                     if key != name_selector and arguments.get(key)]
+        if conflicts:
+            return {'error': name_selector + ' cannot be combined with ' + ', '.join(conflicts) + '. '
+                    'Use name for one lookup or account_names for several; both search Discord members '
+                    'and family Clash accounts. Use separate plan steps for other selectors.',
+                    'cause': 'invalid_arguments', 'conflicting_fields': [name_selector, *conflicts]}
+        from .account_names import resolve_names
+        name_selection = await resolve_names(context, arguments.get('account_names') or [arguments['name']])
+        roster_names = {tag: row['player_name'] for tag, row in name_selection.pop('accounts').items()}
+        name_identifiers = name_selection.pop('member_ids')
+        if not roster_names and not name_identifiers:
+            return {'rows': [], 'status': 'needs_input', **name_selection}
+        arguments = {key: value for key, value in arguments.items() if key not in ('name', 'account_names')}
+        arguments['account_tags'] = sorted(roster_names)
     if arguments.get('cohort_ref'):
         selection = await cohort_selection(context,arguments['cohort_ref'],'member_ids')
         if 'error' in selection:
@@ -117,17 +125,9 @@ async def member_accounts(context, arguments):
             await _complete_members(context.guild)
         arguments = {**arguments,**selection}
     selectors = [key for key in ('member_ids', 'account_tags', 'name') if arguments.get(key)]
-    if len(selectors) != 1:
+    if not name_selection and len(selectors) != 1:
         return {'error': 'Which members, accounts or exact name do you want?', 'cause': 'needs_input'}
     identifiers = list(arguments.get('member_ids', []))
-    if arguments.get('name'):
-        from ..research.member_identity import matching_members, clarification
-        members = await matching_members(context, arguments['name'].strip())
-        identifiers = [member.id for member in members]
-        if len(identifiers) != 1:
-            return {'rows': [member_fields(context.guild.get_member(value), value) for value in identifiers],
-                    'status': 'needs_input', 'missing': [clarification(arguments['name'], members)],
-                    'name_resolution': 'Discord names and linked account names; no unique owner was selected'}
     tags = sorted({tag for value in arguments.get('account_tags', [])
                    if (tag := normalize_player_tag(value)) is not None})
     if arguments.get('account_tags') and len(tags) != len(set(arguments['account_tags'])):
@@ -143,6 +143,7 @@ async def member_accounts(context, arguments):
                 if row:
                     links.setdefault(row['discord_user_id'], []).append(row)
             identifiers = sorted(links)
+    identifiers = sorted(set(identifiers) | set(name_identifiers))
     current = await profiles(context, tags)
     owners = {row['player_tag']: identifier for identifier, rows in links.items() for row in rows}
     result = []
@@ -170,8 +171,6 @@ async def member_accounts(context, arguments):
             'profile_status': item['status']})
     for identifier in identifiers:
         member = context.guild.get_member(identifier)
-        if member:
-            context.state.resolved_members[identifier] = member.display_name
         if not links.get(identifier):
             result.append({**member_fields(member, identifier), 'player_tag': None,
                            'has_elbow_helper_links': False if context.account_links is not None else None,
@@ -184,8 +183,14 @@ async def member_accounts(context, arguments):
         history_reads = await account_activity(context, matched, arguments)
     from .domain_facts import clan_profile
     current_clans = {row.get('clan', {}).get('tag') for row in matched if row.get('clan')}
+    await require_evidence_access(context)
+    for identifier in name_identifiers if name_selection else identifiers:
+        member = context.guild.get_member(identifier)
+        if member:
+            context.state.resolved_members[identifier] = member.display_name
     return {'rows': sorted(matched, key=lambda row: (row['member_id'] is None,
-            row['member_id'] or 0, row.get('player_tag') or '')), 'status': 'resolved',
+            row['member_id'] or 0, row.get('player_tag') or '')),
+            'status': 'needs_input' if name_selection and not name_selection['selection_complete'] else 'resolved',
             'member_count': len(identifiers), 'account_count':None if any(row.get('profile_status')=='links_unavailable' for row in result) else sum(bool(row.get('player_tag')) for row in matched),
             'unknown_profile_count':sum(unknown_account_data(row,arguments) for row in result),
             'unknown_accounts':[row for row in result if unknown_account_data(row,arguments)],
@@ -197,7 +202,10 @@ async def member_accounts(context, arguments):
                 'role_comparison_complete': len(matched) == len(roster_clans)} if roster_clans else {}),
             **{key: value for key, value in name_selection.items() if key != 'accounts'},
             **({'history_reads': history_reads} if arguments.get('after') else {}),
-            'coverage': ('selected game accounts only; owners do not expand the account selection'
+            'coverage': ('matched game accounts only; matching_members lists linked accounts separately; '
+                         'Discord-only matches include all bot-linked accounts'
+                         if name_selection else
+                         'selected game accounts only; owners do not expand the account selection'
                          if arguments.get('account_tags') else
                          'all bot-linked accounts for selected members; missing profiles remain unknown')}
 
@@ -478,16 +486,16 @@ async def member_cohort(context, arguments):
 
 
 TOOLS = (
- family_tool('read_member_accounts', 'Resolve named game accounts, profiles and dated war/CWL/ranked activity, or join Discord owners.',
+ family_tool('read_member_accounts', 'Look up Discord members and family Clash accounts together, with linked accounts and owners.',
      {'member_ids': IDS, 'account_tags': TAGS, 'cohort_ref':COHORT_REF, **ACCOUNT_FILTERS,
       'account_names': {'type': 'array', 'minItems': 1, 'maxItems': 200, 'uniqueItems': True,
           'items': {'type': 'string', 'minLength': 1, 'maxLength': 100},
-          'description': 'Game account subjects of stats requests. Search all family rosters and stored names; tolerate spacing/case/typos; return ambiguity by tag.'},
+          'description': 'Several names using the same lookup as name: return Discord members with linked accounts and family Clash account candidates with owners. Exact/prefix account matches precede small typos. Alternative to name/member_ids/account_tags/cohort_ref; use one selector.'},
       'after': DATE, 'before': DATE,
       'include_roles': {'type': 'boolean', 'default': False},
       'name': {'type': 'string', 'minLength': 1, 'maxLength': 100,
-               'description': 'Explicit Discord-member identity; expands to every linked account of that owner. For game account stats use account_names.'}}, member_accounts,
-     usage_note='Stats names use account_names unless explicitly Discord members. after/before reads REG, CWL and ranked history for those tags. home_clans: Discord roles.'),
+               'description': 'One name: search Discord display names, usernames, nickname parts and linked account names together with family Clash accounts. Returns matching_members with linked accounts and account candidates with owners. Ambiguity authorizes no actions or pings. Alternative to other selectors.'}}, member_accounts,
+     usage_note='Alternatives: name or account_names search both members (Discord ID) and accounts. after/before: REG/CWL/ranked. home_clans: roles.'),
  family_tool('read_clan_rosters', 'Read every selected clan roster, TH distribution, capacity and donations.',
      {'clan_codes': CLANS_INPUT, 'basis': ROSTER_BASIS,
       'season': {'type': 'string', 'maxLength': 20}, **ACCOUNT_FILTERS,

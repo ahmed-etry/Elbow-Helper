@@ -6,19 +6,29 @@ import re
 import discord
 
 
-MEMBER_PROVENANCE_INSTRUCTION = (
-    "Before targeting a member in an action or reply (including pings and roasts), "
-    "use an explicit mention in this request, the author of the message the requester "
-    "replied to, or find_discord_members with status=resolved in this request. "
-    "Nearby speakers, old lookups, the owner and the asker are not defaults. "
-    "Keep all supplied name parts in the lookup. If it returns needs_input, ask "
-    "which member. When the requester refers to themself, set self_target=true in "
-    "submit_request_plan or submit_social_reply; that flag authorizes only the requester's own member ID. "
-    "On the social route, optionally supply member_query only for a named third party "
-    "the reply is about. Never supply it for the asker or for unnamed social chat. "
-    "Public identity clarifications use display names, usernames only for colliding "
-    "display names, and never raw IDs."
-)
+def member_provenance_instruction(*, account_lookup=False):
+    lookup = (
+        "a resolved member from read_member_accounts or find_discord_members "
+        "with status=resolved in this request. An account owner counts only through a bot "
+        "account link; ambiguous name candidates grant no target provenance. "
+        if account_lookup else "find_discord_members with status=resolved in this request. ")
+    return (
+        "Before targeting a member in an action or reply (including pings and roasts), "
+        "use an explicit mention in this request, the author of the message the requester "
+        "replied to, or " + lookup +
+        "Nearby speakers, old lookups, the owner and the asker are not defaults. "
+        "Keep all supplied name parts in the lookup. If it returns needs_input, ask "
+        "which member. When the requester refers to themself, set self_target=true in "
+        "submit_request_plan or submit_social_reply; that flag authorizes only the requester's own member ID. "
+        "On the social route, optionally supply member_query only for a named third party "
+        "the reply is about. Never supply it for the asker or for unnamed social chat. "
+        "Public identity clarifications use display names, usernames only for colliding "
+        "display names, and never raw IDs."
+    )
+
+
+MEMBER_PROVENANCE_INSTRUCTION = member_provenance_instruction()
+ACCOUNT_MEMBER_PROVENANCE_INSTRUCTION = member_provenance_instruction(account_lookup=True)
 _MENTION = re.compile(r"<@!?(\d+)>")
 _MEMBER_FIELDS = frozenset({
     "member_id", "member_ids", "user_id", "user_ids", "recipient_ids", "dm_member_ids",
@@ -117,7 +127,7 @@ def member_target_issue(context, arguments, scope=None, *, self_target=None):
     missing = member_target_ids(arguments, scope) - allowed_member_ids(context, self_target=self_target)
     if missing:
         return (f"Member IDs {sorted(missing)} have no target provenance in this request. "
-                "Resolve them first with find_discord_members (status=resolved), or ask "
+                "Resolve them first with read_member_accounts or find_discord_members (status=resolved), or ask "
                 "which member. For a self reference, set self_target=true in submit_request_plan; "
                 "it authorizes only the asker.")
     return ""
