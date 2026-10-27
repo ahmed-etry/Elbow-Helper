@@ -166,10 +166,10 @@ class SelfKnowledgeFlowTests(unittest.IsolatedAsyncioTestCase):
                 local_context='Synthetic banter.', context=context, conversation_history='',
                 route=RouteDecision(social=True))
         # Captured from service.py with the same frozen time. Update only when the
-        # banter instructions change on purpose (last: participation wording).
+        # banter instructions change on purpose (last: leadership requests).
         expected = {
             'prompt': 'a5f81ffb1f888da2716cfe22adc23dbf5c475b3ea71d53c3a1617e11aa5f1a1b',
-            'system_prompt': '13e82f3bec741184ef44012fa2cc4e08618a1ae089b41e7873093dff933399e6',
+            'system_prompt': '7733cb399b5143f74d1dad5a03b70c84191809c2c441866118a30ac8162975ed',
         }
         for key, digest in expected.items():
             self.assertEqual(hashlib.sha256(model.request[key].encode()).hexdigest(), digest)
