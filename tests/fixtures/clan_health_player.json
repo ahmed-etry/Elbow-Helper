@@ -1,0 +1,48 @@
+{
+  "tag": "#P0Y2L",
+  "name": "Synthetic Player",
+  "townHallLevel": 18,
+  "expLevel": 250,
+  "trophies": 5000,
+  "bestTrophies": 5500,
+  "warStars": 1500,
+  "attackWins": 100,
+  "defenseWins": 10,
+  "donations": 500,
+  "donationsReceived": 250,
+  "clanCapitalContributions": 123456,
+  "troops": [
+    {"name": "Barbarian", "level": 12, "maxLevel": 12, "village": "home"},
+    {"name": "Archer", "level": 13, "maxLevel": 14, "village": "home"},
+    {"name": "Wall Wrecker", "level": 5, "maxLevel": 5, "village": "home"},
+    {"name": "Super Barbarian", "level": 12, "maxLevel": 12, "village": "home", "superTroopIsActive": true},
+    {"name": "L.A.S.S.I", "level": 15, "maxLevel": 15, "village": "home"},
+    {"name": "Electro Owl", "level": 14, "maxLevel": 15, "village": "home"},
+    {"name": "Mighty Yak", "level": 13, "maxLevel": 15, "village": "home"},
+    {"name": "Unicorn", "level": 12, "maxLevel": 15, "village": "home"},
+    {"name": "Frosty", "level": 10, "maxLevel": 15, "village": "home"},
+    {"name": "Diggy", "level": 9, "maxLevel": 10, "village": "home"},
+    {"name": "Poison Lizard", "level": 8, "maxLevel": 15, "village": "home"},
+    {"name": "Phoenix", "level": 7, "maxLevel": 10, "village": "home"},
+    {"name": "Spirit Fox", "level": 6, "maxLevel": 10, "village": "home"},
+    {"name": "Angry Jelly", "level": 5, "maxLevel": 10, "village": "home"},
+    {"name": "Sneezy", "level": 4, "maxLevel": 10, "village": "home"},
+    {"name": "Greedy Raven", "level": 3, "maxLevel": 10, "village": "home"},
+    {"name": "Raged Barbarian", "level": 20, "maxLevel": 20, "village": "builderBase"},
+    {"name": "Boxer Giant", "level": 20, "maxLevel": 20, "village": "builderBase"}
+  ],
+  "heroes": [
+    {"name": "Barbarian King", "level": 90, "maxLevel": 105, "village": "home"},
+    {"name": "Battle Machine", "level": 30, "maxLevel": 35, "village": "builderBase"}
+  ],
+  "heroEquipment": [
+    {"name": "Barbarian Puppet", "level": 18, "maxLevel": 18, "village": "home"}
+  ],
+  "spells": [
+    {"name": "Lightning Spell", "level": 11, "maxLevel": 12, "village": "home"},
+    {"name": "Rage Spell", "level": 6, "maxLevel": 6, "village": "home"}
+  ],
+  "achievements": [
+    {"name": "Games Champion", "stars": 3, "value": 123400, "target": 100000, "village": "home"}
+  ]
+}

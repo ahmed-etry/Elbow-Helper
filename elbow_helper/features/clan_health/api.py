@@ -21,6 +21,21 @@ from .database import ClanHealthRepository
 LOGGER = logging.getLogger(__name__)
 
 
+def _unit_name_key(name: Any) -> str:
+    return "".join(char for char in str(name or "").casefold() if char.isalnum())
+
+
+# Supercell's Pet List, checked 2026-10-27:
+# https://support.supercell.com/clash-of-clans/en/articles/about-heroes-pets-9.html
+_PET_NAME_KEYS = frozenset(
+    _unit_name_key(name)
+    for name in (
+        "L.A.S.S.I", "Electro Owl", "Mighty Yak", "Unicorn", "Frosty", "Diggy",
+        "Poison Lizard", "Phoenix", "Spirit Fox", "Angry Jelly", "Sneezy", "Greedy Raven",
+    )
+)
+
+
 def _validated_clan_members(
     payload: Dict[str, Any],
 ) -> tuple[List[Dict[str, Any]], Optional[int], bool]:
@@ -1010,36 +1025,24 @@ class ClanHealthCollector:
                     hero_sum += int(hero["level"])
             row["hero_sum"] = hero_sum
             pet_sum = 0
-            for pet in payload.get("troops", []) or []:
-                # Pets are represented as troops in API with village=home and "isTroop" true.
-                # We identify pets by known pet home levels via api section when available.
-                if str(pet.get("village") or "").lower() != "home":
+            troop_sum = 0
+            # Raw API troops include pets without a pet type discriminator.
+            for troop in payload.get("troops", []) or []:
+                if str(troop.get("village") or "").lower() != "home":
                     continue
-                # Pets include "superTroopIsActive" as False and are not spell/equipment entries.
-                # Name-based fallback is safer for broad API versions.
-                if str(pet.get("name") or "").strip().lower() in {
-                    "lassi", "electro owl", "mighty yak", "unicorn", "frosty", "diggy", "poison lizard", "phoenix", "spirit fox", "angry jelly"
-                }:
-                    if isinstance(pet.get("level"), int):
-                        pet_sum += int(pet["level"])
+                if not isinstance(troop.get("level"), int):
+                    continue
+                if _unit_name_key(troop.get("name")) in _PET_NAME_KEYS:
+                    pet_sum += int(troop["level"])
+                else:
+                    troop_sum += int(troop["level"])
             row["pet_sum"] = pet_sum
+            row["troop_sum"] = troop_sum
             equipment_sum = 0
             for eq in payload.get("heroEquipment", []) or []:
                 if isinstance(eq.get("level"), int):
                     equipment_sum += int(eq["level"])
             row["equipment_sum"] = equipment_sum
-            troop_sum = 0
-            for troop in payload.get("troops", []) or []:
-                if str(troop.get("village") or "").lower() != "home":
-                    continue
-                name = str(troop.get("name") or "").strip().lower()
-                if name in {
-                    "lassi", "electro owl", "mighty yak", "unicorn", "frosty", "diggy", "poison lizard", "phoenix", "spirit fox", "angry jelly"
-                }:
-                    continue
-                if isinstance(troop.get("level"), int):
-                    troop_sum += int(troop["level"])
-            row["troop_sum"] = troop_sum
             spell_sum = 0
             for spell in payload.get("spells", []) or []:
                 if str(spell.get("village") or "").lower() not in {"", "home"}:
