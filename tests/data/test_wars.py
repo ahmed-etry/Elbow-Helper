@@ -323,7 +323,7 @@ class WarStoreTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(rows[-1]["preparation_at"])
         self.assertEqual(rows[-1]["attacks_complete"], 0)
 
-    async def test_invalid_values_and_new_nested_identity_fields_are_not_persisted(self):
+    async def test_invalid_values_fail_and_new_nested_fields_do_not_reduce_coverage(self):
         await self.record(war())
         before = await self.rows("SELECT * FROM wars")
         for update in ({"state": []}, {"type": []}, {"teamSize": -1}, {"endTime": "not a time"}, {"battleModifier": {"tag": "#P0"}}):
@@ -333,7 +333,7 @@ class WarStoreTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         partial = war("warEnded")
         partial["clan"]["members"][0]["newIdentity"] = {"name": "Unreviewed identity"}
         report = await self.record(partial)
-        self.assertEqual(report["status"], "failed")
+        self.assertEqual(report["status"], "ok")
         self.assertNotIn("Unreviewed identity", str(await self.rows("SELECT * FROM war_members")))
 
     async def test_failed_final_fetch_retains_deadline_retry_and_cwl_incomplete_end_is_repaired(self):

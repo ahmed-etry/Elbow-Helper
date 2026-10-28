@@ -101,7 +101,7 @@ class FamilyStoreTests(unittest.IsolatedAsyncioTestCase):
             "player_observations", "item_catalog", "player_items", "hero_equipment", "player_counters",
             "player_collection_state", "player_coverage",
             "wars", "war_source_keys", "war_sides", "war_members", "war_attacks", "cwl_seasons", "cwl_log_summaries",
-            "cwl_clans", "cwl_players", "cwl_rounds", "cwl_season_sources", "war_collection_state",
+            "cwl_clans", "cwl_players", "cwl_rounds", "cwl_season_sources", "war_collection_state", "api_records", "api_field_changes", "player_ranked_references",
         })
         with self.assertRaises(sqlite3.IntegrityError):
             await self.store.call(lambda c: c.execute(
@@ -178,8 +178,8 @@ class FamilyStoreTests(unittest.IsolatedAsyncioTestCase):
     async def test_partial_and_failed_rosters_never_close_stays_or_refresh_good_time(self):
         await self.clans(100)
         await self.clans(200, [clan_response(0, [], declared=1), clan_response(1, [])])
-        await self.clans(300, [clan_response(0, [player(role="admin", donations=4)], declared=2), clan_response(1, [])])
-        await self.clans(400, [response(None, 429), clan_response(1, [])])
+        await self.clans(3_600_000_300, [clan_response(0, [player(role="admin", donations=4)], declared=2), clan_response(1, [])])
+        await self.clans(3_600_000_400, [response(None, 429), clan_response(1, [])])
         stays = await self.rows("SELECT * FROM clan_membership")
         self.assertEqual(len(stays), 1)
         self.assertEqual((stays[0]["to_at"], stays[0]["clan_role"], stays[0]["last_observed_at"]), (None, "member", 100))
@@ -227,7 +227,7 @@ class FamilyStoreTests(unittest.IsolatedAsyncioTestCase):
     async def test_changed_names_and_metadata_hourly_counters_and_missing_fields(self):
         await self.clans(100, [clan_response(0, [player(donations=0)]), clan_response(1, [])])
         await self.clans(200, [clan_response(0, [player(name="New name", donationsReceived=3)], clanPoints=13000), clan_response(1, [])])
-        await self.clans(3_600_000_100, [clan_response(0, [player(name="New name")], requiredTrophies=5000), clan_response(1, [])])
+        await self.clans(3_600_000_100, [clan_response(0, [player(name="New name", donationsReceived=3)], requiredTrophies=5000), clan_response(1, [])])
         aliases = await self.rows("SELECT * FROM account_aliases ORDER BY from_at")
         self.assertEqual([(r["name"], r["to_at"]) for r in aliases], [("Player", 200), ("New name", None)])
         metadata = await self.rows("SELECT * FROM clan_observations WHERE clan_id=1 ORDER BY observed_at")
@@ -239,7 +239,7 @@ class FamilyStoreTests(unittest.IsolatedAsyncioTestCase):
         samples = await self.rows("SELECT * FROM donation_snapshots ORDER BY sampled_at")
         self.assertEqual((samples[0]["donations"], samples[0]["received"]), (0, None))
         self.assertEqual((samples[1]["donations"], samples[1]["received"]), (None, 3))
-        self.assertEqual(json.loads(samples[0]["field_presence_json"]), ["donations"])
+        self.assertEqual(json.loads(samples[0]["field_presence_json"]), 1)
 
     async def test_links_mirror_reassignment_unlink_restart_and_unknown_metadata_age(self):
         await self.links(100, link())

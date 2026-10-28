@@ -217,7 +217,8 @@ class WarFormatTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         await old.finish(run)
         specs = [(kind, clan.tag) for clan in CLANS for kind in ("clan_profile", "clan_roster")]
         run = await old.begin_run("clans", "family_clans", specs, 300)
-        await old.call(collect_clans, run, CLANS, [clan_response(0, [player()]), clan_response(1, [])], 300)
+        with patch("elbow_helper.data.store.clans.collect_fields"):
+            await old.call(collect_clans, run, CLANS, [clan_response(0, [player()]), clan_response(1, [])], 300)
         await old.finish(run)
         run = await old.begin_run("players", "accounts", [("player_profile", "#P0")], 400)
         await old.requested(run, 0)
@@ -226,12 +227,13 @@ class WarFormatTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         duplicate = deepcopy(payload["achievements"][0])
         duplicate["info"] = "Different synthetic instructions"
         payload["achievements"].append(duplicate)
-        await old.call(collect_player, run, 0, account_id, "#P0", response(payload), 400)
+        with patch("elbow_helper.data.store.players.collect_fields"), patch("elbow_helper.data.store.players._ranked_references"):
+            await old.call(collect_player, run, 0, account_id, "#P0", response(payload), 400)
         self.assertEqual((await old.finish(run))["failed"], 0)
 
         def snapshot(c):
             tables = [r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")]
-            return {table: [tuple(row) for row in c.execute(f"SELECT * FROM {table} ORDER BY rowid")] for table in tables}
+            return {table: [tuple(row) for row in c.execute(f"SELECT * FROM {table}")] for table in tables}
 
         before = await old.call(snapshot)
         for table in ("player_observations", "player_items", "hero_equipment", "player_counters"):
@@ -253,6 +255,6 @@ class WarFormatTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                     "SELECT name FROM sqlite_master WHERE name='wars'").fetchone()[0]
 
         versions, columns, table = await asyncio.to_thread(migrate)
-        self.assertEqual(versions, (1, 2, 3, 4, 5))
+        self.assertEqual(versions, tuple(range(1, SCHEMA_VERSION + 1)))
         self.assertIn("identity_key", columns)
         self.assertEqual(table, "wars")

@@ -1,12 +1,15 @@
 """Clan generations: positive facts, conservative absence and bounded moves."""
 
 from collections import Counter
+import json
 
 from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 
 from . import FamilyStore
+from .api_fields import collect_fields
 from .people import account, account_name, close_interval
+from .player_projection import HOUR_US
 from .projections import (
     CLAN_COUNTER_FIELDS, DONATION_FIELDS, canonical_json, profile_valid, roster_projection,
 )
@@ -21,7 +24,7 @@ def _error(response):
 
 
 def _profile(connection, clan_id, payload, at, item, previous):
-    # A member list contains personal identities; retain it only in the typed tables.
+    # Member rows have their own typed facts and generic leaf history.
     metadata = canonical_json({key: value for key, value in payload.items()
                                if key not in CLAN_COUNTER_FIELDS and key != "memberList"})
     last = connection.execute(
@@ -40,6 +43,32 @@ def _profile(connection, clan_id, payload, at, item, previous):
              canonical_json([key for key in CLAN_COUNTER_FIELDS if key in payload]), item),
         )
     connection.execute("UPDATE clans SET name=? WHERE id=?", (payload["name"], clan_id))
+
+
+def _donations(connection, account_id, clan_id, row, at, item):
+    last = connection.execute(
+        "SELECT * FROM donation_snapshots WHERE account_id=? ORDER BY sampled_at DESC LIMIT 1",
+        (account_id,),
+    ).fetchone()
+    if last is not None and at < last["sampled_at"]:
+        raise ValueError("out_of_order_observation")
+    if last is not None and at // HOUR_US == last["sampled_at"] // HOUR_US:
+        return
+    presence = sum(1 << index for index, key in enumerate(DONATION_FIELDS) if key in row)
+    values = tuple(row.get(key) for key in DONATION_FIELDS)
+    columns = ("donations", "received", "trophies", "builder_trophies", "clan_rank", "previous_rank")
+    # Bit positions follow DONATION_FIELDS. Compare old field-name lists
+    # without rewriting any of the existing observations.
+    previous_presence = json.loads(last["field_presence_json"]) if last is not None else None
+    if isinstance(previous_presence, list):
+        previous_presence = sum(1 << index for index, key in enumerate(DONATION_FIELDS) if key in previous_presence)
+    if (last is not None and last["clan_id"] == clan_id and previous_presence == presence
+            and tuple(last[key] for key in columns) == values):
+        return
+    # Keep counter decreases, including the donation season reset. The API
+    # supplies no season identity here, so do not infer one from the UTC month.
+    connection.execute("INSERT INTO donation_snapshots VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                       (account_id, at, clan_id, None, *values, canonical_json(presence), item))
 
 
 def collect_clans(connection, run, clans, responses, at):
@@ -83,6 +112,7 @@ def collect_clans(connection, run, clans, responses, at):
             if profile is not None:
                 previous = FamilyStore.previous_good(connection, "clan_profile", clan.tag)
                 _profile(connection, clan_id, profile, at, profile_item, previous)
+                collect_fields(connection, "clan_profile", clan.tag, profile, run, at, complete=complete)
             FamilyStore.outcome(
                 connection, profile_item, "ok" if profile is not None else "failed", at,
                 error=None if profile is not None else "invalid_profile" if _payload(response) is not None else _error(response),
@@ -96,11 +126,7 @@ def collect_clans(connection, run, clans, responses, at):
                 account_id = account(connection, row["tag"], at)
                 observed.add(account_id)
                 account_name(connection, account_id, row["name"], at, roster_item)
-                connection.execute(
-                    "INSERT INTO donation_snapshots VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (account_id, at, clan_id, None, *(row.get(key) for key in DONATION_FIELDS),
-                     canonical_json([key for key in DONATION_FIELDS if key in row]), roster_item),
-                )
+                _donations(connection, account_id, clan_id, row, at, roster_item)
                 # Partial rosters retain positive name/counter evidence but do
                 # not change any stays, roles, or last-good membership times.
                 if not complete:
