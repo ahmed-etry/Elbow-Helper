@@ -5,65 +5,18 @@ import json
 from pathlib import Path
 import sqlite3
 
+from .schema import DATABASE
+
 
 class RankedStore:
     def __init__(self, path: Path):
         self.path = path
 
     def initialize(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with closing(sqlite3.connect(self.path, timeout=30)) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("""CREATE TABLE IF NOT EXISTS snapshots (
-                player_tag TEXT NOT NULL, observed_at TEXT NOT NULL,
-                member_id INTEGER NOT NULL, clan_tag TEXT,
-                player_name TEXT, status TEXT NOT NULL, fields_json TEXT NOT NULL,
-                PRIMARY KEY (player_tag, observed_at)
-            )""")
-            conn.execute("CREATE INDEX IF NOT EXISTS snapshots_member ON snapshots(member_id, observed_at)")
-            conn.execute("CREATE INDEX IF NOT EXISTS snapshots_clan ON snapshots(clan_tag, observed_at)")
-            conn.execute("CREATE INDEX IF NOT EXISTS snapshots_time ON snapshots(observed_at)")
-            conn.execute("""CREATE TABLE IF NOT EXISTS ranked_battles (
-                battle_key TEXT PRIMARY KEY, player_tag TEXT NOT NULL, battle_at TEXT NOT NULL,
-                battle_type TEXT NOT NULL, attack INTEGER NOT NULL, opponent_tag TEXT,
-                member_id INTEGER NOT NULL, clan_tag TEXT, player_name TEXT,
-                first_observed_at TEXT NOT NULL, last_observed_at TEXT NOT NULL,
-                payload_json TEXT NOT NULL
-            )""")
-            columns = conn.execute("PRAGMA table_info(ranked_battles)").fetchall()
-            if any(column[1] == "opponent_tag" and column[3] for column in columns):
-                # SQLite cannot drop NOT NULL in place. Rebuild in one transaction,
-                # preserving battle keys, payloads and first-observed associations.
-                conn.execute("BEGIN")
-                conn.execute("ALTER TABLE ranked_battles RENAME TO ranked_battles_old")
-                conn.execute("""CREATE TABLE ranked_battles (
-                    battle_key TEXT PRIMARY KEY, player_tag TEXT NOT NULL, battle_at TEXT NOT NULL,
-                    battle_type TEXT NOT NULL, attack INTEGER NOT NULL, opponent_tag TEXT,
-                    member_id INTEGER NOT NULL, clan_tag TEXT, player_name TEXT,
-                    first_observed_at TEXT NOT NULL, last_observed_at TEXT NOT NULL,
-                    payload_json TEXT NOT NULL
-                )""")
-                conn.execute("INSERT INTO ranked_battles SELECT * FROM ranked_battles_old")
-                conn.execute("DROP TABLE ranked_battles_old")
-            conn.execute("CREATE INDEX IF NOT EXISTS battles_time ON ranked_battles(battle_at, player_tag)")
-            conn.execute("CREATE INDEX IF NOT EXISTS battles_member ON ranked_battles(member_id, battle_at)")
-            conn.execute("CREATE INDEX IF NOT EXISTS battles_clan ON ranked_battles(clan_tag, battle_at)")
-            conn.execute("""CREATE TABLE IF NOT EXISTS battle_log_polls (
-                player_tag TEXT NOT NULL, observed_at TEXT NOT NULL, member_id INTEGER NOT NULL,
-                clan_tag TEXT, status TEXT NOT NULL, total_entries INTEGER,
-                oldest_battle_at TEXT, newest_battle_at TEXT, skipped_entries INTEGER NOT NULL,
-                poll_interval_seconds REAL NOT NULL, PRIMARY KEY (player_tag, observed_at)
-            )""")
-            conn.execute("CREATE INDEX IF NOT EXISTS polls_member ON battle_log_polls(member_id, observed_at)")
-            conn.execute("CREATE INDEX IF NOT EXISTS polls_clan ON battle_log_polls(clan_tag, observed_at)")
-            # A row also records that this tag has already had its 404 warning.
-            conn.execute("""CREATE TABLE IF NOT EXISTS profile_health (
-                player_tag TEXT PRIMARY KEY, missing INTEGER NOT NULL
-            )""")
-            conn.commit()
+        DATABASE.initialize(self.path)
 
     def append(self, observations, *, battles=(), polls=(), profile_health=None):
-        with closing(sqlite3.connect(self.path, timeout=30)) as conn:
+        with closing(DATABASE.connect(self.path, timeout=30)) as conn:
             conn.executemany("""INSERT OR IGNORE INTO snapshots
                 (player_tag, observed_at, member_id, clan_tag, player_name, status, fields_json)
                 VALUES (?, ?, ?, ?, ?, ?, ?)""", [
@@ -94,7 +47,7 @@ class RankedStore:
 
     def profile_health(self, tags):
         """Read durable 404 warning and recovery state for the linked accounts."""
-        with closing(sqlite3.connect(self.path, timeout=30)) as conn:
+        with closing(DATABASE.connect(self.path, timeout=30)) as conn:
             return {tag: bool(row[0]) for tag in tags
                     if (row := conn.execute("SELECT missing FROM profile_health WHERE player_tag = ?",
                                             (tag,)).fetchone()) is not None}
@@ -102,7 +55,7 @@ class RankedStore:
     def read_battle_window(self, *, after, before, selector, values):
         column = {"member_ids": "member_id", "account_tags": "player_tag", "clan_tags": "clan_tag"}[selector]
         placeholders = ",".join("?" for _ in values)
-        with closing(sqlite3.connect(self.path, timeout=30)) as conn:
+        with closing(DATABASE.connect(self.path, timeout=30)) as conn:
             conn.row_factory = sqlite3.Row
             battles = conn.execute(f"""SELECT * FROM ranked_battles
                 WHERE battle_at >= ? AND battle_at < ? AND {column} IN ({placeholders})
@@ -115,7 +68,7 @@ class RankedStore:
 
     def latest_collection(self, tags):
         """Restore per-account cooldowns without reading the full history."""
-        with closing(sqlite3.connect(self.path, timeout=30)) as conn:
+        with closing(DATABASE.connect(self.path, timeout=30)) as conn:
             conn.row_factory = sqlite3.Row
             latest = {}
             for tag in tags:
@@ -130,7 +83,7 @@ class RankedStore:
         # Selectors are internal constants; every member-supplied value is bound.
         column = {"member_ids": "member_id", "account_tags": "player_tag", "clan_tags": "clan_tag"}[selector]
         placeholders = ",".join("?" for _ in values)
-        with closing(sqlite3.connect(self.path, timeout=30)) as conn:
+        with closing(DATABASE.connect(self.path, timeout=30)) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(f"""SELECT * FROM snapshots
                 WHERE observed_at >= ? AND observed_at < ? AND player_tag IN (

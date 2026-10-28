@@ -205,6 +205,50 @@ class SQLiteMigrationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "strictly increasing"):
             run_sqlite_migrations(connection, migrations, target_version=2)
 
+    def test_proven_unversioned_baseline_continues_to_later_versions(self) -> None:
+        with closing(sqlite3.connect(":memory:")) as connection:
+            connection.execute("CREATE TABLE legacy(value TEXT)")
+            connection.execute("INSERT INTO legacy VALUES ('preserved')")
+            connection.commit()
+
+            def adopt(conn):
+                self.assertTrue(conn.in_transaction)
+                self.assertEqual(conn.execute("SELECT * FROM legacy").fetchall(), [("preserved",)])
+
+            def unexpected_create(conn):
+                self.fail("An adopted baseline must not run its blank-schema creator")
+
+            applied = run_sqlite_migrations(
+                connection,
+                (SQLiteMigration(1, "baseline", unexpected_create),
+                 SQLiteMigration(2, "add detail", lambda conn: conn.execute("ALTER TABLE legacy ADD COLUMN detail TEXT"))),
+                target_version=2, adopt_unversioned=adopt,
+            )
+            self.assertEqual(applied, (1, 2))
+            self.assertEqual(sqlite_schema_version(connection), 2)
+            self.assertEqual(connection.execute("SELECT * FROM legacy").fetchall(), [("preserved", None)])
+
+    def test_later_failure_rolls_back_adoption_and_version_together(self) -> None:
+        with closing(sqlite3.connect(":memory:")) as connection:
+            connection.execute("CREATE TABLE legacy(value TEXT)")
+
+            def adopt(conn):
+                conn.execute("INSERT INTO legacy VALUES ('discarded')")
+                conn.execute("ALTER TABLE legacy ADD COLUMN detail TEXT")
+
+            def fail(conn):
+                raise ValueError("synthetic later upgrade failure")
+
+            with self.assertRaises(SQLiteMigrationError):
+                run_sqlite_migrations(
+                    connection,
+                    (SQLiteMigration(1, "baseline", lambda conn: None), SQLiteMigration(2, "failure", fail)),
+                    target_version=2, adopt_unversioned=adopt,
+                )
+            self.assertEqual(sqlite_schema_version(connection), 0)
+            self.assertEqual(connection.execute("SELECT * FROM legacy").fetchall(), [])
+            self.assertEqual([row[1] for row in connection.execute("PRAGMA table_info(legacy)")], ["value"])
+
 
 class RosterSchemaMigrationTests(unittest.TestCase):
     def setUp(self) -> None:

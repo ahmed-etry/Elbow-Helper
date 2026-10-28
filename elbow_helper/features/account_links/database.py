@@ -7,6 +7,7 @@ import sqlite3
 from typing import Any, Iterable, Iterator, Mapping
 
 from .config import DB_PATH
+from .schema import DATABASE
 
 
 _LINK_UPSERT_SQL = """
@@ -30,8 +31,7 @@ _LINK_UPSERT_SQL = """
 class AccountLinksDbMixin:
     @contextmanager
     def _db_connect(self) -> Iterator[sqlite3.Connection]:
-        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(DB_PATH)
+        conn = DATABASE.connect(DB_PATH)
         try:
             conn.row_factory = sqlite3.Row
             yield conn
@@ -39,52 +39,7 @@ class AccountLinksDbMixin:
             conn.close()
 
     def _init_db(self) -> None:
-        with self._db_connect() as conn, conn:
-            cursor = conn.cursor()
-            cursor.execute("PRAGMA journal_mode=WAL")
-            cursor.execute("PRAGMA synchronous=NORMAL")
-            cursor.execute("PRAGMA busy_timeout=30000")
-            # Keep schema changes atomic. SQLite rejects dependencies on the old
-            # column rather than silently removing indexes, constraints or triggers.
-            cursor.execute("BEGIN IMMEDIATE")
-            columns = {row["name"] for row in cursor.execute("PRAGMA table_info(links)")}
-            if "is_primary" in columns:
-                cursor.execute("ALTER TABLE links DROP COLUMN is_primary")
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS links (
-                    player_tag TEXT PRIMARY KEY,
-                    discord_user_id INTEGER NOT NULL,
-                    player_name_last_seen TEXT DEFAULT '',
-                    last_seen_clan_tag TEXT DEFAULT '',
-                    last_seen_clan_code TEXT DEFAULT '',
-                    last_seen_role TEXT DEFAULT ''
-                )
-                """
-            )
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS suggestions (
-                    player_tag TEXT PRIMARY KEY,
-                    player_name TEXT NOT NULL,
-                    current_clan_code TEXT NOT NULL,
-                    current_clan_tag TEXT NOT NULL,
-                    proposed_discord_user_id INTEGER NOT NULL,
-                    proposed_display_name TEXT DEFAULT '',
-                    review_channel_id INTEGER DEFAULT 0,
-                    review_message_id INTEGER DEFAULT 0
-                )
-                """
-            )
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS ignored_tags (
-                    player_tag TEXT PRIMARY KEY
-                )
-                """
-            )
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_links_discord_user ON links(discord_user_id)")
-            conn.commit()
+        DATABASE.initialize(DB_PATH)
 
     def get_all_links(self) -> dict[str, dict[str, Any]]:
         with self._db_connect() as conn:

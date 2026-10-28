@@ -20,7 +20,7 @@ class RecordWriter:
         recorder_id: int,
         recorder_display: str,
     ) -> dict[str, Any]:
-        with closing(sqlite3.connect(self.path, timeout=30)) as conn:
+        with closing(self._db_connect(timeout=30)) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute("PRAGMA busy_timeout=30000")
@@ -57,7 +57,7 @@ class RecordWriter:
         edited_by_id: int,
         edited_by_display: str,
     ) -> dict[str, Any] | None:
-        with closing(sqlite3.connect(self.path, timeout=30)) as conn:
+        with closing(self._db_connect(timeout=30)) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute("PRAGMA busy_timeout=30000")
@@ -91,7 +91,7 @@ class RecordWriter:
         removed_by_id: int,
         removed_by_display: str,
     ) -> dict[str, Any] | None:
-        with closing(sqlite3.connect(self.path, timeout=30)) as conn:
+        with closing(self._db_connect(timeout=30)) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute("PRAGMA busy_timeout=30000")

@@ -30,6 +30,7 @@ from .config import MEME_DAILY_LIMIT
 from .config import MESSAGE_COUNT_COOLDOWN_SECONDS
 from .config import RANDOM_CRIT_TRIGGER_RE
 from .config import REACTION_DAILY_LIMIT
+from .schema import DATABASE
 
 NON_UTILITY_CLAN_MEMBER_ROLE_IDS = {
     int(clan.member_role_id)
@@ -88,7 +89,7 @@ class AchievementTrackingMixin:
 
             current_member_ids = {member.id for member in guild.members}
             
-            conn = sqlite3.connect(self.db_path, timeout=20.0)
+            conn = DATABASE.connect(self.db_path, timeout=20.0)
             cursor = conn.cursor()
 
             cursor.execute('SELECT DISTINCT user_id FROM user_stats')

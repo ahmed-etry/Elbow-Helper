@@ -56,14 +56,14 @@ class ClanHealth(
         self._last_startup_sync_ts = 0
         self._background_lock = asyncio.Lock()
         self._startup_logged = False
-        self.repository.initialize()
-        start_resilient_loop(self._war_log_loop)
-        start_resilient_loop(self._snapshot_log_loop)
 
     async def cog_load(self) -> None:
         from .database.config_store import seed_missing_configs
 
+        await asyncio.to_thread(self.repository.initialize)
         await asyncio.to_thread(seed_missing_configs)
+        start_resilient_loop(self._war_log_loop)
+        start_resilient_loop(self._snapshot_log_loop)
 
     def cog_unload(self) -> None:
         if self._war_log_loop.is_running():

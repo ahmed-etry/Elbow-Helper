@@ -30,6 +30,7 @@ from .config import SALARY_AMOUNT
 from .config import TICKET_COST
 from .config import TICKET_LIMIT_PER_MONTH
 from .definitions import COIN_REWARDS
+from .schema import DATABASE
 from .views import CoinLogView
 
 class AchievementCommandMixin:
@@ -43,7 +44,7 @@ class AchievementCommandMixin:
             if not current:
                 return []
             
-            conn = sqlite3.connect(self.db_path, timeout=20.0)
+            conn = DATABASE.connect(self.db_path, timeout=20.0)
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT id, name, emoji

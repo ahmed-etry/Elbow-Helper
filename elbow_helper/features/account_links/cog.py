@@ -65,10 +65,10 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
             "location_statuses": {},
         }
         self._clan_fetch_warning_state: dict[str, dict[str, Any]] = {}
-        self._init_db()
-        start_resilient_loop(self._poll_clans_loop)
 
     async def cog_load(self) -> None:
+        await asyncio.to_thread(self._init_db)
+        start_resilient_loop(self._poll_clans_loop)
         await self.register_pending_suggestion_views()
 
     def cog_unload(self) -> None:

@@ -47,7 +47,7 @@ class ClanHealthCwlReads:
                 params.extend(codes)
         try:
             with closing(
-                sqlite3.connect(self.path, timeout=5)
+                self._db_connect(timeout=5)
             ) as connection:
                 rows = connection.execute(
                     f"""
@@ -108,7 +108,7 @@ class ClanHealthCwlReads:
                 "clan database does not exist"
             )
         with closing(
-            sqlite3.connect(self.path, timeout=30)
+            self._db_connect(timeout=30)
         ) as connection:
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA busy_timeout=30000")
@@ -195,7 +195,7 @@ class ClanHealthCwlReads:
         if not self.path.exists():
             return self._empty_roster_history()
         with closing(
-            sqlite3.connect(self.path, timeout=30)
+            self._db_connect(timeout=30)
         ) as connection:
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA busy_timeout=30000")
@@ -352,7 +352,7 @@ class ClanHealthCwlReads:
         placeholders = ",".join("?" for _ in tags)
         try:
             with closing(
-                sqlite3.connect(self.path, timeout=10)
+                self._db_connect(timeout=10)
             ) as connection:
                 connection.row_factory = sqlite3.Row
                 rows = connection.execute(

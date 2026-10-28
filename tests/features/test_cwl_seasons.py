@@ -13,6 +13,7 @@ from elbow_helper.domain.cwl import cwl_season_key
 from elbow_helper.configuration.clans import CLAN_TAGS
 from elbow_helper.features.clan_health.api import ClanHealthCollector
 from elbow_helper.features.clan_health.database import ClanHealthRepository
+from elbow_helper.features.clan_health.database.schema import create_schema
 from elbow_helper.features.cwl.bonus.commands import CwlBonusMixin
 from elbow_helper.features.cwl.transfers import CwlTransferMixin
 
@@ -89,23 +90,8 @@ class CwlSeasonTests(unittest.IsolatedAsyncioTestCase):
                        ("2026-06-catchup", _war(17, month=6)),
                        ("2026-06-16", _war(21, month=6, round_number=5))]
             with closing(sqlite3.connect(repository.path)) as connection, connection:
-                connection.execute("""
-                    CREATE TABLE wars (
-                        war_id TEXT NOT NULL,
-                        war_type TEXT NOT NULL,
-                        clan_code TEXT NOT NULL,
-                        clan_tag TEXT NOT NULL,
-                        cwl_season TEXT NOT NULL DEFAULT '',
-                        cwl_round INTEGER DEFAULT 0,
-                        start_ts INTEGER DEFAULT 0,
-                        end_ts INTEGER DEFAULT 0,
-                        state TEXT NOT NULL DEFAULT '',
-                        last_seen_ts INTEGER NOT NULL,
-                        source TEXT NOT NULL DEFAULT '',
-                        PRIMARY KEY (war_id, clan_code)
-                    )
-                """)
-                connection.execute("PRAGMA user_version=23")
+                create_schema(connection)
+                connection.execute("ALTER TABLE wars DROP COLUMN cwl_season_label")
                 connection.executemany(
                     "INSERT INTO wars (war_id, war_type, clan_code, clan_tag, cwl_season, "
                     "start_ts, cwl_round, state, last_seen_ts, source) "
@@ -123,7 +109,7 @@ class CwlSeasonTests(unittest.IsolatedAsyncioTestCase):
                     "SELECT war_id, clan_code, start_ts, cwl_round, state, source FROM wars",
                 ).fetchall()
                 self.assertEqual(before, after)
-                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 23)
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 1)
                 rows = connection.execute(
                     "SELECT cwl_season, cwl_season_label FROM wars ORDER BY war_id",
                 ).fetchall()
@@ -161,7 +147,7 @@ class CwlSeasonTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(connection.execute(
                     "SELECT cwl_season, cwl_season_label FROM wars",
                 ).fetchone(), ("2026-10", "2026-10-02"))
-                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 0)
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 1)
 
     async def test_transfer_statuses_use_one_start_check_and_the_league_key(self):
         workflow = CwlTransferMixin()

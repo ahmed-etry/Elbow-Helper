@@ -41,8 +41,14 @@ def run_sqlite_migrations(
     migrations: Sequence[SQLiteMigration],
     *,
     target_version: int,
+    adopt_unversioned: Callable[[sqlite3.Connection], None] | None = None,
 ) -> tuple[int, ...]:
-    """Apply pending migrations atomically and return their version numbers."""
+    """Apply pending migrations atomically and return their version numbers.
+
+    A feature may supply a validating adoption handler for its known unversioned
+    baseline. It replaces the first migration, inside the same transaction as
+    subsequent upgrades and the version stamp. Other stores still reject it.
+    """
     ordered = tuple(migrations)
     _validate_migrations(ordered, target_version=target_version)
 
@@ -60,7 +66,8 @@ def run_sqlite_migrations(
         raise UnsupportedSQLiteVersionError(
             f"Database version {current_version} has no supported migration path."
         )
-    if current_version == 0 and _has_user_schema(connection):
+    adopting = current_version == 0 and _has_user_schema(connection)
+    if adopting and adopt_unversioned is None:
         raise UnversionedSQLiteSchemaError(
             "Refusing to migrate a non-empty database without a schema version."
         )
@@ -79,7 +86,10 @@ def run_sqlite_migrations(
     try:
         with sqlite_transaction(connection, immediate=True):
             for active_migration in pending:
-                active_migration.apply(connection)
+                if adopting and active_migration is pending[0]:
+                    adopt_unversioned(connection)
+                else:
+                    active_migration.apply(connection)
                 if not connection.in_transaction:
                     raise SQLiteMigrationError(
                         f"Migration {active_migration.version} committed its own "

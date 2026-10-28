@@ -10,6 +10,7 @@ from unittest.mock import patch
 from elbow_helper.features.clan_health.analysis import ClanHealthAnalyzer
 from elbow_helper.features.clan_health.config import UTC
 from elbow_helper.features.clan_health.database import ClanHealthRepository
+from elbow_helper.features.clan_health.database.schema import create_schema
 from elbow_helper.features.clan_health.commands.player import ClanHealthPlayerCommandMixin
 
 
@@ -18,11 +19,9 @@ class PlayerMovementHistoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             database_path = Path(directory) / "clan_health.db"
             with sqlite3.connect(database_path) as connection:
-                connection.execute(
-                    "CREATE TABLE player_snapshots (player_tag TEXT, captured_ts INTEGER, clan_code TEXT, player_name TEXT)"
-                )
+                create_schema(connection)
                 connection.executemany(
-                    "INSERT INTO player_snapshots VALUES (?, ?, ?, ?)",
+                    "INSERT INTO player_snapshots(player_tag, captured_ts, clan_code, player_name) VALUES (?, ?, ?, ?)",
                     [
                         ("#PLAYER", 1_700_000_000, "OLD", "Player"),
                         ("#PLAYER", 1_700_100_000, "CURRENT", "Player"),

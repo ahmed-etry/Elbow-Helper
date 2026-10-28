@@ -7,12 +7,12 @@ from contextlib import closing
 import json
 import sqlite3
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from elbow_helper.configuration.clans import CLAN_ORDER
 
 from ..config import CLAN_PROFILE_BY_CODE, DB_PATH, UTC
+from .schema import DATABASE
 from ..player_health_config import (
     load_player_health_config,
     profile_health_settings,
@@ -37,8 +37,7 @@ def _utc_now_iso() -> str:
 
 
 def _connect() -> sqlite3.Connection:
-    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = DATABASE.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=30000")
     return conn
