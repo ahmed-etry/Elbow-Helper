@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 import discord
 from discord import app_commands
 from discord.ext import tasks
-from elbow_helper.discord.interactions import deny
+from elbow_helper.infrastructure.discord.interactions import deny
 
 from elbow_helper.configuration.channels import OVERSEEING_TERRACE
 from elbow_helper.configuration.guild import GUILD_ID

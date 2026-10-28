@@ -6,7 +6,7 @@ from typing import Protocol
 import discord
 from discord import app_commands
 from discord.ext import commands
-from elbow_helper.discord.interactions import deny, warn
+from elbow_helper.infrastructure.discord.interactions import deny, warn
 
 from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.infrastructure.clash import ClashClient

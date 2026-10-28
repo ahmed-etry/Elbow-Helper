@@ -7,7 +7,7 @@ from datetime import datetime
 from datetime import timezone
 
 import discord
-from elbow_helper.discord.pagination import format_page_footer
+from elbow_helper.infrastructure.discord.pagination import format_page_footer
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
 from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
 

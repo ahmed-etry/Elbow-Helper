@@ -5,7 +5,7 @@ import logging
 import discord
 from discord import app_commands
 from discord.ext import commands
-from elbow_helper.discord.interactions import send_bound_view, send_ephemeral
+from elbow_helper.infrastructure.discord.interactions import send_bound_view, send_ephemeral
 
 from elbow_helper.configuration.guild import GUILD_ID
 

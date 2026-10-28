@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from typing import Sequence
 
 import discord
-from elbow_helper.discord.views import BaseTimeoutView
+from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 
 from .constants import LOGGER
 

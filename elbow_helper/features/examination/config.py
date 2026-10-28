@@ -6,7 +6,7 @@ from datetime import timedelta
 
 import discord
 
-from elbow_helper.discord.timezones import build_timezone_select_options
+from elbow_helper.infrastructure.discord.timezones import build_timezone_select_options
 
 STATE_FILE = "data/examination/examination_state.json"
 

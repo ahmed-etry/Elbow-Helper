@@ -5,7 +5,7 @@ from datetime import datetime
 
 import discord
 from discord import app_commands
-from elbow_helper.discord.interactions import deny
+from elbow_helper.infrastructure.discord.interactions import deny
 from elbow_helper.configuration.channels import HIBERNATION_FALLBACK, HIBERNATION_LOG
 
 from elbow_helper.configuration.guild import GUILD_ID

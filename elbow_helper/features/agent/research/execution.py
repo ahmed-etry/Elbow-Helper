@@ -8,7 +8,7 @@ from typing import Any, Mapping
 
 import discord
 
-from elbow_helper.discord.message_search import DiscordMessageSearchError
+from elbow_helper.infrastructure.discord.message_search import DiscordMessageSearchError
 
 from ..access import AgentAccessLost, accessible_message_channel, require_evidence_access
 from .repository import ResearchJobBusy, ResearchJobConflict

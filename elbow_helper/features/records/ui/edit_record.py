@@ -9,9 +9,9 @@ from typing import Any
 
 import discord
 
-from elbow_helper.discord.interactions import deny
-from elbow_helper.discord.views import BaseErrorModal
-from elbow_helper.discord.views import BaseTimeoutView
+from elbow_helper.infrastructure.discord.interactions import deny
+from elbow_helper.infrastructure.discord.views import BaseErrorModal
+from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 from elbow_helper.configuration.roles import LEAD_PLUS
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
 from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL

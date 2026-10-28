@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 
 import discord
 
-from elbow_helper.discord.interactions import deny, warn
+from elbow_helper.infrastructure.discord.interactions import deny, warn
 
 from elbow_helper.domain.player_tags import normalize_player_tag
 

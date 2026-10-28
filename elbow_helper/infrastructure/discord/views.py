@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import discord
-from elbow_helper.discord.interactions import fail
-from elbow_helper.discord.interactions import is_unknown_interaction_error
-from elbow_helper.discord.interactions import log_interaction_error
+from elbow_helper.infrastructure.discord.interactions import fail
+from elbow_helper.infrastructure.discord.interactions import is_unknown_interaction_error
+from elbow_helper.infrastructure.discord.interactions import log_interaction_error
 
 
 class BaseTimeoutView(discord.ui.View):

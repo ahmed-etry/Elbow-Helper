@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 
-from elbow_helper.discord.publishing import PublishingQueue
+from elbow_helper.infrastructure.discord.publishing import PublishingQueue
 from elbow_helper.features.clan_reporting.cog import ClanReporting
 from elbow_helper.features.clan_reporting.config import MISSING_ELDER_STICKY_BURIAL_MESSAGES
 
@@ -238,7 +238,7 @@ class MissingElderBoardTests(unittest.IsolatedAsyncioTestCase):
         board = self.message()
         self.manager.state["missing_elder_messages"]["BEH"] = board.id
         board.edit.side_effect = self.http_error(discord.HTTPException, 503)
-        with patch("elbow_helper.discord.publishing.HTTP_RETRY_DELAYS", (0, 0)):
+        with patch("elbow_helper.infrastructure.discord.publishing.HTTP_RETRY_DELAYS", (0, 0)):
             with self.assertLogs("elbow_helper.discord.publishing", "WARNING") as logs:
                 self.assertFalse(await self.manager._update_missing_elder_message("BEH"))
         self.assertEqual(len(logs.output), 1)

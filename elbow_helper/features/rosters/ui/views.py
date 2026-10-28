@@ -6,16 +6,16 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from elbow_helper.discord.interactions import deny
-from elbow_helper.discord.interactions import warn
-from elbow_helper.discord.pagination import ADAPTIVE_JUMP_THRESHOLD
-from elbow_helper.discord.pagination import FIRST_PAGE_LABEL
-from elbow_helper.discord.pagination import format_page_footer
-from elbow_helper.discord.pagination import LAST_PAGE_LABEL
-from elbow_helper.discord.pagination import NEXT_PAGE_LABEL
-from elbow_helper.discord.pagination import PREV_PAGE_LABEL
-from elbow_helper.discord.views import BaseErrorModal
-from elbow_helper.discord.views import BaseTimeoutView
+from elbow_helper.infrastructure.discord.interactions import deny
+from elbow_helper.infrastructure.discord.interactions import warn
+from elbow_helper.infrastructure.discord.pagination import ADAPTIVE_JUMP_THRESHOLD
+from elbow_helper.infrastructure.discord.pagination import FIRST_PAGE_LABEL
+from elbow_helper.infrastructure.discord.pagination import format_page_footer
+from elbow_helper.infrastructure.discord.pagination import LAST_PAGE_LABEL
+from elbow_helper.infrastructure.discord.pagination import NEXT_PAGE_LABEL
+from elbow_helper.infrastructure.discord.pagination import PREV_PAGE_LABEL
+from elbow_helper.infrastructure.discord.views import BaseErrorModal
+from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 from ..config import ROSTER_DISCORD_COLUMN_MAX_WIDTH
 from ..config import ROSTER_DISCORD_COLUMN_MIN_WIDTH
 from ..config import ROSTER_PLAYER_COLUMN_MAX_WIDTH

@@ -7,7 +7,7 @@ import time
 
 import discord
 
-from elbow_helper.discord.message_search import DiscordMessageHistoryError
+from elbow_helper.infrastructure.discord.message_search import DiscordMessageHistoryError
 from elbow_helper.features.clan_health.attendance import aggregate_attendance
 from .war_reads import selected_wars, period
 from .core import FamilyReport

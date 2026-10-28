@@ -5,15 +5,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import discord
-from elbow_helper.discord.interactions import edit_bound_view, edit_original_bound_view
-from elbow_helper.discord.pagination import ADAPTIVE_JUMP_THRESHOLD
-from elbow_helper.discord.pagination import FIRST_PAGE_LABEL
-from elbow_helper.discord.pagination import format_page_footer
-from elbow_helper.discord.pagination import LAST_PAGE_LABEL
-from elbow_helper.discord.pagination import NEXT_PAGE_LABEL
-from elbow_helper.discord.pagination import PREV_PAGE_LABEL
-from elbow_helper.discord.views import BaseErrorModal
-from elbow_helper.discord.views import BaseTimeoutView
+from elbow_helper.infrastructure.discord.interactions import edit_bound_view, edit_original_bound_view
+from elbow_helper.infrastructure.discord.pagination import ADAPTIVE_JUMP_THRESHOLD
+from elbow_helper.infrastructure.discord.pagination import FIRST_PAGE_LABEL
+from elbow_helper.infrastructure.discord.pagination import format_page_footer
+from elbow_helper.infrastructure.discord.pagination import LAST_PAGE_LABEL
+from elbow_helper.infrastructure.discord.pagination import NEXT_PAGE_LABEL
+from elbow_helper.infrastructure.discord.pagination import PREV_PAGE_LABEL
+from elbow_helper.infrastructure.discord.views import BaseErrorModal
+from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 
 from elbow_helper.domain.timezones import resolve_timezone_input
 

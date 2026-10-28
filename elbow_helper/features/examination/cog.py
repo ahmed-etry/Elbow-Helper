@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional, Set
 import discord
 from discord.ext import commands, tasks
 from elbow_helper.core.background import start_resilient_loop
-from elbow_helper.discord.channel_ordering import move_text_channel_within_category
+from elbow_helper.infrastructure.discord.channel_ordering import move_text_channel_within_category
 
 from elbow_helper.configuration.channels import EXAMINATION_TICKET_CATEGORY
 

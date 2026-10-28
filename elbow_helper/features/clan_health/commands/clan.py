@@ -14,8 +14,8 @@ from typing import Any, Dict, List, Optional
 
 import discord
 from discord import app_commands
-from elbow_helper.discord.interactions import deny
-from elbow_helper.discord.interactions import warn
+from elbow_helper.infrastructure.discord.interactions import deny
+from elbow_helper.infrastructure.discord.interactions import warn
 from elbow_helper.configuration.clans import CLAN_NAMES
 
 from ..config import CLAN_EXPORT_ORDER, UTC

@@ -9,7 +9,7 @@ import discord
 
 from elbow_helper.configuration.channels import TRIAL_LIST, TICKETS_LOG
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.discord.message_search import DiscordHistoryPage, DiscordSearchMessage
+from elbow_helper.infrastructure.discord.message_search import DiscordHistoryPage, DiscordSearchMessage
 from elbow_helper.features.agent.engine.answer_inputs import answer_evidence
 from elbow_helper.features.agent.families import identity_reads, recruitment_history, reference_reads, workflow_reads
 from elbow_helper.features.agent.families.bot_workflows import bot_workflows

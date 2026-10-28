@@ -8,8 +8,8 @@ from typing import Any, Dict, Optional
 
 import discord
 from discord.ext import commands, tasks
-from elbow_helper.discord.interactions import deny
-from elbow_helper.discord.interactions import fail
+from elbow_helper.infrastructure.discord.interactions import deny
+from elbow_helper.infrastructure.discord.interactions import fail
 from elbow_helper.configuration.channels import REC_ROOM
 from elbow_helper.configuration.channels import TRIAL_LIST
 from elbow_helper.configuration.guild import GUILD_ID

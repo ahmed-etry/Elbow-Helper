@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import discord
-from elbow_helper.discord.views import BaseTimeoutView
+from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 
 from ..intake.logic import PROMO_SOURCES
 from ..intake.logic import is_valid_route

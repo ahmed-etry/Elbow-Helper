@@ -5,11 +5,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import discord
-from elbow_helper.discord.interactions import deny
-from elbow_helper.discord.interactions import send_bound_view
-from elbow_helper.discord.pagination import NEXT_PAGE_LABEL
-from elbow_helper.discord.pagination import PREV_PAGE_LABEL
-from elbow_helper.discord.views import BaseTimeoutView
+from elbow_helper.infrastructure.discord.interactions import deny
+from elbow_helper.infrastructure.discord.interactions import send_bound_view
+from elbow_helper.infrastructure.discord.pagination import NEXT_PAGE_LABEL
+from elbow_helper.infrastructure.discord.pagination import PREV_PAGE_LABEL
+from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 
 from .builder import TargetRoleSelectView
 from .edit import EditConnectionView

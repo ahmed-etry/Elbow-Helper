@@ -8,8 +8,8 @@ from datetime import datetime, timezone
 
 import chat_exporter
 import discord
-from elbow_helper.discord.embeds import build_status_embed
-from elbow_helper.discord.views import TranscriptLinkPromptView
+from elbow_helper.infrastructure.discord.embeds import build_status_embed
+from elbow_helper.infrastructure.discord.views import TranscriptLinkPromptView
 
 from elbow_helper.configuration.channels import HIBERNATION_FALLBACK, HIBERNATION_LOG, RECRUITMENT_TICKET_CATEGORY, TICKETS_LOG
 from elbow_helper.configuration.files import CREATED_TICKETS_FILE

@@ -16,10 +16,10 @@ from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
 
-from elbow_helper.discord.application_emojis import loading_status
-from elbow_helper.discord.interactions import deny
-from elbow_helper.discord.interactions import warn
-from elbow_helper.discord.timezones import build_timezone_choices
+from elbow_helper.infrastructure.discord.application_emojis import loading_status
+from elbow_helper.infrastructure.discord.interactions import deny
+from elbow_helper.infrastructure.discord.interactions import warn
+from elbow_helper.infrastructure.discord.timezones import build_timezone_choices
 from elbow_helper.core.background import start_resilient_loop
 from elbow_helper.configuration.clans import CLAN_ORDER
 from elbow_helper.configuration.clans import CLANS

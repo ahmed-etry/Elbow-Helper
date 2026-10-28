@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 
-from elbow_helper.discord.publishing import PublishingQueue
+from elbow_helper.infrastructure.discord.publishing import PublishingQueue
 from elbow_helper.features.cwl.announcements import CwlAnnouncementMixin
 from elbow_helper.features.cwl.bonus.dashboard import CwlBonusDashboardMixin
 from elbow_helper.features.cwl.dashboard import CwlDashboardMixin
@@ -53,7 +53,7 @@ class CwlPublishingTests(unittest.IsolatedAsyncioTestCase):
         messages[101].edit.side_effect = discord.HTTPException(
             SimpleNamespace(status=503, reason="synthetic"), "synthetic failure",
         )
-        with patch("elbow_helper.discord.publishing.HTTP_RETRY_DELAYS", (0, 0)):
+        with patch("elbow_helper.infrastructure.discord.publishing.HTTP_RETRY_DELAYS", (0, 0)):
             with self.assertLogs("elbow_helper.discord.publishing", "WARNING") as logs:
                 self.assertFalse(await owner._refresh_dashboard_with_retry("BEH", "manual"))
         self.assertEqual(messages[101].edit.await_count, 3)
@@ -87,7 +87,7 @@ class CwlPublishingTests(unittest.IsolatedAsyncioTestCase):
         message.edit.side_effect = discord.HTTPException(
             SimpleNamespace(status=503, reason="synthetic"), "synthetic failure",
         )
-        with patch("elbow_helper.discord.publishing.HTTP_RETRY_DELAYS", (0, 0)):
+        with patch("elbow_helper.infrastructure.discord.publishing.HTTP_RETRY_DELAYS", (0, 0)):
             with self.assertLogs("elbow_helper.discord.publishing", "WARNING"):
                 self.assertFalse(await owner._post_bonus_dashboard(
                     mode="final", target_channel=channel, ping_helper=True,

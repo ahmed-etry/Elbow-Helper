@@ -19,7 +19,7 @@ from typing import Any, Awaitable, Callable
 import discord
 
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = logging.getLogger("elbow_helper.discord.publishing")
 # Discord's name/topic sublimit: https://github.com/discord/discord-api-docs/issues/2208
 CHANNEL_EDIT_LIMIT = 2
 CHANNEL_EDIT_WINDOW = 600.0

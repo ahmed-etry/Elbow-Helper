@@ -11,7 +11,7 @@ from typing import Optional
 from uuid import uuid4
 
 import discord
-from elbow_helper.discord.pagination import format_page_footer
+from elbow_helper.infrastructure.discord.pagination import format_page_footer
 from discord.ext import commands
 
 from elbow_helper.configuration.guild import GUILD_ID

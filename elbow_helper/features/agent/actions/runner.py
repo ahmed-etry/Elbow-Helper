@@ -11,7 +11,7 @@ from typing import Any
 from uuid import uuid4
 
 import discord
-from elbow_helper.discord.application_emojis import loading_status
+from elbow_helper.infrastructure.discord.application_emojis import loading_status
 
 from ..access import require_access, require_access_requirements, accessible_message_channel, AgentAccessLost, require_evidence_access
 from ..disclosure import can_disclose_provenance

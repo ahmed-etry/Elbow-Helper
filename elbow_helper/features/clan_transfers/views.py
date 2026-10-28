@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import discord
-from elbow_helper.discord.views import BaseTimeoutView
+from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 
 
 class ClanTransfersView(BaseTimeoutView):

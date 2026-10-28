@@ -10,8 +10,8 @@ from typing import Any, Optional
 import discord
 from discord import app_commands
 
-from elbow_helper.discord.interactions import deny
-from elbow_helper.discord.views import BaseErrorModal
+from elbow_helper.infrastructure.discord.interactions import deny
+from elbow_helper.infrastructure.discord.views import BaseErrorModal
 
 from ..config import CLAN_CHOICES, CLAN_EXPORT_ORDER
 from ..ui import ClanConfigHomeView

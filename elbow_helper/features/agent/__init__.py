@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 import asyncio
-from elbow_helper.discord.message_search import DiscordMessageSearch
-from elbow_helper.discord.thread_discovery import DiscordThreadDiscovery
+from elbow_helper.infrastructure.discord.message_search import DiscordMessageSearch
+from elbow_helper.infrastructure.discord.thread_discovery import DiscordThreadDiscovery
 from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.files import (
     AGENT_ACTIONS_DATABASE,

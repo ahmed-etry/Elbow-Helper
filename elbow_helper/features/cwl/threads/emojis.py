@@ -8,8 +8,8 @@ from typing import Mapping
 
 import discord
 
-from elbow_helper.discord.application_emojis import ApplicationEmojiCatalog
-from elbow_helper.discord.application_emojis import get_application_emoji_provider
+from elbow_helper.infrastructure.discord.application_emojis import ApplicationEmojiCatalog
+from elbow_helper.infrastructure.discord.application_emojis import get_application_emoji_provider
 
 
 CWL_THREAD_EMOJI_NAMES = {

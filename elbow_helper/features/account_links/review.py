@@ -6,8 +6,8 @@ import logging
 import copy
 
 import discord
-from elbow_helper.discord.interactions import send_bound_view
-from elbow_helper.discord.interactions import succeed
+from elbow_helper.infrastructure.discord.interactions import send_bound_view
+from elbow_helper.infrastructure.discord.interactions import succeed
 from elbow_helper.configuration.roles import CORE
 from elbow_helper.configuration.roles import RECRUITERS
 

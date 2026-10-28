@@ -10,7 +10,7 @@ from typing import Optional
 import aiohttp
 import discord
 from discord.ext import commands, tasks
-from elbow_helper.discord.channel_ordering import move_text_channel_within_category
+from elbow_helper.infrastructure.discord.channel_ordering import move_text_channel_within_category
 from elbow_helper.configuration.channels import REC_ROOM
 from elbow_helper.configuration.channels import RECRUITMENT_TICKET_CATEGORY
 from elbow_helper.configuration.roles import RECRUITERS

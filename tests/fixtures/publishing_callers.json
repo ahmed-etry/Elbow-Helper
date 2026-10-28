@@ -105,25 +105,25 @@
       ],
       "reason": "One startup avatar upload; outside message/channel publishing."
     },
-    "elbow_helper/discord/channel_ordering.py:move_text_channel_within_category": {
+    "elbow_helper/infrastructure/discord/channel_ordering.py:move_text_channel_within_category": {
       "operations": [
         "channel.move"
       ],
       "reason": "Transport inside a queued complete channel order; no independent edit submission."
     },
-    "elbow_helper/discord/interactions.py:edit_bound_view": {
+    "elbow_helper/infrastructure/discord/interactions.py:edit_bound_view": {
       "operations": [
         "interaction.response.edit_message"
       ],
       "reason": "One interaction response or cancellation; preserve the interaction deadline."
     },
-    "elbow_helper/discord/views.py:BaseTimeoutView.on_timeout": {
+    "elbow_helper/infrastructure/discord/views.py:BaseTimeoutView.on_timeout": {
       "operations": [
         "self.message.edit"
       ],
       "reason": "One control-expiry edit per view."
     },
-    "elbow_helper/discord/views.py:TranscriptLinkPromptButton.callback": {
+    "elbow_helper/infrastructure/discord/views.py:TranscriptLinkPromptButton.callback": {
       "operations": [
         "interaction.response.edit_message"
       ],

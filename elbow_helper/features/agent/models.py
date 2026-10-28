@@ -14,7 +14,7 @@ import asyncio
 import discord
 from discord.ext import commands
 
-from elbow_helper.discord.message_search import DiscordMessageSearch
+from elbow_helper.infrastructure.discord.message_search import DiscordMessageSearch
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from .conversation.state import ConversationCheckpoint, ConversationTurn
 from .reports.base import ReportArtifact

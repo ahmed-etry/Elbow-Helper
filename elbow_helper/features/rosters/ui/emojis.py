@@ -7,8 +7,8 @@ import logging
 
 import discord
 
-from elbow_helper.discord.application_emojis import ApplicationEmojiCatalog
-from elbow_helper.discord.application_emojis import get_application_emoji_provider
+from elbow_helper.infrastructure.discord.application_emojis import ApplicationEmojiCatalog
+from elbow_helper.infrastructure.discord.application_emojis import get_application_emoji_provider
 
 
 LOGGER = logging.getLogger(__name__)

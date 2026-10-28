@@ -22,13 +22,13 @@ from discord import app_commands
 from discord.ext import commands
 import elbow_helper
 
-from elbow_helper.discord.publishing import PublishingQueue
+from elbow_helper.infrastructure.discord.publishing import PublishingQueue
 from elbow_helper.configuration.roles import HIBERNATING_ROLE_ID
-from elbow_helper.discord.pagination import ADAPTIVE_JUMP_THRESHOLD
-from elbow_helper.discord.pagination import FIRST_PAGE_LABEL
-from elbow_helper.discord.pagination import LAST_PAGE_LABEL
-from elbow_helper.discord.pagination import NEXT_PAGE_LABEL
-from elbow_helper.discord.pagination import PREV_PAGE_LABEL
+from elbow_helper.infrastructure.discord.pagination import ADAPTIVE_JUMP_THRESHOLD
+from elbow_helper.infrastructure.discord.pagination import FIRST_PAGE_LABEL
+from elbow_helper.infrastructure.discord.pagination import LAST_PAGE_LABEL
+from elbow_helper.infrastructure.discord.pagination import NEXT_PAGE_LABEL
+from elbow_helper.infrastructure.discord.pagination import PREV_PAGE_LABEL
 from elbow_helper.features.rosters.services.accounts import RosterAccountDirectory
 from elbow_helper.features.rosters.services.automation import RosterAutomationService
 from elbow_helper.features.rosters.repository import RosterRepository
@@ -2579,7 +2579,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_clear_progress_uses_loading_emoji_without_buttons(self) -> None:
-        from elbow_helper.discord.application_emojis import ApplicationEmojiCatalog
+        from elbow_helper.infrastructure.discord.application_emojis import ApplicationEmojiCatalog
 
         cog = object.__new__(Rosters)
         cog.bot = MagicMock(publishing=PublishingQueue())
@@ -2594,7 +2594,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
             "loading": "<a:loading:123>",
         })))
         with patch(
-            "elbow_helper.discord.application_emojis.get_application_emoji_provider",
+            "elbow_helper.infrastructure.discord.application_emojis.get_application_emoji_provider",
             return_value=provider,
         ):
             await cog.confirm_clear(interaction, 7)

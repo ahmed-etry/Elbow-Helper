@@ -1,7 +1,7 @@
 """Reuse authorized raw history pages, checking the head for new messages."""
 
 from dataclasses import replace
-from elbow_helper.discord.message_search import DiscordMessageHistoryError
+from elbow_helper.infrastructure.discord.message_search import DiscordMessageHistoryError
 
 from ..read_cache import read_scope
 

@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import discord
 
-from elbow_helper.discord.publishing import PublishingQueue
+from elbow_helper.infrastructure.discord.publishing import PublishingQueue
 from elbow_helper.configuration.clans import CLAN_NAMES
 from elbow_helper.configuration.clans import CLAN_TAGS
 from elbow_helper.features.cwl.threads.board import CwlThreadBoardMixin

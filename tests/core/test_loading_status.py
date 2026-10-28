@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.discord.application_emojis import ApplicationEmojiCatalog, loading_status
+from elbow_helper.infrastructure.discord.application_emojis import ApplicationEmojiCatalog, loading_status
 
 
 class LoadingStatusTests(unittest.IsolatedAsyncioTestCase):
@@ -14,7 +14,7 @@ class LoadingStatusTests(unittest.IsolatedAsyncioTestCase):
             "loading": "<a:loading:123>",
         })))
         with patch(
-            "elbow_helper.discord.application_emojis.get_application_emoji_provider",
+            "elbow_helper.infrastructure.discord.application_emojis.get_application_emoji_provider",
             return_value=provider,
         ) as get_provider:
             self.assertEqual(await loading_status(client, "Sending DM"),
@@ -26,7 +26,7 @@ class LoadingStatusTests(unittest.IsolatedAsyncioTestCase):
         client = SimpleNamespace(fetch_application_emojis=AsyncMock())
         provider = SimpleNamespace(get=AsyncMock(return_value=ApplicationEmojiCatalog({})))
         with patch(
-            "elbow_helper.discord.application_emojis.get_application_emoji_provider",
+            "elbow_helper.infrastructure.discord.application_emojis.get_application_emoji_provider",
             return_value=provider,
         ):
             self.assertEqual(await loading_status(client, "Updating..."), "Updating...")

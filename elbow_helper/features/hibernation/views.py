@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import discord
-from elbow_helper.discord.application_emojis import loading_status
-from elbow_helper.discord.views import BaseTimeoutView
+from elbow_helper.infrastructure.discord.application_emojis import loading_status
+from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 
 from elbow_helper.configuration.roles import CORE, LEAD, RECRUITERS
 

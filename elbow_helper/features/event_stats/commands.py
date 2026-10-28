@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import discord
 from discord import app_commands
-from elbow_helper.discord.interactions import deny
-from elbow_helper.discord.interactions import send_bound_view
+from elbow_helper.infrastructure.discord.interactions import deny
+from elbow_helper.infrastructure.discord.interactions import send_bound_view
 
 from elbow_helper.configuration.guild import GUILD_ID
 

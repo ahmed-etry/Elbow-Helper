@@ -8,7 +8,7 @@ import copy
 import discord
 from discord import app_commands
 
-from elbow_helper.discord.interactions import deny
+from elbow_helper.infrastructure.discord.interactions import deny
 from elbow_helper.configuration.roles import CWL_HELPERS
 from elbow_helper.configuration.roles import LEAD_PLUS
 
