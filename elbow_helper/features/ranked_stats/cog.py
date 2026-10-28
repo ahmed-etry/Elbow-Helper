@@ -11,6 +11,7 @@ import aiohttp
 from discord.ext import commands, tasks
 
 from elbow_helper.core.background import start_resilient_loop
+from elbow_helper.configuration.files import RANKED_DATABASE
 from elbow_helper.domain.player_tags import encode_clash_tag, normalize_player_tag
 from .fields import project_player
 from .queries import RankedQueries
@@ -42,7 +43,7 @@ class RankedStats(commands.Cog):
         self.bot = bot
         self.account_links = account_links
         self.client = bot.clash_client
-        self.store = RankedStore(bot.paths.data_root / "ranked_stats" / "ranked.sqlite3")
+        self.store = RankedStore(bot.paths.data_root / RANKED_DATABASE)
         self.queries = RankedQueries(self.store)
         self._missing_fields = set()
         self._invalid_links = False

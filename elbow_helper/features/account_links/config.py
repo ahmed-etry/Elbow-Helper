@@ -6,10 +6,11 @@ from pathlib import Path
 
 from elbow_helper.configuration.channels import REC_ROOM
 from elbow_helper.configuration.clans import CLANS
+from elbow_helper.configuration.files import ACCOUNT_LINKS_DATABASE
 
 COC_HTTP_TOTAL_TIMEOUT_SECONDS = 20
 
-DB_PATH = Path("data/clan_links/links.sqlite3")
+DB_PATH = Path("data") / ACCOUNT_LINKS_DATABASE
 POLL_INTERVAL_MINUTES = 15
 REVIEW_CHANNEL_ID = REC_ROOM
 

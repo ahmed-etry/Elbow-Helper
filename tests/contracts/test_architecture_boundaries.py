@@ -340,9 +340,13 @@ class DependencyBoundaryTests(unittest.TestCase):
         self.assertNotIn("features.hibernation", sources)
 
     def test_internal_renames_preserve_production_identifiers(self) -> None:
+        account_links_config = importlib.import_module(
+            "elbow_helper.features.account_links.config"
+        )
+        self.assertEqual(
+            account_links_config.DB_PATH, Path("data/clan_links/links.sqlite3"),
+        )
         expected_markers = {
-            FEATURE_ROOT / "account_links" / "config.py":
-                'Path("data/clan_links/links.sqlite3")',
             FEATURE_ROOT / "account_links" / "views.py":
                 'custom_id=f"clan_links:',
             FEATURE_ROOT / "clan_reporting" / "config.py":

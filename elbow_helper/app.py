@@ -17,6 +17,7 @@ from elbow_helper.discord.usage import on_interaction
 from elbow_helper.configuration.guild import GUILD_ID
 
 from .core.errors import install_asyncio_exception_handler
+from .core.backups import DatabaseBackupJob
 from .core.lifecycle import ElbowHelperBot
 from .core.logging import configure_logging
 from .core.paths import ApplicationPaths
@@ -122,7 +123,7 @@ async def main() -> None:
             google_publisher,
             workbook_writer,
         )
-        async with bot:
+        async with bot, DatabaseBackupJob(paths.data_root, ready=bot.boot_complete):
             await bot.start(settings.require_discord_token())
 
 

@@ -5,6 +5,12 @@ import asyncio
 from elbow_helper.discord.message_search import DiscordMessageSearch
 from elbow_helper.discord.thread_discovery import DiscordThreadDiscovery
 from elbow_helper.configuration.guild import GUILD_ID
+from elbow_helper.configuration.files import (
+    AGENT_ACTIONS_DATABASE,
+    AGENT_CONVERSATIONS_DATABASE,
+    AGENT_RESEARCH_DATABASE,
+    AGENT_TRANSCRIPTS_DATABASE,
+)
 from .cog import AgentCog, AGENT_REQUEST_TIMEOUT_SECONDS
 from .conversation.transcripts import TranscriptArchive
 from .conversation.repository import ConversationRepository
@@ -70,16 +76,16 @@ async def setup(bot) -> None:
             "EventStats, MemberLifecycle, RankedStats, ClanReporting and RoleConnections"
         )
     archive = await asyncio.to_thread(
-        TranscriptArchive, bot.paths.data_root / "agent" / "transcripts.sqlite3",
+        TranscriptArchive, bot.paths.data_root / AGENT_TRANSCRIPTS_DATABASE,
     )
     repository = await asyncio.to_thread(
-        ConversationRepository, bot.paths.data_root / "agent" / "agent.sqlite3",
+        ConversationRepository, bot.paths.data_root / AGENT_CONVERSATIONS_DATABASE,
     )
     research_jobs = await asyncio.to_thread(
-        ResearchJobRepository, bot.paths.data_root / "agent" / "research_jobs.sqlite3",
+        ResearchJobRepository, bot.paths.data_root / AGENT_RESEARCH_DATABASE,
     )
     action_repository = await asyncio.to_thread(
-        AgentActionRepository, bot.paths.data_root / "agent" / "actions.sqlite3",
+        AgentActionRepository, bot.paths.data_root / AGENT_ACTIONS_DATABASE,
     )
     message_search = DiscordMessageSearch(bot.http)
     thread_discovery = DiscordThreadDiscovery()

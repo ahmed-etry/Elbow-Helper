@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from elbow_helper.configuration.files import ROSTERS_DATABASE
 
-DB_PATH = Path("data/rosters/rosters.sqlite3")
+
+DB_PATH = Path("data") / ROSTERS_DATABASE
 SCHEDULER_INTERVAL_SECONDS = 60
 REFRESH_COOLDOWN_SECONDS = 30
 ROSTER_SEARCH_CACHE_TTL_SECONDS = 60
