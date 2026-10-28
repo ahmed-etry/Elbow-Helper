@@ -260,6 +260,7 @@ async def read_clash(context, arguments, *, complete_battle_log=False):
                     path, attempts=2,
                     timeout_seconds=max(0.1, (deadline - time.monotonic() - 0.2) / 2),
                     backoff_seconds=0.1, maximum_backoff_seconds=0.1,
+                    fresh=fresh,
                 )
             shared = getattr(context, 'read_cache', None)
             live_war = kind in ('current_war', 'cwl_war', 'battle_log')

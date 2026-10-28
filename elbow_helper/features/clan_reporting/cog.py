@@ -137,7 +137,7 @@ class ClanReporting(
 
     async def refresh_missing_elder_board_from_accounts(self, clan_code: str) -> bool:
         """Refresh linked accounts and one board for its button and the agent."""
-        await self.account_links.refresh_now(refresh_boards=False)
+        await self.account_links.refresh_now(refresh_boards=False, fresh=True)
         return await self._update_missing_elder_message(clan_code, reposition_if_buried=False)
 
     async def refresh_missing_elder_board_now(self, clan_code: str, *, reposition_if_buried: bool = False) -> None:
