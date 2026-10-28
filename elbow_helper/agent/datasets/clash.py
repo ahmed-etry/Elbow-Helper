@@ -33,7 +33,7 @@ ENDPOINTS = {
     "battle_log": "/players/{tag}/battlelog",
 }
 PLAYER_FIELDS = (
-    "tag name townHallLevel role trophies bestTrophies"
+    "tag name townHallLevel role trophies bestTrophies clan_status"
 ).split()
 CLAN_FIELDS = (
     "tag name type description clanLevel clanPoints members warWins warLosses warTies "
@@ -66,6 +66,10 @@ def _fields(value, names):
 
 def select_fields(payload, fields):
     """Project API field paths through objects and lists without removing rows."""
+    if isinstance(payload, dict) and "clan_status" in payload and any(
+        path == "clan" or path.startswith("clan.") for path in fields
+    ):
+        fields = [*fields, "clan_status"]
     tree = {}
     for path in fields:
         node = tree
@@ -279,6 +283,9 @@ async def read_clash(context, arguments, *, complete_battle_log=False):
             if response.ok and isinstance(response.payload, dict):
                 original = payload = (deepcopy(response.payload)
                     if live_war or cache is None and shared is None else response.payload)
+                if kind == "player":
+                    # Only successful profiles establish current clan membership.
+                    payload = {**payload, "clan_status": "in_clan" if payload.get("clan") else "not_in_clan"}
                 coverage = None
                 if kind == "battle_log":
                     # The battle-log route has no verified server-side limit parameter.

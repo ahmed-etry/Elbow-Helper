@@ -20,6 +20,46 @@ def member(identifier, joined=None):
 
 
 class IdentityFamilyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_live_clan_evidence_reaches_account_and_cohort_writers(self):
+        target = member(42, datetime(2026, 1, 1, tzinfo=timezone.utc))
+        clan = {'tag': CLANS['BEC'].tag, 'name': CLANS['BEC'].name}
+        payloads = {'/players/%23P0': {'tag': '#P0', 'name': 'In clan', 'clan': clan},
+                    '/players/%23Q0': {'tag': '#Q0', 'name': 'Clanless'}}
+
+        async def get(path, **kwargs):
+            payload = payloads.get(path)
+            return SimpleNamespace(ok=payload is not None, status=200 if payload else 503, payload=payload)
+
+        context = replace(_context(),
+            bot=SimpleNamespace(clash_client=SimpleNamespace(configured=True, get=AsyncMock(side_effect=get))),
+            account_links=SimpleNamespace(get_links_for_members=lambda ids: {
+                42: [{'player_tag': tag} for tag in ('#P0', '#Q0', '#P2')]}))
+        context.guild.members = [target]
+        context.guild.get_member = lambda identifier: target if identifier == 42 else context.member
+        for family, handler, arguments in (
+            ('read_member_accounts', reads.member_accounts, {'member_ids': [42]}),
+            ('read_member_cohort', reads.member_cohort, {'basis': 'joined_discord'}),
+        ):
+            with self.subTest(family=family):
+                result = await handler(context, arguments)
+                visible = answer_evidence({'accounts': family_model_view({**result, 'family': family})})['accounts']
+                for evidence in (result, visible):
+                    accounts = (evidence['rows'] if family == 'read_member_accounts'
+                                else evidence['rows'][0]['accounts'])
+                    by_tag = {row['player_tag']: row for row in accounts}
+                    self.assertEqual(by_tag['#P0']['clan'], clan)
+                    self.assertEqual(by_tag['#P0']['clan_status'], 'in_clan')
+                    self.assertIsNone(by_tag['#Q0']['clan'])
+                    self.assertEqual(by_tag['#Q0']['clan_status'], 'not_in_clan')
+                    self.assertEqual(by_tag['#Q0']['profile_status'], 'ok')
+                    self.assertIsNone(by_tag['#P2']['clan'])
+                    self.assertNotIn('clan_status', by_tag['#P2'])
+                    self.assertEqual(by_tag['#P2']['profile_status'], 'maintenance')
+                unknown_count = 'unknown_profile_count' if family == 'read_member_accounts' else 'unknown_account_profiles'
+                self.assertEqual(result[unknown_count], 1)
+                self.assertFalse(result['count_complete'])
+        self.assertNotIn('clan', payloads['/players/%23Q0'])
+
     async def test_roster_subreads_share_deadline_and_keep_current_capacity_after_seasonal_gap(self):
         import time
         context = _context()

@@ -166,6 +166,7 @@ async def member_accounts(context, arguments):
             'townHallLevel': data.get('townHallLevel'),
             'role': data.get('role'), 'ranked_league': data.get('leagueTier'), 'legacy_league': data.get('league'),
             'clan': data.get('clan'), 'trophies': data.get('trophies'),
+            **({'clan_status': data['clan_status']} if 'clan_status' in data else {}),
             'donations': data.get('donations'),
             'war_stars': data.get('warStars'), 'observed_at': item.get('observed_at'),
             'profile_status': item['status']})
