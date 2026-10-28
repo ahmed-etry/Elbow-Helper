@@ -23,12 +23,11 @@ from ..actions.contracts import (
 from ..actions.outcomes import ActionOutcome
 from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool, AgentCapabilityEffect
-from ..text import chunk_response
 from ..wording import (
     ACTION_DM_LINE, ACTION_DM_LABEL, ACTION_DM_TARGET, ACTION_PINGS_LINE, DM_SENT_FOR,
 )
 from .messages import resolve_post_attachment
-from .message_parts import outgoing_parts
+from .message_parts import image_attachment, outgoing_parts
 from .member_labels import member_label, mentioned_member_labels
 
 LOGGER = logging.getLogger(__name__)
@@ -92,11 +91,10 @@ async def _deliver_dms(context, identifiers, text, attachment, delivery,
             if member.id != context.member.id else ""
         )
         delivered = True
-        parts = outgoing_parts(text, attachment=attachment)
-        if footer and not any(is_gif for _, is_gif in parts):
-            parts = tuple((part, False) for part in chunk_response(text + footer))
+        image = image_attachment(attachment)
+        parts = outgoing_parts(text + ("" if image else footer), attachment=attachment)
         try:
-            for part_index, (part, is_gif) in enumerate(parts):
+            for part_index, part in enumerate(parts):
                 if recipient_allowed is not None and not await recipient_allowed(member.id):
                     break
                 view = view_factory(member.id) if view_factory is not None else None
@@ -107,7 +105,7 @@ async def _deliver_dms(context, identifiers, text, attachment, delivery,
                 try:
                     await member.send(
                         part,
-                        allowed_mentions=discord.AllowedMentions.none() if is_gif
+                        allowed_mentions=discord.AllowedMentions.none() if image
                         else discord.AllowedMentions(
                             everyone=False, roles=False, users=True,
                         ),
@@ -145,7 +143,7 @@ async def prepare_direct_messages(context, arguments):
     if not isinstance(text, str) or not 1 <= len(text) <= 4000:
         raise ActionRefused("The DM text must be 1 to 4,000 characters.")
     attachment = await resolve_post_attachment(context, arguments)
-    text = '\n'.join(part for part, _ in outgoing_parts(text, attachment=attachment))
+    text = '\n'.join(outgoing_parts(text, attachment=attachment))
     labels = await mentioned_member_labels(context.guild, text)
     if any(member.id != context.member.id for member in members):
         context.state.required_access.add(ACCESS_LEAD)

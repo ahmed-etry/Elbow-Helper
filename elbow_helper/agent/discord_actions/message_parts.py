@@ -1,4 +1,4 @@
-"""Render images without captions, preserving ordinary text-only messages."""
+"""Send requested text whole; only an image file is posted without a caption."""
 
 from pathlib import PurePath
 from urllib.parse import urlsplit
@@ -12,12 +12,12 @@ def image_attachment(attachment):
     return attachment is not None and PurePath(attachment.filename).suffix.lower() in EXTENSIONS
 
 
-def outgoing_parts(text, *, attachment=None):
-    if image_attachment(attachment):
-        return (("", True),)
-    links = tuple(dict.fromkeys(url for raw in URLS.findall(text) if (
+def media_links(text):
+    return tuple(dict.fromkeys(url for raw in URLS.findall(text) if (
         provider_url(url := raw.rstrip(").,>"))
         or PurePath(urlsplit(url).path).suffix.lower() in EXTENSIONS)))
-    if not links:
-        return tuple((part, False) for part in chunk_response(text))
-    return tuple((link, True) for link in links)
+
+
+def outgoing_parts(text, *, attachment=None):
+    # GIF and image links stay inside the text; Discord previews them under it.
+    return ("",) if image_attachment(attachment) else tuple(chunk_response(text))
