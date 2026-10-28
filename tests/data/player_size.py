@@ -28,7 +28,7 @@ def annual_size(source):
             "VALUES (?,'players','family_and_linked_accounts',?,?,?,'ok',279,279,279)",
             [(index + 1, BASE + index * HOUR, BASE + index * HOUR, BASE + index * HOUR + 1) for index in range(8760)])
         catalog = source.execute("SELECT * FROM item_catalog").fetchall()
-        connection.executemany("INSERT INTO item_catalog VALUES (?,?,?,?,?,?,?)", [tuple(row) for row in catalog])
+        connection.executemany("INSERT INTO item_catalog VALUES (?,?,?,?,?,?,?,?)", [tuple(row) for row in catalog])
         items = source.execute("SELECT * FROM player_items WHERE observed_at=(SELECT MIN(observed_at) FROM player_items)").fetchall()
         connection.executemany("INSERT INTO player_items VALUES (?,?,?,?,?,?,?,?,?)",
                                [(account, row["item_id"], BASE, row["level"], row["max_level"], row["static_fields_json"], 1, None, 1)

@@ -7,7 +7,7 @@ from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 
 from . import FamilyStore
 from .people import account_name
-from .player_projection import ARRAYS, COUNTERS, HOUR_US, TRANSIENT, project_profile
+from .player_projection import ARRAYS, COUNTERS, HOUR_US, TRANSIENT, item_identity, project_profile
 from . import player_state
 from .projections import canonical_json, nonnegative_int
 
@@ -43,16 +43,17 @@ def _previous(connection, account_id, section):
 
 def _catalog(connection, source, row, classification=None):
     connection.execute(
-        "INSERT INTO item_catalog(source_array,village,source_name,source_identifier,classification,definition_json) "
-        "VALUES (?,?,?,?,?,?) ON CONFLICT(source_array,village,source_name) DO UPDATE SET "
+        "INSERT INTO item_catalog(source_array,village,source_name,source_identifier,classification,definition_json,identity_key) "
+        "VALUES (?,?,?,?,?,?,?) ON CONFLICT(source_array,village,source_name,identity_key) DO UPDATE SET "
         "classification=excluded.classification WHERE excluded.classification IS NOT NULL "
         "AND excluded.classification IS NOT item_catalog.classification",
         (source, row.get("village", ""), row["name"], str(row["id"]) if "id" in row else None,
-         classification if classification is not None else ARRAYS[source], canonical_json({"projection_version": 1})),
+         classification if classification is not None else ARRAYS[source], canonical_json({"projection_version": 1}),
+         item_identity(source, row)[2]),
     )
     return connection.execute(
-        "SELECT id FROM item_catalog WHERE source_array=? AND village=? AND source_name=?",
-        (source, row.get("village", ""), row["name"]),
+        "SELECT id FROM item_catalog WHERE source_array=? AND village=? AND source_name=? AND identity_key=?",
+        (source, *item_identity(source, row)),
     ).fetchone()[0]
 
 
