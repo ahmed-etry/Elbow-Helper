@@ -24,6 +24,7 @@ from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 
 from .test_family_store import response
 from .field_size import annual_estimate
+from .source_size import annual_estimate as source_estimate
 
 
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "family_api"
@@ -333,9 +334,9 @@ class ApiFieldTests(unittest.IsolatedAsyncioTestCase):
                 target.commit()
         await self.store.call(seed)
         def fail(c):
-            MIGRATIONS[-1].apply(c)
+            MIGRATIONS[5].apply(c)
             raise ValueError("synthetic schema failure")
-        migrations = (*MIGRATIONS[:-1], SQLiteMigration(SCHEMA_VERSION, "synthetic failure", fail))
+        migrations = (*MIGRATIONS[:5], SQLiteMigration(6, "synthetic failure", fail), *MIGRATIONS[6:])
         with patch("elbow_helper.data.store.MIGRATIONS", migrations):
             with self.assertRaises(SQLiteMigrationError):
                 await FamilyStore(old).initialize()
@@ -417,6 +418,19 @@ class ApiFieldTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await write(2 * DAY + 3, {"invalid": float("nan")})
 
+    async def test_multiple_pages_merge_one_run_patch_including_removed_and_restored_leaves(self):
+        run = await self.store.begin_run("test", "pages", [], 100)
+        def pages(c):
+            with sqlite_transaction(c):
+                for at, payload in enumerate(({"removed": 1, "restored": 2}, {"restored": 3},
+                                               {"removed": 4}, {"removed": 5, "restored": None}), 100):
+                    collect_fields(c, "pages", "synthetic", payload, run, at)
+        await self.store.call(pages)
+        self.assertEqual(await self.store.call(read_fields, "pages", "synthetic"), {"/removed": 5, "/restored": None})
+        patches = await self.rows("SELECT * FROM api_field_changes WHERE source_run_id=?", (run,))
+        self.assertEqual(len(patches), 1)
+        await self.store.finish(run)
+
     async def test_whole_yearly_record_includes_typed_generic_and_clan_history(self):
         for index, name in enumerate(("player_4.json", "cwl_war_1.json", "cwl_group_1.json"), 1):
             await self.record(fixture(name), index * DAY)
@@ -427,3 +441,9 @@ class ApiFieldTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(estimate["donations"], 60_000_000)
         self.assertLess(total, 750_000_000)
         print(f"\nWhole family year (279 accounts, 9 clans), estimated bytes: {estimate}; total={total:,}.")
+        sources = source_estimate()
+        self.assertTrue(all(value > 0 for value in sources.values()))
+        self.assertLessEqual(total + sum(sources.values()), 1_500_000_000)
+        print(f"New collectors, estimated bytes/year: {sources}; added={sum(sources.values()):,}; "
+              f"whole record={total + sum(sources.values()):,}.")
+        print(f"All accounts at busiest observed battle/raid rates: whole record={total + sum(source_estimate(busiest=True).values()):,}.")

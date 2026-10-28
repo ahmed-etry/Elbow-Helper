@@ -1,0 +1,17 @@
+{
+  "kind": "legend_seasons",
+  "scope": "/leagues/29000022/seasons",
+  "body": {
+    "items": [
+      {
+        "id": "2026-09"
+      },
+      {
+        "id": "2026-08"
+      }
+    ],
+    "paging": {
+      "cursors": {}
+    }
+  }
+}

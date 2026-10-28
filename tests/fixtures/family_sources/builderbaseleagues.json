@@ -1,0 +1,179 @@
+{
+  "kind": "catalogue",
+  "scope": "/builderbaseleagues",
+  "body": {
+    "items": [
+      {
+        "id": 44000000,
+        "name": "Synthetic name 425"
+      },
+      {
+        "id": 44000001,
+        "name": "Synthetic name 426"
+      },
+      {
+        "id": 44000002,
+        "name": "Synthetic name 427"
+      },
+      {
+        "id": 44000003,
+        "name": "Synthetic name 428"
+      },
+      {
+        "id": 44000004,
+        "name": "Synthetic name 429"
+      },
+      {
+        "id": 44000005,
+        "name": "Synthetic name 430"
+      },
+      {
+        "id": 44000006,
+        "name": "Synthetic name 431"
+      },
+      {
+        "id": 44000007,
+        "name": "Synthetic name 432"
+      },
+      {
+        "id": 44000008,
+        "name": "Synthetic name 433"
+      },
+      {
+        "id": 44000009,
+        "name": "Synthetic name 434"
+      },
+      {
+        "id": 44000010,
+        "name": "Synthetic name 435"
+      },
+      {
+        "id": 44000011,
+        "name": "Synthetic name 436"
+      },
+      {
+        "id": 44000012,
+        "name": "Synthetic name 437"
+      },
+      {
+        "id": 44000013,
+        "name": "Synthetic name 438"
+      },
+      {
+        "id": 44000014,
+        "name": "Synthetic name 439"
+      },
+      {
+        "id": 44000015,
+        "name": "Synthetic name 440"
+      },
+      {
+        "id": 44000016,
+        "name": "Synthetic name 441"
+      },
+      {
+        "id": 44000017,
+        "name": "Synthetic name 442"
+      },
+      {
+        "id": 44000018,
+        "name": "Synthetic name 443"
+      },
+      {
+        "id": 44000019,
+        "name": "Synthetic name 444"
+      },
+      {
+        "id": 44000020,
+        "name": "Synthetic name 445"
+      },
+      {
+        "id": 44000021,
+        "name": "Synthetic name 446"
+      },
+      {
+        "id": 44000022,
+        "name": "Synthetic name 447"
+      },
+      {
+        "id": 44000023,
+        "name": "Synthetic name 448"
+      },
+      {
+        "id": 44000024,
+        "name": "Synthetic name 449"
+      },
+      {
+        "id": 44000025,
+        "name": "Synthetic name 450"
+      },
+      {
+        "id": 44000026,
+        "name": "Synthetic name 451"
+      },
+      {
+        "id": 44000027,
+        "name": "Synthetic name 452"
+      },
+      {
+        "id": 44000028,
+        "name": "Synthetic name 453"
+      },
+      {
+        "id": 44000029,
+        "name": "Synthetic name 454"
+      },
+      {
+        "id": 44000030,
+        "name": "Synthetic name 455"
+      },
+      {
+        "id": 44000031,
+        "name": "Synthetic name 456"
+      },
+      {
+        "id": 44000032,
+        "name": "Synthetic name 457"
+      },
+      {
+        "id": 44000033,
+        "name": "Synthetic name 458"
+      },
+      {
+        "id": 44000034,
+        "name": "Synthetic name 459"
+      },
+      {
+        "id": 44000035,
+        "name": "Synthetic name 460"
+      },
+      {
+        "id": 44000036,
+        "name": "Synthetic name 461"
+      },
+      {
+        "id": 44000037,
+        "name": "Synthetic name 462"
+      },
+      {
+        "id": 44000038,
+        "name": "Synthetic name 463"
+      },
+      {
+        "id": 44000039,
+        "name": "Synthetic name 464"
+      },
+      {
+        "id": 44000040,
+        "name": "Synthetic name 465"
+      },
+      {
+        "id": 44000041,
+        "name": "Synthetic name 466"
+      }
+    ],
+    "paging": {
+      "cursors": {}
+    }
+  }
+}

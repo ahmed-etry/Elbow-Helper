@@ -13,7 +13,10 @@ from elbow_helper.data.store import FamilyStore, now_us
 from elbow_helper.data.store.clans import collect_clans
 from elbow_helper.data.store.people import mirror_links, observe_discord
 from elbow_helper.data.store.players import collect_player, due_accounts, players_due
+from elbow_helper.data.store.source_state import COLLECTORS as SOURCE_COLLECTORS
+from elbow_helper.data.store.sources import due_sources
 from .wars import collect_pass, due_jobs
+from .sources import collect_sources
 
 
 LOGGER = logging.getLogger(__name__)
@@ -54,6 +57,7 @@ class FamilyCollectors(commands.Cog):
         self._link_lock = asyncio.Lock()
         self._player_lock = asyncio.Lock()
         self._war_lock = asyncio.Lock()
+        self._source_locks = {name: asyncio.Lock() for name in SOURCE_COLLECTORS}
         self._closing = False
 
     async def cog_load(self):
@@ -69,6 +73,8 @@ class FamilyCollectors(commands.Cog):
             asyncio.create_task(self._schedule("wars", SCHEDULE_CHECK_SECONDS, self.collect_wars)),
             asyncio.create_task(self._schedule("discord", DISCORD_INTERVAL_SECONDS, self.scan_discord, startup=True)),
         ]
+        self._tasks.extend(asyncio.create_task(self._schedule(name, SCHEDULE_CHECK_SECONDS,
+                            lambda name=name: collect_sources(self, name))) for name in sorted(SOURCE_COLLECTORS))
 
     async def cog_unload(self):
         self._closing = True
@@ -79,13 +85,16 @@ class FamilyCollectors(commands.Cog):
         # Listener callbacks are dispatched as separate Discord tasks. Wait for
         # their in-flight transactions before allowing the client to close.
         async with self._discord_lock, self._clan_lock, self._link_lock, self._player_lock, self._war_lock:
-            pass
+            for lock in self._source_locks.values():
+                async with lock:
+                    pass
 
     async def _schedule(self, name, seconds, collect, *, startup=False):
         await self.bot.boot_complete.wait()
         while not self._closing:
             try:
-                due = (bool(await self.store.call(due_jobs, self.clans, now_us())) if name == "wars" else
+                due = (bool(await self.store.call(due_sources, name, self.clans, now_us())) if name in SOURCE_COLLECTORS else
+                       bool(await self.store.call(due_jobs, self.clans, now_us())) if name == "wars" else
                        await self.store.call(players_due, now_us()) if name == "players"
                        else await self.store.due(name, seconds, now_us()))
                 if startup or due:

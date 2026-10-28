@@ -1,0 +1,8 @@
+{
+  "kind": "goldpass",
+  "scope": "/goldpass/seasons/current",
+  "body": {
+    "startTime": "20261001T080000.000Z",
+    "endTime": "20261101T080000.000Z"
+  }
+}

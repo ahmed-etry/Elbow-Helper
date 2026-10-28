@@ -1,0 +1,17 @@
+{
+  "battle_logs_sampled": 31,
+  "battle_logs_with_timed_entries": 27,
+  "battle_rate_median": 5.445577539153594,
+  "battle_rate_maximum": 11.535820553902495,
+  "battle_entry_bytes_mean": 1526.5838926174497,
+  "profiles_sampled": 278,
+  "current_ranked_accounts": 140,
+  "ranked_member_count_median": 100.0,
+  "completed_raid_weekends_sampled": 108,
+  "raid_attacks_median": 108.0,
+  "raid_attacks_maximum": 253,
+  "compact_battles_measured": 1192,
+  "compact_battle_tables_bytes": 573440,
+  "compact_battle_bytes_with_indexes": 481.0738255033557,
+  "battle_rate_estimator": "Intervals between entries divided by elapsed days"
+}

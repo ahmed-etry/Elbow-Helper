@@ -26,7 +26,8 @@ def unpack(value):
 def _identity(row):
     if not isinstance(row, dict):
         return None
-    for keys in (("tag",), ("name", "village", "info"), ("name", "village"), ("name",), ("id",), ("order",), ("endTime",)):
+    for keys in (("tag",), ("playerTag",), ("creationTime", "opponentPlayerTag"),
+                 ("name", "village", "info"), ("name", "village"), ("name",), ("id",), ("order",), ("endTime",)):
         if all(key in row and type(row[key]) in (str, int) for key in keys):
             return "@" + canonical_json({key: row[key] for key in keys})
     return None
@@ -110,8 +111,21 @@ def collect_fields(connection, kind, scope, payload, run, at, *, complete=True):
     else:
         record_id = record["id"]
     if changed or removed:
-        connection.execute("INSERT INTO api_field_changes VALUES (?,?,?,?)",
-                           (record_id, at, _pack([changed, removed]), run))
+        # A paginated source can update its envelope several times in one run.
+        # Combine those patches so provenance stays per run, with final values.
+        prior = connection.execute("SELECT patch_z FROM api_field_changes WHERE record_id=? AND source_run_id=?",
+                                   (record_id, run)).fetchone()
+        if prior:
+            earlier, deleted = unpack(prior[0])
+            earlier.update(changed)
+            for key in removed:
+                earlier.pop(key, None)
+            deleted = (set(deleted) | set(removed)) - changed.keys()
+            connection.execute("UPDATE api_field_changes SET observed_at=?,patch_z=? WHERE record_id=? AND source_run_id=?",
+                               (at, _pack([earlier, sorted(deleted)]), record_id, run))
+        else:
+            connection.execute("INSERT INTO api_field_changes VALUES (?,?,?,?)",
+                               (record_id, at, _pack([changed, removed]), run))
     if changed or removed or any(interval and ready for interval, ready in zip(intervals, due)):
         connection.execute("UPDATE api_records SET state_z=?,fast_sampled_at=?,slow_sampled_at=? WHERE id=?",
                            (_pack([paths, state]), at if due[0] else clocks[0], at if due[1] else clocks[1], record_id))
@@ -119,6 +133,9 @@ def collect_fields(connection, kind, scope, payload, run, at, *, complete=True):
 
 def read_fields(connection, kind, scope):
     """Resolve the path dictionary and replay history, preserving null vs absence."""
+    if kind == "battle_log":
+        from .battles import read_battle_fields
+        return read_battle_fields(connection, scope)
     record = connection.execute("SELECT id,state_z FROM api_records WHERE source_kind=? AND scope_id=?",
                                 (kind, scope)).fetchone()
     if record is None:
