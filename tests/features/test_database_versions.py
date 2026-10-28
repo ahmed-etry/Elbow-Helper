@@ -1,5 +1,6 @@
 """Adopt deployed schemas without losing data or accepting unknown formats."""
 
+from collections import Counter
 from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor
 import logging
@@ -26,7 +27,7 @@ from elbow_helper.features.records.database import RecordRepository
 from elbow_helper.features.records.database import schema as records_schema
 from elbow_helper.features import records
 from elbow_helper.infrastructure.persistence.migrations import (
-    SQLiteMigrationError, UnversionedSQLiteSchemaError, UnsupportedSQLiteVersionError,
+    SQLiteMigration, SQLiteMigrationError, UnversionedSQLiteSchemaError, UnsupportedSQLiteVersionError,
 )
 from elbow_helper.infrastructure.persistence.versioned import validate_sqlite_shape
 
@@ -63,6 +64,17 @@ def saved_state(path):
         return tuple(connection.iterdump())
 
 
+def saved_values(path):
+    with closing(sqlite3.connect(path)) as connection:
+        tables = [row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+        result = {}
+        for table in tables:
+            columns = sorted(row[1] for row in connection.execute(f"PRAGMA table_info({quote(table)})"))
+            names = ','.join(map(quote, columns))
+            result[table] = Counter(connection.execute(f"SELECT {names} FROM {quote(table)}").fetchall())
+        return result
+
+
 def version(path):
     with closing(sqlite3.connect(path)) as connection:
         return connection.execute("PRAGMA user_version").fetchone()[0]
@@ -93,6 +105,40 @@ def rewrite_table(path, table, change, *, extra_values=None):
             connection.execute(statement)
 
 
+def live_achievements_fixture(path, *, schema_version=1, extra_flag=True, old_order=True):
+    deployed_fixture(path, achievements_schema)
+    if extra_flag:
+        with closing(sqlite3.connect(path)) as connection, connection:
+            connection.execute("ALTER TABLE achievements ADD COLUMN leadership_only INTEGER DEFAULT 0")
+            connection.execute("UPDATE achievements SET leadership_only=1")
+    if old_order:
+        def reorder(sql):
+            # Columns added by historical ALTER TABLE statements followed the
+            # original counters, rather than appearing beside voice_hours.
+            seconds = ("voice_total_seconds INTEGER DEFAULT 0,", "silent_voice_seconds INTEGER DEFAULT 0,")
+            for column in seconds:
+                sql = sql.replace(column, "")
+            return sql.replace("night_owl_last_local_day INTEGER DEFAULT 0", (
+                "night_owl_last_local_day INTEGER DEFAULT 0, " + " ".join(seconds).rstrip(",")
+            ))
+
+        rewrite_table(path, "user_stats", reorder)
+    with closing(sqlite3.connect(path)) as connection, connection:
+        columns = connection.execute("PRAGMA table_info(user_stats)").fetchall()
+        for user_id in (7, 23, 999):
+            values = [user_id if row[1] == "user_id" else
+                      "12 34 caf\u00e9 \U0001f41d" if row[2] == "TEXT" else
+                      user_id + 0.25 if row[2] == "REAL" else
+                      user_id * 100 + index for index, row in enumerate(columns)]
+            connection.execute(
+                f"INSERT OR REPLACE INTO user_stats VALUES ({','.join('?' for _ in values)})", values,
+            )
+        connection.execute("UPDATE user_stats SET active_channels=NULL, message_count=NULL WHERE user_id=999")
+        connection.execute("INSERT INTO achievements(id, name, description) VALUES ('nullable', 'Caf\u00e9 \U0001f41d', '')")
+        connection.execute("INSERT INTO user_achievements VALUES (23, 'nullable', 123456)")
+        connection.execute(f"PRAGMA user_version={schema_version}")
+
+
 class DatabaseVersionTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -102,12 +148,12 @@ class DatabaseVersionTests(unittest.TestCase):
     def path(self, schema, suffix=""):
         return self.root / f"{schema.DATABASE.name}{suffix}.sqlite3"
 
-    def test_blank_databases_start_at_version_one(self):
+    def test_blank_databases_start_at_current_version(self):
         for schema in SCHEMAS:
             with self.subTest(database=schema.DATABASE.name):
                 path = self.path(schema)
                 schema.DATABASE.initialize(path)
-                self.assertEqual(version(path), 1)
+                self.assertEqual(version(path), schema.SCHEMA_VERSION)
                 with closing(sqlite3.connect(path)) as connection:
                     self.assertEqual(connection.execute("PRAGMA integrity_check").fetchone()[0], "ok")
 
@@ -118,15 +164,28 @@ class DatabaseVersionTests(unittest.TestCase):
                 deployed_fixture(path, schema)
                 before = saved_state(path)
                 schema.DATABASE.initialize(path)
-                self.assertEqual(version(path), 1)
-                self.assertEqual(saved_state(path), before)
+                self.assertEqual(version(path), schema.SCHEMA_VERSION)
+                if schema is achievements_schema:
+                    self.assertEqual(sorted(saved_state(path)), sorted(before))
+                else:
+                    self.assertEqual(saved_state(path), before)
 
     def assert_adopted_with_warnings(self, schema, path, messages):
+        if schema is achievements_schema:
+            # Version two now normalises the entire schema, rather than keeping
+            # harmless declaration differences and warning on every startup.
+            before = saved_values(path)
+            with self.assertNoLogs("elbow_helper.infrastructure.persistence.versioned", level="WARNING"):
+                schema.DATABASE.initialize(path)
+                schema.DATABASE.initialize(path)
+            self.assertEqual(version(path), schema.SCHEMA_VERSION)
+            self.assertEqual(saved_values(path), before)
+            return
         before = saved_state(path)
         with self.assertLogs("elbow_helper.infrastructure.persistence.versioned", level="WARNING") as logged:
             schema.DATABASE.initialize(path)
             schema.DATABASE.initialize(path)
-        self.assertEqual(version(path), 1)
+        self.assertEqual(version(path), schema.SCHEMA_VERSION)
         self.assertEqual(saved_state(path), before)
         self.assertEqual(len(logged.output), len(messages), logged.output)
         for message in messages:
@@ -188,6 +247,9 @@ class DatabaseVersionTests(unittest.TestCase):
                 with closing(sqlite3.connect(path)) as connection, connection:
                     connection.execute(f"ALTER TABLE {table} ADD COLUMN older_field BLOB")
                     connection.execute(f"UPDATE {table} SET older_field=x'00ff80'")
+                if schema is achievements_schema:
+                    self.assert_refused_unchanged(schema, path, UnversionedSQLiteSchemaError)
+                    continue
                 self.assert_adopted_with_warnings(schema, path, [f"{table}.older_field: extra column"])
 
     def test_missing_foreign_keys_adopt_unchanged(self):
@@ -413,7 +475,7 @@ class DatabaseVersionTests(unittest.TestCase):
                 path = self.path(schema)
                 deployed_fixture(path, schema)
                 with closing(sqlite3.connect(path)) as connection:
-                    connection.execute("PRAGMA user_version=2")
+                    connection.execute(f"PRAGMA user_version={schema.SCHEMA_VERSION + 1}")
                 self.assert_refused_unchanged(schema, path, UnsupportedSQLiteVersionError)
 
     def assert_refused_unchanged(self, schema, path, error):
@@ -432,7 +494,7 @@ class DatabaseVersionTests(unittest.TestCase):
         with closing(sqlite3.connect(path)) as connection, connection:
             connection.execute("ALTER TABLE links ADD COLUMN is_primary INTEGER NOT NULL DEFAULT 0")
         links_schema.DATABASE.initialize(path)
-        self.assertEqual(version(path), 1)
+        self.assertEqual(version(path), links_schema.SCHEMA_VERSION)
         self.assertEqual(saved_state(path), before)
 
     def test_ranked_snapshot_only_and_nullable_opponent_upgrades(self):
@@ -453,7 +515,7 @@ class DatabaseVersionTests(unittest.TestCase):
                         connection.execute("INSERT INTO ranked_battles SELECT * FROM saved_battles")
                         connection.execute("DROP TABLE saved_battles")
                 ranked_schema.DATABASE.initialize(path)
-                self.assertEqual(version(path), 1)
+                self.assertEqual(version(path), ranked_schema.SCHEMA_VERSION)
                 with closing(sqlite3.connect(path)) as connection:
                     self.assertEqual(connection.execute("SELECT * FROM snapshots").fetchall(), snapshots)
                     self.assertEqual(connection.execute("SELECT * FROM ranked_battles").fetchall(), [] if snapshot_only else battles)
@@ -469,11 +531,110 @@ class DatabaseVersionTests(unittest.TestCase):
             transactions = connection.execute("SELECT * FROM coin_transactions").fetchall()
         achievements_schema.DATABASE.initialize(path)
         achievements_schema.DATABASE.initialize(path)
-        self.assertEqual(version(path), 1)
+        self.assertEqual(version(path), achievements_schema.SCHEMA_VERSION)
         with closing(sqlite3.connect(path)) as connection:
             self.assertEqual(connection.execute("SELECT * FROM coin_transactions").fetchall(), transactions)
             self.assertEqual(connection.execute("SELECT * FROM cwl_reward_grants").fetchall(),
                              [("synthetic_bonus", 7, "coins", 7)])
+
+    def test_achievement_cleanup_preserves_rows_and_removes_startup_warnings(self):
+        for schema_version in (0, 1):
+            for extra_flag, old_order in ((True, True), (True, False), (False, True)):
+                with self.subTest(version=schema_version, flag=extra_flag, order=old_order):
+                    path = self.path(achievements_schema, f"{schema_version}{extra_flag}{old_order}")
+                    live_achievements_fixture(path, schema_version=schema_version,
+                                              extra_flag=extra_flag, old_order=old_order)
+                    with closing(sqlite3.connect(path)) as connection:
+                        with self.assertLogs("elbow_helper.infrastructure.persistence.versioned", level="WARNING") as logged:
+                            achievements_schema.validate_schema(connection)
+                        expected = []
+                        if extra_flag:
+                            expected.append("achievements.leadership_only: extra column")
+                        if old_order:
+                            expected.append("user_stats: column order differs; queries name columns")
+                        self.assertEqual(len(logged.output), len(expected))
+                        for warning in expected:
+                            self.assertTrue(any(warning in line for line in logged.output), logged.output)
+                        tables = [row[0] for row in connection.execute(
+                            "SELECT name FROM sqlite_master WHERE type='table'"
+                        )]
+                        # Compare named values, so a column-order mistake cannot
+                        # hide behind equal row counts or repeated sample values.
+                        names = {table: [row[1] for row in connection.execute(f"PRAGMA table_info({quote(table)})")
+                                         if row[1] != "leadership_only"] for table in tables}
+
+                        def rows(database):
+                            return {table: database.execute(
+                                f"SELECT {','.join(map(quote, columns))} FROM {quote(table)} ORDER BY rowid"
+                            ).fetchall() for table, columns in names.items()}
+
+                        before = rows(connection)
+                    # Initialize again with a fresh startup cache, like a restart.
+                    for _ in range(2):
+                        with patch.object(achievements_schema.DATABASE, "_ready", set()), self.assertNoLogs(
+                            "elbow_helper.infrastructure.persistence.versioned", level="WARNING"
+                        ):
+                            achievements_schema.DATABASE.initialize(path)
+                    self.assertEqual(version(path), achievements_schema.SCHEMA_VERSION)
+                    with closing(sqlite3.connect(path)) as connection, closing(sqlite3.connect(":memory:")) as fresh:
+                        achievements_schema.create_schema(fresh)
+                        self.assertEqual(rows(connection), before)
+                        for table in ("achievements", "user_stats", "user_achievements", "coin_transactions"):
+                            for pragma in ("table_info", "index_list", "foreign_key_list"):
+                                self.assertEqual(connection.execute(f"PRAGMA {pragma}({quote(table)})").fetchall(),
+                                                 fresh.execute(f"PRAGMA {pragma}({quote(table)})").fetchall())
+                        self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
+                        self.assertEqual(connection.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+
+    def test_achievement_cleanup_preserves_fresh_rows_and_definitions(self):
+        path = self.path(achievements_schema)
+        deployed_fixture(path, achievements_schema)
+        before = saved_state(path)
+        with closing(sqlite3.connect(path)) as connection:
+            schema_cookie = connection.execute("PRAGMA schema_version").fetchone()[0]
+        with self.assertNoLogs("elbow_helper.infrastructure.persistence.versioned", level="WARNING"):
+            achievements_schema.DATABASE.initialize(path)
+        self.assertEqual(sorted(saved_state(path)), sorted(before))
+        self.assertEqual(version(path), achievements_schema.SCHEMA_VERSION)
+        with closing(sqlite3.connect(path)) as connection:
+            self.assertGreater(connection.execute("PRAGMA schema_version").fetchone()[0], schema_cookie)
+
+    def test_achievement_cleanup_failure_rolls_back_both_tables_and_version(self):
+        for schema_version in (0, 1):
+            for failure in ("copy_stats", "after_cleanup"):
+                with self.subTest(version=schema_version, failure=failure):
+                    path = self.path(achievements_schema, f"{schema_version}{failure}")
+                    live_achievements_fixture(path, schema_version=schema_version)
+                    original = achievements_schema.DATABASE.migrations[-1]
+
+                    def fail(connection):
+                        self.assertTrue(connection.in_transaction)
+                        if failure == "copy_stats":
+                            def authorize(action, name, detail, database, source):
+                                if action == sqlite3.SQLITE_INSERT and name == "user_stats" and database == "main":
+                                    return sqlite3.SQLITE_DENY
+                                return sqlite3.SQLITE_OK
+                            connection.set_authorizer(authorize)
+                        original.apply(connection)
+                        raise sqlite3.OperationalError("synthetic failure after both rebuilds")
+
+                    migrations = (*achievements_schema.DATABASE.migrations[:-1],
+                                  SQLiteMigration(original.version, original.name, fail))
+                    with patch.object(achievements_schema.DATABASE, "migrations", migrations):
+                        self.assert_refused_unchanged(achievements_schema, path, SQLiteMigrationError)
+                    # A failed upgrade must remain retryable.
+                    achievements_schema.DATABASE.initialize(path)
+                    self.assertEqual(version(path), achievements_schema.SCHEMA_VERSION)
+
+    def test_achievement_cleanup_refuses_to_discard_unknown_values(self):
+        for table in ("achievements", "user_stats"):
+            with self.subTest(table=table):
+                path = self.path(achievements_schema, table)
+                live_achievements_fixture(path)
+                with closing(sqlite3.connect(path)) as connection, connection:
+                    connection.execute(f"ALTER TABLE {table} ADD COLUMN unknown_value BLOB")
+                    connection.execute(f"UPDATE {table} SET unknown_value=x'00ff80'")
+                self.assert_refused_unchanged(achievements_schema, path, UnversionedSQLiteSchemaError)
 
     def test_health_label_upgrade_preserves_the_original_label(self):
         path = self.path(health_schema)
@@ -483,7 +644,7 @@ class DatabaseVersionTests(unittest.TestCase):
             connection.execute("UPDATE wars SET war_type='CWL', cwl_season='2026-09', start_ts=1788220800, cwl_round=1")
             other_data = connection.execute("SELECT * FROM report_players").fetchall()
         health_schema.DATABASE.initialize(path)
-        self.assertEqual(version(path), 1)
+        self.assertEqual(version(path), health_schema.SCHEMA_VERSION)
         with closing(sqlite3.connect(path)) as connection:
             self.assertEqual(connection.execute("SELECT cwl_season, cwl_season_label FROM wars").fetchall(),
                              [("2026-09", "2026-09")])
@@ -507,7 +668,7 @@ class DatabaseVersionTests(unittest.TestCase):
                     self.assert_refused_unchanged(schema, path, SQLiteMigrationError)
                 self.assertEqual(path.read_bytes(), before)
                 schema.DATABASE.initialize(path)
-                self.assertEqual(version(path), 1)
+                self.assertEqual(version(path), schema.SCHEMA_VERSION)
 
     def test_concurrent_first_connections_adopt_only_once(self):
         for schema in SCHEMAS:
@@ -518,7 +679,7 @@ class DatabaseVersionTests(unittest.TestCase):
                     with ThreadPoolExecutor(max_workers=4) as pool:
                         list(pool.map(schema.DATABASE.initialize, [path] * 8))
                     adopt.assert_called_once()
-                self.assertEqual(version(path), 1)
+                self.assertEqual(version(path), schema.SCHEMA_VERSION)
 
     def test_connections_never_recreate_a_file_removed_after_startup(self):
         for schema in SCHEMAS:
@@ -537,8 +698,11 @@ class DatabaseVersionTests(unittest.TestCase):
                 deployed_fixture(path, schema)
                 before = saved_state(path)
                 self.open_through_feature(schema, path)
-                self.assertEqual(version(path), 1)
-                self.assertEqual(saved_state(path), before)
+                self.assertEqual(version(path), schema.SCHEMA_VERSION)
+                if schema is achievements_schema:
+                    self.assertEqual(sorted(saved_state(path)), sorted(before))
+                else:
+                    self.assertEqual(saved_state(path), before)
 
     def test_ordinary_connections_cannot_create_or_write_an_unknown_schema(self):
         for schema in SCHEMAS:
