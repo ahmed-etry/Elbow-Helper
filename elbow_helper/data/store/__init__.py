@@ -71,6 +71,10 @@ class FamilyStore:
                 "INSERT INTO collection_runs(collector,scope_kind,scheduled_at,started_at,status,expected) "
                 "VALUES (?,?,?,?, 'running',?)", (collector, scope_kind, at, at, len(specs)),
             ).lastrowid
+            if collector == "players":
+                from .player_state import queue
+                queue(connection, run, specs, at)
+                return run
             connection.executemany(
                 "INSERT INTO collection_items(run_id,ordinal,source_kind,scope_id,status,started_at) "
                 "VALUES (?,?,?,?, 'pending',?)",
@@ -110,6 +114,11 @@ class FamilyStore:
     @staticmethod
     def _requested(connection, run, ordinal):
         with sqlite_transaction(connection, immediate=True):
+            collector = connection.execute("SELECT collector FROM collection_runs WHERE id=?", (run,)).fetchone()[0]
+            if collector == "players":
+                from .player_state import requested
+                requested(connection, run, ordinal, now_us())
+                return
             connection.execute(
                 "UPDATE collection_items SET status='running',started_at=? "
                 "WHERE run_id=? AND ordinal=? AND status='pending'", (now_us(), run, ordinal),
@@ -134,6 +143,10 @@ class FamilyStore:
 
     @staticmethod
     def _finish(connection, run, at, *, interrupted=False):
+        collector = connection.execute("SELECT collector FROM collection_runs WHERE id=?", (run,)).fetchone()[0]
+        if collector == "players":
+            from .player_state import finish
+            return finish(connection, run, at, interrupted=interrupted)
         counts = {row["status"]: row["n"] for row in connection.execute(
             "SELECT status,COUNT(*) AS n FROM collection_items WHERE run_id=? GROUP BY status", (run,),
         )}
