@@ -2,13 +2,15 @@
 
 from pathlib import Path
 
+from elbow_helper.configuration.files import ACHIEVEMENTS_DATABASE
+
 from ...datasets.sources import DataSource
 
 
 SOURCES = (
     DataSource(
         "achievements",
-        Path("data/achievements/achievements.db"),
+        Path("data") / ACHIEVEMENTS_DATABASE,
         tables=(
             (
                 "achievements", "none",

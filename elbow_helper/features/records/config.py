@@ -2,4 +2,6 @@
 
 from pathlib import Path
 
-DB_PATH = Path("data/records/records.sqlite3")
+from elbow_helper.configuration.files import RECORDS_DATABASE
+
+DB_PATH = Path("data") / RECORDS_DATABASE

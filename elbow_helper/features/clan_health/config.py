@@ -10,9 +10,10 @@ from pathlib import Path
 from discord import app_commands
 
 from elbow_helper.configuration.clans import CLANS, CLAN_ORDER
+from elbow_helper.configuration.files import CLAN_HEALTH_DATABASE
 
 UTC = timezone.utc
-DB_PATH = Path("data/clan_health/clan_health.db")
+DB_PATH = Path("data") / CLAN_HEALTH_DATABASE
 SNAPSHOT_LOG_MINUTES = 60
 
 UTILITY_CLANS = {code for code, clan in CLANS.items() if clan.is_utility}

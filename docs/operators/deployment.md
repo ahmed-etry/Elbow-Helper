@@ -28,3 +28,5 @@ uv run python -m elbow_helper
 Rolling back code does not roll back `data/`, and older code may not support
 newer saved data. To restore saved data, stop the bot, move the current `data/`
 directory aside, and replace it with one complete backup.
+After restoring a host backup, if a database won't open, replace it with its
+copy from `data/backups/`.

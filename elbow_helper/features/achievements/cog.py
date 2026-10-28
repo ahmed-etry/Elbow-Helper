@@ -12,6 +12,7 @@ import discord
 from discord.ext import commands
 from elbow_helper.core.background import start_resilient_loop
 from elbow_helper.configuration.guild import GUILD_ID
+from elbow_helper.configuration.files import ACHIEVEMENTS_DATABASE
 
 from .achievements import AchievementServiceMixin
 from .commands import AchievementCommandMixin
@@ -58,8 +59,8 @@ class Achievements(
         self._clan_role_change_tasks = {}
         self._pending_clan_role_baselines = {}
 
-        data_dir = bot.paths.data_root / "achievements"
-        self.db_path = os.fspath(data_dir / "achievements.db")
+        database_path = bot.paths.data_root / ACHIEVEMENTS_DATABASE
+        self.db_path = os.fspath(database_path)
         self.logger = logging.getLogger(__name__)
         self.rewards = AchievementRewardService(self)
         self.queries = AchievementQueries(Path(self.db_path))
