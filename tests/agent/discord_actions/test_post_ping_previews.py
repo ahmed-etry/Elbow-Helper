@@ -84,12 +84,12 @@ class PostPingPreviewTests(unittest.IsolatedAsyncioTestCase):
         preview = await self.preview(text="@here <@&9> <@7>")
         self.assertIn("Pings: Example (@example.7)", preview.lines)
 
-    async def test_gif_only_reply_never_claims_an_author_ping(self):
+    async def test_gif_link_reply_previews_the_requested_author_ping(self):
         preview = await self.preview(
             text="https://tenor.com/view/synthetic", reply_to=55, ping_author=True,
         )
-        self.assertFalse(any(line.startswith("Pings:") for line in preview.lines))
-        self.assertIn("Reply to Example (@example.7), no ping: [Synthetic question]"
+        self.assertIn("Pings: Example (@example.7)", preview.lines)
+        self.assertIn("Reply to Example (@example.7), with ping: [Synthetic question]"
                       "(https://discord.com/channels/3/2/55)", preview.details)
 
     async def test_edit_previews_both_members_with_the_same_display_name(self):
