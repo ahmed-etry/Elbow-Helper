@@ -131,6 +131,7 @@ class CwlTransferMixin:
                 )
         profiles, failed_tags = await fetch_account_profiles(
             list(accounts_by_tag.values()), self.clash_client,
+            fresh=True,
         )
         incomplete_account_rosters = {
             code for code, members in roster_members.items()
@@ -534,6 +535,7 @@ class CwlTransferMixin:
                 f"/clans/{encode_clash_tag(clan_tag)}/currentwar/leaguegroup",
                 attempts=1,
                 timeout_seconds=15,
+                fresh=True,
             )
             if response.status == 404:
                 return clan_code, "not_started"

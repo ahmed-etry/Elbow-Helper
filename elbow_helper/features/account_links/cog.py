@@ -131,6 +131,7 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         warning_key: str,
         warning_label: str,
         log_failure: bool = True,
+        fresh: bool = False,
     ) -> dict[str, Any] | None:
         response = await self.clash_client.get(
             path,
@@ -138,6 +139,7 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
             timeout_seconds=COC_HTTP_TOTAL_TIMEOUT_SECONDS,
             backoff_seconds=CLAN_FETCH_BACKOFF_SECONDS,
             maximum_backoff_seconds=10.0,
+            fresh=fresh,
         )
         payload = response.payload_object
         if response.ok and payload is not None:
@@ -168,7 +170,7 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
             LOGGER.debug("Failed to fetch %s: %s", warning_label, detail)
         return None
 
-    async def _fetch_clan_members(self, clan_code: str) -> list[dict[str, Any]] | None:
+    async def _fetch_clan_members(self, clan_code: str, *, fresh: bool = False) -> list[dict[str, Any]] | None:
         if not self.clash_client.configured:
             return []
         clan_tag = CLANS[clan_code].tag
@@ -177,6 +179,7 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
             path,
             warning_key=f"members:{clan_code}",
             warning_label=f"clan members for {clan_code}",
+            fresh=fresh,
         )
         if payload is None:
             return None
@@ -292,14 +295,14 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         except (discord.Forbidden, discord.HTTPException):
             return []
 
-    async def _rebuild_snapshots(self) -> None:
+    async def _rebuild_snapshots(self, *, fresh: bool = False) -> None:
         fresh_members: dict[str, dict[str, dict[str, Any]]] = {}
         player_locations: dict[str, dict[str, Any]] = {}
         semaphore = asyncio.Semaphore(CLAN_FETCH_CONCURRENCY)
 
         async def fetch_one(clan_code: str) -> tuple[str, list[dict[str, Any]] | None]:
             async with semaphore:
-                return clan_code, await self._fetch_clan_members(clan_code)
+                return clan_code, await self._fetch_clan_members(clan_code, fresh=fresh)
 
         results = await asyncio.gather(*(fetch_one(clan_code) for clan_code in TRACKED_CLAN_CODES))
         self._last_snapshot_complete = self.clash_client.configured and all(
@@ -618,9 +621,9 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
             embed.add_field(name="Most Recent Clan Role", value=str(row["last_seen_role"]), inline=True)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    async def refresh_now(self, *, refresh_boards: bool = True) -> None:
+    async def refresh_now(self, *, refresh_boards: bool = True, fresh: bool = False) -> None:
         async with self._snapshot_lock:
-            await self._rebuild_snapshots()
+            await self._rebuild_snapshots(fresh=fresh)
             await self._prune_departed_suggestions()
             await self._process_unlinked_players()
             self._snapshot_ready.set()

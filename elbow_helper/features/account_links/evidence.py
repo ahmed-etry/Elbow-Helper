@@ -240,6 +240,7 @@ async def _refresh_account_locations(
                 continue
             response = await account_links.clash_client.get(
                 f"/players/{encode_clash_tag(tag)}", attempts=1, timeout_seconds=5.0,
+                fresh=True,
             )
             payload = response.payload_object
             if not response.ok or not payload or normalize_player_tag(payload.get("tag")) != tag:

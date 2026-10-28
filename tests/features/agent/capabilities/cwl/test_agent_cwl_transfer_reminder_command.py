@@ -43,9 +43,10 @@ class CwlTransferReminderCommandTests(unittest.IsolatedAsyncioTestCase):
                 CLAN_LINKS={"BEH": "https://example.test/clan"},
             ),
             patch("elbow_helper.features.cwl.transfers.fetch_account_profiles",
-                  new=AsyncMock(return_value=([], set()))),
+                  new=AsyncMock(return_value=([], set()))) as profiles,
         ):
             prepared = await workflow.prepare_transfer_reminder(5)
+            self.assertTrue(profiles.await_args.kwargs["fresh"])
             self.assertEqual(prepared["status"], "post")
             self.assertIn("<@3>", prepared["content"])
             channel.send.assert_not_awaited()

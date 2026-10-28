@@ -62,6 +62,8 @@ def _account_from_payload(account: LinkedAccount, payload: dict[str, Any]) -> Li
 async def fetch_account_profiles(
     accounts: list[LinkedAccount],
     clash_client: ClashClient,
+    *,
+    fresh: bool = False,
 ) -> tuple[dict[str, LinkedAccount], set[str]]:
     """Return current profiles by tag and the tags that could not be checked."""
     unique_accounts = {account.player_tag: account for account in accounts}
@@ -80,6 +82,7 @@ async def fetch_account_profiles(
                 f"/players/{encode_clash_tag(account.player_tag)}",
                 attempts=1,
                 timeout_seconds=12,
+                fresh=fresh,
             )
         payload = response.payload_object
         if response.status != 200 or payload is None:
@@ -100,12 +103,14 @@ async def fetch_account_profiles(
 async def enrich_accounts(
     accounts: list[LinkedAccount],
     clash_client: ClashClient,
+    *,
+    fresh: bool = False,
 ) -> list[LinkedAccount]:
     """Add current Town Hall, clan, and hero data when the Clash API is available."""
     if not accounts:
         return accounts
 
-    profiles, _ = await fetch_account_profiles(accounts, clash_client)
+    profiles, _ = await fetch_account_profiles(accounts, clash_client, fresh=fresh)
     return [profiles.get(account.player_tag, account) for account in accounts]
 
 
@@ -145,6 +150,7 @@ class RosterProfileService:
                 for member in members
             ],
             self._clash_client,
+            fresh=True,
         )
         snapshots = {
             profile.player_tag: {

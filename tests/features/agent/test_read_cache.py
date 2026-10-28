@@ -189,12 +189,14 @@ class ReadCacheTests(unittest.IsolatedAsyncioTestCase):
             args = {'kind': 'player', 'tags': [tag]}
             await read_clash(local, args)
             await read_clash(local, {**args, 'max_age_seconds': 0})
+            self.assertTrue(local.bot.clash_client.get.await_args.kwargs['fresh'])
             async def reader(nested, selected):
                 raw = await read_clash(nested, args)
                 return {'rows': raw['items']}
             tool = family_tool('read_member_accounts', 'Synthetic nested profile', {}, reader)
             with patch('elbow_helper.features.agent.families.core.require_evidence_access', AsyncMock()):
                 await tool.handler(local, {'fresh': True})
+            self.assertTrue(local.bot.clash_client.get.await_args.kwargs['fresh'])
             self.assertEqual(local.bot.clash_client.get.await_count, 9)
 
     async def test_shared_hits_recheck_access_and_isolate_asker_destination_and_private_scope(self):

@@ -72,7 +72,7 @@ class CwlTransferHubMixin:
                     ),
                 )
         profiles, failed_tags = await fetch_account_profiles(
-            list(account_map.values()), self.clash_client)
+            list(account_map.values()), self.clash_client, fresh=True)
         return None, self._build_member_cwl_embed(assignments, profiles, failed_tags)
 
     @staticmethod

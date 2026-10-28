@@ -150,6 +150,7 @@ class DebugCog(commands.Cog):
         response = await self.clash_client.get(
             f"/clans/{encode_clash_tag(tag)}/currentwar",
             attempts=1, timeout_seconds=10,
+            fresh=True,
         )
         if response.error is not None:
             return ClashConnectionCheck(
