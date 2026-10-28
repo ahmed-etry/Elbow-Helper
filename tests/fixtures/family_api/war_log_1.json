@@ -1,0 +1,1651 @@
+{
+  "kind": "war_log",
+  "scope": "#PP9R22",
+  "body": {
+    "items": [
+      {
+        "result": "win",
+        "endTime": "20261028T070104.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/34",
+            "large": "https://example.test/asset/35",
+            "medium": "https://example.test/asset/36"
+          },
+          "clanLevel": 21,
+          "attacks": 26,
+          "stars": 45,
+          "destructionPercentage": 100.0,
+          "expEarned": 291
+        },
+        "opponent": {
+          "tag": "#PP9VG2",
+          "name": "Synthetic name 1137",
+          "badgeUrls": {
+            "small": "https://example.test/asset/220",
+            "large": "https://example.test/asset/221",
+            "medium": "https://example.test/asset/222"
+          },
+          "clanLevel": 29,
+          "stars": 38,
+          "destructionPercentage": 88.333336
+        }
+      },
+      {
+        "result": "lose",
+        "endTime": "20261026T075155.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/34",
+            "large": "https://example.test/asset/35",
+            "medium": "https://example.test/asset/36"
+          },
+          "clanLevel": 21,
+          "attacks": 25,
+          "stars": 44,
+          "destructionPercentage": 99.46667,
+          "expEarned": 248
+        },
+        "opponent": {
+          "tag": "#PP9VG8",
+          "name": "Synthetic name 1138",
+          "badgeUrls": {
+            "small": "https://example.test/asset/223",
+            "large": "https://example.test/asset/224",
+            "medium": "https://example.test/asset/225"
+          },
+          "clanLevel": 11,
+          "stars": 45,
+          "destructionPercentage": 100.0
+        }
+      },
+      {
+        "result": "tie",
+        "endTime": "20261024T084901.000Z",
+        "teamSize": 25,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/34",
+            "large": "https://example.test/asset/35",
+            "medium": "https://example.test/asset/36"
+          },
+          "clanLevel": 21,
+          "attacks": 48,
+          "stars": 75,
+          "destructionPercentage": 100.0,
+          "expEarned": 382
+        },
+        "opponent": {
+          "tag": "#PP9VG9",
+          "name": "Synthetic name 1139",
+          "badgeUrls": {
+            "small": "https://example.test/asset/226",
+            "large": "https://example.test/asset/227",
+            "medium": "https://example.test/asset/228"
+          },
+          "clanLevel": 26,
+          "stars": 75,
+          "destructionPercentage": 100.0
+        }
+      },
+      {
+        "result": "tie",
+        "endTime": "20261022T060737.000Z",
+        "teamSize": 25,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/34",
+            "large": "https://example.test/asset/35",
+            "medium": "https://example.test/asset/36"
+          },
+          "clanLevel": 21,
+          "attacks": 44,
+          "stars": 75,
+          "destructionPercentage": 100.0,
+          "expEarned": 393
+        },
+        "opponent": {
+          "tag": "#PP9VGP",
+          "name": "Synthetic name 1140",
+          "badgeUrls": {
+            "small": "https://example.test/asset/229",
+            "large": "https://example.test/asset/230",
+            "medium": "https://example.test/asset/231"
+          },
+          "clanLevel": 23,
+          "stars": 75,
+          "destructionPercentage": 100.0
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20261020T032818.000Z",
+        "teamSize": 20,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/34",
+            "large": "https://example.test/asset/35",
+            "medium": "https://example.test/asset/36"
+          },
+          "clanLevel": 21,
+          "attacks": 39,
+          "stars": 60,
+          "destructionPercentage": 100.0,
+          "expEarned": 366
+        },
+        "opponent": {
+          "tag": "#PP9VGY",
+          "name": "Synthetic name 1141",
+          "badgeUrls": {
+            "small": "https://example.test/asset/232",
+            "large": "https://example.test/asset/233",
+            "medium": "https://example.test/asset/234"
+          },
+          "clanLevel": 13,
+          "stars": 59,
+          "destructionPercentage": 99.85
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20261018T041001.000Z",
+        "teamSize": 25,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/34",
+            "large": "https://example.test/asset/35",
+            "medium": "https://example.test/asset/36"
+          },
+          "clanLevel": 21,
+          "attacks": 43,
+          "stars": 75,
+          "destructionPercentage": 100.0,
+          "expEarned": 428
+        },
+        "opponent": {
+          "tag": "#PP9VGL",
+          "name": "Synthetic name 1142",
+          "badgeUrls": {
+            "small": "https://example.test/asset/235",
+            "large": "https://example.test/asset/236",
+            "medium": "https://example.test/asset/237"
+          },
+          "clanLevel": 27,
+          "stars": 64,
+          "destructionPercentage": 91.52
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20261016T044208.000Z",
+        "teamSize": 20,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/34",
+            "large": "https://example.test/asset/35",
+            "medium": "https://example.test/asset/36"
+          },
+          "clanLevel": 21,
+          "attacks": 39,
+          "stars": 60,
+          "destructionPercentage": 100.0,
+          "expEarned": 358
+        },
+        "opponent": {
+          "tag": "#PP9VGQ",
+          "name": "Synthetic name 1143",
+          "badgeUrls": {
+            "small": "https://example.test/asset/238",
+            "large": "https://example.test/asset/239",
+            "medium": "https://example.test/asset/240"
+          },
+          "clanLevel": 19,
+          "stars": 59,
+          "destructionPercentage": 99.95
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20261013T194613.000Z",
+        "teamSize": 20,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/34",
+            "large": "https://example.test/asset/35",
+            "medium": "https://example.test/asset/36"
+          },
+          "clanLevel": 21,
+          "attacks": 29,
+          "stars": 60,
+          "destructionPercentage": 100.0,
+          "expEarned": 369
+        },
+        "opponent": {
+          "tag": "#PP9VGG",
+          "name": "Synthetic name 1144",
+          "badgeUrls": {
+            "small": "https://example.test/asset/241",
+            "large": "https://example.test/asset/242",
+            "medium": "https://example.test/asset/243"
+          },
+          "clanLevel": 22,
+          "stars": 33,
+          "destructionPercentage": 61.85
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20261009T184052.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 1,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/34",
+            "large": "https://example.test/asset/35",
+            "medium": "https://example.test/asset/36"
+          },
+          "clanLevel": 21,
+          "attacks": 105,
+          "stars": 380,
+          "destructionPercentage": 698.3333,
+          "expEarned": 0
+        },
+        "opponent": {
+          "badgeUrls": {
+            "small": "https://example.test/asset/163",
+            "large": "https://example.test/asset/164",
+            "medium": "https://example.test/asset/165"
+          },
+          "clanLevel": 0,
+          "stars": 271,
+          "destructionPercentage": 0.0
+        }
+      },
+      {
+        "result": "tie",
+        "endTime": "20260930T052531.000Z",
+        "teamSize": 20,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/34",
+            "large": "https://example.test/asset/35",
+            "medium": "https://example.test/asset/36"
+          },
+          "clanLevel": 21,
+          "attacks": 31,
+          "stars": 60,
+          "destructionPercentage": 100.0,
+          "expEarned": 306
+        },
+        "opponent": {
+          "tag": "#PP9VGR",
+          "name": "Synthetic name 1145",
+          "badgeUrls": {
+            "small": "https://example.test/asset/244",
+            "large": "https://example.test/asset/245",
+            "medium": "https://example.test/asset/246"
+          },
+          "clanLevel": 22,
+          "stars": 60,
+          "destructionPercentage": 100.0
+        }
+      },
+      {
+        "result": "tie",
+        "endTime": "20260927T161425.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/34",
+            "large": "https://example.test/asset/35",
+            "medium": "https://example.test/asset/36"
+          },
+          "clanLevel": 21,
+          "attacks": 29,
+          "stars": 45,
+          "destructionPercentage": 100.0,
+          "expEarned": 254
+        },
+        "opponent": {
+          "tag": "#PP9VGJ",
+          "name": "Synthetic name 1146",
+          "badgeUrls": {
+            "small": "https://example.test/asset/247",
+            "large": "https://example.test/asset/248",
+            "medium": "https://example.test/asset/249"
+          },
+          "clanLevel": 14,
+          "stars": 45,
+          "destructionPercentage": 100.0
+        }
+      },
+      {
+        "result": "lose",
+        "endTime": "20260925T162631.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/34",
+            "large": "https://example.test/asset/35",
+            "medium": "https://example.test/asset/36"
+          },
+          "clanLevel": 21,
+          "attacks": 25,
+          "stars": 44,
+          "destructionPercentage": 99.8,
+          "expEarned": 253
+        },
+        "opponent": {
+          "tag": "#PP9VGC",
+          "name": "Synthetic name 1147",
+          "badgeUrls": {
+            "small": "https://example.test/asset/250",
+            "large": "https://example.test/asset/251",
+            "medium": "https://example.test/asset/252"
+          },
+          "clanLevel": 9,
+          "stars": 45,
+          "destructionPercentage": 100.0
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20260923T162529.000Z",
+        "teamSize": 20,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/34",
+            "large": "https://example.test/asset/35",
+            "medium": "https://example.test/asset/36"
+          },
+          "clanLevel": 21,
+          "attacks": 24,
+          "stars": 56,
+          "destructionPercentage": 94.2,
+          "expEarned": 349
+        },
+        "opponent": {
+          "tag": "#PP9VGU",
+          "name": "Synthetic name 1148",
+          "badgeUrls": {
+            "small": "https://example.test/asset/253",
+            "large": "https://example.test/asset/254",
+            "medium": "https://example.test/asset/255"
+          },
+          "clanLevel": 17,
+          "stars": 48,
+          "destructionPercentage": 84.0
+        }
+      },
+      {
+        "result": "tie",
+        "endTime": "20260921T163028.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/34",
+            "large": "https://example.test/asset/35",
+            "medium": "https://example.test/asset/36"
+          },
+          "clanLevel": 21,
+          "attacks": 30,
+          "stars": 45,
+          "destructionPercentage": 100.0,
+          "expEarned": 250
+        },
+        "opponent": {
+          "tag": "#PP9VGV",
+          "name": "Synthetic name 1149",
+          "badgeUrls": {
+            "small": "https://example.test/asset/256",
+            "large": "https://example.test/asset/257",
+            "medium": "https://example.test/asset/258"
+          },
+          "clanLevel": 19,
+          "stars": 45,
+          "destructionPercentage": 100.0
+        }
+      },
+      {
+        "result": "lose",
+        "endTime": "20260919T162234.000Z",
+        "teamSize": 20,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/34",
+            "large": "https://example.test/asset/35",
+            "medium": "https://example.test/asset/36"
+          },
+          "clanLevel": 21,
+          "attacks": 32,
+          "stars": 59,
+          "destructionPercentage": 99.05,
+          "expEarned": 325
+        },
+        "opponent": {
+          "tag": "#PP9VR0",
+          "name": "Synthetic name 1150",
+          "badgeUrls": {
+            "small": "https://example.test/asset/259",
+            "large": "https://example.test/asset/260",
+            "medium": "https://example.test/asset/261"
+          },
+          "clanLevel": 26,
+          "stars": 60,
+          "destructionPercentage": 100.0
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20260917T042921.000Z",
+        "teamSize": 20,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/34",
+            "large": "https://example.test/asset/35",
+            "medium": "https://example.test/asset/36"
+          },
+          "clanLevel": 21,
+          "attacks": 36,
+          "stars": 60,
+          "destructionPercentage": 100.0,
+          "expEarned": 376
+        },
+        "opponent": {
+          "tag": "#PP9VR2",
+          "name": "Synthetic name 1151",
+          "badgeUrls": {
+            "small": "https://example.test/asset/262",
+            "large": "https://example.test/asset/263",
+            "medium": "https://example.test/asset/264"
+          },
+          "clanLevel": 25,
+          "stars": 44,
+          "destructionPercentage": 80.3
+        }
+      },
+      {
+        "result": "tie",
+        "endTime": "20260914T191738.000Z",
+        "teamSize": 20,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/34",
+            "large": "https://example.test/asset/35",
+            "medium": "https://example.test/asset/36"
+          },
+          "clanLevel": 21,
+          "attacks": 38,
+          "stars": 60,
+          "destructionPercentage": 100.0,
+          "expEarned": 315
+        },
+        "opponent": {
+          "tag": "#PP9VR8",
+          "name": "Synthetic name 1152",
+          "badgeUrls": {
+            "small": "https://example.test/asset/265",
+            "large": "https://example.test/asset/266",
+            "medium": "https://example.test/asset/267"
+          },
+          "clanLevel": 19,
+          "stars": 60,
+          "destructionPercentage": 100.0
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20260912T181327.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/34",
+            "large": "https://example.test/asset/35",
+            "medium": "https://example.test/asset/36"
+          },
+          "clanLevel": 21,
+          "attacks": 24,
+          "stars": 45,
+          "destructionPercentage": 100.0,
+          "expEarned": 302
+        },
+        "opponent": {
+          "tag": "#PP9VR9",
+          "name": "Synthetic name 1153",
+          "badgeUrls": {
+            "small": "https://example.test/asset/268",
+            "large": "https://example.test/asset/269",
+            "medium": "https://example.test/asset/270"
+          },
+          "clanLevel": 23,
+          "stars": 36,
+          "destructionPercentage": 91.2
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20260909T193639.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 1,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/34",
+            "large": "https://example.test/asset/35",
+            "medium": "https://example.test/asset/36"
+          },
+          "clanLevel": 21,
+          "attacks": 104,
+          "stars": 346,
+          "destructionPercentage": 677.86664,
+          "expEarned": 0
+        },
+        "opponent": {
+          "badgeUrls": {
+            "small": "https://example.test/asset/163",
+            "large": "https://example.test/asset/164",
+            "medium": "https://example.test/asset/165"
+          },
+          "clanLevel": 0,
+          "stars": 250,
+          "destructionPercentage": 0.0
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20260901T163741.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/271",
+            "large": "https://example.test/asset/272",
+            "medium": "https://example.test/asset/273"
+          },
+          "clanLevel": 21,
+          "attacks": 19,
+          "stars": 45,
+          "destructionPercentage": 100.0,
+          "expEarned": 305
+        },
+        "opponent": {
+          "tag": "#PP9VRP",
+          "name": "Synthetic name 1154",
+          "badgeUrls": {
+            "small": "https://example.test/asset/274",
+            "large": "https://example.test/asset/275",
+            "medium": "https://example.test/asset/276"
+          },
+          "clanLevel": 17,
+          "stars": 36,
+          "destructionPercentage": 88.26667
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20260830T080229.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/271",
+            "large": "https://example.test/asset/272",
+            "medium": "https://example.test/asset/273"
+          },
+          "clanLevel": 21,
+          "attacks": 30,
+          "stars": 45,
+          "destructionPercentage": 100.0,
+          "expEarned": 295
+        },
+        "opponent": {
+          "tag": "#PP9VRY",
+          "name": "Synthetic name 1155",
+          "badgeUrls": {
+            "small": "https://example.test/asset/277",
+            "large": "https://example.test/asset/278",
+            "medium": "https://example.test/asset/279"
+          },
+          "clanLevel": 18,
+          "stars": 31,
+          "destructionPercentage": 75.8
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20260828T081104.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/271",
+            "large": "https://example.test/asset/272",
+            "medium": "https://example.test/asset/273"
+          },
+          "clanLevel": 21,
+          "attacks": 29,
+          "stars": 45,
+          "destructionPercentage": 100.0,
+          "expEarned": 292
+        },
+        "opponent": {
+          "tag": "#PP9VRL",
+          "name": "Synthetic name 1156",
+          "badgeUrls": {
+            "small": "https://example.test/asset/280",
+            "large": "https://example.test/asset/281",
+            "medium": "https://example.test/asset/282"
+          },
+          "clanLevel": 22,
+          "stars": 36,
+          "destructionPercentage": 91.0
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20260826T042020.000Z",
+        "teamSize": 10,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/271",
+            "large": "https://example.test/asset/272",
+            "medium": "https://example.test/asset/273"
+          },
+          "clanLevel": 21,
+          "attacks": 18,
+          "stars": 30,
+          "destructionPercentage": 100.0,
+          "expEarned": 228
+        },
+        "opponent": {
+          "tag": "#PP9VRQ",
+          "name": "Synthetic name 1157",
+          "badgeUrls": {
+            "small": "https://example.test/asset/283",
+            "large": "https://example.test/asset/284",
+            "medium": "https://example.test/asset/285"
+          },
+          "clanLevel": 18,
+          "stars": 26,
+          "destructionPercentage": 97.5
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20260824T051128.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/271",
+            "large": "https://example.test/asset/272",
+            "medium": "https://example.test/asset/273"
+          },
+          "clanLevel": 21,
+          "attacks": 25,
+          "stars": 45,
+          "destructionPercentage": 100.0,
+          "expEarned": 298
+        },
+        "opponent": {
+          "tag": "#PP9VRG",
+          "name": "Synthetic name 1158",
+          "badgeUrls": {
+            "small": "https://example.test/asset/286",
+            "large": "https://example.test/asset/287",
+            "medium": "https://example.test/asset/288"
+          },
+          "clanLevel": 25,
+          "stars": 21,
+          "destructionPercentage": 50.6
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20260822T035907.000Z",
+        "teamSize": 10,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/271",
+            "large": "https://example.test/asset/272",
+            "medium": "https://example.test/asset/273"
+          },
+          "clanLevel": 21,
+          "attacks": 14,
+          "stars": 30,
+          "destructionPercentage": 100.0,
+          "expEarned": 221
+        },
+        "opponent": {
+          "tag": "#PP9VRR",
+          "name": "Synthetic name 1159",
+          "badgeUrls": {
+            "small": "https://example.test/asset/289",
+            "large": "https://example.test/asset/290",
+            "medium": "https://example.test/asset/291"
+          },
+          "clanLevel": 13,
+          "stars": 27,
+          "destructionPercentage": 94.4
+        }
+      },
+      {
+        "result": "tie",
+        "endTime": "20260820T042013.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/271",
+            "large": "https://example.test/asset/272",
+            "medium": "https://example.test/asset/273"
+          },
+          "clanLevel": 21,
+          "attacks": 26,
+          "stars": 45,
+          "destructionPercentage": 100.0,
+          "expEarned": 239
+        },
+        "opponent": {
+          "tag": "#PP9VRJ",
+          "name": "Synthetic name 1160",
+          "badgeUrls": {
+            "small": "https://example.test/asset/292",
+            "large": "https://example.test/asset/293",
+            "medium": "https://example.test/asset/294"
+          },
+          "clanLevel": 18,
+          "stars": 45,
+          "destructionPercentage": 100.0
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20260818T035957.000Z",
+        "teamSize": 10,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/271",
+            "large": "https://example.test/asset/272",
+            "medium": "https://example.test/asset/273"
+          },
+          "clanLevel": 21,
+          "attacks": 15,
+          "stars": 30,
+          "destructionPercentage": 100.0,
+          "expEarned": 224
+        },
+        "opponent": {
+          "tag": "#PP9VRC",
+          "name": "Synthetic name 1161",
+          "badgeUrls": {
+            "small": "https://example.test/asset/295",
+            "large": "https://example.test/asset/296",
+            "medium": "https://example.test/asset/297"
+          },
+          "clanLevel": 11,
+          "stars": 25,
+          "destructionPercentage": 93.1
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20260815T172355.000Z",
+        "teamSize": 10,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/271",
+            "large": "https://example.test/asset/272",
+            "medium": "https://example.test/asset/273"
+          },
+          "clanLevel": 21,
+          "attacks": 15,
+          "stars": 30,
+          "destructionPercentage": 100.0,
+          "expEarned": 212
+        },
+        "opponent": {
+          "tag": "#PP9VRU",
+          "name": "Synthetic name 1162",
+          "badgeUrls": {
+            "small": "https://example.test/asset/298",
+            "large": "https://example.test/asset/299",
+            "medium": "https://example.test/asset/300"
+          },
+          "clanLevel": 16,
+          "stars": 15,
+          "destructionPercentage": 55.0
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20260813T175857.000Z",
+        "teamSize": 10,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/271",
+            "large": "https://example.test/asset/272",
+            "medium": "https://example.test/asset/273"
+          },
+          "clanLevel": 21,
+          "attacks": 17,
+          "stars": 30,
+          "destructionPercentage": 100.0,
+          "expEarned": 226
+        },
+        "opponent": {
+          "tag": "#PP9VRV",
+          "name": "Synthetic name 1163",
+          "badgeUrls": {
+            "small": "https://example.test/asset/301",
+            "large": "https://example.test/asset/302",
+            "medium": "https://example.test/asset/303"
+          },
+          "clanLevel": 14,
+          "stars": 23,
+          "destructionPercentage": 83.4
+        }
+      },
+      {
+        "result": null,
+        "endTime": "20260811T010820.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 1,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/271",
+            "large": "https://example.test/asset/272",
+            "medium": "https://example.test/asset/273"
+          },
+          "clanLevel": 21,
+          "attacks": 105,
+          "stars": 333,
+          "destructionPercentage": 682.0,
+          "expEarned": 0
+        },
+        "opponent": {
+          "badgeUrls": {
+            "small": "https://example.test/asset/163",
+            "large": "https://example.test/asset/164",
+            "medium": "https://example.test/asset/165"
+          },
+          "clanLevel": 0,
+          "stars": 278,
+          "destructionPercentage": 0.0
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20260729T164607.000Z",
+        "teamSize": 10,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/304",
+            "large": "https://example.test/asset/305",
+            "medium": "https://example.test/asset/306"
+          },
+          "clanLevel": 20,
+          "attacks": 20,
+          "stars": 30,
+          "destructionPercentage": 100.0,
+          "expEarned": 229
+        },
+        "opponent": {
+          "tag": "#PP9VJ0",
+          "name": "Synthetic name 1164",
+          "badgeUrls": {
+            "small": "https://example.test/asset/307",
+            "large": "https://example.test/asset/308",
+            "medium": "https://example.test/asset/309"
+          },
+          "clanLevel": 9,
+          "stars": 21,
+          "destructionPercentage": 88.7
+        }
+      },
+      {
+        "result": "lose",
+        "endTime": "20260727T173043.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/304",
+            "large": "https://example.test/asset/305",
+            "medium": "https://example.test/asset/306"
+          },
+          "clanLevel": 20,
+          "attacks": 19,
+          "stars": 39,
+          "destructionPercentage": 94.46667,
+          "expEarned": 242
+        },
+        "opponent": {
+          "tag": "#PP9VJ2",
+          "name": "Synthetic name 1165",
+          "badgeUrls": {
+            "small": "https://example.test/asset/310",
+            "large": "https://example.test/asset/311",
+            "medium": "https://example.test/asset/312"
+          },
+          "clanLevel": 17,
+          "stars": 45,
+          "destructionPercentage": 100.0
+        }
+      },
+      {
+        "result": "tie",
+        "endTime": "20260725T171431.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/304",
+            "large": "https://example.test/asset/305",
+            "medium": "https://example.test/asset/306"
+          },
+          "clanLevel": 20,
+          "attacks": 26,
+          "stars": 45,
+          "destructionPercentage": 100.0,
+          "expEarned": 238
+        },
+        "opponent": {
+          "tag": "#PP9VJ8",
+          "name": "Synthetic name 1166",
+          "badgeUrls": {
+            "small": "https://example.test/asset/313",
+            "large": "https://example.test/asset/314",
+            "medium": "https://example.test/asset/315"
+          },
+          "clanLevel": 13,
+          "stars": 45,
+          "destructionPercentage": 100.0
+        }
+      },
+      {
+        "result": "lose",
+        "endTime": "20260723T170731.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/304",
+            "large": "https://example.test/asset/305",
+            "medium": "https://example.test/asset/306"
+          },
+          "clanLevel": 20,
+          "attacks": 25,
+          "stars": 40,
+          "destructionPercentage": 92.53333,
+          "expEarned": 240
+        },
+        "opponent": {
+          "tag": "#PP9VJ9",
+          "name": "Synthetic name 1167",
+          "badgeUrls": {
+            "small": "https://example.test/asset/316",
+            "large": "https://example.test/asset/317",
+            "medium": "https://example.test/asset/318"
+          },
+          "clanLevel": 2,
+          "stars": 43,
+          "destructionPercentage": 98.933334
+        }
+      },
+      {
+        "result": "tie",
+        "endTime": "20260721T170038.000Z",
+        "teamSize": 20,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/304",
+            "large": "https://example.test/asset/305",
+            "medium": "https://example.test/asset/306"
+          },
+          "clanLevel": 20,
+          "attacks": 35,
+          "stars": 60,
+          "destructionPercentage": 100.0,
+          "expEarned": 318
+        },
+        "opponent": {
+          "tag": "#PP9VJP",
+          "name": "Synthetic name 1168",
+          "badgeUrls": {
+            "small": "https://example.test/asset/319",
+            "large": "https://example.test/asset/320",
+            "medium": "https://example.test/asset/321"
+          },
+          "clanLevel": 25,
+          "stars": 60,
+          "destructionPercentage": 100.0
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20260719T033803.000Z",
+        "teamSize": 10,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/304",
+            "large": "https://example.test/asset/305",
+            "medium": "https://example.test/asset/306"
+          },
+          "clanLevel": 20,
+          "attacks": 19,
+          "stars": 30,
+          "destructionPercentage": 100.0,
+          "expEarned": 227
+        },
+        "opponent": {
+          "tag": "#PP9VJY",
+          "name": "Synthetic name 1169",
+          "badgeUrls": {
+            "small": "https://example.test/asset/322",
+            "large": "https://example.test/asset/323",
+            "medium": "https://example.test/asset/324"
+          },
+          "clanLevel": 10,
+          "stars": 24,
+          "destructionPercentage": 88.0
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20260717T041533.000Z",
+        "teamSize": 10,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/304",
+            "large": "https://example.test/asset/305",
+            "medium": "https://example.test/asset/306"
+          },
+          "clanLevel": 20,
+          "attacks": 17,
+          "stars": 30,
+          "destructionPercentage": 100.0,
+          "expEarned": 227
+        },
+        "opponent": {
+          "tag": "#PP9VJL",
+          "name": "Synthetic name 1170",
+          "badgeUrls": {
+            "small": "https://example.test/asset/325",
+            "large": "https://example.test/asset/326",
+            "medium": "https://example.test/asset/327"
+          },
+          "clanLevel": 19,
+          "stars": 27,
+          "destructionPercentage": 97.7
+        }
+      },
+      {
+        "result": "lose",
+        "endTime": "20260715T031226.000Z",
+        "teamSize": 20,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/304",
+            "large": "https://example.test/asset/305",
+            "medium": "https://example.test/asset/306"
+          },
+          "clanLevel": 20,
+          "attacks": 26,
+          "stars": 54,
+          "destructionPercentage": 93.35,
+          "expEarned": 303
+        },
+        "opponent": {
+          "tag": "#PP9VJQ",
+          "name": "Synthetic name 1171",
+          "badgeUrls": {
+            "small": "https://example.test/asset/328",
+            "large": "https://example.test/asset/329",
+            "medium": "https://example.test/asset/330"
+          },
+          "clanLevel": 24,
+          "stars": 60,
+          "destructionPercentage": 100.0
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20260712T171623.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/304",
+            "large": "https://example.test/asset/305",
+            "medium": "https://example.test/asset/306"
+          },
+          "clanLevel": 20,
+          "attacks": 21,
+          "stars": 44,
+          "destructionPercentage": 99.86667,
+          "expEarned": 288
+        },
+        "opponent": {
+          "tag": "#PP9VJG",
+          "name": "Synthetic name 1172",
+          "badgeUrls": {
+            "small": "https://example.test/asset/331",
+            "large": "https://example.test/asset/332",
+            "medium": "https://example.test/asset/333"
+          },
+          "clanLevel": 16,
+          "stars": 29,
+          "destructionPercentage": 71.6
+        }
+      },
+      {
+        "result": null,
+        "endTime": "20260709T182211.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 1,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/304",
+            "large": "https://example.test/asset/305",
+            "medium": "https://example.test/asset/306"
+          },
+          "clanLevel": 20,
+          "attacks": 103,
+          "stars": 313,
+          "destructionPercentage": 668.3333,
+          "expEarned": 0
+        },
+        "opponent": {
+          "badgeUrls": {
+            "small": "https://example.test/asset/163",
+            "large": "https://example.test/asset/164",
+            "medium": "https://example.test/asset/165"
+          },
+          "clanLevel": 0,
+          "stars": 291,
+          "destructionPercentage": 0.0
+        }
+      },
+      {
+        "result": "tie",
+        "endTime": "20260629T172647.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/304",
+            "large": "https://example.test/asset/305",
+            "medium": "https://example.test/asset/306"
+          },
+          "clanLevel": 20,
+          "attacks": 24,
+          "stars": 45,
+          "destructionPercentage": 100.0,
+          "expEarned": 243
+        },
+        "opponent": {
+          "tag": "#PP9VJR",
+          "name": "Synthetic name 1173",
+          "badgeUrls": {
+            "small": "https://example.test/asset/334",
+            "large": "https://example.test/asset/335",
+            "medium": "https://example.test/asset/336"
+          },
+          "clanLevel": 14,
+          "stars": 45,
+          "destructionPercentage": 100.0
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20260627T171509.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/304",
+            "large": "https://example.test/asset/305",
+            "medium": "https://example.test/asset/306"
+          },
+          "clanLevel": 20,
+          "attacks": 25,
+          "stars": 45,
+          "destructionPercentage": 100.0,
+          "expEarned": 299
+        },
+        "opponent": {
+          "tag": "#PP9VJJ",
+          "name": "Synthetic name 1174",
+          "badgeUrls": {
+            "small": "https://example.test/asset/337",
+            "large": "https://example.test/asset/338",
+            "medium": "https://example.test/asset/339"
+          },
+          "clanLevel": 32,
+          "stars": 30,
+          "destructionPercentage": 71.933334
+        }
+      },
+      {
+        "result": null,
+        "endTime": "20260625T073810.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 1,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/304",
+            "large": "https://example.test/asset/305",
+            "medium": "https://example.test/asset/306"
+          },
+          "clanLevel": 20,
+          "attacks": 103,
+          "stars": 288,
+          "destructionPercentage": 642.2,
+          "expEarned": 0
+        },
+        "opponent": {
+          "badgeUrls": {
+            "small": "https://example.test/asset/163",
+            "large": "https://example.test/asset/164",
+            "medium": "https://example.test/asset/165"
+          },
+          "clanLevel": 0,
+          "stars": 282,
+          "destructionPercentage": 0.0
+        }
+      },
+      {
+        "result": "tie",
+        "endTime": "20260614T175257.000Z",
+        "teamSize": 20,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/304",
+            "large": "https://example.test/asset/305",
+            "medium": "https://example.test/asset/306"
+          },
+          "clanLevel": 20,
+          "attacks": 33,
+          "stars": 60,
+          "destructionPercentage": 100.0,
+          "expEarned": 301
+        },
+        "opponent": {
+          "tag": "#PP9VJC",
+          "name": "Synthetic name 1175",
+          "badgeUrls": {
+            "small": "https://example.test/asset/340",
+            "large": "https://example.test/asset/341",
+            "medium": "https://example.test/asset/342"
+          },
+          "clanLevel": 31,
+          "stars": 60,
+          "destructionPercentage": 100.0
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20260612T170433.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/304",
+            "large": "https://example.test/asset/305",
+            "medium": "https://example.test/asset/306"
+          },
+          "clanLevel": 20,
+          "attacks": 27,
+          "stars": 45,
+          "destructionPercentage": 100.0,
+          "expEarned": 300
+        },
+        "opponent": {
+          "tag": "#PP9VJU",
+          "name": "Synthetic name 1176",
+          "badgeUrls": {
+            "small": "https://example.test/asset/343",
+            "large": "https://example.test/asset/344",
+            "medium": "https://example.test/asset/345"
+          },
+          "clanLevel": 28,
+          "stars": 40,
+          "destructionPercentage": 93.6
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20260609T182826.000Z",
+        "teamSize": 15,
+        "attacksPerMember": 1,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/304",
+            "large": "https://example.test/asset/305",
+            "medium": "https://example.test/asset/306"
+          },
+          "clanLevel": 20,
+          "attacks": 104,
+          "stars": 335,
+          "destructionPercentage": 666.6667,
+          "expEarned": 0
+        },
+        "opponent": {
+          "badgeUrls": {
+            "small": "https://example.test/asset/163",
+            "large": "https://example.test/asset/164",
+            "medium": "https://example.test/asset/165"
+          },
+          "clanLevel": 0,
+          "stars": 206,
+          "destructionPercentage": 0.0
+        }
+      },
+      {
+        "result": "tie",
+        "endTime": "20260530T034615.000Z",
+        "teamSize": 20,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/304",
+            "large": "https://example.test/asset/305",
+            "medium": "https://example.test/asset/306"
+          },
+          "clanLevel": 20,
+          "attacks": 36,
+          "stars": 60,
+          "destructionPercentage": 100.0,
+          "expEarned": 307
+        },
+        "opponent": {
+          "tag": "#PP9VJV",
+          "name": "Synthetic name 1177",
+          "badgeUrls": {
+            "small": "https://example.test/asset/346",
+            "large": "https://example.test/asset/347",
+            "medium": "https://example.test/asset/348"
+          },
+          "clanLevel": 27,
+          "stars": 60,
+          "destructionPercentage": 100.0
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20260527T190703.000Z",
+        "teamSize": 20,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/304",
+            "large": "https://example.test/asset/305",
+            "medium": "https://example.test/asset/306"
+          },
+          "clanLevel": 20,
+          "attacks": 38,
+          "stars": 60,
+          "destructionPercentage": 100.0,
+          "expEarned": 352
+        },
+        "opponent": {
+          "tag": "#PP9VC0",
+          "name": "Synthetic name 1178",
+          "badgeUrls": {
+            "small": "https://example.test/asset/349",
+            "large": "https://example.test/asset/350",
+            "medium": "https://example.test/asset/351"
+          },
+          "clanLevel": 19,
+          "stars": 43,
+          "destructionPercentage": 80.9
+        }
+      },
+      {
+        "result": "win",
+        "endTime": "20260525T170745.000Z",
+        "teamSize": 20,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/304",
+            "large": "https://example.test/asset/305",
+            "medium": "https://example.test/asset/306"
+          },
+          "clanLevel": 20,
+          "attacks": 40,
+          "stars": 60,
+          "destructionPercentage": 100.0,
+          "expEarned": 360
+        },
+        "opponent": {
+          "tag": "#PP9VC2",
+          "name": "Synthetic name 1179",
+          "badgeUrls": {
+            "small": "https://example.test/asset/352",
+            "large": "https://example.test/asset/353",
+            "medium": "https://example.test/asset/354"
+          },
+          "clanLevel": 23,
+          "stars": 51,
+          "destructionPercentage": 91.0
+        }
+      },
+      {
+        "result": "tie",
+        "endTime": "20260523T172611.000Z",
+        "teamSize": 20,
+        "attacksPerMember": 2,
+        "battleModifier": "none",
+        "clan": {
+          "tag": "#PP9R22",
+          "name": "Synthetic name 228",
+          "badgeUrls": {
+            "small": "https://example.test/asset/304",
+            "large": "https://example.test/asset/305",
+            "medium": "https://example.test/asset/306"
+          },
+          "clanLevel": 20,
+          "attacks": 34,
+          "stars": 60,
+          "destructionPercentage": 100.0,
+          "expEarned": 317
+        },
+        "opponent": {
+          "tag": "#PP9VC8",
+          "name": "Synthetic name 1180",
+          "badgeUrls": {
+            "small": "https://example.test/asset/355",
+            "large": "https://example.test/asset/356",
+            "medium": "https://example.test/asset/357"
+          },
+          "clanLevel": 20,
+          "stars": 60,
+          "destructionPercentage": 100.0
+        }
+      }
+    ],
+    "paging": {
+      "cursors": {
+        "after": "eyJwb3MiOjUwfQ"
+      }
+    }
+  }
+}

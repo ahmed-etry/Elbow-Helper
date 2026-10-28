@@ -1,0 +1,209 @@
+{
+  "kind": "current_war",
+  "scope": "#PP9RR0",
+  "body": {
+    "state": "warEnded",
+    "teamSize": 5,
+    "attacksPerMember": 2,
+    "battleModifier": "none",
+    "preparationStartTime": "20261024T034220.000Z",
+    "startTime": "20261025T024220.000Z",
+    "endTime": "20261026T024220.000Z",
+    "clan": {
+      "tag": "#PP9RR0",
+      "name": "Synthetic name 403",
+      "badgeUrls": {
+        "small": "https://example.test/asset/124",
+        "large": "https://example.test/asset/125",
+        "medium": "https://example.test/asset/126"
+      },
+      "clanLevel": 12,
+      "attacks": 0,
+      "stars": 0,
+      "destructionPercentage": 0.0,
+      "members": [
+        {
+          "tag": "#PP9RR9",
+          "name": "Synthetic name 407",
+          "townhallLevel": 12,
+          "mapPosition": 2,
+          "opponentAttacks": 1,
+          "bestOpponentAttack": {
+            "attackerTag": "#PP9JJ8",
+            "defenderTag": "#PP9RR9",
+            "stars": 3,
+            "destructionPercentage": 100,
+            "order": 2,
+            "duration": 97
+          }
+        },
+        {
+          "tag": "#PP9RRL",
+          "name": "Synthetic name 410",
+          "townhallLevel": 9,
+          "mapPosition": 3,
+          "opponentAttacks": 1,
+          "bestOpponentAttack": {
+            "attackerTag": "#PP9JJ9",
+            "defenderTag": "#PP9RRL",
+            "stars": 3,
+            "destructionPercentage": 100,
+            "order": 3,
+            "duration": 60
+          }
+        },
+        {
+          "tag": "#PP9RJ0",
+          "name": "Synthetic name 424",
+          "townhallLevel": 6,
+          "mapPosition": 4,
+          "opponentAttacks": 1,
+          "bestOpponentAttack": {
+            "attackerTag": "#PP9JJP",
+            "defenderTag": "#PP9RJ0",
+            "stars": 3,
+            "destructionPercentage": 100,
+            "order": 4,
+            "duration": 61
+          }
+        },
+        {
+          "tag": "#PP9RR8",
+          "name": "Synthetic name 406",
+          "townhallLevel": 13,
+          "mapPosition": 1,
+          "opponentAttacks": 1,
+          "bestOpponentAttack": {
+            "attackerTag": "#PP9JJ8",
+            "defenderTag": "#PP9RR8",
+            "stars": 3,
+            "destructionPercentage": 100,
+            "order": 1,
+            "duration": 96
+          }
+        },
+        {
+          "tag": "#PP9RJ9",
+          "name": "Synthetic name 428",
+          "townhallLevel": 2,
+          "mapPosition": 5,
+          "opponentAttacks": 2,
+          "bestOpponentAttack": {
+            "attackerTag": "#PP9JJP",
+            "defenderTag": "#PP9RJ9",
+            "stars": 3,
+            "destructionPercentage": 100,
+            "order": 5,
+            "duration": 17
+          }
+        }
+      ]
+    },
+    "opponent": {
+      "tag": "#PP9JJY",
+      "name": "Synthetic name 638",
+      "badgeUrls": {
+        "small": "https://example.test/asset/172",
+        "large": "https://example.test/asset/173",
+        "medium": "https://example.test/asset/174"
+      },
+      "clanLevel": 1,
+      "attacks": 6,
+      "stars": 15,
+      "destructionPercentage": 100.0,
+      "members": [
+        {
+          "tag": "#PP9JJP",
+          "name": "Synthetic name 639",
+          "townhallLevel": 6,
+          "mapPosition": 4,
+          "attacks": [
+            {
+              "attackerTag": "#PP9JJP",
+              "defenderTag": "#PP9RJ0",
+              "stars": 3,
+              "destructionPercentage": 100,
+              "order": 4,
+              "duration": 61
+            },
+            {
+              "attackerTag": "#PP9JJP",
+              "defenderTag": "#PP9RJ9",
+              "stars": 3,
+              "destructionPercentage": 100,
+              "order": 5,
+              "duration": 17
+            }
+          ],
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9JJL",
+          "name": "Synthetic name 640",
+          "townhallLevel": 9,
+          "mapPosition": 3,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9JJQ",
+          "name": "Synthetic name 641",
+          "townhallLevel": 6,
+          "mapPosition": 5,
+          "attacks": [
+            {
+              "attackerTag": "#PP9JJQ",
+              "defenderTag": "#PP9RJ9",
+              "stars": 3,
+              "destructionPercentage": 100,
+              "order": 6,
+              "duration": 15
+            }
+          ],
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9JJ9",
+          "name": "Synthetic name 642",
+          "townhallLevel": 11,
+          "mapPosition": 2,
+          "attacks": [
+            {
+              "attackerTag": "#PP9JJ9",
+              "defenderTag": "#PP9RRL",
+              "stars": 3,
+              "destructionPercentage": 100,
+              "order": 3,
+              "duration": 60
+            }
+          ],
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9JJ8",
+          "name": "Synthetic name 643",
+          "townhallLevel": 16,
+          "mapPosition": 1,
+          "attacks": [
+            {
+              "attackerTag": "#PP9JJ8",
+              "defenderTag": "#PP9RR8",
+              "stars": 3,
+              "destructionPercentage": 100,
+              "order": 1,
+              "duration": 96
+            },
+            {
+              "attackerTag": "#PP9JJ8",
+              "defenderTag": "#PP9RR9",
+              "stars": 3,
+              "destructionPercentage": 100,
+              "order": 2,
+              "duration": 97
+            }
+          ],
+          "opponentAttacks": 0
+        }
+      ]
+    }
+  }
+}

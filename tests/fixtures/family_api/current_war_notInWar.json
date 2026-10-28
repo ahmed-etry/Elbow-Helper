@@ -1,0 +1,29 @@
+{
+  "kind": "current_war",
+  "scope": "#PP9RP8",
+  "body": {
+    "state": "notInWar",
+    "clan": {
+      "badgeUrls": {
+        "small": "https://example.test/asset/163",
+        "large": "https://example.test/asset/164",
+        "medium": "https://example.test/asset/165"
+      },
+      "clanLevel": 0,
+      "attacks": 0,
+      "stars": 0,
+      "destructionPercentage": 0.0
+    },
+    "opponent": {
+      "badgeUrls": {
+        "small": "https://example.test/asset/163",
+        "large": "https://example.test/asset/164",
+        "medium": "https://example.test/asset/165"
+      },
+      "clanLevel": 0,
+      "attacks": 0,
+      "stars": 0,
+      "destructionPercentage": 0.0
+    }
+  }
+}
