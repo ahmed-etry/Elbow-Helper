@@ -18,6 +18,17 @@ def now_us() -> int:
     return time.time_ns() // 1000
 
 
+def _queued(collector):
+    """Players and wars queue on their own checkpoints instead of item rows."""
+    if collector == "players":
+        from . import player_state
+        return player_state
+    if collector == "wars":
+        from . import war_state
+        return war_state
+    return None
+
+
 class FamilyStore:
     """One worker-thread serialization boundary for this database's writes.
 
@@ -71,9 +82,8 @@ class FamilyStore:
                 "INSERT INTO collection_runs(collector,scope_kind,scheduled_at,started_at,status,expected) "
                 "VALUES (?,?,?,?, 'running',?)", (collector, scope_kind, at, at, len(specs)),
             ).lastrowid
-            if collector == "players":
-                from .player_state import queue
-                queue(connection, run, specs, at)
+            if state := _queued(collector):
+                state.queue(connection, run, specs, at)
                 return run
             connection.executemany(
                 "INSERT INTO collection_items(run_id,ordinal,source_kind,scope_id,status,started_at) "
@@ -115,9 +125,8 @@ class FamilyStore:
     def _requested(connection, run, ordinal):
         with sqlite_transaction(connection, immediate=True):
             collector = connection.execute("SELECT collector FROM collection_runs WHERE id=?", (run,)).fetchone()[0]
-            if collector == "players":
-                from .player_state import requested
-                requested(connection, run, ordinal, now_us())
+            if state := _queued(collector):
+                state.requested(connection, run, ordinal, now_us())
                 return
             connection.execute(
                 "UPDATE collection_items SET status='running',started_at=? "
@@ -144,9 +153,8 @@ class FamilyStore:
     @staticmethod
     def _finish(connection, run, at, *, interrupted=False):
         collector = connection.execute("SELECT collector FROM collection_runs WHERE id=?", (run,)).fetchone()[0]
-        if collector == "players":
-            from .player_state import finish
-            return finish(connection, run, at, interrupted=interrupted)
+        if state := _queued(collector):
+            return state.finish(connection, run, at, interrupted=interrupted)
         counts = {row["status"]: row["n"] for row in connection.execute(
             "SELECT status,COUNT(*) AS n FROM collection_items WHERE run_id=? GROUP BY status", (run,),
         )}

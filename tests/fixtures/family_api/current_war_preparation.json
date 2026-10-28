@@ -1,0 +1,253 @@
+{
+  "kind": "current_war",
+  "scope": "#PP9R22",
+  "body": {
+    "state": "preparation",
+    "teamSize": 15,
+    "attacksPerMember": 2,
+    "battleModifier": "none",
+    "preparationStartTime": "20261028T083815.000Z",
+    "startTime": "20261029T073815.000Z",
+    "endTime": "20261030T073815.000Z",
+    "clan": {
+      "tag": "#PP9R22",
+      "name": "Synthetic name 228",
+      "badgeUrls": {
+        "small": "https://example.test/asset/34",
+        "large": "https://example.test/asset/35",
+        "medium": "https://example.test/asset/36"
+      },
+      "clanLevel": 21,
+      "attacks": 0,
+      "stars": 0,
+      "destructionPercentage": 0.0,
+      "members": [
+        {
+          "tag": "#PP9R82",
+          "name": "Synthetic name 256",
+          "townhallLevel": 18,
+          "mapPosition": 8,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9R8J",
+          "name": "Synthetic name 272",
+          "townhallLevel": 17,
+          "mapPosition": 15,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9R2J",
+          "name": "Synthetic name 246",
+          "townhallLevel": 18,
+          "mapPosition": 4,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9R2P",
+          "name": "Synthetic name 236",
+          "townhallLevel": 18,
+          "mapPosition": 2,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9R28",
+          "name": "Synthetic name 231",
+          "townhallLevel": 18,
+          "mapPosition": 6,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9R2R",
+          "name": "Synthetic name 244",
+          "townhallLevel": 18,
+          "mapPosition": 7,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9R2C",
+          "name": "Synthetic name 249",
+          "townhallLevel": 18,
+          "mapPosition": 5,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9R2V",
+          "name": "Synthetic name 252",
+          "townhallLevel": 18,
+          "mapPosition": 9,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9R8G",
+          "name": "Synthetic name 268",
+          "townhallLevel": 16,
+          "mapPosition": 14,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9R8Q",
+          "name": "Synthetic name 266",
+          "townhallLevel": 18,
+          "mapPosition": 10,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9R29",
+          "name": "Synthetic name 234",
+          "townhallLevel": 18,
+          "mapPosition": 1,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9R92",
+          "name": "Synthetic name 279",
+          "townhallLevel": 18,
+          "mapPosition": 11,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9R8P",
+          "name": "Synthetic name 260",
+          "townhallLevel": 18,
+          "mapPosition": 13,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9R88",
+          "name": "Synthetic name 257",
+          "townhallLevel": 18,
+          "mapPosition": 3,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9R89",
+          "name": "Synthetic name 258",
+          "townhallLevel": 17,
+          "mapPosition": 12,
+          "opponentAttacks": 0
+        }
+      ]
+    },
+    "opponent": {
+      "tag": "#PP9JQ2",
+      "name": "Synthetic name 595",
+      "badgeUrls": {
+        "small": "https://example.test/asset/166",
+        "large": "https://example.test/asset/167",
+        "medium": "https://example.test/asset/168"
+      },
+      "clanLevel": 30,
+      "attacks": 0,
+      "stars": 0,
+      "destructionPercentage": 0.0,
+      "members": [
+        {
+          "tag": "#PP9JQ8",
+          "name": "Synthetic name 596",
+          "townhallLevel": 18,
+          "mapPosition": 4,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9JQ9",
+          "name": "Synthetic name 597",
+          "townhallLevel": 17,
+          "mapPosition": 12,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9JQP",
+          "name": "Synthetic name 598",
+          "townhallLevel": 18,
+          "mapPosition": 3,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9JQY",
+          "name": "Synthetic name 599",
+          "townhallLevel": 18,
+          "mapPosition": 7,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9JQL",
+          "name": "Synthetic name 600",
+          "townhallLevel": 18,
+          "mapPosition": 8,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9JQQ",
+          "name": "Synthetic name 601",
+          "townhallLevel": 18,
+          "mapPosition": 5,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9JQG",
+          "name": "Synthetic name 602",
+          "townhallLevel": 18,
+          "mapPosition": 11,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9JQR",
+          "name": "Synthetic name 603",
+          "townhallLevel": 18,
+          "mapPosition": 10,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9JQJ",
+          "name": "Synthetic name 604",
+          "townhallLevel": 18,
+          "mapPosition": 1,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9JQC",
+          "name": "Synthetic name 605",
+          "townhallLevel": 18,
+          "mapPosition": 6,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9JQU",
+          "name": "Synthetic name 606",
+          "townhallLevel": 18,
+          "mapPosition": 9,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9JQV",
+          "name": "Synthetic name 607",
+          "townhallLevel": 18,
+          "mapPosition": 2,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9JG0",
+          "name": "Synthetic name 608",
+          "townhallLevel": 16,
+          "mapPosition": 14,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9JG2",
+          "name": "Synthetic name 609",
+          "townhallLevel": 17,
+          "mapPosition": 13,
+          "opponentAttacks": 0
+        },
+        {
+          "tag": "#PP9JG8",
+          "name": "Synthetic name 610",
+          "townhallLevel": 15,
+          "mapPosition": 15,
+          "opponentAttacks": 0
+        }
+      ]
+    }
+  }
+}

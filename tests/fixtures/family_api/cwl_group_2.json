@@ -1,0 +1,1264 @@
+{
+  "kind": "cwl_group",
+  "scope": "#PP9R0Q",
+  "body": {
+    "state": "ended",
+    "season": "2026-10-01",
+    "clans": [
+      {
+        "tag": "#PP9UYJ",
+        "name": "Synthetic name 939",
+        "clanLevel": 24,
+        "badgeUrls": {
+          "small": "https://example.test/asset/199",
+          "large": "https://example.test/asset/200",
+          "medium": "https://example.test/asset/201"
+        },
+        "members": [
+          {
+            "tag": "#PP9UYC",
+            "name": "Synthetic name 940",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UYU",
+            "name": "Synthetic name 941",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UYV",
+            "name": "Synthetic name 942",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UL0",
+            "name": "Synthetic name 943",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UL2",
+            "name": "Synthetic name 944",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UL8",
+            "name": "Synthetic name 945",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UL9",
+            "name": "Synthetic name 946",
+            "townHallLevel": 11
+          },
+          {
+            "tag": "#PP9ULP",
+            "name": "Synthetic name 947",
+            "townHallLevel": 14
+          },
+          {
+            "tag": "#PP9ULY",
+            "name": "Synthetic name 948",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9ULL",
+            "name": "Synthetic name 949",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9ULQ",
+            "name": "Synthetic name 950",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9ULG",
+            "name": "Synthetic name 951",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9ULR",
+            "name": "Synthetic name 952",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9ULJ",
+            "name": "Synthetic name 953",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9ULC",
+            "name": "Synthetic name 954",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9ULU",
+            "name": "Synthetic name 274",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9ULV",
+            "name": "Synthetic name 955",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UQ0",
+            "name": "Synthetic name 956",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UQ2",
+            "name": "Synthetic name 957",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UQ8",
+            "name": "Synthetic name 958",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UQ9",
+            "name": "Synthetic name 959",
+            "townHallLevel": 18
+          }
+        ]
+      },
+      {
+        "tag": "#PP9UQP",
+        "name": "Synthetic name 960",
+        "clanLevel": 41,
+        "badgeUrls": {
+          "small": "https://example.test/asset/202",
+          "large": "https://example.test/asset/203",
+          "medium": "https://example.test/asset/204"
+        },
+        "members": [
+          {
+            "tag": "#PP9UQY",
+            "name": "Synthetic name 961",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UQL",
+            "name": "Synthetic name 962",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UQQ",
+            "name": "Synthetic name 963",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UQG",
+            "name": "Synthetic name 964",
+            "townHallLevel": 17
+          },
+          {
+            "tag": "#PP9UQR",
+            "name": "Synthetic name 965",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UQJ",
+            "name": "Synthetic name 966",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UQC",
+            "name": "Synthetic name 967",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UQU",
+            "name": "Synthetic name 968",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UQV",
+            "name": "Synthetic name 969",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UG0",
+            "name": "Synthetic name 970",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UG2",
+            "name": "Synthetic name 971",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UG8",
+            "name": "Synthetic name 972",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UG9",
+            "name": "Synthetic name 973",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UGP",
+            "name": "Synthetic name 974",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UGY",
+            "name": "Synthetic name 975",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UGL",
+            "name": "Synthetic name 976",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UGQ",
+            "name": "Synthetic name 977",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UGG",
+            "name": "Synthetic name 978",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UGR",
+            "name": "Synthetic name 979",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UGJ",
+            "name": "Synthetic name 980",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UGC",
+            "name": "Synthetic name 981",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UGU",
+            "name": "Synthetic name 982",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UGV",
+            "name": "Synthetic name 983",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UR0",
+            "name": "Synthetic name 984",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UR2",
+            "name": "Synthetic name 985",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UR8",
+            "name": "Synthetic name 986",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UR9",
+            "name": "Synthetic name 987",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9URP",
+            "name": "Synthetic name 988",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9URY",
+            "name": "Synthetic name 989",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9URL",
+            "name": "Synthetic name 990",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9URQ",
+            "name": "Synthetic name 991",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9URG",
+            "name": "Synthetic name 992",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9URR",
+            "name": "Synthetic name 993",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9URJ",
+            "name": "Synthetic name 994",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9URC",
+            "name": "Synthetic name 995",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9URU",
+            "name": "Synthetic name 996",
+            "townHallLevel": 18
+          }
+        ]
+      },
+      {
+        "tag": "#PP9URV",
+        "name": "Synthetic name 997",
+        "clanLevel": 16,
+        "badgeUrls": {
+          "small": "https://example.test/asset/205",
+          "large": "https://example.test/asset/206",
+          "medium": "https://example.test/asset/207"
+        },
+        "members": [
+          {
+            "tag": "#PP9UJ0",
+            "name": "Synthetic name 998",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UJ2",
+            "name": "Synthetic name 999",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UJ8",
+            "name": "Synthetic name 1000",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UJ9",
+            "name": "Synthetic name 1001",
+            "townHallLevel": 10
+          },
+          {
+            "tag": "#PP9UJP",
+            "name": "Synthetic name 1002",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UJY",
+            "name": "Synthetic name 1003",
+            "townHallLevel": 17
+          },
+          {
+            "tag": "#PP9UJL",
+            "name": "Synthetic name 1004",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UJQ",
+            "name": "Synthetic name 1005",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UJG",
+            "name": "Synthetic name 1006",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UJR",
+            "name": "Synthetic name 1007",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UJJ",
+            "name": "Synthetic name 1008",
+            "townHallLevel": 17
+          },
+          {
+            "tag": "#PP9UJC",
+            "name": "Synthetic name 1009",
+            "townHallLevel": 16
+          },
+          {
+            "tag": "#PP9UJU",
+            "name": "Synthetic name 1010",
+            "townHallLevel": 3
+          },
+          {
+            "tag": "#PP9UJV",
+            "name": "Synthetic name 1011",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UC0",
+            "name": "Synthetic name 1012",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UC2",
+            "name": "Synthetic name 1013",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UC8",
+            "name": "Synthetic name 1014",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UC9",
+            "name": "Synthetic name 1015",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UCP",
+            "name": "Synthetic name 1016",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UCY",
+            "name": "Synthetic name 1017",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UCL",
+            "name": "Synthetic name 1018",
+            "townHallLevel": 18
+          }
+        ]
+      },
+      {
+        "tag": "#PP9UCQ",
+        "name": "Synthetic name 1019",
+        "clanLevel": 21,
+        "badgeUrls": {
+          "small": "https://example.test/asset/208",
+          "large": "https://example.test/asset/209",
+          "medium": "https://example.test/asset/210"
+        },
+        "members": [
+          {
+            "tag": "#PP9UCG",
+            "name": "Synthetic name 1020",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UCR",
+            "name": "Synthetic name 1021",
+            "townHallLevel": 13
+          },
+          {
+            "tag": "#PP9UCJ",
+            "name": "Synthetic name 1022",
+            "townHallLevel": 17
+          },
+          {
+            "tag": "#PP9UCC",
+            "name": "Synthetic name 1023",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UCU",
+            "name": "Synthetic name 1024",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UCV",
+            "name": "Synthetic name 1025",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UU0",
+            "name": "Synthetic name 1026",
+            "townHallLevel": 17
+          },
+          {
+            "tag": "#PP9UU2",
+            "name": "Synthetic name 1027",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UU8",
+            "name": "Synthetic name 1028",
+            "townHallLevel": 16
+          },
+          {
+            "tag": "#PP9UU9",
+            "name": "Synthetic name 1029",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UUP",
+            "name": "Synthetic name 1030",
+            "townHallLevel": 15
+          },
+          {
+            "tag": "#PP9UUY",
+            "name": "Synthetic name 1031",
+            "townHallLevel": 17
+          },
+          {
+            "tag": "#PP9UUL",
+            "name": "Synthetic name 1032",
+            "townHallLevel": 16
+          },
+          {
+            "tag": "#PP9UUQ",
+            "name": "Synthetic name 1033",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UUG",
+            "name": "Synthetic name 1034",
+            "townHallLevel": 16
+          },
+          {
+            "tag": "#PP9UUR",
+            "name": "Synthetic name 1035",
+            "townHallLevel": 17
+          },
+          {
+            "tag": "#PP9UUJ",
+            "name": "Synthetic name 1036",
+            "townHallLevel": 14
+          },
+          {
+            "tag": "#PP9UUC",
+            "name": "Synthetic name 1037",
+            "townHallLevel": 17
+          },
+          {
+            "tag": "#PP9UUU",
+            "name": "Synthetic name 1038",
+            "townHallLevel": 14
+          },
+          {
+            "tag": "#PP9UUV",
+            "name": "Synthetic name 1039",
+            "townHallLevel": 17
+          },
+          {
+            "tag": "#PP9UV0",
+            "name": "Synthetic name 1040",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UV2",
+            "name": "Synthetic name 1041",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UV8",
+            "name": "Synthetic name 1042",
+            "townHallLevel": 17
+          },
+          {
+            "tag": "#PP9UV9",
+            "name": "Synthetic name 1043",
+            "townHallLevel": 15
+          },
+          {
+            "tag": "#PP9UVP",
+            "name": "Synthetic name 1044",
+            "townHallLevel": 16
+          },
+          {
+            "tag": "#PP9UVY",
+            "name": "Synthetic name 1045",
+            "townHallLevel": 16
+          },
+          {
+            "tag": "#PP9UVL",
+            "name": "Synthetic name 1046",
+            "townHallLevel": 17
+          },
+          {
+            "tag": "#PP9UVQ",
+            "name": "Synthetic name 1047",
+            "townHallLevel": 16
+          },
+          {
+            "tag": "#PP9UVG",
+            "name": "Synthetic name 1048",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UVR",
+            "name": "Synthetic name 1049",
+            "townHallLevel": 13
+          },
+          {
+            "tag": "#PP9UVJ",
+            "name": "Synthetic name 1050",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9UVC",
+            "name": "Synthetic name 1051",
+            "townHallLevel": 16
+          },
+          {
+            "tag": "#PP9UVU",
+            "name": "Synthetic name 1052",
+            "townHallLevel": 13
+          },
+          {
+            "tag": "#PP9UVV",
+            "name": "Synthetic name 1053",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V00",
+            "name": "Synthetic name 1054",
+            "townHallLevel": 13
+          },
+          {
+            "tag": "#PP9V02",
+            "name": "Synthetic name 1036",
+            "townHallLevel": 17
+          },
+          {
+            "tag": "#PP9V08",
+            "name": "Synthetic name 1055",
+            "townHallLevel": 15
+          },
+          {
+            "tag": "#PP9V09",
+            "name": "Synthetic name 1056",
+            "townHallLevel": 14
+          },
+          {
+            "tag": "#PP9V0P",
+            "name": "Synthetic name 1057",
+            "townHallLevel": 17
+          },
+          {
+            "tag": "#PP9V0Y",
+            "name": "Synthetic name 1058",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V0L",
+            "name": "Synthetic name 1059",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V0Q",
+            "name": "Synthetic name 1060",
+            "townHallLevel": 16
+          },
+          {
+            "tag": "#PP9V0G",
+            "name": "Synthetic name 1061",
+            "townHallLevel": 9
+          },
+          {
+            "tag": "#PP9V0R",
+            "name": "Synthetic name 1062",
+            "townHallLevel": 11
+          },
+          {
+            "tag": "#PP9V0J",
+            "name": "Synthetic name 1063",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V0C",
+            "name": "Synthetic name 1064",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V0U",
+            "name": "Synthetic name 1065",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V0V",
+            "name": "Synthetic name 1066",
+            "townHallLevel": 17
+          },
+          {
+            "tag": "#PP9V20",
+            "name": "Synthetic name 1067",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V22",
+            "name": "Synthetic name 1068",
+            "townHallLevel": 18
+          }
+        ]
+      },
+      {
+        "tag": "#PP9V28",
+        "name": "Synthetic name 1069",
+        "clanLevel": 14,
+        "badgeUrls": {
+          "small": "https://example.test/asset/211",
+          "large": "https://example.test/asset/212",
+          "medium": "https://example.test/asset/213"
+        },
+        "members": [
+          {
+            "tag": "#PP9V29",
+            "name": "Synthetic name 1070",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V2P",
+            "name": "Synthetic name 1071",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V2Y",
+            "name": "Synthetic name 1072",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V2L",
+            "name": "Synthetic name 1073",
+            "townHallLevel": 16
+          },
+          {
+            "tag": "#PP9V2Q",
+            "name": "Synthetic name 1074",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V2G",
+            "name": "Synthetic name 1075",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V2R",
+            "name": "Synthetic name 1076",
+            "townHallLevel": 13
+          },
+          {
+            "tag": "#PP9V2J",
+            "name": "Synthetic name 1077",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V2C",
+            "name": "Synthetic name 1078",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V2U",
+            "name": "Synthetic name 1079",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V2V",
+            "name": "Synthetic name 1022",
+            "townHallLevel": 13
+          },
+          {
+            "tag": "#PP9V80",
+            "name": "Synthetic name 1080",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V82",
+            "name": "Synthetic name 1081",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V88",
+            "name": "Synthetic name 1082",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V89",
+            "name": "Synthetic name 1083",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V8P",
+            "name": "Synthetic name 1084",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V8Y",
+            "name": "Synthetic name 1085",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V8L",
+            "name": "Synthetic name 1086",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V8Q",
+            "name": "Synthetic name 1087",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V8G",
+            "name": "Synthetic name 1088",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V8R",
+            "name": "Synthetic name 1089",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V8J",
+            "name": "Synthetic name 1090",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V8C",
+            "name": "Synthetic name 1091",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V8U",
+            "name": "Synthetic name 1092",
+            "townHallLevel": 17
+          }
+        ]
+      },
+      {
+        "tag": "#PP9R0Q",
+        "name": "Synthetic name 81",
+        "clanLevel": 24,
+        "badgeUrls": {
+          "small": "https://example.test/asset/6",
+          "large": "https://example.test/asset/7",
+          "medium": "https://example.test/asset/8"
+        },
+        "members": [
+          {
+            "tag": "#PP9RVJ",
+            "name": "Synthetic name 485",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9J2R",
+            "name": "Synthetic name 515",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9J29",
+            "name": "Synthetic name 508",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9J0V",
+            "name": "Synthetic name 504",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9J0J",
+            "name": "Synthetic name 501",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9R0L",
+            "name": "Synthetic name 80",
+            "townHallLevel": 10
+          },
+          {
+            "tag": "#PP9J20",
+            "name": "Synthetic name 505",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9J9Y",
+            "name": "Synthetic name 541",
+            "townHallLevel": 8
+          },
+          {
+            "tag": "#PP9R0V",
+            "name": "Synthetic name 209",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9J0U",
+            "name": "Synthetic name 503",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9J99",
+            "name": "Synthetic name 539",
+            "townHallLevel": 11
+          },
+          {
+            "tag": "#PP9J9Q",
+            "name": "Synthetic name 544",
+            "townHallLevel": 15
+          },
+          {
+            "tag": "#PP9J08",
+            "name": "Synthetic name 491",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9J8J",
+            "name": "Synthetic name 530",
+            "townHallLevel": 17
+          },
+          {
+            "tag": "#PP9J2V",
+            "name": "Synthetic name 519",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9J9P",
+            "name": "Synthetic name 540",
+            "townHallLevel": 13
+          },
+          {
+            "tag": "#PP9J0P",
+            "name": "Synthetic name 494",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9J22",
+            "name": "Synthetic name 506",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9J2U",
+            "name": "Synthetic name 518",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9J28",
+            "name": "Synthetic name 507",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9RVV",
+            "name": "Synthetic name 488",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9J9L",
+            "name": "Synthetic name 542",
+            "townHallLevel": 9
+          },
+          {
+            "tag": "#PP9J8R",
+            "name": "Synthetic name 529",
+            "townHallLevel": 17
+          },
+          {
+            "tag": "#PP9J2J",
+            "name": "Synthetic name 516",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9J9R",
+            "name": "Synthetic name 546",
+            "townHallLevel": 7
+          },
+          {
+            "tag": "#PP9J9G",
+            "name": "Synthetic name 545",
+            "townHallLevel": 3
+          }
+        ]
+      },
+      {
+        "tag": "#PP9V8V",
+        "name": "Synthetic name 1093",
+        "clanLevel": 19,
+        "badgeUrls": {
+          "small": "https://example.test/asset/214",
+          "large": "https://example.test/asset/215",
+          "medium": "https://example.test/asset/216"
+        },
+        "members": [
+          {
+            "tag": "#PP9V90",
+            "name": "Synthetic name 1094",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V92",
+            "name": "Synthetic name 1095",
+            "townHallLevel": 12
+          },
+          {
+            "tag": "#PP9V98",
+            "name": "Synthetic name 1096",
+            "townHallLevel": 13
+          },
+          {
+            "tag": "#PP9V99",
+            "name": "Synthetic name 1097",
+            "townHallLevel": 15
+          },
+          {
+            "tag": "#PP9V9P",
+            "name": "Synthetic name 1098",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V9Y",
+            "name": "Synthetic name 1099",
+            "townHallLevel": 14
+          },
+          {
+            "tag": "#PP9V9L",
+            "name": "Synthetic name 1100",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V9Q",
+            "name": "Synthetic name 1101",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V9G",
+            "name": "Synthetic name 1102",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V9R",
+            "name": "Synthetic name 1103",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V9J",
+            "name": "Synthetic name 1104",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V9C",
+            "name": "Synthetic name 1105",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V9U",
+            "name": "Synthetic name 1106",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9V9V",
+            "name": "Synthetic name 1107",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VP0",
+            "name": "Synthetic name 1108",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VP2",
+            "name": "Synthetic name 1109",
+            "townHallLevel": 8
+          },
+          {
+            "tag": "#PP9VP8",
+            "name": "Synthetic name 1110",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VP9",
+            "name": "Synthetic name 1111",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VPP",
+            "name": "Synthetic name 1112",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VPY",
+            "name": "Synthetic name 1113",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VPL",
+            "name": "Synthetic name 1114",
+            "townHallLevel": 8
+          },
+          {
+            "tag": "#PP9VPQ",
+            "name": "Synthetic name 1115",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VPG",
+            "name": "Synthetic name 1116",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VPR",
+            "name": "Synthetic name 1117",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VPJ",
+            "name": "Synthetic name 1118",
+            "townHallLevel": 17
+          }
+        ]
+      },
+      {
+        "tag": "#PP9VPC",
+        "name": "Synthetic name 1119",
+        "clanLevel": 29,
+        "badgeUrls": {
+          "small": "https://example.test/asset/217",
+          "large": "https://example.test/asset/218",
+          "medium": "https://example.test/asset/219"
+        },
+        "members": [
+          {
+            "tag": "#PP9VPU",
+            "name": "Synthetic name 1120",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VPV",
+            "name": "Synthetic name 1121",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VY0",
+            "name": "Synthetic name 1122",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VY2",
+            "name": "Synthetic name 1123",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VY8",
+            "name": "Synthetic name 1124",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VY9",
+            "name": "Synthetic name 1125",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VYP",
+            "name": "Synthetic name 1126",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VYY",
+            "name": "Synthetic name 1127",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VYL",
+            "name": "Synthetic name 1128",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VYQ",
+            "name": "Synthetic name 1129",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VYG",
+            "name": "Synthetic name 1130",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VYR",
+            "name": "Synthetic name 1131",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VYJ",
+            "name": "Synthetic name 1132",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VYC",
+            "name": "Synthetic name 1133",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VYU",
+            "name": "Synthetic name 1134",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VYV",
+            "name": "Synthetic name 1135",
+            "townHallLevel": 18
+          },
+          {
+            "tag": "#PP9VL0",
+            "name": "Synthetic name 1136",
+            "townHallLevel": 18
+          }
+        ]
+      }
+    ],
+    "rounds": [
+      {
+        "warTags": [
+          "#PP9VL2",
+          "#PP9VL8",
+          "#PP9VL9",
+          "#PP9VLP"
+        ]
+      },
+      {
+        "warTags": [
+          "#PP9VLY",
+          "#PP9VLL",
+          "#PP9VLQ",
+          "#PP9VLG"
+        ]
+      },
+      {
+        "warTags": [
+          "#PP9VLR",
+          "#PP9VLJ",
+          "#PP9VLC",
+          "#PP9VLU"
+        ]
+      },
+      {
+        "warTags": [
+          "#PP9VLV",
+          "#PP9VQ0",
+          "#PP9VQ2",
+          "#PP9VQ8"
+        ]
+      },
+      {
+        "warTags": [
+          "#PP9VQ9",
+          "#PP9VQP",
+          "#PP9VQY",
+          "#PP9VQL"
+        ]
+      },
+      {
+        "warTags": [
+          "#PP9VQQ",
+          "#PP9VQG",
+          "#PP9VQR",
+          "#PP9VQJ"
+        ]
+      },
+      {
+        "warTags": [
+          "#PP9VQC",
+          "#PP9VQU",
+          "#PP9VQV",
+          "#PP9VG0"
+        ]
+      }
+    ]
+  }
+}
