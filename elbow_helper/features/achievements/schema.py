@@ -1,11 +1,17 @@
-"""Version-one achievements schema and historical CWL reward adoption."""
+"""Versioned achievements schema and historical CWL reward adoption."""
 
+from contextlib import closing
+import logging
 import sqlite3
 
-from elbow_helper.infrastructure.persistence.migrations import SQLiteMigration
+from elbow_helper.infrastructure.persistence.migrations import (
+    SQLiteMigration, UnversionedSQLiteSchemaError,
+)
 from elbow_helper.infrastructure.persistence.versioned import (
     VersionedSQLiteDatabase, validate_sqlite_shape,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 COIN_DB_INIT = [
     '''
@@ -194,10 +200,101 @@ def adopt_schema(conn: sqlite3.Connection) -> None:
     validate_schema(conn, warn=False)
 
 
-SCHEMA_VERSION = 1
+def clean_legacy_tables(conn: sqlite3.Connection) -> None:
+    """Rebuild all current tables atomically, retaining unrecognised data."""
+    validate_schema(conn, warn=False)
+    with closing(sqlite3.connect(":memory:")) as reference:
+        create_schema(reference)
+        expected = reference.execute(
+            "SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name"
+        ).fetchall()
+        tables = {name: [row[1] for row in reference.execute(f"PRAGMA table_info({_quote(name)})")]
+                  for kind, name, _, _ in expected if kind == "table" and name != "sqlite_sequence"}
+
+    actual_tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    for table in actual_tables - tables.keys() - {"sqlite_sequence"}:
+        count = conn.execute(f"SELECT COUNT(*) FROM {_quote(table)}").fetchone()[0]
+        # This is the only leftover found in the live backup. Repo-wide searches
+        # found no reader or writer; nonempty copies still need human review.
+        if table == "raffle_winners_old" and count == 0:
+            conn.execute(f"DROP TABLE {_quote(table)}")
+        else:
+            LOGGER.warning("Keeping unrecognised achievements table %s (%s rows)", table, count)
+
+    expected_names = {name for _, name, _, _ in expected}
+    retained_objects = [row for row in conn.execute(
+        "SELECT type, name, tbl_name, sql FROM sqlite_master "
+        "WHERE type IN ('index', 'trigger', 'view') AND sql IS NOT NULL"
+    ) if row[1] not in expected_names]
+    sequences = (conn.execute("SELECT name, seq FROM sqlite_sequence").fetchall()
+                 if "sqlite_sequence" in actual_tables else [])
+    for table, columns in tables.items():
+        actual = {row[1] for row in conn.execute(f"PRAGMA table_info({_quote(table)})")}
+        obsolete = {"leadership_only"} if table == "achievements" else set()
+        unexpected = actual - set(columns) - obsolete
+        if unexpected:
+            raise UnversionedSQLiteSchemaError(
+                f"Cannot rebuild {table} without losing unknown columns: {sorted(unexpected)}."
+            )
+        names = ", ".join(map(_quote, columns))
+        conn.execute(f"CREATE TEMP TABLE {_quote('_achievements_v2_' + table)} "
+                     f"AS SELECT {names} FROM main.{_quote(table)}")
+
+    # Keep original names in all foreign keys and views: don't rename old
+    # parents. The connection gate opens with foreign-key enforcement off.
+    for table in reversed(tables):
+        conn.execute(f"DROP TABLE main.{_quote(table)}")
+    create_schema(conn)
+    for table, columns in tables.items():
+        saved = f"temp.{_quote('_achievements_v2_' + table)}"
+        rebuilt = f"main.{_quote(table)}"
+        names = ", ".join(map(_quote, columns))
+        conn.execute(f"INSERT INTO {rebuilt} ({names}) SELECT {names} FROM {saved}")
+        # Affinity changes must never silently turn stored strings into numbers
+        # (or merge duplicate rows). Compare values, storage types and counts.
+        grouped = names + ", " + ", ".join(f"typeof({_quote(name)})" for name in columns)
+        for left, right in ((saved, rebuilt), (rebuilt, saved)):
+            if conn.execute(
+                f"SELECT {grouped}, COUNT(*) FROM {left} GROUP BY {grouped} "
+                f"EXCEPT SELECT {grouped}, COUNT(*) FROM {right} GROUP BY {grouped}"
+            ).fetchone() is not None:
+                raise UnversionedSQLiteSchemaError(f"Rebuilding {table} would change stored values.")
+        conn.execute(f"DROP TABLE {saved}")
+
+    # Explicit IDs don't preserve an AUTOINCREMENT high-water mark after its
+    # highest rows have been deleted. Restore the original sequence values too.
+    for name in {name for name, _ in sequences}:
+        conn.execute("DELETE FROM sqlite_sequence WHERE name=?", (name,))
+    conn.executemany("INSERT INTO sqlite_sequence(name, seq) VALUES (?, ?)", sequences)
+    for kind, name, table, statement in retained_objects:
+        if table in tables and kind != "view":
+            conn.execute(statement)
+        LOGGER.warning("Keeping unrecognised achievements %s %s", kind, name)
+
+    validate_schema(conn, warn=False)
+    actual = {row[1]: row for row in conn.execute(
+        "SELECT type, name, tbl_name, sql FROM sqlite_master"
+    )}
+    if any(actual.get(row[1]) != row for row in expected):
+        raise UnversionedSQLiteSchemaError("Rebuilt achievements schema differs from fresh schema.")
+
+
+def _quote(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+
+def compact_database(conn: sqlite3.Connection) -> None:
+    """Compact only after the upgrade transaction has committed."""
+    conn.execute("VACUUM")
+
+
+SCHEMA_VERSION = 2
 
 DATABASE = VersionedSQLiteDatabase(
     "achievements", create_schema, adopt_schema,
-    migrations=(SQLiteMigration(1, "achievements baseline", create_schema),),
-    target_version=SCHEMA_VERSION, validate=validate_schema,
+    migrations=(
+        SQLiteMigration(1, "achievements baseline", create_schema),
+        SQLiteMigration(2, "rebuild achievements database", clean_legacy_tables),
+    ),
+    target_version=SCHEMA_VERSION, validate=validate_schema, after_migrate=compact_database,
 )

@@ -21,12 +21,15 @@ class VersionedSQLiteDatabase:
 
     Callers run this synchronous boundary on a worker thread. A rejected upgrade
     is never cached, and journal settings are changed only after it succeeds.
+    Post-migration work runs after commit; failures are retried by this instance
+    before ordinary connections can open.
     """
 
     def __init__(
         self, name: str, create: Callable, adopt: Callable, *,
         migrations: Sequence[SQLiteMigration], target_version: int,
         validate: Callable | None = None,
+        after_migrate: Callable[[sqlite3.Connection], None] | None = None,
     ):
         self.name = name
         self.create = create
@@ -34,6 +37,8 @@ class VersionedSQLiteDatabase:
         self.migrations = tuple(migrations)
         self.target_version = target_version
         self.validate = validate
+        self.after_migrate = after_migrate
+        self._pending_after_migrate: set[Path] = set()
         self._ready: set[Path] = set()
         self._lock = Lock()
 
@@ -45,7 +50,7 @@ class VersionedSQLiteDatabase:
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 with closing(sqlite3.connect(path, timeout=30)) as connection:
-                    run_sqlite_migrations(
+                    applied = run_sqlite_migrations(
                         connection,
                         self.migrations,
                         target_version=self.target_version,
@@ -55,6 +60,11 @@ class VersionedSQLiteDatabase:
                         validate_sqlite_shape(connection, self.create)
                     else:
                         self.validate(connection)
+                    if applied and self.after_migrate is not None:
+                        self._pending_after_migrate.add(path)
+                    if path in self._pending_after_migrate:
+                        self.after_migrate(connection)
+                        self._pending_after_migrate.remove(path)
                     connection.execute("PRAGMA journal_mode=WAL")
             except (SQLiteMigrationError, sqlite3.Error, OSError):
                 LOGGER.exception("Refusing to open %s database at %s", self.name, path)
