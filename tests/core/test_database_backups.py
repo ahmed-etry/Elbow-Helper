@@ -196,22 +196,22 @@ class DatabaseRunTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
 
-    def test_inventory_covers_all_ten_databases_without_scanning_other_files(self) -> None:
+    def test_inventory_covers_all_eleven_databases_without_scanning_other_files(self) -> None:
         expected = {
             "clan_links/links.sqlite3", "achievements/achievements.db",
             "agent/agent.sqlite3", "agent/transcripts.sqlite3",
             "agent/research_jobs.sqlite3", "agent/actions.sqlite3",
             "clan_health/clan_health.db", "ranked_stats/ranked.sqlite3",
-            "records/records.sqlite3", "rosters/rosters.sqlite3",
+            "records/records.sqlite3", "rosters/rosters.sqlite3", "family/family.sqlite3",
         }
         self.assertEqual({path.as_posix() for path in SQLITE_DATABASES}, expected)
-        self.assertEqual(len(SQLITE_DATABASES), 10)
+        self.assertEqual(len(SQLITE_DATABASES), 11)
         for relative in SQLITE_DATABASES:
             create_database(self.root / relative)
         create_database(self.root / "unowned.db")
         with self.assertLogs(backups.LOGGER, level="INFO") as logs:
             result = backups.backup_databases(self.root)
-        self.assertEqual((result.copied, result.failed), (10, 0))
+        self.assertEqual((result.copied, result.failed), (11, 0))
         self.assertEqual(len(logs.records), 1)
         total_size = 0
         for relative in SQLITE_DATABASES:
@@ -219,7 +219,7 @@ class DatabaseRunTests(unittest.TestCase):
             self.assertEqual(contents(destination), contents(self.root / relative))
             total_size += destination.stat().st_size
         self.assertEqual(result.total_bytes, total_size)
-        self.assertIn(f"copied=10 failed=0 bytes={total_size}", logs.output[0])
+        self.assertIn(f"copied=11 failed=0 bytes={total_size}", logs.output[0])
         self.assertFalse((self.root / "backups" / "unowned.db").exists())
 
     def test_missing_and_corrupt_sources_warn_and_do_not_block_other_copies(self) -> None:

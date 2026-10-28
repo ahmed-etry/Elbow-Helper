@@ -16,6 +16,7 @@ CLAN_HEALTH_DATABASE = Path("clan_health/clan_health.db")
 RANKED_DATABASE = Path("ranked_stats/ranked.sqlite3")
 RECORDS_DATABASE = Path("records/records.sqlite3")
 ROSTERS_DATABASE = Path("rosters/rosters.sqlite3")
+FAMILY_DATABASE = Path("family/family.sqlite3")
 
 SQLITE_DATABASES = (
     ACCOUNT_LINKS_DATABASE,
@@ -28,4 +29,5 @@ SQLITE_DATABASES = (
     RANKED_DATABASE,
     RECORDS_DATABASE,
     ROSTERS_DATABASE,
+    FAMILY_DATABASE,
 )
