@@ -233,6 +233,7 @@ class ElbowHelperBot(commands.Bot):
         self.extension_report: ExtensionLoadReport | None = None
         self.synced_command_count: int | None = None
         self._boot_started_at = 0.0
+        self.family_collectors = None
 
     async def close(self) -> None:
         # Stop feature producers before flushing, while the HTTP client is open.
@@ -248,6 +249,8 @@ class ElbowHelperBot(commands.Bot):
             required=self.required_extensions,
             optional=self.optional_extensions,
         )
+        if getattr(self, "family_collectors", None) is not None:
+            await self.add_cog(self.family_collectors)
         synced = await sync_guild_commands(self.tree, self.guild_id)
         self.synced_command_count = len(synced)
 

@@ -16,6 +16,10 @@ from elbow_helper.infrastructure.discord.usage import on_app_command_completion
 from elbow_helper.infrastructure.discord.usage import on_interaction
 from elbow_helper.infrastructure.discord.publishing import PublishingQueue
 from elbow_helper.configuration.guild import GUILD_ID
+from elbow_helper.configuration.clans import CLANS
+from elbow_helper.configuration.files import FAMILY_DATABASE
+from elbow_helper.data.collectors import FamilyCollectors
+from elbow_helper.data.store import FamilyStore
 
 from .core.errors import install_asyncio_exception_handler
 from .core.backups import DatabaseBackupJob
@@ -93,6 +97,9 @@ def create_bot(
         publishing=PublishingQueue(),
     )
     bot.tree.error(handle_app_command_error)
+    bot.family_collectors = FamilyCollectors(
+        bot, FamilyStore(paths.data_root / FAMILY_DATABASE), clash_client, CLANS.values(),
+    )
     bot.add_listener(on_app_command_completion)
     bot.add_listener(on_interaction)
     return bot

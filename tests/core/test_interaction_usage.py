@@ -43,7 +43,8 @@ class InteractionUsageTests(unittest.IsolatedAsyncioTestCase):
     def test_create_bot_registers_public_listeners_and_error_handler(self):
         bot = SimpleNamespace(add_listener=Mock(), tree=SimpleNamespace(error=Mock()))
         with patch("elbow_helper.app.ElbowHelperBot", return_value=bot):
-            self.assertIs(create_bot(None, None, None, None, None), bot)
+            paths = ApplicationPaths.from_project_root(Path.cwd())
+            self.assertIs(create_bot(paths, None, None, None, None), bot)
         self.assertEqual(bot.add_listener.call_args_list,
                          [call(on_app_command_completion), call(on_interaction)])
         bot.tree.error.assert_called_once_with(handle_app_command_error)
