@@ -114,6 +114,7 @@ class AnswerFlow:
         self.discussion_message_ids = set()
         self.decision_composed = False
         self.answer_session_inputs = None
+        self.decision_session = None
         self.answer_accounts = {}
 
     def model_results(self, results):
@@ -346,7 +347,8 @@ class AnswerFlow:
                               else AgentReasoningEffort.NONE if self.assessment_requested
                               else AgentReasoningEffort.LOW)
         if self.assessment_requested:
-            if not options.get('allow_tools', True) and not self.decision_composed:
+            if (not options.get('allow_tools', True) and not self.decision_composed
+                    and self.rounder.session is not self.decision_session):
                 options['continuation_instruction'] = '\n'.join(filter(None, (
                     options.get('continuation_instruction'), self._decision_instruction())))
             elif self.decision_composed:
@@ -374,23 +376,30 @@ class AnswerFlow:
 
     async def _repair_decision_format(self, answer, error):
         """Repair the response shape without resending the full research context."""
-        instruction = ('Correct the invalid decision response: ' + str(error)
-            + '\nPreserve the draft facts and source links; add no facts or advice. '
+        repair_rules = ('Preserve the draft facts and source links; add no facts or advice. '
               'An unavailable discussion does not establish a decision. '
               'Keep readable facts and ask about the unresolved choice.')
+        error_instruction = 'Correct the invalid decision response: ' + str(error)
+        instruction = error_instruction + '\n' + repair_rules
         if self.final_session_factory is not None:
+            system = self._decision_instruction() + '\n' + repair_rules
+            if self.assessment_requested and not self.decision_composed:
+                # Preserve both existing schema copies; only their placement changes.
+                system += '\n' + self._decision_instruction()
             prompt = json.dumps({'request': self.context.state.request_text, 'draft': answer,
                 'verified_discussion_message_ids': sorted(self.discussion_message_ids)}, ensure_ascii=False)
-            projected = estimate_tokens(self._decision_instruction() + prompt + instruction) + 512
+            projected = estimate_tokens(system + prompt + error_instruction) + 512
             if self.budget.request_output_limit(projected, allow_tools=False) > 0:
                 await require_evidence_access(self.context)
-                session = self.final_session_factory(system_prompt=self._decision_instruction(),
+                session = self.final_session_factory(system_prompt=system,
                     prompt=prompt, tools=(), max_output_tokens=limits.FINAL_MAX_OUTPUT_TOKENS)
                 if session is not None and session is not self.rounder.session:
                     self.rounder.session = session
+                    self.decision_session = session
                     self.rounder.pending_calls = self.rounder.pending_results = ()
                     self.rounder.unpublished = None
                     self.budget.next_input_estimate = projected
+                    instruction = error_instruction
         return await self._advance_answer((), allow_tools=False,
             continuation_instruction=instruction,
             max_output_tokens=limits.FINAL_MAX_OUTPUT_TOKENS)
@@ -485,21 +494,22 @@ class AnswerFlow:
             return fallback()
 
     def _answer_system(self, *, allow_more):
-        system = answer_instructions(self.registry if allow_more else None)
+        extra = ()
         if self.assessment_requested:
             if allow_more:
-                system += ('\nThis round checks whether more evidence is needed. Submit a plan only for '
+                extra = ('This round checks whether more evidence is needed. Submit a plan only for '
                     'missing necessary evidence. When ready, return only {"research_complete":true}. '
                     'Do not draft the assessment here; a separate final composition follows. '
                     'This review contains checked summaries, retained-table metadata and discussion pages. '
                     'The final writer receives every authorized retained row. Use read_handles for missing facts; '
                     'do not reread a complete cohort just to reproduce its rows. Read omitted details when '
-                    'their meaning is necessary for the remaining research.')
+                    'their meaning is necessary for the remaining research.',)
             else:
-                system += ('\n\nFor assessments, use the decision JSON schema supplied with the round instructions. '
+                extra = ('For assessments, use the decision JSON schema supplied with the round instructions. '
                     'It replaces the normal plain reply and private-answer envelope formats. '
-                    'After the decision has been composed, later repair instructions may request plain reply text.')
-        return system
+                    'After the decision has been composed, later repair instructions may request plain reply text.',
+                    self._decision_instruction())
+        return answer_instructions(self.registry if allow_more else None, extra_instructions=extra)
 
     def _answer_frame(self, evidence, *, allow_more, instruction):
         return json.dumps({"request": self.context.state.request_text,
@@ -528,8 +538,6 @@ class AnswerFlow:
         room -= estimate_tokens(system + prompt) + 1024
         if not allow_more:
             room -= estimate_tokens(LIMIT_ANSWER_INSTRUCTION)
-        if self.assessment_requested and not self.decision_composed and not review_only:
-            room -= estimate_tokens(self._decision_instruction())
         if room <= 0:
             return False
         # Local/replied messages are independent evidence, including on a late repair.
@@ -565,7 +573,7 @@ class AnswerFlow:
             self.budget.final_input_estimate = (
                 estimate_tokens(final_system + final_prompt) + estimate_tokens('[]') + 512
                 + estimate_tokens(LIMIT_ANSWER_INSTRUCTION)
-                + estimate_tokens(LIMIT_ANSWER_INSTRUCTION + '\n' + self._decision_instruction()))
+                + estimate_tokens(LIMIT_ANSWER_INSTRUCTION))
         if review_only:
             evidence = answer_evidence(review_evidence, guild=self.context.guild, subjects=subjects)
             evidence.update(supplementary)
@@ -598,6 +606,7 @@ class AnswerFlow:
         self.budget.next_input_estimate = projected
         if not allow_more:
             self.answer_session_inputs = (system, prompt, projected)
+            self.decision_session = session if self.assessment_requested else None
             self.rounder.partial_content = ''
         return True
 
@@ -611,6 +620,8 @@ class AnswerFlow:
             max_output_tokens=limits.FINAL_MAX_OUTPUT_TOKENS,
             **({'images': self.answer_images} if self.answer_images else {}))
         if session is not None and session is not self.rounder.session:
+            if self.rounder.session is self.decision_session:
+                self.decision_session = session
             self.rounder.session = session
             self.rounder.pending_calls = self.rounder.pending_results = ()
             self.rounder.unpublished = None

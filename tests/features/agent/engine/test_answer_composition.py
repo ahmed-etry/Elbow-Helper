@@ -299,7 +299,7 @@ class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
                     if social and '<bot_command_overview>' not in prompt:
                         return provider_response(calls=[call('load_research_context', {})])
                     overview = prompt.split("<bot_command_overview>\n")[1].split("\n</bot_command_overview>")[0]
-                    self.assertEqual(json.loads(overview.split("\n", 1)[1])["commands"], expected)
+                    self.assertEqual(json.loads(overview)["commands"], expected)
                     return provider_response(calls=[call("submit_request_plan", _plan([
                         {"id": "sample", "capability": "read_sample", "arguments": {}, "depends_on": []}]))])
 

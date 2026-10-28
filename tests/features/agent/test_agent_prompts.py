@@ -216,12 +216,13 @@ class RequestPromptTests(unittest.TestCase):
                 )
                 self.assertIn(
                     "Triggering message (a mention is not necessarily a request):\n"
-                    "A passing mention talks about you to someone else rather than asking you something. "
-                    "Meet that conversational moment with a short line or fitting GIF. "
-                    "Don't pick on unrelated details like spelling or add factual claims nobody asked for.\n"
                     f"<request>\n{message}\n</request>",
                     prompt,
                 )
+                self.assertTrue(prompt.startswith(
+                    "A passing mention talks about you to someone else rather than asking you something. "
+                    "Meet that conversational moment with a short line or fitting GIF. "
+                    "Don't pick on unrelated details like spelling or add factual claims nobody asked for.\n"))
                 self.assertIn(f"<local_context>\n{nearby}\n</local_context>", prompt)
                 self.assertIn('Agent (you): {"display_name": "Synthetic Bot", "member_id": 999}', prompt)
                 self.assertNotIn("Persona and tone:", prompt)
@@ -287,7 +288,9 @@ class RequestPromptTests(unittest.TestCase):
                   '\n</history_checkpoint>\n\n<conversation_history>\nEarlier question and answer'
                   '\n</conversation_history>')
         for prompt in prompts:
-            self.assertTrue(prompt.startswith(prefix))
+            guidance, history = prompt.split('<history_checkpoint>', 1)
+            self.assertEqual(guidance, prompts[0].split('<history_checkpoint>', 1)[0])
+            self.assertTrue(('<history_checkpoint>' + history).startswith(prefix))
         self.assertIn('Server: server 1\nAsker: member 1\nAsked at: 2026-09-16T01:00:00+00:00', prompts[0])
         self.assertIn('<request>\nquestion 1\n</request>', prompts[0])
         with_id = build_request_prompt(
