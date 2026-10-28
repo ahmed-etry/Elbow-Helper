@@ -17,6 +17,8 @@ from elbow_helper.core.lifecycle import RequiredExtensionLoadError
 from elbow_helper.core.lifecycle import load_extensions
 from elbow_helper.core.lifecycle import sync_guild_commands
 from elbow_helper.core.logging import CompactTransientDuplicateFilter
+from elbow_helper.core.logging import CompactTransientFormatter
+from elbow_helper.core.logging import ConsoleAllowlistFilter
 from elbow_helper.core.logging import TransientExternalFailurePolicy
 from elbow_helper.core.logging import UnifiedLogFormatter
 from elbow_helper.core.paths import ApplicationPaths
@@ -246,3 +248,28 @@ class LoggingPolicyTests(unittest.TestCase):
         rendered = formatter.format(self._warning_record("Example"))
 
         self.assertEqual(rendered, "[EXAMPLE] Example")
+
+        console_filter = ConsoleAllowlistFilter()
+        for suffix, tag in (("", "AGENT"), (".cog", "COG"), (".conversation.state", "STATE")):
+            for level in (logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR):
+                for transient in (False, True):
+                    with self.subTest(suffix=suffix, level=level, transient=transient):
+                        records = [logging.LogRecord(
+                            name=name + suffix, level=level, pathname="synthetic.py", lineno=1,
+                            msg="Synthetic event", args=(),
+                            exc_info=(TimeoutError, TimeoutError("Synthetic timeout"), None)
+                            if transient else None,
+                        ) for name in ("elbow_helper.features.agent", "elbow_helper.agent")]
+                        for formatter_type in (UnifiedLogFormatter, CompactTransientFormatter):
+                            log_formatter = formatter_type("%(log_tag)s %(message)s")
+                            old, new = [log_formatter.format(record) for record in records]
+                            self.assertEqual(new, old)
+                            self.assertTrue(new.startswith(f"[{tag}] "))
+                        self.assertEqual(
+                            [console_filter.filter(record) for record in records],
+                            [level >= logging.WARNING] * 2,
+                        )
+        self.assertEqual(
+            UnifiedLogFormatter._build_tag("elbow_helper.agents.cog"),
+            "[ELBOW_HELPER.AGENTS.COG]",
+        )

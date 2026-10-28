@@ -1,0 +1,158 @@
+"""Command plans invoke adapters and expose only status to the model."""
+
+from types import SimpleNamespace
+from dataclasses import replace
+import unittest
+from unittest.mock import AsyncMock, patch
+
+from elbow_helper.agent.commands.bridge import build_command_tools
+from elbow_helper.agent.actions.contracts import ChangePreview
+from elbow_helper.agent.actions.outcomes import ActionOutcome, command_reply
+from elbow_helper.agent.commands.registry import (
+    CommandAdapter, PreparedCommandChange,
+)
+from elbow_helper.agent.models import AgentTurnState, AgentCapabilityEffect
+from elbow_helper.agent.models import AgentAttachment
+from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
+from elbow_helper.agent.wording import ACTION_EMPTY, ACTION_PRIVATE_NOTE
+from elbow_helper.agent.engine.capability_contract import compile_capability_call
+
+
+class CommandBridgeTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.path = "/synthetic"
+        self.run = AsyncMock(return_value=ActionOutcome(
+            "complete", "private", private_parts=("private synthetic data",),
+        ))
+        self.adapter = CommandAdapter(
+            self.path, "private", self.run,
+            entity_options=(("target", "synthetic_source"),),
+        )
+        command = DiscoveredCommand(self.path, "Registered", (
+            ParameterInfo("target", "Choose a target.", True, "integer"),
+        ))
+        help_entry = SimpleNamespace(path=self.path, summary="Inspect a target.", details="Show its result.")
+        self.patches = (
+            patch("elbow_helper.agent.commands.registry.discover_commands",
+                  return_value={self.path: command}),
+            patch("elbow_helper.agent.commands.registry.HELP_ENTRIES", (help_entry,)),
+        )
+
+    def test_declared_member_options_keep_their_target_identity_in_the_runtime_scope(self):
+        adapter = replace(self.adapter, entity_options=(("target", "discord_member"),))
+        with self.patches[0], self.patches[1]:
+            tools, _ = build_command_tools(object(), (adapter,))
+        tool = next(iter(tools.values()))
+        scope = compile_capability_call(tool, {"target": 101})
+        self.assertEqual(scope["entities"], [{"kind": "discord_member", "field": "target", "key": 101}])
+
+    async def test_missing_input_asks_without_running(self):
+        with self.patches[0], self.patches[1]:
+            tools, _ = build_command_tools(object(), (self.adapter,))
+        context = SimpleNamespace(state=AgentTurnState())
+        tool = next(iter(tools.values()))
+        self.assertIs(tool.effect, AgentCapabilityEffect.COMMAND)
+        result = await tool.handler(context, {})
+        self.assertEqual(result["status"], "needs_input")
+        self.assertEqual(context.state.outcomes[0].missing, ("Choose a target.",))
+        self.assertEqual(context.state.outcomes[0].missing_options, ({
+            "name": "target", "description": "Choose a target.", "choices": [],
+        },))
+        self.run.assert_not_awaited()
+
+    async def test_all_missing_values_use_option_descriptions(self):
+        command = DiscoveredCommand(self.path, "Registered", (
+            ParameterInfo("first_target", "The first target", True, "integer"),
+            ParameterInfo("second_target", "The second target", True, "integer"),
+        ))
+        with (patch("elbow_helper.agent.commands.registry.discover_commands",
+                    return_value={self.path: command}), self.patches[1]):
+            tools, _ = build_command_tools(object(), (self.adapter,))
+        context = SimpleNamespace(state=AgentTurnState())
+        await next(iter(tools.values())).handler(context, {})
+        self.assertEqual(context.state.outcomes[0].missing,
+                         ("The first target", "The second target"))
+
+    async def test_false_and_zero_are_valid_required_values(self):
+        command = DiscoveredCommand(self.path, "Registered", (
+            ParameterInfo("enabled", "Choose a value.", True, "boolean"),
+            ParameterInfo("count", "Choose a count.", True, "integer"),
+        ))
+        with (patch("elbow_helper.agent.commands.registry.discover_commands",
+                    return_value={self.path: command}), self.patches[1]):
+            tools, _ = build_command_tools(object(), (self.adapter,))
+        context = SimpleNamespace(state=AgentTurnState())
+        values = {"enabled": False, "count": 0}
+        result = await next(iter(tools.values())).handler(context, values)
+        self.assertEqual(result["status"], "complete")
+        self.run.assert_awaited_once_with(context, values)
+
+    async def test_private_content_never_enters_model_result(self):
+        with self.patches[0], self.patches[1]:
+            tools, _ = build_command_tools(object(), (self.adapter,))
+        context = SimpleNamespace(state=AgentTurnState())
+        result = await next(iter(tools.values())).handler(context, {"target": 101})
+        self.assertEqual(result, {"command": self.path, "status": "complete", "visibility": "private"})
+        self.assertNotIn("private synthetic data", str(result))
+        self.assertEqual(context.state.outcomes[0].private_parts, ("private synthetic data",))
+        self.run.assert_awaited_once_with(context, {"target": 101})
+
+    async def test_private_text_and_files_never_enter_public_delivery_state(self):
+        self.run.return_value = ActionOutcome(
+            "complete", "private", text="synthetic private text",
+            attachments=(AgentAttachment("synthetic.txt", b"private bytes"),),
+        )
+        with self.patches[0], self.patches[1]:
+            tools, _ = build_command_tools(object(), (self.adapter,))
+        context = SimpleNamespace(state=AgentTurnState())
+        result = await next(iter(tools.values())).handler(context, {"target": 101})
+        self.assertNotIn("synthetic private text", str(result))
+        self.assertNotIn("private bytes", str(result))
+        self.assertEqual(context.state.attachments, [])
+        self.assertEqual(context.state.outcomes[0].private_parts,
+                         ("synthetic private text",))
+
+    async def test_empty_private_result_is_not_posted_in_the_channel(self):
+        self.run.return_value = ActionOutcome("empty", "private")
+        with self.patches[0], self.patches[1]:
+            tools, _ = build_command_tools(object(), (self.adapter,))
+        context = SimpleNamespace(state=AgentTurnState())
+        result = await next(iter(tools.values())).handler(context, {"target": 101})
+        self.assertEqual(result["visibility"], "private")
+        self.assertEqual(command_reply(context.state.outcomes), ACTION_PRIVATE_NOTE)
+        self.assertEqual(context.state.outcomes[0].private_parts, (ACTION_EMPTY,))
+
+
+    async def test_confirmed_adapter_only_prepares_before_the_button(self):
+        preview = AsyncMock(return_value=ChangePreview(
+            ("Change synthetic target",), AsyncMock(return_value=True),
+        ))
+        adapter = CommandAdapter(self.path, "confirm", self.run, prepare=preview)
+        with self.patches[0], self.patches[1]:
+            tools, _ = build_command_tools(object(), (adapter,))
+        context = SimpleNamespace(state=AgentTurnState())
+        result = await next(iter(tools.values())).handler(context, {"target": 101})
+        self.assertEqual(result["status"], "confirmation_required")
+        self.assertEqual(len(context.state.proposed_changes), 1)
+        self.assertEqual(context.state.proposed_changes[0].preview.lines,
+                         ("Change synthetic target",))
+        self.run.assert_not_awaited()
+        preview.assert_awaited_once_with(context, {"target": 101})
+
+    async def test_prepared_change_uses_the_saved_run_after_confirmation(self):
+        saved_run = AsyncMock(return_value=ActionOutcome("complete"))
+        preview = AsyncMock(return_value=PreparedCommandChange(
+            ChangePreview(("Change synthetic target",),
+                          AsyncMock(return_value=True)),
+            saved_run,
+        ))
+        adapter = CommandAdapter(self.path, "confirm", self.run, prepare=preview)
+        with self.patches[0], self.patches[1]:
+            tools, _ = build_command_tools(object(), (adapter,))
+        context = SimpleNamespace(state=AgentTurnState())
+        await next(iter(tools.values())).handler(context, {"target": 101})
+        self.run.assert_not_awaited()
+        saved_run.assert_not_awaited()
+        await context.state.proposed_changes[0].run()
+        saved_run.assert_awaited_once()
+        self.run.assert_not_awaited()

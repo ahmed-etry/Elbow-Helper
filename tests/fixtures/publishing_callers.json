@@ -153,117 +153,117 @@
       ],
       "reason": "One interaction response or cancellation; preserve the interaction deadline."
     },
-    "elbow_helper/features/agent/actions/answer_view.py:PostAnswerView.on_timeout": {
+    "elbow_helper/agent/actions/answer_view.py:PostAnswerView.on_timeout": {
       "operations": [
         "self.message.edit"
       ],
       "reason": "One answer/preview delivery or control expiry, including virtual combined-reply parts."
     },
-    "elbow_helper/features/agent/actions/combined_reply.py:CombinedReplyView.edit_part_locked": {
+    "elbow_helper/agent/actions/combined_reply.py:CombinedReplyView.edit_part_locked": {
       "operations": [
         "self.message.edit"
       ],
       "reason": "One answer/preview delivery or control expiry, including virtual combined-reply parts."
     },
-    "elbow_helper/features/agent/actions/preview.py:ConfirmationView.cancel": {
+    "elbow_helper/agent/actions/preview.py:ConfirmationView.cancel": {
       "operations": [
         "interaction.response.edit_message",
         "self.message.edit"
       ],
       "reason": "One interaction response or cancellation; preserve the interaction deadline."
     },
-    "elbow_helper/features/agent/actions/preview.py:ConfirmationView.confirm": {
+    "elbow_helper/agent/actions/preview.py:ConfirmationView.confirm": {
       "operations": [
         "self.message.edit"
       ],
       "reason": "One answer/preview delivery or control expiry, including virtual combined-reply parts."
     },
-    "elbow_helper/features/agent/actions/preview.py:ConfirmationView.invalidate": {
+    "elbow_helper/agent/actions/preview.py:ConfirmationView.invalidate": {
       "operations": [
         "self.message.edit"
       ],
       "reason": "One answer/preview delivery or control expiry, including virtual combined-reply parts."
     },
-    "elbow_helper/features/agent/actions/preview.py:ConfirmationView.on_timeout": {
+    "elbow_helper/agent/actions/preview.py:ConfirmationView.on_timeout": {
       "operations": [
         "self.message.edit"
       ],
       "reason": "One answer/preview delivery or control expiry, including virtual combined-reply parts."
     },
-    "elbow_helper/features/agent/actions/private_view.py:PrivateResultView.on_timeout": {
+    "elbow_helper/agent/actions/private_view.py:PrivateResultView.on_timeout": {
       "operations": [
         "self.message.edit"
       ],
       "reason": "One answer/preview delivery or control expiry, including virtual combined-reply parts."
     },
-    "elbow_helper/features/agent/actions/runner.py:AgentActionRunner._execute": {
+    "elbow_helper/agent/actions/runner.py:AgentActionRunner._execute": {
       "operations": [
         "progress.edit"
       ],
       "reason": "One confirmed run progress/result; virtual combined-reply parts require immediate per-step composition."
     },
-    "elbow_helper/features/agent/actions/runner.py:AgentActionRunner._post_report": {
+    "elbow_helper/agent/actions/runner.py:AgentActionRunner._post_report": {
       "operations": [
         "progress.edit"
       ],
       "reason": "One confirmed run progress/result; virtual combined-reply parts require immediate per-step composition."
     },
-    "elbow_helper/features/agent/actions/runner.py:AgentActionRunner._show_progress": {
+    "elbow_helper/agent/actions/runner.py:AgentActionRunner._show_progress": {
       "operations": [
         "progress_message.edit"
       ],
       "reason": "One confirmed run progress/result; virtual combined-reply parts require immediate per-step composition."
     },
-    "elbow_helper/features/agent/actions/runner.py:AgentActionRunner._show_stop_later": {
+    "elbow_helper/agent/actions/runner.py:AgentActionRunner._show_stop_later": {
       "operations": [
         "progress.edit"
       ],
       "reason": "One confirmed run progress/result; virtual combined-reply parts require immediate per-step composition."
     },
-    "elbow_helper/features/agent/delivery.py:AgentDeliveryMixin._bind_private_answer.post": {
+    "elbow_helper/agent/delivery.py:AgentDeliveryMixin._bind_private_answer.post": {
       "operations": [
         "target.edit"
       ],
       "reason": "One answer/preview delivery or control expiry, including virtual combined-reply parts."
     },
-    "elbow_helper/features/agent/discord_actions/channels.py:edit_action.apply": {
+    "elbow_helper/agent/discord_actions/channels.py:edit_action.apply": {
       "operations": [
         "current.edit"
       ],
       "reason": "One explicitly confirmed action with preview/audit/undo; each action must apply individually."
     },
-    "elbow_helper/features/agent/discord_actions/messages.py:_edit_action.run": {
+    "elbow_helper/agent/discord_actions/messages.py:_edit_action.run": {
       "operations": [
         "message.edit"
       ],
       "reason": "One explicitly confirmed action with preview/audit/undo; each action must apply individually."
     },
-    "elbow_helper/features/agent/discord_actions/nicknames.py:_nickname_action.run": {
+    "elbow_helper/agent/discord_actions/nicknames.py:_nickname_action.run": {
       "operations": [
         "member.edit"
       ],
       "reason": "One explicitly confirmed action with preview/audit/undo; each action must apply individually."
     },
-    "elbow_helper/features/agent/discord_actions/role_settings.py:role_action.apply": {
+    "elbow_helper/agent/discord_actions/role_settings.py:role_action.apply": {
       "operations": [
         "created.edit",
         "current.edit"
       ],
       "reason": "One explicitly confirmed action with preview/audit/undo; each action must apply individually."
     },
-    "elbow_helper/features/agent/discord_actions/scheduled_events.py:event_action.apply": {
+    "elbow_helper/agent/discord_actions/scheduled_events.py:event_action.apply": {
       "operations": [
         "current.edit"
       ],
       "reason": "One explicitly confirmed action with preview/audit/undo; each action must apply individually."
     },
-    "elbow_helper/features/agent/discord_actions/scheduled_events.py:prepare_cancel.apply": {
+    "elbow_helper/agent/discord_actions/scheduled_events.py:prepare_cancel.apply": {
       "operations": [
         "current.edit"
       ],
       "reason": "One explicitly confirmed action with preview/audit/undo; each action must apply individually."
     },
-    "elbow_helper/features/agent/discord_actions/threads.py:_thread_update_action.run": {
+    "elbow_helper/agent/discord_actions/threads.py:_thread_update_action.run": {
       "operations": [
         "thread.edit"
       ],

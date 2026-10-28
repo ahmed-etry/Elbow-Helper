@@ -176,7 +176,9 @@ class UnifiedLogFormatter(logging.Formatter):
 
     @staticmethod
     def _build_tag(logger_name: str) -> str:
-        if logger_name.startswith("elbow_helper.features."):
+        if logger_name == "elbow_helper.agent" or logger_name.startswith(
+            ("elbow_helper.features.", "elbow_helper.agent.")
+        ):
             return f"[{logger_name.split('.')[-1].upper()}]"
         if logger_name == "elbow.boot":
             return "[BOOT]"

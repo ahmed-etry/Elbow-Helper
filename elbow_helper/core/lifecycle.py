@@ -51,7 +51,7 @@ REQUIRED_EXTENSIONS = (
     "elbow_helper.features.cwl",
     "elbow_helper.features.examination",
     "elbow_helper.features.clan_reporting",
-    "elbow_helper.features.agent",
+    "elbow_helper.agent",
     "elbow_helper.infrastructure.discord.command_registry",
 )
 OPTIONAL_EXTENSIONS: tuple[str, ...] = ()

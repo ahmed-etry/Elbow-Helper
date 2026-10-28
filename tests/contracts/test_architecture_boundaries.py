@@ -22,6 +22,7 @@ from elbow_helper.features.rosters.cog import Rosters
 
 
 FEATURE_ROOT = Path(elbow_helper.features.__file__).parent
+AGENT_ROOT = FEATURE_ROOT.parent / "agent"
 PROJECT_ROOT = FEATURE_ROOT.parents[1]
 CLAN_HEALTH_DATABASE_ROOT = FEATURE_ROOT / "clan_health" / "database"
 
@@ -85,7 +86,7 @@ class CommandRegistryTests(unittest.IsolatedAsyncioTestCase):
 
 class DependencyBoundaryTests(unittest.TestCase):
     def test_agent_large_module_responsibilities_remain_separated(self) -> None:
-        agent_root = FEATURE_ROOT / "agent"
+        agent_root = AGENT_ROOT
         attachment_tools = (
             agent_root / "files" / "attachment_tools.py"
         ).read_text(encoding="utf-8")
@@ -196,7 +197,7 @@ class DependencyBoundaryTests(unittest.TestCase):
                 "elbow_helper.features.event_stats",
                 "elbow_helper.features.account_links",
             ),
-            "elbow_helper.features.agent": (
+            "elbow_helper.agent": (
                 "elbow_helper.features.achievements",
                 "elbow_helper.features.hibernation",
                 "elbow_helper.features.clan_transfers",
@@ -239,7 +240,7 @@ class DependencyBoundaryTests(unittest.TestCase):
                     )
 
     def test_feature_modules_do_not_construct_external_ai_clients(self) -> None:
-        for path in FEATURE_ROOT.rglob("*.py"):
+        for path in (*FEATURE_ROOT.rglob("*.py"), *AGENT_ROOT.rglob("*.py")):
             source = path.read_text(encoding="utf-8-sig")
             with self.subTest(path=path):
                 self.assertNotIn("from openai import", source)
@@ -251,27 +252,27 @@ class DependencyBoundaryTests(unittest.TestCase):
 
     def test_feature_modules_do_not_load_process_settings(self) -> None:
         forbidden = ("os.getenv(", "os.environ[", "load_dotenv(")
-        for path in FEATURE_ROOT.rglob("*.py"):
+        for path in (*FEATURE_ROOT.rglob("*.py"), *AGENT_ROOT.rglob("*.py")):
             source = path.read_text(encoding="utf-8-sig")
             with self.subTest(path=path):
                 for marker in forbidden:
                     self.assertNotIn(marker, source)
 
     def test_feature_paths_do_not_depend_on_module_depth(self) -> None:
-        for path in FEATURE_ROOT.rglob("*.py"):
+        for path in (*FEATURE_ROOT.rglob("*.py"), *AGENT_ROOT.rglob("*.py")):
             source = path.read_text(encoding="utf-8-sig")
             with self.subTest(path=path):
                 self.assertNotIn("Path(__file__)", source)
 
     def test_features_do_not_create_clash_http_sessions(self) -> None:
-        for path in FEATURE_ROOT.rglob("*.py"):
+        for path in (*FEATURE_ROOT.rglob("*.py"), *AGENT_ROOT.rglob("*.py")):
             source = path.read_text(encoding="utf-8-sig")
             with self.subTest(path=path):
                 self.assertNotIn("aiohttp.ClientSession(", source)
 
     def test_thread_discovery_transport_stays_out_of_agent_tools(self) -> None:
         source = (
-            FEATURE_ROOT / "agent" / "research" / "threads.py"
+            AGENT_ROOT / "research" / "threads.py"
         ).read_text(encoding="utf-8-sig")
         self.assertNotIn("guild.active_threads(", source)
         self.assertNotIn("parent.archived_threads(", source)
@@ -279,7 +280,7 @@ class DependencyBoundaryTests(unittest.TestCase):
 
     def test_features_use_the_application_owned_export_store(self) -> None:
         offenders: list[str] = []
-        for path in FEATURE_ROOT.rglob("*.py"):
+        for path in (*FEATURE_ROOT.rglob("*.py"), *AGENT_ROOT.rglob("*.py")):
             source = path.read_text(encoding="utf-8-sig")
             if "LocalExportStore(" in source:
                 offenders.append(str(path))
@@ -287,7 +288,7 @@ class DependencyBoundaryTests(unittest.TestCase):
 
     def test_features_schedule_tasks_from_the_running_loop(self) -> None:
         offenders: list[str] = []
-        for path in FEATURE_ROOT.rglob("*.py"):
+        for path in (*FEATURE_ROOT.rglob("*.py"), *AGENT_ROOT.rglob("*.py")):
             source = path.read_text(encoding="utf-8-sig")
             if ".bot.loop.create_task(" in source:
                 offenders.append(str(path))
@@ -303,7 +304,7 @@ class DependencyBoundaryTests(unittest.TestCase):
 
     def test_shared_command_roots_have_one_registration_owner(self) -> None:
         offenders: list[str] = []
-        for path in FEATURE_ROOT.rglob("*.py"):
+        for path in (*FEATURE_ROOT.rglob("*.py"), *AGENT_ROOT.rglob("*.py")):
             source = path.read_text(encoding="utf-8-sig")
             if any(
                 f'Group(name="{root}"' in source
