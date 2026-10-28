@@ -1,0 +1,102 @@
+from types import SimpleNamespace
+import unittest
+from unittest.mock import AsyncMock
+
+from elbow_helper.configuration.roles import CORE, LEAD
+from elbow_helper.agent.access import AgentAccessLost
+from elbow_helper.agent.models import AgentRequestContext
+from elbow_helper.agent.capabilities.events.reads import (
+    read_event_schedule, read_event_schedule_report,
+)
+from elbow_helper.features.event_stats.queries import (
+    EventScheduleRow, EventScheduleSnapshot,
+)
+
+
+class _Queries:
+    def snapshot(self, guild):
+        return EventScheduleSnapshot(
+            "2026-09-19T12:00:00+00:00",
+            (
+                EventScheduleRow(
+                    "members", "Members", "preset", "counter", "counter",
+                    True, "live", 0, None, 0, None, None, None,
+                    20, 2, 0, "complete",
+                ),
+                EventScheduleRow(
+                    "cwl", "CWL", "preset", "recurring", "range",
+                    True, "upcoming", 1, None, 24,
+                    "2026-10-01T08:00:00+00:00",
+                    "2026-10-09T08:00:00+00:00", None,
+                    None, 0, 0, None,
+                ),
+            ),
+        )
+
+
+class AgentEventTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.member = SimpleNamespace(
+            id=42, roles=[
+                SimpleNamespace(id=next(iter(CORE))),
+                SimpleNamespace(id=next(iter(LEAD))),
+            ],
+        )
+        self.bot_member = SimpleNamespace(id=99, roles=[])
+        self.channel = SimpleNamespace(
+            id=100,
+            permissions_for=lambda _: SimpleNamespace(
+                view_channel=True, read_message_history=True,
+            ),
+        )
+        self.guild = SimpleNamespace(
+            id=1, me=self.bot_member,
+            get_member=lambda value: self.member if value == 42 else self.bot_member,
+            get_channel_or_thread=lambda value: self.channel if value == 100 else None,
+        )
+        self.channel.guild = self.guild
+        self.context = AgentRequestContext(private_pass=True,
+            bot=SimpleNamespace(fetch_channel=AsyncMock(return_value=None)),
+            guild=self.guild, member=self.member,
+            source_message=SimpleNamespace(channel=self.channel),
+            account_links=None, message_search=None,
+            event_queries=_Queries(),
+        )
+
+    async def test_event_schedule_is_role_scoped_retained_and_filtered(self):
+        first = await read_event_schedule(self.context, {
+            "event_type": "recurring",
+        })
+
+        self.assertEqual(first["event_count"], 2)
+        self.assertEqual(first["matching_rows"], 1)
+        self.assertEqual(first["events"][0]["event_key"], "cwl")
+        self.assertEqual(self.context.state.required_access, set())
+        retained = await read_event_schedule_report(self.context, {
+            "report_id": first["report_id"], "phase": "live",
+        })
+        self.assertEqual(retained["events"][0]["member_count"], 20)
+
+    async def test_member_can_read_public_event_data(self):
+        self.member.roles = [SimpleNamespace(id=next(iter(CORE)))]
+        first = await read_event_schedule(self.context, {})
+        self.assertEqual(first["event_count"], 2)
+        self.assertFalse(self.context.state.required_access)
+        retained = await read_event_schedule_report(self.context, {"report_id": first["report_id"]})
+        self.assertEqual(retained["event_count"], 2)
+
+    async def test_entry_loss_during_read_retains_nothing(self):
+        snapshot = self.context.event_queries.snapshot
+        def lose_entry(guild):
+            self.member.roles = []
+            return snapshot(guild)
+        self.context.event_queries.snapshot = lose_entry
+        with self.assertRaises(AgentAccessLost):
+            await read_event_schedule(self.context, {})
+        self.assertEqual(self.context.state.reports, {})
+
+    async def test_entry_loss_blocks_retained_report(self):
+        first = await read_event_schedule(self.context, {})
+        self.member.roles = []
+        with self.assertRaises(AgentAccessLost):
+            await read_event_schedule_report(self.context, {"report_id": first["report_id"]})

@@ -1,0 +1,236 @@
+from dataclasses import replace
+from datetime import datetime, timezone
+from types import SimpleNamespace
+import unittest
+from elbow_helper.agent.access import LookupAccessDenied
+from unittest.mock import AsyncMock
+
+from elbow_helper.configuration.roles import CORE, LEAD, CO_APPLICANT_ROLE_ID
+from elbow_helper.features.achievements.queries import (
+    AchievementCountRow, AchievementCountSnapshot, AchievementProgressRow,
+    CoinTransactionRow, CoinTransactionSnapshot, EconomyRulesSnapshot,
+    MemberAchievementSnapshot, MemberInventorySnapshot, RaffleSnapshot,
+    RaffleWinnerRow,
+)
+from elbow_helper.agent.access import AgentAccessLost
+from elbow_helper.agent.models import AgentRequestContext
+from elbow_helper.agent.capabilities.achievements.reads import (
+    read_member_achievement_report, read_member_achievements,
+)
+from elbow_helper.agent.capabilities.achievements.economy import (
+    read_achievement_economy_rules, read_member_inventory,
+)
+
+
+class _Queries:
+    def economy_rules(self):
+        return EconomyRulesSnapshot(
+            "2026-09-18T12:00:00+00:00", 5, 10, 1, 4, 10, 100, 1,
+            10, 10, 20, (("alpha", 10), ("beta", 15)),
+        )
+
+    def member_progress(self, member_id, *, joined_at):
+        return MemberAchievementSnapshot(
+            "2026-09-18T12:00:00+00:00", member_id, 1, 3,
+            (
+                AchievementProgressRow(
+                    "chatterbox", "Chatterbox", "Send messages", 100,
+                    "counter", 75, True, 1000,
+                ),
+                AchievementProgressRow(
+                    "one_of_us", "One of Us", "Stay for a month", 30,
+                    "membership_days", 20, False, None,
+                ),
+                AchievementProgressRow(
+                    "storyteller", "Storyteller", "Write a long message", 1,
+                    "completion_only", 0, False, None,
+                ),
+            ),
+        )
+
+    def leaderboard_counts(self):
+        return AchievementCountSnapshot(
+            "2026-09-18T12:00:00+00:00", 25,
+            (AchievementCountRow(42, 3), AchievementCountRow(43, 2),
+             AchievementCountRow(77, 1)),
+        )
+
+    def member_inventory(self, member_id):
+        return MemberInventorySnapshot(
+            "2026-09-18T12:00:00+00:00", member_id, 125, True, 24321,
+        )
+
+    def coin_transactions(self, member_id, *, after=None, before=None):
+        rows = (
+            CoinTransactionRow(
+                2, -100, "raffle_purchase", "ticket", member_id, 1001,
+            ),
+            CoinTransactionRow(1, 5, "daily", None, None, 1000),
+        )
+        selected = tuple(
+            row for row in rows
+            if (after is None or row.created_at >= after)
+            and (before is None or row.created_at < before)
+        )
+        return CoinTransactionSnapshot(
+            "2026-09-18T12:00:00+00:00", member_id, len(selected),
+            selected, True, after, before,
+        )
+
+    def raffle(self, month=None):
+        if month == "bad":
+            raise ValueError("bad month")
+        return RaffleSnapshot(
+            "2026-09-18T12:00:00+00:00", 24321, "September 2026",
+            "Gold Pass", 1, 2, (42, 77), 2,
+            (
+                RaffleWinnerRow(1, 42, 1000, "draw", None, False),
+                RaffleWinnerRow(2, 77, 1001, "reroll", 1, True),
+            ),
+            True,
+        )
+
+
+class AgentAchievementTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.requester = SimpleNamespace(
+            id=1, display_name="Requester",
+            roles=[SimpleNamespace(id=next(iter(CORE))), SimpleNamespace(id=CO_APPLICANT_ROLE_ID)],
+        )
+        self.target = SimpleNamespace(
+            id=42, display_name="Alpha", joined_at=datetime(
+                2026, 8, 1, tzinfo=timezone.utc,
+            ), roles=[],
+        )
+        self.bot_member = SimpleNamespace(id=99, roles=[])
+        self.lead = SimpleNamespace(
+            id=43, display_name="Lead", roles=[
+                SimpleNamespace(id=next(iter(LEAD))),
+            ],
+        )
+        self.channel = SimpleNamespace(
+            id=100,
+            permissions_for=lambda _: SimpleNamespace(
+                view_channel=True, read_message_history=True,
+            ),
+        )
+        members = {
+            self.requester.id: self.requester,
+            self.target.id: self.target,
+            self.lead.id: self.lead,
+            self.bot_member.id: self.bot_member,
+        }
+        self.guild = SimpleNamespace(
+            id=10, me=self.bot_member,
+            get_member=members.get,
+            get_channel_or_thread=lambda value: (
+                self.channel if value == self.channel.id else None
+            ),
+        )
+        self.channel.guild = self.guild
+        self.context = AgentRequestContext(private_pass=True,
+            bot=SimpleNamespace(fetch_channel=AsyncMock(return_value=None)),
+            guild=self.guild, member=self.requester,
+            source_message=SimpleNamespace(channel=self.channel),
+            account_links=None, message_search=None,
+            achievement_queries=_Queries(),
+        )
+
+    async def test_member_progress_is_retained_filtered_and_paged(self):
+        first = await read_member_achievements(self.context, {
+            "member_id": 42, "status": "in_progress", "limit": 1,
+        })
+
+        self.assertEqual(first["member_name"], "Alpha")
+        self.assertEqual(first["completed_count"], 1)
+        self.assertEqual(first["matching_rows"], 2)
+        self.assertEqual(first["achievements"][0]["achievement_id"], "one_of_us")
+        second = await read_member_achievement_report(self.context, {
+            "report_id": first["report_id"], "status": "in_progress",
+            "offset": first["next_offset"],
+        })
+        self.assertEqual(
+            second["achievements"][0]["progress_kind"], "completion_only",
+        )
+
+
+    async def test_requester_permission_loss_hides_retained_report(self):
+        first = await read_member_achievements(
+            self.context, {"member_id": 42},
+        )
+        self.requester.roles = []
+
+        with self.assertRaises(AgentAccessLost):
+            await read_member_achievement_report(self.context, {
+                "report_id": first["report_id"],
+            })
+
+
+    async def test_missing_or_departed_member_is_not_queried(self):
+        result = await read_member_achievements(
+            self.context, {"member_id": 77},
+        )
+        self.assertIn("error", result)
+        self.assertEqual(self.context.state.reports, {})
+
+    async def test_self_inventory_needs_no_additional_role(self):
+        result = await read_member_inventory(
+            self.context, {"member_id": self.requester.id},
+        )
+
+        self.assertEqual(result["balance"], 125)
+        self.assertTrue(result["has_current_ticket"])
+        self.assertEqual(self.context.state.required_access, set())
+
+    async def test_economy_rules_are_authoritative_and_permission_rechecked(self):
+        result = await read_achievement_economy_rules(self.context, {})
+
+        self.assertEqual(result["daily_activity"]["qualifying_messages"], 5)
+        self.assertEqual(result["tickets"]["cost_coins"], 100)
+        self.assertEqual(result["manual_monthly_caps"]["combined_coins"], 20)
+        self.assertEqual(result["achievement_reward_total_coins"], 25)
+
+        class _RevokingQueries(_Queries):
+            def economy_rules(inner):
+                self.requester.roles = []
+                return super().economy_rules()
+
+        self.context = replace(
+            self.context, achievement_queries=_RevokingQueries(),
+        )
+        with self.assertRaises(AgentAccessLost):
+            await read_achievement_economy_rules(self.context, {})
+
+    async def test_other_inventory_requires_lead(self):
+        result = await read_member_inventory(self.context, {"member_id": self.target.id})
+        self.assertEqual(result["required_access"], ["lead"])
+        self.assertFalse(self.context.state.required_access)
+
+        self.requester.roles.append(SimpleNamespace(id=next(iter(LEAD))))
+        self.context.state.scope = None
+        result = await read_member_inventory(self.context, {"member_id": self.target.id})
+        self.assertEqual(result["member_name"], "Alpha")
+        self.assertEqual(self.context.state.required_access, {"lead"})
+
+    async def test_lead_loss_during_inventory_read_discards_result(self):
+        self.requester.roles.append(SimpleNamespace(id=next(iter(LEAD))))
+        class RevokingQueries(_Queries):
+            def member_inventory(inner, member_id):
+                self.requester.roles = [role for role in self.requester.roles if role.id not in LEAD]
+                return super().member_inventory(member_id)
+        self.context = replace(self.context, achievement_queries=RevokingQueries())
+        result = await read_member_inventory(self.context, {"member_id": self.target.id})
+        self.assertIn("error", result)
+        self.assertFalse(self.context.state.required_access)
+
+
+async def _capture_access_loss(awaitable):
+    try:
+        await awaitable
+    except (AgentAccessLost, LookupAccessDenied):
+        return True
+    return False
+
+
+if __name__ == "__main__":
+    unittest.main()

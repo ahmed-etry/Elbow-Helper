@@ -15,7 +15,7 @@ from elbow_helper.data.collectors.service import FamilyCollectors, LINK_INTERVAL
 from elbow_helper.data.store import FamilyStore
 from elbow_helper.data.store.projections import DONATION_FIELDS, roster_projection
 from elbow_helper.infrastructure.clash import ClashClient
-from tests.features.agent.test_compact_clash import synthetic_clan
+from tests.agent.test_compact_clash import synthetic_clan
 
 from .test_family_store import CLANS, clan_response, link, player, response
 
