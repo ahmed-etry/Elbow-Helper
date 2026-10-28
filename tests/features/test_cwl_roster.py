@@ -14,6 +14,7 @@ from xml.etree import ElementTree
 from typing import get_type_hints
 
 from elbow_helper.features.clan_health.database import ClanHealthRepository
+from elbow_helper.features.clan_health.database.schema import create_schema
 from elbow_helper.features.cwl.roster.analysis import build_ass_season_metrics
 from elbow_helper.features.cwl.roster.analysis import build_mega_ass_metrics
 from elbow_helper.features.cwl.roster.analysis import CwlRosterAnalysisMixin
@@ -428,65 +429,39 @@ class AssAnalysisTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "clan_health.db"
             with closing(sqlite3.connect(path)) as conn:
-                conn.executescript(
-                    """
-                    CREATE TABLE wars (
-                        war_id TEXT,
-                        war_type TEXT,
-                        clan_code TEXT,
-                        cwl_season TEXT,
-                        cwl_league TEXT,
-                        cwl_round INTEGER,
-                        team_size INTEGER,
-                        attacks_per_member INTEGER,
-                        state TEXT,
-                        end_ts INTEGER
-                    );
-                    CREATE TABLE war_roster_members (
-                        war_id TEXT,
-                        clan_code TEXT,
-                        player_tag TEXT,
-                        player_name TEXT,
-                        townhall INTEGER,
-                        map_position INTEGER,
-                        attacks_expected INTEGER
-                    );
-                    CREATE TABLE war_attacks (
-                        war_id TEXT,
-                        war_type TEXT,
-                        clan_code TEXT,
-                        player_tag TEXT,
-                        player_name TEXT,
-                        attack_order INTEGER,
-                        defender_map_position INTEGER,
-                        stars INTEGER,
-                        destruction REAL
-                    );
-                    """
-                )
+                create_schema(conn)
                 for day in range(1, 8):
                     war_id = f"war-{day}"
                     conn.execute(
                         """
-                        INSERT INTO wars VALUES (
-                            ?, 'CWL', 'BE4', '2026-06', 'Master League I',
-                            ?, 15, 1, 'warEnded', ?
+                        INSERT INTO wars (
+                            war_id, war_type, clan_code, clan_tag, cwl_season, cwl_league,
+                            cwl_round, team_size, attacks_per_member, state, end_ts, last_seen_ts
+                        ) VALUES (
+                            ?, 'CWL', 'BE4', '#P0', '2026-06', 'Master League I',
+                            ?, 15, 1, 'warEnded', ?, 1
                         )
                         """,
                         (war_id, day, 100 + day),
                     )
                     conn.execute(
                         """
-                        INSERT INTO war_roster_members VALUES (
-                            ?, 'BE4', '#A', 'Alpha', 18, 1, 1
+                        INSERT INTO war_roster_members (
+                            war_id, clan_code, player_tag, player_name, townhall, map_position,
+                            attacks_expected, roster_state, captured_ts
+                        ) VALUES (
+                            ?, 'BE4', '#A', 'Alpha', 18, 1, 1, 'warEnded', 1
                         )
                         """,
                         (war_id,),
                     )
                     conn.execute(
                         """
-                        INSERT INTO war_attacks VALUES (
-                            ?, 'CWL', 'BE4', '#A', 'Alpha', 1, 1, 3, 100
+                        INSERT INTO war_attacks (
+                            war_id, war_type, clan_code, clan_tag, end_ts, war_state, player_tag,
+                            player_name, attack_order, defender_map_position, stars, destruction
+                        ) VALUES (
+                            ?, 'CWL', 'BE4', '#P0', 1, 'warEnded', '#A', 'Alpha', 1, 1, 3, 100
                         )
                         """,
                         (war_id,),
@@ -496,8 +471,10 @@ class AssAnalysisTests(unittest.TestCase):
             with closing(sqlite3.connect(path)) as conn:
                 for day in range(1, 8):
                     conn.execute(
-                        "INSERT INTO wars VALUES (?, 'CWL', 'BE4', '2026-08', "
-                        "'Master League I', ?, 15, 1, 'warEnded', ?)",
+                        "INSERT INTO wars (war_id, war_type, clan_code, clan_tag, cwl_season, cwl_league, "
+                        "cwl_round, team_size, attacks_per_member, state, end_ts, last_seen_ts) "
+                        "VALUES (?, 'CWL', 'BE4', '#P0', '2026-08', "
+                        "'Master League I', ?, 15, 1, 'warEnded', ?, 1)",
                         (f"newer-war-{day}", day, 200 + day),
                     )
                 conn.commit()
@@ -518,36 +495,12 @@ class AssAnalysisTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "clan_health.db"
             with closing(sqlite3.connect(path)) as conn:
-                conn.executescript(
-                    """
-                    CREATE TABLE wars (
-                        war_id TEXT,
-                        war_type TEXT,
-                        clan_code TEXT,
-                        cwl_season TEXT,
-                        cwl_league TEXT,
-                        cwl_round INTEGER,
-                        team_size INTEGER,
-                        attacks_per_member INTEGER,
-                        state TEXT,
-                        end_ts INTEGER
-                    );
-                    CREATE TABLE war_roster_members (
-                        war_id TEXT,
-                        clan_code TEXT,
-                        player_tag TEXT
-                    );
-                    CREATE TABLE war_attacks (
-                        war_id TEXT,
-                        war_type TEXT,
-                        clan_code TEXT
-                    );
-                    INSERT INTO wars VALUES (
-                        'war-1', 'CWL', 'BE4', '2026-07', 'Master League I',
-                        1, 15, 1, 'warEnded', 100
-                    );
-                    """
-                )
+                create_schema(conn)
+                conn.execute("""INSERT INTO wars (
+                    war_id, war_type, clan_code, clan_tag, cwl_season, cwl_league,
+                    cwl_round, team_size, attacks_per_member, state, end_ts, last_seen_ts
+                ) VALUES ('war-1', 'CWL', 'BE4', '#P0', '2026-07', 'Master League I',
+                          1, 15, 1, 'warEnded', 100, 1)""")
                 conn.commit()
             dataset = ClanHealthRepository(path).roster_history(3)
 

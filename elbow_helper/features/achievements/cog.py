@@ -59,13 +59,14 @@ class Achievements(
         self._pending_clan_role_baselines = {}
 
         data_dir = bot.paths.data_root / "achievements"
-        data_dir.mkdir(parents=True, exist_ok=True)
         self.db_path = os.fspath(data_dir / "achievements.db")
         self.logger = logging.getLogger(__name__)
-        self.init_database()
         self.rewards = AchievementRewardService(self)
-        self.init_achievements()
         self.queries = AchievementQueries(Path(self.db_path))
+
+    async def cog_load(self) -> None:
+        await asyncio.to_thread(self.init_database)
+        await asyncio.to_thread(self.init_achievements)
         start_resilient_loop(self.check_time_achievements)
         start_resilient_loop(self.initial_achievement_check)
         start_resilient_loop(self.cleanup_database)

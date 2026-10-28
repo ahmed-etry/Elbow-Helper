@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from elbow_helper.core.lifecycle import ElbowHelperBot
 from .database import RecordRepository
 from .export_service import RecordExportService
@@ -16,7 +18,7 @@ async def setup(bot: ElbowHelperBot) -> None:
     if account_links is None:
         raise RuntimeError("Records requires the Account Links service")
     repository = RecordRepository()
-    repository.initialize()
+    await asyncio.to_thread(repository.initialize)
     service = RecordService(repository, account_links)
     exports = RecordExportService(
         service.reader,

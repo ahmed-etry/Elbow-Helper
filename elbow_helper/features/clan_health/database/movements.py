@@ -13,7 +13,7 @@ class ClanHealthMovementReads:
     ) -> dict[str, list[dict[str, Any]]]:
         """Read consecutive complete family runs and all their roster rows."""
         limit = max(1, min(int(run_limit), 22))
-        with closing(sqlite3.connect(self.path, timeout=30)) as connection:
+        with closing(self._db_connect(timeout=30)) as connection:
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA busy_timeout=30000")
             connection.execute("BEGIN")

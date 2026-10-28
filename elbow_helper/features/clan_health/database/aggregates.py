@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional, Set
 
 class ClanHealthAggregates:
     def _get_baseline_snapshot(self, player_tag: str, cutoff_ts: int) -> Optional[sqlite3.Row]:
-        with closing(sqlite3.connect(self.path)) as conn, conn:
+        with closing(self._db_connect()) as conn, conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute(
@@ -32,7 +32,7 @@ class ClanHealthAggregates:
         cycle_end_ts: int,
         player_tags: Optional[Set[str]] = None,
     ) -> Dict[str, Dict[str, Any]]:
-        with closing(sqlite3.connect(self.path)) as conn, conn:
+        with closing(self._db_connect()) as conn, conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             params: list[Any] = [cycle_start_ts, cycle_end_ts]
@@ -76,7 +76,7 @@ class ClanHealthAggregates:
         cycle_end_ts: int,
         clan_codes: Optional[Set[str]] = None,
     ) -> Dict[str, Dict[str, int]]:
-        with closing(sqlite3.connect(self.path)) as conn, conn:
+        with closing(self._db_connect()) as conn, conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             params: list[Any] = [cycle_start_ts, cycle_end_ts]
@@ -110,7 +110,7 @@ class ClanHealthAggregates:
         }
 
     def _count_raid_weekends_in_window(self, *, cycle_start_ts: int, cycle_end_ts: int) -> int:
-        with closing(sqlite3.connect(self.path)) as conn, conn:
+        with closing(self._db_connect()) as conn, conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -130,7 +130,7 @@ class ClanHealthAggregates:
         cycle_end_ts: int,
         player_tags: Optional[Set[str]] = None,
     ) -> Dict[str, Dict[str, Any]]:
-        with closing(sqlite3.connect(self.path)) as conn, conn:
+        with closing(self._db_connect()) as conn, conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             if player_tags:
@@ -176,7 +176,7 @@ class ClanHealthAggregates:
         cycle_end_ts: int,
         player_tags: Optional[Set[str]] = None,
     ) -> Dict[str, Dict[str, int]]:
-        with closing(sqlite3.connect(self.path)) as conn, conn:
+        with closing(self._db_connect()) as conn, conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             if player_tags:
@@ -287,7 +287,7 @@ class ClanHealthAggregates:
         if not tags:
             return {}
         placeholders = ",".join("?" for _ in tags)
-        with closing(sqlite3.connect(self.path)) as conn, conn:
+        with closing(self._db_connect()) as conn, conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute(
@@ -318,7 +318,7 @@ class ClanHealthAggregates:
         if not tags:
             return {}
         placeholders = ",".join("?" for _ in tags)
-        with closing(sqlite3.connect(self.path)) as conn, conn:
+        with closing(self._db_connect()) as conn, conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute(

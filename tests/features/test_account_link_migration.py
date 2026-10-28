@@ -1,6 +1,6 @@
 """Account-primary removal preserves link data and SQLite schema invariants."""
 
-from contextlib import closing, contextmanager
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -8,6 +8,8 @@ import unittest
 from unittest.mock import patch
 
 from elbow_helper.features.account_links.database import AccountLinksDbMixin
+from elbow_helper.features.account_links.schema import DATABASE, create_schema
+from elbow_helper.infrastructure.persistence.migrations import SQLiteMigrationError
 
 
 class AccountLinkMigrationTests(unittest.TestCase):
@@ -22,25 +24,21 @@ class AccountLinkMigrationTests(unittest.TestCase):
 
     def legacy_database(self):
         with closing(sqlite3.connect(self.path)) as conn, conn:
+            create_schema(conn)
+            conn.execute("ALTER TABLE links ADD COLUMN is_primary INTEGER NOT NULL DEFAULT 0")
+            conn.execute("DROP TABLE suggestions")
+            conn.execute("DROP TABLE ignored_tags")
             conn.executescript("""
                 PRAGMA journal_mode=WAL;
-                CREATE TABLE links (
-                    player_tag TEXT PRIMARY KEY,
-                    discord_user_id INTEGER NOT NULL,
-                    is_primary INTEGER NOT NULL DEFAULT 0,
-                    player_name_last_seen TEXT DEFAULT '',
-                    last_seen_clan_tag TEXT DEFAULT '',
-                    last_seen_clan_code TEXT DEFAULT '',
-                    last_seen_role TEXT DEFAULT ''
-                );
-                CREATE INDEX idx_links_discord_user ON links(discord_user_id);
                 CREATE UNIQUE INDEX unique_observation ON links(player_name_last_seen, player_tag);
                 CREATE TABLE unrelated (value TEXT CHECK(value != ''));
                 INSERT INTO unrelated VALUES ('untouched');
                 CREATE TRIGGER reject_negative_member BEFORE INSERT ON links
                 WHEN NEW.discord_user_id < 0 BEGIN SELECT RAISE(ABORT, 'invalid member'); END;
             """)
-            conn.executemany("INSERT INTO links VALUES (?, ?, ?, ?, ?, ?, ?)", [
+            conn.executemany("INSERT INTO links(player_tag, discord_user_id, is_primary, "
+                             "player_name_last_seen, last_seen_clan_tag, last_seen_clan_code, last_seen_role) "
+                             "VALUES (?, ?, ?, ?, ?, ?, ?)", [
                 ("#P0", 7, 1, "Éléphant 🐘", "#CLAN", "BEH", "coLeader"),
                 ("#P2", 7, 0, "", "", "", ""),
                 ("#P8", 8, 1, "玩家", None, "", None),
@@ -65,9 +63,10 @@ class AccountLinkMigrationTests(unittest.TestCase):
     def test_migrate_twice_preserves_all_other_values_indexes_and_constraints(self):
         self.legacy_database()
         before = self.preserved_state()
+        stamped = (*before[:5], (1,), *before[6:])
         for _ in range(2):
             self.links._init_db()
-            self.assertEqual(self.preserved_state(), before)
+            self.assertEqual(self.preserved_state(), stamped)
             with self.links._db_connect() as conn:
                 self.assertNotIn("is_primary", [row["name"] for row in conn.execute("PRAGMA table_info(links)")])
                 self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
@@ -87,8 +86,9 @@ class AccountLinkMigrationTests(unittest.TestCase):
         with closing(sqlite3.connect(self.path)) as conn, conn:
             conn.execute("CREATE INDEX unexpected_primary_dependency ON links(is_primary)")
         before = self.preserved_state()
-        with self.assertRaises(sqlite3.OperationalError):
+        with self.assertRaises(SQLiteMigrationError) as raised:
             self.links._init_db()
+        self.assertIsInstance(raised.exception.__cause__, sqlite3.OperationalError)
         self.assertEqual(self.preserved_state(), before)
         with closing(sqlite3.connect(self.path)) as conn, conn:
             self.assertEqual(conn.execute("SELECT is_primary FROM links ORDER BY player_tag").fetchall(), [(1,), (0,), (1,), (0,)])
@@ -97,25 +97,24 @@ class AccountLinkMigrationTests(unittest.TestCase):
     def test_failure_after_drop_rolls_back_schema_and_data(self):
         self.legacy_database()
         before = self.preserved_state()
-        original_connect = self.links._db_connect
+        original_adopt = DATABASE.adopt
 
-        @contextmanager
-        def deny_later_schema_change():
-            with original_connect() as conn:
-                conn.set_authorizer(lambda action, name, *args: (
-                    sqlite3.SQLITE_DENY if action == sqlite3.SQLITE_CREATE_TABLE
-                    and name == "suggestions" else sqlite3.SQLITE_OK
-                ))
-                yield conn
+        def deny_later_schema_change(conn):
+            conn.set_authorizer(lambda action, name, *args: (
+                sqlite3.SQLITE_DENY if action == sqlite3.SQLITE_CREATE_TABLE
+                and name == "suggestions" else sqlite3.SQLITE_OK
+            ))
+            original_adopt(conn)
 
-        with patch.object(self.links, "_db_connect", deny_later_schema_change):
-            with self.assertRaises(sqlite3.DatabaseError):
+        with patch.object(DATABASE, "adopt", deny_later_schema_change):
+            with self.assertRaises(SQLiteMigrationError) as raised:
                 self.links._init_db()
+            self.assertIsInstance(raised.exception.__cause__, sqlite3.DatabaseError)
         self.assertEqual(self.preserved_state(), before)
         with closing(sqlite3.connect(self.path)) as conn, conn:
             self.assertEqual(conn.execute("SELECT sum(is_primary) FROM links").fetchone()[0], 2)
         self.links._init_db()
-        self.assertEqual(self.preserved_state(), before)
+        self.assertEqual(self.preserved_state(), (*before[:5], (1,), *before[6:]))
 
     def test_fresh_database_supports_link_reassignment_removal_and_restore(self):
         self.links._init_db()

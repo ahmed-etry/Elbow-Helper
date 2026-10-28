@@ -19,7 +19,7 @@ class ClanHealthWarReads:
         ended_before_ts: int | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
         limit = max(1, min(int(history_limit), 21))
-        with closing(sqlite3.connect(self.path, timeout=30)) as connection:
+        with closing(self._db_connect(timeout=30)) as connection:
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA busy_timeout=30000")
             connection.execute("BEGIN")

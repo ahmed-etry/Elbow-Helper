@@ -13,6 +13,7 @@ from elbow_helper.features.achievements.database import COIN_DB_INIT
 from elbow_helper.features.achievements.rewards import AchievementRewardService
 from elbow_helper.features.clan_health.database import ClanHealthRepository
 from elbow_helper.features.clan_health.database.migrations import key_stored_cwl_seasons
+from elbow_helper.features.clan_health.database.schema import create_schema
 from elbow_helper.features.cwl.bonus.analysis import BonusAnalysisService
 from elbow_helper.features.cwl.bonus.export import BonusWorkbookWriter
 from elbow_helper.features.cwl.bonus.service import BonusReportError
@@ -78,60 +79,23 @@ class ClanHealthCwlReadTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         path = Path(temporary.name) / "wars.sqlite3"
         with closing(sqlite3.connect(path)) as connection:
-            connection.executescript(
-                """
-                CREATE TABLE wars (
-                    war_id TEXT,
-                    clan_code TEXT,
-                    cwl_season TEXT,
-                    cwl_league TEXT,
-                    cwl_round INTEGER,
-                    team_size INTEGER,
-                    attacks_per_member INTEGER,
-                    state TEXT,
-                    end_ts INTEGER,
-                    start_ts INTEGER,
-                    war_type TEXT
-                );
-                CREATE TABLE war_roster_members (
-                    war_id TEXT,
-                    clan_code TEXT,
-                    player_tag TEXT,
-                    player_name TEXT,
-                    townhall INTEGER,
-                    map_position INTEGER,
-                    attacks_expected INTEGER,
-                    attacks_used INTEGER,
-                    roster_state TEXT
-                );
-                CREATE TABLE war_attacks (
-                    war_id TEXT,
-                    clan_code TEXT,
-                    war_type TEXT,
-                    player_tag TEXT,
-                    player_name TEXT,
-                    attack_order INTEGER,
-                    defender_tag TEXT,
-                    defender_townhall INTEGER,
-                    defender_map_position INTEGER,
-                    stars INTEGER,
-                    destruction REAL
-                );
-                INSERT INTO wars VALUES (
-                    'CWL:#WAR', 'BEH', '2026-07-01', 'Champion League II',
-                    1, 15, 1,
-                    'warEnded', 1, 1782950400, 'CWL'
-                );
-                INSERT INTO war_roster_members VALUES (
-                    'CWL:#WAR', 'BEH', '#A', 'Ahmad', 18, 1, 1, 1,
-                    'active'
-                );
-                INSERT INTO war_attacks VALUES (
-                    'CWL:#WAR', 'BEH', 'CWL', '#A', 'Ahmad', 1,
-                    '#D', 18, 1, 3, 100
-                );
-                """
-            )
+            create_schema(connection)
+            connection.execute("ALTER TABLE wars DROP COLUMN cwl_season_label")
+            connection.execute("""INSERT INTO wars (
+                war_id, clan_code, clan_tag, cwl_season, cwl_league, cwl_round,
+                team_size, attacks_per_member, state, end_ts, start_ts, war_type, last_seen_ts
+            ) VALUES ('CWL:#WAR', 'BEH', '#P0', '2026-07-01', 'Champion League II',
+                      1, 15, 1, 'warEnded', 1, 1782950400, 'CWL', 1)""")
+            connection.execute("""INSERT INTO war_roster_members (
+                war_id, clan_code, player_tag, player_name, townhall, map_position,
+                attacks_expected, attacks_used, roster_state, captured_ts
+            ) VALUES ('CWL:#WAR', 'BEH', '#A', 'Ahmad', 18, 1, 1, 1, 'active', 1)""")
+            connection.execute("""INSERT INTO war_attacks (
+                war_id, clan_code, clan_tag, end_ts, war_state, war_type, player_tag,
+                player_name, attack_order, defender_tag, defender_townhall,
+                defender_map_position, stars, destruction
+            ) VALUES ('CWL:#WAR', 'BEH', '#P0', 1, 'warEnded', 'CWL', '#A', 'Ahmad',
+                      1, '#D', 18, 1, 3, 100)""")
             key_stored_cwl_seasons(connection)
             connection.commit()
         repository = ClanHealthRepository(path)

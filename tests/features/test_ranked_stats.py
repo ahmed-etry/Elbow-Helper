@@ -54,6 +54,18 @@ class RankedWindowTests(unittest.TestCase):
     def read(self, selector="member_ids", values=(42,), **arguments):
         return self.queries.window(after=stamp(), before=stamp(4), selector=selector, values=values, **arguments)
 
+    def adopt_legacy_copy(self):
+        """A pre-version backup is first opened at a new process/file boundary."""
+        import sqlite3
+        legacy_path = self.path.with_name("legacy.sqlite3")
+        with closing(sqlite3.connect(self.path)) as source, closing(sqlite3.connect(legacy_path)) as target:
+            source.backup(target)
+            target.execute("PRAGMA user_version=0")
+        self.path = legacy_path
+        self.store = RankedStore(self.path)
+        self.store.initialize()
+        self.queries = RankedQueries(self.store)
+
     def test_existing_snapshot_database_is_migrated_without_inferring_attempts(self):
         self.store.append([observation(wins=10), observation(wins=20, minute=5)])
         import sqlite3
@@ -61,7 +73,7 @@ class RankedWindowTests(unittest.TestCase):
             conn.execute("DROP TABLE ranked_battles")
             conn.execute("DROP TABLE battle_log_polls")
             conn.commit()
-        self.store.initialize()
+        self.adopt_legacy_copy()
         row = self.read()["accounts"][0]
         self.assertEqual(row["sample_count"], 2)
         self.assertEqual(row["ranking"]["attackWins"], 20)
@@ -81,7 +93,7 @@ class RankedWindowTests(unittest.TestCase):
             conn.execute("INSERT INTO ranked_battles SELECT * FROM saved_battles")
             conn.execute("DROP TABLE saved_battles")
             conn.commit()
-        self.store.initialize()
+        self.adopt_legacy_copy()
         self.store.initialize()
         with closing(sqlite3.connect(self.path)) as conn:
             self.assertEqual(conn.execute("SELECT * FROM ranked_battles").fetchall(), original)

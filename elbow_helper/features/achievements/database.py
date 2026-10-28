@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import closing
 import sqlite3
 from datetime import datetime
 from datetime import timedelta
@@ -14,154 +15,15 @@ import discord
 from .config import RUNTIME_CACHE_PRUNE_INTERVAL_SECONDS
 from .config import RUNTIME_CACHE_RETENTION_DAYS
 
-COIN_DB_INIT = [
-    '''
-    CREATE TABLE IF NOT EXISTS user_coins (
-        user_id INTEGER PRIMARY KEY,
-        balance INTEGER NOT NULL DEFAULT 0,
-        last_ticket_month INTEGER,
-        last_salary_month INTEGER,
-        last_daily_ts INTEGER,
-        manual_cwl_month INTEGER,
-        manual_cwl_awarded INTEGER DEFAULT 0,
-        manual_enc_month INTEGER,
-        manual_enc_awarded INTEGER DEFAULT 0,
-        daily_msg_day INTEGER,
-        daily_msg_count INTEGER DEFAULT 0
-    )
-    ''',
-    '''
-    CREATE TABLE IF NOT EXISTS coin_transactions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        amount INTEGER NOT NULL,
-        type TEXT NOT NULL,
-        reason TEXT,
-        actor_id INTEGER,
-        created_at INTEGER NOT NULL
-    )
-    ''',
-    '''
-    CREATE INDEX IF NOT EXISTS coin_transactions_member_time_idx
-    ON coin_transactions (user_id, created_at)
-    ''',
-    '''
-    CREATE TABLE IF NOT EXISTS cwl_reward_grants (
-        reason TEXT NOT NULL,
-        user_id INTEGER NOT NULL,
-        reward_kind TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        PRIMARY KEY (reason, user_id, reward_kind)
-    )
-    ''',
-    '''
-    INSERT OR IGNORE INTO cwl_reward_grants
-        (reason, user_id, reward_kind, created_at)
-    SELECT reason, user_id, 'coins', created_at
-    FROM coin_transactions
-    WHERE type = 'bonus_cwl' AND reason IS NOT NULL
-    ''',
-    '''
-    CREATE TABLE IF NOT EXISTS raffle_tickets (
-        month_key INTEGER NOT NULL,
-        user_id INTEGER PRIMARY KEY
-    )
-    ''',
-    '''
-    CREATE TABLE IF NOT EXISTS raffle_winners (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        month_key INTEGER NOT NULL,
-        user_id INTEGER NOT NULL,
-        drawn_at INTEGER NOT NULL,
-        draw_type TEXT NOT NULL DEFAULT 'draw',
-        reroll_of INTEGER,
-        is_active INTEGER NOT NULL DEFAULT 1,
-        UNIQUE (month_key, user_id)
-    )
-    ''',
-    '''
-    CREATE TABLE IF NOT EXISTS economy_meta (
-        key TEXT PRIMARY KEY,
-        value TEXT
-    )
-    ''',
-]
+from .schema import COIN_DB_INIT
+from .schema import DATABASE
+
+__all__ = ["AchievementsDatabaseMixin", "COIN_DB_INIT"]
 
 
 class AchievementsDatabaseMixin:
     def init_database(self):
-        conn = None
-        try:
-            conn = sqlite3.connect(self.db_path, timeout=20.0)
-            cursor = conn.cursor()
-            # Use WAL + NORMAL sync to reduce writer stalls under message load.
-            cursor.execute("PRAGMA journal_mode = WAL")
-            cursor.execute("PRAGMA synchronous = NORMAL")
-            cursor.execute("PRAGMA temp_store = MEMORY")
-
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS achievements (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    description TEXT NOT NULL,
-                    required_count INTEGER,
-                    emoji TEXT
-                )
-            ''')
-
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS user_achievements (
-                    user_id INTEGER NOT NULL,
-                    achievement_id TEXT NOT NULL,
-                    completed_date INTEGER NOT NULL,
-                    PRIMARY KEY (user_id, achievement_id),
-                    FOREIGN KEY (achievement_id) REFERENCES achievements(id)
-                )
-            ''')
-
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS user_stats (
-                    user_id INTEGER PRIMARY KEY,
-                    message_count INTEGER DEFAULT 0,
-                    emoji_count INTEGER DEFAULT 0,
-                    reaction_count INTEGER DEFAULT 0,
-                    voice_hours REAL DEFAULT 0.0,
-                    voice_total_seconds INTEGER DEFAULT 0,
-                    silent_voice_seconds INTEGER DEFAULT 0,
-                    role_pings INTEGER DEFAULT 0,
-                    meme_posts INTEGER DEFAULT 0,
-                    hibernation_count INTEGER DEFAULT 0,
-                    role_changes_count INTEGER DEFAULT 0,
-                    opinion_uses_count INTEGER DEFAULT 0,
-                    member_status_changes_count INTEGER DEFAULT 0,
-                    clan_changes_count INTEGER DEFAULT 0,
-                    clan_transfer_count INTEGER DEFAULT 0,
-                    voice_unmuted INTEGER DEFAULT 0,
-                    voice_never_unmuted INTEGER DEFAULT 1,
-                    active_channels TEXT DEFAULT '',
-                    last_voice_join INTEGER DEFAULT 0,
-                    last_activity_date INTEGER DEFAULT 0,
-                    activity_streak INTEGER DEFAULT 0,
-                    weekly_activity_count INTEGER DEFAULT 0,
-                    monthly_activity_count INTEGER DEFAULT 0,
-                    early_bird_count INTEGER DEFAULT 0,
-                    night_owl_count INTEGER DEFAULT 0,
-                    early_bird_last_local_day INTEGER DEFAULT 0,
-                    night_owl_last_local_day INTEGER DEFAULT 0
-                )
-            ''')
-
-
-            for stmt in COIN_DB_INIT:
-                cursor.execute(stmt)
-
-            conn.commit()
-
-        except (sqlite3.Error, OSError):
-            self.logger.exception("Error initializing database")
-        finally:
-            if conn:
-                conn.close()
+        DATABASE.initialize(self.db_path)
 
     def _ensure_user_stats_row(self, cursor: sqlite3.Cursor, user_id: int):
         """Ensure a stats row exists for the user before counter updates."""
@@ -308,17 +170,14 @@ class AchievementsDatabaseMixin:
 
     def init_achievements(self):
         """Initialize achievement definitions"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        for achievement in self.ALL_ACHIEVEMENTS:
-            cursor.execute('''
-                INSERT OR REPLACE INTO achievements 
-                (id, name, description, required_count, emoji)
-                VALUES (?, ?, ?, ?, ?)
-            ''', achievement[:5])
-        
-        conn.commit()
+        with closing(DATABASE.connect(self.db_path)) as conn, conn:
+            cursor = conn.cursor()
+            for achievement in self.ALL_ACHIEVEMENTS:
+                cursor.execute('''
+                    INSERT OR REPLACE INTO achievements
+                    (id, name, description, required_count, emoji)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', achievement[:5])
 
     async def _retry_db_operation(self, func, *args, **kwargs):
         """Retry DB work on lock contention and run queued side-effects only after commit."""
@@ -331,7 +190,7 @@ class AchievementsDatabaseMixin:
                 queued_actions = []
                 token = self._post_commit_actions_var.set(queued_actions)
                 try:
-                    conn = sqlite3.connect(self.db_path, timeout=0.0, check_same_thread=False)
+                    conn = DATABASE.connect(self.db_path, timeout=0.0, check_same_thread=False)
                     cursor = conn.cursor()
                     cursor.execute("PRAGMA busy_timeout = 0")
                     cursor.execute("PRAGMA synchronous = NORMAL")
@@ -368,7 +227,7 @@ class AchievementsDatabaseMixin:
         """Retrieve achievement details from the database."""
         conn = None
         try:
-            conn = sqlite3.connect(self.db_path, timeout=20.0)
+            conn = DATABASE.connect(self.db_path, timeout=20.0)
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT id, name, description, required_count, emoji

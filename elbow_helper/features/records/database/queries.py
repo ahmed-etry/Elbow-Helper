@@ -28,7 +28,7 @@ class RecordQueries:
         if limit is not None:
             limit_sql = " LIMIT ?"
             params.append(max(1, int(limit)))
-        with closing(sqlite3.connect(self.path, timeout=30)) as conn:
+        with closing(self._db_connect(timeout=30)) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 f"""
@@ -57,7 +57,7 @@ class RecordQueries:
         placeholders = ",".join("?" for _ in ids)
         try:
             with closing(
-                sqlite3.connect(self.path, timeout=10)
+                self._db_connect(timeout=10)
             ) as connection:
                 connection.row_factory = sqlite3.Row
                 rows = connection.execute(
