@@ -8,7 +8,7 @@ import sqlite3
 from contextlib import closing
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.discord.message_search import DiscordSearchMessage
+from elbow_helper.infrastructure.discord.message_search import DiscordSearchMessage
 from elbow_helper.configuration.roles import CORE, CO_APPLICANT_ROLE_ID
 from elbow_helper.features.agent.engine.registry import (
     build_agent_tool_groups, build_agent_tools,

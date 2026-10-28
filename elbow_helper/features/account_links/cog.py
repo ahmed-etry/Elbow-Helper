@@ -12,9 +12,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext import tasks
-from elbow_helper.discord.interactions import deny
-from elbow_helper.discord.interactions import fail
-from elbow_helper.discord.interactions import warn
+from elbow_helper.infrastructure.discord.interactions import deny
+from elbow_helper.infrastructure.discord.interactions import fail
+from elbow_helper.infrastructure.discord.interactions import warn
 
 from elbow_helper.domain.player_tags import encode_clash_tag
 from elbow_helper.domain.player_tags import normalize_player_tag

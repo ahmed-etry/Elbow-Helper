@@ -5,8 +5,8 @@ from typing import Optional
 
 import discord
 from discord.ext import commands
-from elbow_helper.discord.interactions import deny
-from elbow_helper.discord.views import BaseTimeoutView
+from elbow_helper.infrastructure.discord.interactions import deny
+from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 
 from elbow_helper.configuration.channels import PUBLIC_NEWS
 from elbow_helper.configuration.roles import LEAD

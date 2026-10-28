@@ -23,7 +23,7 @@ from elbow_helper.features.agent.actions.outcomes import ActionOutcome
 from elbow_helper.features.agent.actions.contracts import ActionClass
 from elbow_helper.features.recruitment.commands import RecruitmentCommandMixin
 from elbow_helper.features.clan_health.commands.health import ClanHealthRootCommandMixin
-from elbow_helper.discord import command_registry
+from elbow_helper.infrastructure.discord import command_registry
 import elbow_helper.features as features
 from elbow_helper.features.cwl.cog import CwlManagement
 from elbow_helper.features.rosters.cog import Rosters

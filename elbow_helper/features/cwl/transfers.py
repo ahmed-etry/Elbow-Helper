@@ -17,9 +17,9 @@ from typing import Optional
 from typing import Set
 
 import discord
-from elbow_helper.discord.application_emojis import loading_status
+from elbow_helper.infrastructure.discord.application_emojis import loading_status
 from discord import app_commands
-from elbow_helper.discord.interactions import deny
+from elbow_helper.infrastructure.discord.interactions import deny
 from elbow_helper.features.rosters.config import CWL_CLAN_ROSTER_IDS
 from elbow_helper.features.rosters.models import LinkedAccount
 from elbow_helper.features.rosters.models import RosterMember

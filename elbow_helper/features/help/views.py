@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import discord
-from elbow_helper.discord.pagination import ADAPTIVE_JUMP_THRESHOLD
-from elbow_helper.discord.pagination import FIRST_PAGE_LABEL
-from elbow_helper.discord.pagination import LAST_PAGE_LABEL
-from elbow_helper.discord.pagination import NEXT_PAGE_LABEL
-from elbow_helper.discord.pagination import PREV_PAGE_LABEL
-from elbow_helper.discord.views import BaseTimeoutView
+from elbow_helper.infrastructure.discord.pagination import ADAPTIVE_JUMP_THRESHOLD
+from elbow_helper.infrastructure.discord.pagination import FIRST_PAGE_LABEL
+from elbow_helper.infrastructure.discord.pagination import LAST_PAGE_LABEL
+from elbow_helper.infrastructure.discord.pagination import NEXT_PAGE_LABEL
+from elbow_helper.infrastructure.discord.pagination import PREV_PAGE_LABEL
+from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 
 from .catalog import CATEGORY_ORDER, HelpEntry
 from .rendering import build_list_embed

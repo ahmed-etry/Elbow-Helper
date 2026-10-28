@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import AsyncMock
 
 from elbow_helper.configuration.roles import LEAD_PLUS
-from elbow_helper.discord.command_registry import setup as setup_command_registry
+from elbow_helper.infrastructure.discord.command_registry import setup as setup_command_registry
 from elbow_helper.features.agent.commands.help_tool import read_bot_command_help
 from elbow_helper.features.agent.engine.answer_inputs import answer_evidence
 from elbow_helper.features.agent.families.reference_reads import TOOLS

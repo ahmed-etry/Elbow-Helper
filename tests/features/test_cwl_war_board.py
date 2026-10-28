@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import discord
 
-from elbow_helper.discord.publishing import PublishingQueue
+from elbow_helper.infrastructure.discord.publishing import PublishingQueue
 from elbow_helper.features.cwl.war_board import CwlWarBoardMixin
 from elbow_helper.features.cwl.war_board import cwl_board_snapshot_is_complete
 from elbow_helper.features.cwl.war_board import orient_cwl_war

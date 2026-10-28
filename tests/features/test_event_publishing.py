@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 
-from elbow_helper.discord.publishing import PublishingQueue
+from elbow_helper.infrastructure.discord.publishing import PublishingQueue
 from elbow_helper.features.event_stats.channels import EventStatsChannelsMixin
 
 

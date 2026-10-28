@@ -4,7 +4,7 @@ import discord
 from discord.ext import commands
 
 from elbow_helper.configuration.guild import GUILD_ID
-from elbow_helper.discord.views import TranscriptLinkPromptView
+from elbow_helper.infrastructure.discord.views import TranscriptLinkPromptView
 
 from .cog import Hibernate
 from .queries import HibernationQueries

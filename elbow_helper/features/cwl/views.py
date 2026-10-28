@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import discord
-from elbow_helper.discord.views import BaseTimeoutView
+from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 
 if TYPE_CHECKING:
     from .cog import CwlManagement

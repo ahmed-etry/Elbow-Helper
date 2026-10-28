@@ -5,8 +5,8 @@ from datetime import timedelta
 from datetime import timezone
 import unittest
 
-from elbow_helper.discord.timezones import build_timezone_choices
-from elbow_helper.discord.timezones import build_timezone_select_options
+from elbow_helper.infrastructure.discord.timezones import build_timezone_choices
+from elbow_helper.infrastructure.discord.timezones import build_timezone_select_options
 from elbow_helper.domain.timezones import TIMEZONE_ENTRIES
 from elbow_helper.domain.timezones import canonical_timezone_name
 from elbow_helper.domain.timezones import format_timezone_display

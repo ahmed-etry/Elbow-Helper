@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from elbow_helper.discord.views import BaseTimeoutView
+from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 
 from .emojis import CwlThreadEmojiSet
 from .emojis import EMPTY_CWL_THREAD_EMOJIS

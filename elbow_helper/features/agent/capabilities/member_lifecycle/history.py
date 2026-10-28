@@ -8,7 +8,7 @@ import time
 import discord
 
 from elbow_helper.configuration.channels import OVERSEEING_TERRACE
-from elbow_helper.discord.message_search import DiscordMessageSearchError
+from elbow_helper.infrastructure.discord.message_search import DiscordMessageSearchError
 from ...access import accessible_message_channel, require_evidence_access
 from ...engine.budgets import TOOL_TIMEOUT_SECONDS
 from ...research.history import (

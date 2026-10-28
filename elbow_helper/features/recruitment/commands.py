@@ -9,9 +9,9 @@ from typing import Optional
 
 import discord
 from discord import app_commands
-from elbow_helper.discord.interactions import deny
-from elbow_helper.discord.interactions import fail
-from elbow_helper.discord.interactions import warn
+from elbow_helper.infrastructure.discord.interactions import deny
+from elbow_helper.infrastructure.discord.interactions import fail
+from elbow_helper.infrastructure.discord.interactions import warn
 from elbow_helper.configuration.channels import GET_STARTED_CHANNEL
 from elbow_helper.configuration.channels import RECRUITMENT_TICKET_CATEGORY
 from elbow_helper.configuration.channels import SELF_ROLES

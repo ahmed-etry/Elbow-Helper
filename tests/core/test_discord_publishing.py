@@ -9,9 +9,9 @@ from unittest.mock import AsyncMock, patch
 
 import discord
 
-from elbow_helper.discord.publishing import PublishingQueue
-from elbow_helper.discord.interactions import edit_bound_view
-from elbow_helper.discord.interactions import edit_original_bound_view
+from elbow_helper.infrastructure.discord.publishing import PublishingQueue
+from elbow_helper.infrastructure.discord.interactions import edit_bound_view
+from elbow_helper.infrastructure.discord.interactions import edit_original_bound_view
 
 
 def http_error(kind=discord.HTTPException, status=500):
@@ -176,7 +176,7 @@ class PublishingQueueTests(unittest.IsolatedAsyncioTestCase):
     async def test_http_retries_then_fails_without_raising_or_repeated_warnings(self):
         message = self.target()
         message.edit.side_effect = http_error()
-        with patch("elbow_helper.discord.publishing.HTTP_RETRY_DELAYS", (0, 0)):
+        with patch("elbow_helper.infrastructure.discord.publishing.HTTP_RETRY_DELAYS", (0, 0)):
             with self.assertLogs("elbow_helper.discord.publishing", "WARNING") as logs:
                 self.assertFalse(await self.queue.edit_message(message, content="one"))
                 self.assertFalse(await self.queue.edit_message(message, content="two"))
@@ -194,7 +194,7 @@ class PublishingQueueTests(unittest.IsolatedAsyncioTestCase):
             return fields["content"]
 
         message.edit.side_effect = edit
-        with patch("elbow_helper.discord.publishing.HTTP_RETRY_DELAYS", (0.02, 0.02)):
+        with patch("elbow_helper.infrastructure.discord.publishing.HTTP_RETRY_DELAYS", (0.02, 0.02)):
             first = self.queue.edit_message(message, content="old")
             await failed.wait()
             newest = self.queue.edit_message(message, content="new")
@@ -285,7 +285,7 @@ class PublishingQueueTests(unittest.IsolatedAsyncioTestCase):
             return message
 
         message.edit.side_effect = edit
-        with patch("elbow_helper.discord.publishing.HTTP_RETRY_DELAYS", (0, 0)):
+        with patch("elbow_helper.infrastructure.discord.publishing.HTTP_RETRY_DELAYS", (0, 0)):
             for _ in range(2):
                 upload = discord.File(Buffer(b"image"), filename="image.png")
                 self.assertTrue(await self.queue.edit_message(message, attachments=[upload]))
@@ -340,7 +340,7 @@ class PublishingQueueTests(unittest.IsolatedAsyncioTestCase):
         active = self.queue.edit_message(message, content="active")
         await entered.wait()
         pending = self.queue.edit_message(message, content="pending")
-        with patch("elbow_helper.discord.publishing.SHUTDOWN_TIMEOUT", 0.01):
+        with patch("elbow_helper.infrastructure.discord.publishing.SHUTDOWN_TIMEOUT", 0.01):
             with self.assertLogs("elbow_helper.discord.publishing", "WARNING") as logs:
                 await asyncio.wait_for(self.queue.close(), 1)
         self.assertFalse(await active)
@@ -352,7 +352,7 @@ class PublishingQueueTests(unittest.IsolatedAsyncioTestCase):
         await self.queue.edit_channel(channel, name="first")
         await self.queue.edit_channel(channel, topic="second")
         held = self.queue.edit_channel(channel, name="held")
-        with patch("elbow_helper.discord.publishing.SHUTDOWN_TIMEOUT", 0.01):
+        with patch("elbow_helper.infrastructure.discord.publishing.SHUTDOWN_TIMEOUT", 0.01):
             with self.assertLogs("elbow_helper.discord.publishing", "WARNING") as logs:
                 await self.queue.close()
         self.assertFalse(await held)

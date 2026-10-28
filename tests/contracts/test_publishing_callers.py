@@ -30,7 +30,7 @@ class PublishingCallerTests(unittest.TestCase):
                 visit(path, child, trail)
 
         for path in (ROOT / "elbow_helper").rglob("*.py"):
-            if path != ROOT / "elbow_helper/discord/publishing.py":
+            if path != ROOT / "elbow_helper/infrastructure/discord/publishing.py":
                 visit(path, ast.parse(path.read_text(encoding="utf-8-sig")))
 
         self.assertEqual({key: sorted(value) for key, value in queued.items()}, inventory["queued"])

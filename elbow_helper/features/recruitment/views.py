@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING, Any
 import discord
 from elbow_helper.configuration.roles import LEAD
 from elbow_helper.configuration.roles import RECRUITERS
-from elbow_helper.discord.interactions import deny
-from elbow_helper.discord.views import BaseTimeoutView
+from elbow_helper.infrastructure.discord.interactions import deny
+from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 
 
 if TYPE_CHECKING:

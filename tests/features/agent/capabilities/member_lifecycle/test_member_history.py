@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 
 from features.agent.capabilities.member_lifecycle.test_agent_member_lifecycle import AgentMemberLifecycleTests
 from elbow_helper.configuration.channels import OVERSEEING_TERRACE
-from elbow_helper.discord.message_search import DiscordSearchMessage, DiscordSearchPage, DiscordHistoryPage
+from elbow_helper.infrastructure.discord.message_search import DiscordSearchMessage, DiscordSearchPage, DiscordHistoryPage
 from elbow_helper.features.agent.capabilities.member_lifecycle.history import read_member_history
 
 
@@ -42,7 +42,7 @@ class MemberHistoryTests(AgentMemberLifecycleTests):
     async def test_departed_member_and_unavailable_index_still_use_history(self):
         self.search.search_page.side_effect = RuntimeError("unavailable")
         # Search errors are explicitly recognized; transport failure leaves honest coverage.
-        from elbow_helper.discord.message_search import DiscordMessageSearchError
+        from elbow_helper.infrastructure.discord.message_search import DiscordMessageSearchError
         self.search.search_page.side_effect = DiscordMessageSearchError("indexing")
         self.search.history_page.return_value = DiscordHistoryPage((log(10, "<@700> left"),), 1000, 1, 100, None, True)
         result = await read_member_history(self.context, {"member_id": 700})

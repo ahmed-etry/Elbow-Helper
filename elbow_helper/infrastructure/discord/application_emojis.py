@@ -16,7 +16,7 @@ from elbow_helper.configuration.emojis import APPLICATION_EMOJI_REFRESH_SECONDS
 from elbow_helper.configuration.emojis import APPLICATION_EMOJI_RETRY_SECONDS
 
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = logging.getLogger("elbow_helper.discord.application_emojis")
 
 
 @dataclass(frozen=True)

@@ -10,7 +10,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext.commands import MissingAnyRole
-from elbow_helper.discord.interactions import deny
+from elbow_helper.infrastructure.discord.interactions import deny
 
 from elbow_helper.domain.player_tags import encode_clash_tag
 from elbow_helper.infrastructure.clash import ClashClient

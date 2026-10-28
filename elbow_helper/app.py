@@ -7,14 +7,14 @@ import asyncio
 import discord
 from discord import app_commands
 
-from elbow_helper.discord.interactions import deny
-from elbow_helper.discord.interactions import fail
-from elbow_helper.discord.interactions import log_interaction_error
-from elbow_helper.discord.interactions import warn
-from elbow_helper.discord.usage import log_command_usage
-from elbow_helper.discord.usage import on_app_command_completion
-from elbow_helper.discord.usage import on_interaction
-from elbow_helper.discord.publishing import PublishingQueue
+from elbow_helper.infrastructure.discord.interactions import deny
+from elbow_helper.infrastructure.discord.interactions import fail
+from elbow_helper.infrastructure.discord.interactions import log_interaction_error
+from elbow_helper.infrastructure.discord.interactions import warn
+from elbow_helper.infrastructure.discord.usage import log_command_usage
+from elbow_helper.infrastructure.discord.usage import on_app_command_completion
+from elbow_helper.infrastructure.discord.usage import on_interaction
+from elbow_helper.infrastructure.discord.publishing import PublishingQueue
 from elbow_helper.configuration.guild import GUILD_ID
 
 from .core.errors import install_asyncio_exception_handler

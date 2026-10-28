@@ -10,9 +10,9 @@ from discord import app_commands
 import elbow_helper.features
 from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.core.lifecycle import REQUIRED_EXTENSIONS
-from elbow_helper.discord.command_registry import ROOT_NAMES
-from elbow_helper.discord.command_registry import setup as setup_command_registry
-from elbow_helper.discord.command_registry import teardown as teardown_command_registry
+from elbow_helper.infrastructure.discord.command_registry import ROOT_NAMES
+from elbow_helper.infrastructure.discord.command_registry import setup as setup_command_registry
+from elbow_helper.infrastructure.discord.command_registry import teardown as teardown_command_registry
 from elbow_helper.features.clan_transfers.cog import ClanTransfers
 from elbow_helper.features.cwl.cog import CwlManagement
 from elbow_helper.features.diagnostics.cog import DebugCog
@@ -223,7 +223,7 @@ class DependencyBoundaryTests(unittest.TestCase):
                 "elbow_helper.features.rosters",
             ),
             "elbow_helper.features.clan_reporting": ("elbow_helper.features.account_links",),
-            "elbow_helper.discord.command_registry": (
+            "elbow_helper.infrastructure.discord.command_registry": (
                 "elbow_helper.features.clan_transfers",
                 "elbow_helper.features.cwl",
                 "elbow_helper.features.records",

@@ -15,7 +15,7 @@ from typing import List
 from typing import Optional
 
 import discord
-from elbow_helper.discord.application_emojis import loading_status
+from elbow_helper.infrastructure.discord.application_emojis import loading_status
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt

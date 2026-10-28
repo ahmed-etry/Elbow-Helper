@@ -1,4 +1,4 @@
-from elbow_helper.discord.views import TranscriptLinkPromptView
+from elbow_helper.infrastructure.discord.views import TranscriptLinkPromptView
 
 from .ai import SupportWelcomeService
 from .cog import SupportActions

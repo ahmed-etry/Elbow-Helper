@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
-from elbow_helper.discord.message_search import DiscordHistoryPage, DiscordSearchMessage
+from elbow_helper.infrastructure.discord.message_search import DiscordHistoryPage, DiscordSearchMessage
 from elbow_helper.features.agent.conversation.context import compile_context, estimate_tokens
 from elbow_helper.features.agent.conversation.findings import retained_finding, FINDINGS_INSTRUCTION
 from elbow_helper.features.agent.conversation.findings import report_is_current

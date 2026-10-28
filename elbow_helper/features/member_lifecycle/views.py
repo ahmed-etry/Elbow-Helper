@@ -4,11 +4,11 @@ import logging
 from typing import TYPE_CHECKING
 
 import discord
-from elbow_helper.discord.interactions import send_bound_view
-from elbow_helper.discord.pagination import format_page_footer
-from elbow_helper.discord.pagination import NEXT_PAGE_LABEL
-from elbow_helper.discord.pagination import PREV_PAGE_LABEL
-from elbow_helper.discord.views import BaseTimeoutView
+from elbow_helper.infrastructure.discord.interactions import send_bound_view
+from elbow_helper.infrastructure.discord.pagination import format_page_footer
+from elbow_helper.infrastructure.discord.pagination import NEXT_PAGE_LABEL
+from elbow_helper.infrastructure.discord.pagination import PREV_PAGE_LABEL
+from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 
 from elbow_helper.configuration.channels import OVERSEEING_TERRACE
 from elbow_helper.configuration.guild import GUILD_ID

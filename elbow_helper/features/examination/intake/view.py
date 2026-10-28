@@ -14,8 +14,8 @@ from typing import Dict
 from typing import Optional
 
 import discord
-from elbow_helper.discord.application_emojis import loading_status
-from elbow_helper.discord.views import BaseTimeoutView
+from elbow_helper.infrastructure.discord.application_emojis import loading_status
+from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
 from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL

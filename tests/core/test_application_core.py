@@ -20,7 +20,7 @@ from elbow_helper.core.logging import CompactTransientDuplicateFilter
 from elbow_helper.core.logging import TransientExternalFailurePolicy
 from elbow_helper.core.logging import UnifiedLogFormatter
 from elbow_helper.core.paths import ApplicationPaths
-from elbow_helper.discord.publishing import PublishingQueue
+from elbow_helper.infrastructure.discord.publishing import PublishingQueue
 from elbow_helper.infrastructure.clash import ClashClient
 from elbow_helper.infrastructure.ai import DeepSeekTextClient
 from elbow_helper.infrastructure.exports import GoogleSheetsPublisher

@@ -7,7 +7,7 @@ from unittest.mock import Mock
 
 import discord
 
-from elbow_helper.discord.thread_discovery import (
+from elbow_helper.infrastructure.discord.thread_discovery import (
     DiscordThreadDiscovery, DiscordThreadDiscoveryError,
 )
 

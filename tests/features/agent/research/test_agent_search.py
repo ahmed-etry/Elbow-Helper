@@ -8,10 +8,10 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import discord
 
-from elbow_helper.discord.message_search import (
+from elbow_helper.infrastructure.discord.message_search import (
     DiscordHistoryPage, DiscordSearchMessage, DiscordSearchPage,
 )
-from elbow_helper.discord.thread_discovery import DiscordArchivedThreadPage
+from elbow_helper.infrastructure.discord.thread_discovery import DiscordArchivedThreadPage
 from elbow_helper.features.agent.models import AgentTurnState
 from elbow_helper.features.agent.research.history import find_discord_channels
 from elbow_helper.features.agent.research.history import read_discord_channel_history

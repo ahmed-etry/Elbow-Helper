@@ -15,8 +15,8 @@ from discord import app_commands
 from elbow_helper.app import create_bot, handle_app_command_error
 from elbow_helper.core.logging import configure_logging
 from elbow_helper.core.paths import ApplicationPaths
-from elbow_helper.discord.interactions import deny, fail
-from elbow_helper.discord.usage import on_app_command_completion, on_interaction
+from elbow_helper.infrastructure.discord.interactions import deny, fail
+from elbow_helper.infrastructure.discord.usage import on_app_command_completion, on_interaction
 
 
 class InteractionUsageTests(unittest.IsolatedAsyncioTestCase):
@@ -51,7 +51,7 @@ class InteractionUsageTests(unittest.IsolatedAsyncioTestCase):
     async def test_command_logs_only_on_completion_without_arguments(self):
         with self.assertNoLogs("elbow.usage", level="INFO"):
             await on_interaction(self.interaction)
-        with (patch("elbow_helper.discord.usage.discord.utils.utcnow", return_value=self.now),
+        with (patch("elbow_helper.infrastructure.discord.usage.discord.utils.utcnow", return_value=self.now),
               self.assertLogs("elbow.usage", level="INFO") as logs):
             await on_app_command_completion(self.interaction, self.command)
         self.assert_command_log(logs, "ok")
@@ -63,7 +63,7 @@ class InteractionUsageTests(unittest.IsolatedAsyncioTestCase):
             (app_commands.CommandInvokeError(self.command, app_commands.CheckFailure("private-check")), "denied"),
         ):
             with self.subTest(outcome=outcome):
-                with (patch("elbow_helper.discord.usage.discord.utils.utcnow", return_value=self.now),
+                with (patch("elbow_helper.infrastructure.discord.usage.discord.utils.utcnow", return_value=self.now),
                       patch("elbow_helper.app.deny", new=AsyncMock()) as denial,
                       patch("elbow_helper.app.fail", new=AsyncMock()) as failure,
                       patch("elbow_helper.app.log_interaction_error"),
@@ -76,16 +76,16 @@ class InteractionUsageTests(unittest.IsolatedAsyncioTestCase):
     async def test_feedback_outcomes_survive_normal_command_return(self):
         for feedback, outcome in ((deny, "denied"), (fail, "failed")):
             with self.subTest(outcome=outcome):
-                with patch("elbow_helper.discord.interactions._send_feedback", new=AsyncMock()):
+                with patch("elbow_helper.infrastructure.discord.interactions._send_feedback", new=AsyncMock()):
                     await feedback(self.interaction)
-                with (patch("elbow_helper.discord.usage.discord.utils.utcnow", return_value=self.now),
+                with (patch("elbow_helper.infrastructure.discord.usage.discord.utils.utcnow", return_value=self.now),
                       self.assertLogs("elbow.usage", level="INFO") as logs):
                     await on_app_command_completion(self.interaction, self.command)
                 self.assert_command_log(logs, outcome)
 
     async def test_error_without_resolved_command_uses_name_only(self):
         self.interaction.command = None
-        with (patch("elbow_helper.discord.usage.discord.utils.utcnow", return_value=self.now),
+        with (patch("elbow_helper.infrastructure.discord.usage.discord.utils.utcnow", return_value=self.now),
               patch("elbow_helper.app.fail", new=AsyncMock()),
               patch("elbow_helper.app.log_interaction_error"),
               self.assertLogs("elbow.usage", level="INFO") as logs):

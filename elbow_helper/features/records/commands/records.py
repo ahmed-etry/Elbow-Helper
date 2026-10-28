@@ -12,9 +12,9 @@ from xml.etree import ElementTree
 import discord
 from discord import app_commands
 
-from elbow_helper.discord.interactions import deny
-from elbow_helper.discord.interactions import warn
-from elbow_helper.discord.interactions import send_bound_view
+from elbow_helper.infrastructure.discord.interactions import deny
+from elbow_helper.infrastructure.discord.interactions import warn
+from elbow_helper.infrastructure.discord.interactions import send_bound_view
 from elbow_helper.configuration.roles import LEAD_PLUS
 
 from ..domain.types import CATEGORY_CHOICES

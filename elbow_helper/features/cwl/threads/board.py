@@ -9,8 +9,8 @@ from typing import Any
 import discord
 
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
-from elbow_helper.discord.interactions import deny
-from elbow_helper.discord.interactions import warn
+from elbow_helper.infrastructure.discord.interactions import deny
+from elbow_helper.infrastructure.discord.interactions import warn
 
 from ..config import CLAN_LINKS
 from ..config import CLAN_NAME_TO_CODE

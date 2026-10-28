@@ -11,7 +11,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from elbow_helper.discord.publishing import PublishingQueue
+from elbow_helper.infrastructure.discord.publishing import PublishingQueue
 
 from elbow_helper.infrastructure.ai import AgentModel
 from elbow_helper.infrastructure.ai import TextGenerator
@@ -52,7 +52,7 @@ REQUIRED_EXTENSIONS = (
     "elbow_helper.features.examination",
     "elbow_helper.features.clan_reporting",
     "elbow_helper.features.agent",
-    "elbow_helper.discord.command_registry",
+    "elbow_helper.infrastructure.discord.command_registry",
 )
 OPTIONAL_EXTENSIONS: tuple[str, ...] = ()
 

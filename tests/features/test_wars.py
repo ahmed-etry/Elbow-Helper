@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import discord
 
-from elbow_helper.discord.publishing import PublishingQueue
+from elbow_helper.infrastructure.discord.publishing import PublishingQueue
 from elbow_helper.features.rosters.ui.emojis import TownHallEmojiProvider
 from elbow_helper.features.wars.board import WarBoardMixin
 from elbow_helper.features.wars.board import PreviousWarView

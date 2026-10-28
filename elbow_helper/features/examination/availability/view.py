@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import discord
-from elbow_helper.discord.interactions import send_bound_view
-from elbow_helper.discord.views import BaseErrorModal
-from elbow_helper.discord.views import BaseTimeoutView
+from elbow_helper.infrastructure.discord.interactions import send_bound_view
+from elbow_helper.infrastructure.discord.views import BaseErrorModal
+from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 
 from .logic import _format_structured_availability_display
 from .logic import _parse_single_time_input
