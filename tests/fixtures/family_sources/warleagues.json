@@ -1,0 +1,103 @@
+{
+  "kind": "catalogue",
+  "scope": "/warleagues",
+  "body": {
+    "items": [
+      {
+        "id": 48000000,
+        "name": "Synthetic name 366"
+      },
+      {
+        "id": 48000001,
+        "name": "Synthetic name 367"
+      },
+      {
+        "id": 48000002,
+        "name": "Synthetic name 368"
+      },
+      {
+        "id": 48000003,
+        "name": "Synthetic name 369"
+      },
+      {
+        "id": 48000004,
+        "name": "Synthetic name 370"
+      },
+      {
+        "id": 48000005,
+        "name": "Synthetic name 371"
+      },
+      {
+        "id": 48000006,
+        "name": "Synthetic name 372"
+      },
+      {
+        "id": 48000007,
+        "name": "Synthetic name 373"
+      },
+      {
+        "id": 48000008,
+        "name": "Synthetic name 374"
+      },
+      {
+        "id": 48000009,
+        "name": "Synthetic name 375"
+      },
+      {
+        "id": 48000010,
+        "name": "Synthetic name 376"
+      },
+      {
+        "id": 48000011,
+        "name": "Synthetic name 377"
+      },
+      {
+        "id": 48000012,
+        "name": "Synthetic name 378"
+      },
+      {
+        "id": 48000013,
+        "name": "Synthetic name 379"
+      },
+      {
+        "id": 48000014,
+        "name": "Synthetic name 380"
+      },
+      {
+        "id": 48000015,
+        "name": "Synthetic name 381"
+      },
+      {
+        "id": 48000016,
+        "name": "Synthetic name 382"
+      },
+      {
+        "id": 48000017,
+        "name": "Synthetic name 383"
+      },
+      {
+        "id": 48000018,
+        "name": "Synthetic name 384"
+      },
+      {
+        "id": 48000019,
+        "name": "Synthetic name 385"
+      },
+      {
+        "id": 48000020,
+        "name": "Synthetic name 386"
+      },
+      {
+        "id": 48000021,
+        "name": "Synthetic name 387"
+      },
+      {
+        "id": 48000022,
+        "name": "Synthetic name 388"
+      }
+    ],
+    "paging": {
+      "cursors": {}
+    }
+  }
+}

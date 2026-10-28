@@ -113,7 +113,9 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.gather(*self.collectors._tasks)
         self.assertEqual(LINK_INTERVAL_SECONDS, 300)
         intervals = {call.args[0]: call.args[1] for call in schedule.await_args_list}
-        self.assertEqual(intervals, {"clans": 900, "links": 300, "players": 3600, "wars": 30, "discord": 86400})
+        self.assertEqual(intervals, {"clans": 900, "links": 300, "players": 3600, "wars": 30, "discord": 86400,
+                                     "battle_logs": 30, "league_history": 30, "ranked_groups": 30,
+                                     "capital_raids": 30, "reference_data": 30})
         await self.collectors.cog_unload()
 
     async def test_individual_fetch_exceptions_do_not_abort_remaining_clans_one_warning(self):
@@ -285,7 +287,7 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
             self.assertLogs("elbow_helper.data.collectors.service", level="WARNING"),
         ):
             await self.collectors.cog_load()
-        self.assertEqual(len(self.collectors._tasks), 5)
+        self.assertEqual(len(self.collectors._tasks), 10)
         await self.collectors.cog_unload()
 
     async def test_application_assembles_registers_collectors_and_stops_them_offline(self):
@@ -302,7 +304,7 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
         ):
             await bot.setup_hook()
         self.assertIs(bot.get_cog("FamilyCollectors"), bot.family_collectors)
-        self.assertEqual(len(bot.family_collectors._tasks), 5)
+        self.assertEqual(len(bot.family_collectors._tasks), 10)
         self.assertEqual(len(bot.family_collectors.clans), 9)
         self.assertTrue((paths.data_root / "family" / "family.sqlite3").is_file())
         for name in ("on_member_join", "on_member_update", "on_raw_member_remove", "on_user_update"):

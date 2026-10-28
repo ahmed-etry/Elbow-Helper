@@ -1,0 +1,5815 @@
+{
+  "kind": "capital_raids",
+  "scope": "#PP9",
+  "body": {
+    "items": [
+      {
+        "state": "ended",
+        "startTime": "20261023T070000.000Z",
+        "endTime": "20261026T070000.000Z",
+        "capitalTotalLoot": 1181433,
+        "raidsCompleted": 14,
+        "totalAttacks": 253,
+        "enemyDistrictsDestroyed": 106,
+        "offensiveReward": 231,
+        "defensiveReward": 154,
+        "members": [
+          {
+            "tag": "#PP29L",
+            "name": "Synthetic name 271",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 28449
+          },
+          {
+            "tag": "#PP29Q",
+            "name": "Synthetic name 272",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 27608
+          },
+          {
+            "tag": "#PP29G",
+            "name": "Synthetic name 273",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 33121
+          },
+          {
+            "tag": "#PP29R",
+            "name": "Synthetic name 274",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 30643
+          },
+          {
+            "tag": "#PP29J",
+            "name": "Synthetic name 275",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 27316
+          },
+          {
+            "tag": "#PP29C",
+            "name": "Synthetic name 276",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 29922
+          },
+          {
+            "tag": "#PP29U",
+            "name": "Synthetic name 277",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 25633
+          },
+          {
+            "tag": "#PP29V",
+            "name": "Synthetic name 278",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 30487
+          },
+          {
+            "tag": "#PP2P0",
+            "name": "Synthetic name 279",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 26086
+          },
+          {
+            "tag": "#PP2P2",
+            "name": "Synthetic name 280",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 24854
+          },
+          {
+            "tag": "#PP2P8",
+            "name": "Synthetic name 281",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 27742
+          },
+          {
+            "tag": "#PP2P9",
+            "name": "Synthetic name 282",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 37207
+          },
+          {
+            "tag": "#PP2PP",
+            "name": "Synthetic name 283",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 24603
+          },
+          {
+            "tag": "#PP2PY",
+            "name": "Synthetic name 284",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 25902
+          },
+          {
+            "tag": "#PP2PL",
+            "name": "Synthetic name 285",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 27656
+          },
+          {
+            "tag": "#PP2PQ",
+            "name": "Synthetic name 286",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 31645
+          },
+          {
+            "tag": "#PP2PG",
+            "name": "Synthetic name 287",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 31872
+          },
+          {
+            "tag": "#PP2PR",
+            "name": "Synthetic name 288",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 23190
+          },
+          {
+            "tag": "#PP2PJ",
+            "name": "Synthetic name 289",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 33275
+          },
+          {
+            "tag": "#PP2PC",
+            "name": "Synthetic name 290",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 33355
+          },
+          {
+            "tag": "#PP2PU",
+            "name": "Synthetic name 291",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 31260
+          },
+          {
+            "tag": "#PP2PV",
+            "name": "Synthetic name 292",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 27249
+          },
+          {
+            "tag": "#PP2Y0",
+            "name": "Synthetic name 293",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 28502
+          },
+          {
+            "tag": "#PP2Y2",
+            "name": "Synthetic name 294",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 32837
+          },
+          {
+            "tag": "#PP2Y8",
+            "name": "Synthetic name 295",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 26990
+          },
+          {
+            "tag": "#PP2Y9",
+            "name": "Synthetic name 296",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 25513
+          },
+          {
+            "tag": "#PP2YP",
+            "name": "Synthetic name 297",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 26258
+          },
+          {
+            "tag": "#PP2YY",
+            "name": "Synthetic name 298",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 24426
+          },
+          {
+            "tag": "#PP2YL",
+            "name": "Synthetic name 299",
+            "attacks": 1,
+            "attackLimit": 5,
+            "bonusAttackLimit": 0,
+            "capitalResourcesLooted": 3985
+          },
+          {
+            "tag": "#PP2YQ",
+            "name": "Synthetic name 300",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 32263
+          },
+          {
+            "tag": "#PP2YG",
+            "name": "Synthetic name 301",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 23350
+          },
+          {
+            "tag": "#PP2YR",
+            "name": "Synthetic name 302",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 26550
+          },
+          {
+            "tag": "#PP2YJ",
+            "name": "Synthetic name 303",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 33195
+          },
+          {
+            "tag": "#PP2YC",
+            "name": "Synthetic name 304",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 23971
+          },
+          {
+            "tag": "#PP2YU",
+            "name": "Synthetic name 305",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 27709
+          },
+          {
+            "tag": "#PP2YV",
+            "name": "Synthetic name 306",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 30587
+          },
+          {
+            "tag": "#PP2L0",
+            "name": "Synthetic name 307",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 20444
+          },
+          {
+            "tag": "#PP2L2",
+            "name": "Synthetic name 308",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 29479
+          },
+          {
+            "tag": "#PP2L8",
+            "name": "Synthetic name 309",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 17678
+          },
+          {
+            "tag": "#PP2L9",
+            "name": "Synthetic name 310",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 31901
+          },
+          {
+            "tag": "#PP2LP",
+            "name": "Synthetic name 311",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 27697
+          },
+          {
+            "tag": "#PP2LY",
+            "name": "Synthetic name 312",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 22756
+          },
+          {
+            "tag": "#PP2LL",
+            "name": "Synthetic name 313",
+            "attacks": 6,
+            "attackLimit": 5,
+            "bonusAttackLimit": 1,
+            "capitalResourcesLooted": 26267
+          }
+        ],
+        "attackLog": [
+          {
+            "defender": {
+              "tag": "#PP2LQ",
+              "name": "Synthetic name 314",
+              "level": 22,
+              "badgeUrls": {
+                "small": "https://example.test/asset/1",
+                "large": "https://example.test/asset/2",
+                "medium": "https://example.test/asset/3"
+              }
+            },
+            "attackCount": 19,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 13061,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PC",
+                      "name": "Synthetic name 290"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29U",
+                      "name": "Synthetic name 277"
+                    },
+                    "destructionPercent": 55,
+                    "stars": 1
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29U",
+                      "name": "Synthetic name 277"
+                    },
+                    "destructionPercent": 27,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10929,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2YV",
+                      "name": "Synthetic name 306"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YV",
+                      "name": "Synthetic name 306"
+                    },
+                    "destructionPercent": 49,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9197,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2YV",
+                      "name": "Synthetic name 306"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YV",
+                      "name": "Synthetic name 306"
+                    },
+                    "destructionPercent": 42,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10027,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29U",
+                      "name": "Synthetic name 277"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29U",
+                      "name": "Synthetic name 277"
+                    },
+                    "destructionPercent": 60,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10461,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2YV",
+                      "name": "Synthetic name 306"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YV",
+                      "name": "Synthetic name 306"
+                    },
+                    "destructionPercent": 56,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9486,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29U",
+                      "name": "Synthetic name 277"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29U",
+                      "name": "Synthetic name 277"
+                    },
+                    "destructionPercent": 43,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11056,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29G",
+                      "name": "Synthetic name 273"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29G",
+                      "name": "Synthetic name 273"
+                    },
+                    "destructionPercent": 67,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11423,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29G",
+                      "name": "Synthetic name 273"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29G",
+                      "name": "Synthetic name 273"
+                    },
+                    "destructionPercent": 53,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10642,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29G",
+                      "name": "Synthetic name 273"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29G",
+                      "name": "Synthetic name 273"
+                    },
+                    "destructionPercent": 69,
+                    "stars": 2
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "defender": {
+              "tag": "#PP2LG",
+              "name": "Synthetic name 324",
+              "level": 18,
+              "badgeUrls": {
+                "small": "https://example.test/asset/4",
+                "large": "https://example.test/asset/5",
+                "medium": "https://example.test/asset/6"
+              }
+            },
+            "attackCount": 20,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 13589,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2L0",
+                      "name": "Synthetic name 307"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2L0",
+                      "name": "Synthetic name 307"
+                    },
+                    "destructionPercent": 83,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2L0",
+                      "name": "Synthetic name 307"
+                    },
+                    "destructionPercent": 46,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11579,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2YU",
+                      "name": "Synthetic name 305"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YU",
+                      "name": "Synthetic name 305"
+                    },
+                    "destructionPercent": 67,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10504,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2YU",
+                      "name": "Synthetic name 305"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2P9",
+                      "name": "Synthetic name 282"
+                    },
+                    "destructionPercent": 64,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9349,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PC",
+                      "name": "Synthetic name 290"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PC",
+                      "name": "Synthetic name 290"
+                    },
+                    "destructionPercent": 92,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11027,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2P9",
+                      "name": "Synthetic name 282"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2P9",
+                      "name": "Synthetic name 282"
+                    },
+                    "destructionPercent": 55,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10268,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2L0",
+                      "name": "Synthetic name 307"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2P9",
+                      "name": "Synthetic name 282"
+                    },
+                    "destructionPercent": 87,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 1,
+                "totalLooted": 8476,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PC",
+                      "name": "Synthetic name 290"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  }
+                ]
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11780,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2P9",
+                      "name": "Synthetic name 282"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2P9",
+                      "name": "Synthetic name 282"
+                    },
+                    "destructionPercent": 58,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 4,
+                "totalLooted": 12187,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2L0",
+                      "name": "Synthetic name 307"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2LY",
+                      "name": "Synthetic name 312"
+                    },
+                    "destructionPercent": 98,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2LY",
+                      "name": "Synthetic name 312"
+                    },
+                    "destructionPercent": 61,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2LY",
+                      "name": "Synthetic name 312"
+                    },
+                    "destructionPercent": 18,
+                    "stars": 0
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "defender": {
+              "tag": "#PP2LR",
+              "name": "Synthetic name 325",
+              "level": 30,
+              "badgeUrls": {
+                "small": "https://example.test/asset/7",
+                "large": "https://example.test/asset/8",
+                "medium": "https://example.test/asset/9"
+              }
+            },
+            "attackCount": 26,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 4,
+                "totalLooted": 14069,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PC",
+                      "name": "Synthetic name 290"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PC",
+                      "name": "Synthetic name 290"
+                    },
+                    "destructionPercent": 86,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YY",
+                      "name": "Synthetic name 298"
+                    },
+                    "destructionPercent": 46,
+                    "stars": 0
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YY",
+                      "name": "Synthetic name 298"
+                    },
+                    "destructionPercent": 28,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11661,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2YU",
+                      "name": "Synthetic name 305"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YU",
+                      "name": "Synthetic name 305"
+                    },
+                    "destructionPercent": 65,
+                    "stars": 1
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YU",
+                      "name": "Synthetic name 305"
+                    },
+                    "destructionPercent": 29,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10115,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2YY",
+                      "name": "Synthetic name 298"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YY",
+                      "name": "Synthetic name 298"
+                    },
+                    "destructionPercent": 45,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11736,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2LL",
+                      "name": "Synthetic name 313"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2LL",
+                      "name": "Synthetic name 313"
+                    },
+                    "destructionPercent": 79,
+                    "stars": 1
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2LL",
+                      "name": "Synthetic name 313"
+                    },
+                    "destructionPercent": 35,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11861,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2YY",
+                      "name": "Synthetic name 298"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YY",
+                      "name": "Synthetic name 298"
+                    },
+                    "destructionPercent": 68,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2LL",
+                      "name": "Synthetic name 313"
+                    },
+                    "destructionPercent": 30,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11501,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2LL",
+                      "name": "Synthetic name 313"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2LL",
+                      "name": "Synthetic name 313"
+                    },
+                    "destructionPercent": 61,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11331,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PR",
+                      "name": "Synthetic name 288"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PR",
+                      "name": "Synthetic name 288"
+                    },
+                    "destructionPercent": 55,
+                    "stars": 1
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PR",
+                      "name": "Synthetic name 288"
+                    },
+                    "destructionPercent": 34,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11996,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2YG",
+                      "name": "Synthetic name 301"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YG",
+                      "name": "Synthetic name 301"
+                    },
+                    "destructionPercent": 78,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2LY",
+                      "name": "Synthetic name 312"
+                    },
+                    "destructionPercent": 35,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11826,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2LY",
+                      "name": "Synthetic name 312"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2LY",
+                      "name": "Synthetic name 312"
+                    },
+                    "destructionPercent": 76,
+                    "stars": 1
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2L0",
+                      "name": "Synthetic name 307"
+                    },
+                    "destructionPercent": 46,
+                    "stars": 0
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "defender": {
+              "tag": "#PP2LJ",
+              "name": "Synthetic name 326",
+              "level": 31,
+              "badgeUrls": {
+                "small": "https://example.test/asset/10",
+                "large": "https://example.test/asset/11",
+                "medium": "https://example.test/asset/12"
+              }
+            },
+            "attackCount": 27,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 4,
+                "totalLooted": 13784,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2P2",
+                      "name": "Synthetic name 280"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2P2",
+                      "name": "Synthetic name 280"
+                    },
+                    "destructionPercent": 81,
+                    "stars": 1
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2P2",
+                      "name": "Synthetic name 280"
+                    },
+                    "destructionPercent": 48,
+                    "stars": 0
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2P2",
+                      "name": "Synthetic name 280"
+                    },
+                    "destructionPercent": 14,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11760,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y0",
+                      "name": "Synthetic name 293"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y0",
+                      "name": "Synthetic name 293"
+                    },
+                    "destructionPercent": 74,
+                    "stars": 1
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y0",
+                      "name": "Synthetic name 293"
+                    },
+                    "destructionPercent": 35,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 10709,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2YG",
+                      "name": "Synthetic name 301"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YG",
+                      "name": "Synthetic name 301"
+                    },
+                    "destructionPercent": 73,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YG",
+                      "name": "Synthetic name 301"
+                    },
+                    "destructionPercent": 37,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11793,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y8",
+                      "name": "Synthetic name 295"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y8",
+                      "name": "Synthetic name 295"
+                    },
+                    "destructionPercent": 83,
+                    "stars": 1
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y8",
+                      "name": "Synthetic name 295"
+                    },
+                    "destructionPercent": 47,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 12365,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2YC",
+                      "name": "Synthetic name 304"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YC",
+                      "name": "Synthetic name 304"
+                    },
+                    "destructionPercent": 99,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YC",
+                      "name": "Synthetic name 304"
+                    },
+                    "destructionPercent": 64,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11315,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y8",
+                      "name": "Synthetic name 295"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y8",
+                      "name": "Synthetic name 295"
+                    },
+                    "destructionPercent": 31,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11859,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PR",
+                      "name": "Synthetic name 288"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PR",
+                      "name": "Synthetic name 288"
+                    },
+                    "destructionPercent": 67,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PR",
+                      "name": "Synthetic name 288"
+                    },
+                    "destructionPercent": 38,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11606,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2YC",
+                      "name": "Synthetic name 304"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YC",
+                      "name": "Synthetic name 304"
+                    },
+                    "destructionPercent": 65,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YC",
+                      "name": "Synthetic name 304"
+                    },
+                    "destructionPercent": 11,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 12207,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y8",
+                      "name": "Synthetic name 295"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YG",
+                      "name": "Synthetic name 301"
+                    },
+                    "destructionPercent": 73,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YL",
+                      "name": "Synthetic name 299"
+                    },
+                    "destructionPercent": 40,
+                    "stars": 0
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "defender": {
+              "tag": "#PP2LC",
+              "name": "Synthetic name 327",
+              "level": 25,
+              "badgeUrls": {
+                "small": "https://example.test/asset/13",
+                "large": "https://example.test/asset/14",
+                "medium": "https://example.test/asset/15"
+              }
+            },
+            "attackCount": 20,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 13385,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29Q",
+                      "name": "Synthetic name 272"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2L2",
+                      "name": "Synthetic name 308"
+                    },
+                    "destructionPercent": 77,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2L2",
+                      "name": "Synthetic name 308"
+                    },
+                    "destructionPercent": 45,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11316,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2YJ",
+                      "name": "Synthetic name 303"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YJ",
+                      "name": "Synthetic name 303"
+                    },
+                    "destructionPercent": 43,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10217,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2L2",
+                      "name": "Synthetic name 308"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2L2",
+                      "name": "Synthetic name 308"
+                    },
+                    "destructionPercent": 49,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10769,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2L2",
+                      "name": "Synthetic name 308"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YJ",
+                      "name": "Synthetic name 303"
+                    },
+                    "destructionPercent": 52,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10508,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2YJ",
+                      "name": "Synthetic name 303"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PL",
+                      "name": "Synthetic name 285"
+                    },
+                    "destructionPercent": 46,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10378,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2L2",
+                      "name": "Synthetic name 308"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2P2",
+                      "name": "Synthetic name 280"
+                    },
+                    "destructionPercent": 54,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10576,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2YJ",
+                      "name": "Synthetic name 303"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YJ",
+                      "name": "Synthetic name 303"
+                    },
+                    "destructionPercent": 54,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11927,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PL",
+                      "name": "Synthetic name 285"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PL",
+                      "name": "Synthetic name 285"
+                    },
+                    "destructionPercent": 91,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PL",
+                      "name": "Synthetic name 285"
+                    },
+                    "destructionPercent": 47,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10989,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PL",
+                      "name": "Synthetic name 285"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PL",
+                      "name": "Synthetic name 285"
+                    },
+                    "destructionPercent": 40,
+                    "stars": 0
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "defender": {
+              "tag": "#PP2LU",
+              "name": "Synthetic name 328",
+              "level": 18,
+              "badgeUrls": {
+                "small": "https://example.test/asset/16",
+                "large": "https://example.test/asset/17",
+                "medium": "https://example.test/asset/18"
+              }
+            },
+            "attackCount": 20,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 4,
+                "totalLooted": 13886,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29L",
+                      "name": "Synthetic name 271"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29L",
+                      "name": "Synthetic name 271"
+                    },
+                    "destructionPercent": 73,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YP",
+                      "name": "Synthetic name 297"
+                    },
+                    "destructionPercent": 50,
+                    "stars": 1
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YP",
+                      "name": "Synthetic name 297"
+                    },
+                    "destructionPercent": 41,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11044,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2YP",
+                      "name": "Synthetic name 297"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YP",
+                      "name": "Synthetic name 297"
+                    },
+                    "destructionPercent": 68,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9904,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2YP",
+                      "name": "Synthetic name 297"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YP",
+                      "name": "Synthetic name 297"
+                    },
+                    "destructionPercent": 56,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10337,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PG",
+                      "name": "Synthetic name 287"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PG",
+                      "name": "Synthetic name 287"
+                    },
+                    "destructionPercent": 74,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10717,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PG",
+                      "name": "Synthetic name 287"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PG",
+                      "name": "Synthetic name 287"
+                    },
+                    "destructionPercent": 67,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10818,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PG",
+                      "name": "Synthetic name 287"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PG",
+                      "name": "Synthetic name 287"
+                    },
+                    "destructionPercent": 70,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10950,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PJ",
+                      "name": "Synthetic name 289"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PJ",
+                      "name": "Synthetic name 289"
+                    },
+                    "destructionPercent": 59,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11241,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PJ",
+                      "name": "Synthetic name 289"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PJ",
+                      "name": "Synthetic name 289"
+                    },
+                    "destructionPercent": 54,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11084,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PJ",
+                      "name": "Synthetic name 289"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PJ",
+                      "name": "Synthetic name 289"
+                    },
+                    "destructionPercent": 76,
+                    "stars": 1
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "defender": {
+              "tag": "#PP2LV",
+              "name": "Synthetic name 329",
+              "level": 22,
+              "badgeUrls": {
+                "small": "https://example.test/asset/19",
+                "large": "https://example.test/asset/20",
+                "medium": "https://example.test/asset/21"
+              }
+            },
+            "attackCount": 23,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 5,
+                "totalLooted": 14120,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2L8",
+                      "name": "Synthetic name 309"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2L8",
+                      "name": "Synthetic name 309"
+                    },
+                    "destructionPercent": 98,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2L8",
+                      "name": "Synthetic name 309"
+                    },
+                    "destructionPercent": 85,
+                    "stars": 1
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2L8",
+                      "name": "Synthetic name 309"
+                    },
+                    "destructionPercent": 70,
+                    "stars": 1
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2L8",
+                      "name": "Synthetic name 309"
+                    },
+                    "destructionPercent": 38,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 12012,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29Q",
+                      "name": "Synthetic name 272"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29Q",
+                      "name": "Synthetic name 272"
+                    },
+                    "destructionPercent": 83,
+                    "stars": 1
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29Q",
+                      "name": "Synthetic name 272"
+                    },
+                    "destructionPercent": 38,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9650,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29L",
+                      "name": "Synthetic name 271"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29L",
+                      "name": "Synthetic name 271"
+                    },
+                    "destructionPercent": 41,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10223,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29L",
+                      "name": "Synthetic name 271"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29L",
+                      "name": "Synthetic name 271"
+                    },
+                    "destructionPercent": 78,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10216,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2LP",
+                      "name": "Synthetic name 311"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2LP",
+                      "name": "Synthetic name 311"
+                    },
+                    "destructionPercent": 50,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9803,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2L8",
+                      "name": "Synthetic name 309"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2LP",
+                      "name": "Synthetic name 311"
+                    },
+                    "destructionPercent": 62,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10239,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29J",
+                      "name": "Synthetic name 275"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29J",
+                      "name": "Synthetic name 275"
+                    },
+                    "destructionPercent": 66,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11236,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2LP",
+                      "name": "Synthetic name 311"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2LP",
+                      "name": "Synthetic name 311"
+                    },
+                    "destructionPercent": 78,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2LP",
+                      "name": "Synthetic name 311"
+                    },
+                    "destructionPercent": 48,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11091,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29Q",
+                      "name": "Synthetic name 272"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29Q",
+                      "name": "Synthetic name 272"
+                    },
+                    "destructionPercent": 44,
+                    "stars": 0
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "defender": {
+              "tag": "#PP2Q0",
+              "name": "Synthetic name 330",
+              "level": 18,
+              "badgeUrls": {
+                "small": "https://example.test/asset/22",
+                "large": "https://example.test/asset/23",
+                "medium": "https://example.test/asset/24"
+              }
+            },
+            "attackCount": 24,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 13787,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PQ",
+                      "name": "Synthetic name 286"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PQ",
+                      "name": "Synthetic name 286"
+                    },
+                    "destructionPercent": 70,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PQ",
+                      "name": "Synthetic name 286"
+                    },
+                    "destructionPercent": 47,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11331,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PP",
+                      "name": "Synthetic name 283"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PP",
+                      "name": "Synthetic name 283"
+                    },
+                    "destructionPercent": 57,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 10793,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PY",
+                      "name": "Synthetic name 284"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PY",
+                      "name": "Synthetic name 284"
+                    },
+                    "destructionPercent": 77,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PP",
+                      "name": "Synthetic name 283"
+                    },
+                    "destructionPercent": 30,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11820,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2YR",
+                      "name": "Synthetic name 302"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YR",
+                      "name": "Synthetic name 302"
+                    },
+                    "destructionPercent": 99,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YR",
+                      "name": "Synthetic name 302"
+                    },
+                    "destructionPercent": 40,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11885,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PP",
+                      "name": "Synthetic name 283"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PP",
+                      "name": "Synthetic name 283"
+                    },
+                    "destructionPercent": 58,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YR",
+                      "name": "Synthetic name 302"
+                    },
+                    "destructionPercent": 32,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11378,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PQ",
+                      "name": "Synthetic name 286"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PQ",
+                      "name": "Synthetic name 286"
+                    },
+                    "destructionPercent": 41,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11295,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2YR",
+                      "name": "Synthetic name 302"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YR",
+                      "name": "Synthetic name 302"
+                    },
+                    "destructionPercent": 38,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 12152,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PP",
+                      "name": "Synthetic name 283"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29J",
+                      "name": "Synthetic name 275"
+                    },
+                    "destructionPercent": 93,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2P2",
+                      "name": "Synthetic name 280"
+                    },
+                    "destructionPercent": 53,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 12192,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29J",
+                      "name": "Synthetic name 275"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29J",
+                      "name": "Synthetic name 275"
+                    },
+                    "destructionPercent": 93,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29J",
+                      "name": "Synthetic name 275"
+                    },
+                    "destructionPercent": 50,
+                    "stars": 2
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "defender": {
+              "tag": "#PP2Q2",
+              "name": "Synthetic name 331",
+              "level": 5,
+              "badgeUrls": {
+                "small": "https://example.test/asset/25",
+                "large": "https://example.test/asset/26",
+                "medium": "https://example.test/asset/27"
+              }
+            },
+            "attackCount": 18,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 13453,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2P8",
+                      "name": "Synthetic name 281"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2P8",
+                      "name": "Synthetic name 281"
+                    },
+                    "destructionPercent": 91,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2P8",
+                      "name": "Synthetic name 281"
+                    },
+                    "destructionPercent": 59,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10315,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29C",
+                      "name": "Synthetic name 276"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29C",
+                      "name": "Synthetic name 276"
+                    },
+                    "destructionPercent": 63,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9177,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y0",
+                      "name": "Synthetic name 293"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y0",
+                      "name": "Synthetic name 293"
+                    },
+                    "destructionPercent": 85,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9118,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29C",
+                      "name": "Synthetic name 276"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29C",
+                      "name": "Synthetic name 276"
+                    },
+                    "destructionPercent": 70,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10489,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29C",
+                      "name": "Synthetic name 276"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29C",
+                      "name": "Synthetic name 276"
+                    },
+                    "destructionPercent": 46,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10135,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2P8",
+                      "name": "Synthetic name 281"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y0",
+                      "name": "Synthetic name 293"
+                    },
+                    "destructionPercent": 78,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9277,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PY",
+                      "name": "Synthetic name 284"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PY",
+                      "name": "Synthetic name 284"
+                    },
+                    "destructionPercent": 63,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9227,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PY",
+                      "name": "Synthetic name 284"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PY",
+                      "name": "Synthetic name 284"
+                    },
+                    "destructionPercent": 49,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 1,
+                "totalLooted": 6480,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PQ",
+                      "name": "Synthetic name 286"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "defender": {
+              "tag": "#PP2Q8",
+              "name": "Synthetic name 332",
+              "level": 18,
+              "badgeUrls": {
+                "small": "https://example.test/asset/28",
+                "large": "https://example.test/asset/29",
+                "medium": "https://example.test/asset/30"
+              }
+            },
+            "attackCount": 20,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 13946,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y9",
+                      "name": "Synthetic name 296"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y9",
+                      "name": "Synthetic name 296"
+                    },
+                    "destructionPercent": 92,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y9",
+                      "name": "Synthetic name 296"
+                    },
+                    "destructionPercent": 49,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11496,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2L9",
+                      "name": "Synthetic name 310"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2L9",
+                      "name": "Synthetic name 310"
+                    },
+                    "destructionPercent": 40,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10051,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2L9",
+                      "name": "Synthetic name 310"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2L9",
+                      "name": "Synthetic name 310"
+                    },
+                    "destructionPercent": 60,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10354,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2L9",
+                      "name": "Synthetic name 310"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2L9",
+                      "name": "Synthetic name 310"
+                    },
+                    "destructionPercent": 62,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10840,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2YQ",
+                      "name": "Synthetic name 300"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YQ",
+                      "name": "Synthetic name 300"
+                    },
+                    "destructionPercent": 65,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11567,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y9",
+                      "name": "Synthetic name 296"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y9",
+                      "name": "Synthetic name 296"
+                    },
+                    "destructionPercent": 51,
+                    "stars": 1
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y9",
+                      "name": "Synthetic name 296"
+                    },
+                    "destructionPercent": 19,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10422,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2YQ",
+                      "name": "Synthetic name 300"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YQ",
+                      "name": "Synthetic name 300"
+                    },
+                    "destructionPercent": 83,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11719,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2P8",
+                      "name": "Synthetic name 281"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2P8",
+                      "name": "Synthetic name 281"
+                    },
+                    "destructionPercent": 61,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11001,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2YQ",
+                      "name": "Synthetic name 300"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2YQ",
+                      "name": "Synthetic name 300"
+                    },
+                    "destructionPercent": 40,
+                    "stars": 0
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "defender": {
+              "tag": "#PP2Q9",
+              "name": "Synthetic name 333",
+              "level": 22,
+              "badgeUrls": {
+                "small": "https://example.test/asset/31",
+                "large": "https://example.test/asset/32",
+                "medium": "https://example.test/asset/33"
+              }
+            },
+            "attackCount": 21,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 4,
+                "totalLooted": 13880,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PV",
+                      "name": "Synthetic name 292"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PV",
+                      "name": "Synthetic name 292"
+                    },
+                    "destructionPercent": 95,
+                    "stars": 1
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PV",
+                      "name": "Synthetic name 292"
+                    },
+                    "destructionPercent": 75,
+                    "stars": 1
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2P0",
+                      "name": "Synthetic name 279"
+                    },
+                    "destructionPercent": 43,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11985,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2P0",
+                      "name": "Synthetic name 279"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2P0",
+                      "name": "Synthetic name 279"
+                    },
+                    "destructionPercent": 84,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2P0",
+                      "name": "Synthetic name 279"
+                    },
+                    "destructionPercent": 27,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10277,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PU",
+                      "name": "Synthetic name 291"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PU",
+                      "name": "Synthetic name 291"
+                    },
+                    "destructionPercent": 35,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10385,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PU",
+                      "name": "Synthetic name 291"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PU",
+                      "name": "Synthetic name 291"
+                    },
+                    "destructionPercent": 44,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10598,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PU",
+                      "name": "Synthetic name 291"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PU",
+                      "name": "Synthetic name 291"
+                    },
+                    "destructionPercent": 56,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11441,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2P0",
+                      "name": "Synthetic name 279"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2P0",
+                      "name": "Synthetic name 279"
+                    },
+                    "destructionPercent": 46,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10339,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y2",
+                      "name": "Synthetic name 294"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y2",
+                      "name": "Synthetic name 294"
+                    },
+                    "destructionPercent": 44,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11133,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y2",
+                      "name": "Synthetic name 294"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y2",
+                      "name": "Synthetic name 294"
+                    },
+                    "destructionPercent": 49,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11365,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y2",
+                      "name": "Synthetic name 294"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2Y2",
+                      "name": "Synthetic name 294"
+                    },
+                    "destructionPercent": 70,
+                    "stars": 2
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "defender": {
+              "tag": "#PP2QP",
+              "name": "Synthetic name 334",
+              "level": 19,
+              "badgeUrls": {
+                "small": "https://example.test/asset/34",
+                "large": "https://example.test/asset/35",
+                "medium": "https://example.test/asset/36"
+              }
+            },
+            "attackCount": 15,
+            "districtCount": 9,
+            "districtsDestroyed": 7,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 0,
+                "stars": 0,
+                "attackCount": 0,
+                "totalLooted": 0
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 49,
+                "stars": 0,
+                "attackCount": 1,
+                "totalLooted": 4510,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29V",
+                      "name": "Synthetic name 278"
+                    },
+                    "destructionPercent": 49,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9901,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29V",
+                      "name": "Synthetic name 278"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29V",
+                      "name": "Synthetic name 278"
+                    },
+                    "destructionPercent": 53,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10372,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29R",
+                      "name": "Synthetic name 274"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29R",
+                      "name": "Synthetic name 274"
+                    },
+                    "destructionPercent": 52,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10737,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29V",
+                      "name": "Synthetic name 278"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29V",
+                      "name": "Synthetic name 278"
+                    },
+                    "destructionPercent": 67,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9866,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29R",
+                      "name": "Synthetic name 274"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29R",
+                      "name": "Synthetic name 274"
+                    },
+                    "destructionPercent": 55,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10405,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29R",
+                      "name": "Synthetic name 274"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP29R",
+                      "name": "Synthetic name 274"
+                    },
+                    "destructionPercent": 67,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10834,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP29V",
+                      "name": "Synthetic name 278"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PV",
+                      "name": "Synthetic name 292"
+                    },
+                    "destructionPercent": 54,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10534,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2PV",
+                      "name": "Synthetic name 292"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2PV",
+                      "name": "Synthetic name 292"
+                    },
+                    "destructionPercent": 42,
+                    "stars": 0
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "defenseLog": [
+          {
+            "attacker": {
+              "tag": "#PP2QY",
+              "name": "Synthetic name 335",
+              "level": 20,
+              "badgeUrls": {
+                "small": "https://example.test/asset/37",
+                "large": "https://example.test/asset/38",
+                "medium": "https://example.test/asset/39"
+              }
+            },
+            "attackCount": 20,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 13583,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2QL",
+                      "name": "Synthetic name 336"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2QL",
+                      "name": "Synthetic name 336"
+                    },
+                    "destructionPercent": 71,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2QL",
+                      "name": "Synthetic name 336"
+                    },
+                    "destructionPercent": 40,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10918,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2QQ",
+                      "name": "Synthetic name 337"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2QQ",
+                      "name": "Synthetic name 337"
+                    },
+                    "destructionPercent": 60,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9911,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2QG",
+                      "name": "Synthetic name 338"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2QG",
+                      "name": "Synthetic name 338"
+                    },
+                    "destructionPercent": 66,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10510,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2QQ",
+                      "name": "Synthetic name 337"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2QR",
+                      "name": "Synthetic name 339"
+                    },
+                    "destructionPercent": 76,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10815,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2QG",
+                      "name": "Synthetic name 338"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2QR",
+                      "name": "Synthetic name 339"
+                    },
+                    "destructionPercent": 54,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9757,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2QG",
+                      "name": "Synthetic name 338"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2QG",
+                      "name": "Synthetic name 338"
+                    },
+                    "destructionPercent": 27,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10736,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2QL",
+                      "name": "Synthetic name 336"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2QR",
+                      "name": "Synthetic name 339"
+                    },
+                    "destructionPercent": 75,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11510,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2QR",
+                      "name": "Synthetic name 339"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2QR",
+                      "name": "Synthetic name 339"
+                    },
+                    "destructionPercent": 45,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 12099,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2QL",
+                      "name": "Synthetic name 336"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2QG",
+                      "name": "Synthetic name 338"
+                    },
+                    "destructionPercent": 93,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2QR",
+                      "name": "Synthetic name 339"
+                    },
+                    "destructionPercent": 26,
+                    "stars": 0
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "attacker": {
+              "tag": "#PP2QJ",
+              "name": "Synthetic name 340",
+              "level": 32,
+              "badgeUrls": {
+                "small": "https://example.test/asset/40",
+                "large": "https://example.test/asset/41",
+                "medium": "https://example.test/asset/42"
+              }
+            },
+            "attackCount": 19,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 14000,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2QC",
+                      "name": "Synthetic name 341"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2QC",
+                      "name": "Synthetic name 341"
+                    },
+                    "destructionPercent": 86,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2QU",
+                      "name": "Synthetic name 342"
+                    },
+                    "destructionPercent": 47,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10825,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2QU",
+                      "name": "Synthetic name 342"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2QU",
+                      "name": "Synthetic name 342"
+                    },
+                    "destructionPercent": 52,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9653,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2QV",
+                      "name": "Synthetic name 343"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2QU",
+                      "name": "Synthetic name 342"
+                    },
+                    "destructionPercent": 59,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10489,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2G0",
+                      "name": "Synthetic name 344"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2G0",
+                      "name": "Synthetic name 344"
+                    },
+                    "destructionPercent": 72,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10755,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2QU",
+                      "name": "Synthetic name 342"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2QU",
+                      "name": "Synthetic name 342"
+                    },
+                    "destructionPercent": 50,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9976,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2G0",
+                      "name": "Synthetic name 344"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2G2",
+                      "name": "Synthetic name 345"
+                    },
+                    "destructionPercent": 39,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11091,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2G0",
+                      "name": "Synthetic name 344"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2G0",
+                      "name": "Synthetic name 344"
+                    },
+                    "destructionPercent": 39,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11771,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2G0",
+                      "name": "Synthetic name 344"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2G8",
+                      "name": "Synthetic name 346"
+                    },
+                    "destructionPercent": 52,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11535,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2G8",
+                      "name": "Synthetic name 346"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2G8",
+                      "name": "Synthetic name 346"
+                    },
+                    "destructionPercent": 46,
+                    "stars": 0
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "attacker": {
+              "tag": "#PP2G9",
+              "name": "Synthetic name 347",
+              "level": 28,
+              "badgeUrls": {
+                "small": "https://example.test/asset/43",
+                "large": "https://example.test/asset/44",
+                "medium": "https://example.test/asset/45"
+              }
+            },
+            "attackCount": 22,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 13439,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2GP",
+                      "name": "Synthetic name 348"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2GY",
+                      "name": "Synthetic name 349"
+                    },
+                    "destructionPercent": 71,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2GL",
+                      "name": "Synthetic name 350"
+                    },
+                    "destructionPercent": 46,
+                    "stars": 0
+                  }
+                ]
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11495,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2GQ",
+                      "name": "Synthetic name 351"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2GG",
+                      "name": "Synthetic name 352"
+                    },
+                    "destructionPercent": 94,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2GR",
+                      "name": "Synthetic name 353"
+                    },
+                    "destructionPercent": 44,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9770,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2GR",
+                      "name": "Synthetic name 353"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2GQ",
+                      "name": "Synthetic name 351"
+                    },
+                    "destructionPercent": 77,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10234,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2GG",
+                      "name": "Synthetic name 352"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2GG",
+                      "name": "Synthetic name 352"
+                    },
+                    "destructionPercent": 51,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10567,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2GQ",
+                      "name": "Synthetic name 351"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2GR",
+                      "name": "Synthetic name 353"
+                    },
+                    "destructionPercent": 49,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10039,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2GR",
+                      "name": "Synthetic name 353"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2GQ",
+                      "name": "Synthetic name 351"
+                    },
+                    "destructionPercent": 60,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10966,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2GG",
+                      "name": "Synthetic name 352"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2GG",
+                      "name": "Synthetic name 352"
+                    },
+                    "destructionPercent": 64,
+                    "stars": 2
+                  }
+                ]
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11855,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2GY",
+                      "name": "Synthetic name 349"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2GG",
+                      "name": "Synthetic name 352"
+                    },
+                    "destructionPercent": 82,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2GQ",
+                      "name": "Synthetic name 351"
+                    },
+                    "destructionPercent": 45,
+                    "stars": 1
+                  }
+                ]
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 12036,
+                "attacks": [
+                  {
+                    "attacker": {
+                      "tag": "#PP2GY",
+                      "name": "Synthetic name 349"
+                    },
+                    "destructionPercent": 100,
+                    "stars": 3
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2GY",
+                      "name": "Synthetic name 349"
+                    },
+                    "destructionPercent": 87,
+                    "stars": 2
+                  },
+                  {
+                    "attacker": {
+                      "tag": "#PP2GL",
+                      "name": "Synthetic name 350"
+                    },
+                    "destructionPercent": 27,
+                    "stars": 0
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "state": "ended",
+        "startTime": "20261016T070000.000Z",
+        "endTime": "20261019T070000.000Z",
+        "capitalTotalLoot": 907930,
+        "raidsCompleted": 10,
+        "totalAttacks": 224,
+        "enemyDistrictsDestroyed": 80,
+        "offensiveReward": 194,
+        "defensiveReward": 224,
+        "attackLog": [
+          {
+            "defender": {
+              "tag": "#PP2GJ",
+              "name": "Synthetic name 354",
+              "level": 28,
+              "badgeUrls": {
+                "small": "https://example.test/asset/46",
+                "large": "https://example.test/asset/47",
+                "medium": "https://example.test/asset/48"
+              }
+            },
+            "attackCount": 25,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 4,
+                "totalLooted": 14087
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11718
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 10482
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 10828
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10900
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10949
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11474
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11603
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11955
+              }
+            ]
+          },
+          {
+            "defender": {
+              "tag": "#PP2GC",
+              "name": "Synthetic name 355",
+              "level": 22,
+              "badgeUrls": {
+                "small": "https://example.test/asset/49",
+                "large": "https://example.test/asset/50",
+                "medium": "https://example.test/asset/51"
+              }
+            },
+            "attackCount": 25,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 4,
+                "totalLooted": 13976
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11790
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10391
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11087
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11835
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 12020
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10514
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 12110
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 12201
+              }
+            ]
+          },
+          {
+            "defender": {
+              "tag": "#PP2GU",
+              "name": "Synthetic name 356",
+              "level": 14,
+              "badgeUrls": {
+                "small": "https://example.test/asset/52",
+                "large": "https://example.test/asset/53",
+                "medium": "https://example.test/asset/54"
+              }
+            },
+            "attackCount": 22,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 4,
+                "totalLooted": 14000
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11181
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9640
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10545
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9980
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9326
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 10660
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11623
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10988
+              }
+            ]
+          },
+          {
+            "defender": {
+              "tag": "#PP2GV",
+              "name": "Synthetic name 357",
+              "level": 12,
+              "badgeUrls": {
+                "small": "https://example.test/asset/55",
+                "large": "https://example.test/asset/56",
+                "medium": "https://example.test/asset/57"
+              }
+            },
+            "attackCount": 23,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 4,
+                "totalLooted": 13640
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11511
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10067
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11436
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 12206
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 4,
+                "totalLooted": 11852
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10534
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10826
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11553
+              }
+            ]
+          },
+          {
+            "defender": {
+              "tag": "#PP2R0",
+              "name": "Synthetic name 358",
+              "level": 25,
+              "badgeUrls": {
+                "small": "https://example.test/asset/58",
+                "large": "https://example.test/asset/59",
+                "medium": "https://example.test/asset/60"
+              }
+            },
+            "attackCount": 28,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 4,
+                "totalLooted": 13706
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11499
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 10676
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11775
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11927
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11333
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11847
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 12116
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 12123
+              }
+            ]
+          },
+          {
+            "defender": {
+              "tag": "#PP2R2",
+              "name": "Synthetic name 359",
+              "level": 18,
+              "badgeUrls": {
+                "small": "https://example.test/asset/61",
+                "large": "https://example.test/asset/62",
+                "medium": "https://example.test/asset/63"
+              }
+            },
+            "attackCount": 22,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 5,
+                "totalLooted": 13840
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10705
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 8828
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9225
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9532
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9461
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9218
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11246
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 3,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 8511
+              }
+            ]
+          },
+          {
+            "defender": {
+              "tag": "#PP2R8",
+              "name": "Synthetic name 360",
+              "level": 23,
+              "badgeUrls": {
+                "small": "https://example.test/asset/64",
+                "large": "https://example.test/asset/65",
+                "medium": "https://example.test/asset/66"
+              }
+            },
+            "attackCount": 38,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 6,
+                "totalLooted": 14114
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 12021
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 4,
+                "totalLooted": 10865
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11196
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 5,
+                "totalLooted": 11750
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11879
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 6,
+                "totalLooted": 12030
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 4,
+                "totalLooted": 12074
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 4,
+                "totalLooted": 12114
+              }
+            ]
+          },
+          {
+            "defender": {
+              "tag": "#PP2R9",
+              "name": "Synthetic name 361",
+              "level": 21,
+              "badgeUrls": {
+                "small": "https://example.test/asset/67",
+                "large": "https://example.test/asset/68",
+                "medium": "https://example.test/asset/69"
+              }
+            },
+            "attackCount": 22,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 4,
+                "totalLooted": 13655
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11493
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 10435
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 10663
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10691
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11189
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10482
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11570
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11203
+              }
+            ]
+          },
+          {
+            "defender": {
+              "tag": "#PP2RP",
+              "name": "Synthetic name 362",
+              "level": 20,
+              "badgeUrls": {
+                "small": "https://example.test/asset/70",
+                "large": "https://example.test/asset/71",
+                "medium": "https://example.test/asset/72"
+              }
+            },
+            "attackCount": 19,
+            "districtCount": 9,
+            "districtsDestroyed": 8,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 67,
+                "stars": 1,
+                "attackCount": 2,
+                "totalLooted": 6560
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10912
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9501
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9815
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10282
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9047
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11016
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10830
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11487
+              }
+            ]
+          }
+        ],
+        "defenseLog": [
+          {
+            "attacker": {
+              "tag": "#PP2RY",
+              "name": "Synthetic name 363",
+              "level": 23,
+              "badgeUrls": {
+                "small": "https://example.test/asset/73",
+                "large": "https://example.test/asset/74",
+                "medium": "https://example.test/asset/75"
+              }
+            },
+            "attackCount": 23,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 13961
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10817
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 9899
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10462
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10551
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10111
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 4,
+                "totalLooted": 11135
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11559
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 11778
+              }
+            ]
+          },
+          {
+            "attacker": {
+              "tag": "#PP2RL",
+              "name": "Synthetic name 364",
+              "level": 33,
+              "badgeUrls": {
+                "small": "https://example.test/asset/76",
+                "large": "https://example.test/asset/77",
+                "medium": "https://example.test/asset/78"
+              }
+            },
+            "attackCount": 22,
+            "districtCount": 9,
+            "districtsDestroyed": 8,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 0,
+                "stars": 0,
+                "attackCount": 0,
+                "totalLooted": 0
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 4,
+                "totalLooted": 11438
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 9630
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10204
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11199
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 9754
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 2,
+                "totalLooted": 10873
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 12062
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11937
+              }
+            ]
+          },
+          {
+            "attacker": {
+              "tag": "#PP2RQ",
+              "name": "Synthetic name 365",
+              "level": 13,
+              "badgeUrls": {
+                "small": "https://example.test/asset/79",
+                "large": "https://example.test/asset/80",
+                "medium": "https://example.test/asset/81"
+              }
+            },
+            "attackCount": 29,
+            "districtCount": 9,
+            "districtsDestroyed": 9,
+            "districts": [
+              {
+                "id": 70000000,
+                "name": "Synthetic name 315",
+                "districtHallLevel": 10,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 4,
+                "totalLooted": 13667
+              },
+              {
+                "id": 70000001,
+                "name": "Synthetic name 316",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 10846
+              },
+              {
+                "id": 70000002,
+                "name": "Synthetic name 317",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 9978
+              },
+              {
+                "id": 70000003,
+                "name": "Synthetic name 318",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 10405
+              },
+              {
+                "id": 70000004,
+                "name": "Synthetic name 319",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 10809
+              },
+              {
+                "id": 70000005,
+                "name": "Synthetic name 320",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 4,
+                "totalLooted": 10324
+              },
+              {
+                "id": 70000006,
+                "name": "Synthetic name 321",
+                "districtHallLevel": 5,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11006
+              },
+              {
+                "id": 70000007,
+                "name": "Synthetic name 322",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11522
+              },
+              {
+                "id": 70000008,
+                "name": "Synthetic name 323",
+                "districtHallLevel": 4,
+                "destructionPercent": 100,
+                "stars": 3,
+                "attackCount": 3,
+                "totalLooted": 11934
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "paging": {
+      "cursors": {
+        "after": "synthetic-after"
+      }
+    }
+  }
+}

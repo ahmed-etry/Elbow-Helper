@@ -1,0 +1,1440 @@
+{
+  "kind": "ranked_group",
+  "scope": "[\"#PP0\",\"#PP2\",1792990800]",
+  "body": {
+    "members": [
+      {
+        "playerTag": "#PP98",
+        "playerName": "Synthetic name 71",
+        "clanTag": "#PP99",
+        "clanName": "Synthetic name 72",
+        "leagueTrophies": 1227,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP9P",
+        "playerName": "Synthetic name 73",
+        "clanTag": "#PP9Y",
+        "clanName": "Synthetic name 74",
+        "leagueTrophies": 1216,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 1,
+        "defenseLoseCount": 21
+      },
+      {
+        "playerTag": "#PP9L",
+        "playerName": "Synthetic name 75",
+        "clanTag": "#PP9Q",
+        "clanName": "Synthetic name 76",
+        "leagueTrophies": 1190,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 1,
+        "defenseLoseCount": 21
+      },
+      {
+        "playerTag": "#PP9G",
+        "playerName": "Synthetic name 77",
+        "clanTag": "#PP9R",
+        "clanName": "Synthetic name 78",
+        "leagueTrophies": 1185,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP9J",
+        "playerName": "Synthetic name 79",
+        "clanTag": "#PP9C",
+        "clanName": "Synthetic name 80",
+        "leagueTrophies": 1161,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP9U",
+        "playerName": "Synthetic name 81",
+        "clanTag": "#PP9V",
+        "clanName": "Synthetic name 82",
+        "leagueTrophies": 1140,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPP0",
+        "playerName": "Synthetic name 83",
+        "clanTag": "#PPP2",
+        "clanName": "Synthetic name 84",
+        "leagueTrophies": 1132,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPP8",
+        "playerName": "Synthetic name 85",
+        "clanTag": "#PPP9",
+        "clanName": "Synthetic name 86",
+        "leagueTrophies": 1126,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPPP",
+        "playerName": "Synthetic name 87",
+        "clanTag": "#PPPY",
+        "clanName": "Synthetic name 88",
+        "leagueTrophies": 1126,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPPL",
+        "playerName": "Synthetic name 89",
+        "clanTag": "#PPPQ",
+        "clanName": "Synthetic name 90",
+        "leagueTrophies": 1120,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPPG",
+        "playerName": "Synthetic name 91",
+        "clanTag": "#PPPR",
+        "clanName": "Synthetic name 92",
+        "leagueTrophies": 1116,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPPJ",
+        "playerName": "Synthetic name 93",
+        "clanTag": "#PPPC",
+        "clanName": "Synthetic name 94",
+        "leagueTrophies": 1109,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 1,
+        "defenseLoseCount": 21
+      },
+      {
+        "playerTag": "#PPPU",
+        "playerName": "Synthetic name 95",
+        "clanTag": "#PPPV",
+        "clanName": "Synthetic name 96",
+        "leagueTrophies": 1085,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPY0",
+        "playerName": "Synthetic name 97",
+        "clanTag": "#PPY2",
+        "clanName": "Synthetic name 98",
+        "leagueTrophies": 1068,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPY8",
+        "playerName": "Synthetic name 99",
+        "clanTag": "#PPY9",
+        "clanName": "Synthetic name 100",
+        "leagueTrophies": 1067,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPYP",
+        "playerName": "Synthetic name 101",
+        "clanTag": "#PPYY",
+        "clanName": "Synthetic name 102",
+        "leagueTrophies": 1064,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPYL",
+        "playerName": "Synthetic name 103",
+        "clanTag": "#PPYQ",
+        "clanName": "Synthetic name 104",
+        "leagueTrophies": 1042,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPYG",
+        "playerName": "Synthetic name 105",
+        "clanTag": "#PPYR",
+        "clanName": "Synthetic name 106",
+        "leagueTrophies": 1034,
+        "attackWinCount": 23,
+        "attackLoseCount": 1,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPYJ",
+        "playerName": "Synthetic name 107",
+        "clanTag": "#PPYC",
+        "clanName": "Synthetic name 108",
+        "leagueTrophies": 1032,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 21
+      },
+      {
+        "playerTag": "#PPYU",
+        "playerName": "Synthetic name 109",
+        "clanTag": "#PPYV",
+        "clanName": "Synthetic name 110",
+        "leagueTrophies": 1031,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPL0",
+        "playerName": "Synthetic name 111",
+        "clanTag": "#PPL2",
+        "clanName": "Synthetic name 112",
+        "leagueTrophies": 1024,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPL8",
+        "playerName": "Synthetic name 113",
+        "clanTag": "#PPL9",
+        "clanName": "Synthetic name 114",
+        "leagueTrophies": 1023,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPLP",
+        "playerName": "Synthetic name 115",
+        "clanTag": "#PPLY",
+        "clanName": "Synthetic name 116",
+        "leagueTrophies": 1021,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPLL",
+        "playerName": "Synthetic name 117",
+        "clanTag": "#PPLQ",
+        "clanName": "Synthetic name 118",
+        "leagueTrophies": 1019,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPLG",
+        "playerName": "Synthetic name 119",
+        "clanTag": "#PPLR",
+        "clanName": "Synthetic name 120",
+        "leagueTrophies": 1018,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 1,
+        "defenseLoseCount": 21
+      },
+      {
+        "playerTag": "#PPLJ",
+        "playerName": "Synthetic name 121",
+        "clanTag": "#PPLC",
+        "clanName": "Synthetic name 122",
+        "leagueTrophies": 1006,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 23
+      },
+      {
+        "playerTag": "#PPLU",
+        "playerName": "Synthetic name 123",
+        "clanTag": "#PPLV",
+        "clanName": "Synthetic name 124",
+        "leagueTrophies": 1005,
+        "attackWinCount": 23,
+        "attackLoseCount": 1,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPQ0",
+        "playerName": "Synthetic name 125",
+        "clanTag": "#PPQ2",
+        "clanName": "Synthetic name 126",
+        "leagueTrophies": 1001,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPQ8",
+        "playerName": "Synthetic name 127",
+        "clanTag": "#PPQ9",
+        "clanName": "Synthetic name 128",
+        "leagueTrophies": 994,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPQP",
+        "playerName": "Synthetic name 129",
+        "clanTag": "#PPQY",
+        "clanName": "Synthetic name 130",
+        "leagueTrophies": 994,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPQL",
+        "playerName": "Synthetic name 131",
+        "clanTag": "#PPQQ",
+        "clanName": "Synthetic name 132",
+        "leagueTrophies": 990,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 23
+      },
+      {
+        "playerTag": "#PPQG",
+        "playerName": "Synthetic name 133",
+        "clanTag": "#PPQR",
+        "clanName": "Synthetic name 134",
+        "leagueTrophies": 989,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPQJ",
+        "playerName": "Synthetic name 135",
+        "clanTag": "#PPQC",
+        "clanName": "Synthetic name 136",
+        "leagueTrophies": 988,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 23
+      },
+      {
+        "playerTag": "#PPQU",
+        "playerName": "Synthetic name 137",
+        "clanTag": "#PPQV",
+        "clanName": "Synthetic name 138",
+        "leagueTrophies": 983,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPG0",
+        "playerName": "Synthetic name 139",
+        "clanTag": "#PPG2",
+        "clanName": "Synthetic name 140",
+        "leagueTrophies": 980,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPG8",
+        "playerName": "Synthetic name 141",
+        "clanTag": "#PPG9",
+        "clanName": "Synthetic name 142",
+        "leagueTrophies": 974,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPGP",
+        "playerName": "Synthetic name 143",
+        "clanTag": "#PPGY",
+        "clanName": "Synthetic name 144",
+        "leagueTrophies": 969,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPGL",
+        "playerName": "Synthetic name 145",
+        "clanTag": "#PPGQ",
+        "clanName": "Synthetic name 146",
+        "leagueTrophies": 969,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPGG",
+        "playerName": "Synthetic name 147",
+        "clanTag": "#PPGR",
+        "clanName": "Synthetic name 148",
+        "leagueTrophies": 950,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPGJ",
+        "playerName": "Synthetic name 149",
+        "clanTag": "#PPGC",
+        "clanName": "Synthetic name 150",
+        "leagueTrophies": 942,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPGU",
+        "playerName": "Synthetic name 151",
+        "clanTag": "#PPGV",
+        "clanName": "Synthetic name 152",
+        "leagueTrophies": 932,
+        "attackWinCount": 21,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 23
+      },
+      {
+        "playerTag": "#PPR0",
+        "playerName": "Synthetic name 153",
+        "clanTag": "#PPR2",
+        "clanName": "Synthetic name 154",
+        "leagueTrophies": 928,
+        "attackWinCount": 23,
+        "attackLoseCount": 1,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPR8",
+        "playerName": "Synthetic name 155",
+        "clanTag": "#PPR9",
+        "clanName": "Synthetic name 156",
+        "leagueTrophies": 928,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPRP",
+        "playerName": "Synthetic name 157",
+        "clanTag": "#PPRY",
+        "clanName": "Synthetic name 158",
+        "leagueTrophies": 917,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPRL",
+        "playerName": "Synthetic name 159",
+        "clanTag": "#PPRQ",
+        "clanName": "Synthetic name 160",
+        "leagueTrophies": 913,
+        "attackWinCount": 21,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPRG",
+        "playerName": "Synthetic name 161",
+        "clanTag": "#PPRR",
+        "clanName": "Synthetic name 162",
+        "leagueTrophies": 912,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPRJ",
+        "playerName": "Synthetic name 163",
+        "clanTag": "#PPRC",
+        "clanName": "Synthetic name 164",
+        "leagueTrophies": 907,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPRU",
+        "playerName": "Synthetic name 165",
+        "clanTag": "#PPRV",
+        "clanName": "Synthetic name 166",
+        "leagueTrophies": 906,
+        "attackWinCount": 23,
+        "attackLoseCount": 1,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPJ0",
+        "playerName": "Synthetic name 167",
+        "clanTag": "#PPJ2",
+        "clanName": "Synthetic name 168",
+        "leagueTrophies": 906,
+        "attackWinCount": 21,
+        "attackLoseCount": 0,
+        "defenseWinCount": 1,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPJ8",
+        "playerName": "Synthetic name 169",
+        "clanTag": "#PPJ9",
+        "clanName": "Synthetic name 170",
+        "leagueTrophies": 906,
+        "attackWinCount": 20,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPJP",
+        "playerName": "Synthetic name 171",
+        "clanTag": "#PPJY",
+        "clanName": "Synthetic name 172",
+        "leagueTrophies": 904,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPJL",
+        "playerName": "Synthetic name 173",
+        "clanTag": "#PPJQ",
+        "clanName": "Synthetic name 174",
+        "leagueTrophies": 903,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 23
+      },
+      {
+        "playerTag": "#PPJG",
+        "playerName": "Synthetic name 175",
+        "clanTag": "#PPJR",
+        "clanName": "Synthetic name 176",
+        "leagueTrophies": 902,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 23
+      },
+      {
+        "playerTag": "#PPJJ",
+        "playerName": "Synthetic name 177",
+        "clanTag": "#PPJC",
+        "clanName": "Synthetic name 178",
+        "leagueTrophies": 896,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPJU",
+        "playerName": "Synthetic name 179",
+        "clanTag": "#PPJV",
+        "clanName": "Synthetic name 180",
+        "leagueTrophies": 894,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 23
+      },
+      {
+        "playerTag": "#PPC0",
+        "playerName": "Synthetic name 181",
+        "clanTag": "#PPC2",
+        "clanName": "Synthetic name 182",
+        "leagueTrophies": 894,
+        "attackWinCount": 20,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPC8",
+        "playerName": "Synthetic name 183",
+        "clanTag": "#PPC9",
+        "clanName": "Synthetic name 184",
+        "leagueTrophies": 891,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 1,
+        "defenseLoseCount": 21
+      },
+      {
+        "playerTag": "#PPCP",
+        "playerName": "Synthetic name 185",
+        "clanTag": "#PPCY",
+        "clanName": "Synthetic name 186",
+        "leagueTrophies": 889,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 21
+      },
+      {
+        "playerTag": "#PPCL",
+        "playerName": "Synthetic name 187",
+        "clanTag": "#PPCQ",
+        "clanName": "Synthetic name 188",
+        "leagueTrophies": 889,
+        "attackWinCount": 21,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPCG",
+        "playerName": "Synthetic name 189",
+        "clanTag": "#PPCR",
+        "clanName": "Synthetic name 190",
+        "leagueTrophies": 886,
+        "attackWinCount": 19,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPCJ",
+        "playerName": "Synthetic name 191",
+        "clanTag": "#PPCC",
+        "clanName": "Synthetic name 192",
+        "leagueTrophies": 882,
+        "attackWinCount": 18,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPCU",
+        "playerName": "Synthetic name 193",
+        "clanTag": "#PPCV",
+        "clanName": "Synthetic name 194",
+        "leagueTrophies": 876,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPU0",
+        "playerName": "Synthetic name 195",
+        "clanTag": "#PPU2",
+        "clanName": "Synthetic name 196",
+        "leagueTrophies": 874,
+        "attackWinCount": 22,
+        "attackLoseCount": 2,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPU8",
+        "playerName": "Synthetic name 197",
+        "clanTag": "#PPU9",
+        "clanName": "Synthetic name 198",
+        "leagueTrophies": 871,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPUP",
+        "playerName": "Synthetic name 199",
+        "clanTag": "#PPUY",
+        "clanName": "Synthetic name 200",
+        "leagueTrophies": 868,
+        "attackWinCount": 22,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPUL",
+        "playerName": "Synthetic name 201",
+        "clanTag": "#PPUQ",
+        "clanName": "Synthetic name 202",
+        "leagueTrophies": 867,
+        "attackWinCount": 19,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPUG",
+        "playerName": "Synthetic name 203",
+        "clanTag": "#PPUR",
+        "clanName": "Synthetic name 204",
+        "leagueTrophies": 862,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPUJ",
+        "playerName": "Synthetic name 205",
+        "clanTag": "#PPUC",
+        "clanName": "Synthetic name 206",
+        "leagueTrophies": 862,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPUU",
+        "playerName": "Synthetic name 207",
+        "clanTag": "#PPUV",
+        "clanName": "Synthetic name 208",
+        "leagueTrophies": 861,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPV0",
+        "playerName": "Synthetic name 209",
+        "clanTag": "#PPV2",
+        "clanName": "Synthetic name 210",
+        "leagueTrophies": 858,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPV8",
+        "playerName": "Synthetic name 211",
+        "clanTag": "#PPV9",
+        "clanName": "Synthetic name 212",
+        "leagueTrophies": 849,
+        "attackWinCount": 19,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPVP",
+        "playerName": "Synthetic name 213",
+        "clanTag": "#PPVY",
+        "clanName": "Synthetic name 214",
+        "leagueTrophies": 845,
+        "attackWinCount": 20,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPVL",
+        "playerName": "Synthetic name 215",
+        "clanTag": "#PPVQ",
+        "clanName": "Synthetic name 216",
+        "leagueTrophies": 843,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPVG",
+        "playerName": "Synthetic name 217",
+        "clanTag": "#PPVR",
+        "clanName": "Synthetic name 218",
+        "leagueTrophies": 840,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPVJ",
+        "playerName": "Synthetic name 219",
+        "clanTag": "#PPVC",
+        "clanName": "Synthetic name 220",
+        "leagueTrophies": 839,
+        "attackWinCount": 23,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PPVU",
+        "playerName": "Synthetic name 221",
+        "clanTag": "#PPVV",
+        "clanName": "Synthetic name 222",
+        "leagueTrophies": 834,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP200",
+        "playerName": "Synthetic name 223",
+        "clanTag": "#PP202",
+        "clanName": "Synthetic name 224",
+        "leagueTrophies": 834,
+        "attackWinCount": 21,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP208",
+        "playerName": "Synthetic name 225",
+        "clanTag": "#PP209",
+        "clanName": "Synthetic name 226",
+        "leagueTrophies": 827,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP20P",
+        "playerName": "Synthetic name 227",
+        "clanTag": "#PP20Y",
+        "clanName": "Synthetic name 228",
+        "leagueTrophies": 827,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP20L",
+        "playerName": "Synthetic name 229",
+        "clanTag": "#PP20Q",
+        "clanName": "Synthetic name 230",
+        "leagueTrophies": 822,
+        "attackWinCount": 21,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP20G",
+        "playerName": "Synthetic name 231",
+        "clanTag": "#PP20R",
+        "clanName": "Synthetic name 232",
+        "leagueTrophies": 804,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP20J",
+        "playerName": "Synthetic name 233",
+        "clanTag": "#PP20C",
+        "clanName": "Synthetic name 234",
+        "leagueTrophies": 800,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP20U",
+        "playerName": "Synthetic name 235",
+        "clanTag": "#PP20V",
+        "clanName": "Synthetic name 236",
+        "leagueTrophies": 775,
+        "attackWinCount": 19,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP220",
+        "playerName": "Synthetic name 237",
+        "clanTag": "#PP222",
+        "clanName": "Synthetic name 238",
+        "leagueTrophies": 772,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP228",
+        "playerName": "Synthetic name 239",
+        "clanTag": "#PP229",
+        "clanName": "Synthetic name 240",
+        "leagueTrophies": 771,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP22P",
+        "playerName": "Synthetic name 241",
+        "clanTag": "#PP22Y",
+        "clanName": "Synthetic name 242",
+        "leagueTrophies": 768,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP22L",
+        "playerName": "Synthetic name 243",
+        "clanTag": "#PP22Q",
+        "clanName": "Synthetic name 244",
+        "leagueTrophies": 750,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 23
+      },
+      {
+        "playerTag": "#PP22G",
+        "playerName": "Synthetic name 245",
+        "clanTag": "#PP22R",
+        "clanName": "Synthetic name 246",
+        "leagueTrophies": 750,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP22J",
+        "playerName": "Synthetic name 247",
+        "clanTag": "#PP22C",
+        "clanName": "Synthetic name 248",
+        "leagueTrophies": 743,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP22U",
+        "playerName": "Synthetic name 249",
+        "clanTag": "#PP22V",
+        "clanName": "Synthetic name 250",
+        "leagueTrophies": 742,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP280",
+        "playerName": "Synthetic name 251",
+        "clanTag": "#PP282",
+        "clanName": "Synthetic name 252",
+        "leagueTrophies": 673,
+        "attackWinCount": 24,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP288",
+        "playerName": "Synthetic name 253",
+        "clanTag": "#PP289",
+        "clanName": "Synthetic name 254",
+        "leagueTrophies": 631,
+        "attackWinCount": 14,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP28P",
+        "playerName": "Synthetic name 255",
+        "clanTag": "#PP28Y",
+        "clanName": "Synthetic name 256",
+        "leagueTrophies": 580,
+        "attackWinCount": 16,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP28L",
+        "playerName": "Synthetic name 257",
+        "clanTag": "#PP28Q",
+        "clanName": "Synthetic name 258",
+        "leagueTrophies": 535,
+        "attackWinCount": 18,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP28G",
+        "playerName": "Synthetic name 259",
+        "clanTag": "#PP28R",
+        "clanName": "Synthetic name 260",
+        "leagueTrophies": 501,
+        "attackWinCount": 11,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 23
+      },
+      {
+        "playerTag": "#PP28J",
+        "playerName": "Synthetic name 261",
+        "clanTag": "#PP28C",
+        "clanName": "Synthetic name 262",
+        "leagueTrophies": 460,
+        "attackWinCount": 7,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 23
+      },
+      {
+        "playerTag": "#PP28U",
+        "playerName": "Synthetic name 263",
+        "clanTag": "#PP28V",
+        "clanName": "Synthetic name 264",
+        "leagueTrophies": 414,
+        "attackWinCount": 9,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP290",
+        "playerName": "Synthetic name 265",
+        "clanTag": "#PP292",
+        "clanName": "Synthetic name 266",
+        "leagueTrophies": 326,
+        "attackWinCount": 6,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      },
+      {
+        "playerTag": "#PP298",
+        "playerName": "Synthetic name 267",
+        "clanTag": "#PP299",
+        "clanName": "Synthetic name 268",
+        "leagueTrophies": 325,
+        "attackWinCount": 0,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 21
+      },
+      {
+        "playerTag": "#PP29P",
+        "playerName": "Synthetic name 269",
+        "clanTag": "#PP29Y",
+        "clanName": "Synthetic name 270",
+        "leagueTrophies": 229,
+        "attackWinCount": 2,
+        "attackLoseCount": 0,
+        "defenseWinCount": 0,
+        "defenseLoseCount": 22
+      }
+    ],
+    "attackLogs": [
+      {
+        "opponentPlayerTag": "#PPVU",
+        "opponentName": "Synthetic name 221",
+        "stars": 2,
+        "destructionPercentage": 99,
+        "trophies": 32,
+        "creationTime": "2026-10-01T18:33:51Z"
+      },
+      {
+        "opponentPlayerTag": "#PPR0",
+        "opponentName": "Synthetic name 153",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 40,
+        "creationTime": "2026-10-03T15:50:26Z"
+      },
+      {
+        "opponentPlayerTag": "#PPUG",
+        "opponentName": "Synthetic name 203",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 40,
+        "creationTime": "2026-10-03T15:53:44Z"
+      },
+      {
+        "opponentPlayerTag": "#PP29P",
+        "opponentName": "Synthetic name 269",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 40,
+        "creationTime": "2026-10-03T15:59:06Z"
+      },
+      {
+        "opponentPlayerTag": "#PPVG",
+        "opponentName": "Synthetic name 217",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 40,
+        "creationTime": "2026-10-03T16:01:58Z"
+      },
+      {
+        "opponentPlayerTag": "#PPCP",
+        "opponentName": "Synthetic name 185",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 40,
+        "creationTime": "2026-10-03T16:05:35Z"
+      },
+      {
+        "opponentPlayerTag": "#PP22U",
+        "opponentName": "Synthetic name 249",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 40,
+        "creationTime": "2026-10-03T16:10:52Z"
+      },
+      {
+        "opponentPlayerTag": "#PPCU",
+        "opponentName": "Synthetic name 193",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 40,
+        "creationTime": "2026-10-04T06:36:19Z"
+      },
+      {
+        "opponentPlayerTag": "#PP28J",
+        "opponentName": "Synthetic name 261",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 40,
+        "creationTime": "2026-10-04T06:39:21Z"
+      },
+      {
+        "opponentPlayerTag": "#PPJU",
+        "opponentName": "Synthetic name 179",
+        "stars": 2,
+        "destructionPercentage": 60,
+        "trophies": 19,
+        "creationTime": "2026-10-04T06:43:06Z"
+      },
+      {
+        "opponentPlayerTag": "#PP9L",
+        "opponentName": "Synthetic name 75",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 40,
+        "creationTime": "2026-10-04T06:47:11Z"
+      },
+      {
+        "opponentPlayerTag": "#PPC8",
+        "opponentName": "Synthetic name 183",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 40,
+        "creationTime": "2026-10-04T06:50:24Z"
+      },
+      {
+        "opponentPlayerTag": "#PPGP",
+        "opponentName": "Synthetic name 143",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 40,
+        "creationTime": "2026-10-04T15:24:47Z"
+      },
+      {
+        "opponentPlayerTag": "#PPQ8",
+        "opponentName": "Synthetic name 127",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 40,
+        "creationTime": "2026-10-04T15:28:23Z"
+      },
+      {
+        "opponentPlayerTag": "#PPJP",
+        "opponentName": "Synthetic name 171",
+        "stars": 1,
+        "destructionPercentage": 87,
+        "trophies": 14,
+        "creationTime": "2026-10-04T16:27:05Z"
+      },
+      {
+        "opponentPlayerTag": "#PPG0",
+        "opponentName": "Synthetic name 139",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 40,
+        "creationTime": "2026-10-04T16:30:08Z"
+      },
+      {
+        "opponentPlayerTag": "#PPQJ",
+        "opponentName": "Synthetic name 135",
+        "stars": 2,
+        "destructionPercentage": 91,
+        "trophies": 29,
+        "creationTime": "2026-10-04T18:39:46Z"
+      },
+      {
+        "opponentPlayerTag": "#PPV0",
+        "opponentName": "Synthetic name 209",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 40,
+        "creationTime": "2026-10-04T18:51:56Z"
+      },
+      {
+        "opponentPlayerTag": "#PPCG",
+        "opponentName": "Synthetic name 189",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 40,
+        "creationTime": "2026-10-04T18:55:15Z"
+      }
+    ],
+    "defenseLogs": [
+      {
+        "opponentPlayerTag": "#PPY8",
+        "opponentName": "Synthetic name 99",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 0,
+        "creationTime": "2026-09-30T15:00:08Z"
+      },
+      {
+        "opponentPlayerTag": "#PP22U",
+        "opponentName": "Synthetic name 249",
+        "stars": 1,
+        "destructionPercentage": 89,
+        "trophies": 26,
+        "creationTime": "2026-09-30T16:46:25Z"
+      },
+      {
+        "opponentPlayerTag": "#PPQJ",
+        "opponentName": "Synthetic name 135",
+        "stars": 2,
+        "destructionPercentage": 91,
+        "trophies": 11,
+        "creationTime": "2026-09-30T17:08:28Z"
+      },
+      {
+        "opponentPlayerTag": "#PPQP",
+        "opponentName": "Synthetic name 129",
+        "stars": 2,
+        "destructionPercentage": 92,
+        "trophies": 10,
+        "creationTime": "2026-09-30T20:44:21Z"
+      },
+      {
+        "opponentPlayerTag": "#PPG0",
+        "opponentName": "Synthetic name 139",
+        "stars": 1,
+        "destructionPercentage": 96,
+        "trophies": 25,
+        "creationTime": "2026-10-01T06:06:19Z"
+      },
+      {
+        "opponentPlayerTag": "#PPLU",
+        "opponentName": "Synthetic name 123",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 0,
+        "creationTime": "2026-10-01T06:41:07Z"
+      },
+      {
+        "opponentPlayerTag": "#PPQG",
+        "opponentName": "Synthetic name 133",
+        "stars": 2,
+        "destructionPercentage": 99,
+        "trophies": 8,
+        "creationTime": "2026-10-01T09:19:29Z"
+      },
+      {
+        "opponentPlayerTag": "#PPPL",
+        "opponentName": "Synthetic name 89",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 0,
+        "creationTime": "2026-10-01T19:12:53Z"
+      },
+      {
+        "opponentPlayerTag": "#PPRL",
+        "opponentName": "Synthetic name 159",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 0,
+        "creationTime": "2026-10-01T22:02:38Z"
+      },
+      {
+        "opponentPlayerTag": "#PPC8",
+        "opponentName": "Synthetic name 183",
+        "stars": 2,
+        "destructionPercentage": 72,
+        "trophies": 17,
+        "creationTime": "2026-10-02T09:52:16Z"
+      },
+      {
+        "opponentPlayerTag": "#PPYP",
+        "opponentName": "Synthetic name 101",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 0,
+        "creationTime": "2026-10-02T14:26:52Z"
+      },
+      {
+        "opponentPlayerTag": "#PPLJ",
+        "opponentName": "Synthetic name 121",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 0,
+        "creationTime": "2026-10-02T16:49:26Z"
+      },
+      {
+        "opponentPlayerTag": "#PP290",
+        "opponentName": "Synthetic name 265",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 0,
+        "creationTime": "2026-10-03T03:02:15Z"
+      },
+      {
+        "opponentPlayerTag": "#PPRU",
+        "opponentName": "Synthetic name 165",
+        "stars": 2,
+        "destructionPercentage": 93,
+        "trophies": 10,
+        "creationTime": "2026-10-03T09:31:00Z"
+      },
+      {
+        "opponentPlayerTag": "#PP22J",
+        "opponentName": "Synthetic name 247",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 0,
+        "creationTime": "2026-10-03T14:03:52Z"
+      },
+      {
+        "opponentPlayerTag": "#PPPJ",
+        "opponentName": "Synthetic name 93",
+        "stars": 2,
+        "destructionPercentage": 96,
+        "trophies": 9,
+        "creationTime": "2026-10-03T17:26:36Z"
+      },
+      {
+        "opponentPlayerTag": "#PP22L",
+        "opponentName": "Synthetic name 243",
+        "stars": 2,
+        "destructionPercentage": 98,
+        "trophies": 8,
+        "creationTime": "2026-10-04T04:49:49Z"
+      },
+      {
+        "opponentPlayerTag": "#PPLP",
+        "opponentName": "Synthetic name 115",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 0,
+        "creationTime": "2026-10-04T12:38:32Z"
+      },
+      {
+        "opponentPlayerTag": "#PPUJ",
+        "opponentName": "Synthetic name 205",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 0,
+        "creationTime": "2026-10-04T13:19:24Z"
+      },
+      {
+        "opponentPlayerTag": "#PPC0",
+        "opponentName": "Synthetic name 181",
+        "stars": 2,
+        "destructionPercentage": 90,
+        "trophies": 11,
+        "creationTime": "2026-10-04T19:53:53Z"
+      },
+      {
+        "opponentPlayerTag": "#PP280",
+        "opponentName": "Synthetic name 251",
+        "stars": 2,
+        "destructionPercentage": 99,
+        "trophies": 8,
+        "creationTime": "2026-10-04T20:04:08Z"
+      },
+      {
+        "opponentPlayerTag": "#PPRG",
+        "opponentName": "Synthetic name 161",
+        "stars": 3,
+        "destructionPercentage": 100,
+        "trophies": 0,
+        "creationTime": "2026-10-05T02:06:47Z"
+      }
+    ]
+  }
+}

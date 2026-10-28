@@ -1,0 +1,7732 @@
+{
+  "kind": "battle_log",
+  "scope": "#PP0",
+  "body": {
+    "items": [
+      {
+        "battleType": "ranked",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP2",
+        "opponentName": "Synthetic name 1",
+        "opponentTownHallLevel": 17,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 400
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 94,
+        "battleTimestamp": "20261022T053237.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP8",
+        "opponentName": "Synthetic name 29",
+        "opponentTownHallLevel": 16,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 2238840
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1706171
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 400
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 15187
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 2238840
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1706171
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 15187
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 35,
+        "battleTimestamp": "20261022T053302.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP9",
+        "opponentName": "Synthetic name 30",
+        "opponentTownHallLevel": 17,
+        "stars": 2,
+        "destructionPercentage": 95,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 820000
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 400
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 180,
+        "battleTimestamp": "20261022T055922.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PPP",
+        "opponentName": "Synthetic name 31",
+        "opponentTownHallLevel": 17,
+        "stars": 0,
+        "destructionPercentage": 16,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 2",
+            "amount": 10438
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 266
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1317796
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 509973
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 2186575
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1493822
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 14752
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 56,
+        "battleTimestamp": "20261022T133659.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": true,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PPY",
+        "opponentName": "Synthetic name 32",
+        "opponentTownHallLevel": 17,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 1765360
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1765360
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10705
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 400
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1765360
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1765360
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10705
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 131,
+        "battleTimestamp": "20261022T134909.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PPL",
+        "opponentName": "Synthetic name 33",
+        "opponentTownHallLevel": 17,
+        "stars": 1,
+        "destructionPercentage": 68,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 4",
+            "amount": 267
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1671305
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 3036
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1267013
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 2121560
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1950541
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 14227
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 70,
+        "battleTimestamp": "20261022T214942.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PPQ",
+        "opponentName": "Synthetic name 34",
+        "opponentTownHallLevel": 17,
+        "stars": 2,
+        "destructionPercentage": 90,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 359
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 180,
+        "battleTimestamp": "20261023T003201.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PPG",
+        "opponentName": "Synthetic name 35",
+        "opponentTownHallLevel": 17,
+        "stars": 2,
+        "destructionPercentage": 68,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 2",
+            "amount": 11421
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 400
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1716971
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1957115
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1957115
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1716971
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 11421
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 179,
+        "battleTimestamp": "20261023T060703.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": true,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PPR",
+        "opponentName": "Synthetic name 36",
+        "opponentTownHallLevel": 17,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 450
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 161,
+        "battleTimestamp": "20261023T082019.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": true,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PPL",
+        "opponentName": "Synthetic name 33",
+        "opponentTownHallLevel": 17,
+        "stars": 2,
+        "destructionPercentage": 99,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 1671305
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1267013
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 450
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 11239
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1671305
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1267013
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 11239
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 180,
+        "battleTimestamp": "20261023T082522.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": true,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PPG",
+        "opponentName": "Synthetic name 35",
+        "opponentTownHallLevel": 17,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 2",
+            "amount": 11421
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1957115
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1716971
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 450
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1957115
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1716971
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 11421
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 104,
+        "battleTimestamp": "20261023T082754.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": true,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PPJ",
+        "opponentName": "Synthetic name 37",
+        "opponentTownHallLevel": 17,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 450
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 141,
+        "battleTimestamp": "20261023T083338.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": true,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PPC",
+        "opponentName": "Synthetic name 38",
+        "opponentTownHallLevel": 16,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 828288
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 817174
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 450
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 8314
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 828288
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 817174
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 8314
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 84,
+        "battleTimestamp": "20261023T083544.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": true,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PPU",
+        "opponentName": "Synthetic name 39",
+        "opponentTownHallLevel": 17,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 1838680
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1957594
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10950
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 450
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1838680
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1957594
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10950
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 120,
+        "battleTimestamp": "20261023T083958.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": true,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PPQ",
+        "opponentName": "Synthetic name 34",
+        "opponentTownHallLevel": 17,
+        "stars": 2,
+        "destructionPercentage": 74,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 150
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 615000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 149,
+        "battleTimestamp": "20261023T084622.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": true,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PPV",
+        "opponentName": "Synthetic name 40",
+        "opponentTownHallLevel": 17,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 450
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 149,
+        "battleTimestamp": "20261023T095438.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PPU",
+        "opponentName": "Synthetic name 39",
+        "opponentTownHallLevel": 17,
+        "stars": 2,
+        "destructionPercentage": 60,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 993322
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10950
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 300
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 858023
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1838680
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1957594
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10950
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 180,
+        "battleTimestamp": "20261023T100348.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP20",
+        "opponentName": "Synthetic name 41",
+        "opponentTownHallLevel": 17,
+        "stars": 1,
+        "destructionPercentage": 75,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 567476
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 450
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 1912
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 554989
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 726519
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 927585
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 11912
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 154,
+        "battleTimestamp": "20261023T141224.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP22",
+        "opponentName": "Synthetic name 42",
+        "opponentTownHallLevel": 17,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 450
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 110,
+        "battleTimestamp": "20261023T141403.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": true,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP20",
+        "opponentName": "Synthetic name 41",
+        "opponentTownHallLevel": 17,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 1965851
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10226
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1798699
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 450
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1965851
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1798699
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10226
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 114,
+        "battleTimestamp": "20261023T151451.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": true,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP28",
+        "opponentName": "Synthetic name 43",
+        "opponentTownHallLevel": 17,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 4",
+            "amount": 450
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 166,
+        "battleTimestamp": "20261023T155619.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": true,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP29",
+        "opponentName": "Synthetic name 44",
+        "opponentTownHallLevel": 17,
+        "stars": 2,
+        "destructionPercentage": 99,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 450
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 180,
+        "battleTimestamp": "20261023T162538.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": true,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP2P",
+        "opponentName": "Synthetic name 45",
+        "opponentTownHallLevel": 17,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 4",
+            "amount": 450
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 131,
+        "battleTimestamp": "20261023T163806.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": true,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP2Y",
+        "opponentName": "Synthetic name 46",
+        "opponentTownHallLevel": 16,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 450
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 155,
+        "battleTimestamp": "20261023T164424.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP2L",
+        "opponentName": "Synthetic name 47",
+        "opponentTownHallLevel": 17,
+        "stars": 1,
+        "destructionPercentage": 65,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 784338
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 300
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 9726
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1530995
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 2004029
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1996247
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 11306
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 107,
+        "battleTimestamp": "20261023T225526.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP2Q",
+        "opponentName": "Synthetic name 48",
+        "opponentTownHallLevel": 17,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 4",
+            "amount": 450
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 2326140
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 2300747
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 16320
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 2326140
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 2300747
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 16320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 75,
+        "battleTimestamp": "20261024T101723.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP2G",
+        "opponentName": "Synthetic name 49",
+        "opponentTownHallLevel": 17,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 450
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 126,
+        "battleTimestamp": "20261024T134026.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP2R",
+        "opponentName": "Synthetic name 50",
+        "opponentTownHallLevel": 17,
+        "stars": 2,
+        "destructionPercentage": 98,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 4",
+            "amount": 450
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 140,
+        "battleTimestamp": "20261024T160140.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP2J",
+        "opponentName": "Synthetic name 51",
+        "opponentTownHallLevel": 17,
+        "stars": 2,
+        "destructionPercentage": 82,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 1370892
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 466
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1630461
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 13324
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 2111155
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 2047175
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 15690
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 145,
+        "battleTimestamp": "20261024T182323.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP2C",
+        "opponentName": "Synthetic name 52",
+        "opponentTownHallLevel": 17,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 2",
+            "amount": 17005
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 2009539
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1884546
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 700
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 2009539
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1884546
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 17005
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 105,
+        "battleTimestamp": "20261025T025028.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP2U",
+        "opponentName": "Synthetic name 53",
+        "opponentTownHallLevel": 17,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 700
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 130,
+        "battleTimestamp": "20261025T075917.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP2V",
+        "opponentName": "Synthetic name 54",
+        "opponentTownHallLevel": 17,
+        "stars": 0,
+        "destructionPercentage": 44,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 501436
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 530980
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 9066
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1806767
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1789109
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10099
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 96,
+        "battleTimestamp": "20261025T110719.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP80",
+        "opponentName": "Synthetic name 55",
+        "opponentTownHallLevel": 17,
+        "stars": 1,
+        "destructionPercentage": 56,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 900112
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1352595
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10206
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 2010506
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1923346
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 13618
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 90,
+        "battleTimestamp": "20261025T191308.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP82",
+        "opponentName": "Synthetic name 56",
+        "opponentTownHallLevel": 17,
+        "stars": 0,
+        "destructionPercentage": 36,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 561030
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 9725
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 180,
+        "battleTimestamp": "20261025T204506.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP88",
+        "opponentName": "Synthetic name 57",
+        "opponentTownHallLevel": 17,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 2187582
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 17304
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1926333
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 2187582
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1926333
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 17304
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 131,
+        "battleTimestamp": "20261026T052631.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": true,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP88",
+        "opponentName": "Synthetic name 57",
+        "opponentTownHallLevel": 17,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 2",
+            "amount": 48782
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 5330208
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 6043287
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 6043287
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 5330208
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 48782
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 140,
+        "battleTimestamp": "20261026T131022.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP89",
+        "opponentName": "Synthetic name 58",
+        "opponentTownHallLevel": 17,
+        "stars": 2,
+        "destructionPercentage": 62,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 1084705
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 725954
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10368
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1432795
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1196059
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10552
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 137,
+        "battleTimestamp": "20261026T133223.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": true,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP89",
+        "opponentName": "Synthetic name 58",
+        "opponentTownHallLevel": 17,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 1854950
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1774887
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 11373
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1854950
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1774887
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 11373
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 132,
+        "battleTimestamp": "20261026T133526.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": true,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP8P",
+        "opponentName": "Synthetic name 59",
+        "opponentTownHallLevel": 17,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 108,
+        "battleTimestamp": "20261026T203339.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": true,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP8Y",
+        "opponentName": "Synthetic name 60",
+        "opponentTownHallLevel": 17,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 126,
+        "battleTimestamp": "20261026T203651.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP8L",
+        "opponentName": "Synthetic name 61",
+        "opponentTownHallLevel": 16,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 146,
+        "battleTimestamp": "20261026T212738.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP8Q",
+        "opponentName": "Synthetic name 62",
+        "opponentTownHallLevel": 17,
+        "stars": 2,
+        "destructionPercentage": 57,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 2",
+            "amount": 13426
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1228165
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 714500
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 2276143
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 2261646
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 16009
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 133,
+        "battleTimestamp": "20261026T233307.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP8G",
+        "opponentName": "Synthetic name 63",
+        "opponentTownHallLevel": 17,
+        "stars": 2,
+        "destructionPercentage": 78,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 820000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 929650
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 119,
+        "battleTimestamp": "20261027T051904.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP8R",
+        "opponentName": "Synthetic name 64",
+        "opponentTownHallLevel": 17,
+        "stars": 1,
+        "destructionPercentage": 80,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 2240058
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 27558
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1940358
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 3068151
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 3024502
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 28558
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 180,
+        "battleTimestamp": "20261027T075714.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP8J",
+        "opponentName": "Synthetic name 65",
+        "opponentTownHallLevel": 15,
+        "stars": 2,
+        "destructionPercentage": 95,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 999635
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 146,
+        "battleTimestamp": "20261027T115531.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP8C",
+        "opponentName": "Synthetic name 66",
+        "opponentTownHallLevel": 17,
+        "stars": 2,
+        "destructionPercentage": 76,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 820000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 820000
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 163,
+        "battleTimestamp": "20261027T143502.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP8U",
+        "opponentName": "Synthetic name 67",
+        "opponentTownHallLevel": 17,
+        "stars": 1,
+        "destructionPercentage": 89,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 2",
+            "amount": 28015
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 3047503
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 2852428
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 3598889
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 3355385
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 29858
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 147,
+        "battleTimestamp": "20261027T160308.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP8V",
+        "opponentName": "Synthetic name 68",
+        "opponentTownHallLevel": 17,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 86,
+        "battleTimestamp": "20261027T212643.000Z"
+      },
+      {
+        "battleType": "homeVillage",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP90",
+        "opponentName": "Synthetic name 69",
+        "opponentTownHallLevel": 17,
+        "stars": 0,
+        "destructionPercentage": 6,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 235095
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 3729929
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 3311331
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 31863
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 2,
+        "battleTimestamp": "20261028T010250.000Z"
+      },
+      {
+        "battleType": "ranked",
+        "attack": false,
+        "armyShareCode": "synthetic-army",
+        "opponentPlayerTag": "#PP92",
+        "opponentName": "Synthetic name 70",
+        "opponentTownHallLevel": 17,
+        "stars": 3,
+        "destructionPercentage": 100,
+        "lootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          }
+        ],
+        "extraLootedResources": [
+          {
+            "name": "Synthetic name 3",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 0
+          }
+        ],
+        "availableLoot": [
+          {
+            "name": "Synthetic name 6",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 3",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 5",
+            "amount": 1025000
+          },
+          {
+            "name": "Synthetic name 2",
+            "amount": 10320
+          },
+          {
+            "name": "Synthetic name 7",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 8",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 9",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 10",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 11",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 12",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 13",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 14",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 15",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 16",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 4",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 17",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 18",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 19",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 20",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 21",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 22",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 23",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 24",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 25",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 26",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 27",
+            "amount": 0
+          },
+          {
+            "name": "Synthetic name 28",
+            "amount": 0
+          }
+        ],
+        "battleTime": 174,
+        "battleTimestamp": "20261028T020028.000Z"
+      }
+    ]
+  }
+}

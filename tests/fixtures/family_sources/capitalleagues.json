@@ -1,0 +1,103 @@
+{
+  "kind": "catalogue",
+  "scope": "/capitalleagues",
+  "body": {
+    "items": [
+      {
+        "id": 85000000,
+        "name": "Synthetic name 366"
+      },
+      {
+        "id": 85000001,
+        "name": "Synthetic name 367"
+      },
+      {
+        "id": 85000002,
+        "name": "Synthetic name 368"
+      },
+      {
+        "id": 85000003,
+        "name": "Synthetic name 369"
+      },
+      {
+        "id": 85000004,
+        "name": "Synthetic name 370"
+      },
+      {
+        "id": 85000005,
+        "name": "Synthetic name 371"
+      },
+      {
+        "id": 85000006,
+        "name": "Synthetic name 372"
+      },
+      {
+        "id": 85000007,
+        "name": "Synthetic name 373"
+      },
+      {
+        "id": 85000008,
+        "name": "Synthetic name 374"
+      },
+      {
+        "id": 85000009,
+        "name": "Synthetic name 375"
+      },
+      {
+        "id": 85000010,
+        "name": "Synthetic name 376"
+      },
+      {
+        "id": 85000011,
+        "name": "Synthetic name 377"
+      },
+      {
+        "id": 85000012,
+        "name": "Synthetic name 378"
+      },
+      {
+        "id": 85000013,
+        "name": "Synthetic name 379"
+      },
+      {
+        "id": 85000014,
+        "name": "Synthetic name 380"
+      },
+      {
+        "id": 85000015,
+        "name": "Synthetic name 381"
+      },
+      {
+        "id": 85000016,
+        "name": "Synthetic name 382"
+      },
+      {
+        "id": 85000017,
+        "name": "Synthetic name 383"
+      },
+      {
+        "id": 85000018,
+        "name": "Synthetic name 384"
+      },
+      {
+        "id": 85000019,
+        "name": "Synthetic name 385"
+      },
+      {
+        "id": 85000020,
+        "name": "Synthetic name 386"
+      },
+      {
+        "id": 85000021,
+        "name": "Synthetic name 387"
+      },
+      {
+        "id": 85000022,
+        "name": "Synthetic name 388"
+      }
+    ],
+    "paging": {
+      "cursors": {}
+    }
+  }
+}

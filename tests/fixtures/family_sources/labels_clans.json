@@ -1,0 +1,147 @@
+{
+  "kind": "catalogue",
+  "scope": "/labels/clans",
+  "body": {
+    "items": [
+      {
+        "id": 56000000,
+        "name": "Synthetic name 467",
+        "iconUrls": {
+          "small": "https://example.test/asset/224",
+          "medium": "https://example.test/asset/225"
+        }
+      },
+      {
+        "id": 56000001,
+        "name": "Synthetic name 468",
+        "iconUrls": {
+          "small": "https://example.test/asset/226",
+          "medium": "https://example.test/asset/227"
+        }
+      },
+      {
+        "id": 56000002,
+        "name": "Synthetic name 469",
+        "iconUrls": {
+          "small": "https://example.test/asset/228",
+          "medium": "https://example.test/asset/229"
+        }
+      },
+      {
+        "id": 56000003,
+        "name": "Synthetic name 470",
+        "iconUrls": {
+          "small": "https://example.test/asset/230",
+          "medium": "https://example.test/asset/231"
+        }
+      },
+      {
+        "id": 56000004,
+        "name": "Synthetic name 471",
+        "iconUrls": {
+          "small": "https://example.test/asset/232",
+          "medium": "https://example.test/asset/233"
+        }
+      },
+      {
+        "id": 56000005,
+        "name": "Synthetic name 472",
+        "iconUrls": {
+          "small": "https://example.test/asset/234",
+          "medium": "https://example.test/asset/235"
+        }
+      },
+      {
+        "id": 56000006,
+        "name": "Synthetic name 473",
+        "iconUrls": {
+          "small": "https://example.test/asset/236",
+          "medium": "https://example.test/asset/237"
+        }
+      },
+      {
+        "id": 56000007,
+        "name": "Synthetic name 474",
+        "iconUrls": {
+          "small": "https://example.test/asset/238",
+          "medium": "https://example.test/asset/239"
+        }
+      },
+      {
+        "id": 56000008,
+        "name": "Synthetic name 475",
+        "iconUrls": {
+          "small": "https://example.test/asset/240",
+          "medium": "https://example.test/asset/241"
+        }
+      },
+      {
+        "id": 56000009,
+        "name": "Synthetic name 476",
+        "iconUrls": {
+          "small": "https://example.test/asset/242",
+          "medium": "https://example.test/asset/243"
+        }
+      },
+      {
+        "id": 56000010,
+        "name": "Synthetic name 477",
+        "iconUrls": {
+          "small": "https://example.test/asset/244",
+          "medium": "https://example.test/asset/245"
+        }
+      },
+      {
+        "id": 56000011,
+        "name": "Synthetic name 478",
+        "iconUrls": {
+          "small": "https://example.test/asset/246",
+          "medium": "https://example.test/asset/247"
+        }
+      },
+      {
+        "id": 56000012,
+        "name": "Synthetic name 479",
+        "iconUrls": {
+          "small": "https://example.test/asset/248",
+          "medium": "https://example.test/asset/249"
+        }
+      },
+      {
+        "id": 56000013,
+        "name": "Synthetic name 480",
+        "iconUrls": {
+          "small": "https://example.test/asset/250",
+          "medium": "https://example.test/asset/251"
+        }
+      },
+      {
+        "id": 56000014,
+        "name": "Synthetic name 481",
+        "iconUrls": {
+          "small": "https://example.test/asset/252",
+          "medium": "https://example.test/asset/253"
+        }
+      },
+      {
+        "id": 56000015,
+        "name": "Synthetic name 482",
+        "iconUrls": {
+          "small": "https://example.test/asset/254",
+          "medium": "https://example.test/asset/255"
+        }
+      },
+      {
+        "id": 56000016,
+        "name": "Synthetic name 483",
+        "iconUrls": {
+          "small": "https://example.test/asset/256",
+          "medium": "https://example.test/asset/257"
+        }
+      }
+    ],
+    "paging": {
+      "cursors": {}
+    }
+  }
+}

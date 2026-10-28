@@ -19,13 +19,16 @@ def now_us() -> int:
 
 
 def _queued(collector):
-    """Players and wars queue on their own checkpoints instead of item rows."""
+    """High-volume sources queue on checkpoints instead of item rows."""
     if collector == "players":
         from . import player_state
         return player_state
     if collector == "wars":
         from . import war_state
         return war_state
+    from . import source_state
+    if collector in source_state.COLLECTORS:
+        return source_state
     return None
 
 
