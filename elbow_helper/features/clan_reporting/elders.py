@@ -96,14 +96,8 @@ class ClanReportingElderMixin:
                 save_state(self.state)
                 return True
 
-            try:
-                updated = await self._run_discord_http_operation(
-                    clan_code,
-                    "edit missing-elder board",
-                    lambda: message.edit(embed=embed, view=view),
-                )
-            except discord.NotFound as exc:
-                LOGGER.warning("Failed to edit missing-elder board for %s: %s", clan_code, exc)
+            result = await self.bot.publishing.edit_message(message, embed=embed, view=view)
+            if isinstance(result.error, discord.NotFound):
                 recovered_message, _, recovery_completed = await self._find_missing_elder_board_in_history(
                     channel,
                     clan_code,
@@ -113,16 +107,8 @@ class ClanReportingElderMixin:
                 if recovered_message is not None:
                     board_messages[clan_code] = recovered_message.id
                     save_state(self.state)
-                    try:
-                        updated = await self._run_discord_http_operation(
-                            clan_code,
-                            "edit recovered missing-elder board",
-                            lambda: recovered_message.edit(embed=embed, view=view),
-                        )
-                    except (discord.NotFound, discord.Forbidden, discord.HTTPException) as edit_exc:
-                        LOGGER.warning("Failed to edit recovered missing-elder board for %s: %s", clan_code, edit_exc)
-                        return False
-                    return updated is not None
+                    result = await self.bot.publishing.edit_message(recovered_message, embed=embed, view=view)
+                    return bool(result)
                 new_message = await self._run_discord_http_operation(
                     clan_code,
                     "send replacement missing-elder board",
@@ -133,10 +119,7 @@ class ClanReportingElderMixin:
                 board_messages[clan_code] = new_message.id
                 save_state(self.state)
                 return True
-            except (discord.Forbidden, discord.HTTPException) as exc:
-                LOGGER.warning("Failed to edit missing-elder board for %s: %s", clan_code, exc)
-                return False
-            return updated is not None
+            return bool(result)
 
     async def _delete_missing_elder_message(
         self,

@@ -429,13 +429,14 @@ class CwlAnnouncementMixin:
             ):
                 channel = await resolve_channel(CWL_HQ_CHANNEL_ID)
                 if isinstance(channel, discord.TextChannel):
-                    await self._post_bonus_dashboard(
+                    posted = await self._post_bonus_dashboard(
                         mode="final",
                         target_channel=channel,
                         ping_helper=True,
                     )
-                    self._sent_keys.add(bonus_board_key)
-                    self._save_scheduler_state()
+                    if posted is not False:
+                        self._sent_keys.add(bonus_board_key)
+                        self._save_scheduler_state()
         except Exception as e:
             LOGGER.exception("reminder loop iteration failed: %s", e)
 

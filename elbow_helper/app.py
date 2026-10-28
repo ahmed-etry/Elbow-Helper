@@ -14,6 +14,7 @@ from elbow_helper.discord.interactions import warn
 from elbow_helper.discord.usage import log_command_usage
 from elbow_helper.discord.usage import on_app_command_completion
 from elbow_helper.discord.usage import on_interaction
+from elbow_helper.discord.publishing import PublishingQueue
 from elbow_helper.configuration.guild import GUILD_ID
 
 from .core.errors import install_asyncio_exception_handler
@@ -89,6 +90,7 @@ def create_bot(
         agent_model=ai_client,
         google_publisher=google_publisher,
         workbook_writer=workbook_writer,
+        publishing=PublishingQueue(),
     )
     bot.tree.error(handle_app_command_error)
     bot.add_listener(on_app_command_completion)

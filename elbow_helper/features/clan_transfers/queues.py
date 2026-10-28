@@ -174,21 +174,22 @@ class ClanTransferQueueMixin:
                 if message_id:
                     try:
                         message = await thread.fetch_message(message_id)
-                        await message.edit(embed=embed, view=view)
-                        return
+                        result = await self.bot.publishing.edit_message(message, embed=embed, view=view)
+                        if result:
+                            return
+                        clan_state["queue_message_id"] = None
+                        self._save_state()
                     except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                         clan_state["queue_message_id"] = None
                         self._save_state()
 
                 existing = await self._find_existing_queue_message(thread, clan_code)
                 if existing is not None:
-                    try:
-                        await existing.edit(embed=embed, view=view)
+                    result = await self.bot.publishing.edit_message(existing, embed=embed, view=view)
+                    if result:
                         clan_state["queue_message_id"] = existing.id
                         self._save_state()
                         return
-                    except (discord.Forbidden, discord.HTTPException) as exc:
-                        self.logger.warning("Failed to edit existing queue message for %s: %s", clan_code, exc)
 
                 try:
                     message = await thread.send(embed=embed, view=view)
@@ -212,9 +213,11 @@ class ClanTransferQueueMixin:
             if message_id:
                 try:
                     message = await channel.fetch_message(message_id)
-                    await message.edit(embed=embed, view=view)
-                    self._save_state()
-                    return
+                    result = await self.bot.publishing.edit_message(message, embed=embed, view=view)
+                    if result:
+                        self._save_state()
+                        return
+                    self.state["global_board_message_id"] = None
                 except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
                     self.logger.warning("Failed to edit global board %s: %s", message_id, exc)
                     self.state["global_board_message_id"] = None
@@ -312,25 +315,13 @@ class ClanTransferQueueMixin:
         if archived:
             if channel.archived:
                 return channel
-            try:
-                return await channel.edit(archived=True, reason=reason)
-            except discord.Forbidden:
-                self.logger.warning("Cannot archive queue thread %s (missing permissions).", channel.id)
-                return None
-            except discord.HTTPException as exc:
-                self.logger.warning("Failed to archive queue thread %s: %s", channel.id, exc)
-                return None
+            result = await self.bot.publishing.edit_channel(channel, archived=True, reason=reason)
+            return result.value if result else None
 
         if not channel.archived and not channel.locked:
             return channel
-        try:
-            return await channel.edit(archived=False, locked=False, reason=reason)
-        except discord.Forbidden:
-            self.logger.warning("Cannot unarchive queue thread %s (missing permissions).", channel.id)
-            return None
-        except discord.HTTPException as exc:
-            self.logger.warning("Failed to unarchive queue thread %s: %s", channel.id, exc)
-            return None
+        result = await self.bot.publishing.edit_channel(channel, archived=False, locked=False, reason=reason)
+        return result.value if result else None
 
     async def _ensure_thread_active(self, channel, clan_code: str):
         if not isinstance(channel, discord.Thread):

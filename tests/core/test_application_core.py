@@ -20,6 +20,7 @@ from elbow_helper.core.logging import CompactTransientDuplicateFilter
 from elbow_helper.core.logging import TransientExternalFailurePolicy
 from elbow_helper.core.logging import UnifiedLogFormatter
 from elbow_helper.core.paths import ApplicationPaths
+from elbow_helper.discord.publishing import PublishingQueue
 from elbow_helper.infrastructure.clash import ClashClient
 from elbow_helper.infrastructure.ai import DeepSeekTextClient
 from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
@@ -38,6 +39,32 @@ class _ExtensionLoader:
 
 
 class ExtensionLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_close_stops_producers_then_flushes_before_closing_discord(self) -> None:
+        events = []
+
+        class Producer(commands.Cog):
+            async def cog_unload(self):
+                events.append("stop")
+
+        bot = ElbowHelperBot(
+            paths=ApplicationPaths.from_project_root(Path.cwd()), guild_id=123,
+            clash_client=ClashClient(None), text_generator=SimpleNamespace(),
+            agent_model=SimpleNamespace(), google_publisher=SimpleNamespace(),
+            workbook_writer=WorkbookWriter(), publishing=PublishingQueue(),
+        )
+        await bot.add_cog(Producer())
+        message = SimpleNamespace(id=10, edit=AsyncMock(side_effect=lambda **fields: events.append("edit")))
+        result = bot.publishing.edit_message(message, content="newest")
+
+        async def close_discord():
+            events.append("close")
+            self.assertTrue(result.done())
+
+        with patch.object(commands.Bot, "close", new=AsyncMock(side_effect=close_discord)):
+            await bot.close()
+        self.assertEqual(events, ["stop", "edit", "close"])
+        self.assertTrue(await result)
+
     async def test_required_extension_failure_rejects_startup(self) -> None:
         bot = _ExtensionLoader({"elbow_helper.features.required"})
 

@@ -931,8 +931,8 @@ class CwlBonusDashboardMixin:
         embed = self._build_bonus_dashboard_embed(board)
         dashboard_image = self._build_bonus_dashboard_file(board)
         view = CwlBonusDashboardView(self, board_closed=bool(board.get("closed")))
-        await message.edit(embed=embed, attachments=[dashboard_image], view=view)
-        return message
+        result = await self.bot.publishing.edit_message(message, embed=embed, attachments=[dashboard_image], view=view)
+        return message if result else None
 
     async def _post_bonus_dashboard(
         self,
@@ -940,7 +940,7 @@ class CwlBonusDashboardMixin:
         mode: str,
         target_channel: discord.TextChannel,
         ping_helper: bool,
-    ) -> None:
+    ) -> bool:
         existing_message: Optional[discord.Message] = None
         month_key = self._bonus_month_key()
         if mode == BONUS_BOARD_MODE_REVIEW:
@@ -964,11 +964,14 @@ class CwlBonusDashboardMixin:
             sent = await target_channel.send(content=content, embed=embed, file=dashboard_image, view=view)
             board["message_id"] = sent.id
         else:
-            await existing_message.edit(content=content, embed=embed, attachments=[dashboard_image], view=view)
+            result = await self.bot.publishing.edit_message(existing_message, content=content, embed=embed, attachments=[dashboard_image], view=view)
+            if not result:
+                return False
             board["message_id"] = existing_message.id
         board["channel_id"] = target_channel.id
         board["updated_at"] = int(datetime.now(dt_timezone.utc).timestamp())
         self.bonus_dashboard_store.save()
+        return True
 
     async def _mark_bonus_board_complete(self, board: Dict[str, Any]) -> None:
         if self._bonus_board_complete(board):

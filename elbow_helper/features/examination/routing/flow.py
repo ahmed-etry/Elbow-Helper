@@ -661,7 +661,7 @@ class ExaminationRoutingFlowMixin:
             matched_examiners=self._format_matched_examiners(visible_members),
             exam_required=case.get("exam_required", True),
         )
-        await routing_msg.edit(
+        result = await self.bot.publishing.edit_message(routing_msg,
             embed=embed,
             view=ExamRoutingView(
                 self,
@@ -669,6 +669,8 @@ class ExaminationRoutingFlowMixin:
                 exam_required=case.get("exam_required", True),
             ),
         )
+        if not result:
+            return
         if case.get("pinged_ids") or case.get("pinged_role_ids"):
             return
         routing_channel = await self._get_routing_channel()

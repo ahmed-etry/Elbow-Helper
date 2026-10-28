@@ -250,21 +250,13 @@ class CwlWarBoardMixin:
             else:
                 for index, embed in enumerate(embeds):
                     embed.timestamp = message.embeds[index].timestamp
-            try:
-                await message.edit(content=None, embeds=embeds, view=None)
-            except discord.NotFound:
+            result = await self.bot.publishing.edit_message(message, content=None, embeds=embeds, view=None)
+            if isinstance(result.error, discord.NotFound):
                 self.cwl_board_registry.pop(clan_code, None)
                 self.state["cwl_board_messages"] = self.cwl_board_registry
                 await self._save_state()
                 return False
-            except (discord.Forbidden, discord.HTTPException) as error:
-                LOGGER.warning(
-                    "CWL war board could not be updated for %s: %s",
-                    clan_code,
-                    error,
-                )
-                return False
-            return True
+            return bool(result)
 
     async def _sync_cwl_channel(
         self,

@@ -39,21 +39,11 @@ class CwlThreadTasksMixin:
         if archived:
             if thread.archived:
                 return True
-            try:
-                await thread.edit(archived=True, reason=reason)
-                return True
-            except (discord.Forbidden, discord.HTTPException) as e:
-                LOGGER.warning("Failed archiving registered CWL thread %s: %s", thread.id, e)
-                return False
+            return bool(await self.bot.publishing.edit_channel(thread, archived=True, reason=reason))
 
         if not thread.archived and not thread.locked:
             return True
-        try:
-            await thread.edit(archived=False, locked=False, reason=reason)
-            return True
-        except (discord.Forbidden, discord.HTTPException) as e:
-            LOGGER.warning("Failed unarchiving registered CWL thread %s: %s", thread.id, e)
-            return False
+        return bool(await self.bot.publishing.edit_channel(thread, archived=False, locked=False, reason=reason))
 
 
     async def clear_thread_messages_except_first(self, thread: discord.Thread) -> None:

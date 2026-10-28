@@ -362,15 +362,6 @@ class EventStatsChannelsMixin:
                 continue
 
             try:
-                desired_category = self._resolve_category(guild, event)
-                desired_category_id = desired_category.id if desired_category else None
-                if channel.category_id != desired_category_id:
-                    await channel.move(
-                        end=True,
-                        category=desired_category,
-                        reason="Update event tracker categories",
-                    )
-
                 if event["type"] == "counter":
                     count = self._counter_value(guild, event)
                     suffix = str(count) if count is not None else "N/A"
@@ -380,8 +371,10 @@ class EventStatsChannelsMixin:
                     suffix, _ = self._one_time_suffix(event, now)
 
                 name = self._compose_channel_name(event["name"], suffix)
-                if channel.name != name:
-                    await channel.edit(name=name, reason="Update event statistics")
+                if channel.name != name or self.bot.publishing.channel_pending(channel.id):
+                    # The refresh loop must keep submitting newer countdown values
+                    # while the queue waits for the channel's name/topic window.
+                    self.bot.publishing.edit_channel(channel, name=name, reason="Update event statistics")
             except discord.Forbidden:
                 LOGGER.warning("Missing permissions editing %s", getattr(channel, "name", event["name"]))
             except discord.HTTPException as exc:
@@ -432,15 +425,17 @@ class EventStatsChannelsMixin:
 
         current_ids = [channel.id for channel in voice_channels if channel.id in desired_ids]
         already_in_category = all(channel.category_id == category_id for channel in desired_channels)
-        if current_ids == desired_ids and already_in_category:
+        group = (category_id, "voice")
+        if (current_ids == desired_ids and already_in_category
+                and not self.bot.publishing.order_pending(guild.id, group)):
             return
 
         anchor_positions = [index for index, channel in enumerate(voice_channels) if channel.id in desired_ids]
         anchor = min(anchor_positions) if anchor_positions else len(voice_channels)
 
-        previous: discord.VoiceChannel | None = None
-        for channel in desired_channels:
-            try:
+        async def apply_order() -> None:
+            previous: discord.VoiceChannel | None = None
+            for channel in desired_channels:
                 if previous is None:
                     await channel.move(
                         beginning=True,
@@ -455,8 +450,5 @@ class EventStatsChannelsMixin:
                         reason="Reorder event trackers",
                     )
                 previous = channel
-            except (discord.Forbidden, discord.HTTPException) as exc:
-                if isinstance(exc, discord.HTTPException) and self._is_channel_edit_rate_limited(exc):
-                    LOGGER.info("Failed to reorder channel %s: %s", channel.id, exc)
-                    continue
-                LOGGER.warning("Failed to reorder channel %s: %s", channel.id, exc)
+
+        self.bot.publishing.reorder(guild.id, group, tuple(desired_ids), apply_order)

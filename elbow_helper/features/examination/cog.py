@@ -246,7 +246,26 @@ class Examination(
         return bool(isinstance(case, dict) and case.get("type") in EXAM_TICKET_TYPE_ORDER)
 
     @tasks.loop(minutes=15)
-    async def organize_tickets(self) -> None:
+    async def organize_tickets(self):
+        category = self.bot.get_channel(EXAMINATION_TICKET_CATEGORY)
+        if not isinstance(category, discord.CategoryChannel):
+            try:
+                category = await self.bot.fetch_channel(EXAMINATION_TICKET_CATEGORY)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                return
+        if not isinstance(category, discord.CategoryChannel):
+            return
+        type_order = {ticket_type: index for index, ticket_type in enumerate(EXAM_TICKET_TYPE_ORDER)}
+        tickets = [channel for channel in category.text_channels if self._is_exam_ticket_channel(channel)]
+        order = tuple(channel.id for channel in sorted(
+            tickets, key=lambda channel: (type_order.get(self._get_exam_ticket_type(channel), len(type_order)),
+                                          channel.created_at.timestamp()),
+        ))
+        await self.bot.publishing.reorder(
+            category.guild.id, (category.id, "text"), order, self._apply_ticket_order,
+        )
+
+    async def _apply_ticket_order(self):
         try:
             category = self.bot.get_channel(EXAMINATION_TICKET_CATEGORY)
             if not isinstance(category, discord.CategoryChannel):
@@ -261,7 +280,7 @@ class Examination(
                     "Examination ticket category %s not found or invalid.",
                     EXAMINATION_TICKET_CATEGORY,
                 )
-                return
+                return False
 
             me = category.guild.me
             if me is None and self.bot.user:
@@ -275,19 +294,19 @@ class Examination(
                         "Skipping exam ticket reorder: unable to resolve bot member object: %s",
                         exc,
                     )
-                    return
+                    return False
             if me is None:
                 self._warn_ticket_reorder_issue(
                     "member_missing",
                     "Skipping exam ticket reorder: bot member object unavailable.",
                 )
-                return
+                return False
             self._clear_ticket_reorder_issue("member_resolve", "member_missing")
 
             ticket_channels = [ch for ch in category.text_channels if self._is_exam_ticket_channel(ch)]
             if not ticket_channels:
                 self.logger.debug("No examination ticket channels to organize.")
-                return
+                return True
 
             type_order = {ticket_type: idx for idx, ticket_type in enumerate(EXAM_TICKET_TYPE_ORDER)}
 
@@ -301,6 +320,7 @@ class Examination(
             max_passes = max(1, len(ticket_channels) * 2)
             move_attempts = 0
             moved_count = 0
+            publish_error = None
             no_perm_channels: set[str] = set()
             forbidden_channels: list[str] = []
             forbidden_details: list[str] = []
@@ -363,6 +383,7 @@ class Examination(
                     )
                     moved_count += 1
                 except discord.Forbidden as exc:
+                    publish_error = exc
                     forbidden_channels.append(f"{channel_to_move.name} ({channel_to_move.id})")
                     ch_perms = channel_to_move.permissions_for(me)
                     cat_perms = category.permissions_for(me)
@@ -383,6 +404,7 @@ class Examination(
                     blocked_ticket_ids.add(channel_to_move.id)
                     continue
                 except discord.HTTPException as exc:
+                    publish_error = exc
                     http_failures.append((channel_to_move.name, channel_to_move.id, exc))
                     break
                 finally:
@@ -424,14 +446,18 @@ class Examination(
             if http_failures:
                 preview = " | ".join(f"{name} ({cid}): {err}" for name, cid, err in http_failures[:3])
                 suffix = f" (+{len(http_failures) - 3} more)" if len(http_failures) > 3 else ""
-                self.logger.warning(
+                self.logger.debug(
                     "Exam ticket reorder had %s Discord API edit failures: %s%s",
                     len(http_failures),
                     preview,
                     suffix,
                 )
+            if publish_error is not None:
+                raise publish_error
+            return not no_perm_channels
         except (discord.Forbidden, discord.HTTPException, RuntimeError):
-            self.logger.exception("Error in examination ticket reordering task")
+            raise
+
 
     @organize_tickets.before_loop
     async def before_organize_tickets(self) -> None:
