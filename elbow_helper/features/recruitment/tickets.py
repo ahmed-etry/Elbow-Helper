@@ -122,12 +122,26 @@ class TicketMixin:
 
     @tasks.loop(minutes=15)
     async def organize_tickets(self):
+        category = self.bot.get_channel(RECRUITMENT_TICKET_CATEGORY)
+        if not isinstance(category, discord.CategoryChannel):
+            await self._apply_ticket_order()
+            return
+        tickets = [channel for channel in category.text_channels if channel.name[:1] in TICKET_STATUS_ORDER]
+        order = tuple(channel.id for channel in sorted(
+            tickets, key=lambda channel: (TICKET_STATUS_ORDER.index(channel.name[0]),
+                                          channel.created_at.timestamp()),
+        ))
+        await self.bot.publishing.reorder(
+            category.guild.id, (category.id, "text"), order, self._apply_ticket_order,
+        )
+
+    async def _apply_ticket_order(self):
         # Keep ticket ordering stable by status prefix then creation time.
         try:
             category = self.bot.get_channel(RECRUITMENT_TICKET_CATEGORY)
             if not isinstance(category, discord.CategoryChannel):
                 self.logger.warning("Ticket category %s not found or invalid.", RECRUITMENT_TICKET_CATEGORY)
-                return
+                return False
             me = category.guild.me
             if me is None and self.bot.user:
                 me = category.guild.get_member(self.bot.user.id)
@@ -140,13 +154,13 @@ class TicketMixin:
                         "Skipping ticket reorder: unable to resolve bot member object: %s",
                         e,
                     )
-                    return
+                    return False
             if me is None:
                 self._warn_ticket_reorder_issue(
                     "member_missing",
                     "Skipping ticket reorder: bot member object unavailable.",
                 )
-                return
+                return False
             self._clear_ticket_reorder_issue("member_resolve", "member_missing")
             ticket_channels = [
                 ch for ch in category.text_channels
@@ -154,7 +168,7 @@ class TicketMixin:
             ]
             if not ticket_channels:
                 self.logger.debug("No ticket channels to organize.")
-                return
+                return True
             def sort_key(ch):
                 emoji = ch.name[0]
                 status_index = TICKET_STATUS_ORDER.index(emoji) if emoji in TICKET_STATUS_ORDER else len(TICKET_STATUS_ORDER)
@@ -166,6 +180,7 @@ class TicketMixin:
             max_passes = max(1, len(ticket_channels) * 2)
             move_attempts = 0
             moved_count = 0
+            publish_error = None
             no_perm_channels: set[str] = set()
             forbidden_channels = []
             forbidden_details = []
@@ -225,6 +240,7 @@ class TicketMixin:
                     moved_count += 1
                     self.logger.debug("Moved %s to position %s", channel_to_move.name, desired_pos)
                 except discord.Forbidden as e:
+                    publish_error = e
                     forbidden_channels.append(f"{channel_to_move.name} ({channel_to_move.id})")
                     ch_perms = channel_to_move.permissions_for(me)
                     cat_perms = category.permissions_for(me)
@@ -244,6 +260,7 @@ class TicketMixin:
                     )
                     break
                 except discord.HTTPException as e:
+                    publish_error = e
                     http_failures.append((channel_to_move.name, channel_to_move.id, e))
                     break
             else:
@@ -256,8 +273,7 @@ class TicketMixin:
                 no_perm_sorted = sorted(no_perm_channels)
                 preview = ", ".join(no_perm_sorted[:5])
                 suffix = f" (+{len(no_perm_sorted) - 5} more)" if len(no_perm_sorted) > 5 else ""
-                self._warn_ticket_reorder_issue(
-                    "no_manage_channels",
+                self.logger.debug(
                     "Skipped ticket reorder for %s channels without manage_channels: %s%s",
                     len(no_perm_sorted),
                     preview,
@@ -268,8 +284,7 @@ class TicketMixin:
             if forbidden_channels:
                 preview = ", ".join(forbidden_channels[:5])
                 suffix = f" (+{len(forbidden_channels) - 5} more)" if len(forbidden_channels) > 5 else ""
-                self._warn_ticket_reorder_issue(
-                    "forbidden_edits",
+                self.logger.debug(
                     "Ticket reorder received forbidden on %s channel edits (moved=%s/%s): %s%s",
                     len(forbidden_channels),
                     moved_count,
@@ -286,14 +301,17 @@ class TicketMixin:
             if http_failures:
                 preview = " | ".join(f"{name} ({cid}): {err}" for name, cid, err in http_failures[:3])
                 suffix = f" (+{len(http_failures) - 3} more)" if len(http_failures) > 3 else ""
-                self.logger.warning(
+                self.logger.debug(
                     "Ticket reorder had %s Discord API edit failures: %s%s",
                     len(http_failures),
                     preview,
                     suffix,
                 )
-        except (discord.Forbidden, discord.HTTPException, RuntimeError) as e:
-            self.logger.exception("Error in ticket reordering task: %s", e)
+            if publish_error is not None:
+                raise publish_error
+            return not no_perm_channels
+        except (discord.Forbidden, discord.HTTPException, RuntimeError):
+            raise
 
 
     @organize_tickets.before_loop

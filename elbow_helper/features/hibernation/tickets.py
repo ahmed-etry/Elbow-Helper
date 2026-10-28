@@ -161,8 +161,10 @@ class HibernationTicketMixin:
         if isinstance(message_id, int):
             try:
                 message = await fallback_channel.fetch_message(message_id)
-                await message.edit(embed=embed, view=None)
-                return message
+                if await self.bot.publishing.edit_message(message, embed=embed, view=None):
+                    return message
+                set_fallback_info_message_id(data, None)
+                save_hibernation_state(data)
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                 set_fallback_info_message_id(data, None)
                 save_hibernation_state(data)

@@ -349,20 +349,12 @@ class AchievementRaffleMixin:
                     continue
                 return None
 
-            try:
-                await message.edit(embed=embed, view=view)
+            result = await self.bot.publishing.edit_message(message, embed=embed, view=view)
+            if result:
                 return True
-            except (discord.NotFound, discord.Forbidden):
+            if isinstance(result.error, (discord.NotFound, discord.Forbidden)):
                 return False
-            except discord.HTTPException as exc:
-                if await self._maybe_retry_raffle_hub_http_error(
-                    exc,
-                    message_id=message_id,
-                    operation="edit",
-                    attempt=attempt,
-                ):
-                    continue
-                return None
+            return None
 
         return None
 
@@ -474,7 +466,7 @@ class AchievementRaffleMixin:
             embed.set_thumbnail(
                 url=DEFAULT_THUMBNAIL_URL
             )
-            
+
             embed.set_footer(text="Use /economyinfo for coins, tickets, and raffle details.")
 
             message_id = None if force_new else await self._retry_db_operation(

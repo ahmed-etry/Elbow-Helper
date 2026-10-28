@@ -198,8 +198,12 @@ class CwlTransferHubMixin:
             if message_id:
                 try:
                     message = await channel.fetch_message(int(message_id))
-                    await message.edit(content=None, embed=embed, view=view)
-                    return True
+                    result = await self.bot.publishing.edit_message(message, content=None, embed=embed, view=view)
+                    if isinstance(result.error, discord.NotFound):
+                        self.transfer_state["hub_message_id"] = None
+                        self._save_transfer_state()
+                    else:
+                        return bool(result)
                 except discord.NotFound:
                     self.transfer_state["hub_message_id"] = None
                     self._save_transfer_state()
@@ -215,7 +219,9 @@ class CwlTransferHubMixin:
                 async for message in channel.history(limit=100):
                     if not self._is_transfer_hub_message(message):
                         continue
-                    await message.edit(content=None, embed=embed, view=view)
+                    result = await self.bot.publishing.edit_message(message, content=None, embed=embed, view=view)
+                    if not result:
+                        return False
                     self.transfer_state["hub_message_id"] = message.id
                     self._save_transfer_state()
                     return True

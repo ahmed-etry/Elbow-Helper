@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 import discord
 
+from elbow_helper.discord.publishing import PublishingQueue
 from elbow_helper.features.cwl.war_board import CwlWarBoardMixin
 from elbow_helper.features.cwl.war_board import cwl_board_snapshot_is_complete
 from elbow_helper.features.cwl.war_board import orient_cwl_war
@@ -147,6 +148,7 @@ class CwlLeagueWarFetchTests(unittest.IsolatedAsyncioTestCase):
 class CwlWarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_one_registered_message_contains_battle_and_preparation(self) -> None:
         manager = CwlWarBoardMixin()
+        manager.bot = MagicMock(publishing=MagicMock(wraps=PublishingQueue()))
         manager.cwl_board_registry = {}
         manager.state = {"cwl_board_messages": manager.cwl_board_registry}
         manager._cwl_board_locks = {}
@@ -189,10 +191,12 @@ class CwlWarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
         )
 
         channel.send.assert_awaited_once()
+        manager.bot.publishing.edit_message.assert_not_called()
         posted.edit.assert_not_awaited()
 
     async def test_missing_war_data_leaves_the_registered_board_untouched(self) -> None:
         manager = CwlWarBoardMixin()
+        manager.bot = MagicMock(publishing=MagicMock(wraps=PublishingQueue()))
         manager.cwl_board_registry = {
             "BEH": {"channel": CLAN_CWL_INFO_CHANNELS["BEH"], "message": 900}
         }
@@ -215,6 +219,7 @@ class CwlWarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_channel_sync_updates_only_the_war_board(self) -> None:
         manager = CwlWarBoardMixin()
+        manager.bot = MagicMock(publishing=MagicMock(wraps=PublishingQueue()))
         channel = MagicMock(spec=discord.TextChannel)
         manager._cwl_board_channel = AsyncMock(return_value=channel)
         manager._upsert_cwl_board = AsyncMock(return_value=True)

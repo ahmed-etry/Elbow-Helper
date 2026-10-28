@@ -799,8 +799,8 @@ class ExaminationAvailabilityMixin:
             if prompt_id:
                 try:
                     msg = await channel.fetch_message(prompt_id)
-                    await msg.edit(embed=embed, view=view)
-                    return
+                    if await self.bot.publishing.edit_message(msg, embed=embed, view=view):
+                        return
                 except (discord.NotFound, discord.Forbidden):
                     pass
                 except discord.HTTPException:
@@ -837,10 +837,7 @@ class ExaminationAvailabilityMixin:
             msg = await channel.fetch_message(prompt_id)
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             return
-        try:
-            await msg.edit(embed=embed, view=view)
-        except (discord.Forbidden, discord.HTTPException):
-            return
+        await self.bot.publishing.edit_message(msg, embed=embed, view=view)
 
     async def _finalize_availability_prompt(self, channel_id: int) -> None:
         # Replace the prompt with a confirmation embed once availability is set.
@@ -859,8 +856,8 @@ class ExaminationAvailabilityMixin:
         if prompt_id:
             try:
                 msg = await channel.fetch_message(prompt_id)
-                await msg.edit(embed=embed, view=None)
-                return
+                if await self.bot.publishing.edit_message(msg, embed=embed, view=None):
+                    return
             except (discord.NotFound, discord.Forbidden):
                 pass
             except discord.HTTPException:

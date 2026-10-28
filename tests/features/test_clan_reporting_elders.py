@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 
+from elbow_helper.discord.publishing import PublishingQueue
 from elbow_helper.features.clan_reporting.cog import ClanReporting
 from elbow_helper.features.clan_reporting.config import MISSING_ELDER_STICKY_BURIAL_MESSAGES
 
@@ -27,6 +28,7 @@ class MissingElderBoardTests(unittest.IsolatedAsyncioTestCase):
 
     def new_manager(self, state):
         manager = object.__new__(ClanReporting)
+        manager.bot = SimpleNamespace(publishing=MagicMock(wraps=PublishingQueue()))
         manager.state = state
         manager._board_last_repost_at = {}
         manager._board_repost_locks = {}
@@ -166,6 +168,7 @@ class MissingElderBoardTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await self.manager._update_missing_elder_message("BEH"))
 
         self.assertEqual(self.manager.state["missing_elder_messages"]["BEH"], board.id)
+        self.manager.bot.publishing.edit_message.assert_called_once()
         board.edit.assert_awaited_once()
         self.channel.send.assert_not_awaited()
 
@@ -216,6 +219,32 @@ class MissingElderBoardTests(unittest.IsolatedAsyncioTestCase):
         board.delete.side_effect = None
         self.assertTrue(await self.manager._update_missing_elder_message("BEH"))
         self.assertIsNone(self.manager.state["missing_elder_messages"]["BEH"])
+
+    async def test_deleted_board_during_edit_posts_replacement(self):
+        board = self.message()
+        self.manager.state["missing_elder_messages"]["BEH"] = board.id
+
+        async def deleted(**fields):
+            self.messages.pop(board.id, None)
+            raise self.http_error(discord.NotFound, 404)
+
+        board.edit.side_effect = deleted
+        with self.assertLogs("elbow_helper.discord.publishing", "WARNING"):
+            self.assertTrue(await self.manager._update_missing_elder_message("BEH"))
+        self.channel.send.assert_awaited_once()
+        self.assertNotEqual(self.manager.state["missing_elder_messages"]["BEH"], board.id)
+
+    async def test_edit_failure_preserves_board_and_does_not_raise_into_refresh(self):
+        board = self.message()
+        self.manager.state["missing_elder_messages"]["BEH"] = board.id
+        board.edit.side_effect = self.http_error(discord.HTTPException, 503)
+        with patch("elbow_helper.discord.publishing.HTTP_RETRY_DELAYS", (0, 0)):
+            with self.assertLogs("elbow_helper.discord.publishing", "WARNING") as logs:
+                self.assertFalse(await self.manager._update_missing_elder_message("BEH"))
+        self.assertEqual(len(logs.output), 1)
+        self.assertEqual(board.edit.await_count, 3)
+        self.assertEqual(self.manager.state["missing_elder_messages"]["BEH"], board.id)
+        self.channel.send.assert_not_awaited()
 
     async def test_delete_not_found_records_intentional_absence(self):
         board = self.message()

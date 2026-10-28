@@ -1,0 +1,884 @@
+{
+  "queued": {
+    "elbow_helper/features/achievements/raffle.py:AchievementRaffleMixin._try_update_existing_raffle_hub_message": [
+      "edit_message"
+    ],
+    "elbow_helper/features/clan_reporting/elders.py:ClanReportingElderMixin._update_missing_elder_message": [
+      "edit_message"
+    ],
+    "elbow_helper/features/clan_transfers/queues.py:ClanTransferQueueMixin._set_thread_archived": [
+      "edit_channel"
+    ],
+    "elbow_helper/features/clan_transfers/queues.py:ClanTransferQueueMixin.ensure_global_board": [
+      "edit_message"
+    ],
+    "elbow_helper/features/clan_transfers/queues.py:ClanTransferQueueMixin.ensure_queue_message": [
+      "edit_message"
+    ],
+    "elbow_helper/features/cwl/bonus/dashboard.py:CwlBonusDashboardMixin._edit_bonus_board_message": [
+      "edit_message"
+    ],
+    "elbow_helper/features/cwl/bonus/dashboard.py:CwlBonusDashboardMixin._post_bonus_dashboard": [
+      "edit_message"
+    ],
+    "elbow_helper/features/cwl/dashboard.py:CwlDashboardMixin._upsert_dashboard_for_clan": [
+      "edit_channel"
+    ],
+    "elbow_helper/features/cwl/dashboard.py:CwlDashboardMixin._upsert_dashboard_for_clan.upsert_message": [
+      "edit_message"
+    ],
+    "elbow_helper/features/cwl/threads/board.py:CwlThreadBoardMixin._sync_thread_status_board": [
+      "edit_message"
+    ],
+    "elbow_helper/features/cwl/threads/tasks.py:CwlThreadTasksMixin._set_registered_thread_archived": [
+      "edit_channel"
+    ],
+    "elbow_helper/features/cwl/transfer_hub.py:CwlTransferHubMixin.ensure_transfer_hub": [
+      "edit_message"
+    ],
+    "elbow_helper/features/cwl/war_board.py:CwlWarBoardMixin._upsert_cwl_board": [
+      "edit_message"
+    ],
+    "elbow_helper/features/event_stats/channels.py:EventStatsChannelsMixin._reorder_channel_group": [
+      "reorder"
+    ],
+    "elbow_helper/features/event_stats/channels.py:EventStatsChannelsMixin.refresh_all_channels": [
+      "edit_channel"
+    ],
+    "elbow_helper/features/examination/availability/logic.py:ExaminationAvailabilityMixin._ensure_availability_prompt": [
+      "edit_message"
+    ],
+    "elbow_helper/features/examination/availability/logic.py:ExaminationAvailabilityMixin._finalize_availability_prompt": [
+      "edit_message"
+    ],
+    "elbow_helper/features/examination/availability/logic.py:ExaminationAvailabilityMixin._update_availability_prompt": [
+      "edit_message"
+    ],
+    "elbow_helper/features/examination/cog.py:Examination.organize_tickets": [
+      "reorder"
+    ],
+    "elbow_helper/features/examination/intake/view.py:ExaminationPromoIntakeMixin._reconcile_promo_route_controls_unlocked": [
+      "edit_message"
+    ],
+    "elbow_helper/features/examination/intake/view.py:ExaminationPromoIntakeMixin._render_promo_intake_message": [
+      "edit_message"
+    ],
+    "elbow_helper/features/examination/intake/view.py:ExaminationPromoIntakeMixin._retire_availability_prompt_for_route_change": [
+      "edit_message"
+    ],
+    "elbow_helper/features/examination/intake/view.py:ExaminationPromoIntakeMixin._retire_routing_message_for_route_change": [
+      "edit_message"
+    ],
+    "elbow_helper/features/examination/panel.py:ExaminationPanelMixin._post_panel": [
+      "edit_channel",
+      "edit_message"
+    ],
+    "elbow_helper/features/examination/routing/flow.py:ExaminationRoutingFlowMixin._refresh_case_fields": [
+      "edit_message"
+    ],
+    "elbow_helper/features/hibernation/tickets.py:HibernationTicketMixin.ensure_fallback_info_message": [
+      "edit_message"
+    ],
+    "elbow_helper/features/recruitment/tickets.py:TicketMixin.organize_tickets": [
+      "reorder"
+    ],
+    "elbow_helper/features/rosters/services/posts.py:RosterPostService._retire_if_buried": [
+      "edit_message"
+    ],
+    "elbow_helper/features/rosters/services/posts.py:RosterPostService.disable_all": [
+      "edit_message"
+    ],
+    "elbow_helper/features/rosters/services/posts.py:RosterPostService.refresh": [
+      "edit_message"
+    ],
+    "elbow_helper/features/wars/board.py:WarBoardMixin._remove_war_board_controls": [
+      "edit_message"
+    ],
+    "elbow_helper/features/wars/board.py:WarBoardMixin._update_war_board": [
+      "edit_message"
+    ]
+  },
+  "direct": {
+    "elbow_helper/core/lifecycle.py:update_bot_avatar": {
+      "operations": [
+        "bot.user.edit"
+      ],
+      "reason": "One startup avatar upload; outside message/channel publishing."
+    },
+    "elbow_helper/discord/channel_ordering.py:move_text_channel_within_category": {
+      "operations": [
+        "channel.move"
+      ],
+      "reason": "Transport inside a queued complete channel order; no independent edit submission."
+    },
+    "elbow_helper/discord/interactions.py:edit_bound_view": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/discord/views.py:BaseTimeoutView.on_timeout": {
+      "operations": [
+        "self.message.edit"
+      ],
+      "reason": "One control-expiry edit per view."
+    },
+    "elbow_helper/discord/views.py:TranscriptLinkPromptButton.callback": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/account_links/review.py:AccountLinksReviewMixin.ignore_suggestion": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/account_links/views.py:IgnoreSuggestionView._cancel": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/achievements/views.py:AchievementOverviewView._render": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/achievements/views.py:CoinLogView._render": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/agent/actions/answer_view.py:PostAnswerView.on_timeout": {
+      "operations": [
+        "self.message.edit"
+      ],
+      "reason": "One answer/preview delivery or control expiry, including virtual combined-reply parts."
+    },
+    "elbow_helper/features/agent/actions/combined_reply.py:CombinedReplyView.edit_part_locked": {
+      "operations": [
+        "self.message.edit"
+      ],
+      "reason": "One answer/preview delivery or control expiry, including virtual combined-reply parts."
+    },
+    "elbow_helper/features/agent/actions/preview.py:ConfirmationView.cancel": {
+      "operations": [
+        "interaction.response.edit_message",
+        "self.message.edit"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/agent/actions/preview.py:ConfirmationView.confirm": {
+      "operations": [
+        "self.message.edit"
+      ],
+      "reason": "One answer/preview delivery or control expiry, including virtual combined-reply parts."
+    },
+    "elbow_helper/features/agent/actions/preview.py:ConfirmationView.invalidate": {
+      "operations": [
+        "self.message.edit"
+      ],
+      "reason": "One answer/preview delivery or control expiry, including virtual combined-reply parts."
+    },
+    "elbow_helper/features/agent/actions/preview.py:ConfirmationView.on_timeout": {
+      "operations": [
+        "self.message.edit"
+      ],
+      "reason": "One answer/preview delivery or control expiry, including virtual combined-reply parts."
+    },
+    "elbow_helper/features/agent/actions/private_view.py:PrivateResultView.on_timeout": {
+      "operations": [
+        "self.message.edit"
+      ],
+      "reason": "One answer/preview delivery or control expiry, including virtual combined-reply parts."
+    },
+    "elbow_helper/features/agent/actions/runner.py:AgentActionRunner._execute": {
+      "operations": [
+        "progress.edit"
+      ],
+      "reason": "One confirmed run progress/result; virtual combined-reply parts require immediate per-step composition."
+    },
+    "elbow_helper/features/agent/actions/runner.py:AgentActionRunner._post_report": {
+      "operations": [
+        "progress.edit"
+      ],
+      "reason": "One confirmed run progress/result; virtual combined-reply parts require immediate per-step composition."
+    },
+    "elbow_helper/features/agent/actions/runner.py:AgentActionRunner._show_progress": {
+      "operations": [
+        "progress_message.edit"
+      ],
+      "reason": "One confirmed run progress/result; virtual combined-reply parts require immediate per-step composition."
+    },
+    "elbow_helper/features/agent/actions/runner.py:AgentActionRunner._show_stop_later": {
+      "operations": [
+        "progress.edit"
+      ],
+      "reason": "One confirmed run progress/result; virtual combined-reply parts require immediate per-step composition."
+    },
+    "elbow_helper/features/agent/delivery.py:AgentDeliveryMixin._bind_private_answer.post": {
+      "operations": [
+        "target.edit"
+      ],
+      "reason": "One answer/preview delivery or control expiry, including virtual combined-reply parts."
+    },
+    "elbow_helper/features/agent/discord_actions/channels.py:edit_action.apply": {
+      "operations": [
+        "current.edit"
+      ],
+      "reason": "One explicitly confirmed action with preview/audit/undo; each action must apply individually."
+    },
+    "elbow_helper/features/agent/discord_actions/messages.py:_edit_action.run": {
+      "operations": [
+        "message.edit"
+      ],
+      "reason": "One explicitly confirmed action with preview/audit/undo; each action must apply individually."
+    },
+    "elbow_helper/features/agent/discord_actions/nicknames.py:_nickname_action.run": {
+      "operations": [
+        "member.edit"
+      ],
+      "reason": "One explicitly confirmed action with preview/audit/undo; each action must apply individually."
+    },
+    "elbow_helper/features/agent/discord_actions/role_settings.py:role_action.apply": {
+      "operations": [
+        "created.edit",
+        "current.edit"
+      ],
+      "reason": "One explicitly confirmed action with preview/audit/undo; each action must apply individually."
+    },
+    "elbow_helper/features/agent/discord_actions/scheduled_events.py:event_action.apply": {
+      "operations": [
+        "current.edit"
+      ],
+      "reason": "One explicitly confirmed action with preview/audit/undo; each action must apply individually."
+    },
+    "elbow_helper/features/agent/discord_actions/scheduled_events.py:prepare_cancel.apply": {
+      "operations": [
+        "current.edit"
+      ],
+      "reason": "One explicitly confirmed action with preview/audit/undo; each action must apply individually."
+    },
+    "elbow_helper/features/agent/discord_actions/threads.py:_thread_update_action.run": {
+      "operations": [
+        "thread.edit"
+      ],
+      "reason": "One explicitly confirmed action with preview/audit/undo; each action must apply individually."
+    },
+    "elbow_helper/features/attack_plans/views.py:PlanningView._show": {
+      "operations": [
+        "interaction.message.edit"
+      ],
+      "reason": "One interactive page/panel update; preserve its interaction deadline."
+    },
+    "elbow_helper/features/clan_health/export.py:ClanHealthExportMixin.send_prepared_health_export": {
+      "operations": [
+        "msg.edit"
+      ],
+      "reason": "One export/report followup, attaching its delivery controls or failure result."
+    },
+    "elbow_helper/features/clan_health/ui/config_panel.py:ClanConfigBlockView.refresh_message": {
+      "operations": [
+        "self.message.edit"
+      ],
+      "reason": "One interactive page/panel update; preserve its interaction deadline."
+    },
+    "elbow_helper/features/cwl/bonus/commands.py:CwlBonusMixin._send_bonus_report": {
+      "operations": [
+        "message.edit"
+      ],
+      "reason": "One export/report followup, attaching its delivery controls or failure result."
+    },
+    "elbow_helper/features/cwl/bonus/dashboard.py:BonusClanSelectView.select_clan": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/cwl/bonus/dashboard.py:BonusContinueView.choose_another_clan": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/cwl/bonus/dashboard.py:BonusContinueView.dismiss": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/cwl/bonus/dashboard.py:BonusFallbackView.back": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/cwl/bonus/settings.py:BonusExportView.on_timeout": {
+      "operations": [
+        "self.message.edit"
+      ],
+      "reason": "One control-expiry edit per view."
+    },
+    "elbow_helper/features/cwl/roster/export.py:CwlRosterExportMixin._send_roster_workbook": {
+      "operations": [
+        "message.edit"
+      ],
+      "reason": "One export/report followup, attaching its delivery controls or failure result."
+    },
+    "elbow_helper/features/cwl/transfers.py:CwlTransferMixin._run_transfer_reminder": {
+      "operations": [
+        "status_message.edit"
+      ],
+      "reason": "One interaction progress/result or cancellation; preserve its interaction deadline."
+    },
+    "elbow_helper/features/event_stats/channels.py:EventStatsChannelsMixin._reorder_channel_group.apply_order": {
+      "operations": [
+        "channel.move"
+      ],
+      "reason": "Transport inside a queued complete channel order; no independent edit submission."
+    },
+    "elbow_helper/features/event_stats/views.py:EventActionView.edit": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/event_stats/views.py:EventCategoryView.close_button": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/event_stats/views.py:EventListView.close_button": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/event_stats/views.py:EventManageSelectView.close_button": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/event_stats/views.py:EventPanelView.close_panel": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/examination/availability/view.py:AvailabilityRemoveWindowSelect.callback": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/examination/intake/view.py:ExaminationPromoIntakeMixin._edit_promo_interaction_message": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/examination/intake/view.py:ExaminationPromoIntakeMixin._execute_leadership_promo_route_change.ready": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/examination/intake/view.py:ExaminationPromoIntakeMixin._handle_promo_confirm": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/examination/intake/view.py:PromoRouteChangeConfirmView.cancel": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/examination/panel.py:ExaminerRosterView._update": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/examination/routing/flow.py:ExaminationRoutingFlowMixin._rename_ticket_channel": {
+      "operations": [
+        "channel.edit"
+      ],
+      "reason": "One ticket creation or explicit rename action; no recurring edits."
+    },
+    "elbow_helper/features/examination/routing/view.py:LeadershipPromoRouteChangeView.cancel": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/examination/routing/view.py:LeadershipPromoRouteChangeView.set_from_clan": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/examination/routing/view.py:LeadershipPromoRouteChangeView.set_to_clan": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/help/views.py:HelpCategorySelect.callback": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/help/views.py:HelpPaginationView.first_page": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/help/views.py:HelpPaginationView.last_page": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/help/views.py:HelpPaginationView.next_page": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/help/views.py:HelpPaginationView.prev_page": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/hibernation/tickets.py:HibernationTicketMixin._archive_fallback_thread_for_member": {
+      "operations": [
+        "thread.edit"
+      ],
+      "reason": "One member hibernation/reactivation thread action; no recurring name/topic edits."
+    },
+    "elbow_helper/features/hibernation/tickets.py:HibernationTicketMixin._reopen_reactivation_ticket": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/hibernation/tickets.py:HibernationTicketMixin._resolve_or_create_fallback_thread": {
+      "operations": [
+        "thread.edit"
+      ],
+      "reason": "One member hibernation/reactivation thread action; no recurring name/topic edits."
+    },
+    "elbow_helper/features/hibernation/tickets.py:HibernationTicketMixin.close_reactivation_ticket": {
+      "operations": [
+        "transcript_status_message.edit"
+      ],
+      "reason": "One ticket-close transcript progress/result; each close is an individual workflow."
+    },
+    "elbow_helper/features/member_lifecycle/reports.py:ReportsMixin.applicant_linger_scan": {
+      "operations": [
+        "msg.edit"
+      ],
+      "reason": "Initial control attachment to a newly sent report; one edit per message."
+    },
+    "elbow_helper/features/member_lifecycle/views.py:ApplicantCleanupSelect.callback": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/member_lifecycle/views.py:ApplicantCleanupSelectView.cancel": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/member_lifecycle/views.py:ApplicantCleanupSelectView.confirm_kick": {
+      "operations": [
+        "message.edit"
+      ],
+      "reason": "One confirmed cleanup action disables its report controls."
+    },
+    "elbow_helper/features/member_lifecycle/views.py:ApplicantCleanupSelectView.next_page": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/member_lifecycle/views.py:ApplicantCleanupSelectView.prev_page": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/records/commands/records.py:RecordCommandMixin._send_record_export": {
+      "operations": [
+        "message.edit"
+      ],
+      "reason": "One export/report followup, attaching its delivery controls or failure result."
+    },
+    "elbow_helper/features/records/ui/edit_record.py:CancelButton.callback": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/records/ui/edit_record.py:RecordEditView.refresh": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/records/ui/edit_record.py:SaveButton.callback": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/recruitment/commands.py:RecruitmentCommandMixin.perform_accept": {
+      "operations": [
+        "user.edit"
+      ],
+      "reason": "One ticket creation, acceptance, decline, or trial-completion action; no recurring edits."
+    },
+    "elbow_helper/features/recruitment/commands.py:RecruitmentCommandMixin.post_decline": {
+      "operations": [
+        "channel.edit"
+      ],
+      "reason": "One ticket creation, acceptance, decline, or trial-completion action; no recurring edits."
+    },
+    "elbow_helper/features/recruitment/commands.py:RecruitmentCommandMixin.post_finalize": {
+      "operations": [
+        "channel.edit"
+      ],
+      "reason": "One ticket creation, acceptance, decline, or trial-completion action; no recurring edits."
+    },
+    "elbow_helper/features/recruitment/tickets.py:TicketMixin.on_guild_channel_create": {
+      "operations": [
+        "channel.edit"
+      ],
+      "reason": "One ticket creation, acceptance, decline, or trial-completion action; no recurring edits."
+    },
+    "elbow_helper/features/recruitment/trials.py:TrialMixin._mark_trial_reminder_resolved": {
+      "operations": [
+        "message.edit"
+      ],
+      "reason": "One ticket creation, acceptance, decline, or trial-completion action; no recurring edits."
+    },
+    "elbow_helper/features/recruitment/trials.py:TrialMixin._rename_trial_ticket": {
+      "operations": [
+        "channel.edit"
+      ],
+      "reason": "One ticket creation, acceptance, decline, or trial-completion action; no recurring edits."
+    },
+    "elbow_helper/features/recruitment/trials.py:TrialMixin.complete_trial_end": {
+      "operations": [
+        "ticket_channel.edit"
+      ],
+      "reason": "One ticket creation, acceptance, decline, or trial-completion action; no recurring edits."
+    },
+    "elbow_helper/features/recruitment/views.py:AcceptConfirmationView._cancel": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/recruitment/views.py:AcceptConfirmationView._confirm": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/role_connections/board.py:ConnectionsView.next_page": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/role_connections/board.py:ConnectionsView.prev_page": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/role_connections/builder.py:ConditionBuilderView.cancel": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/role_connections/builder.py:ConditionBuilderView.finish": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/role_connections/builder.py:ConditionRoleSelect.callback": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/role_connections/builder.py:ConditionTypeSelect.callback": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/role_connections/builder.py:TargetRoleSelectView.cancel": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/role_connections/cog.py:RoleConnections.run_scan": {
+      "operations": [
+        "message.edit"
+      ],
+      "reason": "One interaction progress/result or cancellation; preserve its interaction deadline."
+    },
+    "elbow_helper/features/role_connections/edit.py:EditConnectionActionView.cancel": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/role_connections/edit.py:EditConnectionView.cancel": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/role_connections/edit.py:RemoveConnectionSelect.callback": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/role_connections/edit.py:RemoveConnectionView.cancel": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/role_connections/edit.py:RoleListAddSelect.callback": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/role_connections/edit.py:RoleListAddView.cancel": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/role_connections/edit.py:RoleListRemoveSelect.callback": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/role_connections/edit.py:RoleListRemoveView.cancel": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/role_connections/edit.py:TargetRoleEditSelect.callback": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/role_connections/edit.py:TargetRoleEditView.cancel": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/role_connections/scan.py:ScanConfirmView.cancel": {
+      "operations": [
+        "interaction.message.edit"
+      ],
+      "reason": "One interaction progress/result or cancellation; preserve its interaction deadline."
+    },
+    "elbow_helper/features/role_connections/scan.py:ScanConfirmView.first_page": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/role_connections/scan.py:ScanConfirmView.last_page": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/role_connections/scan.py:ScanConfirmView.next_page": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/role_connections/scan.py:ScanConfirmView.prev_page": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/role_connections/scan.py:ScanConfirmView.start": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/rosters/cog.py:Rosters._send_roster_export": {
+      "operations": [
+        "message.edit"
+      ],
+      "reason": "One export/report followup, attaching its delivery controls or failure result."
+    },
+    "elbow_helper/features/rosters/cog.py:Rosters.apply_account_selection": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/rosters/cog.py:Rosters.confirm_clear": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/rosters/cog.py:Rosters.handle_management_action": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/rosters/cog.py:Rosters.remove_roster_players": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/rosters/cog.py:Rosters.show_account_picker": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/rosters/cog.py:Rosters.show_roster_layout": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/rosters/cog.py:Rosters.show_roster_removal_picker": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/rosters/cog.py:Rosters.show_roster_settings": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/rosters/ui/views.py:AccountPickerView.deselect": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/rosters/ui/views.py:AccountPickerView.select_accounts": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/rosters/ui/views.py:ConfirmClearView.cancel": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/rosters/ui/views.py:ConfirmDeleteView.cancel": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/rosters/ui/views.py:RosterRemovalView._change_page": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/rosters/ui/views.py:RosterRemovalView.deselect": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/rosters/ui/views.py:RosterRemovalView.filter_member": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/rosters/ui/views.py:RosterRemovalView.update_selection": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/rosters/ui/views.py:RosterSettingsView.run_action": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/support_tickets/commands.py:SupportCommandMixin._reopen_ticket": {
+      "operations": [
+        "interaction.response.edit_message"
+      ],
+      "reason": "One interaction response or cancellation; preserve the interaction deadline."
+    },
+    "elbow_helper/features/support_tickets/commands.py:SupportCommandMixin.close_support_ticket": {
+      "operations": [
+        "transcript_status_message.edit"
+      ],
+      "reason": "One ticket-close transcript progress/result; each close is an individual workflow."
+    },
+    "elbow_helper/features/support_tickets/commands.py:SupportCommandMixin.open_support_ticket": {
+      "operations": [
+        "ticket_channel.edit"
+      ],
+      "reason": "One ticket creation or explicit rename action; no recurring edits."
+    },
+    "elbow_helper/features/support_tickets/routing.py:RoutingMixin.rename_ticket": {
+      "operations": [
+        "channel.edit"
+      ],
+      "reason": "One ticket creation or explicit rename action; no recurring edits."
+    }
+  },
+  "notes": [
+    "Account-link board refreshes delegate to ClanReportingElderMixin; account_links has only interaction-response edits.",
+    "Roles, nicknames, scheduled events, avatar uploads, sends, and deletes are outside this publishing brief.",
+    "Direct interaction responses, original responses, followups, modals, and their one-off controls retain their deadlines."
+  ]
+}

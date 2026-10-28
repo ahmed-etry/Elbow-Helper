@@ -138,7 +138,9 @@ class CwlDashboardMixin:
     async def _refresh_dashboard_with_retry(self, clan_code: str, context: str) -> bool:
         for attempt in range(1, DASHBOARD_REFRESH_RETRIES + 1):
             try:
-                await self._upsert_dashboard_for_clan(clan_code)
+                if await self._upsert_dashboard_for_clan(clan_code) is False:
+                    # Publishing has already retried and logged this destination.
+                    return False
                 self._dashboard_refresh_warning_state.pop(f"{context}:{clan_code}", None)
                 return True
             except (
@@ -874,7 +876,7 @@ class CwlDashboardMixin:
         return None
 
 
-    async def _upsert_dashboard_for_clan(self, clan_code: str) -> None:
+    async def _upsert_dashboard_for_clan(self, clan_code: str) -> bool | None:
         thread_id = DASHBOARD_THREADS.get(clan_code)
         if not thread_id:
             return
@@ -884,10 +886,8 @@ class CwlDashboardMixin:
 
         was_archived = thread.archived
         if was_archived:
-            try:
-                await thread.edit(archived=False, locked=False)
-            except (discord.Forbidden, discord.HTTPException):
-                return
+            if not await self.bot.publishing.edit_channel(thread, archived=False, locked=False):
+                return False
 
         try:
             prep_embed, prep_file = await self._build_prep_preview_payload(clan_code)
@@ -902,7 +902,7 @@ class CwlDashboardMixin:
                 image_file: discord.File,
                 title_fragment: str,
                 view: Optional[discord.ui.View] = None,
-            ) -> None:
+            ) -> bool:
                 message_id = message_ids.get(clan_code)
                 target_message: Optional[discord.Message] = None
                 state_changed = False
@@ -954,12 +954,14 @@ class CwlDashboardMixin:
                         sent.id,
                     )
                 else:
-                    await target_message.edit(
+                    result = await self.bot.publishing.edit_message(target_message,
                         content=None,
                         embed=embed,
                         attachments=[image_file],
                         view=view,
                     )
+                    if not result:
+                        return False
 
                 for duplicate_message in duplicate_messages:
                     try:
@@ -969,15 +971,17 @@ class CwlDashboardMixin:
 
                 if state_changed:
                     self._save_dashboard_state()
+                return True
 
-            await upsert_message(
+            if not await upsert_message(
                 prep_message_ids,
                 prep_embed,
                 prep_file,
                 "Next Prep Matchup",
                 view=CwlPrepRefreshView(self, clan_code),
-            )
-            await upsert_message(
+            ):
+                return False
+            return await upsert_message(
                 stars_message_ids,
                 stars_embed,
                 stars_file,
@@ -986,10 +990,7 @@ class CwlDashboardMixin:
             )
         finally:
             if was_archived:
-                try:
-                    await thread.edit(archived=True)
-                except (discord.Forbidden, discord.HTTPException):
-                    pass
+                await self.bot.publishing.edit_channel(thread, archived=True)
 
 
     @tasks.loop(minutes=20)

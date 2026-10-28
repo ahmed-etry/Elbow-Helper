@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 import discord
 
+from elbow_helper.discord.publishing import PublishingQueue
 from elbow_helper.features.rosters.ui.emojis import TownHallEmojiProvider
 from elbow_helper.features.wars.board import WarBoardMixin
 from elbow_helper.features.wars.board import PreviousWarView
@@ -158,7 +159,7 @@ def _war_role_manager(
     roster_role_claim = AsyncMock(return_value=roster_claim)
     manager._roster_role_claim = roster_role_claim
 
-    manager.bot = MagicMock()
+    manager.bot = MagicMock(publishing=MagicMock(wraps=PublishingQueue()))
     manager.bot.get_guild.return_value = guild
     manager.account_links = clan_links
     return manager, role, roster_role_claim
@@ -371,7 +372,7 @@ def _war_summary_manager() -> tuple[_WarSummaryManager, MagicMock, MagicMock]:
     message.author.id = 99
     channel.send.return_value = message
 
-    manager.bot = MagicMock()
+    manager.bot = MagicMock(publishing=MagicMock(wraps=PublishingQueue()))
     manager.bot.user.id = 99
     manager.bot.get_channel.return_value = channel
     manager.bot.fetch_channel = AsyncMock(return_value=channel)
@@ -591,7 +592,7 @@ class WarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
         posted.channel = channel
         posted.edit = AsyncMock()
         channel.send = AsyncMock(return_value=posted)
-        manager.bot = MagicMock()
+        manager.bot = MagicMock(publishing=MagicMock(wraps=PublishingQueue()))
         manager.bot.get_channel.return_value = channel
 
         first_war = _war_payload()
@@ -606,6 +607,7 @@ class WarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
         await manager._update_war_board("Hellbow", next_war)
 
         channel.send.assert_awaited_once()
+        manager.bot.publishing.edit_message.assert_called_once()
         posted.edit.assert_awaited_once()
         self.assertEqual(
             manager.war_board_registry["BEH"],
@@ -634,12 +636,13 @@ class WarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
         channel.id = CLAN_WAR_CHANNELS["BEH"]
         channel.fetch_message = AsyncMock(return_value=message)
         channel.send = AsyncMock()
-        manager.bot = MagicMock()
+        manager.bot = MagicMock(publishing=MagicMock(wraps=PublishingQueue()))
         manager.bot.get_channel.return_value = channel
 
         await manager._update_war_board("Hellbow", data)
 
         channel.send.assert_not_awaited()
+        manager.bot.publishing.edit_message.assert_not_called()
         message.edit.assert_not_awaited()
 
     async def test_existing_controls_are_removed_on_refresh(self) -> None:
@@ -662,12 +665,13 @@ class WarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
         channel.id = CLAN_WAR_CHANNELS["BEH"]
         channel.fetch_message = AsyncMock(return_value=message)
         channel.send = AsyncMock()
-        manager.bot = MagicMock()
+        manager.bot = MagicMock(publishing=MagicMock(wraps=PublishingQueue()))
         manager.bot.get_channel.return_value = channel
 
         await manager._update_war_board("Hellbow", data)
 
         channel.send.assert_not_awaited()
+        manager.bot.publishing.edit_message.assert_called_once()
         message.edit.assert_awaited_once()
         self.assertIsNone(message.edit.await_args.kwargs["view"])
 
@@ -688,7 +692,7 @@ class WarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
         posted.edit = AsyncMock()
         channel.send = AsyncMock(return_value=posted)
         channel.fetch_message = AsyncMock(return_value=posted)
-        manager.bot = MagicMock()
+        manager.bot = MagicMock(publishing=MagicMock(wraps=PublishingQueue()))
         manager.bot.get_channel.return_value = channel
 
         ended = _war_payload("warEnded")
@@ -774,7 +778,7 @@ class WarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 "previous": _war_payload("warEnded"),
             }
         }
-        manager.bot = MagicMock()
+        manager.bot = MagicMock(publishing=MagicMock(wraps=PublishingQueue()))
 
         manager._register_war_board_views()
 

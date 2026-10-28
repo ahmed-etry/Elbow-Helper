@@ -268,10 +268,7 @@ class ExaminationPanelMixin:
         if not thread:
             return
         if thread.archived:
-            try:
-                await thread.edit(archived=False, reason="Update the examiner panel")
-            except (discord.Forbidden, discord.HTTPException):
-                self.logger.warning("Examiner panel unarchive skipped: thread_id=%s", thread.id)
+            if not await self.bot.publishing.edit_channel(thread, archived=False, reason="Update the examiner panel"):
                 return
         entries = self._get_roster_entries()
         total = len(entries)
@@ -336,8 +333,9 @@ class ExaminationPanelMixin:
         if msg_id:
             try:
                 msg = await thread.fetch_message(msg_id)
-                await msg.edit(embed=embed, view=self.panel_view)
-                return
+                result = await self.bot.publishing.edit_message(msg, embed=embed, view=self.panel_view)
+                if result:
+                    return
             except discord.NotFound:
                 self.logger.debug(
                     "Examiner panel message missing; posting replacement: thread_id=%s message_id=%s",

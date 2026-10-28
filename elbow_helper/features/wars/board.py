@@ -233,10 +233,7 @@ class WarBoardMixin:
         message, _ = await self._registered_war_board_message(clan_code, channel)
         if message is None or not message.components:
             return
-        try:
-            await message.edit(view=None)
-        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-            return
+        await self.bot.publishing.edit_message(message, view=None)
 
     async def _update_war_board(self, clan_name: str, data: dict[str, Any]) -> None:
         clan_code = CLAN_CODES_BY_NAME.get(clan_name)
@@ -309,15 +306,8 @@ class WarBoardMixin:
             embed.timestamp = datetime.now(timezone.utc)
         elif message.embeds:
             embed.timestamp = message.embeds[0].timestamp
-        try:
-            await message.edit(embed=embed, view=view)
-        except discord.NotFound:
+        result = await self.bot.publishing.edit_message(message, embed=embed, view=view)
+        if isinstance(result.error, discord.NotFound):
             self.war_board_registry.pop(clan_code, None)
             self.cache["war_board_messages"] = self.war_board_registry
             await self._save_cache_async()
-        except (discord.Forbidden, discord.HTTPException) as error:
-            LOGGER.warning(
-                "War board could not be updated for %s: %s",
-                clan_code,
-                error,
-            )

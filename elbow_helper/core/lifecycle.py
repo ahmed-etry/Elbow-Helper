@@ -11,6 +11,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from elbow_helper.discord.publishing import PublishingQueue
+
 from elbow_helper.infrastructure.ai import AgentModel
 from elbow_helper.infrastructure.ai import TextGenerator
 from elbow_helper.infrastructure.clash import ClashClient
@@ -211,6 +213,7 @@ class ElbowHelperBot(commands.Bot):
         agent_model: AgentModel,
         google_publisher: GoogleSheetsPublisher,
         workbook_writer: WorkbookWriter,
+        publishing: PublishingQueue | None = None,
         required_extensions: tuple[str, ...] = REQUIRED_EXTENSIONS,
         optional_extensions: tuple[str, ...] = OPTIONAL_EXTENSIONS,
     ):
@@ -222,6 +225,7 @@ class ElbowHelperBot(commands.Bot):
         self.agent_model = agent_model
         self.google_publisher = google_publisher
         self.workbook_writer = workbook_writer
+        self.publishing = publishing if publishing is not None else PublishingQueue()
         self.local_exports = LocalExportStore(paths.data_root / ".exports")
         self.required_extensions = required_extensions
         self.optional_extensions = optional_extensions
@@ -229,6 +233,13 @@ class ElbowHelperBot(commands.Bot):
         self.extension_report: ExtensionLoadReport | None = None
         self.synced_command_count: int | None = None
         self._boot_started_at = 0.0
+
+    async def close(self) -> None:
+        # Stop feature producers before flushing, while the HTTP client is open.
+        for name in tuple(self.cogs):
+            await self.remove_cog(name)
+        await self.publishing.close()
+        await super().close()
 
     async def setup_hook(self) -> None:
         self._boot_started_at = time.perf_counter()

@@ -331,25 +331,13 @@ class RosterPostService:
                 roster,
                 message_page(message, roster.id),
             )
-            try:
-                await message.edit(
-                    embeds=embeds,
-                    view=self.message_view(
-                        roster,
-                        page=page,
-                        page_count=page_count,
-                    ),
-                )
-            except (discord.NotFound, discord.Forbidden):
+            result = await self._bot.publishing.edit_message(
+                message,
+                embeds=embeds,
+                view=self.message_view(roster, page=page, page_count=page_count),
+            )
+            if isinstance(result.error, (discord.NotFound, discord.Forbidden)):
                 await self.remove_deleted_message(post.message_id)
-            except discord.HTTPException:
-                LOGGER.warning(
-                    "Could not refresh roster post roster_id=%s channel=%s "
-                    "message=%s",
-                    roster.id,
-                    post.channel_id,
-                    post.message_id,
-                )
 
     async def _retire_if_buried(
         self,
@@ -390,26 +378,8 @@ class RosterPostService:
             )
             return False
 
-        try:
-            await message.edit(view=None)
-        except discord.NotFound:
-            pass
-        except discord.Forbidden:
-            LOGGER.warning(
-                "Could not disable buried roster post roster_id=%s channel=%s "
-                "message=%s",
-                post.roster_id,
-                post.channel_id,
-                post.message_id,
-            )
-        except discord.HTTPException:
-            LOGGER.warning(
-                "Could not retire buried roster post roster_id=%s channel=%s "
-                "message=%s",
-                post.roster_id,
-                post.channel_id,
-                post.message_id,
-            )
+        result = await self._bot.publishing.edit_message(message, view=None)
+        if not result and not isinstance(result.error, (discord.NotFound, discord.Forbidden)):
             return False
 
         await self.remove_deleted_message(post.message_id)
@@ -493,10 +463,9 @@ class RosterPostService:
             except (discord.Forbidden, discord.HTTPException):
                 failed_message_ids.append(post.message_id)
                 continue
-            try:
-                await message.edit(view=None)
-            except discord.NotFound:
+            result = await self._bot.publishing.edit_message(message, view=None)
+            if isinstance(result.error, discord.NotFound):
                 await self.remove_deleted_message(post.message_id)
-            except (discord.Forbidden, discord.HTTPException):
+            elif not result:
                 failed_message_ids.append(post.message_id)
         return tuple(failed_message_ids)

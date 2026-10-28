@@ -467,16 +467,11 @@ class CwlThreadBoardMixin:
                     ):
                         self.save_data()
                     return True
-                try:
-                    completed, _ = await self._run_sticky_http_operation(
-                        thread,
-                        "edit CWL status board",
-                        lambda: old_message.edit(embed=embed, view=view),
-                    )
-                except discord.NotFound:
+                result = await self.bot.publishing.edit_message(old_message, embed=embed, view=view)
+                if isinstance(result.error, discord.NotFound):
                     old_message = None
                 else:
-                    if not completed:
+                    if not result:
                         return False
                     thread_data["sticky_last_updated"] = self._utc_now_iso()
                     await self._cleanup_stale_sticky_messages(

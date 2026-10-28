@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 import discord
 
+from elbow_helper.discord.publishing import PublishingQueue
 from elbow_helper.configuration.clans import CLAN_NAMES
 from elbow_helper.configuration.clans import CLAN_TAGS
 from elbow_helper.features.cwl.threads.board import CwlThreadBoardMixin
@@ -100,6 +101,7 @@ def _round(
 
 class ThreadBoardHarness(CwlThreadBoardMixin):
     def __init__(self) -> None:
+        self.bot = SimpleNamespace(publishing=MagicMock(wraps=PublishingQueue()))
         self._thread_snapshot_cache = {}
         self._sticky_last_repost_at = {}
         self._sticky_update_locks = {}
@@ -363,6 +365,7 @@ class CwlThreadSyncTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertTrue(unchanged)
+        manager.bot.publishing.edit_message.assert_not_called()
         existing_message.edit.assert_not_awaited()
         thread.send.assert_not_awaited()
 
@@ -375,6 +378,7 @@ class CwlThreadSyncTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertTrue(changed)
+        manager.bot.publishing.edit_message.assert_called_once()
         existing_message.edit.assert_awaited_once()
         thread.send.assert_not_awaited()
 

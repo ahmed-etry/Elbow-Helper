@@ -545,20 +545,14 @@ class ExaminationPromoIntakeMixin:
                 routing_message = await routing_channel.fetch_message(int(routing_message_id))
             except (TypeError, ValueError, discord.NotFound, discord.Forbidden, discord.HTTPException):
                 return
-        try:
-            await routing_message.edit(
-                content=None,
-                embed=self._build_route_changed_embed(case, ticket_channel),
-                view=None,
-            )
+        result = await self.bot.publishing.edit_message(
+            routing_message,
+            content=None,
+            embed=self._build_route_changed_embed(case, ticket_channel),
+            view=None,
+        )
+        if result:
             self._schedule_deprecated_routing_message_delete(routing_message, ticket_channel)
-        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-            self.logger.debug(
-                "Could not mark old promotion routing message as changed: channel_id=%s message_id=%s",
-                ticket_channel.id,
-                getattr(routing_message, "id", routing_message_id),
-                exc_info=True,
-            )
 
     async def _retire_availability_prompt_for_route_change(
         self,
@@ -594,10 +588,7 @@ class ExaminationPromoIntakeMixin:
             timestamp=datetime.now(timezone.utc),
         )
         embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
-        try:
-            await msg.edit(content=None, embed=embed, view=None)
-        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-            return
+        await self.bot.publishing.edit_message(msg, content=None, embed=embed, view=None)
 
     def _reset_case_for_route_change(self, case: Dict[str, Any], user_id: int) -> None:
         case["from_clan"] = None
@@ -794,7 +785,7 @@ class ExaminationPromoIntakeMixin:
                         msg = await ticket_channel.fetch_message(int(intake_message_id))
                         view = PromoRouteChangeView(self)
                         if _message_custom_ids(msg) != _view_custom_ids(view):
-                            await msg.edit(view=view)
+                            await self.bot.publishing.edit_message(msg, view=view)
                             await _sleep_after_reconcile_edit()
                     except (TypeError, ValueError, discord.NotFound, discord.Forbidden, discord.HTTPException):
                         pass
@@ -811,7 +802,7 @@ class ExaminationPromoIntakeMixin:
                         title = msg.embeds[0].title if msg.embeds else ""
                         if title == "Availability Saved":
                             if _message_custom_ids(msg):
-                                await msg.edit(
+                                await self.bot.publishing.edit_message(msg,
                                     embed=self._build_availability_confirm_embed(case, opener),
                                     view=None,
                                 )
@@ -819,7 +810,7 @@ class ExaminationPromoIntakeMixin:
                         else:
                             view = AvailabilityPromptView(self, ticket_channel.id)
                             if _message_custom_ids(msg) != _view_custom_ids(view):
-                                await msg.edit(
+                                await self.bot.publishing.edit_message(msg,
                                     embed=self._build_availability_prompt_embed(case, opener),
                                     view=view,
                                 )
@@ -840,7 +831,7 @@ class ExaminationPromoIntakeMixin:
                             exam_required=case.get("exam_required", True),
                         )
                         if _message_custom_ids(msg) != _view_custom_ids(view):
-                            await msg.edit(view=view)
+                            await self.bot.publishing.edit_message(msg, view=view)
                             await _sleep_after_reconcile_edit()
                     except (TypeError, ValueError, discord.NotFound, discord.Forbidden, discord.HTTPException):
                         pass
@@ -878,8 +869,8 @@ class ExaminationPromoIntakeMixin:
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                 msg = None
             if msg is not None:
-                await msg.edit(content=content, embed=None, view=view)
-                return msg
+                result = await self.bot.publishing.edit_message(msg, content=content, embed=None, view=view)
+                return msg if result else None
         msg = await channel.send(content=content, view=view)
         case["intake_message_id"] = msg.id
         self._save()
