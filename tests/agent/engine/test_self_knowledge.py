@@ -169,7 +169,7 @@ class SelfKnowledgeFlowTests(unittest.IsolatedAsyncioTestCase):
         # an intentional instruction or prompt-layout change.
         expected = {
             'prompt': '433c9ec556ba364df6ff54a6311c0180f6174e9905399e26a33a774fefb1a350',
-            'system_prompt': 'e5fb79df3ef1af5124f2b2574adf22d0f254b34fab014f8b301a513006714605',
+            'system_prompt': '4e409612d891fb4b39595011594179d9af1b2c1a8e46b7c537ec1c63ca79f9ff',
         }
         for key, digest in expected.items():
             self.assertEqual(hashlib.sha256(model.request[key].encode()).hexdigest(), digest)

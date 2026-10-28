@@ -13,7 +13,7 @@ from dataclasses import replace
 import discord
 
 
-from ..access import accessible_message_channel, can_access_message_channel
+from ..access import accessible_message_channel, can_access_message_channel, message_channel_unavailable
 from ..models import AgentRequestContext
 from ..text import message_text
 from ..capabilities.validation import bounded_int
@@ -99,7 +99,7 @@ async def _read_history_page(context, arguments, *, character_budget, complete_c
         return {"error": "Valid channel and author IDs are required."}
     channel = await accessible_message_channel(context, channel_id)
     if channel is None:
-        return {"error": "That conversation is not available here."}
+        return message_channel_unavailable(context, channel_id)
     try:
         after = search_date(arguments.get("after"))
         before = search_date(arguments.get("before"))
@@ -146,7 +146,7 @@ async def _read_history_page(context, arguments, *, character_budget, complete_c
         after_id=after_id, limit=limit, refresh_head=not arguments.get('cursor'),
     )
     if await accessible_message_channel(context, channel_id) is None:
-        return {"error": "That conversation is not available here."}
+        return message_channel_unavailable(context, channel_id)
     if (
         page.before_id != page_before_id
         or page.after_id != after_id
@@ -396,7 +396,7 @@ async def read_message_context(
         return {"error": "Valid channel_id and message_id values are required."}
     channel = await accessible_message_channel(context, channel_id)
     if channel is None:
-        return {"error": "That conversation is not available here."}
+        return message_channel_unavailable(context, channel_id)
     history = getattr(channel, "history", None)
     if not callable(history):
         return {"error": "That Discord location does not expose message history."}
@@ -436,7 +436,7 @@ async def read_message_context(
         context.guild.id, channel, anchor, messages, after=after, before=before, complete_content=complete_content,
     ) if anchor is not None else None
     if await accessible_message_channel(context, channel_id) is None:
-        return {"error": "That conversation is not available here."}
+        return message_channel_unavailable(context, channel_id)
     context.state.source_channels.add(channel_id)
     return {
         "channel_id": channel_id,

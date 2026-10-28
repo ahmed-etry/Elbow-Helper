@@ -17,6 +17,7 @@ from ..actions.contracts import ActionClass, PreparedAction
 from ..wording import ACTION_UNAVAILABLE
 from ..access import AgentAccessLost
 from ..access import require_access, accessible_message_channel, has_lookup_access
+from ..access import message_channel_unavailable
 from ..access import require_evidence_access
 from ..reports.tools import original_tool
 from ..plan.checker import check_plan, check_step
@@ -73,10 +74,11 @@ async def disclosure_issue(
                 "required_access": sorted(contract.required_access), "cause": "access_denied"}
     for channel_id in channels:
         if await accessible_message_channel(context, channel_id) is None:
-            return {"error": "That conversation is not available here.",
-                    "cause": ("access_denied" if str(channel_id) in context.state.scope_audit.excluded
-                              else "unavailable"),
-                    "available_privately": bool(context.state.scope_audit.private_candidates)}
+            result = message_channel_unavailable(context, channel_id)
+            result.setdefault("cause", "access_denied" if str(channel_id) in context.state.scope_audit.excluded
+                              else "unavailable")
+            result.setdefault("available_privately", False)
+            return result
 
     return {}
 

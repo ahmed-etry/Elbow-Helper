@@ -198,8 +198,27 @@ async def accessible_message_channel(
         try:
             channel = await context.bot.fetch_channel(channel_id)
         except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+            if relevant:
+                _clear_channel_exclusion(context, channel_id)
             return None
     return channel if await can_access_message_channel(context, channel, relevant=relevant) else None
+
+
+def _clear_channel_exclusion(context, channel_id):
+    """A fresh requested read must not reuse an earlier permission decision."""
+    audit = context.state.scope_audit
+    audit.excluded.pop(str(channel_id), None)
+    audit.private_candidates.discard(str(channel_id))
+
+
+def message_channel_unavailable(context, channel_id, *, error="That conversation is not available here."):
+    """Describe a destination-only refusal without returning excluded evidence."""
+    result = {"error": error}
+    audit = context.state.scope_audit
+    if (str(channel_id) in audit.private_candidates
+            and audit.excluded.get(str(channel_id)) in ("per_person", "role_scope")):
+        result.update(cause="access_denied", available_privately=True)
+    return result
 
 
 async def can_access_message_channel(
@@ -208,6 +227,8 @@ async def can_access_message_channel(
     *, relevant: bool = True,
 ) -> bool:
     """Check a resolved channel without widening access through another lookup."""
+    if relevant:
+        _clear_channel_exclusion(context, getattr(channel, "id", None))
     if getattr(getattr(channel, "guild", None), "id", None) != context.guild.id:
         return False
     permissions_for = getattr(channel, "permissions_for", None)

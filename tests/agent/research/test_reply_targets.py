@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 import discord
 
 from elbow_helper.agent.engine.registry import build_agent_tools
+from elbow_helper.agent.models import AgentTurnState
 from elbow_helper.agent.plan.checker import check_plan
 from elbow_helper.agent.plan.executor import execute_plan
 from elbow_helper.agent.research.history import read_message_context
@@ -35,7 +36,7 @@ class ReplyTargetTests(unittest.IsolatedAsyncioTestCase):
         self.channel = SimpleNamespace(id=100, name="rec-room", history=history,
                                        fetch_message=AsyncMock(return_value=self.target))
         self.context = SimpleNamespace(guild=SimpleNamespace(id=1),
-                                       state=SimpleNamespace(source_channels=set()))
+                                       state=AgentTurnState())
 
     async def read(self, **arguments):
         with patch("elbow_helper.agent.research.history.accessible_message_channel",
