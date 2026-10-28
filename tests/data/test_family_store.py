@@ -98,6 +98,8 @@ class FamilyStoreTests(unittest.IsolatedAsyncioTestCase):
             "members", "member_aliases", "guild_membership", "member_roles", "accounts", "account_aliases",
             "account_links", "account_link_metadata", "clans", "clan_observations", "clan_counters",
             "clan_membership", "donation_snapshots", "collection_runs", "collection_items",
+            "player_observations", "item_catalog", "player_items", "hero_equipment", "player_counters",
+            "player_collection_state", "player_coverage",
         })
         with self.assertRaises(sqlite3.IntegrityError):
             await self.store.call(lambda c: c.execute(
@@ -107,10 +109,10 @@ class FamilyStoreTests(unittest.IsolatedAsyncioTestCase):
         await self.links(100, link())
 
         def upgrade(connection):
-            migration = SQLiteMigration(2, "later subject", lambda c: c.execute("CREATE TABLE later_subject(id INTEGER PRIMARY KEY)"))
-            return run_sqlite_migrations(connection, (*MIGRATIONS, migration), target_version=2)
+            migration = SQLiteMigration(SCHEMA_VERSION + 1, "later subject", lambda c: c.execute("CREATE TABLE later_subject(id INTEGER PRIMARY KEY)"))
+            return run_sqlite_migrations(connection, (*MIGRATIONS, migration), target_version=SCHEMA_VERSION + 1)
 
-        self.assertEqual(await self.store.call(upgrade), (2,))
+        self.assertEqual(await self.store.call(upgrade), (SCHEMA_VERSION + 1,))
         self.assertEqual(len(await self.rows("SELECT * FROM account_links")), 1)
         newer = FamilyStore(self.path)
         with self.assertRaises(UnsupportedSQLiteVersionError):
@@ -131,13 +133,13 @@ class FamilyStoreTests(unittest.IsolatedAsyncioTestCase):
             def fail(c):
                 c.execute("CREATE TABLE not_committed(value INTEGER)")
                 raise ValueError("synthetic failure")
-            return run_sqlite_migrations(c, (*MIGRATIONS, SQLiteMigration(2, "failed subject", fail)), target_version=2)
+            return run_sqlite_migrations(c, (*MIGRATIONS, SQLiteMigration(SCHEMA_VERSION + 1, "failed subject", fail)), target_version=SCHEMA_VERSION + 1)
 
         from elbow_helper.infrastructure.persistence.migrations import SQLiteMigrationError
         with self.assertRaises(SQLiteMigrationError):
             await self.store.call(upgrade)
         self.assertEqual(await self.rows("SELECT name FROM sqlite_master WHERE name='not_committed'"), [])
-        self.assertEqual(await self.store.call(lambda c: c.execute("PRAGMA user_version").fetchone()[0]), 1)
+        self.assertEqual(await self.store.call(lambda c: c.execute("PRAGMA user_version").fetchone()[0]), SCHEMA_VERSION)
 
     async def test_restart_recovery_and_unchanged_roster_do_not_duplicate_open_intervals(self):
         await self.clans(100)

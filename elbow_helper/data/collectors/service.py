@@ -12,12 +12,15 @@ from elbow_helper.infrastructure.clash import ClashClient
 from elbow_helper.data.store import FamilyStore, now_us
 from elbow_helper.data.store.clans import collect_clans
 from elbow_helper.data.store.people import mirror_links, observe_discord
+from elbow_helper.data.store.players import collect_player, due_accounts, players_due
 
 
 LOGGER = logging.getLogger(__name__)
 # Nine clan profiles x 96 polls = 864 logical GETs/day before
-# shared Cache-Control reuse. This collector never fetches player profiles.
+# shared Cache-Control reuse. Player profiles add 279 x 24 = 6,696 logical
+# GETs/day at that population; outside linked accounts add 24 each.
 CLAN_INTERVAL_SECONDS = 15 * 60
+PLAYER_INTERVAL_SECONDS = 60 * 60
 LINK_INTERVAL_SECONDS = 5 * 60
 DISCORD_INTERVAL_SECONDS = 24 * 60 * 60
 SCHEDULE_CHECK_SECONDS = 30
@@ -48,6 +51,7 @@ class FamilyCollectors(commands.Cog):
         self._discord_lock = asyncio.Lock()
         self._clan_lock = asyncio.Lock()
         self._link_lock = asyncio.Lock()
+        self._player_lock = asyncio.Lock()
         self._closing = False
 
     async def cog_load(self):
@@ -59,6 +63,7 @@ class FamilyCollectors(commands.Cog):
         self._tasks = [
             asyncio.create_task(self._schedule("clans", CLAN_INTERVAL_SECONDS, self.collect_clans)),
             asyncio.create_task(self._schedule("links", LINK_INTERVAL_SECONDS, self.collect_links)),
+            asyncio.create_task(self._schedule("players", PLAYER_INTERVAL_SECONDS, self.collect_players)),
             asyncio.create_task(self._schedule("discord", DISCORD_INTERVAL_SECONDS, self.scan_discord, startup=True)),
         ]
 
@@ -70,14 +75,16 @@ class FamilyCollectors(commands.Cog):
         self._tasks.clear()
         # Listener callbacks are dispatched as separate Discord tasks. Wait for
         # their in-flight transactions before allowing the client to close.
-        async with self._discord_lock, self._clan_lock, self._link_lock:
+        async with self._discord_lock, self._clan_lock, self._link_lock, self._player_lock:
             pass
 
     async def _schedule(self, name, seconds, collect, *, startup=False):
         await self.bot.boot_complete.wait()
         while not self._closing:
             try:
-                if startup or await self.store.due(name, seconds, now_us()):
+                due = (await self.store.call(players_due, now_us()) if name == "players"
+                       else await self.store.due(name, seconds, now_us()))
+                if startup or due:
                     startup = False
                     await collect()
             except asyncio.CancelledError:
@@ -134,6 +141,30 @@ class FamilyCollectors(commands.Cog):
                 await self.store.call(collect_clans, run, self.clans, responses, now_us())
 
             return await self._run("clans", "family_clans", specs, operation)
+
+    async def collect_players(self):
+        async with self._player_lock:
+            if self._closing:
+                return
+            try:
+                accounts = await self.store.call(due_accounts, now_us())
+            except Exception:
+                LOGGER.warning("Family players account list unavailable; will retry")
+                return
+            specs = [("player_profile", row["player_tag"]) for row in accounts]
+
+            async def operation(run):
+                # Sequential fetches share the application's cache and limiter.
+                # Commit each profile separately, with no network transaction.
+                for ordinal, row in enumerate(accounts):
+                    await self.store.requested(run, ordinal)
+                    try:
+                        response = await self.clash_client.get(f"/players/{encode_clash_tag(row['player_tag'])}")
+                    except Exception:
+                        response = None
+                    await self.store.call(collect_player, run, ordinal, row["id"], row["player_tag"], response, now_us())
+
+            return await self._run("players", "family_and_linked_accounts", specs, operation)
 
     async def collect_links(self):
         async with self._link_lock:
