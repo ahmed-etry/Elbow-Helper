@@ -1,12 +1,13 @@
 """Versioned, additive family-record schema. Times are UTC microseconds."""
 
+import json
 import sqlite3
 
 from elbow_helper.infrastructure.persistence.migrations import SQLiteMigration
 
 
 # Later subjects add migrations; they must not rewrite this baseline.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 STATEMENTS = (
     """CREATE TABLE collection_runs (
         id INTEGER PRIMARY KEY, collector TEXT NOT NULL, scope_kind TEXT NOT NULL,
@@ -218,14 +219,41 @@ def compact_player_schema(connection: sqlite3.Connection) -> None:
         "OR a.end_source_item_id=collection_items.id)")
 
 
+def extend_achievement_identity(connection: sqlite3.Connection) -> None:
+    # Preserve catalogue IDs (and every referencing fact) while extending the
+    # old name-only uniqueness rule. Check all references before clearing the
+    # deferred DROP-table check, which otherwise also rejects a rebuilt parent.
+    connection.execute("PRAGMA defer_foreign_keys=ON")
+    connection.execute("""CREATE TABLE item_catalog_expanded (
+        id INTEGER PRIMARY KEY, source_array TEXT NOT NULL, village TEXT NOT NULL,
+        source_name TEXT NOT NULL, source_identifier TEXT, classification TEXT,
+        definition_json TEXT NOT NULL, identity_key TEXT NOT NULL DEFAULT '',
+        UNIQUE(source_array,village,source_name,identity_key))""")
+    for row in connection.execute("SELECT * FROM item_catalog").fetchall():
+        identity = ""
+        if row[1] == "achievements":
+            item = connection.execute("SELECT static_fields_json FROM player_items WHERE item_id=? ORDER BY observed_at DESC LIMIT 1",
+                                      (row[0],)).fetchone()
+            info = json.loads(item[0]).get("info", "") if item else ""
+            identity = info if isinstance(info, str) else ""
+        connection.execute("INSERT INTO item_catalog_expanded VALUES (?,?,?,?,?,?,?,?)", (*row, identity))
+    connection.execute("DROP TABLE item_catalog")
+    connection.execute("ALTER TABLE item_catalog_expanded RENAME TO item_catalog")
+    if connection.execute("PRAGMA foreign_key_check").fetchone():
+        raise sqlite3.IntegrityError("catalogue_migration_foreign_key_check")
+    connection.execute("PRAGMA defer_foreign_keys=OFF")
+
+
 def create_schema(connection: sqlite3.Connection) -> None:
     create_initial_schema(connection)
     create_player_schema(connection)
     compact_player_schema(connection)
+    extend_achievement_identity(connection)
 
 
 MIGRATIONS = (
     SQLiteMigration(1, "family people and membership", create_initial_schema),
     SQLiteMigration(2, "family player profiles", create_player_schema),
     SQLiteMigration(3, "compact player history", compact_player_schema),
+    SQLiteMigration(4, "distinct achievement identities", extend_achievement_identity),
 )

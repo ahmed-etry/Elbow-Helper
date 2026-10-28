@@ -1,0 +1,1596 @@
+{
+  "kind": "player_profile",
+  "scope": "#PP9R0V",
+  "body": {
+    "tag": "#PP9R0V",
+    "name": "Synthetic name 209",
+    "townHallLevel": 18,
+    "expLevel": 257,
+    "trophies": 0,
+    "bestTrophies": 5327,
+    "warStars": 3406,
+    "attackWins": 0,
+    "defenseWins": 0,
+    "builderHallLevel": 10,
+    "builderBaseTrophies": 3273,
+    "bestBuilderBaseTrophies": 3309,
+    "role": "coLeader",
+    "warPreference": "in",
+    "donations": 1031,
+    "donationsReceived": 720,
+    "clanCapitalContributions": 3953581,
+    "clan": {
+      "tag": "#PP9R0J",
+      "name": "Synthetic name 129",
+      "clanLevel": 24,
+      "badgeUrls": {
+        "small": "https://example.test/asset/17",
+        "large": "https://example.test/asset/18",
+        "medium": "https://example.test/asset/19"
+      }
+    },
+    "leagueTier": {
+      "id": 105000034,
+      "name": "Synthetic name 210",
+      "iconUrls": {
+        "small": "https://example.test/asset/28",
+        "large": "https://example.test/asset/29"
+      }
+    },
+    "builderBaseLeague": {
+      "id": 44000026,
+      "name": "Synthetic name 211"
+    },
+    "legendStatistics": {
+      "legendTrophies": 87,
+      "previousSeason": {
+        "id": "2026-04-20",
+        "rank": 160672,
+        "trophies": 4961
+      },
+      "bestSeason": {
+        "id": "2026-03-23",
+        "rank": 104578,
+        "trophies": 5087
+      },
+      "currentSeason": {
+        "trophies": 0
+      }
+    },
+    "currentLeagueSeasonId": 0,
+    "previousLeagueGroupTag": "#PP9R20",
+    "previousLeagueSeasonId": 1790571600,
+    "achievements": [
+      {
+        "name": "Synthetic name 4",
+        "stars": 3,
+        "value": 19,
+        "target": 10,
+        "info": "Upgrade a Gold Storage to level 10",
+        "completionInfo": "Highest Gold Storage level: 19",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 84",
+        "stars": 3,
+        "value": 270,
+        "target": 150,
+        "info": "Win 150 Stars on the Campaign Map",
+        "completionInfo": "Stars in Campaign Map: 270",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 6",
+        "stars": 3,
+        "value": 18,
+        "target": 8,
+        "info": "Upgrade Town Hall to level 8",
+        "completionInfo": "Current Town Hall level: 18",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 7",
+        "stars": 3,
+        "value": 7705,
+        "target": 500,
+        "info": "Remove 500 obstacles (trees, rocks, bushes)",
+        "completionInfo": "Total obstacles removed: 7705",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 8",
+        "stars": 3,
+        "value": 1,
+        "target": 1,
+        "info": "Unlock Dragon in the Barracks",
+        "completionInfo": null,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 9",
+        "stars": 3,
+        "value": 2000000000,
+        "target": 100000000,
+        "info": "Steal 100000000 Gold",
+        "completionInfo": "Total Gold looted: 2000000000",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 10",
+        "stars": 3,
+        "value": 2000000000,
+        "target": 100000000,
+        "info": "Steal 100000000 elixir",
+        "completionInfo": "Total Elixir looted: 2000000000",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 11",
+        "stars": 3,
+        "value": 5327,
+        "target": 1250,
+        "info": "Achieve a total of 1250 trophies in Multiplayer battles",
+        "completionInfo": "Trophy record: 5327",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 12",
+        "stars": 3,
+        "value": 14,
+        "target": 4,
+        "info": "Upgrade Clan Castle to level 4",
+        "completionInfo": "Current Clan Castle level: 14",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 13",
+        "stars": 3,
+        "value": 354387,
+        "target": 2000,
+        "info": "Destroy 2000 Walls in Multiplayer battles",
+        "completionInfo": "Total Walls destroyed: 354387",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 14",
+        "stars": 3,
+        "value": 10802,
+        "target": 2000,
+        "info": "Destroy 2000 Town Halls in Multiplayer battles",
+        "completionInfo": "Total Town Halls destroyed: 10802",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 15",
+        "stars": 3,
+        "value": 47696,
+        "target": 2500,
+        "info": "Destroy 2500 Builder's Huts in Multiplayer battles",
+        "completionInfo": "Total Builder's Huts destroyed: 47696",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 16",
+        "stars": 3,
+        "value": 14674,
+        "target": 5000,
+        "info": "Win 5000 Multiplayer battles",
+        "completionInfo": "Total multiplayer battles won: 14674",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 17",
+        "stars": 3,
+        "value": 2273,
+        "target": 500,
+        "info": "Successfully defend against 500 attacks",
+        "completionInfo": "Total defenses won: 2273",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 18",
+        "stars": 3,
+        "value": 315249,
+        "target": 25000,
+        "info": "Donate 25000 capacity worth of reinforcements to Clanmates",
+        "completionInfo": "Total capacity donated: 315249",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 19",
+        "stars": 3,
+        "value": 36499,
+        "target": 5000,
+        "info": "Destroy 5000 Mortars in Multiplayer battles",
+        "completionInfo": "Total Mortars destroyed: 36499",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 20",
+        "stars": 3,
+        "value": 93427425,
+        "target": 1000000,
+        "info": "Steal 1000000 Dark Elixir",
+        "completionInfo": "Total Dark Elixir looted: 93427425",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 21",
+        "stars": 3,
+        "value": 22,
+        "target": 1,
+        "info": "Become a Champion!",
+        "completionInfo": null,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 22",
+        "stars": 3,
+        "value": 24390,
+        "target": 2500,
+        "info": "Destroy 2500 X-Bows in Multiplayer battles",
+        "completionInfo": "Total X-Bows destroyed: 24390",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 23",
+        "stars": 3,
+        "value": 15787,
+        "target": 5000,
+        "info": "Destroy 5000 Inferno Towers in Multiplayer battles",
+        "completionInfo": "Total Inferno Towers destroyed: 15787",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 24",
+        "stars": 3,
+        "value": 3406,
+        "target": 1000,
+        "info": "Score 1000 Stars for your clan in Clan War battles",
+        "completionInfo": "Total Stars scored for clan in Clan War battles: 3406",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 25",
+        "stars": 3,
+        "value": 2000000000,
+        "target": 100000000,
+        "info": "Collect 100000000 Gold from the Clan Castle",
+        "completionInfo": "Total Gold collected in Clan War bonuses: 2000000000",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 26",
+        "stars": 3,
+        "value": 3829,
+        "target": 2000,
+        "info": "Destroy 2000 Eagle or Inferno Artilleries in Multiplayer battles",
+        "completionInfo": "Total Eagle or Inferno Artilleries destroyed: 3829",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 27",
+        "stars": 2,
+        "value": 9449,
+        "target": 10000,
+        "info": "Donate 10000 Spell storage capacity worth of Spells",
+        "completionInfo": "Total Spell capacity donated: 9449",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 28",
+        "stars": 0,
+        "value": 0,
+        "target": 1,
+        "info": "Protect your Village by connecting to a social network",
+        "completionInfo": "Completed!",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 29",
+        "stars": 3,
+        "value": 10,
+        "target": 8,
+        "info": "Upgrade Builder Hall to level 8",
+        "completionInfo": "Current Builder Hall level: 10",
+        "village": "builderBase"
+      },
+      {
+        "name": "Synthetic name 30",
+        "stars": 3,
+        "value": 1,
+        "target": 1,
+        "info": "Unlock Power P.E.K.K.A in the Builder Barracks",
+        "completionInfo": null,
+        "village": "builderBase"
+      },
+      {
+        "name": "Synthetic name 31",
+        "stars": 3,
+        "value": 2739,
+        "target": 2000,
+        "info": "Destroy 2000 Builder Halls in Builder Battles",
+        "completionInfo": "Total Builder Halls destroyed: 2739",
+        "village": "builderBase"
+      },
+      {
+        "name": "Synthetic name 32",
+        "stars": 3,
+        "value": 3309,
+        "target": 3000,
+        "info": "Achieve a total of 3000 trophies in Builder Battles",
+        "completionInfo": "Builder Trophy record: 3309",
+        "village": "builderBase"
+      },
+      {
+        "name": "Synthetic name 33",
+        "stars": 3,
+        "value": 3,
+        "target": 3,
+        "info": "Gear Up 3 buildings using the Master Builder",
+        "completionInfo": "Total buildings geared up: 3",
+        "village": "builderBase"
+      },
+      {
+        "name": "Synthetic name 34",
+        "stars": 3,
+        "value": 1,
+        "target": 1,
+        "info": "Rebuild Battle Machine",
+        "completionInfo": null,
+        "village": "builderBase"
+      },
+      {
+        "name": "Synthetic name 35",
+        "stars": 3,
+        "value": 232755,
+        "target": 100000,
+        "info": "Earn 100000 points in Clan Games",
+        "completionInfo": "Total Clan Games points: 232755",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 36",
+        "stars": 1,
+        "value": 2,
+        "target": 1,
+        "info": "Slay the Giant Dragon on the Campaign Map",
+        "completionInfo": null,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 37",
+        "stars": 3,
+        "value": 593,
+        "target": 250,
+        "info": "Score 250 Stars for your clan in War League battles",
+        "completionInfo": "Total Stars scored for clan in War League battles: 593",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 28",
+        "stars": 0,
+        "value": 0,
+        "target": 1,
+        "info": "Connect your account to Supercell ID for safe keeping.",
+        "completionInfo": "Completed!",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 38",
+        "stars": 3,
+        "value": 159470,
+        "target": 50000,
+        "info": "Earn 50000 points in Season Challenges",
+        "completionInfo": "Total Season Challenges points: 159470",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 39",
+        "stars": 3,
+        "value": 8701,
+        "target": 4000,
+        "info": "Destroy 4000 Scattershots in Multiplayer battles",
+        "completionInfo": "Total Scattershots destroyed: 8701",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 40",
+        "stars": 3,
+        "value": 7111,
+        "target": 2000,
+        "info": "Destroy 2000 weaponized Town Halls in Multiplayer battles",
+        "completionInfo": "Weaponized Town Halls destroyed: 7111",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 41",
+        "stars": 3,
+        "value": 23718,
+        "target": 2500,
+        "info": "Destroy 2500 weaponized Builder's Huts in Multiplayer battles",
+        "completionInfo": "Total weaponized Builder's Huts destroyed: 23718",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 42",
+        "stars": 3,
+        "value": 532,
+        "target": 250,
+        "info": "Boost a Super Troop 250 times",
+        "completionInfo": "Total times Super Troops boosted: 532",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 43",
+        "stars": 2,
+        "value": 2519,
+        "target": 5000,
+        "info": "Donate 5000 Siege Machines",
+        "completionInfo": "Total Siege Machines donated: 2519",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 44",
+        "stars": 3,
+        "value": 2963460,
+        "target": 1000000,
+        "info": "Loot 1000000 Capital Gold during Raid attacks",
+        "completionInfo": "Total Capital Gold looted: 2963460",
+        "village": "clanCapital"
+      },
+      {
+        "name": "Synthetic name 45",
+        "stars": 3,
+        "value": 3953581,
+        "target": 2000000,
+        "info": "Contribute 2000000 Capital Gold to upgrades in the Clan Capital",
+        "completionInfo": "Total Capital Gold contributed: 3953581",
+        "village": "clanCapital"
+      },
+      {
+        "name": "Synthetic name 46",
+        "stars": 3,
+        "value": 7693,
+        "target": 4000,
+        "info": "Destroy 4000 Spell Towers in Multiplayer Battles",
+        "completionInfo": "Total Spell Towers Destroyed: 7693",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 47",
+        "stars": 3,
+        "value": 3473,
+        "target": 2000,
+        "info": "Destroy 2000 Monoliths in Multiplayer Battles",
+        "completionInfo": "Total Monoliths Destroyed: 3473",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 48",
+        "stars": 1,
+        "value": 2,
+        "target": 1,
+        "info": "Defeat M.O.M.M.A on the Campaign Map",
+        "completionInfo": null,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 49",
+        "stars": 3,
+        "value": 112,
+        "target": 75,
+        "info": "Supercharge buildings 75 times",
+        "completionInfo": "Total Supercharges: 112",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 50",
+        "stars": 3,
+        "value": 10596,
+        "target": 5000,
+        "info": "Destroy 5000 Multi-Archer Towers in Multiplayer Battles",
+        "completionInfo": "Total Multi-Archer Towers Destroyed: 10596",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 51",
+        "stars": 3,
+        "value": 10436,
+        "target": 5000,
+        "info": "Destroy 5000 Ricochet Cannons in Multiplayer Battles",
+        "completionInfo": "Total Ricochet Cannons Destroyed: 10436",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 52",
+        "stars": 3,
+        "value": 6310,
+        "target": 4000,
+        "info": "Destroy 4000 Firespitters in Multiplayer Battles",
+        "completionInfo": "Total Firespitters Destroyed: 6310",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 53",
+        "stars": 3,
+        "value": 3278,
+        "target": 2000,
+        "info": "Destroy 2000 Multi-Gear Towers in Multiplayer Battles",
+        "completionInfo": "Total Multi-Gear Towers Destroyed: 3278",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 54",
+        "stars": 3,
+        "value": 145,
+        "target": 75,
+        "info": "Upgrade Crafted Defenses 75 times",
+        "completionInfo": "Total Crafted Defense upgrades: 145",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 55",
+        "stars": 3,
+        "value": 3545,
+        "target": 2000,
+        "info": "Destroy 2000 Crafted Defenses in Multiplayer Battles",
+        "completionInfo": "Total Crafted Defenses Destroyed: 3545",
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 132",
+        "stars": 3,
+        "value": 34,
+        "target": 12,
+        "info": "Reach League Wizard 12",
+        "completionInfo": null,
+        "village": "home"
+      }
+    ],
+    "playerHouse": {
+      "elements": [
+        {
+          "type": "ground",
+          "id": 82000004
+        },
+        {
+          "type": "walls",
+          "id": 82000128
+        },
+        {
+          "type": "roof",
+          "id": 82000126
+        },
+        {
+          "type": "decoration",
+          "id": 82000061
+        }
+      ]
+    },
+    "labels": [
+      {
+        "id": 57000010,
+        "name": "Synthetic name 212",
+        "iconUrls": {
+          "small": "https://example.test/asset/30",
+          "medium": "https://example.test/asset/31"
+        }
+      },
+      {
+        "id": 57000015,
+        "name": "Synthetic name 135",
+        "iconUrls": {
+          "small": "https://example.test/asset/26",
+          "medium": "https://example.test/asset/27"
+        }
+      },
+      {
+        "id": 57000017,
+        "name": "Synthetic name 213",
+        "iconUrls": {
+          "small": "https://example.test/asset/32",
+          "medium": "https://example.test/asset/33"
+        }
+      }
+    ],
+    "troops": [
+      {
+        "name": "Synthetic name 57",
+        "level": 13,
+        "maxLevel": 13,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 58",
+        "level": 14,
+        "maxLevel": 14,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 59",
+        "level": 10,
+        "maxLevel": 10,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 60",
+        "level": 14,
+        "maxLevel": 14,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 61",
+        "level": 14,
+        "maxLevel": 14,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 88",
+        "level": 13,
+        "maxLevel": 13,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 89",
+        "level": 14,
+        "maxLevel": 14,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 90",
+        "level": 11,
+        "maxLevel": 11,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 91",
+        "level": 13,
+        "maxLevel": 13,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 92",
+        "level": 13,
+        "maxLevel": 13,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 93",
+        "level": 14,
+        "maxLevel": 14,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 94",
+        "level": 15,
+        "maxLevel": 15,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 95",
+        "level": 12,
+        "maxLevel": 12,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 96",
+        "level": 15,
+        "maxLevel": 15,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 97",
+        "level": 8,
+        "maxLevel": 8,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 98",
+        "level": 8,
+        "maxLevel": 8,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 136",
+        "level": 10,
+        "maxLevel": 10,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 99",
+        "level": 12,
+        "maxLevel": 12,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 137",
+        "level": 12,
+        "maxLevel": 12,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 62",
+        "level": 1,
+        "maxLevel": 9,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 63",
+        "level": 1,
+        "maxLevel": 10,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 64",
+        "level": 1,
+        "maxLevel": 10,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 65",
+        "level": 1,
+        "maxLevel": 10,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 66",
+        "level": 20,
+        "maxLevel": 20,
+        "village": "builderBase"
+      },
+      {
+        "name": "Synthetic name 100",
+        "level": 20,
+        "maxLevel": 20,
+        "village": "builderBase"
+      },
+      {
+        "name": "Synthetic name 101",
+        "level": 20,
+        "maxLevel": 20,
+        "village": "builderBase"
+      },
+      {
+        "name": "Synthetic name 102",
+        "level": 20,
+        "maxLevel": 20,
+        "village": "builderBase"
+      },
+      {
+        "name": "Synthetic name 103",
+        "level": 20,
+        "maxLevel": 20,
+        "village": "builderBase"
+      },
+      {
+        "name": "Synthetic name 138",
+        "level": 20,
+        "maxLevel": 20,
+        "village": "builderBase"
+      },
+      {
+        "name": "Synthetic name 104",
+        "level": 20,
+        "maxLevel": 20,
+        "village": "builderBase"
+      },
+      {
+        "name": "Synthetic name 139",
+        "level": 20,
+        "maxLevel": 20,
+        "village": "builderBase"
+      },
+      {
+        "name": "Synthetic name 99",
+        "level": 20,
+        "maxLevel": 20,
+        "village": "builderBase"
+      },
+      {
+        "name": "Synthetic name 140",
+        "level": 20,
+        "maxLevel": 20,
+        "village": "builderBase"
+      },
+      {
+        "name": "Synthetic name 141",
+        "level": 4,
+        "maxLevel": 6,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 142",
+        "level": 5,
+        "maxLevel": 6,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 143",
+        "level": 8,
+        "maxLevel": 8,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 67",
+        "level": 1,
+        "maxLevel": 6,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 68",
+        "level": 1,
+        "maxLevel": 12,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 69",
+        "level": 1,
+        "maxLevel": 9,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 144",
+        "level": 9,
+        "maxLevel": 9,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 145",
+        "level": 9,
+        "maxLevel": 9,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 146",
+        "level": 6,
+        "maxLevel": 6,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 70",
+        "level": 1,
+        "maxLevel": 12,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 71",
+        "level": 1,
+        "maxLevel": 12,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 147",
+        "level": 6,
+        "maxLevel": 6,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 72",
+        "level": 1,
+        "maxLevel": 8,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 148",
+        "level": 20,
+        "maxLevel": 20,
+        "village": "builderBase"
+      },
+      {
+        "name": "Synthetic name 149",
+        "level": 6,
+        "maxLevel": 6,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 73",
+        "level": 1,
+        "maxLevel": 8,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 74",
+        "level": 1,
+        "maxLevel": 10,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 75",
+        "level": 1,
+        "maxLevel": 11,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 150",
+        "level": 4,
+        "maxLevel": 4,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 76",
+        "level": 1,
+        "maxLevel": 10,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 77",
+        "level": 1,
+        "maxLevel": 11,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 151",
+        "level": 6,
+        "maxLevel": 6,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 152",
+        "level": 5,
+        "maxLevel": 5,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 153",
+        "level": 5,
+        "maxLevel": 6,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 154",
+        "level": 5,
+        "maxLevel": 5,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 155",
+        "level": 4,
+        "maxLevel": 4,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 78",
+        "level": 1,
+        "maxLevel": 12,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 214",
+        "level": 20,
+        "maxLevel": 20,
+        "village": "builderBase"
+      },
+      {
+        "name": "Synthetic name 156",
+        "level": 4,
+        "maxLevel": 4,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 157",
+        "level": 4,
+        "maxLevel": 4,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 158",
+        "level": 6,
+        "maxLevel": 6,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 159",
+        "level": 4,
+        "maxLevel": 4,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 215",
+        "level": 4,
+        "maxLevel": 4,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 79",
+        "level": 1,
+        "maxLevel": 8,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 160",
+        "level": 4,
+        "maxLevel": 4,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 216",
+        "level": 3,
+        "maxLevel": 3,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 217",
+        "level": 4,
+        "maxLevel": 4,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 161",
+        "level": 15,
+        "maxLevel": 15,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 162",
+        "level": 15,
+        "maxLevel": 15,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 163",
+        "level": 15,
+        "maxLevel": 15,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 164",
+        "level": 15,
+        "maxLevel": 15,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 165",
+        "level": 10,
+        "maxLevel": 10,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 166",
+        "level": 15,
+        "maxLevel": 15,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 167",
+        "level": 15,
+        "maxLevel": 15,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 168",
+        "level": 15,
+        "maxLevel": 15,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 169",
+        "level": 10,
+        "maxLevel": 10,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 170",
+        "level": 10,
+        "maxLevel": 10,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 218",
+        "level": 10,
+        "maxLevel": 10,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 219",
+        "level": 10,
+        "maxLevel": 10,
+        "village": "home"
+      }
+    ],
+    "heroes": [
+      {
+        "name": "Synthetic name 105",
+        "level": 110,
+        "maxLevel": 110,
+        "equipment": [
+          {
+            "name": "Synthetic name 171",
+            "level": 27,
+            "maxLevel": 27,
+            "village": "home"
+          },
+          {
+            "name": "Synthetic name 115",
+            "level": 18,
+            "maxLevel": 18,
+            "village": "home"
+          }
+        ],
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 108",
+        "level": 110,
+        "maxLevel": 110,
+        "equipment": [
+          {
+            "name": "Synthetic name 117",
+            "level": 18,
+            "maxLevel": 18,
+            "village": "home"
+          },
+          {
+            "name": "Synthetic name 172",
+            "level": 27,
+            "maxLevel": 27,
+            "village": "home"
+          }
+        ],
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 174",
+        "level": 85,
+        "maxLevel": 85,
+        "equipment": [
+          {
+            "name": "Synthetic name 191",
+            "level": 18,
+            "maxLevel": 18,
+            "village": "home"
+          },
+          {
+            "name": "Synthetic name 196",
+            "level": 18,
+            "maxLevel": 18,
+            "village": "home"
+          }
+        ],
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 111",
+        "level": 35,
+        "maxLevel": 35,
+        "village": "builderBase"
+      },
+      {
+        "name": "Synthetic name 177",
+        "level": 55,
+        "maxLevel": 55,
+        "equipment": [
+          {
+            "name": "Synthetic name 193",
+            "level": 18,
+            "maxLevel": 18,
+            "village": "home"
+          },
+          {
+            "name": "Synthetic name 179",
+            "level": 26,
+            "maxLevel": 27,
+            "village": "home"
+          }
+        ],
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 180",
+        "level": 35,
+        "maxLevel": 35,
+        "village": "builderBase"
+      },
+      {
+        "name": "Synthetic name 112",
+        "level": 95,
+        "maxLevel": 95,
+        "equipment": [
+          {
+            "name": "Synthetic name 220",
+            "level": 27,
+            "maxLevel": 27,
+            "village": "home"
+          },
+          {
+            "name": "Synthetic name 113",
+            "level": 18,
+            "maxLevel": 18,
+            "village": "home"
+          }
+        ],
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 181",
+        "level": 25,
+        "maxLevel": 25,
+        "equipment": [
+          {
+            "name": "Synthetic name 221",
+            "level": 18,
+            "maxLevel": 18,
+            "village": "home"
+          },
+          {
+            "name": "Synthetic name 183",
+            "level": 18,
+            "maxLevel": 18,
+            "village": "home"
+          }
+        ],
+        "village": "home"
+      }
+    ],
+    "heroEquipment": [
+      {
+        "name": "Synthetic name 184",
+        "level": 23,
+        "maxLevel": 27,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 185",
+        "level": 27,
+        "maxLevel": 27,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 171",
+        "level": 27,
+        "maxLevel": 27,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 186",
+        "level": 26,
+        "maxLevel": 27,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 187",
+        "level": 20,
+        "maxLevel": 27,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 222",
+        "level": 27,
+        "maxLevel": 27,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 176",
+        "level": 27,
+        "maxLevel": 27,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 188",
+        "level": 27,
+        "maxLevel": 27,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 189",
+        "level": 27,
+        "maxLevel": 27,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 173",
+        "level": 27,
+        "maxLevel": 27,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 179",
+        "level": 26,
+        "maxLevel": 27,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 223",
+        "level": 27,
+        "maxLevel": 27,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 172",
+        "level": 27,
+        "maxLevel": 27,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 220",
+        "level": 27,
+        "maxLevel": 27,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 224",
+        "level": 17,
+        "maxLevel": 27,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 225",
+        "level": 27,
+        "maxLevel": 27,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 190",
+        "level": 27,
+        "maxLevel": 27,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 182",
+        "level": 27,
+        "maxLevel": 27,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 226",
+        "level": 23,
+        "maxLevel": 27,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 107",
+        "level": 17,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 106",
+        "level": 18,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 110",
+        "level": 11,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 109",
+        "level": 18,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 191",
+        "level": 18,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 192",
+        "level": 18,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 193",
+        "level": 18,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 194",
+        "level": 11,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 115",
+        "level": 18,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 178",
+        "level": 18,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 116",
+        "level": 18,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 198",
+        "level": 18,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 117",
+        "level": 18,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 195",
+        "level": 18,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 175",
+        "level": 18,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 196",
+        "level": 18,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 114",
+        "level": 18,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 113",
+        "level": 18,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 118",
+        "level": 18,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 199",
+        "level": 18,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 183",
+        "level": 18,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 200",
+        "level": 18,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 197",
+        "level": 18,
+        "maxLevel": 18,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 221",
+        "level": 18,
+        "maxLevel": 18,
+        "village": "home"
+      }
+    ],
+    "spells": [
+      {
+        "name": "Synthetic name 119",
+        "level": 13,
+        "maxLevel": 13,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 120",
+        "level": 12,
+        "maxLevel": 12,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 121",
+        "level": 7,
+        "maxLevel": 7,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 122",
+        "level": 5,
+        "maxLevel": 5,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 123",
+        "level": 8,
+        "maxLevel": 8,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 124",
+        "level": 12,
+        "maxLevel": 12,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 125",
+        "level": 8,
+        "maxLevel": 8,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 126",
+        "level": 7,
+        "maxLevel": 7,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 201",
+        "level": 9,
+        "maxLevel": 9,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 127",
+        "level": 8,
+        "maxLevel": 8,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 202",
+        "level": 8,
+        "maxLevel": 8,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 203",
+        "level": 4,
+        "maxLevel": 4,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 204",
+        "level": 7,
+        "maxLevel": 7,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 205",
+        "level": 5,
+        "maxLevel": 5,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 206",
+        "level": 5,
+        "maxLevel": 5,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 207",
+        "level": 6,
+        "maxLevel": 6,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 227",
+        "level": 4,
+        "maxLevel": 4,
+        "village": "home"
+      },
+      {
+        "name": "Synthetic name 208",
+        "level": 4,
+        "maxLevel": 4,
+        "village": "home"
+      }
+    ]
+  }
+}

@@ -28,8 +28,6 @@ ARRAYS = {"troops": None, "pets": "pet", "heroes": "hero", "heroEquipment": "equ
           "spells": "spell", "achievements": "achievement"}
 TRANSIENT = {"superTroopIsActive", "boosted", "boostTime", "boostExpirationTime",
              "superTroopCooldown", "originalLevel", "equipment"}
-ITEM_FIELDS = {"name", "village", "id", "level", "maxLevel", "stars", "target", "value",
-               "info", "completionInfo", "hero", "heroName", "rarity", "isPet", *TRANSIENT}
 LEGEND_SLOW = {"bestSeason", "previousSeason", "bestBuilderBaseSeason", "previousBuilderBaseSeason"}
 LEGEND_FAST = {"legendTrophies", "currentSeason", "currentDay", "previousDay"}
 
@@ -56,7 +54,8 @@ class Profile:
 
     @property
     def complete(self):
-        return not self.unsupported and all(self.complete_arrays.values())
+        # Unprojected API fields are diagnostic, not evidence of missing data.
+        return all(self.complete_arrays.values())
 
 
 def project_profile(payload, tag):
@@ -105,8 +104,8 @@ def project_profile(payload, tag):
                 complete_arrays[source] = False
                 continue
             valid.append(row)
-        counts = Counter((row.get("village", ""), row["name"]) for row in valid)
-        items[source] = [row for row in valid if counts[(row.get("village", ""), row["name"])] == 1]
+        counts = Counter(item_identity(source, row) for row in valid)
+        items[source] = [row for row in valid if counts[item_identity(source, row)] == 1]
         if len(items[source]) != len(rows):
             complete_arrays[source] = False
     # pets is optional in the raw API. Its absence supplies no removal evidence.
@@ -117,7 +116,7 @@ def project_profile(payload, tag):
 
 def _valid_item(row, source):
     if (not isinstance(row, dict) or not isinstance(row.get("name"), str) or not row["name"]
-            or not isinstance(row.get("village", ""), str) or set(row) - ITEM_FIELDS
+            or not isinstance(row.get("village", ""), str)
             or not _json_value(row)):
         return False
     required = ("stars", "target") if source == "achievements" else ("level", "maxLevel")
@@ -126,3 +125,10 @@ def _valid_item(row, source):
     if any(key in row and not nonnegative_int(row[key]) for key in ("level", "maxLevel", "stars", "target", "value")):
         return False
     return "isPet" not in row or type(row["isPet"]) is bool
+
+
+def item_identity(source, row):
+    # Two official achievements share a name and village, but have different
+    # instructions. Keep both instead of treating that real shape as a conflict.
+    discriminator = row.get("info", "") if source == "achievements" else ""
+    return row.get("village", ""), row["name"], discriminator if isinstance(discriminator, str) else ""

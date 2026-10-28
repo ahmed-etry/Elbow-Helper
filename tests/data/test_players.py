@@ -252,13 +252,12 @@ class PlayerStoreTests(PlayerTestCase):
         await self.observe(2 * DAY_US + 400, payload)
         self.assertEqual(len(await self.rows("SELECT * FROM player_items WHERE observed_at=?", (2 * DAY_US + 400,))), 1)
 
-    async def test_partial_missing_duplicate_and_unknown_arrays_cannot_remove_items(self):
+    async def test_partial_missing_and_duplicate_arrays_cannot_remove_items(self):
         payload = profile()
         await self.observe(100, payload)
         initial = len(await self.rows("SELECT * FROM player_items"))
         for index, value in enumerate((None, {}, [{"name": "Broken"}],
-                                       [payload["troops"][0], payload["troops"][0]],
-                                       [{**payload["troops"][0], "newApiField": 123}])):
+                                       [payload["troops"][0], payload["troops"][0]])):
             with self.subTest(value=value):
                 altered = deepcopy(payload)
                 altered["troops"] = value
@@ -360,14 +359,44 @@ class PlayerStoreTests(PlayerTestCase):
         self.assertEqual(by_identity[("heroes", "Barbarian King")]["classification"], "hero")
         self.assertEqual(by_identity[("heroEquipment", "Barbarian Puppet")]["classification"], "equipment")
 
-    async def test_unsupported_profile_fields_are_partial_and_not_silently_stored(self):
+    async def test_unknown_profile_and_legend_fields_do_not_fail_collection(self):
         payload = profile()
         payload["newApiField"] = {"anything": "not projected"}
+        payload["legendStatistics"]["newLegendField"] = {"future": [1, None]}
+        projected = project_profile(payload, "#P0")
+        self.assertTrue(projected.complete)
         result = await self.observe(100, payload)
-        self.assertEqual(result["failed"], 1)
+        self.assertEqual(result, {"status": "ok", "failed": 0, "succeeded": 1, "empty": 0})
         item = (await self.rows("SELECT completeness_json FROM collection_items"))[0]
-        self.assertEqual(json.loads(item["completeness_json"])["unsupported_fields"], ["newApiField"])
+        completeness = json.loads(item["completeness_json"])
+        self.assertTrue(completeness["complete"])
+        self.assertEqual(completeness["unsupported_fields"], ["newApiField", "legendStatistics.newLegendField"])
         self.assertEqual(await self.rows("SELECT * FROM player_observations WHERE field_key='newApiField'"), [])
+        self.assertNotIn("newLegendField", projected.legend)
+
+    async def test_unknown_item_fields_do_not_fail_any_profile_array(self):
+        payload = profile()
+        payload["pets"] = [{"name": "Future pet", "village": "home", "level": 1, "maxLevel": 10}]
+        for source in ("troops", "pets", "heroes", "heroEquipment", "spells", "achievements"):
+            payload[source][0]["newApiField"] = {"future": [1, None, "extra"]}
+        projected = project_profile(payload, "#P0")
+        self.assertTrue(projected.complete)
+        self.assertTrue(all(projected.complete_arrays.values()))
+        result = await self.observe(100, payload)
+        self.assertEqual(result["failed"], 0)
+        self.assertEqual(result["succeeded"], 1)
+
+    async def test_unknown_item_fields_do_not_hide_malformed_known_fields(self):
+        invalid = (("troops", "level", True), ("heroes", "maxLevel", -1),
+                   ("heroEquipment", "name", ""), ("spells", "village", None),
+                   ("achievements", "stars", "1"), ("achievements", "target", None))
+        for at, (source, key, value) in enumerate(invalid, start=100):
+            with self.subTest(source=source, key=key):
+                payload = profile()
+                payload[source][0].update({key: value, "newApiField": {"extra": True}})
+                self.assertFalse(project_profile(payload, "#P0").complete)
+                result = await self.observe(at, payload)
+                self.assertEqual(result["failed"], 1)
 
     async def test_achievement_stars_and_optional_legend_and_league_disappearance(self):
         payload = profile()
