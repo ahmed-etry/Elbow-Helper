@@ -104,6 +104,7 @@ class FamilyStoreTests(unittest.IsolatedAsyncioTestCase):
             "cwl_clans", "cwl_players", "cwl_rounds", "cwl_season_sources", "war_collection_state", "api_records", "api_field_changes", "player_ranked_references",
             "family_api_state", "family_api_entities",
             "family_battles", "battle_strings", "battle_changes",
+            "imports", "link_imports", "legacy_link_aliases", "link_operations",
         })
         with self.assertRaises(sqlite3.IntegrityError):
             await self.store.call(lambda c: c.execute(

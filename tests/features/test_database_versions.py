@@ -719,7 +719,7 @@ class DatabaseVersionTests(unittest.TestCase):
     def open_through_feature(self, schema, path):
         if schema is links_schema:
             with patch("elbow_helper.features.account_links.database.DB_PATH", path):
-                AccountLinksDbMixin().get_all_links()
+                AccountLinksDbMixin()._init_db()
         elif schema is ranked_schema:
             RankedStore(path).append([])
         elif schema is records_schema:

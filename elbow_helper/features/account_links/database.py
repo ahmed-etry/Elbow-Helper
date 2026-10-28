@@ -6,34 +6,22 @@ from contextlib import contextmanager
 import sqlite3
 from typing import Any, Iterable, Iterator, Mapping
 
+from elbow_helper.data.link_facade import LinkFacade
+from elbow_helper.data.store.legacy_links import LinkConflict
+
 from .config import DB_PATH
 from .schema import DATABASE
-
-
-_LINK_UPSERT_SQL = """
-    INSERT INTO links (
-        player_tag,
-        discord_user_id,
-        player_name_last_seen,
-        last_seen_clan_tag,
-        last_seen_clan_code,
-        last_seen_role
-    ) VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(player_tag) DO UPDATE SET
-        discord_user_id = excluded.discord_user_id,
-        player_name_last_seen = excluded.player_name_last_seen,
-        last_seen_clan_tag = excluded.last_seen_clan_tag,
-        last_seen_clan_code = excluded.last_seen_clan_code,
-        last_seen_role = excluded.last_seen_role
-"""
 
 
 class AccountLinksDbMixin:
     @contextmanager
     def _db_connect(self) -> Iterator[sqlite3.Connection]:
-        conn = DATABASE.connect(DB_PATH)
+        service = getattr(self, "link_service", None)
+        conn = (sqlite3.connect(service.legacy_path.resolve().as_uri() + "?mode=rw", uri=True)
+                if service is not None else DATABASE.connect(DB_PATH))
         try:
             conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys=ON")
             yield conn
         finally:
             conn.close()
@@ -41,171 +29,47 @@ class AccountLinksDbMixin:
     def _init_db(self) -> None:
         DATABASE.initialize(DB_PATH)
 
+    def _links(self) -> LinkFacade:
+        return LinkFacade(getattr(self, "link_service", None))
+
+    def _link_writer(self):
+        service = getattr(self, "link_service", None)
+        if service is None:
+            raise LinkConflict("links_topic_unavailable")
+        return service
+
     def get_all_links(self) -> dict[str, dict[str, Any]]:
-        with self._db_connect() as conn:
-            rows = conn.execute("SELECT * FROM links").fetchall()
-        return {str(row["player_tag"]): dict(row) for row in rows}
+        return self._links().all()
 
     def get_link_by_tag(self, player_tag: str) -> dict[str, Any] | None:
-        with self._db_connect() as conn:
-            row = conn.execute("SELECT * FROM links WHERE player_tag = ?", (player_tag,)).fetchone()
-        return dict(row) if row else None
+        return self._links().by_tag(player_tag)
 
     def get_links_by_tags(self, player_tags: Iterable[str]) -> dict[str, dict[str, Any] | None]:
-        """Read one consistent ownership snapshot for a bounded tag group."""
-        tags = tuple(dict.fromkeys(str(value) for value in player_tags))
-        result: dict[str, dict[str, Any] | None] = {tag: None for tag in tags}
-        if not tags:
-            return result
-        with self._db_connect() as conn:
-            conn.execute("BEGIN")
-            for start in range(0, len(tags), 500):
-                batch = tags[start:start + 500]
-                placeholders = ",".join("?" for _ in batch)
-                rows = conn.execute(
-                    f"SELECT * FROM links WHERE player_tag IN ({placeholders}) ORDER BY player_tag",
-                    batch,
-                ).fetchall()
-                for row in rows:
-                    result[str(row["player_tag"])] = dict(row)
-        return result
+        return self._links().by_tags(player_tags)
 
     def get_links_for_user(self, discord_user_id: int) -> list[dict[str, Any]]:
-        with self._db_connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT * FROM links
-                WHERE discord_user_id = ?
-                ORDER BY
-                    COALESCE(player_name_last_seen, '') COLLATE NOCASE ASC,
-                    player_tag ASC
-                """,
-                (int(discord_user_id),),
-            ).fetchall()
-        return [dict(row) for row in rows]
-
-    def delete_link(self, player_tag: str) -> None:
-        self.delete_links([player_tag])
+        return self._links().for_user(discord_user_id)
 
     def get_links_for_members(self, member_ids: Iterable[int]) -> dict[int, list[dict[str, Any]]]:
-        """Read all links for a member group, including members with no links."""
-        ids = sorted(set(int(value) for value in member_ids))
-        result: dict[int, list[dict[str, Any]]] = {value: [] for value in ids}
-        if not ids:
-            return result
-        with self._db_connect() as conn:
-            # All batches describe one ownership snapshot, even while links move.
-            conn.execute("BEGIN")
-            for start in range(0, len(ids), 500):
-                batch = ids[start:start + 500]
-                placeholders = ",".join("?" for _ in batch)
-                rows = conn.execute(
-                    f"SELECT * FROM links WHERE discord_user_id IN ({placeholders}) "
-                    "ORDER BY discord_user_id, player_tag",
-                    batch,
-                ).fetchall()
-                for row in rows:
-                    result[int(row["discord_user_id"])].append(dict(row))
-        return result
+        return self._links().for_members(member_ids)
 
-    def delete_links(self, player_tags: Iterable[str]) -> None:
-        values = [(player_tag,) for player_tag in player_tags]
-        if not values:
-            return
-        with self._db_connect() as conn, conn:
-            conn.executemany("DELETE FROM links WHERE player_tag = ?", values)
+    async def delete_link(self, player_tag: str) -> None:
+        await self._link_writer().delete_link(player_tag)
 
-    def upsert_link(
-        self,
-        *,
-        player_tag: str,
-        discord_user_id: int,
-        player_name_last_seen: str = "",
-        last_seen_clan_tag: str = "",
-        last_seen_clan_code: str = "",
-        last_seen_role: str = "",
-    ) -> None:
-        self.upsert_links(
-            [
-                {
-                    "player_tag": player_tag,
-                    "discord_user_id": discord_user_id,
-                    "player_name_last_seen": player_name_last_seen,
-                    "last_seen_clan_tag": last_seen_clan_tag,
-                    "last_seen_clan_code": last_seen_clan_code,
-                    "last_seen_role": last_seen_role,
-                }
-            ]
-        )
+    async def delete_links(self, player_tags: Iterable[str]) -> None:
+        await self._link_writer().delete_links(player_tags)
 
-    def upsert_links(self, links: Iterable[Mapping[str, object]]) -> None:
-        values = [
-            (
-                str(link["player_tag"]),
-                int(link["discord_user_id"]),
-                str(link.get("player_name_last_seen") or ""),
-                str(link.get("last_seen_clan_tag") or ""),
-                str(link.get("last_seen_clan_code") or ""),
-                str(link.get("last_seen_role") or ""),
-            )
-            for link in links
-        ]
-        if not values:
-            return
-        with self._db_connect() as conn, conn:
-            conn.executemany(_LINK_UPSERT_SQL, values)
+    async def upsert_link(self, **row) -> None:
+        await self._link_writer().upsert_link(**row)
 
-    def restore_links(self, before: Mapping[str, Mapping[str, Any] | None]) -> None:
-        """Restore a link group in one transaction."""
-        if not before:
-            return
-        with self._db_connect() as conn, conn:
-            conn.executemany(
-                "DELETE FROM links WHERE player_tag = ?",
-                ((tag,) for tag in before),
-            )
-            conn.executemany(
-                _LINK_UPSERT_SQL,
-                (
-                    (
-                        tag, int(row["discord_user_id"]),
-                        row.get("player_name_last_seen", ""),
-                        row.get("last_seen_clan_tag", ""),
-                        row.get("last_seen_clan_code", ""),
-                        row.get("last_seen_role", ""),
-                    )
-                    for tag, row in before.items() if row is not None
-                ),
-            )
+    async def upsert_links(self, links: Iterable[Mapping[str, object]]) -> None:
+        await self._link_writer().upsert_links(links)
 
-    def update_link_last_seen(
-        self,
-        *,
-        player_tag: str,
-        player_name_last_seen: str,
-        last_seen_clan_tag: str,
-        last_seen_clan_code: str,
-        last_seen_role: str,
-    ) -> None:
-        with self._db_connect() as conn:
-            conn.execute(
-                """
-                UPDATE links
-                SET player_name_last_seen = ?,
-                    last_seen_clan_tag = ?,
-                    last_seen_clan_code = ?,
-                    last_seen_role = ?
-                WHERE player_tag = ?
-                """,
-                (
-                    player_name_last_seen,
-                    last_seen_clan_tag,
-                    last_seen_clan_code,
-                    last_seen_role,
-                    player_tag,
-                ),
-            )
-            conn.commit()
+    async def restore_links(self, before: Mapping[str, Mapping[str, Any] | None]) -> None:
+        await self._link_writer().restore_links(before)
+
+    async def update_link_last_seen(self, **row) -> None:
+        await self._link_writer().update_link_last_seen(**row)
 
     def delete_suggestion(self, player_tag: str) -> None:
         with self._db_connect() as conn:

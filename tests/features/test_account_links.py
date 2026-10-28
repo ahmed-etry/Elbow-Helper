@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+
 import sqlite3
-from contextlib import contextmanager
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +11,7 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+from tests.data.link_fixtures import attach_links
 from elbow_helper.features.account_links.database import AccountLinksDbMixin
 from elbow_helper.features.account_links.cog import AccountLinks
 from elbow_helper.features.account_links.evidence import (
@@ -40,7 +42,8 @@ class AccountLinksTests(unittest.TestCase):
             with patch("elbow_helper.features.account_links.database.DB_PATH", Path(directory) / "links.db"):
                 links = _LinksHarness()
                 links._init_db()
-                links.upsert_link(player_tag="#P0", discord_user_id=1)
+                asyncio.run(attach_links(links))
+                asyncio.run(links.upsert_link(player_tag="#P0", discord_user_id=1))
                 result = links.get_links_by_tags(("#P0", "#P2", "#P0"))
         self.assertEqual(tuple(result), ("#P0", "#P2"))
         self.assertEqual(result["#P0"]["discord_user_id"], 1)
@@ -51,26 +54,21 @@ class AccountLinksTests(unittest.TestCase):
             with patch("elbow_helper.features.account_links.database.DB_PATH", Path(directory) / "links.db"):
                 links = _LinksHarness()
                 links._init_db()
-                links.upsert_link(player_tag="#P0", discord_user_id=1)
-                writer = _LinksHarness()
-                original_connect = links._db_connect
-                batches = []
+                asyncio.run(attach_links(links))
+                asyncio.run(links.upsert_link(player_tag="#P0", discord_user_id=1))
+                original_read = links.link_service.read_links_in_worker
+                reads = []
 
-                @contextmanager
-                def connect():
-                    with original_connect() as connection:
-                        def trace(sql):
-                            if sql.startswith("SELECT * FROM links WHERE player_tag IN"):
-                                batches.append(sql)
-                                if len(batches) == 2:
-                                    writer.upsert_link(player_tag="#P0", discord_user_id=2)
-                        connection.set_trace_callback(trace)
-                        yield connection
+                def moved_after_snapshot(select=None):
+                    rows = original_read(select)
+                    reads.append(rows)
+                    asyncio.run(links.upsert_link(player_tag="#P0", discord_user_id=2))
+                    return rows
 
                 tags = ("#P0", *(f"#MISSING{index}" for index in range(500)))
-                with patch.object(links, "_db_connect", connect):
+                with patch.object(links.link_service, "read_links_in_worker", moved_after_snapshot):
                     result = links.get_links_by_tags(tags)
-                self.assertEqual(len(batches), 2)
+                self.assertEqual(len(reads), 1)
                 self.assertEqual(result["#P0"]["discord_user_id"], 1)
                 self.assertEqual(links.get_link_by_tag("#P0")["discord_user_id"], 2)
 
@@ -79,25 +77,20 @@ class AccountLinksTests(unittest.TestCase):
             with patch("elbow_helper.features.account_links.database.DB_PATH", Path(directory) / "links.db"):
                 links = _LinksHarness()
                 links._init_db()
-                links.upsert_link(player_tag="#2PP", discord_user_id=1)
-                writer = _LinksHarness()
-                original_connect = links._db_connect
-                batches = []
+                asyncio.run(attach_links(links))
+                asyncio.run(links.upsert_link(player_tag="#2PP", discord_user_id=1))
+                original_read = links.link_service.read_links_in_worker
+                reads = []
 
-                @contextmanager
-                def connect():
-                    with original_connect() as connection:
-                        def trace(sql):
-                            if sql.startswith("SELECT * FROM links WHERE discord_user_id IN"):
-                                batches.append(sql)
-                                if len(batches) == 2:
-                                    writer.upsert_link(player_tag="#2PP", discord_user_id=501)
-                        connection.set_trace_callback(trace)
-                        yield connection
+                def moved_after_snapshot(select=None):
+                    rows = original_read(select)
+                    reads.append(rows)
+                    asyncio.run(links.upsert_link(player_tag="#2PP", discord_user_id=501))
+                    return rows
 
-                with patch.object(links, "_db_connect", connect):
+                with patch.object(links.link_service, "read_links_in_worker", moved_after_snapshot):
                     result = links.get_links_for_members(range(1, 503))
-                self.assertEqual(len(batches), 2)
+                self.assertEqual(len(reads), 1)
                 self.assertEqual([row["player_tag"] for row in result[1]], ["#2PP"])
                 self.assertEqual(result[501], [])
                 self.assertEqual(links.get_link_by_tag("#2PP")["discord_user_id"], 501)
@@ -107,9 +100,10 @@ class AccountLinksTests(unittest.TestCase):
             with patch("elbow_helper.features.account_links.database.DB_PATH", Path(directory) / "links.db"):
                 links = _LinksHarness()
                 links._init_db()
-                links.upsert_link(player_tag="#2PP", discord_user_id=1)
-                links.upsert_link(player_tag="#2PQ", discord_user_id=501)
-                links.upsert_link(player_tag="#2PR", discord_user_id=999)
+                asyncio.run(attach_links(links))
+                asyncio.run(links.upsert_link(player_tag="#2PP", discord_user_id=1))
+                asyncio.run(links.upsert_link(player_tag="#2PQ", discord_user_id=501))
+                asyncio.run(links.upsert_link(player_tag="#2PR", discord_user_id=999))
                 result = links.get_links_for_members(range(1, 503))
         self.assertEqual(len(result), 502)
         self.assertEqual(result[1][0]["player_tag"], "#2PP")
@@ -129,25 +123,26 @@ class AccountLinksTests(unittest.TestCase):
             with patch("elbow_helper.features.account_links.database.DB_PATH", database_path):
                 links = _LinksHarness()
                 links._init_db()
-                links.upsert_link(
-                    player_tag="#FIRST",
+                asyncio.run(attach_links(links))
+                asyncio.run(links.upsert_link(
+                    player_tag="#P0",
                     discord_user_id=1,
                     player_name_last_seen="Zulu",
-                )
-                links.upsert_link(
-                    player_tag="#ZULU",
+                ))
+                asyncio.run(links.upsert_link(
+                    player_tag="#V0",
                     discord_user_id=1,
                     player_name_last_seen="Zulu",
-                )
-                links.upsert_link(
-                    player_tag="#ALPHA",
+                ))
+                asyncio.run(links.upsert_link(
+                    player_tag="#R0",
                     discord_user_id=1,
                     player_name_last_seen="Alpha",
-                )
+                ))
 
                 rows = links.get_links_for_user(1)
 
-        self.assertEqual([row["player_tag"] for row in rows], ["#ALPHA", "#FIRST", "#ZULU"])
+        self.assertEqual([row["player_tag"] for row in rows], ["#R0", "#P0", "#V0"])
 
     def test_batch_upsert_rolls_back_every_link_when_one_write_fails(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -155,12 +150,13 @@ class AccountLinksTests(unittest.TestCase):
             with patch("elbow_helper.features.account_links.database.DB_PATH", database_path):
                 links = _LinksHarness()
                 links._init_db()
+                asyncio.run(attach_links(links))
                 with links._db_connect() as conn:
                     conn.execute(
                         """
                         CREATE TRIGGER reject_test_link
                         BEFORE INSERT ON links
-                        WHEN NEW.player_tag = '#FAIL'
+                        WHEN NEW.player_tag = '#Q0'
                         BEGIN
                             SELECT RAISE(ABORT, 'rejected test link');
                         END
@@ -169,15 +165,15 @@ class AccountLinksTests(unittest.TestCase):
                     conn.commit()
 
                 with self.assertRaises(sqlite3.IntegrityError):
-                    links.upsert_links(
+                    asyncio.run(links.upsert_links(
                         [
-                            {"player_tag": "#FIRST", "discord_user_id": 1},
-                            {"player_tag": "#FAIL", "discord_user_id": 1},
+                            {"player_tag": "#P0", "discord_user_id": 1},
+                            {"player_tag": "#Q0", "discord_user_id": 1},
                         ]
-                    )
+                    ))
 
-                self.assertIsNone(links.get_link_by_tag("#FIRST"))
-                self.assertIsNone(links.get_link_by_tag("#FAIL"))
+                self.assertIsNone(links.get_link_by_tag("#P0"))
+                self.assertIsNone(links.get_link_by_tag("#Q0"))
 
     def test_batch_delete_rolls_back_every_link_when_one_write_fails(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -185,18 +181,19 @@ class AccountLinksTests(unittest.TestCase):
             with patch("elbow_helper.features.account_links.database.DB_PATH", database_path):
                 links = _LinksHarness()
                 links._init_db()
-                links.upsert_links(
+                asyncio.run(attach_links(links))
+                asyncio.run(links.upsert_links(
                     [
-                        {"player_tag": "#FIRST", "discord_user_id": 1},
-                        {"player_tag": "#FAIL", "discord_user_id": 1},
+                        {"player_tag": "#P0", "discord_user_id": 1},
+                        {"player_tag": "#Q0", "discord_user_id": 1},
                     ]
-                )
+                ))
                 with links._db_connect() as conn:
                     conn.execute(
                         """
                         CREATE TRIGGER reject_test_delete
                         BEFORE DELETE ON links
-                        WHEN OLD.player_tag = '#FAIL'
+                        WHEN OLD.player_tag = '#Q0'
                         BEGIN
                             SELECT RAISE(ABORT, 'rejected test delete');
                         END
@@ -205,10 +202,10 @@ class AccountLinksTests(unittest.TestCase):
                     conn.commit()
 
                 with self.assertRaises(sqlite3.IntegrityError):
-                    links.delete_links(["#FIRST", "#FAIL"])
+                    asyncio.run(links.delete_links(["#P0", "#Q0"]))
 
-                self.assertIsNotNone(links.get_link_by_tag("#FIRST"))
-                self.assertIsNotNone(links.get_link_by_tag("#FAIL"))
+                self.assertIsNotNone(links.get_link_by_tag("#P0"))
+                self.assertIsNotNone(links.get_link_by_tag("#Q0"))
 
 
 class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
@@ -237,10 +234,11 @@ class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             with patch("elbow_helper.features.account_links.database.DB_PATH", Path(directory) / "links.db"):
                 links._init_db()
+                await attach_links(links)
                 await AccountLinks.account_add.callback(
                     links, interaction, member, " ".join([*tags, "bad"]),
                 )
-                saved = links.get_all_links()
+                saved = (await asyncio.to_thread(links.get_all_links))
 
         self.assertEqual(set(saved), set(tags[1:]))
         self.assertTrue(all(row["discord_user_id"] == 42 for row in saved.values()))
@@ -266,7 +264,7 @@ class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
                 )
                 links.get_links_for_user = MagicMock(return_value=[])
                 links.get_all_links = MagicMock(return_value={"#P0Y": {"discord_user_id": 99}})
-                links.upsert_links = MagicMock()
+                links.upsert_links = AsyncMock()
                 links._try_refresh_linked_boards = AsyncMock()
 
                 result = await links.account_add_operation(
@@ -287,10 +285,11 @@ class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             with patch("elbow_helper.features.account_links.database.DB_PATH", Path(directory) / "links.db"):
                 links._init_db()
+                await attach_links(links)
                 result = await links.account_add_operation(
                     SimpleNamespace(id=42, mention="<@42>"), "#P0Y",
                 )
-                self.assertEqual(links.get_link_by_tag("#P0Y")["player_name_last_seen"], "#P0Y")
+                self.assertEqual((await asyncio.to_thread(links.get_link_by_tag, "#P0Y"))["player_name_last_seen"], "#P0Y")
         self.assertEqual(result["invalid_tags"], [])
         links.clash_client.get.assert_not_awaited()
 
@@ -306,7 +305,7 @@ class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
         )
         links.get_links_for_user = MagicMock(return_value=[])
         links.get_all_links = MagicMock(return_value={})
-        links.upsert_links = MagicMock()
+        links.upsert_links = AsyncMock()
         links._try_refresh_linked_boards = AsyncMock()
 
         interaction = SimpleNamespace(

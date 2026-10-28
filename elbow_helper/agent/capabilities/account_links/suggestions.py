@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from collections.abc import Mapping
 from typing import Any
 
@@ -99,11 +101,11 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
     tag = normalize_player_tag(values["player_tag"])
     if tag is None:
         return {"status": "needs_input", "issue": "That player tag is not valid."}
-    suggestion = workflow.account_suggestion_snapshot(tag)
+    suggestion = (await asyncio.to_thread(workflow.account_suggestion_snapshot, tag))
     if suggestion is None:
         raise ActionRefused("That account suggestion isn't available.")
     member = None
-    old = workflow.get_links_by_tags([tag]).get(tag)
+    old = (await asyncio.to_thread(workflow.get_links_by_tags, [tag])).get(tag)
     if not ignore:
         member_id = values.get("member_id") or int(
             suggestion.get("proposed_discord_user_id") or 0)
@@ -134,8 +136,8 @@ async def _prepare(context: AgentRequestContext, values: Mapping[str, Any],
             if member is not None:
                 check_member(member, context.guild.me,
                     requester=context.member, guild=context.guild)
-            return (workflow.account_suggestion_snapshot(tag) == suggestion
-                    and workflow.get_links_by_tags([tag]).get(tag) == old)
+            return ((await asyncio.to_thread(workflow.account_suggestion_snapshot, tag)) == suggestion
+                    and (await asyncio.to_thread(workflow.get_links_by_tags, [tag])).get(tag) == old)
         except ValueError:
             return False
 

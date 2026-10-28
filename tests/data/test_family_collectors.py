@@ -304,7 +304,7 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
         ):
             await bot.setup_hook()
         self.assertIs(bot.get_cog("FamilyCollectors"), bot.family_collectors)
-        self.assertEqual(len(bot.family_collectors._tasks), 10)
+        self.assertEqual(len(bot.family_collectors._tasks), 9)
         self.assertEqual(len(bot.family_collectors.clans), 9)
         self.assertTrue((paths.data_root / "family" / "family.sqlite3").is_file())
         for name in ("on_member_join", "on_member_update", "on_raw_member_remove", "on_user_update"):

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -9,6 +11,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.features.account_links.cog import AccountLinks
+from tests.data.link_fixtures import attach_links
 from elbow_helper.features.account_links.database import AccountLinksDbMixin
 from elbow_helper.agent.capabilities.account_links.commands import (
     prepare_account_add, prepare_account_add_undo,
@@ -32,7 +35,7 @@ class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
                                               if row["discord_user_id"] == owner.id]
         links.get_all_links = lambda: dict(saved)
         links.get_links_by_tags = lambda tags: {tag: saved.get(tag) for tag in tags}
-        links.upsert_links = lambda rows: saved.update({
+        links.upsert_links = AsyncMock(side_effect=lambda rows: saved.update({
             row["player_tag"]: {
                 "player_tag": row["player_tag"],
                 "discord_user_id": row["discord_user_id"],
@@ -40,8 +43,8 @@ class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
                 "last_seen_clan_code": "", "last_seen_clan_tag": "",
                 "last_seen_role": "",
             } for row in rows
-        })
-        links.restore_links = lambda before: saved.update(before)
+        }))
+        links.restore_links = AsyncMock(side_effect=lambda before: saved.update(before))
         links._try_refresh_linked_boards = AsyncMock()
         links._board_refresher = object()
         context = SimpleNamespace(
@@ -76,7 +79,7 @@ class AccountLinkCommandTests(unittest.IsolatedAsyncioTestCase):
         links._parse_player_tag_input = lambda _: (["#P0Y"], [])
         links.get_all_links = lambda: dict(saved)
         links.get_links_by_tags = lambda tags: {tag: saved.get(tag) for tag in tags}
-        links.delete_links = lambda tags: [saved.pop(tag, None) for tag in tags]
+        links.delete_links = AsyncMock(side_effect=lambda tags: [saved.pop(tag, None) for tag in tags])
         links._try_refresh_linked_boards = AsyncMock()
         links._board_refresher = None
         context = SimpleNamespace(bot=SimpleNamespace(get_cog=lambda _: links))
@@ -96,17 +99,18 @@ class AccountLinkRestoreTests(unittest.TestCase):
                        Path(directory) / "links.db"):
                 links = AccountLinksDbMixin()
                 links._init_db()
+                asyncio.run(attach_links(links))
                 original = {
                     "player_tag": "#P0Y", "discord_user_id": 8,
                     "player_name_last_seen": "Original",
                     "last_seen_clan_tag": "#CLAN",
                     "last_seen_clan_code": "BEH", "last_seen_role": "member",
                 }
-                links.upsert_links([original])
-                links.upsert_links([
+                asyncio.run(links.upsert_links([original]))
+                asyncio.run(links.upsert_links([
                     {"player_tag": "#P0Y", "discord_user_id": 7},
                     {"player_tag": "#LQG", "discord_user_id": 7},
-                ])
-                links.restore_links({"#P0Y": original, "#LQG": None})
+                ]))
+                asyncio.run(links.restore_links({"#P0Y": original, "#LQG": None}))
                 self.assertEqual(links.get_link_by_tag("#P0Y"), original)
                 self.assertIsNone(links.get_link_by_tag("#LQG"))

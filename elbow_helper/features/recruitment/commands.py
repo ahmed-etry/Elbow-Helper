@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from collections.abc import Awaitable
 from collections.abc import Callable
 import sqlite3
@@ -297,6 +299,7 @@ class RecruitmentCommandMixin:
         if not isinstance(channel, discord.TextChannel):
             return {"issue": "Run this command in a server text channel.",
                     "warnings": tuple(warnings)}
+        await asyncio.to_thread(self.account_links.get_links_by_tags, valid_tags)
         player_rows = await self.account_links.lookup_players(valid_tags)
         clan_links = (CLAN_INFO_BOARDS[valid_clans[0]]["link"]
                       if len(valid_clans) == 1 else
@@ -432,6 +435,8 @@ class RecruitmentCommandMixin:
             server_rules=SERVER_RULES, clan_links=clan_links,
             additional_notes=notes,
         )
+        # Check the topic before changing Discord state or accepting any link.
+        await asyncio.to_thread(self.account_links.get_links_by_tags, player_tags)
         failures: list[str] = []
 
         nickname_updated = await self._apply_accept_member_update(
@@ -499,12 +504,12 @@ class RecruitmentCommandMixin:
         for row in player_rows:
             tag = str(row["player_tag"])
             try:
-                self.account_links.upsert_link(
+                await self.account_links.upsert_link(
                     player_tag=tag,
                     discord_user_id=user.id,
                     player_name_last_seen=str(row["player_name"]),
                 )
-            except (OSError, sqlite3.Error):
+            except (OSError, sqlite3.Error, RuntimeError):
                 self.logger.exception(
                     "Account link failed during /accept: user_id=%s player_tag=%s",
                     user.id,

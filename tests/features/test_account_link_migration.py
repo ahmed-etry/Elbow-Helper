@@ -1,5 +1,6 @@
 """Account-primary removal preserves link data and SQLite schema invariants."""
 
+import asyncio
 from contextlib import closing
 from pathlib import Path
 import sqlite3
@@ -7,6 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from tests.data.link_fixtures import attach_links
 from elbow_helper.features.account_links.database import AccountLinksDbMixin
 from elbow_helper.features.account_links.schema import DATABASE, create_schema
 from elbow_helper.infrastructure.persistence.migrations import SQLiteMigrationError
@@ -78,6 +80,7 @@ class AccountLinkMigrationTests(unittest.TestCase):
                 ):
                     with self.assertRaises(sqlite3.IntegrityError):
                         conn.execute(sql)
+        asyncio.run(attach_links(self.links))
         self.assertEqual(len(self.links.get_all_links()), 4)
         self.assertEqual([row["player_tag"] for row in self.links.get_links_for_members([7, 8])[7]], ["#P0", "#P2"])
 
@@ -119,15 +122,16 @@ class AccountLinkMigrationTests(unittest.TestCase):
     def test_fresh_database_supports_link_reassignment_removal_and_restore(self):
         self.links._init_db()
         self.links._init_db()
-        self.links.upsert_links([
+        asyncio.run(attach_links(self.links))
+        asyncio.run(self.links.upsert_links([
             {"player_tag": "#P0", "discord_user_id": 7, "player_name_last_seen": "Alpha"},
             {"player_tag": "#P2", "discord_user_id": 7, "player_name_last_seen": "Beta"},
-        ])
+        ]))
         before = self.links.get_links_by_tags(["#P0", "#P2", "#P8"])
-        self.links.upsert_link(player_tag="#P0", discord_user_id=8)
-        self.links.delete_link("#P2")
-        self.links.upsert_link(player_tag="#P8", discord_user_id=8)
-        self.links.restore_links(before)
+        asyncio.run(self.links.upsert_link(player_tag="#P0", discord_user_id=8))
+        asyncio.run(self.links.delete_link("#P2"))
+        asyncio.run(self.links.upsert_link(player_tag="#P8", discord_user_id=8))
+        asyncio.run(self.links.restore_links(before))
         self.assertEqual(self.links.get_links_by_tags(before), before)
         self.assertTrue(all("is_primary" not in row for row in self.links.get_all_links().values()))
         with self.links._db_connect() as conn:

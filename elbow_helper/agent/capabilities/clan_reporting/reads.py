@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from typing import Any, Mapping
 from uuid import uuid4
 
@@ -103,9 +105,7 @@ async def read_missing_elder_accounts(
             "omitted_inaccessible_clan_codes": omitted,
         }
     try:
-        snapshot = context.clan_reporting_queries.missing_elder_snapshot(
-            tuple(accessible),
-        )
+        snapshot = (await asyncio.to_thread(context.clan_reporting_queries.missing_elder_snapshot, tuple(accessible)))
         report = MissingElderReport(
             uuid4().hex, context.guild.id,
             tuple(sorted(

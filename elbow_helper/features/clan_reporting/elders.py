@@ -355,7 +355,7 @@ class ClanReportingElderMixin:
             return True
 
     async def _build_missing_elder_embed(self, clan_code: str) -> Optional[discord.Embed]:
-        rows = self.account_links.get_missing_elder_rows(clan_code)
+        rows = (await asyncio.to_thread(self.account_links.get_missing_elder_rows, clan_code))
         if not rows:
             return None
 

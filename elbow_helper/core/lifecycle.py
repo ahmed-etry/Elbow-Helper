@@ -234,11 +234,18 @@ class ElbowHelperBot(commands.Bot):
         self.synced_command_count: int | None = None
         self._boot_started_at = 0.0
         self.family_collectors = None
+        self.link_service = None
+        self.start_links_topic = None
+        self._links_startup_task = None
 
     async def close(self) -> None:
         # Stop feature producers before flushing, while the HTTP client is open.
         for name in tuple(self.cogs):
             await self.remove_cog(name)
+        if self._links_startup_task is not None:
+            await self._links_startup_task
+        if self.link_service is not None:
+            await self.link_service.close()
         await self.publishing.close()
         await super().close()
 
@@ -253,6 +260,11 @@ class ElbowHelperBot(commands.Bot):
             await self.add_cog(self.family_collectors)
         synced = await sync_guild_commands(self.tree, self.guild_id)
         self.synced_command_count = len(synced)
+        # Schedule after collector initialization so boot cannot indirectly
+        # queue behind the background import on the family writer either.
+        start_links_topic = getattr(self, "start_links_topic", None)
+        if start_links_topic is not None:
+            self._links_startup_task = asyncio.create_task(start_links_topic())
 
     async def on_ready(self) -> None:
         if self.boot_complete.is_set():

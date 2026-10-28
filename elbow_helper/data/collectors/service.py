@@ -68,11 +68,12 @@ class FamilyCollectors(commands.Cog):
             LOGGER.warning("Family record initialization failed; collectors will retry")
         self._tasks = [
             asyncio.create_task(self._schedule("clans", CLAN_INTERVAL_SECONDS, self.collect_clans)),
-            asyncio.create_task(self._schedule("links", LINK_INTERVAL_SECONDS, self.collect_links)),
             asyncio.create_task(self._schedule("players", PLAYER_INTERVAL_SECONDS, self.collect_players)),
             asyncio.create_task(self._schedule("wars", SCHEDULE_CHECK_SECONDS, self.collect_wars)),
             asyncio.create_task(self._schedule("discord", DISCORD_INTERVAL_SECONDS, self.scan_discord, startup=True)),
         ]
+        if getattr(self.bot, "link_service", None) is None:
+            self._tasks.append(asyncio.create_task(self._schedule("links", LINK_INTERVAL_SECONDS, self.collect_links)))
         self._tasks.extend(asyncio.create_task(self._schedule(name, SCHEDULE_CHECK_SECONDS,
                             lambda name=name: collect_sources(self, name))) for name in sorted(SOURCE_COLLECTORS))
 
@@ -153,7 +154,12 @@ class FamilyCollectors(commands.Cog):
                         responses.append(None)
                 await self.store.call(collect_clans, run, self.clans, responses, now_us())
 
-            return await self._run("clans", "family_clans", specs, operation)
+            report = await self._run("clans", "family_clans", specs, operation)
+            service = getattr(self.bot, "link_service", None)
+            if (service is not None and report is not None and not report["failed"]
+                    and report["succeeded"] + report["empty"] == len(specs) == 18):
+                await service.retry_import()
+            return report
 
     async def collect_players(self):
         async with self._player_lock:
@@ -194,6 +200,10 @@ class FamilyCollectors(commands.Cog):
             return await self._run("wars", "family_wars_and_leagues", specs, operation)
 
     async def collect_links(self):
+        if getattr(self.bot, "link_service", None) is not None:
+            # Imported ownership is written by the journal service, never by
+            # the old shadow sampler (including while mirroring is deferred).
+            return
         async with self._link_lock:
             if self._closing:
                 return

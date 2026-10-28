@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import logging
 import copy
 
@@ -35,19 +37,19 @@ class AccountLinksReviewMixin:
         """Apply a suggestion decision for the panel and the agent."""
         if not self.can_review_links(actor):
             raise ValueError("You don't have permission to review player links.")
-        suggestion = self.get_pending_suggestion(player_tag)
+        suggestion = (await asyncio.to_thread(self.get_pending_suggestion, player_tag))
         if not suggestion:
             raise ValueError("That suggestion is no longer pending.")
         if ignore:
-            self.add_ignored_tag(player_tag)
-            self.delete_suggestion(player_tag)
+            (await asyncio.to_thread(self.add_ignored_tag, player_tag))
+            (await asyncio.to_thread(self.delete_suggestion, player_tag))
             await self._finalize_suggestion_message(suggestion)
             return f"`{player_tag}` will no longer be suggested as an account match."
         proposed = int(suggestion.get("proposed_discord_user_id") or 0)
         selected = discord_user_id or proposed
         if not selected:
             raise ValueError("No Discord member was suggested. Use **Choose Member** instead.")
-        self.upsert_link(
+        await self.upsert_link(
             player_tag=player_tag,
             discord_user_id=selected,
             player_name_last_seen=str(suggestion.get("player_name") or ""),
@@ -55,7 +57,7 @@ class AccountLinksReviewMixin:
             last_seen_clan_code=str(suggestion.get("current_clan_code") or ""),
             last_seen_role="",
         )
-        self.delete_suggestion(player_tag)
+        (await asyncio.to_thread(self.delete_suggestion, player_tag))
         await self._finalize_suggestion_message(suggestion)
         await self.refresh_board_for_clan(str(suggestion.get("current_clan_code") or ""))
         return "Corrected link saved." if discord_user_id else "Link confirmed."
@@ -113,20 +115,11 @@ class AccountLinksReviewMixin:
         proposed_user_id = int(suggestion.get("proposed_discord_user_id") or 0)
         view = SuggestionReviewView(self, player_tag, has_candidate=bool(proposed_user_id))
         message = await channel.send(embed=self._build_suggestion_embed(suggestion), view=view)
-        self.upsert_suggestion(
-            player_tag=player_tag,
-            player_name=str(suggestion.get("player_name") or ""),
-            current_clan_code=str(suggestion.get("current_clan_code") or ""),
-            current_clan_tag=str(suggestion.get("current_clan_tag") or ""),
-            proposed_discord_user_id=int(suggestion.get("proposed_discord_user_id") or 0),
-            proposed_display_name=str(suggestion.get("proposed_display_name") or ""),
-            review_channel_id=channel.id,
-            review_message_id=message.id,
-        )
+        (await asyncio.to_thread(self.upsert_suggestion, player_tag=player_tag, player_name=str(suggestion.get("player_name") or ""), current_clan_code=str(suggestion.get("current_clan_code") or ""), current_clan_tag=str(suggestion.get("current_clan_tag") or ""), proposed_discord_user_id=int(suggestion.get("proposed_discord_user_id") or 0), proposed_display_name=str(suggestion.get("proposed_display_name") or ""), review_channel_id=channel.id, review_message_id=message.id))
         self.bot.add_view(view, message_id=message.id)
 
     async def register_pending_suggestion_views(self) -> None:
-        for suggestion in self.list_pending_suggestions():
+        for suggestion in (await asyncio.to_thread(self.list_pending_suggestions)):
             message_id = int(suggestion.get("review_message_id") or 0)
             if not message_id:
                 continue
@@ -171,7 +164,7 @@ class AccountLinksReviewMixin:
         if not self._can_review_links(interaction.user):
             await interaction.response.send_message("You don't have permission to review player links.", ephemeral=True)
             return
-        suggestion = self.get_pending_suggestion(player_tag)
+        suggestion = (await asyncio.to_thread(self.get_pending_suggestion, player_tag))
         if not suggestion:
             await interaction.response.send_message("That suggestion is no longer pending.", ephemeral=True)
             return
@@ -190,7 +183,7 @@ class AccountLinksReviewMixin:
         if not self._can_review_links(interaction.user):
             await interaction.response.send_message("You don't have permission to review player links.", ephemeral=True)
             return
-        suggestion = self.get_pending_suggestion(player_tag)
+        suggestion = (await asyncio.to_thread(self.get_pending_suggestion, player_tag))
         if not suggestion:
             await interaction.response.send_message("That suggestion is no longer pending.", ephemeral=True)
             return
@@ -206,7 +199,7 @@ class AccountLinksReviewMixin:
         if not self._can_review_links(interaction.user):
             await interaction.response.send_message("You don't have permission to review player links.", ephemeral=True)
             return
-        suggestion = self.get_pending_suggestion(player_tag)
+        suggestion = (await asyncio.to_thread(self.get_pending_suggestion, player_tag))
         if not suggestion:
             await interaction.response.send_message("That suggestion is no longer pending.", ephemeral=True)
             return
@@ -225,7 +218,7 @@ class AccountLinksReviewMixin:
         if not self._can_review_links(interaction.user):
             await interaction.response.send_message("You don't have permission to review player links.", ephemeral=True)
             return
-        suggestion = self.get_pending_suggestion(player_tag)
+        suggestion = (await asyncio.to_thread(self.get_pending_suggestion, player_tag))
         if not suggestion:
             await interaction.response.send_message("That suggestion is no longer pending.", ephemeral=True)
             return
@@ -238,7 +231,7 @@ class AccountLinksReviewMixin:
         if not self._can_review_links(interaction.user):
             await interaction.response.send_message("You don't have permission to review player links.", ephemeral=True)
             return
-        suggestion = self.get_pending_suggestion(player_tag)
+        suggestion = (await asyncio.to_thread(self.get_pending_suggestion, player_tag))
         if not suggestion:
             await interaction.response.send_message("That suggestion is no longer pending.", ephemeral=True)
             return

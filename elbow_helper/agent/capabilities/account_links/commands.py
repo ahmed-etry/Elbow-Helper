@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from collections.abc import Mapping
 from typing import Any
 
@@ -109,7 +111,7 @@ async def run_account_add(context: Any,
     if result["error"]:
         return ActionOutcome.unavailable()
     tags = [row["player_tag"] for row in result["rows"]]
-    after = workflow.get_links_by_tags(tags)
+    after = (await asyncio.to_thread(workflow.get_links_by_tags, tags))
     if any(
         after.get(row["player_tag"]) is None
         or int(after[row["player_tag"]]["discord_user_id"]) != member.id
@@ -129,16 +131,16 @@ async def prepare_account_add_undo(context: Any,
     if before is None or expected is None:
         raise ActionRefused("That account link change is unavailable")
     tags = tuple(before)
-    current = workflow.get_links_by_tags(tags)
+    current = (await asyncio.to_thread(workflow.get_links_by_tags, tags))
     refresh_boards = workflow.account_board_refresh_available()
 
     async def recheck() -> bool:
-        return (workflow.get_links_by_tags(tags) == expected
+        return ((await asyncio.to_thread(workflow.get_links_by_tags, tags)) == expected
                 and workflow.account_board_refresh_available() == refresh_boards)
 
     async def run() -> ActionOutcome:
         await workflow.restore_account_add(before)
-        after = workflow.get_links_by_tags(tags)
+        after = (await asyncio.to_thread(workflow.get_links_by_tags, tags))
         if after != before:
             raise OSError("Account link undo could not be verified")
         return ActionOutcome("complete", "private", after={"links": after})
@@ -204,7 +206,7 @@ async def run_account_remove(context: Any,
     result = await workflow.account_remove_operation(values["tags"])
     if result["error"]:
         return ActionOutcome.unavailable()
-    after = workflow.get_links_by_tags(result["tags_to_remove"])
+    after = (await asyncio.to_thread(workflow.get_links_by_tags, result["tags_to_remove"]))
     if any(after.values()):
         raise OSError("Account unlink could not be verified")
     return ActionOutcome("complete", "private", text=result["message"],
