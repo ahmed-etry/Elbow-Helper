@@ -129,7 +129,8 @@ class PersonaSlangTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(request["reasoning_effort"], "low")
                     self.assertNotIn("temperature", request)
                 for request in requests[1:3]:
-                    schema = request["tools"][0]["function"]["parameters"]
+                    schema = next(tool['function']['parameters'] for tool in request['tools']
+                                  if tool['function']['name'] == 'submit_social_reply')
                     self.assertIn("requested intensity", schema["properties"]["text"]["description"])
                     self.assertIn("Do not invent a target's real history, habits or gameplay", schema["properties"]["text"]["description"])
                 if repair:

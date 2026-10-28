@@ -29,7 +29,7 @@ def decision_payload(facts='Supported conclusion.'):
 
 class CompleteReadCompositionTests(unittest.IsolatedAsyncioTestCase):
     async def test_final_instruction_boundary_still_calls_provider_and_retains_citation_sources(self):
-        from elbow_helper.features.agent.engine.assessment import DECISION_ANSWER_INSTRUCTION, discussion_ids
+        from elbow_helper.features.agent.engine.assessment import discussion_ids
         from elbow_helper.features.agent.engine.budgets import ASSESSMENT_LIMITS
         from elbow_helper.features.agent.families.core import FamilyReport
         from elbow_helper.features.agent.prompts import LIMIT_ANSWER_INSTRUCTION
@@ -58,8 +58,7 @@ class CompleteReadCompositionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await flow._prepare_answer_session(instruction=LIMIT_ANSWER_INSTRUCTION))
         # The full evidence fits before framing; the final continuation puts it
         # one token over. Evidence must shrink before preparing the actual call.
-        remaining = flow.budget.next_input_estimate + estimate_tokens(
-            LIMIT_ANSWER_INSTRUCTION + '\n' + DECISION_ANSWER_INSTRUCTION) - 1
+        remaining = flow.budget.next_input_estimate + estimate_tokens(LIMIT_ANSWER_INSTRUCTION) - 1
         flow.budget.spent_input = ASSESSMENT_LIMITS.input_tokens - remaining
         self.assertEqual(await flow._compact_reply(), decision_payload())
         self.assertEqual(len(sessions[-1].calls), 1)

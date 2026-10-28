@@ -341,15 +341,16 @@ def compile_context(
             application_owner=asdict(owner) if owner is not None else None,
             carried_evidence=carried,
             reply_context=context.state.reply_context,
+            context_instructions=(
+                *(("Canonical public command help for describing your supported tasks. When asked "
+                    "what you do, combine these summaries with bot_read_overview.",) if not social else ()),
+                *((FINDINGS_INSTRUCTION,) if findings_by_turn else ()),
+            ),
         )
         prompt += "\n\n<current_channel>\n" + json.dumps(channel, ensure_ascii=False) + "\n</current_channel>"
-        if findings_by_turn:
-            prompt += '\n\n' + FINDINGS_INSTRUCTION
         if social:
             return prompt
         return (prompt + "\n\n<bot_command_overview>\n"
-                "Canonical public command help for describing your supported tasks. When asked "
-                "what you do, combine these summaries with bot_read_overview.\n"
                 + json.dumps(command_overview, ensure_ascii=False) + "\n</bot_command_overview>"
                 + "\n<requester_command_overview>\n"
                 + json.dumps(requester_commands, ensure_ascii=False) + "\n</requester_command_overview>"

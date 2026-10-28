@@ -156,7 +156,7 @@ class SelfKnowledgeFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(session.calls), 1)
         self.assertEqual(session.instructions, [None])
 
-    async def test_banter_keeps_prechange_prompt_bytes_and_one_round(self):
+    async def test_banter_keeps_fixed_prompt_bytes_and_one_round(self):
         context = _context()
         session = _Session([social_step('I can roast harder than that.')], [])
         model = _Model(session)
@@ -165,11 +165,11 @@ class SelfKnowledgeFlowTests(unittest.IsolatedAsyncioTestCase):
             flow, _ = AgentService(model)._start_flow(question="You're a menace",
                 local_context='Synthetic banter.', context=context, conversation_history='',
                 route=RouteDecision(social=True))
-        # Captured from service.py with the same frozen time. Update only when the
-        # banter instructions change on purpose (last: leadership requests).
+        # Captured with fixed instructions before request data. Update only for
+        # an intentional instruction or prompt-layout change.
         expected = {
-            'prompt': 'a5f81ffb1f888da2716cfe22adc23dbf5c475b3ea71d53c3a1617e11aa5f1a1b',
-            'system_prompt': '7733cb399b5143f74d1dad5a03b70c84191809c2c441866118a30ac8162975ed',
+            'prompt': '433c9ec556ba364df6ff54a6311c0180f6174e9905399e26a33a774fefb1a350',
+            'system_prompt': 'e5fb79df3ef1af5124f2b2574adf22d0f254b34fab014f8b301a513006714605',
         }
         for key, digest in expected.items():
             self.assertEqual(hashlib.sha256(model.request[key].encode()).hexdigest(), digest)

@@ -96,7 +96,7 @@ def action_catalogue(registry):
         {'capability': name, 'description': tool.definition.description,
          'arguments': tool.definition.parameters,
          'targets': dict(tool.contract.entity_fields)}
-        for name, tool in action_capabilities(registry).items()]}, ensure_ascii=False)
+        for name, tool in sorted(action_capabilities(registry).items())]}, ensure_ascii=False)
 
 
 def _resolved_target(context, item, tool, accounts):

@@ -294,9 +294,9 @@ class _DeepSeekAgentSession:
         self._text_tool_call_sequence = 0
 
     def replace_tools(self, tools: Sequence[AgentToolDefinition]) -> None:
-        self._tool_definitions = tuple(tools)
+        self._tool_definitions = tuple(sorted(tools, key=lambda tool: tool.name))
         if self._replacement is not None:
-            self._replacement.replace_tools(tools)
+            self._replacement.replace_tools(self._tool_definitions)
         self._tools = [
             {
                 "type": "function",
@@ -306,7 +306,7 @@ class _DeepSeekAgentSession:
                     "parameters": dict(tool.parameters),
                 },
             }
-            for tool in tools
+            for tool in self._tool_definitions
         ]
 
     async def advance(
@@ -336,9 +336,9 @@ class _DeepSeekAgentSession:
         if continuation_instruction:
             self._messages.append({"role": "user", "content": continuation_instruction})
 
-        request_messages = list(self._messages)
         if not allow_tools:
-            request_messages.append({"role": "user", "content": _FINAL_ANSWER_INSTRUCTION})
+            self._messages.append({"role": "user", "content": _FINAL_ANSWER_INSTRUCTION})
+        request_messages = list(self._messages)
         options: dict[str, Any] = {
             "model": DEEPSEEK_MODEL,
             "messages": request_messages,

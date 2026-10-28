@@ -190,7 +190,7 @@ class AgentService:
             registry.update(selected_social)
 
         research_context = ""
-        def research_instructions():
+        def research_instructions(extra_instructions=()):
             nonlocal research_context
             levels = context.state.scope.levels if context.state.scope else frozenset()
             knowledge = context.knowledge_store.load().prompt(
@@ -214,8 +214,9 @@ class AgentService:
                     "scoped discovery for those. Each read still checks current access.\n"
                     + context.state.channel_directory + "\n</readable_channel_directory>"
                 )
-            return (system_instructions(full_registry, actions_enabled=actions_available) + "\n\n" + RESEARCH_RULES
-                    + ("\n\n" + FAMILY_INSTRUCTION if family_catalogue else ""))
+            return system_instructions(full_registry, actions_enabled=actions_available,
+                extra_instructions=(RESEARCH_RULES, *extra_instructions,
+                    *((FAMILY_INSTRUCTION,) if family_catalogue else ())))
 
         definition = plan_definition(registry)
         context.state.reaction_combo_due = social and "react_to_request" in registry and reply_combo_due(context)
@@ -230,12 +231,13 @@ class AgentService:
         LOGGER.info("Agent social outputs: request=%s direct_tools=%s",
                     getattr(context.source_message, "id", None),
                     [tool.name for tool in definitions])
-        system_prompt = VOICE_RULES + '\n\n' + GAME_ADVICE_RULES if game_advice else (
-            system_instructions(registry, actions_enabled=actions_available, social=True)
-            + "\n\n" + SOCIAL_INSTRUCTION + "\n\n" + SOCIAL_REPLY_INSTRUCTION
-            if social else research_instructions()
+        system_prompt = '\n\n'.join((VOICE_RULES, GAME_ADVICE_RULES,
+            CHANNEL_FIRST_INSTRUCTION, REPLY_CONTEXT_INSTRUCTION)) if game_advice else (
+            system_instructions(registry, actions_enabled=actions_available, social=True,
+                extra_instructions=(SOCIAL_INSTRUCTION, SOCIAL_REPLY_INSTRUCTION,
+                    CHANNEL_FIRST_INSTRUCTION, REPLY_CONTEXT_INSTRUCTION))
+            if social else research_instructions((CHANNEL_FIRST_INSTRUCTION, REPLY_CONTEXT_INSTRUCTION))
         )
-        system_prompt += "\n\n" + CHANNEL_FIRST_INSTRUCTION + "\n\n" + REPLY_CONTEXT_INSTRUCTION
         context.state.request_text = question
         context.state.family_catalogue = family_catalogue
         compiled = compile_context(
