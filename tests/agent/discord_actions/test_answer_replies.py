@@ -136,6 +136,7 @@ class AnswerReplyTests(unittest.IsolatedAsyncioTestCase):
         context.state.request_text = "Reply to <@7>."
         context.source_message.raw_mentions = [7]
         url = "https://tenor.com/view/synthetic"
+        context.state.gif_url = url
         with patch(
             "elbow_helper.agent.delivery.assert_answer_scope", new_callable=AsyncMock,
             return_value=True,
@@ -158,6 +159,27 @@ class AnswerReplyTests(unittest.IsolatedAsyncioTestCase):
                 message_id=identifier, guild_id=3, channel_id=2,
             )
             self.assertEqual(recorded["requester_id"], self.context.member.id)
+
+    async def test_post_reply_quoting_a_gif_link_sends_the_full_text_once(self):
+        self.request.mentions = []
+        self.request.guild = self.context.guild
+        self.surface.bot = SimpleNamespace(user=None)
+        context = AgentRequestContext(
+            bot=self.surface.bot, guild=self.context.guild, member=self.context.member,
+            source_message=self.request, account_links=None, message_search=None,
+            action_repository=self.context.action_repository,
+        )
+        text = "Synthetic first message.\nSynthetic second message.\nhttps://tenor.com/view/synthetic"
+        with patch(
+            "elbow_helper.agent.delivery.assert_answer_scope", new_callable=AsyncMock,
+            return_value=True,
+        ):
+            result = await self.surface.send_post_reply(self.request, text, None, context, None)
+        self.assertEqual(result, {"channel_id": 2, "message_ids": [72]})
+        self.request.reply.assert_awaited_once()
+        self.assertEqual(self.request.reply.await_args.args[0], text)
+        self.channel.send.assert_not_awaited()
+        self.assertEqual(context.state.reply_delivery.delivery.text_parts, [text])
 
     def test_registered_reply_selection_is_output_and_transient(self):
         from elbow_helper.agent.actions.contracts import ActionClass

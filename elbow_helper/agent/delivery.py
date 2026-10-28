@@ -39,7 +39,7 @@ from .discord_actions.reply_targets import answer_reply_target
 from .discord_actions.reactions import render_server_emojis
 from .discord_actions.gif_library import upload_limit
 from .discord_actions.meme_usage import record_delivered_meme, usage_repository
-from .discord_actions.message_parts import outgoing_parts, image_attachment
+from .discord_actions.message_parts import image_attachment
 from .discord_actions.messages import post_mentions
 from .text import DISCORD_MESSAGE_LIMIT, discord_text
 from .text import chunk_response as _chunk_response
@@ -75,21 +75,20 @@ class AgentDeliveryMixin:
             research_answer_completed=False,
         ))
         first = len(delivery.message_ids)
-        parts = outgoing_parts(text)
-        words = "\n".join(part for part, is_gif in parts if not is_gif)
+        # Only the GIF tool's choice posts as a GIF; quoted links stay in the text.
+        gif = context.state.gif_url
         seed = message.id + 1_000_000 + len(context.state.reply_delivery.posts)
         await assert_answer_scope(context, text)
-        if words:
+        if gif in {raw.rstrip(").,>") for raw in URLS.findall(text)}:
+            await self._send_gif(
+                message, gif, context, conversation, delivery, nonce_seed=seed,
+            )
+        elif text.strip():
             await self._send_response(
-                message, words, referenced, conversation=conversation,
+                message, text, referenced, conversation=conversation,
                 delivery=delivery, context=answer_context,
                 _nonce_seed=seed, _post_mentions=True,
             )
-        for index, (part, is_gif) in enumerate(parts):
-            if is_gif:
-                await self._send_gif(
-                    message, part, context, conversation, delivery, nonce_seed=seed + index,
-                )
         identifiers = delivery.message_ids[first:]
         if context.action_repository is not None:
             for identifier in identifiers:
@@ -130,9 +129,6 @@ class AgentDeliveryMixin:
                     raise
                 context.state.gif_url = context.state.gif_attachment = None
                 response = context.state.gif_fallback_text
-        parts = outgoing_parts(response)
-        if any(is_image for _, is_image in parts):
-            response = '\n'.join(part for part, _ in parts)
         await self._send_response(message, response, referenced, attachments, conversation,
                                   delivery=active, context=context, **options)
 
@@ -450,11 +446,9 @@ class AgentDeliveryMixin:
             response = spreadsheet_response(
                 render_server_emojis(discord_text(answer), context.guild), attachments,
             )
-            image = next((item for item in attachments if image_attachment(item)), None)
-            parts = outgoing_parts(response, attachment=image)
-            media_reply = any(is_image for _, is_image in parts)
+            media_reply = any(image_attachment(item) for item in attachments)
             if media_reply:
-                response = "\n".join(part for part, _ in parts)
+                response = ""
             target = view.message
             if target is None:
                 raise RuntimeError("Private answer has no public edit target")

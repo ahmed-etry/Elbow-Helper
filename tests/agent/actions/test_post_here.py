@@ -134,6 +134,21 @@ class PostHereTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.sent.files, [('synthetic.png', b'media')])
         self.assertEqual(active.text_parts, [''])
 
+    async def test_private_answer_quoting_a_gif_link_keeps_its_text_when_checked_and_posted(self):
+        full = "Synthetic first message.\nhttps://tenor.com/view/synthetic"
+        parent, post, _, active = await self.deliver(full=full)
+        check = self.interaction()
+        await parent.check_privately(check)
+        call, = check.followup.send.await_args_list
+        self.assertEqual(call.args[0], full)
+        extra = call.kwargs.get('view')
+        if extra is not None:
+            self.addCleanup(extra.stop)
+        await post.post_here(self.interaction())
+        self.assertEqual(self.sent.content, full)
+        self.member_chat.send.assert_not_awaited()
+        self.assertEqual(active.text_parts, [full])
+
     async def test_private_image_post_keeps_confirmation_on_a_separate_message(self):
         action = PreparedAction('synthetic_change', {},
             ChangePreview(('Synthetic change',), AsyncMock(return_value=True)), AsyncMock())

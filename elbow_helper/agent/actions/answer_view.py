@@ -14,7 +14,8 @@ from ..wording import (
     ACTION_UNAVAILABLE, FAILURE_MESSAGE, AGENT_PRIVATE_CHECK_BUTTON,
 )
 from ..files.delivery import attachment_files
-from ..discord_actions.message_parts import image_attachment, outgoing_parts
+from ..discord_actions.message_parts import image_attachment
+from ..text import chunk_response
 from ..engine.service import AgentUnavailableError
 from .message_cleanup import log_cleanup_failure
 from .private_view import PRIVATE_RESULT_TIMEOUT, PrivateResultView
@@ -86,8 +87,8 @@ class PrivateAnswerView(PrivateResultView):
             post_view = (PostAnswerView(self) if self.post is not None
                          and ACCESS_VIEW_AUDIT_LOG not in private.state.required_access else None)
             try:
-                image = next((item for item in attachments if image_attachment(item)), None)
-                for index, (part, _) in enumerate(outgoing_parts(answer, attachment=image) or (("", False),)):
+                parts = () if any(image_attachment(item) for item in attachments) else chunk_response(answer)
+                for index, part in enumerate(parts or ("",)):
                     sent = await interaction.followup.send(
                         part or None, ephemeral=True, allowed_mentions=discord.AllowedMentions.none(),
                         **({"files": files} if index == 0 and files else {}),

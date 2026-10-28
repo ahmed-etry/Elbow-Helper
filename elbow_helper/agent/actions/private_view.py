@@ -14,7 +14,7 @@ from ..wording import (
 )
 from ..models import AgentAttachment
 from ..files.delivery import attachment_files, spreadsheet_links, spreadsheet_warnings
-from ..discord_actions.message_parts import image_attachment, outgoing_parts
+from ..discord_actions.message_parts import image_attachment
 from ..text import chunk_response
 from .message_cleanup import log_cleanup_failure
 
@@ -82,10 +82,6 @@ class PrivateResultView(discord.ui.View):
         parts = self.parts
         if any(image_attachment(item) for item in self.attachments):
             parts = ()
-        else:
-            selected = outgoing_parts("\n".join(parts))
-            if any(is_image for _, is_image in selected):
-                parts = tuple(part for part, _ in selected)
         try:
             if self.panels:
                 if len(self.panels) == 1:

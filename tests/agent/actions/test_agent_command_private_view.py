@@ -91,14 +91,15 @@ class PrivateCommandViewTests(unittest.IsolatedAsyncioTestCase):
                 if not with_panel:
                     member.followup.send.assert_not_awaited()
 
-    async def test_private_media_link_result_drops_caption_parts(self):
+    async def test_private_media_link_result_keeps_its_text_parts(self):
         member = self.interaction(101)
         image = 'https://example.invalid/synthetic.png'
         view = PrivateResultView(101, ('Synthetic caption.', image, 'More caption.'))
         self.addCleanup(view.stop)
         await view.open_result(member)
-        member.response.send_message.assert_awaited_once_with(image, ephemeral=True)
-        member.followup.send.assert_not_awaited()
+        member.response.send_message.assert_awaited_once_with('Synthetic caption.', ephemeral=True)
+        self.assertEqual([call.args[0] for call in member.followup.send.await_args_list],
+                         [image, 'More caption.'])
 
     async def test_expired_view_disables_button_and_refuses_open(self):
         view = PrivateResultView(101, ("synthetic private data",))
