@@ -7,7 +7,7 @@ from typing import Any
 
 import discord
 
-from ..access import accessible_message_channel
+from ..access import accessible_message_channel, message_channel_unavailable
 from ..models import AgentRequestContext
 from ..capabilities.validation import bounded_int, bounded_text
 from .history import (
@@ -69,7 +69,9 @@ async def _search_scope(context, arguments):
         for channel_id in explicit_ids:
             channel = await accessible_message_channel(context, channel_id)
             if channel is None:
-                return {"error": "Every requested conversation must be available here."}
+                return message_channel_unavailable(
+                    context, channel_id, error="Every requested conversation must be available here.",
+                )
             channels.append(channel)
         channel_ids = explicit_ids
     else:
@@ -132,7 +134,7 @@ async def _search_raw(context, arguments, scope):
             **({"mentions": arguments["mentions"]} if arguments.get("mentions") else {}),
         )
         if await accessible_message_channel(context, paged) is None:
-            return {"error": "That conversation is not available here."}
+            return message_channel_unavailable(context, paged)
         if any(
             result.channel_id != paged
             or (arguments.get("author_id") is not None
@@ -153,7 +155,9 @@ async def _search_raw(context, arguments, scope):
     if scope["explicit_ids"]:
         for channel_id in scope["explicit_ids"]:
             if await accessible_message_channel(context, channel_id) is None:
-                return {"error": "Every requested conversation must be available here."}
+                return message_channel_unavailable(
+                    context, channel_id, error="Every requested conversation must be available here.",
+                )
         if any(result.channel_id not in scope["explicit_ids"] for result in raw):
             return {"error": "Discord returned results outside the requested search scope."}
         context.state.source_channels.update(scope["explicit_ids"])
