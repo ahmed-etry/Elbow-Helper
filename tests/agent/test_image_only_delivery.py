@@ -73,14 +73,17 @@ class ImageOnlyDeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.delivery.unknown)
         self.assertEqual(self.delivery.text_parts, [])
 
-    async def test_raw_provider_link_cannot_smuggle_a_caption(self):
+    async def test_quoted_provider_link_stays_inside_the_answer_text(self):
         await self.send('Synthetic caption.\nhttps://tenor.com/view/Synthetic')
-        self.assertEqual(self.message.reply.await_args.args, ('https://tenor.com/view/Synthetic',))
-
-    async def test_direct_image_link_cannot_smuggle_a_caption(self):
-        await self.send('Synthetic caption.\nhttps://example.invalid/image.PNG?version=2')
+        self.message.reply.assert_awaited_once()
         self.assertEqual(self.message.reply.await_args.args,
-            ('https://example.invalid/image.PNG?version=2',))
+            ('Synthetic caption.\nhttps://tenor.com/view/Synthetic',))
+
+    async def test_quoted_image_link_stays_inside_the_answer_text(self):
+        await self.send('Synthetic caption.\nhttps://example.invalid/image.PNG?version=2')
+        self.message.reply.assert_awaited_once()
+        self.assertEqual(self.message.reply.await_args.args,
+            ('Synthetic caption.\nhttps://example.invalid/image.PNG?version=2',))
 
     async def test_requester_mention_cannot_become_an_image_caption(self):
         await self.surface.send_response(self.message, 'Synthetic fallback.', None,

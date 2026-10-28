@@ -74,7 +74,7 @@ class GifDeliveryTests(unittest.IsolatedAsyncioTestCase):
         surface = AgentDeliveryMixin()
         surface._send_response = AsyncMock()
         await surface.send_response(object(), response, None, context=context)
-        self.assertEqual(surface._send_response.await_args.args[1], "https://tenor.com/view/synthetic")
+        self.assertEqual(surface._send_response.await_args.args[1], response)
 
     async def test_later_library_selection_replaces_the_retained_gif(self):
         context = _context()
