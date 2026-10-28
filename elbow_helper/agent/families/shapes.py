@@ -11,7 +11,7 @@ RESULT_FIELDS = {
 }
 
 RESULT_FIELDS.update({
-    'read_member_accounts': {**COMMON, 'rows': [{**names('member_id,member_name,joined_at,player_tag,player_name,townHallLevel,role,ranked_league,legacy_league,clan,trophies,profile_status'), 'roles': [names('role_id,name')]}], **names('member_count,account_count,status')},
+    'read_member_accounts': {**COMMON, 'rows': [{**names('member_id,member_name,joined_at,player_tag,player_name,townHallLevel,role,ranked_league,legacy_league,clan,clan_status,trophies,profile_status'), 'roles': [names('role_id,name')]}], **names('member_count,account_count,status')},
     'read_clan_rosters': {**COMMON, 'rows': [names('clan_code,basis,season,player_tag,player_name,townHallLevel,role,donations,profile_status')]},
     'read_member_cohort': {**COMMON, 'rows': [{**names('member_id,member_name,joined_at'), 'accounts':[names('player_tag,player_name,townHallLevel,ranked_league,profile_status')], 'roles': [names('role_id,name')]}]},
 })
@@ -66,7 +66,7 @@ RESULT_FIELDS['read_member_cohort']['rows'][0].update(
     **names('donations,membership_status'),
     war_activity=names('status,wars_observed,attacks_used,attacks_expected,missed,attack_completion_percent,unconfirmed_opportunities,totals_complete'),
     chat_activity=names('status,latest_observed_at,source'))
-RESULT_FIELDS['read_member_cohort']['rows'][0]['accounts'][0].update(names('clan_code,donations'))
+RESULT_FIELDS['read_member_cohort']['rows'][0]['accounts'][0].update(names('clan_code,donations,clan_status'))
 RESULT_FIELDS['read_member_cohort']['rows'][0]['accounts'][0]['war_activity'] = RESULT_FIELDS['read_member_cohort']['rows'][0]['war_activity']
 RESULT_FIELDS['read_member_cohort']['rows'][0]['accounts'][0]['clan'] = names('tag,name')
 RESULT_FIELDS['read_member_cohort']['rows'][0].update(names(

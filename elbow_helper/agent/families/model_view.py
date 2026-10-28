@@ -16,7 +16,7 @@ def record_rows(value):
 
 
 def account_view(row, *, nested=False):
-    result = pick(row, ('player_tag', 'player_name', 'townHallLevel', 'clan', 'clan_code', 'donations', 'war_stars', 'ranked_league', 'role',
+    result = pick(row, ('player_tag', 'player_name', 'townHallLevel', 'clan', 'clan_status', 'clan_code', 'donations', 'war_stars', 'ranked_league', 'role',
                        'profile_status', 'war_activity', 'account_purpose', 'observed_at')) if nested else dict(row)
     if isinstance(result.get('roles'), list):
         result['roles'] = [role for role in result['roles'] if role.get('role_id') != AGENT_TESTER_ROLE_ID]

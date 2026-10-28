@@ -68,6 +68,55 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
             self.context, {"kind": "player", "detail": "full", "tags": ["#P0"] * 6},
         ))["items"]), 6)
 
+    async def test_player_clan_evidence_distinguishes_clanless_from_failed_reads(self):
+        clan = {"tag": "#Q0", "name": "Synthetic clan"}
+        for projection in ({}, {"detail": "full"}, {"fields": ["name", "clan"]},
+                           {"fields": ["clan.tag", "clan.name"]}):
+            for membership, expected_status in (({"clan": clan}, "in_clan"), ({}, "not_in_clan"),
+                                                ({"clan": None}, "not_in_clan")):
+                with self.subTest(projection=projection, membership=membership):
+                    payload = {"tag": "#P0", "name": "Synthetic", **membership}
+                    self.client.get.return_value = SimpleNamespace(ok=True, status=200, payload=payload)
+                    result = await read_clash(self.context, {"kind": "player", "tags": ["#P0"],
+                                                            **projection})
+                    item = model_view(model_result(result))["items"][0]
+                    self.assertEqual(item["status"], "ok")
+                    self.assertEqual(item["data"].get("clan"), membership.get("clan"))
+                    self.assertEqual(item["data"]["clan_status"], expected_status)
+                    if "clan" not in membership:
+                        self.assertNotIn("clan", item["data"])
+                    self.assertEqual(payload, {"tag": "#P0", "name": "Synthetic", **membership})
+            for status in (404, 503, 500):
+                with self.subTest(projection=projection, failed_status=status):
+                    self.client.get.return_value = SimpleNamespace(ok=False, status=status, payload=None)
+                    result = await read_clash(self.context, {"kind": "player", "tags": ["#P0"],
+                                                            **projection})
+                    item = model_view(model_result(result))["items"][0]
+                    self.assertNotEqual(item["status"], "ok")
+                    self.assertNotIn("data", item)
+                    self.assertNotIn("clan_status", item)
+
+    async def test_player_field_selection_without_clan_keeps_its_existing_shape(self):
+        result = await read_clash(self.context, {"kind": "player", "tags": ["#P0"], "fields": ["name"]})
+        self.assertEqual(result["items"][0]["data"], {"name": "Synthetic"})
+        status = await read_clash(self.context, {"kind": "player", "tags": ["#P0"], "fields": ["clan_status"]})
+        self.assertEqual(status["items"][0]["data"], {"clan_status": "not_in_clan"})
+
+    async def test_clanless_evidence_survives_cache_reuse_without_mutating_raw_profiles(self):
+        self.enable_cache()
+        payload = {"tag": "#P0", "name": "Synthetic"}
+        self.client.get.return_value.payload = payload
+        args = {"kind": "player", "tags": ["#P0"]}
+        first = await read_clash(self.context, {**args, "detail": "full"})
+        first["items"][0]["data"]["clan_status"] = "Changed by a consumer"
+        for projection in ({}, {"fields": ["clan"]}):
+            result = await read_clash(self.context, {**args, **projection})
+            self.assertTrue(result["items"][0]["reused"])
+            self.assertNotIn("clan", result["items"][0]["data"])
+            self.assertEqual(result["items"][0]["data"]["clan_status"], "not_in_clan")
+        self.client.get.assert_awaited_once()
+        self.assertEqual(payload, {"tag": "#P0", "name": "Synthetic"})
+
     async def test_timeout_preserves_completed_results(self):
         async def get(path, **kwargs):
             if "/%23P2" in path:

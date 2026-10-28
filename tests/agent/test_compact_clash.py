@@ -191,7 +191,7 @@ class CompactClashTests(unittest.IsolatedAsyncioTestCase):
             {"name": hero["name"], "level": hero["level"]} for hero in player["heroes"]]})
         self.assertFalse(item["truncated"])
         full = await read_clash(context, {"kind": "player", "tags": [player["tag"]], "detail": "full"})
-        self.assertEqual(full["items"][0]["data"], player)
+        self.assertEqual(full["items"][0]["data"], {**player, "clan_status": "in_clan"})
         self.assertIn("equipment", full["items"][0]["data"]["heroes"][0])
 
     def test_parent_selection_empty_lists_missing_fields_and_no_mutation(self):
@@ -293,6 +293,23 @@ class CompactClashTests(unittest.IsolatedAsyncioTestCase):
         for path, count in (("/heroes", 7), ("/troops", 100), ("/achievements", 50)):
             self.assertIn(path, item["omitted_fields"])
             self.assertEqual(item["row_counts"][path], {"returned_rows": 0, "total_rows": count})
+
+    async def test_player_clan_status_survives_size_limit_summary_projection(self):
+        for in_clan in (False, True):
+            with self.subTest(in_clan=in_clan):
+                player = synthetic_player()
+                if not in_clan:
+                    player.pop("clan")
+                context = read_context({player["tag"]: player})
+                result = await read_clash(context, {"kind": "player", "tags": [player["tag"]], "detail": "full"})
+                content = bound_tool_result(encoded(model_view(model_result(result))), 4000)
+                item = records(json.loads(content))["items"][0]
+                self.assertEqual(item["projection"], "summary")
+                self.assertEqual(item["data"]["clan_status"], "in_clan" if in_clan else "not_in_clan")
+                if in_clan:
+                    self.assertEqual(item["data"]["clan"]["tag"], player["clan"]["tag"])
+                else:
+                    self.assertNotIn("clan", item["data"])
 
     async def test_maximum_player_batch_retains_statuses_even_when_metadata_needs_compacting(self):
         players = [synthetic_player(index) for index in range(200)]

@@ -100,6 +100,24 @@ class AccountIndexTests(unittest.TestCase):
                     answer, = insert_account_lists(('[[accounts:a]]',), [group], index)
                     self.assertIn('currently in \\*\\*Synthetic outside\\*\\*', answer)
 
+    def test_clanless_status_preserves_account_index_and_rendered_lists(self):
+        account = {'player_tag': '#AAA111', 'player_name': 'Synthetic live',
+                   'profile_status': 'ok', 'clan': None}
+        declaration = {'id': 'a', 'current_clan': 'BEC', 'columns': columns(),
+                       'accounts': [{'account': '#AAA111'}]}
+        original = account_index({'roster': ROSTER, 'profiles': {'rows': [account]}})
+        expected, = insert_account_lists(('[[accounts:a]]',), [declaration], original)
+        self.assertIn('current clan unknown', expected)
+        for nested in (False, True):
+            with self.subTest(nested=nested):
+                row = {**account, 'clan_status': 'not_in_clan'}
+                profiles = {'rows': [{'member_id': 42, 'accounts': [row]}] if nested else [row]}
+                index = account_index({'roster': ROSTER, 'profiles': profiles})
+                self.assertEqual(index, original)
+                self.assertNotIn('current_clan', index['#AAA111'])
+                rendered, = insert_account_lists(('[[accounts:a]]',), [declaration], index)
+                self.assertEqual(rendered, expected)
+
 
 class RenderTests(unittest.TestCase):
     def setUp(self):
