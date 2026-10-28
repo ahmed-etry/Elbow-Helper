@@ -416,7 +416,7 @@ class SourceTests(unittest.IsolatedAsyncioTestCase):
         def fail(c):
             MIGRATIONS[6].apply(c)
             raise ValueError("synthetic failure")
-        with patch("elbow_helper.data.store.MIGRATIONS", (*MIGRATIONS[:6], SQLiteMigration(7, "failed", fail))):
+        with patch("elbow_helper.data.store.MIGRATIONS", (*MIGRATIONS[:6], SQLiteMigration(7, "failed", fail), *MIGRATIONS[7:])):
             with self.assertRaises(SQLiteMigrationError):
                 await FamilyStore(old).initialize()
         def inspect(c):

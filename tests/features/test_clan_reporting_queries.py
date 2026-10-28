@@ -21,7 +21,7 @@ class ClanReportingQueryTests(unittest.TestCase):
         owner._clan_members = {"BEH": {"#P2LQ": {
             "player_tag": "#P2LQ", "player_name": "One", "role": "member",
         }}}
-        owner.get_link_by_tag = lambda _: {"discord_user_id": 42}
+        owner.get_all_links = lambda: {"#P2LQ": {"discord_user_id": 42}}
 
         self.assertEqual(len(owner.get_missing_elder_rows("BEH")), 1)
         member.roles.append(SimpleNamespace(id=next(iter(LEAD_PLUS))))

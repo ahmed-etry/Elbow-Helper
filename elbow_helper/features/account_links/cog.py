@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 import logging
+import sqlite3
 import time
 from typing import Any
 
@@ -51,6 +52,7 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
     def __init__(self, bot: commands.Bot, clash_client: ClashClient):
         self.bot = bot
         self.clash_client = clash_client
+        self.link_service = getattr(bot, "link_service", None)
         self._board_refresher = None
         self._snapshot_lock = asyncio.Lock()
         self._snapshot_ready = asyncio.Event()
@@ -67,9 +69,15 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         self._clan_fetch_warning_state: dict[str, dict[str, Any]] = {}
 
     async def cog_load(self) -> None:
-        await asyncio.to_thread(self._init_db)
+        # Startup already validated the rollback file without upgrading it.
+        # A failed topic must not make this required extension fail to load.
+        if getattr(self, "link_service", None) is None:
+            await asyncio.to_thread(self._init_db)
         start_resilient_loop(self._poll_clans_loop)
-        await self.register_pending_suggestion_views()
+        try:
+            await self.register_pending_suggestion_views()
+        except (OSError, RuntimeError, sqlite3.Error):
+            LOGGER.exception("Account-link suggestion views unavailable")
 
     def cog_unload(self) -> None:
         if self._poll_clans_loop.is_running():
@@ -335,33 +343,33 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         if not self._last_snapshot_complete:
             return
         current_tags = set(self._player_locations)
-        for suggestion in self.list_pending_suggestions():
+        for suggestion in (await asyncio.to_thread(self.list_pending_suggestions)):
             player_tag = str(suggestion.get("player_tag") or "")
             if not player_tag or player_tag in current_tags:
                 continue
             await self._finalize_suggestion_message(suggestion)
-            self.delete_suggestion(player_tag)
+            (await asyncio.to_thread(self.delete_suggestion, player_tag))
 
     async def _process_unlinked_players(self) -> None:
-        links = self.get_all_links()
+        links = (await asyncio.to_thread(self.get_all_links))
         members = await self._candidate_members()
         for player_tag, row in self._player_locations.items():
-            if self.is_ignored_tag(player_tag):
+            if (await asyncio.to_thread(self.is_ignored_tag, player_tag)):
                 continue
             if player_tag in links:
-                self.update_link_last_seen(
+                await self.update_link_last_seen(
                     player_tag=player_tag,
                     player_name_last_seen=str(row.get("player_name") or ""),
                     last_seen_clan_tag=str(row.get("clan_tag") or ""),
                     last_seen_clan_code=str(row.get("clan_code") or ""),
                     last_seen_role=str(row.get("role") or ""),
                 )
-                pending = self.get_pending_suggestion(player_tag)
+                pending = (await asyncio.to_thread(self.get_pending_suggestion, player_tag))
                 if pending:
-                    self.delete_suggestion(player_tag)
+                    (await asyncio.to_thread(self.delete_suggestion, player_tag))
                     await self._finalize_suggestion_message(pending)
                 continue
-            if self.get_pending_suggestion(player_tag):
+            if (await asyncio.to_thread(self.get_pending_suggestion, player_tag)):
                 continue
             candidate = find_best_candidate(player_name=str(row.get("player_name") or ""), members=members)
             await self.publish_suggestion(
@@ -456,8 +464,8 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         player_rows = await self.lookup_players(valid_tags)
         linkable_tags = {row["player_tag"] for row in player_rows}
         invalid_tags.extend(tag for tag in valid_tags if tag not in linkable_tags)
-        member_links = self.get_links_for_user(member.id)
-        existing_links = self.get_all_links()
+        member_links = (await asyncio.to_thread(self.get_links_for_user, member.id))
+        existing_links = (await asyncio.to_thread(self.get_all_links))
         before = {row["player_tag"]: existing_links.get(row["player_tag"]) for row in player_rows}
         lines: list[str] = []
         link_rows: list[dict[str, object]] = []
@@ -476,7 +484,7 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
             else:
                 lines.append(f"- Linked {row['player_name']} (`{tag}`) to {member.mention}")
         if commit and link_rows:
-            self.upsert_links(link_rows)
+            await self.upsert_links(link_rows)
             await self._try_refresh_linked_boards()
         if invalid_tags:
             lines.append(f"- Invalid player tags: {', '.join(invalid_tags)}")
@@ -490,7 +498,7 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         valid_tags, invalid_tags = self._parse_player_tag_input(tags)
         if not valid_tags:
             return {"error": "None of those player tags were recognized. Check the tags and try again."}
-        existing_links = self.get_all_links()
+        existing_links = (await asyncio.to_thread(self.get_all_links))
         before = {tag: existing_links.get(tag) for tag in valid_tags}
         tags_to_remove: list[str] = []
         lines: list[str] = []
@@ -502,7 +510,7 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
             tags_to_remove.append(tag)
             lines.append(f"- Removed `{tag}` from <@{int(existing['discord_user_id'])}>")
         if commit and tags_to_remove:
-            self.delete_links(tags_to_remove)
+            await self.delete_links(tags_to_remove)
             await self._try_refresh_linked_boards()
         if invalid_tags:
             lines.append(f"- Invalid player tags: {', '.join(invalid_tags)}")
@@ -512,7 +520,7 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
                 "refresh_boards": self.account_board_refresh_available()}
 
     async def restore_account_add(self, before: dict[str, dict[str, Any] | None]) -> None:
-        self.restore_links(before)
+        await self.restore_links(before)
         await self._try_refresh_linked_boards()
 
     @account_group.command(name="add", description="Link one or more Clash accounts to a Discord member.")
@@ -576,7 +584,11 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
             return
 
         if member is not None:
-            rows = self.get_links_for_user(member.id)
+            try:
+                rows = await asyncio.to_thread(self.get_links_for_user, member.id)
+            except RuntimeError:
+                await fail(interaction)
+                return
             if not rows:
                 await interaction.response.send_message(f"No linked Clash accounts found for {member.mention}.", ephemeral=True)
                 return
@@ -599,7 +611,11 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
             await warn(interaction, "That player tag is invalid.")
             return
 
-        row = self.get_link_by_tag(normalized_tag)
+        try:
+            row = await asyncio.to_thread(self.get_link_by_tag, normalized_tag)
+        except RuntimeError:
+            await fail(interaction)
+            return
         if not row:
             await interaction.response.send_message(f"No Discord member is linked to `{normalized_tag}`.", ephemeral=True)
             return
@@ -643,6 +659,7 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
         await self.bot.wait_until_ready()
 
     def get_missing_elder_rows(self, clan_code: str) -> list[dict[str, Any]]:
+        links = self.get_all_links()
         guild = self.bot.get_guild(GUILD_ID)
         if guild is None:
             return []
@@ -652,7 +669,7 @@ class AccountLinks(commands.Cog, AccountLinksDbMixin, AccountLinksReviewMixin):
             return rows
         for row in clan_members.values():
             player_tag = str(row.get("player_tag") or "")
-            link = self.get_link_by_tag(player_tag)
+            link = links.get(player_tag)
             if not link:
                 continue
             member = guild.get_member(int(link["discord_user_id"]))

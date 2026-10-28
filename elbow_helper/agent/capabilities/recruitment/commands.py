@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from collections.abc import Mapping
 from typing import Any
 
@@ -324,7 +326,7 @@ async def prepare_accept(context: Any,
     prepared = await workflow.prepare_accept(user=member, **options)
     if prepared["issue"]:
         raise ActionRefused(prepared["issue"])
-    effects = workflow.accept_effects(prepared)
+    effects = (await asyncio.to_thread(workflow.accept_effects, prepared))
     if effects["missing_roles"]:
         raise ActionRefused(ACTION_ACCEPT_ROLE_MISSING.format(
             roles=", ".join(f"<@&{role_id}>" for role_id in effects["missing_roles"]),
@@ -384,7 +386,7 @@ async def prepare_accept(context: Any,
             live = await workflow.prepare_accept(user=live_member, **options)
             if live["issue"]:
                 return False
-            live_effects = workflow.accept_effects(live)
+            live_effects = (await asyncio.to_thread(workflow.accept_effects, live))
             if live_effects["missing_roles"]:
                 return False
             for role in (*live_effects["remove_roles"], *live_effects["add_roles"]):

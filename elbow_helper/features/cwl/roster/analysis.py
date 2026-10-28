@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import math
 from collections import defaultdict
 from typing import Any
@@ -381,7 +383,7 @@ class CwlRosterAnalysisMixin:
         links_by_tag: dict[str, dict[str, Any]] = {}
         for member_id in signed_member_ids:
             links = list(
-                self.account_links.get_links_for_user(member_id)
+                (await asyncio.to_thread(self.account_links.get_links_for_user, member_id))
             )
             links_by_user[member_id] = links
             for link in links:

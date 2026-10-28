@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import discord
 
+from tests.data.link_fixtures import attach_links
 from elbow_helper.features.account_links.cog import AccountLinks
 from elbow_helper.features.recruitment import commands
 from elbow_helper.features.recruitment import trials
@@ -59,6 +60,7 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         owner.bot.get_channel.return_value = SimpleNamespace(mention="<#100>")
         owner.logger = MagicMock()
         owner.account_links = MagicMock()
+        owner.account_links.upsert_link = AsyncMock()
         owner.account_links.lookup_players = AsyncMock(
             return_value=[
                 {"player_tag": "#A", "player_name": "Alpha"},
@@ -164,6 +166,7 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
                 with tempfile.TemporaryDirectory() as directory:
                     with patch("elbow_helper.features.account_links.database.DB_PATH", Path(directory) / "links.db"):
                         links._init_db()
+                        await attach_links(links)
                         with self._config():
                             arguments = dict(
                                 user=user, valid_clans=["BEH"], nickname="Ahmad",
@@ -182,7 +185,7 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
                                     "\nOther acceptance steps were completed.",
                                     ephemeral=True,
                                 )
-                        saved = links.get_all_links()
+                        saved = (await asyncio.to_thread(links.get_all_links))
 
                 self.assertEqual(set(saved), set(tags[1:]))
                 self.assertTrue(all(row["discord_user_id"] == user.id for row in saved.values()))
@@ -201,13 +204,14 @@ class RecruitmentAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             with patch("elbow_helper.features.account_links.database.DB_PATH", Path(directory) / "links.db"):
                 links._init_db()
+                await attach_links(links)
                 with self._config():
                     await owner._perform_accept_flow(
                         interaction, user=user, valid_clans=["BEH"], nickname="Ahmad",
                         days=7, target_channel=target_channel,
                         additional_notes=None, player_tags=["#P0Y"],
                     )
-                self.assertEqual(links.get_link_by_tag("#P0Y")["player_name_last_seen"], "#P0Y")
+                self.assertEqual((await asyncio.to_thread(links.get_link_by_tag, "#P0Y"))["player_name_last_seen"], "#P0Y")
         links.clash_client.get.assert_not_awaited()
         interaction.followup.send.assert_not_awaited()
 
