@@ -6,6 +6,7 @@ import json
 from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 from . import war_state
+from .api_fields import collect_fields
 from .projections import canonical_json
 from .war_projection import badge, optional_int, project_log_entry, project_war, text
 
@@ -218,7 +219,7 @@ def save_group(connection, raw, scope, family_tags, run, at):
             refs.append((round_no, tag))
     group_key = ":".join(sorted(tags))
     league = raw.get("league", {})
-    if not isinstance(league, dict) or league.keys() - {"id", "name"}:
+    if not isinstance(league, dict):
         raise ValueError("invalid_group_league")
     league_id = optional_int(league, "id") if "league" in raw else optional_int(raw, "leagueId")
     league_name = text(league, "name") if "league" in raw else text(raw, "leagueName")
@@ -350,6 +351,9 @@ def record_response(connection, run, ordinal, kind, scope, response, family_tags
                         status, error = "failed", "partial_war"
                         if kind == "current_war" and war["state"] == "warEnded":
                             due = at + 180 * SECOND
+            if response is not None and response.ok and response.error is None:
+                collect_fields(connection, kind, scope, response.payload, run, at,
+                               complete=complete and kind != "war_log")
         except (ValueError, TypeError, OverflowError) as exc:
             connection.execute("ROLLBACK TO response_facts")
             rolled_back = True

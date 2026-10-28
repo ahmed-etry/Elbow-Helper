@@ -18,8 +18,9 @@ COUNTERS = {
 }
 INTEGER_FIELDS = {
     "townHallLevel", "townHallWeaponLevel", "expLevel", "builderHallLevel",
+    "currentLeagueSeasonId", "previousLeagueSeasonId",
 }
-TEXT_FIELDS = {"name", "role", "warPreference"}
+TEXT_FIELDS = {"name", "role", "warPreference", "currentLeagueGroupTag", "previousLeagueGroupTag"}
 OBJECT_FIELDS = {
     "clan", "league", "builderBaseLeague", "leagueTier", "playerHouse",
     "currentRankedGroup", "previousRankedGroup", "rankedGroup", "previousLeagueTier",
@@ -76,6 +77,10 @@ def project_profile(payload, tag):
         if not valid or not _json_value(value):
             # A malformed known field must not look like a disappearance.
             raise ValueError("invalid_profile_field")
+        if key in {"currentLeagueGroupTag", "previousLeagueGroupTag"}:
+            value = normalize_player_tag(value)
+            if value is None:
+                raise ValueError("invalid_ranked_group_tag")
         fields[key] = value
     counters = {}
     for key in COUNTERS:

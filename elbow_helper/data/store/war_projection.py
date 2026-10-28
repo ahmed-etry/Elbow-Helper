@@ -42,8 +42,8 @@ def text(raw, key):
 def badge(raw):
     value = raw.get("badgeUrls")
     if value is not None and (not isinstance(value, dict)
-                              or any(key not in {"small", "medium", "large"} or not isinstance(url, str)
-                                     for key, url in value.items())):
+                              or any(not isinstance(url, str) for key, url in value.items()
+                                     if key in {"small", "medium", "large"})):
         raise ValueError("invalid_badge")
     return canonical_json(value) if value is not None else None
 
@@ -88,7 +88,7 @@ def attack_projection(raw, stub=False):
     extra = {"stub": stub, "field_presence": sorted(raw.keys() & {
         "attackerTag", "defenderTag", "stars", "destructionPercentage", "order", "duration"})}
     known = {"attackerTag", "defenderTag", "stars", "destructionPercentage", "order", "duration"}
-    complete = not stub and known <= raw.keys() and not (raw.keys() - known)
+    complete = not stub and known <= raw.keys()
     return {"attack_order": order, "attacker": attacker, "defender": defender,
             "stars": stars, "destruction": destruction, "duration": duration,
             "extra_json": canonical_json(extra)}, complete
@@ -173,8 +173,6 @@ def project_war(raw, *, war_tag=None, aggregate=False):
                                 "source_map_position": position, "attacks_expected": per_member,
                                 "attacks_used": len(outgoing), "opponent_attacks": optional_int(member, "opponentAttacks"),
                                 "extra_json": canonical_json(extra)})
-                if member.keys() - {"tag", "name", "townhallLevel", "mapPosition", "opponentAttacks", "attacks", "bestOpponentAttack"}:
-                    roster_complete = False
             except ValueError:
                 roster_complete = attacks_complete = False
         roster_complete &= len(seen) == len(roster) == size
@@ -201,11 +199,6 @@ def project_war(raw, *, war_tag=None, aggregate=False):
     # complete global order instead of treating it as another attack list.
     if set(attacks) != set(range(1, len(attacks) + 1)):
         attacks_complete = False
-    known_top = {"state", "teamSize", "attacksPerMember", "preparationStartTime", "startTime", "warStartTime", "endTime",
-                 "battleModifier", "type", "isFriendly", "result", "clan", "opponent"}
-    known_side = {"tag", "name", "clanLevel", "badgeUrls", "stars", "destructionPercentage", "attacks", "expEarned", "members"}
-    if raw.keys() - known_top or any(source.keys() - known_side for _, source in sides):
-        roster_complete = attacks_complete = False
     modifier = raw.get("battleModifier")
     if modifier is not None and not isinstance(modifier, str):
         raise ValueError("invalid_battle_modifier")
@@ -232,7 +225,7 @@ def project_log_entry(raw):
     # This is the API's CWL summary shape, not a deleted or malformed clan.
     if (raw.get("attacksPerMember") != 1 or type(raw.get("attacksPerMember")) is not int
             or not nonnegative_int(raw.get("teamSize")) or raw["teamSize"] < 1
-            or set(opponent) != {"badgeUrls", "clanLevel", "stars", "destructionPercentage"}
+            or not {"badgeUrls", "clanLevel", "stars", "destructionPercentage"} <= opponent.keys()
             or type(opponent["clanLevel"]) is not int or opponent["clanLevel"] != 0
             or not number(opponent["destructionPercentage"], 0)):
         raise ValueError("invalid_cwl_summary")

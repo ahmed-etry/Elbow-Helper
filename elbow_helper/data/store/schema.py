@@ -5,10 +5,11 @@ import sqlite3
 
 from elbow_helper.infrastructure.persistence.migrations import SQLiteMigration
 from .war_schema import create_war_schema
+from .api_fields import create_api_field_schema
 
 
 # Later subjects add migrations; they must not rewrite this baseline.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 STATEMENTS = (
     """CREATE TABLE collection_runs (
         id INTEGER PRIMARY KEY, collector TEXT NOT NULL, scope_kind TEXT NOT NULL,
@@ -251,6 +252,7 @@ def create_schema(connection: sqlite3.Connection) -> None:
     compact_player_schema(connection)
     extend_achievement_identity(connection)
     create_war_schema(connection)
+    create_api_field_schema(connection)
 
 
 MIGRATIONS = (
@@ -259,4 +261,5 @@ MIGRATIONS = (
     SQLiteMigration(3, "compact player history", compact_player_schema),
     SQLiteMigration(4, "distinct achievement identities", extend_achievement_identity),
     SQLiteMigration(5, "family wars and league seasons", create_war_schema),
+    SQLiteMigration(6, "every API field and ranked references", create_api_field_schema),
 )

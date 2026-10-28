@@ -1,0 +1,221 @@
+{
+  "kind": "clan_profile",
+  "scope": "#PP9R0Y",
+  "body": {
+    "tag": "#PP9R0Y",
+    "name": "Synthetic name 2",
+    "type": "open",
+    "description": "Synthetic clan description",
+    "location": {
+      "id": 32000006,
+      "name": "Synthetic name 229",
+      "isCountry": false
+    },
+    "isFamilyFriendly": false,
+    "badgeUrls": {
+      "small": "https://example.test/asset/1",
+      "large": "https://example.test/asset/2",
+      "medium": "https://example.test/asset/3"
+    },
+    "clanLevel": 11,
+    "clanPoints": 0,
+    "clanBuilderBasePoints": 1240,
+    "clanCapitalPoints": 0,
+    "capitalLeague": {
+      "id": 85000000,
+      "name": "Synthetic name 3"
+    },
+    "requiredTrophies": 0,
+    "warFrequency": "unknown",
+    "warWinStreak": 5,
+    "warWins": 62,
+    "warTies": 47,
+    "warLosses": 11,
+    "isWarLogPublic": true,
+    "warLeague": {
+      "id": 48000000,
+      "name": "Synthetic name 3"
+    },
+    "members": 3,
+    "memberList": [
+      {
+        "tag": "#PP9R0P",
+        "name": "Synthetic name 1",
+        "role": "coLeader",
+        "townHallLevel": 3,
+        "expLevel": 11,
+        "league": {
+          "id": 29000000,
+          "name": "Synthetic name 3",
+          "iconUrls": {
+            "small": "https://example.test/asset/40",
+            "tiny": "https://example.test/asset/41"
+          }
+        },
+        "leagueTier": {
+          "id": 105000000,
+          "name": "Synthetic name 3",
+          "iconUrls": {
+            "small": "https://example.test/asset/4",
+            "large": "https://example.test/asset/5"
+          }
+        },
+        "trophies": 0,
+        "builderBaseTrophies": 0,
+        "clanRank": 1,
+        "previousClanRank": 1,
+        "donations": 0,
+        "donationsReceived": 0,
+        "builderBaseLeague": {
+          "id": 44000000,
+          "name": "Synthetic name 301"
+        }
+      },
+      {
+        "tag": "#PP9RGU",
+        "name": "Synthetic name 399",
+        "role": "leader",
+        "townHallLevel": 12,
+        "expLevel": 111,
+        "league": {
+          "id": 29000000,
+          "name": "Synthetic name 3",
+          "iconUrls": {
+            "small": "https://example.test/asset/40",
+            "tiny": "https://example.test/asset/41"
+          }
+        },
+        "leagueTier": {
+          "id": 105000000,
+          "name": "Synthetic name 3",
+          "iconUrls": {
+            "small": "https://example.test/asset/4",
+            "large": "https://example.test/asset/5"
+          }
+        },
+        "trophies": 0,
+        "builderBaseTrophies": 2354,
+        "clanRank": 2,
+        "previousClanRank": 2,
+        "donations": 0,
+        "donationsReceived": 0,
+        "playerHouse": {
+          "elements": [
+            {
+              "type": "ground",
+              "id": 82000000
+            },
+            {
+              "type": "walls",
+              "id": 82000048
+            },
+            {
+              "type": "roof",
+              "id": 82000014
+            },
+            {
+              "type": "decoration",
+              "id": 82000063
+            }
+          ]
+        },
+        "builderBaseLeague": {
+          "id": 44000021,
+          "name": "Synthetic name 131"
+        }
+      },
+      {
+        "tag": "#PP9RGV",
+        "name": "Synthetic name 400",
+        "role": "member",
+        "townHallLevel": 5,
+        "expLevel": 25,
+        "league": {
+          "id": 29000000,
+          "name": "Synthetic name 3",
+          "iconUrls": {
+            "small": "https://example.test/asset/40",
+            "tiny": "https://example.test/asset/41"
+          }
+        },
+        "leagueTier": {
+          "id": 105000000,
+          "name": "Synthetic name 3",
+          "iconUrls": {
+            "small": "https://example.test/asset/4",
+            "large": "https://example.test/asset/5"
+          }
+        },
+        "trophies": 0,
+        "builderBaseTrophies": 126,
+        "clanRank": 3,
+        "previousClanRank": 3,
+        "donations": 0,
+        "donationsReceived": 0,
+        "builderBaseLeague": {
+          "id": 44000001,
+          "name": "Synthetic name 401"
+        }
+      }
+    ],
+    "labels": [
+      {
+        "id": 56000000,
+        "name": "Synthetic name 85",
+        "iconUrls": {
+          "small": "https://example.test/asset/74",
+          "medium": "https://example.test/asset/75"
+        }
+      },
+      {
+        "id": 56000003,
+        "name": "Synthetic name 402",
+        "iconUrls": {
+          "small": "https://example.test/asset/120",
+          "medium": "https://example.test/asset/121"
+        }
+      },
+      {
+        "id": 56000014,
+        "name": "Synthetic name 134",
+        "iconUrls": {
+          "small": "https://example.test/asset/122",
+          "medium": "https://example.test/asset/123"
+        }
+      }
+    ],
+    "requiredBuilderBaseTrophies": 0,
+    "requiredTownhallLevel": 1,
+    "clanCapital": {
+      "capitalHallLevel": 4,
+      "clanGoldSinkTotal": 0,
+      "districts": [
+        {
+          "id": 70000000,
+          "name": "Synthetic name 303",
+          "districtHallLevel": 4
+        },
+        {
+          "id": 70000001,
+          "name": "Synthetic name 304",
+          "districtHallLevel": 2
+        },
+        {
+          "id": 70000002,
+          "name": "Synthetic name 305",
+          "districtHallLevel": 2
+        },
+        {
+          "id": 70000003,
+          "name": "Synthetic name 306",
+          "districtHallLevel": 1
+        }
+      ]
+    },
+    "chatLanguage": {
+      "id": 75000000,
+      "name": "Synthetic name 312",
+      "languageCode": "EN"
+    }
+  }
+}

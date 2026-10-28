@@ -6,6 +6,7 @@ import json
 from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 
 from . import FamilyStore
+from .api_fields import collect_fields
 from .people import account_name
 from .player_projection import ARRAYS, COUNTERS, HOUR_US, TRANSIENT, item_identity, project_profile
 from . import player_state
@@ -69,6 +70,17 @@ def _fields(connection, account_id, fields, at, item):
         if old.get(key) != value:
             connection.execute("INSERT INTO player_observations VALUES (?,?,?,?,?,?)",
                                (account_id, key, at, value, previous, item))
+
+
+def _ranked_references(connection, account_id, fields, at, run):
+    keys = ("currentLeagueGroupTag", "currentLeagueSeasonId", "previousLeagueGroupTag", "previousLeagueSeasonId")
+    last = connection.execute("SELECT * FROM player_ranked_references WHERE account_id=? ORDER BY observed_at DESC LIMIT 1",
+                              (account_id,)).fetchone()
+    values = tuple(fields.get(key) for key in keys)
+    if last is None and not any(key in fields for key in keys):
+        return
+    if last is None or tuple(last[key] for key in ("current_group_tag", "current_season_id", "previous_group_tag", "previous_season_id")) != values:
+        connection.execute("INSERT INTO player_ranked_references VALUES (?,?,?,?,?,?,?)", (account_id, at, *values, run))
 
 
 def _items(connection, account_id, profile, at, item, *, store=True):
@@ -240,6 +252,7 @@ def collect_player(connection, run, ordinal, account_id, tag, response, at):
         daily = state["slow_sampled_at"] is None or at // (24 * HOUR_US) > state["slow_sampled_at"] // (24 * HOUR_US)
         if daily:
             _fields(connection, account_id, profile.fields, at, run)
+            _ranked_references(connection, account_id, profile.fields, at, run)
         identities, achievements, transient = _items(connection, account_id, profile, at, run, store=daily)
         equipment_complete, equipment_observed = _equipment(connection, account_id, profile, identities, at, run, store=daily)
         _counters(connection, account_id, profile, achievements, transient, at, run, state)
@@ -252,6 +265,7 @@ def collect_player(connection, run, ordinal, account_id, tag, response, at):
             account_name(connection, account_id, profile.fields["name"], at, item)
         connection.execute("UPDATE accounts SET last_profile_at=? WHERE id=?", (at, account_id))
         complete = profile.complete and equipment_complete
+        collect_fields(connection, "player_profile", tag, payload, run, at, complete=complete)
         completeness = {
             "complete": complete, "fields": True, "arrays": profile.complete_arrays,
             "equipment": equipment_observed, "unsupported_fields": profile.unsupported,
