@@ -10,7 +10,7 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 
 from ..access import require_evidence_access
 from ..datasets.clash import read_clash
-from ..research.member_identity import matching_members
+from ..research.member_identity import matching_members, matches_discord_identity
 
 
 def normalized_name(value):
@@ -120,16 +120,9 @@ async def resolve_account_names(context, queries):
             for row in item.get('data', {}).get('memberList', []):
                 add(row.get('tag'), row.get('name'), 'current_family_roster')
     await require_evidence_access(context)
-    resolutions, selected = [], {}
-    for query in queries:
-        candidates = matching_accounts(query, accounts)
-        status = ('resolved' if len(candidates) == 1 else 'ambiguous' if candidates
-                  else 'unknown' if missing else 'not_found')
-        resolutions.append({'query': query, 'status': status, 'candidates': candidates})
-        if status == 'resolved':
-            selected[candidates[0]['player_tag']] = candidates[0]
-    # Ambiguity is useful evidence too: join its candidates before the caller
-    # returns for clarification, without selecting or expanding any owner.
+    resolutions = [{'query': query, 'candidates': matching_accounts(query, accounts)} for query in queries]
+    # Join every candidate before deciding whether matching accounts identify
+    # one owner. Unowned candidates must still require clarification.
     candidates = {row['player_tag']: row for resolution in resolutions
                   for row in resolution['candidates']}
     links = (await asyncio.to_thread(context.account_links.get_links_by_tags, sorted(candidates))
@@ -142,6 +135,16 @@ async def resolve_account_names(context, queries):
         candidate.update(member_id=identifier, member_name=member.display_name if member else None,
                          membership_status=('links_unavailable' if context.account_links is None else
                              'unlinked' if identifier is None else 'present' if member else 'not_in_guild'))
+    selected = {}
+    for resolution in resolutions:
+        matches = resolution['candidates']
+        owners = {row['member_id'] for row in matches}
+        same_owner = len(owners) == 1 and None not in owners
+        status = ('resolved' if len(matches) == 1 or same_owner else 'ambiguous' if matches
+                  else 'unknown' if missing else 'not_found')
+        resolution['status'] = status
+        if status == 'resolved':
+            selected.update((row['player_tag'], row) for row in matches)
     return {'accounts': selected, 'name_resolutions': resolutions, 'missing_sources': missing,
             'selection_complete': all(row['status'] == 'resolved' for row in resolutions)}
 
@@ -203,13 +206,14 @@ async def resolve_names(context, queries):
         selected_members.update(sources)
         if candidates:
             selected.update((row['player_tag'], row) for row in candidates)
-        else:
-            # A Discord-only match selects that member's accounts. An account
-            # match selects only its own tag; other alts remain identity context.
-            for identifier in sources:
-                for row in links.get(identifier, []):
-                    selected[row['player_tag']] = {
-                        'player_tag': row['player_tag'], 'player_name': row.get('player_name_last_seen')}
+        # A Discord identity match selects all linked accounts even when some
+        # account names also match. Account-only matches keep their own tags.
+        for identifier in sources:
+            if candidates and not matches_discord_identity(members[identifier], resolution['query'].strip()):
+                continue
+            for row in links.get(identifier, []):
+                selected.setdefault(row['player_tag'], {
+                    'player_tag': row['player_tag'], 'player_name': row.get('player_name_last_seen')})
     return {'accounts': selected, 'member_ids': sorted(selected_members),
             'name_resolutions': result['name_resolutions'], 'missing_sources': result['missing_sources'],
             'selection_complete': all(row['status'] == 'resolved' for row in result['name_resolutions'])}
