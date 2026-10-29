@@ -68,6 +68,73 @@ def named_member(identifier, display_name, *, nick=None, bot=False):
 
 
 class UnifiedNameLookupTests(unittest.IsolatedAsyncioTestCase):
+    async def test_same_owner_names_resolve_and_only_discord_matches_expand_alts(self):
+        for selector in ('name', 'account_names'):
+            for discord_match in (True, False):
+                for extra_alt in (False, True):
+                    with self.subTest(selector=selector, discord_match=discord_match, extra_alt=extra_alt):
+                        owner = named_member(42, 'Silver Kite' if discord_match else 'Synthetic Pilot')
+                        linked = [('#P0', 'Silver Kite', 42), ('#Q0', 'sILVER kITE', 42)]
+                        if extra_alt:
+                            linked.append(('#Y0', 'Other Beacon', 42))
+                        context = lookup_context([owner], linked)
+                        expected = {'#P0', '#Q0'} | ({'#Y0'} if discord_match and extra_alt else set())
+                        profiles = AsyncMock(return_value={tag: {'status': 'ok', 'data': {
+                            'name': name, 'clan': None, 'clan_status': 'not_in_clan'}}
+                            for tag, name, _ in linked})
+                        with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters())), \
+                             patch.object(identity_reads, 'profiles', profiles):
+                            result = await identity_reads.member_accounts(context, {
+                                selector: 'Silver Kite' if selector == 'name' else ['Silver Kite']})
+                        self.assertEqual(result['status'], 'resolved')
+                        self.assertTrue(result['selection_complete'])
+                        resolution = result['name_resolutions'][0]
+                        self.assertEqual(resolution['account_status'], 'resolved')
+                        self.assertEqual(resolution['member_status'], 'resolved')
+                        self.assertEqual({row['player_tag'] for row in resolution['candidates']}, {'#P0', '#Q0'})
+                        self.assertEqual([row['member_id'] for row in resolution['matching_members']], [42])
+                        profiles.assert_awaited_once_with(context, sorted(expected))
+                        self.assertEqual({row['player_tag'] for row in result['rows']}, expected)
+                        self.assertTrue(all(row['clan_status'] == 'not_in_clan' for row in result['rows']))
+                        self.assertEqual(context.state.resolved_members, {42: owner.display_name})
+
+    async def test_multiple_account_queries_resolve_same_owner_groups_independently(self):
+        context = lookup_context([named_member(42, 'Synthetic Pilot'), named_member(43, 'Synthetic Navigator')], [
+            ('#P0', 'Silver Kite', 42), ('#Q0', 'sILVER kITE', 42),
+            ('#Y0', 'Copper Finch', 43), ('#L0', 'cOPPER fINCH', 43)])
+        with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters())), \
+             patch.object(identity_reads, 'profiles', AsyncMock(return_value={})) as profiles:
+            result = await identity_reads.member_accounts(context, {'account_names': ['Silver Kite', 'Copper Finch']})
+        self.assertEqual(result['status'], 'resolved')
+        self.assertTrue(result['selection_complete'])
+        self.assertEqual([row['status'] for row in result['name_resolutions']], ['resolved', 'resolved'])
+        profiles.assert_awaited_once_with(context, ['#L0', '#P0', '#Q0', '#Y0'])
+        self.assertEqual({row['player_tag'] for row in result['rows']}, {'#P0', '#Q0', '#Y0', '#L0'})
+
+    async def test_multiple_candidates_keep_conflicting_owners_or_discord_matches_ambiguous(self):
+        for selector in ('name', 'account_names'):
+            for conflict in ('two_owners', 'unowned', 'discord_match'):
+                with self.subTest(selector=selector, conflict=conflict):
+                    owner = named_member(42, 'Silver Kite')
+                    other = named_member(43, 'Silver Kite' if conflict == 'discord_match' else 'Synthetic Navigator')
+                    linked = [('#P0', 'Silver Kite', 42)]
+                    if conflict != 'unowned':
+                        linked.append(('#Q0', 'sILVER kITE', 43 if conflict == 'two_owners' else 42))
+                    context = lookup_context([owner, other], linked)
+                    with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters([
+                            ('#Q0', 'sILVER kITE')]))), \
+                         patch.object(identity_reads, 'profiles', AsyncMock()) as profiles:
+                        result = await identity_reads.member_accounts(context, {
+                            selector: 'Silver Kite' if selector == 'name' else ['Silver Kite']})
+                    self.assertEqual(result['status'], 'needs_input')
+                    self.assertFalse(result['selection_complete'])
+                    self.assertEqual(result['name_resolutions'][0]['status'], 'ambiguous')
+                    self.assertEqual({row['player_tag'] for row in result['name_resolutions'][0]['candidates']},
+                                     {'#P0', '#Q0'})
+                    self.assertEqual(result['rows'], [])
+                    profiles.assert_not_awaited()
+                    self.assertEqual(context.state.resolved_members, {})
+
     async def test_bracketed_alias_and_username_work_through_either_selector(self):
         for selector in ('name', 'account_names'):
             for query in ('Lumen Birch', 'Birch', 'synthetic_42'):
@@ -241,6 +308,16 @@ class AccountNameMatchingTests(unittest.TestCase):
 
 
 class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
+    async def test_account_resolver_selects_all_same_owner_candidates_without_other_alts(self):
+        context = context_with_names(linked=[
+            ('#P0', 'Silver Kite'), ('#Q0', 'sILVER kITE'), ('#Y0', 'Other Beacon')])
+        with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters())):
+            result = await account_names.resolve_account_names(context, ['Silver Kite'])
+        self.assertEqual(result['name_resolutions'][0]['status'], 'resolved')
+        self.assertTrue(result['selection_complete'])
+        self.assertEqual(set(result['accounts']), {'#P0', '#Q0'})
+        self.assertEqual({row['member_id'] for row in result['accounts'].values()}, {42})
+
     async def test_case_spacing_and_spelling_select_tags_without_discord_or_alt_expansion(self):
         context = context_with_names(stored=[('#Y0', 'Nebulous')],
             linked=[('#P0', 'Amber Comet'), ('#Q0', 'Other Beacon')])
