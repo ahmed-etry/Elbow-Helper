@@ -21,6 +21,7 @@ from elbow_helper.configuration.files import FAMILY_DATABASE, ACCOUNT_LINKS_DATA
 from elbow_helper.data.collectors import FamilyCollectors
 from elbow_helper.data.store import FamilyStore
 from elbow_helper.data.links import LinkService
+from elbow_helper.data.reads import PeopleReads, MembershipReads
 
 from .core.errors import install_asyncio_exception_handler
 from .core.backups import DatabaseBackupJob
@@ -100,6 +101,9 @@ def create_bot(
     bot.tree.error(handle_app_command_error)
     store = FamilyStore(paths.data_root / FAMILY_DATABASE)
     bot.link_service = LinkService(store, paths.data_root / ACCOUNT_LINKS_DATABASE)
+
+    bot.people_reads = PeopleReads(store, link_service=bot.link_service)
+    bot.membership_reads = MembershipReads(store)
     bot.family_collectors = FamilyCollectors(bot, store, clash_client, CLANS.values())
 
     async def start_links_topic():

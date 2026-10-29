@@ -42,6 +42,8 @@ def account_view(row, *, nested=False, requested_role_ids=()):
         result['roles'] = [role for role in result['roles']
                            if role.get('role_id') != AGENT_TESTER_ROLE_ID
                            or role.get('role_id') in requested_role_ids]
+    if 'record_history' in row:
+        result['record_history'] = row['record_history']
     for field in ('ranked_league', 'legacy_league'):
         if isinstance(result.get(field), dict):
             result[field] = pick(result[field], ('id', 'name'))

@@ -81,6 +81,14 @@ RESULT_FIELDS['read_member_cohort']['rows'][0].update(
 RESULT_FIELDS['read_member_cohort']['rows'][0]['accounts'][0].update(names('clan_code,donations,clan_status'))
 RESULT_FIELDS['read_member_cohort']['rows'][0]['accounts'][0]['war_activity'] = RESULT_FIELDS['read_member_cohort']['rows'][0]['war_activity']
 RESULT_FIELDS['read_member_cohort']['rows'][0]['accounts'][0]['clan'] = names('tag,name')
+IDENTITY_HISTORY = {
+    **names('first_observed_at,last_observed_at,legacy_name,truncated,first_observed_is_first_ever'),
+    'ownership_intervals': [names('member_id,from_at,to_at,previous_good_at,end_previous_good_at,last_observed_at,basis')],
+    'clan_intervals': [names('clan_tag,clan_code,role,from_at,to_at,previous_good_at,end_previous_good_at,last_observed_at,end_basis')],
+    'names': [names('name,from_at,to_at')],
+}
+RESULT_FIELDS['read_member_accounts']['rows'][0]['record_history'] = IDENTITY_HISTORY
+RESULT_FIELDS['read_member_cohort']['rows'][0]['accounts'][0]['record_history'] = IDENTITY_HISTORY
 RESULT_FIELDS['read_member_cohort']['rows'][0].update(names(
     'account_tags,account_names,clan_codes,war_status,wars_observed,attacks_used,attacks_expected,missed,attack_completion_percent,war_totals_complete,discord_activity_status,last_active_day,active_streak_days,lifetime_messages'))
 RESULT_FIELDS['read_member_cohort']['activity_coverage'] = {

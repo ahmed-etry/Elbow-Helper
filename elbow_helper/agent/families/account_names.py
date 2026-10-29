@@ -12,6 +12,7 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 from ..access import require_evidence_access
 from ..datasets.clash import read_clash
 from ..research.member_identity import matching_members, matches_discord_identity
+from .. import record_identity
 
 
 def normalized_name(value):
@@ -109,6 +110,9 @@ async def resolve_account_names(context, queries):
 
     await stored('bot_account_links', context.account_links.get_all_links if context.account_links else None)
     await stored('stored_account_directory', context.cwl_queries.account_names if context.cwl_queries else None)
+    for tag, names in (await record_identity.aliases(context, queries)).items():
+        for name in names:
+            add(tag, name, 'family_record')
     live = await read_clash(context, {'kind': 'clan', 'tags': [clan.tag for clan in CLANS.values()],
                                      'member_scope': 'current', 'detail': 'full', 'limit': 50})
     by_tag = {item['tag']: item for item in live.get('items', [])}

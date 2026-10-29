@@ -187,6 +187,21 @@ class LinkService:
         """One legacy query, independent of the family record and collectors."""
         return await asyncio.to_thread(self.read_links_in_worker)
 
+    async def read_people(self, operation, *args):
+        """Read dated ownership between acknowledged link mutations.
+
+        Deferred imports and pending recovery cannot certify ownership history.
+        Keep the readiness check and snapshot inside both serialization locks.
+        """
+        return await self._serialize(self._read_people, operation, args)
+
+    def _read_people(self, operation, args):
+        with self._access:
+            def read(connection):
+                self._require_ready(connection)
+                return operation(connection, *args)
+            return self._family(read)
+
     def read_links_in_worker(self, select=None):
         """Synchronous facade entry to read_links; callers must use a worker."""
         try:

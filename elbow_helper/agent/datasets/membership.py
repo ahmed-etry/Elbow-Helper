@@ -14,6 +14,7 @@ from ..capabilities.clan_health.data import SOURCES
 from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool
 from ..research.history import search_date
+from .. import record_identity
 
 RUN_LIMIT = 128
 ROW_LIMIT = 100_000
@@ -100,11 +101,14 @@ async def read_membership_history(context, arguments):
             raise ValueError("Invalid membership selection")
     except (ValueError, TypeError, AttributeError):
         return {"error": "Use ISO dates within ninety days, valid clan codes and a page of 1..25."}
-    path = next(source for source in SOURCES if source.alias == "health").resolve(context.bot.paths)
     try:
-        runs, rows, clipped = await asyncio.to_thread(
-            read_observations, path, history_after.timestamp(), before.timestamp(),
-        )
+        observed = await record_identity.history(context, history_after, before)
+        if observed is None:
+            path = next(source for source in SOURCES if source.alias == "health").resolve(context.bot.paths)
+            observed = await asyncio.to_thread(
+                read_observations, path, history_after.timestamp(), before.timestamp(),
+            )
+        runs, rows, clipped = observed
         events = membership_events(runs, rows, after.timestamp(), codes)
     except (sqlite3.Error, OSError, ValueError):
         return {"error": "Membership observations could not be read within their bounds."}
