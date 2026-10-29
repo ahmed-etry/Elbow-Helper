@@ -1,5 +1,6 @@
 """Live Clash reads use a fake application client."""
 import asyncio
+from datetime import datetime, timezone
 import json
 from types import SimpleNamespace
 import unittest
@@ -283,7 +284,9 @@ class ClashReadTests(unittest.IsolatedAsyncioTestCase):
         self.context.guild = SimpleNamespace(id=1)
         self.context.member = SimpleNamespace(id=2)
 
-    async def test_live_battle_log_batches_and_nested_ranked_reads_always_fetch(self):
+    @patch('elbow_helper.agent.datasets.clash.datetime')
+    async def test_live_battle_log_batches_and_nested_ranked_reads_always_fetch(self, clock):
+        clock.now.side_effect = (datetime(2026, 10, 1, 0, 0, second, tzinfo=timezone.utc) for second in range(20))
         self.enable_cache()
         self.client.get.return_value.payload = {"items": [
             {"battleTimestamp": f"202610{day:02d}T120000.000Z", "army": [day], "attack": True}

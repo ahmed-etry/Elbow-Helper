@@ -19,6 +19,7 @@ from ..engine.capability_contract import CapabilityContract
 from ..engine.budgets import TOOL_TIMEOUT_SECONDS
 from .member_context import owner_context, account_owner_profiles, configured_member_roles, PROFILE_ROLE_GROUPS
 from ..read_cache import stored_read
+from .. import record_identity
 
 CLAN_ROLES = {'leadership': 'leadership_role_id', 'member': 'member_role_id',
               'war': 'war_role_id', 'cwl': 'cwl_role_id', 'cwl_helper': 'cwl_helper_role_id'}
@@ -159,6 +160,7 @@ async def member_accounts(context, arguments):
             identifiers = sorted(links)
     identifiers = sorted(set(identifiers) | set(name_identifiers))
     current = await profiles(context, tags)
+    histories = await record_identity.account_histories(context, tags) if arguments.get('include_history') else {}
     owners = {row['player_tag']: identifier for identifier, rows in links.items() for row in rows}
     owners.update({tag: row['member_id'] for tag, row in selected_accounts.items()
                    if row.get('member_id') is not None})
@@ -199,6 +201,8 @@ async def member_accounts(context, arguments):
             'profile_status': item['status'],
             **({'candidate_for': selected_accounts[tag]['candidate_for']}
                if selected_accounts.get(tag, {}).get('candidate_for') else {})})
+        if tag in histories:
+            result[-1]['record_history'] = histories[tag]
     for identifier in identifiers:
         member = context.guild.get_member(identifier)
         if not links.get(identifier):
@@ -524,7 +528,8 @@ async def member_cohort(context, arguments):
         if selected_accounts is not None:
             joined_accounts = {'rows': selected_accounts}
         elif rows:
-            joined_accounts = await member_accounts(context, {'member_ids': [row['member_id'] for row in rows]})
+            joined_accounts = await member_accounts(context, {'member_ids': [row['member_id'] for row in rows],
+                                                              'include_history': arguments.get('include_history', False)})
         else:
             joined_accounts = {'rows': []}
         if 'error' in joined_accounts:
@@ -593,6 +598,8 @@ TOOLS = (
       'after': DATE, 'before': DATE,
       'include_roles': {'type': 'boolean', 'default': False,
           'description': "For questions about this member's roles; lists configured clan, leadership, family and war/support roles only."},
+      'include_history': {'type': 'boolean', 'default': False,
+          'description': "For questions about an account's past owners, clan moves or old names."},
       'name': {'type': 'string', 'minLength': 1, 'maxLength': 100,
                'description': 'One name; requires look_in. Returns matching_members with linked account names and tags or game account candidates with owners. Ambiguity authorizes no actions or pings. Alternative to other selectors.'}}, member_accounts,
      usage_note='look_in: game for in-game names/data; discord for server person (messages, activity, roles, Discord ID); on no match, other side is searched.'),
@@ -616,6 +623,8 @@ TOOLS = (
       'member_ids': IDS, 'cohort_ref': {**COHORT_REF, 'description':
           'With basis=selected, a read_member_accounts report: activity covers exactly its selected accounts and their owners.'},
       'include_roles': {'type': 'boolean', 'description': "For questions about this member's roles; configured roles only."},
+      'include_history': {'type': 'boolean',
+          'description': "With account rows, for questions about an account's past owners, clan moves or old names."},
       'role_name': {'type': 'string', 'minLength': 1, 'maxLength': 100,
                     'description': 'Exact guild role name, such as War Co. With clan_codes, intersect its holders with clan home-role holders.'},
       'role_ids': IDS, 'clan_codes': {**CLANS_INPUT, 'description': 'With role_name or role_ids, filter holders by clan home role. Otherwise select configured clan_role.'}, 'role_match': {'type': 'string', 'enum': ['any', 'all']},
