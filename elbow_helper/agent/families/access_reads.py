@@ -16,20 +16,22 @@ async def discord_access(context, arguments):
     for identifier in arguments.get('role_ids', []):
         role = context.guild.get_role(identifier)
         if role is None:
-            return {'error': 'Choose current guild roles.', 'cause': 'needs_input'}
+            return {'error': 'Choose current guild roles.', 'cause': 'invalid_arguments', 'invalid_fields': ['role_ids']}
         actors.append(('role', role))
     for name in arguments.get('role_names', []):
         matches = [role for role in context.guild.roles if role.name.casefold() == name.casefold()]
         if len(matches) != 1:
-            return {'error': 'Choose one exact guild role name or ID.', 'cause': 'needs_input'}
+            return {'error': 'Choose one exact guild role name or ID.',
+                    'cause': 'needs_input' if matches else 'invalid_arguments', 'invalid_fields': ['role_names']}
         actors.append(('role', matches[0]))
     for identifier in arguments.get('member_ids', []):
         member = context.guild.get_member(identifier)
         if member is None:
-            return {'error': 'Choose current guild members.', 'cause': 'needs_input'}
+            return {'error': 'Choose current guild members.', 'cause': 'invalid_arguments', 'invalid_fields': ['member_ids']}
         actors.append(('member', member))
     if not actors:
-        return {'error': 'Which roles or members should I compare?', 'cause': 'needs_input'}
+        return {'error': 'Which roles or members should I compare?', 'cause': 'invalid_arguments',
+                'missing_fields': ['role_ids', 'role_names', 'member_ids']}
     actors = list({(kind, actor.id): (kind, actor) for kind, actor in actors}.values())
     channels = []
     for identifier in arguments.get('channel_ids', [context.source_message.channel.id]):

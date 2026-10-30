@@ -77,7 +77,8 @@ async def selected_wars(context, arguments, war_type):
                 after, before, season = int(start.timestamp()), int(end.timestamp()), None
         if not (after is not None or season or arguments.get('season_keys') or arguments.get('history_limit')
                 or arguments.get('war_ids') or arguments.get('latest_completed')):
-            return {'error': 'Which season, wars or date window do you want?', 'cause': 'needs_input'}
+            return {'error': 'Which season, wars or date window do you want?', 'cause': 'invalid_arguments',
+                    'missing_fields': ['season', 'season_keys', 'after', 'war_ids', 'latest_completed', 'history_limit']}
         return await stored_read(context, context.cwl_queries, 'attendance',
             clan_codes=arguments.get('clan_codes', list(CLANS)), war_type=war_type,
             after_ts=after, before_ts=before, season=season,
@@ -335,7 +336,7 @@ async def cwl_results(context, arguments):
                     **({'season': arguments['season']} if arguments.get('season') else {})}
         if metric in ('ass', 'bonus'):
             if len(clan) != 1:
-                return {'error': 'Which clan should I score?', 'cause': 'needs_input'}
+                return {'error': 'Which clan should I score?', 'cause': 'invalid_arguments', 'invalid_fields': ['clan_codes']}
             if not any(arguments.get(key) for key in (
                     'season', 'after', 'before', 'war_ids', 'latest_completed')):
                 season = await stored_read(context, context.cwl_queries, 'latest_season', clan_code=clan[0])

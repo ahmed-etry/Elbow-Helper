@@ -127,8 +127,9 @@ def _limit(result, flags, subject, guild):
     cause = result.get("cause")
     denied = (bool(result.get("required_access")) or cause == "access_denied"
               or "access_denied" in flags.get("limits", ()))
-    needs_input = (result.get("status") == "needs_input" or bool(result.get("missing_fields"))
-                   or cause == "needs_input")
+    needs_input = cause != 'invalid_arguments' and (
+        result.get("status") == "needs_input" or bool(result.get("missing_fields"))
+        or cause == "needs_input")
     # Successful clarification reads can contain authorized candidate members,
     # option descriptions or a validation issue. Keep that data whole.
     limit = ({key: deepcopy(value) for key, value in result.items()
@@ -137,6 +138,8 @@ def _limit(result, flags, subject, guild):
     limit["status"] = "denied" if denied else "needs_input" if needs_input else "unavailable"
     for key in ("available_privately", "missing_fields", "missing", "subject",
                 "role_change_access", "change_attempted", "confirmation_prepared"):
+        if cause == 'invalid_arguments' and key in ('missing_fields', 'missing'):
+            continue
         if key in result:
             limit[key] = deepcopy(result[key])
     if "subject" not in limit:

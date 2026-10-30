@@ -91,7 +91,7 @@ class VerificationFixTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCas
         cases = (
             ("read_discord_members", {}, {"member_ids": [41]}),
             ("read_clash", {"kind": "player", "tags": ["invalid"]}, {"kind": "player", "tags": ["#P0"]}),
-            ("read_ranked_stats", {"account_tags": ["#P0"], "after": "2026-01-01", "before": "2026-10-04"},
+            ("read_ranked_stats", {"account_tags": ["#P0"], "after": "2026-10-04", "before": "2026-10-04"},
              {"account_tags": ["#P0"], "after": "2026-10-01", "before": "2026-10-04"}),
         )
         for capability, invalid, corrected in cases:

@@ -1,7 +1,7 @@
 """Agent access to stored ranked observations, matching live Clash access."""
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import sqlite3
 
 from elbow_helper.configuration.clans import CLANS
@@ -110,13 +110,13 @@ async def read_ranked_stats(context, arguments, *, maximum=25, include_battles=F
     try:
         after = search_date(arguments.get("after"))
         before = search_date(arguments.get("before")) or datetime.now(timezone.utc)
-        if after is None or after >= before or (before - after) > timedelta(days=90):
+        if after is None or after >= before:
             raise ValueError("Invalid window")
         offset, limit = arguments.get("offset", 0), arguments.get("limit", 25)
         if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= maximum:
             raise ValueError("Invalid page")
     except (ValueError, TypeError):
-        return invalid_arguments("Use ISO dates for a window of up to ninety days and a valid page.",
+        return invalid_arguments("Use ISO dates with the end after the start and a valid page.",
                                  "after", "before", "offset", "limit")
     try:
         result = await stored_read(context, context.ranked_queries, 'window',
@@ -178,7 +178,7 @@ def ranked_tools():
                 "max_age_seconds": {"type": "integer", "minimum": 0, "maximum": 30,
                                     "default": 30},
             }, "required": ["after"], "additionalProperties": False},
-            usage_note="Choose one selector; max 90 days. Attacks count stored ranked/Legend records, including losses; check coverage. Quotas stay null; dates are UTC.",
+            usage_note="Choose one selector; long periods are read in windows. Attacks count stored ranked/Legend records, including losses; check coverage. Quotas null; dates UTC.",
         ), read_ranked_stats,
         contract=CapabilityContract(entity_fields=(("member_ids", "discord_member_set"),
             ("account_tags", "clash_account_set"), ("clan_tags", "clan_set"))),

@@ -93,7 +93,8 @@ async def recruitment(context, arguments):
                     row['followup_delivery_status'] = 'unverified; check ticket evidence'
     elif stage == 'ticket_evidence':
         if not ticket or not arguments.get('after'):
-            return {'error': 'Which recruitment ticket and date window should I read?', 'cause': 'needs_input'}
+            return {'error': 'Which recruitment ticket and date window should I read?', 'cause': 'invalid_arguments',
+                    'missing_fields': [key for key in ('ticket_channel_id', 'after') if not arguments.get(key)]}
         channel = await accessible_message_channel(context, ticket)
         if channel is None or getattr(channel, 'category_id', None) != RECRUITMENT_TICKET_CATEGORY:
             return {'error': 'That recruitment ticket is unavailable here.', 'cause': 'scope_refused'}

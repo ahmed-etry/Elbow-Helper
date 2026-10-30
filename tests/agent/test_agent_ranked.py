@@ -44,9 +44,9 @@ class AgentRankedTests(unittest.IsolatedAsyncioTestCase):
     async def test_invalid_scope_window_and_paging_are_rejected_before_querying(self):
         context = replace(self.context, ranked_queries=Mock())
         for overrides in ({"account_tags": ["#P0"]}, {"after": "2026-09-02"},
-                          {"after": "2025-01-01"}, {"after": "invalid"},
+                          {"after": "invalid"},
                           {"member_ids": [True]}, {"member_ids": []}, {"limit": 26},
-                          {"offset": -1}, {"before": "2026-11-30T00:00:01Z"}):
+                          {"offset": -1}):
             with self.subTest(overrides=overrides):
                 result = await read_ranked_stats(context, {**self.arguments, **overrides})
                 self.assertIn("error", result)

@@ -18,6 +18,31 @@ def decode_rows(value):
 
 
 class FamilyPagingRegressionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_small_cursor_pages_continue_past_sixteen_dispatches_with_budget_enforced(self):
+        expected = [{'member_id': index} for index in range(21)]
+        async def source(context, arguments):
+            return {'rows': expected}
+        tool = family_tool('read_test_family', 'Read records.', {}, source)
+        runner = PlanRunner(service=AgentService(None), context=_context(),
+            registry={tool.definition.name: tool}, command_capabilities={},
+            budget=ContextBudget(None, 8192, 0), rounder=SimpleNamespace(social_route=False))
+        arguments, observed = {'limit': 1}, []
+        for index in range(21):
+            step = {'id': 'page' + str(index), 'capability': tool.definition.name,
+                    'arguments': arguments, 'depends_on': []}
+            results = await runner.run({'steps': [step]})
+            page = results[step['id']]
+            self.assertNotIn('error', page)
+            observed.extend(page['rows'])
+            arguments = {'report_id': page['report_id'], 'cursor': page['next_cursor'], 'limit': 1}
+        self.assertEqual(observed, expected)
+        self.assertEqual(runner.tool_calls, 21)
+        with patch('elbow_helper.agent.engine.budgets.MAX_TOOL_CALLS', 21):
+            step = {**step, 'id': 'over_limit', 'arguments': {'report_id': page['report_id'], 'view': 'count'}}
+            result = (await runner.run({'steps': [step]}))['over_limit']
+        self.assertEqual(result['error'], 'The request reached its lookup limit.')
+        self.assertEqual(runner.tool_calls, 21)
+
     async def test_runner_reuses_summary_with_shrinking_page_budgets_without_gaps(self):
         expected = [{'member_id': index, 'value': 'x' * 180} for index in range(60)]
 

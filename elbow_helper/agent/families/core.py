@@ -4,9 +4,10 @@ import csv
 from io import BytesIO, StringIO
 import json
 import time
+import zlib
 from uuid import uuid4
 from datetime import datetime, timezone
-from base64 import urlsafe_b64decode
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 
 from .cursor import family_cursor
 
@@ -35,6 +36,7 @@ IDS = {'type': 'array', 'minItems': 1, 'maxItems': 200,
 TAGS = {'type': 'array', 'minItems': 1, 'maxItems': 200,
         'uniqueItems': True, 'items': {'type': 'string', 'maxLength': 20}}
 DATE = {'type': 'string', 'format': 'date-time'}
+MAX_FAMILY_SNAPSHOT_BYTES = 16 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,23 +46,33 @@ class FamilyReport:
     family: str
     payload: str
     retained_bytes: int = field(init=False)
+    _stored_payload: str = field(init=False, repr=False)
 
     def __post_init__(self):
         if (type(self.guild_id) is not int or self.guild_id <= 0
                 or not isinstance(self.report_id, str) or not 1 <= len(self.report_id) <= 32
                 or not isinstance(self.family, str) or not self.family.startswith('read_')):
             raise ValueError('Invalid family report identity')
+        encoded = self.payload.encode('utf-8')
+        if len(encoded) > MAX_FAMILY_SNAPSHOT_BYTES:
+            raise ArtifactCapacityError('Family snapshot exceeds the expanded payload budget')
         data = json.loads(self.payload)
         if (not isinstance(data, dict) or set(data) != {'rows', 'summary'}
                 or not isinstance(data['rows'], list) or not isinstance(data['summary'], dict)
                 or any(not isinstance(row, dict) for row in data['rows'])):
             raise ValueError('Invalid family report snapshot')
+        # Rich account rows repeat role and clan metadata. Retain every row
+        # losslessly before applying the existing model-page boundary; charging
+        # expanded JSON against the storage budget rejected otherwise pageable
+        # reports before a first cursor could be returned.
+        packed = 'z1:' + urlsafe_b64encode(zlib.compress(encoded)).decode('ascii')
+        object.__setattr__(self, '_stored_payload', packed if len(packed) < len(encoded) else self.payload)
         object.__setattr__(self, 'retained_bytes', len(json.dumps(self.storage_payload(),
                            ensure_ascii=False).encode('utf-8')))
 
     def storage_payload(self):
         return {'report_id': self.report_id, 'guild_id': self.guild_id,
-                'family': self.family, 'payload': self.payload}
+                'family': self.family, 'payload': self._stored_payload}
 
     def manifest(self):
         return {'report_id': self.report_id, 'kind': 'family', 'family': self.family,
@@ -100,7 +112,18 @@ class FamilyReport:
 def decode_family(row, guild_id):
     if row['guild_id'] != guild_id:
         raise ValueError('Family report belongs to another guild')
-    return FamilyReport(**{key: row[key] for key in ('report_id', 'guild_id', 'family', 'payload')})
+    fields = {key: row[key] for key in ('report_id', 'guild_id', 'family', 'payload')}
+    if fields['payload'].startswith('z1:'):
+        try:
+            decoder = zlib.decompressobj()
+            payload = decoder.decompress(urlsafe_b64decode(fields['payload'][3:]),
+                                         MAX_FAMILY_SNAPSHOT_BYTES + 1)
+            if len(payload) > MAX_FAMILY_SNAPSHOT_BYTES or not decoder.eof or decoder.unused_data:
+                raise ValueError('Invalid compressed family snapshot')
+            fields['payload'] = payload.decode('utf-8')
+        except (zlib.error, UnicodeError) as error:
+            raise ValueError('Invalid compressed family snapshot') from error
+    return FamilyReport(**fields)
 
 
 def _cell(value):
@@ -201,7 +224,7 @@ def family_tool(name, description, properties, reader, *, required=(), contract=
             missing = [key for key in required if key not in selected]
             if missing:
                 return {'error': 'Please specify ' + ', '.join(missing) + '.',
-                        'cause': 'needs_input', 'missing_fields': missing}
+                        'cause': 'invalid_arguments', 'missing_fields': missing}
             # Leave room for joins, immutable retention and model projection.
             # A slow optional live batch must return available observations
             # before the executor's hard deadline cancels the entire report.
@@ -229,9 +252,9 @@ def family_tool(name, description, properties, reader, *, required=(), contract=
                             'required_access': sorted(context.state.required_access)})
             if context.read_dependencies is not None:
                 context.read_dependencies.inherit(versions)
-            report = FamilyReport(uuid4().hex, context.guild.id, name, json.dumps(
-                {'rows': result['rows'], 'summary': summary}, ensure_ascii=False, allow_nan=False))
             try:
+                report = FamilyReport(uuid4().hex, context.guild.id, name, json.dumps(
+                    {'rows': result['rows'], 'summary': summary}, ensure_ascii=False, allow_nan=False))
                 retain_report(context.state.reports, report)
             except ArtifactCapacityError:
                 return {'error': 'That complete report is too large. Choose a smaller period or cohort.',

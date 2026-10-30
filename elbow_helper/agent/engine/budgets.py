@@ -158,7 +158,10 @@ class ContextBudget:
 
 
 MAX_MODEL_ROUNDS = 20
-MAX_TOOL_CALLS = 16
+# A safeguard against runaway plans, not a reading budget: the evidence
+# budgets fill after roughly thirty useful reads, and the rest leaves room
+# for argument repairs. Raise it together with those budgets.
+MAX_TOOL_CALLS = 40
 MAX_TOOL_RESULT_CHARACTERS = 16_000
 MAX_EVIDENCE_CHARACTERS = 64_000
 MAX_DISCUSSION_EVIDENCE_CHARACTERS = 128_000
