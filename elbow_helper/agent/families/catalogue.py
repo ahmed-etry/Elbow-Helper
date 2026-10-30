@@ -3,6 +3,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ..models import RegisteredAgentTool, AgentCapabilityEffect
 from ..actions.contracts import ActionClass
 from ..access import has_lookup_access
+from ..datasets.query import reader_levels
 from ..engine.capability_contract import CapabilityContract
 from ..plan.format import capability_list
 
@@ -12,7 +13,11 @@ GROUPS = ('changes', 'schedules', 'attachments', 'research_jobs', 'events',
 FAMILY_INSTRUCTION = (
     'Use the visible typed family reads for routine facts. Their handlers select sources, '
     'join identities and compute complete results; do not reproduce those operations with '
-    'SQL or propose capabilities absent from the current checked catalogue. Plan independent '
+    'SQL or propose capabilities absent from the current checked catalogue. For custom counts, '
+    'trends or comparisons over long periods or many accounts that no family read returns, open group '
+    'records with intent inspect: it adds query_bot_data and the table guide. Let SQL count and '
+    'compare so each account or member returns as one short row, and join account tags to their '
+    'Discord member through links.links. Family reads stay first for everything they cover. Plan independent '
     'families together and use typed result references for dependent reads. '
     'For a selected account cohort, use its cohort_ref for dependent measures so historical '
     'participants do not replace the requested population. Open a specialist '
@@ -210,7 +215,7 @@ def group_for(owner, tool):
     return 'records'
 
 
-def discovery_tool(available, active, on_expand):
+def discovery_tool(available, active, on_expand, data_guide=None):
     async def open_group(context, arguments):
         group = arguments['group']
         if group not in GROUPS:
@@ -241,9 +246,19 @@ def discovery_tool(available, active, on_expand):
                         or tool.action_class in (ActionClass.READ, ActionClass.OUTPUT)) and has_lookup_access(
                             context, tool.contract.required_access if tool.contract else frozenset()):
                     page[name] = tool
+        data_query = available.get('query_bot_data') if group == 'records' and offset == 0 else None
+        if data_query is not None and has_lookup_access(
+                context, data_query.contract.required_access if data_query.contract else frozenset()):
+            # The data query is the one specialist read without a typed family;
+            # it must not depend on its alphabetical page among the records.
+            page['query_bot_data'] = data_query
+        else:
+            data_query = None
         active.update(page)
         on_expand()
         return {'group': group, 'catalogue': capability_list(page),
+                **({'data_guide': data_guide(reader_levels(context))}
+                   if data_query is not None and data_guide is not None else {}),
                 **({'roles': [{'role_id': role.id, 'name': role.name} for role in context.guild.roles
                               if not role.is_default()],
                     'role_preview_path': 'read_discord_role_change_preview'} if group == 'changes' and offset == 0 else {}),

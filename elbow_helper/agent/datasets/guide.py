@@ -19,7 +19,9 @@ Clash account tag (#...). clan_code is a family clan code. One member can link m
 links.links maps accounts to members. Join accounts across links, health and rosters by \
 player_tag. PK1, PK2 and subsequent markers identify a table's complete primary key in order. \
 Keep the full record identity when joining related rows; matching one part of a composite \
-key is insufficient. Aggregate each one-to-many input before joining totals."""
+key is insufficient. Aggregate each one-to-many input before joining totals. Return one short \
+row per account or member and set max_rows to 1000 for per-account results; a result that was \
+cut says how many rows were left out and is not the full answer."""
 
 
 class DataGuide:

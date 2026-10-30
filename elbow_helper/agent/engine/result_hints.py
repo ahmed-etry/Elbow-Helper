@@ -209,7 +209,7 @@ BONUS.update(metric_name="", metric_definition="", ass_distinction=names("is_ass
 
 RESULT_FIELDS = {
     "query_bot_data": {
-        "rows": ["{selected SQL columns}"], **names("row_count,truncated"),
+        "rows": ["{selected SQL columns}"], **names("row_count,truncated,total_rows?,rows_cut?,instruction?"),
         "source_coverage?": "{records:{window,record_count,member_count,members[],note}}",
     },
     "read_clash": {"items": [{**names("tag,status"), "data?": "{endpoint fields}",

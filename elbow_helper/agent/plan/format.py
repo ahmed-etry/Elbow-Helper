@@ -218,7 +218,7 @@ REFERENCE_RETURNS = {
     "find_discord_members": "members:[{member_id,display_name,joined_at}],status",
     "read_discord_members": "members:[{member_id,display_name,joined_at}],next_offset",
     "read_linked_accounts": "accounts:[{member_id,player_tag,player_name}],unlinked_member_ids",
-    "query_bot_data": "rows:[{SQL column names}],row_count,truncated",
+    "query_bot_data": "rows:[{SQL column names}],row_count,truncated,total_rows,rows_cut,instruction",
     "search_approved_knowledge": "sections:[{section_id,title,body,next_section_offset}],next_offset",
     "read_discord_channel_history": "messages:[{message_id,content,source}],coverage:{next_cursor,reached_requested_start}",
     "read_clash": "items:[{tag,status,data:{tag,name,townHallLevel,clan:{tag,name}}}],next_tags",

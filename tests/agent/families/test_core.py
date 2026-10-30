@@ -89,13 +89,31 @@ class FamilyReportTests(unittest.IsolatedAsyncioTestCase):
                        {'type': 'object', 'properties': {}}), execute,
                        contract=CapabilityContract(), default_visible=False, specialist_group='records')
         active, changed = {}, Mock()
-        discovery = discovery_tool({'synthetic': tool, 'query_bot_data': replace(tool,
-                      definition=replace(tool.definition, name='query_bot_data'))}, active, changed)
+        available = {'synthetic': tool, 'query_bot_data': replace(tool,
+                      definition=replace(tool.definition, name='query_bot_data'))}
+        discovery = discovery_tool(available, active, changed)
         result = await discovery.handler(_context(), {'group': 'records', 'intent': 'inspect'})
-        self.assertEqual(set(active), {'synthetic'})
+        self.assertEqual(set(active), {'synthetic', 'query_bot_data'})
         self.assertIn('synthetic', result['catalogue'])
+        self.assertNotIn('data_guide', result)
         execute.assert_not_called()
         changed.assert_called_once()
+
+    async def test_opening_records_adds_the_data_query_with_its_table_guide_for_this_reader(self):
+        tool = RegisteredAgentTool(AgentToolDefinition('query_bot_data', 'Query stored data.',
+                       {'type': 'object', 'properties': {}}), Mock(),
+                       contract=CapabilityContract(), default_visible=False, specialist_group='records')
+        guide = Mock(return_value='synthetic guide')
+        active = {}
+        discovery = discovery_tool({'query_bot_data': tool}, active, Mock(), guide)
+        context = _context()
+        with patch('elbow_helper.agent.families.catalogue.reader_levels', return_value={'lead'}):
+            result = await discovery.handler(context, {'group': 'records', 'intent': 'inspect'})
+            other = await discovery.handler(context, {'group': 'events', 'intent': 'inspect'})
+        self.assertEqual(set(active), {'query_bot_data'})
+        self.assertEqual(result['data_guide'], 'synthetic guide')
+        guide.assert_called_once_with({'lead'})
+        self.assertNotIn('data_guide', other)
 
     def test_legacy_sql_and_change_tools_are_not_default_visible(self):
         registry = build_agent_tools()

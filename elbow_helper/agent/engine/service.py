@@ -179,7 +179,8 @@ class AgentService:
         if family_catalogue:
             full_registry["open_capability_group"] = discovery_tool(
                 specialist_registry, registry, lambda: (session.replace_tools((plan_definition(registry),)),
-                                                      setattr(budget, "request_limits", limits.RESEARCH_LIMITS)))
+                                                      setattr(budget, "request_limits", limits.RESEARCH_LIMITS)),
+                self._data_guide.for_levels if self._data_guide else None)
         capability_registry.update(full_registry)
         if not social:
             registry.clear()
