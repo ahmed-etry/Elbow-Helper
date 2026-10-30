@@ -5,13 +5,13 @@ import sqlite3
 
 from elbow_helper.infrastructure.persistence.migrations import SQLiteMigration
 from .war_schema import create_war_schema, extend_war_schema
-from .api_fields import create_api_field_schema
+from .api_fields import create_api_field_schema, rebuild_field_changes
 from .source_schema import create_source_schema
 from .link_schema import create_link_schema
 
 
 # Later subjects add migrations; they must not rewrite this baseline.
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 STATEMENTS = (
     """CREATE TABLE collection_runs (
         id INTEGER PRIMARY KEY, collector TEXT NOT NULL, scope_kind TEXT NOT NULL,
@@ -270,4 +270,5 @@ MIGRATIONS = (
     SQLiteMigration(7, "family battle raid and season sources", create_source_schema),
     SQLiteMigration(8, "checked people import and link mirror", create_link_schema),
     SQLiteMigration(9, "war source status, type basis and legacy IDs", extend_war_schema),
+    SQLiteMigration(10, "ordinary field change table", rebuild_field_changes),
 )

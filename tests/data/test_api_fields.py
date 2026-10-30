@@ -354,6 +354,52 @@ class ApiFieldTests(unittest.IsolatedAsyncioTestCase):
                         target.execute("SELECT name FROM sqlite_master WHERE name='api_records'").fetchall())
         self.assertEqual(await self.store.call(inspect), (5, "#P0", []))
 
+    async def test_field_change_table_upgrade_keeps_rows_and_key_as_ordinary_table(self):
+        old = self.path.parent / "without_rowid.sqlite3"
+        def build(c):
+            with closing(sqlite3.connect(old)) as target:
+                run_sqlite_migrations(target, MIGRATIONS[:9], target_version=9)
+                columns = target.execute("PRAGMA table_info(api_field_changes)").fetchall()
+                keys = target.execute("PRAGMA foreign_key_list(api_field_changes)").fetchall()
+                target.execute("DROP TABLE api_field_changes")
+                target.execute("""CREATE TABLE api_field_changes (
+                    record_id INTEGER NOT NULL REFERENCES api_records(id), observed_at INTEGER NOT NULL,
+                    patch_z BLOB NOT NULL, source_run_id INTEGER NOT NULL REFERENCES collection_runs(id),
+                    PRIMARY KEY(record_id,source_run_id)) WITHOUT ROWID""")
+                target.execute("INSERT INTO api_records(id,source_kind,scope_id,state_z) VALUES (1,'k','s',x'00')")
+                target.execute("INSERT INTO collection_runs(id,collector,scope_kind,scheduled_at,started_at,status,expected) "
+                               "VALUES (7,'c','s',1,1,'ok',1),(8,'c','s',1,1,'ok',1)")
+                target.executemany("INSERT INTO api_field_changes VALUES (?,?,?,?)",
+                                   [(1, 50, b"\x01\x02", 7), (1, 40, b"\x03", 8)])
+                target.commit()
+                return columns, keys
+        columns, keys = await self.store.call(build)
+        def upgrade(c):
+            with closing(sqlite3.connect(old)) as target:
+                target.execute("PRAGMA foreign_keys=ON")
+                versions = run_sqlite_migrations(target, MIGRATIONS, target_version=SCHEMA_VERSION)
+                sql = target.execute("SELECT sql FROM sqlite_master WHERE name='api_field_changes'").fetchone()[0]
+                rows = target.execute("SELECT * FROM api_field_changes ORDER BY source_run_id").fetchall()
+                after = (target.execute("PRAGMA table_info(api_field_changes)").fetchall(),
+                         target.execute("PRAGMA foreign_key_list(api_field_changes)").fetchall())
+                try:
+                    target.execute("INSERT INTO api_field_changes VALUES (1,60,x'05',7)")
+                    duplicate = False
+                except sqlite3.IntegrityError:
+                    duplicate = True
+                return versions, sql, rows, after, duplicate, target.execute("PRAGMA integrity_check").fetchone()[0]
+        versions, sql, rows, after, duplicate, integrity = await self.store.call(upgrade)
+        self.assertEqual(versions, (10,))
+        self.assertNotIn("WITHOUT ROWID", sql.upper())
+        self.assertEqual(rows, [(1, 50, b"\x01\x02", 7), (1, 40, b"\x03", 8)])
+        self.assertEqual(after, (columns, keys))
+        self.assertTrue(duplicate)
+        self.assertEqual(integrity, "ok")
+
+    async def test_fresh_field_change_table_is_ordinary(self):
+        sql = (await self.rows("SELECT sql FROM sqlite_master WHERE name='api_field_changes'"))[0]["sql"]
+        self.assertNotIn("WITHOUT ROWID", sql.upper())
+
     async def test_real_duplicate_achievement_names_keep_both_typed_rows(self):
         sample = fixture("player_4.json")
         _, result = await self.record(sample)
