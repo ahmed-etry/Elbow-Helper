@@ -524,7 +524,7 @@ class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
                 finally:
                     await model.close()
 
-    async def test_real_writer_preserves_access_and_missing_input_without_transport_errors(self):
+    async def test_real_writer_preserves_access_missing_input_and_failed_read_reasons(self):
         cases = (
             ({"error": "Lead access is required.", "required_access": ["lead"],
               "available_privately": False},
@@ -560,8 +560,12 @@ class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
                         for key, value in expected.items():
                             self.assertEqual(limit[key], value)
                         self.assertEqual(limit["subject"], {"clan_code": "C"})
-                        self.assertNotIn("TRANSPORT_DIAGNOSTIC", json.dumps(options))
+                        if raw.get('error') and expected['status'] != 'denied':
+                            self.assertEqual(limit['failed_read'], {
+                                'what': 'read_sample', 'reason': raw['error']})
                         if expected["status"] == "denied":
+                            self.assertNotIn('failed_read', limit)
+                            self.assertNotIn(raw['error'], json.dumps(evidence))
                             constraints = json.dumps(writer_payload(options)[0])
                             self.assertIn("Stop that restricted part", constraints)
                         return provider_response("That detail needs clarification or permitted access.")
@@ -705,6 +709,28 @@ class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AnswerEvidenceTests(unittest.TestCase):
+    def test_failed_read_reasons_survive_invalid_arguments_and_nested_projection(self):
+        reason = 'Synthetic period is required.'
+        failed = {'family': 'read_member_cohort', 'error': reason,
+                  'cause': 'invalid_arguments', 'missing_fields': ['after']}
+        raw = {'activity': failed, 'retained': {'earlier': failed},
+               'source': {'source_reads': {'nested': failed}}}
+        projected = answer_evidence(raw, subjects={'activity': {'member_ids': [42, 43]}})
+        for result in (projected['activity'], projected['retained']['earlier'],
+                       projected['source']['source_reads']['nested']):
+            self.assertEqual(result['status'], 'unavailable')
+            self.assertEqual(result['failed_read'], {'what': 'read_member_cohort', 'reason': reason})
+            self.assertNotIn('rows', result)
+        self.assertEqual(projected['activity']['subject'], {'member_ids': [42, 43]})
+        self.assertEqual(raw['activity']['error'], reason)
+
+    def test_failed_flags_without_error_keep_failure_distinct_from_empty_records(self):
+        projected = answer_evidence({'failed': {'flags': {'status': 'failed'},
+            'cause': 'source_unavailable'}, 'empty': {'rows': []}})
+        self.assertEqual(projected['failed']['failed_read'], {
+            'what': 'failed', 'reason': 'source_unavailable'})
+        self.assertEqual(projected['empty'], {'rows': []})
+
     def test_projection_never_edits_source_prose_or_command_notes(self):
         body = "selection after notes flags 73.42% — names stay exactly as supplied"
         raw = {"read": {"rows": [{"body": body, "notes": body, "selection": body}],
@@ -715,7 +741,8 @@ class AnswerEvidenceTests(unittest.TestCase):
         projected = answer_evidence(raw)
         self.assertEqual(projected["read"]["rows"], raw["read"]["rows"])
         self.assertEqual(projected["read"]["notes"], [body])
-        self.assertEqual(projected["retained"], {"old": {"status": "unavailable"},
+        self.assertEqual(projected["retained"], {"old": {"status": "unavailable",
+            "failed_read": {"what": "old", "reason": "failed attempt"}},
                                                "good": {"sections": [{"body": body}]}})
         self.assertEqual(raw, original)
 

@@ -138,6 +138,12 @@ class PrivateSourceTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(access_refused(result))
                 self.assertEqual(answer_evidence({"conversation": result})["conversation"],
                                  {"status": "denied", "available_privately": True})
+                # A refusal reason may identify a source. It must not enter
+                # writer evidence through the failed-read diagnostic path.
+                sensitive = {**result, 'error': 'Synthetic restricted source: private-room-marker'}
+                projected = answer_evidence({'conversation': sensitive})['conversation']
+                self.assertEqual(projected, {'status': 'denied', 'available_privately': True})
+                self.assertNotIn('private-room-marker', json.dumps(projected))
                 self.assertNotIn("Synthetic recruitment evidence", json.dumps(result))
                 self.assertEqual(self.personal.reads, 0)
         self.ticket.viewers.remove(self.bot_member.id)

@@ -76,6 +76,7 @@ class PlanDependencyTests(unittest.IsolatedAsyncioTestCase):
         run.assert_awaited_once()
         self.assertEqual(results["consumer"], {
             "error": "Step source failed, so this step could not run.",
+            "execution_status": "not_run",
         })
 
     def test_unknown_later_and_malformed_references_still_reject_the_plan(self):

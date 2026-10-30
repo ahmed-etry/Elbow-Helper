@@ -126,10 +126,12 @@ async def execute_plan(
             if "error" in results[dependency]:
                 return step["id"], {
                     "error": f"Step {dependency} failed, so this step could not run.",
+                    "execution_status": "not_run",
                 }
         if step["id"] in (step_errors or {}):
             return step["id"], {
                 "error": step_errors[step["id"]], "cause": "invalid_arguments",
+                "execution_status": "not_run",
                 "capability": step["capability"],
                 **({"argument_schema": argument_schema(step)} if argument_schema else {}),
             }
@@ -141,10 +143,12 @@ async def execute_plan(
         except UnresolvedReferenceError as error:
             LOGGER.warning("Agent step %s has unresolved reference to step %s path %s",
                            step["id"], error.step_id, error.path)
-            return step["id"], {"error": "A required earlier result is unavailable."}
+            return step["id"], {"error": "A required earlier result is unavailable.",
+                                "execution_status": "not_run"}
         except SingleValueReferenceError as error:
             return step["id"], {
                 "error": str(error), "cause": "invalid_arguments",
+                "execution_status": "not_run",
                 "capability": step["capability"],
                 **({"argument_schema": argument_schema(step)} if argument_schema else {}),
             }

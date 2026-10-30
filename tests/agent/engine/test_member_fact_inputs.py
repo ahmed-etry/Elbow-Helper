@@ -47,7 +47,7 @@ class MemberFactInputTests(unittest.TestCase):
             self.assertNotIn('placement_authority', row)
         self.assertNotIn('requester_lookup', rows[1])
 
-    def test_denial_exposes_actual_roles_not_internal_group_or_error_prose(self):
+    def test_denial_preserves_actual_roles_without_private_error_text(self):
         projected = answer_evidence({'restricted': {'required_access': ['lead'],
             'error': 'PRIVATE_ERROR', 'available_privately': True}}, guild=self.guild)
         self.assertEqual(projected['restricted'], {'status': 'denied',
