@@ -180,8 +180,9 @@ class PromptLayoutTests(unittest.IsolatedAsyncioTestCase):
         for name in ('planning', 'banter'):
             with self.subTest(call=name):
                 prompt = requests[name]['prompt']
-                self.assertLess(prompt.index('A passing mention talks about you'),
-                                prompt.index('<history_checkpoint>'))
+                self.assertLess(prompt.index('Triggering message (a mention is not necessarily a request):'),
+                                prompt.index('A passing mention talks about you'))
+                self.assertLess(prompt.index('A passing mention talks about you'), prompt.index('<request>'))
                 if name == 'planning':
                     self.assertLess(prompt.index('Canonical public command help'),
                                     prompt.index('<history_checkpoint>'))

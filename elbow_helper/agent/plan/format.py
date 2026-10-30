@@ -27,6 +27,8 @@ REPLY_CAPABILITIES = frozenset({"react_to_request", "find_gif", "set_discord_rep
 
 WRITER_INSTRUCTION = """Compose the requested answer from the supplied evidence. Lead assessments with the decisive
 supported findings; give a verdict only where the established facts and decision support one.
+Answer what asker_wants describes and leave out facts from the results that don't serve it;
+when it conflicts with the request, the request wins.
 Keep meaningful unknowns local to the affected claim. Don't
 pad with absent observations or rhetorical contrasts. Merge dated records by verified identity,
 cover the requested period, and preserve people with unresolved placement. Partial surviving

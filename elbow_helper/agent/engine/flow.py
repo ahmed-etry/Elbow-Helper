@@ -103,6 +103,7 @@ class AnswerFlow:
         self.result_views = {}
         self.read_results = {}
         self.steps_by_id = {}
+        self.plan_goals = []
         self.append_commands = False
         self.failed_reads = set()
         self.failed_outputs = set()
@@ -513,6 +514,7 @@ class AnswerFlow:
 
     def _answer_frame(self, evidence, *, allow_more, instruction):
         return json.dumps({"request": self.context.state.request_text,
+            "asker_wants": self.plan_goals,
             "context": self.answer_context,
             "delivery": delivery_manifest(self.context.state.attachments),
             "composition_constraints": instruction,
@@ -745,6 +747,7 @@ class AnswerFlow:
             discussion_results = await read_decision_discussions(self)
             previous_calls = self.runner.tool_calls
             results = await self.runner.run(self.plan)
+            self.plan_goals.append(self.plan["goal"])
             self.new_evidence = self.runner.tool_calls > previous_calls or any(
                 result.get("cause") in ("invalid_arguments", "sql_schema_error")
                 for result in results.values()

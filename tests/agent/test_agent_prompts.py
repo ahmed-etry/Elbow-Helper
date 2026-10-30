@@ -216,13 +216,13 @@ class RequestPromptTests(unittest.TestCase):
                 )
                 self.assertIn(
                     "Triggering message (a mention is not necessarily a request):\n"
+                    "A passing mention talks about you to someone else rather than asking you something. "
+                    "Meet that conversational moment with a short line or fitting GIF. "
+                    "Don't pick on unrelated details like spelling or add factual claims nobody asked for.\n"
                     f"<request>\n{message}\n</request>",
                     prompt,
                 )
-                self.assertTrue(prompt.startswith(
-                    "A passing mention talks about you to someone else rather than asking you something. "
-                    "Meet that conversational moment with a short line or fitting GIF. "
-                    "Don't pick on unrelated details like spelling or add factual claims nobody asked for.\n"))
+                self.assertFalse(prompt.startswith("A passing mention"))
                 self.assertIn(f"<local_context>\n{nearby}\n</local_context>", prompt)
                 self.assertIn('Agent (you): {"display_name": "Synthetic Bot", "member_id": 999}', prompt)
                 self.assertNotIn("Persona and tone:", prompt)

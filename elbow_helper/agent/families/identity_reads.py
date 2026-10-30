@@ -77,8 +77,12 @@ def member_fields(member, identifier):
             'participation_clans': participation,
             'home_clan_status': ('not_in_guild' if member is None else 'multiple' if len(homes) > 1
                                  else 'resolved' if homes else 'no_home_role'),
-            'home_clan_basis': 'current non-utility Discord clan member roles; not historical acceptance, '
-                'extra participation, in-game account location or identification of a main account',
+            'home_clan_basis': 'configured non-utility Discord clan member roles, assigned at acceptance and '
+                'changed with promotion or demotion within the family; home roles define where accounts '
+                'are supposed to be; a member with accounts in different home clans holds multiple home '
+                'roles; roles never follow in-game moves or become stale because of them; an account '
+                'outside its home clan has left or moved; utility roles are extra participation; '
+                'not historical acceptance, current account location or identification of a main account',
             'roles': [{'role_id': role.id, 'name': role.name,
                        'clan_purposes': clan_role_purposes(role.id)} for role in member.roles
                       if not role.is_default()] if member else []}
