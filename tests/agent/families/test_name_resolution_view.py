@@ -101,7 +101,7 @@ class NameResolutionViewTests(unittest.IsolatedAsyncioTestCase):
         payload = named_accounts(40)
         context = _context()
         tool = family_tool('read_member_accounts', 'Synthetic accounts.', {}, AsyncMock(return_value=payload))
-        page = await tool.handler(context, {})
+        page = await tool.handler(context, {'include_profile': True})
         self.assertNotIn('error', page)
         self.assertTrue(page['rows'])
         self.assertIsNotNone(page['next_cursor'])

@@ -200,7 +200,8 @@ class IdentitySideTests(unittest.IsolatedAsyncioTestCase):
         tool = next(tool for tool in identity_reads.TOOLS if tool.definition.name == 'read_member_accounts')
         with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters())), \
              patch.object(identity_reads, 'profiles', AsyncMock(return_value={})):
-            result = await tool.handler(context, {'name': 'Silver Kite', 'look_in': 'discord', 'include_roles': True})
+            result = await tool.handler(context, {'name': 'Silver Kite', 'look_in': 'discord',
+                                                  'include_roles': True, 'include_profile': True})
         retained = await tool.handler(context, {'report_id': result['report_id']})
         for data in (result, retained, family_model_view(retained)):
             self.assertEqual(len(data['members']), 1)

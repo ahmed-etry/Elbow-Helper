@@ -600,6 +600,8 @@ TOOLS = (
           'description': "For questions about this member's roles; lists configured clan, leadership, family and war/support roles only."},
       'include_history': {'type': 'boolean', 'default': False,
           'description': "For questions about an account's past owners, clan moves or old names."},
+      'include_profile': {'type': 'boolean', 'default': False,
+          'description': "For questions about a member's or account's standing: trial or member status, join date, home clans, leagues, trophies, donations or career totals."},
       'name': {'type': 'string', 'minLength': 1, 'maxLength': 100,
                'description': 'One name; requires look_in. Returns matching_members with linked account names and tags or game account candidates with owners. Ambiguity authorizes no actions or pings. Alternative to other selectors.'}}, member_accounts,
      usage_note='look_in: game for in-game names/data; discord for server person (messages, activity, roles, Discord ID); on no match, other side is searched.'),

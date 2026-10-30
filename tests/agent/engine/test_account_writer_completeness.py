@@ -21,8 +21,9 @@ class AccountWriterCompletenessTests(unittest.IsolatedAsyncioTestCase):
         members = [{'member_id': 41, 'member_name': 'Owner', 'roles': roles,
                     'home_clans': [{'clan_code': 'BEM'}], 'account_tags': [row['player_tag'] for row in rows]}]
         tool = family_tool('read_member_accounts', 'Read owner accounts.',
-            {'include_roles': {'type': 'boolean'}}, AsyncMock(return_value={'rows': rows, 'members': members}))
-        page = await tool.handler(context, {'include_roles': True, 'limit': 1})
+            {'include_roles': {'type': 'boolean'}, 'include_profile': {'type': 'boolean'}},
+            AsyncMock(return_value={'rows': rows, 'members': members}))
+        page = await tool.handler(context, {'include_roles': True, 'include_profile': True, 'limit': 1})
         self.assertEqual(len(page['rows']), 1)
         evidence = await cohort_writer_evidence(context, {'accounts': model_result(page)})
         projected = answer_evidence(evidence, guild=context.guild)

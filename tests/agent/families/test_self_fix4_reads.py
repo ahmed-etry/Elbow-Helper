@@ -25,7 +25,7 @@ class HomeClanTests(unittest.IsolatedAsyncioTestCase):
         profile = {'#P0': {'status': 'ok', 'data': {'clan': {'tag': CLANS['BEH'].tag, 'name': CLANS['BEH'].name}}}}
         tool = next(t for t in reads.TOOLS if t.definition.name == 'read_member_accounts')
         with patch.object(reads, 'profiles', AsyncMock(return_value=profile)):
-            result = await tool.handler(context, {'member_ids': [42]})
+            result = await tool.handler(context, {'member_ids': [42], 'include_profile': True})
         visible = family_model_view(result)
         self.assertNotIn('roles', visible['rows'][0])
         row = answer_evidence({'member': visible})['member']['rows'][0]

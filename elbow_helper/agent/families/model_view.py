@@ -5,8 +5,19 @@ from ..research.history import readable_history_row
 from .cwl_summary import CWL_ANALYSIS_FIELDS
 
 
+# read_member_accounts returns these only on include_profile; the retained report keeps them all.
+MEMBER_PROFILE_FIELDS = ('nickname', 'joined_at', 'family_membership_roles', 'home_clans',
+                         'participation_clans', 'home_clan_status')
+ACCOUNT_PROFILE_FIELDS = ('role', 'ranked_league', 'legacy_league', 'trophies', 'donations',
+                          'war_stars', 'observed_at')
+
+
 def pick(value, fields):
     return {key: value[key] for key in fields if key in value}
+
+
+def omit(value, fields):
+    return {key: item for key, item in value.items() if key not in fields}
 
 
 def name_resolution_view(resolution):
@@ -114,10 +125,15 @@ def family_model_view(payload):
     rows = data.get('rows')
     if not isinstance(rows, list):
         return data
+    plain_accounts = family == 'read_member_accounts' and not data.get('selection', {}).get('include_profile')
     if isinstance(data.get('members'), list):
         selected_members = {row.get('member_id') or row.get('applicant_member_id') for row in rows}
         data['members'] = [account_view(member) for member in data['members']
                            if member.get('member_id') in selected_members]
+        if family == 'read_member_accounts':
+            # The home clan explanation is stated once in the planner context, never per member.
+            data['members'] = [omit(member, ('home_clan_basis', *(MEMBER_PROFILE_FIELDS if plain_accounts else ())))
+                               for member in data['members']]
         if family == 'read_member_accounts' and not data.get('selection', {}).get('include_roles'):
             for member in data['members']:
                 member.pop('roles', None)
@@ -136,6 +152,8 @@ def family_model_view(payload):
         selected = {row.get('player_tag') for row in rows}
         data['unknown_accounts'] = [projection(row) for row in data['unknown_accounts']
                                    if row.get('player_tag') in selected]
+        if plain_accounts:
+            data['unknown_accounts'] = [omit(row, ACCOUNT_PROFILE_FIELDS) for row in data['unknown_accounts']]
     if isinstance(data.get('clan_facts'), list):
         data['clan_facts'] = [pick(row, ('clan_code', 'name', 'tag', 'operational_cwl_only',
             'configured_cwl_only', 'membership_basis', 'configured_membership_basis',
@@ -190,6 +208,8 @@ def family_model_view(payload):
                         key: pick(value, ('numerator', 'denominator')) if isinstance(value, dict) else value
                         for key, value in metrics.items() if key != 'accounts'}
                         for kind, metrics in item['attack_performance'].items()}
+            if plain_accounts:
+                item = omit(item, ACCOUNT_PROFILE_FIELDS)
             projected.append(item)
             if family == 'read_member_cohort' and data.get('activity_coverage'):
                 projected[-1] = pick(item, ('member_id', 'member_name', 'membership_status',
