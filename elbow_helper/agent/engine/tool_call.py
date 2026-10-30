@@ -274,6 +274,7 @@ def merge_tool_state(
     target.state.knowledge_sources.update(local.state.knowledge_sources)
     target.state.history_cursors.update(local.state.history_cursors)
     target.state.resolved_members.update(local.state.resolved_members)
+    target.state.candidate_member_ids.update(local.state.candidate_member_ids)
     for name in ("reports", "report_sources", "report_access_requirements"):
         destination = getattr(target.state, name)
         selected = getattr(local.state, name)

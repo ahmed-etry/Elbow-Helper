@@ -177,6 +177,7 @@ class AgentTurnState:
     authorized_instructions: tuple[TaskInstruction, ...] = ()
     request_text: str = ""
     resolved_members: dict[int, str] = field(default_factory=dict)
+    candidate_member_ids: set[int] = field(default_factory=set)
     member_self_target: bool = False
     image_sources: list[tuple[int, int]] = field(default_factory=list)
     image_source_status: list[str] = field(default_factory=list)

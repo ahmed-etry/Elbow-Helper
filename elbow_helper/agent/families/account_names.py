@@ -1,8 +1,9 @@
-"""Join named Discord members and family game accounts without choosing a side."""
+"""Resolve names on the planner's chosen side, then join through account links."""
 
 import asyncio
 import sqlite3
 import unicodedata
+from dataclasses import replace
 
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.guild import TEST_ACCOUNT_IDS
@@ -149,71 +150,93 @@ async def resolve_account_names(context, queries):
             'selection_complete': all(row['status'] == 'resolved' for row in resolutions)}
 
 
-async def resolve_names(context, queries):
-    """Use the same two-sided lookup for singular and plural name selectors."""
+async def resolve_names(context, queries, look_in=None):
+    """Search the requested identity source; only misses use the other source."""
+    if look_in not in ('game', 'discord'):
+        return {'error': 'look_in is required for name lookups; choose game or discord.',
+                'cause': 'invalid_arguments', 'invalid_fields': ['look_in']}
     await require_evidence_access(context)
-    # Account-name exactness must not suppress somebody else's nickname part.
-    member_matches = [await matching_members(context, query.strip(), prefer_exact=False) for query in queries]
-    members_complete = getattr(context.guild, 'chunked', True) is not False
-    result = await resolve_account_names(context, queries)
-    if not members_complete:
-        result['missing_sources'].append({'source': 'discord_members', 'cause': 'incomplete'})
-    members, sources_by_query = {}, []
-    for matches, resolution in zip(member_matches, result['name_resolutions']):
-        sources = {member.id: ['discord_or_linked_account_name'] for member in matches}
-        members.update((member.id, member) for member in matches)
-        for candidate in resolution['candidates']:
-            identifier = candidate['member_id']
-            member = context.guild.get_member(identifier) if identifier else None
-            if (member is None or member.id != identifier or identifier in TEST_ACCOUNT_IDS
-                    or getattr(member, 'bot', False)):
-                continue
-            members[identifier] = member
-            member_sources = sources.setdefault(identifier, [])
-            if 'bot_account_link' not in member_sources:
-                member_sources.append('bot_account_link')
-        sources_by_query.append(sources)
+    resolutions, missing, members = [None] * len(queries), [], {}
+
+    async def search(side, indices):
+        if side == 'game':
+            result = await resolve_account_names(context, [queries[index] for index in indices])
+            for source in result['missing_sources']:
+                if source not in missing:
+                    missing.append(source)
+            for index, resolution in zip(indices, result['name_resolutions']):
+                resolution['found_in'] = 'game' if resolution['candidates'] else None
+                resolutions[index] = resolution
+            return
+        # matching_members also supports linked aliases for other callers. Here
+        # only Discord identities may match; links are joined after selection.
+        discord_context = replace(context, account_links=None)
+        for index in indices:
+            query = queries[index].strip()
+            matches = [member for member in await matching_members(
+                discord_context, query, prefer_exact=False)
+                if matches_discord_identity(member, query)]
+            complete = getattr(context.guild, 'chunked', True) is not False
+            if not complete and {'source': 'discord_members', 'cause': 'incomplete'} not in missing:
+                missing.append({'source': 'discord_members', 'cause': 'incomplete'})
+            members.update((member.id, member) for member in matches)
+            resolutions[index] = {'query': queries[index],
+                'status': ('unknown' if not complete else 'ambiguous' if len(matches) > 1
+                           else 'resolved' if matches else 'not_found'),
+                'found_in': 'discord' if matches else None, 'candidates': [],
+                'matching_members': [{'member_id': member.id, 'member_name': member.display_name,
+                    'username': getattr(member, 'name', None),
+                    'nickname': getattr(member, 'nick', None)} for member in matches]}
+
+    await search(look_in, list(range(len(queries))))
+    misses = [index for index, row in enumerate(resolutions) if row['found_in'] is None]
+    unknown = {index for index in misses if resolutions[index]['status'] == 'unknown'}
+    if misses:
+        await search('discord' if look_in == 'game' else 'game', misses)
+        for index in unknown:
+            if resolutions[index]['status'] == 'not_found':
+                resolutions[index]['status'] = 'unknown'
     links = (await asyncio.to_thread(context.account_links.get_links_for_members, sorted(members))
              if members and context.account_links else {})
     await require_evidence_access(context)
-    selected, selected_members = {}, set()
-    for resolution, sources in zip(result['name_resolutions'], sources_by_query):
-        candidates = resolution['candidates']
-        account_status = resolution['status']
-        # An exact account match must never hide a Discord name belonging to
-        # somebody else, including when the account has no current guild owner.
-        collision = bool(candidates and sources and any(
-            candidate['member_id'] != identifier
-            for candidate in candidates for identifier in sources))
-        ambiguous = len(sources) > 1 or account_status == 'ambiguous' or collision
-        status = ('ambiguous' if ambiguous else 'unknown' if not members_complete else
-                  'resolved' if candidates or sources else account_status)
-        resolution.update(status=status, account_status=account_status,
-            member_status=('ambiguous' if ambiguous and sources else 'unknown' if not members_complete else
-                           'resolved' if sources else 'not_found'),
-            matching_members=[{
-                'member_id': identifier, 'member_name': members[identifier].display_name,
-                'username': getattr(members[identifier], 'name', None),
-                'nickname': getattr(members[identifier], 'nick', None),
-                'match_sources': sources[identifier],
-                'accounts': [{'player_tag': row['player_tag'],
-                              'player_name': row.get('player_name_last_seen')}
-                             for row in links.get(identifier, [])],
-                'account_links_status': 'available' if context.account_links else 'links_unavailable',
-            } for identifier in sorted(sources)])
-        if status != 'resolved':
-            continue
-        selected_members.update(sources)
-        if candidates:
-            selected.update((row['player_tag'], row) for row in candidates)
-        # A Discord identity match selects all linked accounts even when some
-        # account names also match. Account-only matches keep their own tags.
-        for identifier in sources:
-            if candidates and not matches_discord_identity(members[identifier], resolution['query'].strip()):
-                continue
-            for row in links.get(identifier, []):
-                selected.setdefault(row['player_tag'], {
-                    'player_tag': row['player_tag'], 'player_name': row.get('player_name_last_seen')})
+    selected, selected_members, resolved_members = {}, set(), set()
+    for resolution in resolutions:
+        resolution['look_in'] = look_in
+        matches = resolution.setdefault('matching_members', [])
+        for member in matches:
+            identifier = member['member_id']
+            member['accounts'] = [{'player_tag': row['player_tag'],
+                                   'player_name': row.get('player_name_last_seen')}
+                                  for row in links.get(identifier, [])]
+            member['account_links_status'] = ('links_unavailable' if context.account_links is None
+                else 'available' if member['accounts'] else 'no_linked_accounts')
+        chosen = []
+        if resolution['found_in'] is not None:
+            if resolution['found_in'] == 'game':
+                chosen = [dict(row) for row in resolution['candidates']]
+            else:
+                chosen = [{**row, 'member_id': member['member_id'],
+                           'member_name': member['member_name']}
+                          for member in matches for row in member['accounts']]
+            identifiers = {row['member_id'] for row in chosen}
+            identifiers.update(member['member_id'] for member in matches)
+            selected_members.update(identifiers - {None})
+            if resolution['status'] != 'resolved':
+                for row in chosen:
+                    row['candidate_for'] = [resolution['query']]
+            if (resolution['status'] == 'resolved' and len(identifiers) == 1
+                    and getattr(context.guild, 'chunked', True) is not False):
+                identifier = next(iter(identifiers))
+                member = context.guild.get_member(identifier) if identifier else None
+                if (member is not None and member.id == identifier and identifier not in TEST_ACCOUNT_IDS
+                        and not getattr(member, 'bot', False)):
+                    resolved_members.add(identifier)
+        resolution['selected_accounts'] = chosen
+        for row in chosen:
+            previous = selected.get(row['player_tag'], {})
+            queries = list(dict.fromkeys(previous.get('candidate_for', []) + row.get('candidate_for', [])))
+            selected[row['player_tag']] = {**row, **({'candidate_for': queries} if queries else {})}
     return {'accounts': selected, 'member_ids': sorted(selected_members),
-            'name_resolutions': result['name_resolutions'], 'missing_sources': result['missing_sources'],
-            'selection_complete': all(row['status'] == 'resolved' for row in result['name_resolutions'])}
+            'resolved_member_ids': sorted(resolved_members),
+            'name_resolutions': resolutions, 'missing_sources': missing,
+            'selection_complete': all(row['found_in'] is not None for row in resolutions)}

@@ -8,7 +8,10 @@ from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 
 from ..access import require_evidence_access
 from ..conversation.context import estimate_tokens
-from ..plan.checker import valid_arguments
+from ..families.model_view import record_rows
+from ..models import AgentCapabilityEffect
+from ..plan.checker import step_dependencies, valid_arguments
+from ..plan.executor import resolve_arguments, UnresolvedReferenceError
 from ..research.directory import scoped_channel_directory
 from .account_lists import (
     ACCOUNT_LISTS_INSTRUCTION, ACCOUNT_LISTS_SCHEMA, insert_resolved_lists, resolve_account_lists,
@@ -122,11 +125,14 @@ def assessment_limits(evidence):
         selected = result.get('leadership_filter')
         if not isinstance(selected, dict) or not selected.get('unverified_accounts'):
             continue
-        rows = result.get('rows', [])
-        if isinstance(rows, dict):
-            rows = [dict(zip(rows['columns'], row)) for row in rows['rows']]
+        rows = record_rows(result.get('rows', []))
+        members = {row['member_id']: row for row in record_rows(result.get('members', []))}
         for row in rows:
-            if row.get('leadership', {}).get('status') != 'unknown':
+            profile = (row if 'leadership' in row or 'membership_status' in row
+                       else members.get(row.get('member_id'), {}))
+            status = profile.get('leadership', {}).get('status',
+                'none' if profile.get('membership_status') == 'present' else 'unknown')
+            if status != 'unknown':
                 continue
             for account in row.get('accounts', [row]):
                 tag = account.get('player_tag')

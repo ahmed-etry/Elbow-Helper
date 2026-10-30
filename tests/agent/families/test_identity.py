@@ -102,12 +102,11 @@ class IdentityFamilyTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(reads, 'profiles', AsyncMock(return_value=profiles)), \
              patch.object(account_names, 'read_clash', AsyncMock(return_value={'items': []})):
             for name in ('Moon Knight', 'Vega Pilot'):
-                result = await reads.member_accounts(context, {'name': name})
+                result = await reads.member_accounts(context, {'name': name, 'look_in': 'game'})
                 self.assertEqual(result['status'], 'resolved')
                 self.assertEqual({row['player_tag'] for row in result['rows']},
                                  {'#P0'} if name == 'Moon Knight' else {'#P0', '#Q0'})
-                self.assertEqual({row['player_tag'] for row in
-                    result['name_resolutions'][0]['matching_members'][0]['accounts']}, {'#P0', '#Q0'})
+                self.assertEqual(result['members'][0]['account_tags'], ['#P0', '#Q0'])
                 self.assertEqual(result['member_count'], 1)
                 self.assertIn(42, context.state.resolved_members)
 
@@ -156,7 +155,7 @@ class IdentityFamilyTests(unittest.IsolatedAsyncioTestCase):
                 result = await reads.member_accounts(context, {'member_ids': [context.member.id]})
                 projected = answer_evidence({'accounts': family_model_view({
                     **result, 'family': 'read_member_accounts'})}, guild=context.guild)
-                row = projected['accounts']['rows'][0]
+                row = projected['accounts']['members'][0]
                 self.assertEqual(row['home_clans'], [])
                 self.assertEqual(row['home_clan_status'], 'no_home_role')
                 participation = row['participation_clans'][0]
@@ -242,7 +241,7 @@ class IdentityFamilyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([row['member_id'] for row in result['rows']], [3,9,2])
         self.assertIn('not recruitment acceptance', result['coverage'])
 
-    async def test_colliding_exact_names_ask_once_without_selecting_a_subject(self):
+    async def test_colliding_exact_names_return_candidates_without_selecting_a_subject(self):
         context = _context()
         context.guild.members = [member(42),member(43)]
         for actor in context.guild.members:
@@ -250,11 +249,17 @@ class IdentityFamilyTests(unittest.IsolatedAsyncioTestCase):
         context.guild.get_member=lambda identifier: context.member if identifier == context.member.id else next(
             (row for row in context.guild.members if row.id==identifier), None)
         with patch.object(account_names, 'read_clash', AsyncMock(return_value={'items': []})):
-            result = await reads.member_accounts(context, {'name':'Same name'})
-        self.assertEqual(result['status'], 'needs_input')
-        self.assertEqual(result['rows'], [])
+            result = await reads.member_accounts(context, {'name':'Same name', 'look_in': 'discord'})
+        self.assertEqual(result['status'], 'resolved')
+        self.assertEqual([row['member_id'] for row in result['rows']], [42,43])
+        self.assertTrue(all(row['player_tag'] is None for row in result['rows']))
+        self.assertTrue(all(row['candidate_for'] == ['Same name'] for row in result['rows']))
+        self.assertEqual(result['resolved_member_ids'], [])
+        self.assertEqual(result['name_resolutions'][0]['status'], 'ambiguous')
         self.assertEqual([row['member_id'] for row in
             result['name_resolutions'][0]['matching_members']], [42,43])
+        self.assertEqual([row['member_id'] for row in result['members']], [42,43])
+        self.assertTrue(all(row['candidate_for'] == ['Same name'] for row in result['members']))
         self.assertEqual(context.state.resolved_members, {})
 
     async def test_roster_filters_precede_cohort_counts_but_not_current_capacity(self):

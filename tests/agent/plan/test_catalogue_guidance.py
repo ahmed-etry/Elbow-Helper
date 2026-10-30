@@ -16,6 +16,18 @@ def registry(summary, note=""):
 
 
 class CatalogueGuidanceTests(unittest.TestCase):
+    def test_name_lookup_note_requires_side_and_describes_fallback(self):
+        from elbow_helper.agent.families.identity_reads import TOOLS
+
+        tool = next(tool for tool in TOOLS if tool.definition.name == "read_member_accounts")
+        note = tool.definition.usage_note
+        self.assertIn("look_in: game", note)
+        self.assertIn("discord", note)
+        self.assertIn("messages, activity, roles, Discord ID", note)
+        self.assertIn("other side is searched", note)
+        self.assertLessEqual(len(note), 160)
+        self.assertIn(" | use " + note, capability_list({tool.definition.name: tool}))
+
     def test_whole_summary_including_sentences_and_maximum_note_renders(self):
         summary = "Read synthetic records. Keep their exact values."
         note = "Use " + "a" * 155 + "."

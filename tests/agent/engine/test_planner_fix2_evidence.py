@@ -70,7 +70,9 @@ class PlannerFix2EvidenceTests(unittest.IsolatedAsyncioTestCase):
         tags = ['#P' + alphabet[i // len(alphabet)] + alphabet[i % len(alphabet)] for i in range(47)]
         links = {tag: {'discord_user_id': 100 + i, 'player_tag': tag} if i < 44 else None
                  for i, tag in enumerate(tags)}
-        context = replace(context, account_links=SimpleNamespace(get_links_by_tags=lambda values: links))
+        context = replace(context, account_links=SimpleNamespace(get_links_by_tags=lambda values: links,
+            get_links_for_members=lambda identifiers: {identifier: [link for link in links.values()
+                if link and link['discord_user_id'] == identifier] for identifier in identifiers}))
         roster = family_tool('read_clan_rosters', 'Read selected roster.', {}, AsyncMock(return_value={
             'rows': [{'player_tag': tag, 'clan_code': 'BES', 'player_name': 'Roster account ' + str(i)}
                      for i, tag in enumerate(tags)]}))
@@ -96,14 +98,24 @@ class PlannerFix2EvidenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all('roles' in r for r in evidence['accounts']['members']))
         self.assertEqual(len(evidence['accounts']['members'][0]['roles']), 81)
         self.assertTrue(all(not r.get('roles') for r in evidence['accounts']['rows']))
+        profiles = {row['member_id']: row for row in evidence['accounts']['members']}
         for i, tag in enumerate(tags):
-            self.assertEqual(rows[tag]['membership_status'],
-                             'present' if i < 43 else 'not_in_guild' if i == 43 else 'unlinked')
-            self.assertEqual(rows[tag]['home_role_checks'], [{'clan_code': 'BES', 'role_id': home_id,
+            self.assertEqual(rows[tag]['clan_codes'], ['BES'])
+            if i >= 44:
+                self.assertIsNone(rows[tag]['member_id'])
+                continue
+            profile = profiles[100 + i]
+            self.assertEqual(profile['membership_status'], 'present' if i < 43 else 'not_in_guild')
+            self.assertEqual(profile['home_role_checks'], [{'clan_code': 'BES', 'role_id': home_id,
                 'has_role': i != 42 if i < 43 else None}])
         # Compact model projection cannot mutate the retained full role evidence.
         retained = json.loads(flow.context.state.reports[flow.completed_results['accounts']['report_id']].payload)
-        self.assertEqual(len(retained['rows'][0]['roles']), 81)
+        self.assertEqual({profile['member_id']: profile['roles'] for profile in retained['summary']['members']},
+                         {profile['member_id']: profile['roles'] for profile in evidence['accounts']['members']})
+        for profile in retained['summary']['members']:
+            expected = [home_id] if profile['member_id'] < 142 else []
+            self.assertEqual([role['role_id'] for role in profile['roles']], expected)
+        self.assertNotIn('roles', retained['rows'][0])
 
     async def test_all_five_tab_leaders_reach_writer_when_score_rows_are_paged(self):
         @dataclass

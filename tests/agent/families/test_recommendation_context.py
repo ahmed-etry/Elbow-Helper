@@ -55,9 +55,11 @@ class RecommendationContextTests(unittest.IsolatedAsyncioTestCase):
         linked = next(row for row in visible['rows'] if row['player_tag'] == '#P0')
         unlinked = next(row for row in visible['rows'] if row['player_tag'] == '#Q0')
         self.assertEqual(linked['member_id'], context.member.id)
-        self.assertEqual(linked['leadership']['status'], 'active')
+        self.assertEqual(visible['members'][0]['leadership']['status'], 'active')
+        self.assertEqual(visible['members'][0]['account_tags'], ['#P0'])
+        self.assertNotIn('leadership', linked)
         self.assertIsNone(linked['account_purpose'])
-        self.assertEqual(unlinked['leadership']['status'], 'unknown')
+        self.assertNotIn('leadership', unlinked)
         self.assertIsNone(unlinked['member_id'])
         summary = visible['clans'][0]
         self.assertEqual(summary['ownership']['distinct_linked_owners'], 1)

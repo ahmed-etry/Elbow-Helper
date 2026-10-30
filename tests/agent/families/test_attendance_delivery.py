@@ -11,12 +11,14 @@ from agent.engine.test_agent_plan_flow import _context
 class AttendanceDeliveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_profile_failures_and_role_checks_do_not_make_account_headers_indivisible(self):
         rows = [{'player_tag': f'#P{i}', 'player_name': f'Player {i}',
-                 'member_id': i + 1000, 'membership_status': 'present',
-                 'home_role_checks': [{'clan_code': 'example', 'has_role': False}],
-                 'roles': [{'role_id': j, 'name': f'Role {j}'} for j in range(25)],
+                 'member_id': i + 1000,
                  'profile_status': 'timeout'} for i in range(200)]
+        members = [{'member_id': i + 1000, 'membership_status': 'present',
+                    'home_role_checks': [{'clan_code': 'example', 'has_role': False}],
+                    'roles': [{'role_id': j, 'name': f'Role {j}'} for j in range(25)]}
+                   for i in range(200)]
         async def source(context, arguments):
-            return {'rows': rows, 'home_role_comparisons': rows,
+            return {'rows': rows, 'members': members, 'home_role_comparisons': rows,
                     'unknown_accounts': rows, 'unknown_profile_count': 200,
                     'count_complete': False}
         tool = family_tool('read_member_accounts', 'Read accounts.', {}, source)

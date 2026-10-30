@@ -50,7 +50,10 @@ class PlannerEvidenceTests(unittest.IsolatedAsyncioTestCase):
             item.is_default = lambda: False
         original = context.guild.get_member
         context.guild.get_member = lambda key: original(key) if key in (41, 999) else None
-        context = replace(context, account_links=SimpleNamespace(get_links_by_tags=lambda tags: {
+        context = replace(context, account_links=SimpleNamespace(
+            get_links_for_members=lambda ids: {identifier: [{'player_tag': tag}] for identifier, tag in (
+                (41, '#P0'), (42, '#Q0')) if identifier in ids},
+            get_links_by_tags=lambda tags: {
             '#P0': {'discord_user_id': 41, 'player_tag': '#P0'},
             '#Q0': {'discord_user_id': 42, 'player_tag': '#Q0'}, '#P2': None}))
         tool = next(t for t in identity_reads.TOOLS if t.definition.name == 'read_member_accounts')
@@ -60,7 +63,9 @@ class PlannerEvidenceTests(unittest.IsolatedAsyncioTestCase):
             shown = await tool.handler(context, {'account_tags': list(data), 'include_roles': True})
         self.assertTrue(all('roles' not in row for row in family_model_view(hidden)['rows']))
         rows = {row['player_tag']: row for row in family_model_view(shown)['rows']}
-        self.assertIn(role.id, {r['role_id'] for r in rows['#P0']['roles']})
+        members = {row['member_id']: row for row in family_model_view(shown)['members']}
+        self.assertIn(role.id, {r['role_id'] for r in members[41]['roles']})
+        self.assertEqual(members[42]['membership_status'], 'not_in_guild')
         self.assertEqual(rows['#Q0']['member_id'], 42)
         self.assertIsNone(rows['#Q0']['member_name'])
         self.assertIsNone(rows['#P2']['member_id'])

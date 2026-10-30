@@ -159,6 +159,7 @@ async def recruitment(context, arguments):
         ids = sorted({row.get('member_id') or row.get('applicant_member_id') for row in result['rows']
                       if row.get('member_id') or row.get('applicant_member_id')})
         accounts = await member_accounts(context,{'member_ids':ids}) if ids else {'rows':[]}
+        result['members'] = accounts.get('members', [])
         for row in result['rows']:
             identifier = row.get('member_id') or row.get('applicant_member_id')
             row['accounts'] = [account for account in accounts.get('rows',[]) if identifier and account.get('member_id')==identifier]
@@ -229,13 +230,15 @@ async def requester_tickets(context, arguments):
                      'source': opener.jump_url if opener else
                          f'https://discord.com/channels/{context.guild.id}/{channel.id}',
                      'acceptance_decision': None, 'finalized': None})
+    members = []
     if arguments.get('include_accounts') and rows:
         from .identity_reads import member_accounts
         accounts = await member_accounts(context, {'member_ids': [context.member.id]})
+        members = accounts.get('members', [])
         for row in rows:
             row['accounts'] = accounts.get('rows', [])
     # Unmatched tickets remain unknown; no other applicant's data is returned.
-    return {'rows': rows, 'stage': 'requester_tickets', 'requester_id': context.member.id,
+    return {'rows': rows, 'members': members, 'stage': 'requester_tickets', 'requester_id': context.member.id,
             'ownership_complete': not missing, 'unresolved_ticket_count': len(missing),
             'available_privately': private_available,
             'coverage': 'Current readable recruitment tickets owned by the requester; deleted and archived tickets are not reconstructed.'}

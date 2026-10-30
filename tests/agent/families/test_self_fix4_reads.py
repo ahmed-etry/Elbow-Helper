@@ -32,6 +32,7 @@ class HomeClanTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('roles', visible['rows'][0])
         row = answer_evidence({'member': visible})['member']['rows'][0]
         self.assertEqual(row['clan']['tag'], CLANS['BEH'].tag)
+        row = visible['members'][0]
         self.assertEqual([c['clan_code'] for c in row['home_clans']], ['BES'])
         self.assertEqual(row['home_clan_status'], 'resolved')
 
@@ -44,7 +45,7 @@ class HomeClanTests(unittest.IsolatedAsyncioTestCase):
             existing.is_default = lambda: False
         context = replace(context, account_links=SimpleNamespace(get_links_for_members=lambda ids: {}))
         result = await reads.member_accounts(context, {'member_ids': [41]})
-        self.assertEqual(result['rows'][0]['home_clan_status'], 'resolved')
+        self.assertEqual(result['members'][0]['home_clan_status'], 'resolved')
         self.assertIsNone(result['rows'][0]['player_tag'])
         self.assertEqual(reads.member_fields(None, 42)['home_clan_status'], 'not_in_guild')
         self.assertEqual(reads.member_fields(None, 42)['home_clans'], [])

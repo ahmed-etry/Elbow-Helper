@@ -67,155 +67,32 @@ def named_member(identifier, display_name, *, nick=None, bot=False):
                            nick=nick, roles=[], joined_at=None, bot=bot)
 
 
-class UnifiedNameLookupTests(unittest.IsolatedAsyncioTestCase):
-    async def test_same_owner_names_resolve_and_only_discord_matches_expand_alts(self):
-        for selector in ('name', 'account_names'):
-            for discord_match in (True, False):
-                for extra_alt in (False, True):
-                    with self.subTest(selector=selector, discord_match=discord_match, extra_alt=extra_alt):
-                        owner = named_member(42, 'Silver Kite' if discord_match else 'Synthetic Pilot')
-                        linked = [('#P0', 'Silver Kite', 42), ('#Q0', 'sILVER kITE', 42)]
-                        if extra_alt:
-                            linked.append(('#Y0', 'Other Beacon', 42))
-                        context = lookup_context([owner], linked)
-                        expected = {'#P0', '#Q0'} | ({'#Y0'} if discord_match and extra_alt else set())
-                        profiles = AsyncMock(return_value={tag: {'status': 'ok', 'data': {
-                            'name': name, 'clan': None, 'clan_status': 'not_in_clan'}}
-                            for tag, name, _ in linked})
-                        with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters())), \
-                             patch.object(identity_reads, 'profiles', profiles):
-                            result = await identity_reads.member_accounts(context, {
-                                selector: 'Silver Kite' if selector == 'name' else ['Silver Kite']})
-                        self.assertEqual(result['status'], 'resolved')
-                        self.assertTrue(result['selection_complete'])
-                        resolution = result['name_resolutions'][0]
-                        self.assertEqual(resolution['account_status'], 'resolved')
-                        self.assertEqual(resolution['member_status'], 'resolved')
-                        self.assertEqual({row['player_tag'] for row in resolution['candidates']}, {'#P0', '#Q0'})
-                        self.assertEqual([row['member_id'] for row in resolution['matching_members']], [42])
-                        profiles.assert_awaited_once_with(context, sorted(expected))
-                        self.assertEqual({row['player_tag'] for row in result['rows']}, expected)
-                        self.assertTrue(all(row['clan_status'] == 'not_in_clan' for row in result['rows']))
-                        self.assertEqual(context.state.resolved_members, {42: owner.display_name})
-
-    async def test_multiple_account_queries_resolve_same_owner_groups_independently(self):
-        context = lookup_context([named_member(42, 'Synthetic Pilot'), named_member(43, 'Synthetic Navigator')], [
-            ('#P0', 'Silver Kite', 42), ('#Q0', 'sILVER kITE', 42),
-            ('#Y0', 'Copper Finch', 43), ('#L0', 'cOPPER fINCH', 43)])
-        with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters())), \
-             patch.object(identity_reads, 'profiles', AsyncMock(return_value={})) as profiles:
-            result = await identity_reads.member_accounts(context, {'account_names': ['Silver Kite', 'Copper Finch']})
-        self.assertEqual(result['status'], 'resolved')
-        self.assertTrue(result['selection_complete'])
-        self.assertEqual([row['status'] for row in result['name_resolutions']], ['resolved', 'resolved'])
-        profiles.assert_awaited_once_with(context, ['#L0', '#P0', '#Q0', '#Y0'])
-        self.assertEqual({row['player_tag'] for row in result['rows']}, {'#P0', '#Q0', '#Y0', '#L0'})
-
-    async def test_multiple_candidates_keep_conflicting_owners_or_discord_matches_ambiguous(self):
-        for selector in ('name', 'account_names'):
-            for conflict in ('two_owners', 'unowned', 'discord_match'):
-                with self.subTest(selector=selector, conflict=conflict):
-                    owner = named_member(42, 'Silver Kite')
-                    other = named_member(43, 'Silver Kite' if conflict == 'discord_match' else 'Synthetic Navigator')
-                    linked = [('#P0', 'Silver Kite', 42)]
-                    if conflict != 'unowned':
-                        linked.append(('#Q0', 'sILVER kITE', 43 if conflict == 'two_owners' else 42))
-                    context = lookup_context([owner, other], linked)
-                    with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters([
-                            ('#Q0', 'sILVER kITE')]))), \
-                         patch.object(identity_reads, 'profiles', AsyncMock()) as profiles:
-                        result = await identity_reads.member_accounts(context, {
-                            selector: 'Silver Kite' if selector == 'name' else ['Silver Kite']})
-                    self.assertEqual(result['status'], 'needs_input')
-                    self.assertFalse(result['selection_complete'])
-                    self.assertEqual(result['name_resolutions'][0]['status'], 'ambiguous')
-                    self.assertEqual({row['player_tag'] for row in result['name_resolutions'][0]['candidates']},
-                                     {'#P0', '#Q0'})
-                    self.assertEqual(result['rows'], [])
-                    profiles.assert_not_awaited()
-                    self.assertEqual(context.state.resolved_members, {})
-
-    async def test_bracketed_alias_and_username_work_through_either_selector(self):
-        for selector in ('name', 'account_names'):
-            for query in ('Lumen Birch', 'Birch', 'synthetic_42'):
-                with self.subTest(selector=selector, query=query):
-                    owner = named_member(42, 'Lumen [Birch]', nick='Lumen [Birch]')
-                    context = lookup_context([owner], [('#P0', 'Silver Kite', 42)])
-                    arguments = {selector: query if selector == 'name' else [query]}
-                    with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters())), \
-                         patch.object(identity_reads, 'profiles', AsyncMock(return_value={})):
-                        result = await identity_reads.member_accounts(context, arguments)
-                    self.assertEqual(result['status'], 'resolved')
-                    resolution = result['name_resolutions'][0]
-                    self.assertEqual(resolution['candidates'], [])
-                    self.assertEqual(resolution['account_status'], 'not_found')
-                    self.assertEqual(resolution['member_status'], 'resolved')
-                    self.assertEqual(resolution['matching_members'][0]['member_name'], 'Lumen [Birch]')
-                    self.assertEqual(resolution['matching_members'][0]['accounts'], [
-                        {'player_tag': '#P0', 'player_name': 'Silver Kite'}])
-                    self.assertEqual(result['rows'][0]['member_id'], 42)
-                    self.assertEqual(context.state.resolved_members, {42: 'Lumen [Birch]'})
-
-    async def test_account_typo_resolves_bot_linked_owner_and_preserves_stats_scope(self):
+class SideNameLookupTests(unittest.IsolatedAsyncioTestCase):
+    async def test_account_typo_resolves_linked_owner_and_preserves_action_provenance(self):
         for selector in ('name', 'account_names'):
             with self.subTest(selector=selector):
                 owner = named_member(42, 'Synthetic Pilot')
                 context = lookup_context([owner], [
                     ('#P0', 'Silver Kite', 42), ('#Q0', 'Other Beacon', 42)])
                 action = AsyncMock(return_value={'status': 'complete'})
+
                 async def act():
                     return json.loads(await execute_tool(name='synthetic_action', handler=action,
                         context=context, arguments={'member_id': 42, 'text': 'Hello <@42>'},
                         action_class=ActionClass.OUTPUT))
+
                 self.assertIn('error', await act())
                 action.assert_not_awaited()
-                arguments = {selector: 'Silver Kte' if selector == 'name' else ['Silver Kte']}
                 with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters())), \
                      patch.object(identity_reads, 'profiles', AsyncMock(return_value={})) as profiles:
-                    result = await identity_reads.member_accounts(context, arguments)
+                    result = await identity_reads.member_accounts(context, {
+                        selector: 'Silver Kte' if selector == 'name' else ['Silver Kte'], 'look_in': 'game'})
                 self.assertEqual(result['status'], 'resolved')
-                resolution = result['name_resolutions'][0]
-                self.assertEqual(resolution['candidates'][0]['member_id'], 42)
-                self.assertEqual(resolution['matching_members'][0]['match_sources'], ['bot_account_link'])
-                self.assertEqual({row['player_tag'] for row in resolution['matching_members'][0]['accounts']},
-                                 {'#P0', '#Q0'})
-                self.assertEqual(profiles.call_args.args[1], ['#P0'])
+                self.assertEqual(result['name_resolutions'][0]['candidates'][0]['member_id'], 42)
+                profiles.assert_awaited_once_with(context, ['#P0'])
                 self.assertEqual([row['player_tag'] for row in result['rows']], ['#P0'])
                 self.assertEqual((await act())['status'], 'complete')
                 action.assert_awaited_once()
-
-    async def test_unrelated_member_and_account_survive_writer_and_never_authorize_actions(self):
-        for selector in ('name', 'account_names'):
-            with self.subTest(selector=selector):
-                member = named_member(42, 'Silver [Kite]')
-                owner = named_member(43, 'Different Navigator')
-                context = lookup_context([member, owner], [
-                    ('#P0', 'Silver Kite', 43), ('#Q0', 'Other Beacon', 42)])
-                tool = next(tool for tool in identity_reads.TOOLS if tool.definition.name == 'read_member_accounts')
-                arguments = {selector: 'Silver Kite' if selector == 'name' else ['Silver Kite']}
-                with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters())), \
-                     patch.object(identity_reads, 'profiles', AsyncMock()) as profiles:
-                    result = await tool.handler(context, arguments)
-                    projected = await cohort_writer_evidence(context, {'lookup': result})
-                profiles.assert_not_called()
-                resolution = answer_evidence(projected, guild=context.guild)['lookup']['name_resolutions'][0]
-                self.assertEqual(resolution['status'], 'ambiguous')
-                self.assertEqual({row['member_id'] for row in resolution['matching_members']}, {42, 43})
-                self.assertEqual(resolution['matching_members'][0]['accounts'], [
-                    {'player_tag': '#Q0', 'player_name': 'Other Beacon'}])
-                self.assertEqual([(row['player_tag'], row['member_id']) for row in resolution['candidates']],
-                                 [('#P0', 43)])
-                self.assertEqual(result['rows'], [])
-                self.assertEqual(result['status'], 'needs_input')
-                self.assertEqual(context.state.resolved_members, {})
-                retained = await tool.handler(context, {'report_id': result['report_id']})
-                self.assertEqual(family_model_view(retained)['name_resolutions'][0], resolution)
-                action = AsyncMock(return_value={'status': 'complete'})
-                for identifier in (42, 43):
-                    blocked = json.loads(await execute_tool(name='synthetic_action', handler=action,
-                        context=context, arguments={'member_id': identifier}, action_class=ActionClass.OUTPUT))
-                    self.assertIn('error', blocked)
-                action.assert_not_awaited()
 
     async def test_account_without_a_current_human_bot_link_cannot_authorize_actions(self):
         for identifier, bot in ((None, False), (404, False), (42, True)):
@@ -225,9 +102,8 @@ class UnifiedNameLookupTests(unittest.IsolatedAsyncioTestCase):
                 with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters([
                         ('#P0', 'Silver Kite')]))), \
                      patch.object(identity_reads, 'profiles', AsyncMock(return_value={})):
-                    result = await identity_reads.member_accounts(context, {'name': 'Silver Kte'})
+                    result = await identity_reads.member_accounts(context, {'name': 'Silver Kte', 'look_in': 'game'})
                 self.assertEqual(result['status'], 'resolved')
-                self.assertEqual(result['name_resolutions'][0]['matching_members'], [])
                 self.assertEqual(context.state.resolved_members, {})
                 action = AsyncMock()
                 blocked = json.loads(await execute_tool(name='synthetic_action', handler=action,
@@ -235,38 +111,23 @@ class UnifiedNameLookupTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn('error', blocked)
                 action.assert_not_awaited()
 
-    async def test_exact_linked_account_does_not_hide_another_members_nickname_part(self):
-        for selector in ('name', 'account_names'):
-            with self.subTest(selector=selector):
-                context = lookup_context([
-                    named_member(42, 'Lumen [Birch]'), named_member(43, 'Different Navigator')],
-                    [('#P0', 'Birch', 43)])
-                with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters())):
-                    result = await identity_reads.member_accounts(context, {
-                        selector: 'Birch' if selector == 'name' else ['Birch']})
-                resolution = result['name_resolutions'][0]
-                self.assertEqual(result['status'], 'needs_input')
-                self.assertEqual(resolution['status'], 'ambiguous')
-                self.assertEqual({row['member_id'] for row in resolution['matching_members']}, {42, 43})
-                self.assertEqual(resolution['candidates'][0]['member_id'], 43)
-                self.assertEqual(context.state.resolved_members, {})
-
-    async def test_failed_member_chunk_keeps_account_candidate_without_authorizing_owner(self):
+    async def test_game_hit_does_not_chunk_discord_or_authorize_incomplete_owner_cache(self):
         context = lookup_context([named_member(42, 'Synthetic Pilot')], [('#P0', 'Silver Kite', 42)])
         context.guild.chunked = False
         context.guild.chunk = AsyncMock()
-        with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters())):
-            result = await identity_reads.member_accounts(context, {'name': 'Silver Kite'})
-        self.assertEqual(result['status'], 'needs_input')
-        self.assertEqual(result['name_resolutions'][0]['status'], 'unknown')
-        self.assertEqual(result['name_resolutions'][0]['candidates'][0]['player_tag'], '#P0')
+        with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters())), \
+             patch.object(identity_reads, 'profiles', AsyncMock(return_value={})):
+            result = await identity_reads.member_accounts(context, {'name': 'Silver Kite', 'look_in': 'game'})
+        self.assertEqual(result['status'], 'resolved')
+        self.assertTrue(result['selection_complete'])
+        context.guild.chunk.assert_not_awaited()
+        self.assertEqual(result['missing_sources'], [])
         self.assertEqual(context.state.resolved_members, {})
 
     async def test_report_reuse_does_not_grant_new_request_provenance(self):
         context = lookup_context([named_member(42, 'Lumen [Birch]')])
         tool = next(tool for tool in identity_reads.TOOLS if tool.definition.name == 'read_member_accounts')
-        with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters())):
-            result = await tool.handler(context, {'name': 'Birch'})
+        result = await tool.handler(context, {'name': 'Birch', 'look_in': 'discord'})
         self.assertIn(42, context.state.resolved_members)
         context.state.resolved_members.clear()
         await tool.handler(context, {'report_id': result['report_id']})
@@ -327,7 +188,7 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters([
                 ('#P0', 'Amber Comet')]))), patch.object(identity_reads, 'profiles', profiles):
             result = await identity_reads.member_accounts(context,
-                {'account_names': [' aMbErCoMet ', 'Nebluous']})
+                {'look_in': 'game', 'account_names': [' aMbErCoMet ', 'Nebluous']})
         self.assertEqual([row['status'] for row in result['name_resolutions']], ['resolved', 'resolved'])
         self.assertEqual({row['player_tag'] for row in result['rows']}, {'#P0', '#Y0'})
         self.assertEqual(profiles.call_args.args[1], ['#P0', '#Y0'])
@@ -413,7 +274,7 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
                 result = await account_names.resolve_account_names(context, [
                     'Silver Kite', 'Golden Finch', 'Copper Finch', 'Velvet Quill', 'Outside Alias'])
                 for name in ('Copper Finch', 'Velvet Quill', 'Outside Alias'):
-                    unified = await identity_reads.member_accounts(context, {'name': name})
+                    unified = await identity_reads.member_accounts(context, {'name': name, 'look_in': 'game'})
                     self.assertEqual(unified['name_resolutions'][0]['status'], 'not_found')
                     self.assertEqual(unified['name_resolutions'][0]['matching_members'], [])
                     self.assertEqual(unified['name_resolutions'][0]['candidates'], [])
@@ -425,25 +286,29 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
     async def test_ambiguous_owner_details_survive_report_and_writer_projection(self):
         context = context_with_names(linked=[('#P0', 'Silver Kite'), ('#Q0', 'Silver Kite')])
         context.account_links.get_all_links()['#Q0']['discord_user_id'] = 43
-        owner = SimpleNamespace(id=42, display_name='Synthetic Pilot')
-        other = SimpleNamespace(id=43, display_name='Synthetic Navigator')
+        owner = named_member(42, 'Synthetic Pilot')
+        other = named_member(43, 'Synthetic Navigator')
         context.guild.get_member = lambda identifier: {42: owner, 43: other}.get(identifier, context.member)
         tool = next(tool for tool in identity_reads.TOOLS if tool.definition.name == 'read_member_accounts')
         with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters([
-                ('#Y0', 'Silver Kite')]))), patch.object(identity_reads, 'profiles', AsyncMock()) as profiles:
-            result = await tool.handler(context, {'account_names': ['Silver Kite']})
+                ('#Y0', 'Silver Kite')]))), patch.object(identity_reads, 'profiles', AsyncMock(return_value={})) as profiles:
+            result = await tool.handler(context, {'look_in': 'game', 'account_names': ['Silver Kite']})
             projected = await cohort_writer_evidence(context, {'owners': result})
-        profiles.assert_not_called()
-        self.assertEqual(result['status'], 'needs_input')
-        self.assertEqual(result['rows'], [])
+        profiles.assert_awaited_once()
+        self.assertEqual(profiles.await_args.args[1], ['#P0', '#Q0', '#Y0'])
+        self.assertEqual(result['status'], 'resolved')
+        self.assertEqual([row['player_tag'] for row in result['rows']], ['#P0', '#Q0', '#Y0'])
         evidence = answer_evidence(projected, guild=context.guild)
         candidates = evidence['owners']['name_resolutions'][0]['candidates']
-        self.assertEqual([(row['player_tag'], row['member_id'], row['member_name'], row['membership_status'])
+        self.assertEqual([(row['player_tag'], row['member_id'], row['member_name'])
                           for row in candidates], [
-            ('#P0', 42, 'Synthetic Pilot', 'present'), ('#Q0', 43, 'Synthetic Navigator', 'present'),
-            ('#Y0', None, None, 'unlinked')])
+            ('#P0', 42, 'Synthetic Pilot'), ('#Q0', 43, 'Synthetic Navigator'), ('#Y0', None, None)])
+        self.assertEqual([row['membership_status'] for row in result['name_resolutions'][0]['candidates']],
+                         ['present', 'present', 'unlinked'])
         retained = await tool.handler(context, {'report_id': result['report_id']})
-        self.assertEqual(family_model_view(retained)['name_resolutions'], result['name_resolutions'])
+        self.assertEqual(retained['name_resolutions'], result['name_resolutions'])
+        self.assertEqual(family_model_view(retained)['name_resolutions'],
+                         projected['owners']['name_resolutions'])
         self.assertEqual(context.state.resolved_members, {})
 
     async def test_ambiguous_owners_distinguish_absent_member_and_unavailable_links(self):
@@ -454,7 +319,7 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
                     context = replace(context, account_links=None)
                 with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters([
                         ('#P0', 'Silver Kite'), ('#Q0', 'Silver Kite')]))):
-                    result = await identity_reads.member_accounts(context, {'account_names': ['Silver Kite']})
+                    result = await identity_reads.member_accounts(context, {'look_in': 'game', 'account_names': ['Silver Kite']})
                 for candidate in result['name_resolutions'][0]['candidates']:
                     self.assertEqual(candidate['membership_status'], expected)
                     self.assertEqual(candidate['member_id'], 42 if linked else None)
@@ -464,7 +329,7 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
         context = context_with_names(linked=[('#P0', 'Silver Kite'), ('#Q0', 'Silver Kite')])
         tool = next(tool for tool in identity_reads.TOOLS if tool.definition.name == 'read_member_accounts')
         with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters())):
-            result = await tool.handler(context, {'account_names': ['Silver Kite']})
+            result = await tool.handler(context, {'look_in': 'game', 'account_names': ['Silver Kite']})
         context.member.roles = []
         with self.assertRaises(AgentAccessLost):
             await tool.handler(context, {'report_id': result['report_id']})
@@ -476,23 +341,19 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
         context.account_links.get_links_by_tags = lose_access
         with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters())):
             with self.assertRaises(AgentAccessLost):
-                await tool.handler(context, {'account_names': ['Silver Kite']})
+                await tool.handler(context, {'look_in': 'game', 'account_names': ['Silver Kite']})
         self.assertEqual(context.state.reports, {})
 
-    async def test_person_name_uses_both_sides_even_with_game_hints(self):
-        context = context_with_names(linked=[('#P0', 'Silver Kite')])
-        owner = SimpleNamespace(id=42, display_name='Lumen (Birch)', name='synthetic_pilot',
-                                nick='Lumen (Birch)', roles=[], joined_at=None)
-        context.guild.members = [owner]
-        context.guild.get_member = lambda identifier: owner if identifier == 42 else context.member
+    async def test_discord_alias_and_game_fallback_use_the_chosen_side(self):
+        context = lookup_context([named_member(42, 'Lumen (Birch)', nick='Lumen (Birch)')],
+                                 [('#P0', 'Silver Kite', 42)])
         with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters())) as source, \
              patch.object(identity_reads, 'profiles', AsyncMock(return_value={})):
-            for name in ('Lumen Birch', 'Silver Kite'):
-                result = await identity_reads.member_accounts(context, {'name': name})
+            for name, found_in in (('Lumen Birch', 'discord'), ('Silver Kite', 'game')):
+                result = await identity_reads.member_accounts(context, {'name': name, 'look_in': 'discord'})
                 self.assertEqual(result['rows'][0]['member_id'], 42)
-                self.assertEqual(result['rows'][0]['member_name'], 'Lumen (Birch)')
-                self.assertEqual(result['name_resolutions'][0]['matching_members'][0]['member_id'], 42)
-        self.assertEqual(source.await_count, 2)
+                self.assertEqual(result['name_resolutions'][0]['found_in'], found_in)
+        source.assert_awaited_once()
 
     async def test_mixed_selectors_return_a_precise_correctable_error_without_reads(self):
         with patch.object(account_names, 'resolve_names', AsyncMock()) as resolve:
@@ -507,19 +368,19 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
                     self.assertIn('separate plan steps', result['error'])
         resolve.assert_not_called()
 
-    def test_planner_catalogue_uses_one_lookup_and_exposes_both_sides(self):
+    def test_planner_catalogue_exposes_required_side_and_fallback(self):
         tool = next(tool for tool in identity_reads.TOOLS if tool.definition.name == 'read_member_accounts')
         catalogue = capability_list({tool.definition.name: tool}, include_returns=False)
         for text in (FAMILY_INSTRUCTION, catalogue):
-            self.assertIn('Discord ID', text)
-            self.assertIn('account_names', text)
-            self.assertIn('alternatives', text.lower())
-            self.assertNotIn('Stats names use account_names unless', text)
+            for expected in ('look_in', 'game', 'discord', 'Discord ID', 'other side is searched'):
+                self.assertIn(expected, text)
+            for removed in ('selected_by', 'account_status', 'member_status', 'both search'):
+                self.assertNotIn(removed, text)
         properties = tool.definition.parameters['properties']
-        self.assertIn('matching_members', properties['name']['description'])
+        self.assertEqual(properties['look_in']['enum'], ['game', 'discord'])
+        self.assertIn('requires look_in', properties['name']['description'])
         self.assertIn('same lookup', properties['account_names']['description'])
-        self.assertIn('matching_members', catalogue)
-        self.assertIn('member_name,membership_status', catalogue)
+        self.assertIn('found_in', catalogue)
 
     async def test_missing_roster_is_unknown_instead_of_a_false_unmatched_account(self):
         with patch.object(account_names, 'read_clash', AsyncMock(return_value={
@@ -564,7 +425,7 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
             context = replace(context_with_names(linked=[('#P0', 'Amber Comet'), ('#Q0', 'Other Beacon')]),
                 cwl_queries=cwl, ranked_queries=SimpleNamespace(window=ranked))
             tool = next(tool for tool in identity_reads.TOOLS if tool.definition.name == 'read_member_accounts')
-            arguments = {'account_names': ['ambercomet'], 'after': '2025-11-02T00:00:00+00:00',
+            arguments = {'look_in': 'game', 'account_names': ['ambercomet'], 'after': '2025-11-02T00:00:00+00:00',
                          'before': '2026-01-01T00:00:00+00:00'}
             registry = {tool.definition.name: tool}
             plan = {'goal': 'Read selected account activity', 'effort': 'high', 'output': 'text',
@@ -620,7 +481,7 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_bad_period_is_rejected_before_account_or_history_reads(self):
         with patch.object(account_names, 'resolve_account_names', AsyncMock()) as resolve:
-            result = await identity_reads.member_accounts(_context(), {'account_names': ['Amber Comet'],
+            result = await identity_reads.member_accounts(_context(), {'look_in': 'game', 'account_names': ['Amber Comet'],
                 'after': '2026-02-01T00:00:00+00:00'})
         self.assertEqual(result['cause'], 'invalid_arguments')
         resolve.assert_not_called()
