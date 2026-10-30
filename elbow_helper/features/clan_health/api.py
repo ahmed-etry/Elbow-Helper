@@ -629,15 +629,15 @@ class ClanHealthCollector:
             war_type="REG",
             source=source,
         )
-        stored_wars = await asyncio.to_thread(self.repository.store_wars, [war_row] if war_row else [])
-        stored_rosters = await asyncio.to_thread(self.repository.store_final_war_rosters, roster_rows)
-        stored = await asyncio.to_thread(self.repository.store_war_activity, rows)
-        stored_attacks = await asyncio.to_thread(self.repository.store_war_attacks, attack_rows)
+        stored = await asyncio.to_thread(
+            self.repository.store_regular_war_snapshot,
+            war_row, roster_rows, rows, attack_rows,
+        )
         if war_state in {"preparation", "inWar"}:
             end_dt = self._coc_time_to_dt(war_payload.get("endTime"))
             if end_dt:
                 self._schedule_war_end_capture(clan_code, int(end_dt.timestamp()))
-        return (1 if rows else 0), stored_wars + stored_rosters + stored + stored_attacks, warnings
+        return (1 if rows else 0), stored, warnings
 
     def _schedule_war_end_capture(self, clan_code: str, end_ts: int) -> None:
         # Idempotent: same endTime + live task → skip; new/changed endTime → cancel prior and reschedule.
@@ -720,10 +720,10 @@ class ClanHealthCollector:
                             war_type="REG",
                             source=source,
                         )
-                        await asyncio.to_thread(self.repository.store_wars, [war_row] if war_row else [])
-                        await asyncio.to_thread(self.repository.store_final_war_rosters, roster_rows)
-                        await asyncio.to_thread(self.repository.store_war_activity, rows)
-                        await asyncio.to_thread(self.repository.store_war_attacks, attack_rows)
+                        await asyncio.to_thread(
+                            self.repository.store_regular_war_snapshot,
+                            war_row, roster_rows, rows, attack_rows,
+                        )
                         return
                     # Rolled over into a new war — abandon; the 20-min loop will reschedule.
                     if payload_end_ts and payload_end_ts != expected_end_ts:

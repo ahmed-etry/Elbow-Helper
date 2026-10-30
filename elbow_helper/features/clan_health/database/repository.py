@@ -33,6 +33,7 @@ class ClanHealthRepository(
     store_report = ClanHealthRecords._store_report
     store_war_activity = ClanHealthRecords._store_war_activity_rows
     store_wars = ClanHealthRecords._store_war_rows
+    store_regular_war_snapshot = ClanHealthRecords._store_regular_war_snapshot
     store_final_war_rosters = (
         ClanHealthRecords._store_final_war_roster_rows
     )
