@@ -1,5 +1,4 @@
 """Full cohort facts survive count collection, partial reads and writer compaction."""
-from copy import deepcopy
 from dataclasses import replace
 import json
 from types import SimpleNamespace
@@ -25,14 +24,13 @@ def cohort(complete=True):
                           'clan_code': 'BES', 'donations': i}], 'donations': i,
             'war_activity': {'status': 'observed', 'wars_observed': 3,
                              'attacks_used': 6, 'totals_complete': True},
-            'chat_activity': {'status': 'unlinked' if i >= 183 else
-                             'no_observed_messages' if complete else 'not_checked_timeout',
-                             'latest_observed_at': None}})
+            'discord_activity': {'status': 'unlinked' if i >= 183 else
+                             'no_record' if complete else 'source_unavailable',
+                             'last_active_day': None, 'active_streak_days': None, 'lifetime_messages': None}})
     activity_fields(rows)
     return {'basis': 'clan_rosters', 'rows': rows, 'member_count': 183,
-        'activity_coverage': {'chat_coverage': {'source_reads_complete': complete,
-            'members_checked': 183 if complete else 80, 'members_not_checked': 0 if complete else 103,
-            'channel_cursors': {'91': None if complete else 123}, 'channel_ids': [91]}}}
+        'activity_coverage': {'discord_activity_coverage': {'source_reads_complete': complete,
+            'members_checked': 183 if complete else 80, 'members_not_checked': 0 if complete else 103}}}
 
 
 class CohortWriterTests(unittest.IsolatedAsyncioTestCase):
@@ -106,7 +104,7 @@ class CohortWriterTests(unittest.IsolatedAsyncioTestCase):
     async def flow(self, source):
         context, model = _context(), WriterModel()
         tool = family_tool('read_member_cohort', 'Read member facts.', {
-            'basis': {'type': 'string'}, 'activity_ref': {'type': 'string'}}, source)
+            'basis': {'type': 'string'}}, source)
         hidden = RegisteredAgentTool(AgentToolDefinition('hidden', 'Specialist.', {}), source,
                                      default_visible=False)
         with patch('elbow_helper.agent.engine.service.build_agent_tools',
@@ -135,21 +133,15 @@ class CohortWriterTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(flow.context.state.attachments)
         self.assertFalse(flow.context.state.proposed_changes)
 
-    async def test_partial_chat_resumes_through_checked_runner_before_writing(self):
-        source = AsyncMock(side_effect=[cohort(False), cohort(True)])
+    async def test_unavailable_store_reaches_writer_without_repeated_reads(self):
+        source = AsyncMock(return_value=cohort(False))
         flow, writer = await self.flow(source)
-        self.assertEqual(source.await_count, 2)
-        self.assertTrue(source.await_args_list[1].args[1]['activity_ref'])
-        self.assertEqual(flow.runner.tool_calls, 2)
-        self.assertEqual(writer['activity_coverage']['chat_coverage']['members_not_checked'], 0)
-        self.assertTrue(all(r['chat_status'] != 'not_checked_timeout' for r in writer['rows']))
-
-    async def test_stalled_cursor_stops_without_claiming_complete_chat(self):
-        source = AsyncMock(side_effect=lambda context, args: deepcopy(cohort(False)))
-        flow, writer = await self.flow(source)
-        self.assertEqual(source.await_count, 2)
-        self.assertFalse(writer['activity_coverage']['chat_coverage']['source_reads_complete'])
+        self.assertEqual(source.await_count, 1)
+        self.assertEqual(flow.runner.tool_calls, 1)
+        self.assertFalse(writer['activity_coverage']['discord_activity_coverage']['source_reads_complete'])
         self.assertEqual(len(writer['rows']), 203)
+        self.assertTrue(all(r['discord_activity_status'] == 'source_unavailable'
+                            for r in writer['rows'] if r['member_id'] is not None))
 
     async def test_revoked_snapshot_never_restores_retained_member_rows(self):
         flow, _ = await self.flow(AsyncMock(return_value=cohort()))

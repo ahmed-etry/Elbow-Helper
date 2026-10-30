@@ -27,7 +27,7 @@ PERFORMANCE = {'type':'object','properties':{
     'required':['war_type'],'additionalProperties':False}
 
 
-async def performance_projection(context, rows, selection):
+async def performance_projection(context, rows, selection, *, account_tags=None):
     from .war_reads import selected_wars
     from elbow_helper.features.clan_health.attendance import aggregate_attendance
     ids = sorted({row.get('member_id') or row.get('applicant_member_id') for row in rows
@@ -40,7 +40,8 @@ async def performance_projection(context, rows, selection):
     tags = sorted({row['player_tag'] for row in result['rows']})
     linked = await asyncio.to_thread(context.account_links.get_links_by_tags, tags) if context.account_links else {}
     owners = {tag: value['discord_user_id'] for tag, value in linked.items() if value}
-    selected = [row for row in result['rows'] if owners.get(row['player_tag']) in ids]
+    selected = [row for row in result['rows'] if owners.get(row['player_tag']) in ids
+                and (account_tags is None or row['player_tag'] in account_tags)]
     by_member = {row['member_id']: row for row in aggregate_attendance(selected, owners, 'member')}
     by_member_type = defaultdict(list)
     for opportunity in selected:

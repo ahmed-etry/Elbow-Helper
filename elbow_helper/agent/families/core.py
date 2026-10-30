@@ -210,11 +210,6 @@ def family_tool(name, description, properties, reader, *, required=(), contract=
                         'cause': 'missing_report'}
             selected = {key: value for key, value in arguments.items() if key not in COMMON}
             fresh = context.fresh_reads or arguments.get('fresh', False)
-            if name == 'read_member_cohort' and selected.get('activity_ref') and fresh:
-                from .cohort_activity import fresh_activity_selection
-                selected = await fresh_activity_selection(context, selected)
-                if 'error' in selected:
-                    return selected
             if 'account_tags' in selected:
                 values = selected['account_tags']
                 tags = [normalize_player_tag(value) for value in values] if isinstance(values, list) else []
@@ -230,8 +225,7 @@ def family_tool(name, description, properties, reader, *, required=(), contract=
             # before the executor's hard deadline cancels the entire report.
             from ..engine.budgets import TOOL_TIMEOUT_SECONDS
             deadline = time.monotonic() + max(0, TOOL_TIMEOUT_SECONDS - 5)
-            continuation = bool(selected.get('activity_ref'))
-            dependencies = ReadDependencies(() if continuation else family_revisions(context, name))
+            dependencies = ReadDependencies(family_revisions(context, name))
             read_context = replace(context, fresh_reads=fresh, read_dependencies=dependencies,
                                    deadline_monotonic=min(deadline, context.deadline_monotonic)
                                    if context.deadline_monotonic is not None else deadline)
@@ -242,11 +236,11 @@ def family_tool(name, description, properties, reader, *, required=(), contract=
             if not isinstance(result.get('rows'), list):
                 raise ValueError('Family reader must return complete rows')
             summary = {key: value for key, value in result.items() if key != 'rows'}
-            versions = result.get('source_versions') if continuation else dependencies.checked(context)
-            selection = result.get('selection', selected) if continuation else selected
+            versions = dependencies.checked(context)
+            selection = selected
             summary.update(schema_version=1, selection=selection, resolved_inputs=selection,
                 requester_id=context.member.id,
-                observed_at=result.get('observed_at') if continuation else datetime.now(timezone.utc).isoformat(),
+                observed_at=datetime.now(timezone.utc).isoformat(),
                 source_versions=versions,
                 provenance={'source_channels': sorted(context.state.source_channels),
                             'required_access': sorted(context.state.required_access)})

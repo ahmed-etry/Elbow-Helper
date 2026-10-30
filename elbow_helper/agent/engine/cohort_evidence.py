@@ -6,9 +6,7 @@ from ..families.core import FamilyReport
 from ..families.model_view import family_model_view, record_rows
 from ..families.cwl_summary import CWL_ANALYSIS_FIELDS
 from ..reports.tools import authorize_report
-from ..reports.base import MAX_REPORTS, MAX_REPORT_PAYLOAD_BYTES
 from ..plan.results import compact_result, model_result
-from . import budgets as limits
 
 
 def restorable_reference(result):
@@ -85,7 +83,7 @@ def cohort_review_evidence(evidence, authorized):
         table = result.get('family') in ('read_cwl_results', 'read_war_attendance',
             'read_ranked_activity', 'read_clan_rosters', 'read_member_accounts') or (
             result.get('family') == 'read_member_cohort'
-            and result.get('basis') in ('clan_rosters', 'role_holders', 'joined_discord'))
+            and result.get('basis') in ('clan_rosters', 'role_holders', 'joined_discord', 'selected'))
         if not table or result.get('complete_snapshot') is not True or result.get('error'):
             continue
         rows = result.get('rows', [])
@@ -98,45 +96,6 @@ def cohort_review_evidence(evidence, authorized):
     return projected
 
 
-async def complete_activity_reads(flow):
-    """Resume checked channel cursors within the ordinary tool/time/evidence budgets."""
-    for identity, result in list(flow.completed_results.items()):
-        if (result.get('family') != 'read_member_cohort'
-                or not result.get('activity_coverage')):
-            continue
-        while not result['activity_coverage']['chat_coverage']['source_reads_complete']:
-            if flow.runner.tool_calls >= limits.MAX_TOOL_CALLS:
-                break
-            report = flow.context.state.reports.get(result.get('report_id'))
-            if not isinstance(report, FamilyReport):
-                break
-            retained = flow.context.state.reports
-            # A continuation adds a complete immutable snapshot. Preserve
-            # the other selected evidence rather than evicting scores or wars
-            # while trying to fill an explicitly unknown chat window.
-            if (len(retained) >= MAX_REPORTS or sum(r.retained_bytes for r in retained.values())
-                    + report.retained_bytes > MAX_REPORT_PAYLOAD_BYTES):
-                break
-            previous = json.loads(report.payload)['summary']['activity_coverage']['chat_coverage']
-            step_id = 'activity_resume_' + str(flow.runner.tool_calls)
-            step = {'id': step_id, 'capability': 'read_member_cohort', 'arguments': {
-                'basis': result['basis'], 'activity_ref': report.report_id, 'view': 'count'},
-                'depends_on': []}
-            resumed = await flow.runner.run({'goal': 'Complete the selected activity snapshot',
-                'effort': 'low', 'output': 'text', 'steps': [step]})
-            candidate = resumed.get(step_id, {})
-            if candidate.get('error') or not candidate.get('activity_coverage'):
-                break
-            result = candidate
-            flow.completed_results[identity] = result
-            flow.result_views[identity] = flow.runner.model_results_for(resumed)[step_id]
-            flow.steps_by_id[step_id] = step
-            latest = flow.context.state.reports.get(result.get('report_id'))
-            if (not isinstance(latest, FamilyReport) or previous ==
-                    json.loads(latest.payload)['summary']['activity_coverage']['chat_coverage']):
-                break
-
-
 async def cohort_writer_evidence(context, evidence, *, snapshots=None):
     """Restore complete authorized cohorts and their dependent measure tables."""
     projected = dict(evidence)
@@ -146,7 +105,7 @@ async def cohort_writer_evidence(context, evidence, *, snapshots=None):
         if not isinstance(result, dict):
             continue
         cohort = (result.get('family') == 'read_member_cohort'
-                  and result.get('basis') in ('clan_rosters', 'role_holders', 'joined_discord'))
+                  and result.get('basis') in ('clan_rosters', 'role_holders', 'joined_discord', 'selected'))
         measures = result.get('family') in ('read_cwl_results', 'read_war_attendance', 'read_ranked_activity')
         rosters = result.get('family') == 'read_clan_rosters'
         discussion = result.get('family') == 'read_conversation_evidence'

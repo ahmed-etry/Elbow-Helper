@@ -75,7 +75,7 @@ class RecommendationContextTests(unittest.IsolatedAsyncioTestCase):
                                          ('other', '#Q0', False)]:
             summary = {'requester_id': context.member.id, 'basis': 'clan_rosters'}
             if activity:
-                summary['activity_coverage'] = {'chat_coverage': {}}
+                summary['activity_coverage'] = {'discord_activity_coverage': {}}
             report = FamilyReport(identity, context.guild.id, 'read_member_cohort', json.dumps({
                 'rows': [{'member_id': 12, 'accounts': [{'player_tag': tag}]}], 'summary': summary}))
             snapshots[identity] = (report, frozenset({context.source_message.channel.id}), frozenset())
@@ -91,7 +91,7 @@ class RecommendationContextTests(unittest.IsolatedAsyncioTestCase):
                              'account_purpose': None}],
                'war_status': 'joined_without_attacking', 'wars_observed': 1}
         visible = family_model_view({'family': 'read_member_cohort', 'basis': 'clan_rosters',
-            'activity_coverage': {'chat_coverage': {}}, 'rows': [row]})['rows'][0]
+            'activity_coverage': {'discord_activity_coverage': {}}, 'rows': [row]})['rows'][0]
         self.assertEqual(visible['leadership']['status'], 'active')
         self.assertEqual(visible['accounts'][0]['townHallLevel'], 12)
         self.assertIn('account_purpose', visible['accounts'][0])

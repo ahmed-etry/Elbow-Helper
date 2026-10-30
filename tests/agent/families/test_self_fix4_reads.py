@@ -1,6 +1,5 @@
 """Home roles, selected-cohort activity and scoped references reach the writer."""
 from dataclasses import replace
-import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
@@ -13,7 +12,6 @@ from elbow_helper.agent.engine.answer_inputs import answer_evidence
 from elbow_helper.configuration.roles import LEAD
 from agent.engine.test_agent_plan_flow import _context
 from agent.families import test_named_role_cohorts, test_reference
-from agent.families.test_cohort_activity import MetadataOnly
 
 
 class HomeClanTests(unittest.IsolatedAsyncioTestCase):
@@ -66,16 +64,14 @@ class RoleActivityTests(unittest.IsolatedAsyncioTestCase):
         context = test_named_role_cohorts.NamedRoleTests().context()
         links = Mock(return_value={101: [{'player_tag': '#P0'}]})
         context = replace(context, account_links=SimpleNamespace(get_links_for_members=links),
-            message_search=SimpleNamespace(history_page=AsyncMock(return_value=
-            SimpleNamespace(messages=(MetadataOnly(),), next_before_id=None, reached_window_start=True))))
+            achievement_queries=SimpleNamespace(member_activity=lambda ids: {}),
+            message_search=SimpleNamespace(history_page=AsyncMock(side_effect=AssertionError('No channel reads'))))
         args = {'basis': 'role_holders', 'role_ids': [27], 'clan_codes': ['BEH'],
                 'include_activity': True, 'after': '2025-12-01T00:00:00+00:00'}
         with patch.object(reads, 'profiles', AsyncMock(return_value={
                 '#P0': {'status': 'ok', 'data': {'name': 'Account', 'donations': 12}}})), \
              patch('elbow_helper.agent.families.cohort_activity.selected_wars',
-                   AsyncMock(return_value={'rows': [], 'coverage': {}})), \
-             patch('elbow_helper.agent.families.cohort_activity.searchable_channel_ids',
-                   AsyncMock(return_value=(91,))):
+                   AsyncMock(return_value={'rows': [], 'coverage': {}})):
             result = await reads.member_cohort(context, args)
         self.assertEqual(links.call_args.args[0], [101])
         self.assertEqual([r['member_id'] for r in result['rows']], [101])
@@ -83,35 +79,9 @@ class RoleActivityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['rows'][0]['account_tags'], ['#P0'])
         visible = family_model_view({**result, 'family': 'read_member_cohort'})
         self.assertEqual(visible['rows'][0]['donations'], 12)
-        self.assertEqual(visible['rows'][0]['chat_status'], 'no_observed_messages')
+        self.assertEqual(visible['rows'][0]['discord_activity_status'], 'no_record')
         self.assertIsNone(result['rows'][0]['war_activity']['attacks_used'])
         self.assertFalse(result['activity_coverage']['historical_collection_complete'])
-
-    async def test_role_activity_cursors_resume_only_the_same_snapshot_basis(self):
-        from elbow_helper.agent.families.core import FamilyReport
-        from elbow_helper.agent.families.cohort_activity import continue_activity
-        context = _context()
-        snapshot = {'rows': [{'member_id': 41, 'accounts': [], 'donations': None,
-            'war_activity': {'status': 'no_stored_participation', 'wars_observed': 0,
-                             'attacks_used': None, 'totals_complete': False},
-            'chat_activity': {'status': 'not_checked_timeout'}}],
-            'summary': {'basis': 'role_holders', 'requester_id': 41,
-                'activity_coverage': {'period': {'after': '2025-12-01T00:00:00+00:00',
-                    'before': '2026-01-01T00:00:00+00:00'}, 'chat_coverage': {}}}}
-        report = FamilyReport('cohort', context.guild.id, 'read_member_cohort', json.dumps(snapshot))
-        context.state.reports['cohort'] = report
-        context.state.report_sources['cohort'] = frozenset()
-        context.state.report_access_requirements['cohort'] = frozenset()
-        async def chat(context, rows, *args, **kwargs):
-            rows[0]['chat_activity'] = {'status': 'no_observed_messages', 'latest_observed_at': None}
-            return {'source_reads_complete': True}
-        with patch('elbow_helper.agent.families.cohort_activity.chat_projection', chat):
-            resumed = await continue_activity(context, {'basis': 'role_holders', 'activity_ref': 'cohort'}, 0)
-            wrong = await continue_activity(context, {'basis': 'clan_rosters', 'activity_ref': 'cohort'}, 0)
-        self.assertEqual(resumed['rows'][0]['chat_status'], 'no_observed_messages')
-        self.assertEqual(wrong['cause'], 'report_unavailable')
-        self.assertEqual(report.payload, json.dumps(snapshot))
-
 
 class ScopedReferenceTests(unittest.IsolatedAsyncioTestCase):
     def context(self):

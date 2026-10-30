@@ -135,6 +135,38 @@ class AchievementQueries:
             self._path, clock=self._clock,
         )
 
+    def member_activity(self, member_ids: list[int]) -> dict[int, dict]:
+        """Read stored posting counters without reconstructing channel history."""
+        identifiers = sorted(set(member_ids))
+        if any(type(value) is not int or value <= 0 for value in identifiers):
+            raise ValueError("Invalid activity member")
+        result = {}
+        if not identifiers:
+            return result
+        try:
+            with closing(self._connect()) as connection:
+                for start in range(0, len(identifiers), 500):
+                    batch = identifiers[start:start + 500]
+                    placeholders = ','.join('?' for _ in batch)
+                    rows = connection.execute(
+                        'SELECT user_id, last_activity_date, activity_streak, message_count '
+                        f'FROM user_stats WHERE user_id IN ({placeholders})', batch,
+                    ).fetchall()
+                    for identifier, last_active, streak, messages in rows:
+                        result[identifier] = {
+                            'status': 'observed' if last_active else 'no_messages_recorded',
+                            'last_active_day': (datetime.fromtimestamp(last_active, timezone.utc)
+                                                .date().isoformat() if last_active else None),
+                            'active_streak_days': streak,
+                            'lifetime_messages': messages,
+                        }
+        except (sqlite3.Error, ValueError, OverflowError, OSError) as error:
+            raise RuntimeError("Activity data could not be read") from error
+        return {identifier: result.get(identifier, {
+            'status': 'no_record', 'last_active_day': None,
+            'active_streak_days': None, 'lifetime_messages': None,
+        }) for identifier in identifiers}
+
     def member_progress(
         self, member_id: int, *, joined_at: datetime | None,
     ) -> MemberAchievementSnapshot:

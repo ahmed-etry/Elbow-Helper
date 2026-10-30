@@ -49,7 +49,7 @@ from .unfinished import unfinished_answer
 from .named_replies import named_reply
 from .evidence_delta import EvidenceDelta, access_refused
 from .answer_inputs import answer_evidence, read_handles, bounded_answer_evidence, serialized_answer_evidence
-from .cohort_evidence import complete_activity_reads, cohort_writer_evidence, cohort_review_evidence, restorable_reference
+from .cohort_evidence import cohort_writer_evidence, cohort_review_evidence, restorable_reference
 from .assessment import DECISION_ANSWER_INSTRUCTION, assessment_limits, deliver_decision_answer, discussion_ids, read_decision_discussions
 from .account_lists import account_index
 from .recommended_actions import action_catalogue, prepare_recommended_actions
@@ -532,8 +532,6 @@ class AnswerFlow:
         review_only = self.assessment_requested and allow_more
         system = self._answer_system(allow_more=allow_more)
         tools = (plan_definition(self.registry),) if allow_more else ()
-        if not review_only:
-            await complete_activity_reads(self)
         evidence = self.model_results(self.completed_results)
         transport = {**self.context.state.grounding_evidence, **evidence}
         prompt = self._answer_frame(evidence, allow_more=allow_more, instruction=instruction)

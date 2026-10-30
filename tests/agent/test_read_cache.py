@@ -495,7 +495,7 @@ class FollowupFindingsTests(unittest.IsolatedAsyncioTestCase):
                 revision[0] = 'corrected'
                 self.assertFalse(report_is_current(local, report))
 
-    async def test_activity_continuations_preserve_revisions_and_fresh_ref_rereads_every_source(self):
+    async def test_fresh_activity_selection_rereads_sources_and_preserves_old_snapshot(self):
         revision = ['one']
         def attendance(**kw):
             return {'rows': [{'player_tag': '#P0', 'player_name': 'Synthetic', 'war_id': 'war',
@@ -510,30 +510,19 @@ class FollowupFindingsTests(unittest.IsolatedAsyncioTestCase):
                   'count_complete': True, 'clans': []}
         tool = next(item for item in identity_reads.TOOLS if item.definition.name == 'read_member_cohort')
         selection = {'basis': 'clan_rosters', 'include_activity': True, 'after': '2025-12-01T00:00:00+00:00'}
-        from elbow_helper.agent.families import cohort_activity
         with patch('elbow_helper.agent.families.core.require_evidence_access', AsyncMock()), \
-             patch.object(identity_reads, 'clan_rosters', AsyncMock(return_value=roster)) as rosters, \
-             patch.object(cohort_activity, 'searchable_channel_ids', AsyncMock(return_value=())), \
-             patch.object(cohort_activity, 'chat_projection', wraps=cohort_activity.chat_projection) as chat:
+             patch.object(identity_reads, 'clan_rosters', AsyncMock(return_value=roster)) as rosters:
             first = await tool.handler(local, selection)
+            retained = local.state.reports[first['report_id']].payload
             revision[0] = 'corrected'
-            second = await tool.handler(local, {'basis': 'clan_rosters', 'activity_ref': first['report_id']})
-            third = await tool.handler(local, {'basis': 'clan_rosters', 'activity_ref': second['report_id']})
-            self.assertEqual(second['source_versions'], first['source_versions'])
-            self.assertEqual(third['source_versions'], first['source_versions'])
-            self.assertEqual(second['observed_at'], first['observed_at'])
-            self.assertEqual(third['resolved_inputs'], selection)
-            self.assertFalse(report_is_current(local, local.state.reports[third['report_id']]))
-            source.attendance.assert_called_once()
-            rosters.assert_awaited_once()
-            fresh = await tool.handler(local, {'basis': 'clan_rosters', 'activity_ref': third['report_id'], 'fresh': True})
-            self.assertEqual(fresh['source_versions'], {'cwl_queries': 'corrected'})
-            self.assertEqual(fresh['rows'][0]['attacks_used'], 2)
-            self.assertEqual(source.attendance.call_count, 2)
-            self.assertEqual(rosters.await_count, 2)
-            self.assertTrue(rosters.call_args.args[0].fresh_reads)
-            self.assertNotIn('progress', chat.call_args.kwargs)
-            self.assertEqual(chat.call_count, 4)
+            self.assertFalse(report_is_current(local, local.state.reports[first['report_id']]))
+            fresh = await tool.handler(local, {**selection, 'fresh': True})
+        self.assertEqual(fresh['source_versions'], {'cwl_queries': 'corrected'})
+        self.assertEqual(fresh['rows'][0]['attacks_used'], 2)
+        self.assertEqual(source.attendance.call_count, 2)
+        self.assertEqual(rosters.await_count, 2)
+        self.assertTrue(rosters.call_args.args[0].fresh_reads)
+        self.assertEqual(local.state.reports[first['report_id']].payload, retained)
 
     async def make_finding(self, family='read_clan_rosters', source=None):
         local = context()
