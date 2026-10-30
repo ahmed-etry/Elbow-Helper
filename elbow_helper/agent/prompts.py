@@ -696,11 +696,7 @@ def build_request_prompt(
     if identity_context:
         identity_context = "\n" + identity_context
 
-    return f"""A passing mention talks about you to someone else rather than asking you something. \
-Meet that conversational moment with a short line or fitting GIF. Don't pick on unrelated \
-details like spelling or add factual claims nobody asked for.
-
-{''.join(instruction + chr(10) * 2 for instruction in context_instructions)}\
+    return f"""{''.join(instruction + chr(10) * 2 for instruction in context_instructions)}\
 <history_checkpoint>
 {history_checkpoint or "No older history checkpoint was supplied."}
 </history_checkpoint>
@@ -734,6 +730,9 @@ Asker: {asker_name}{f' (member_id={asker_id})' if asker_id is not None else ''}
 Asked at: {asked_at.isoformat()}{identity_context}
 
 Triggering message (a mention is not necessarily a request):
+A passing mention talks about you to someone else rather than asking you something. \
+Meet that conversational moment with a short line or fitting GIF. Don't pick on unrelated \
+details like spelling or add factual claims nobody asked for.
 <request>
 {question}
 </request>

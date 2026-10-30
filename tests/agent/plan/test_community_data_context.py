@@ -4,11 +4,30 @@ import unittest
 
 from elbow_helper.agent.families import TOOLS
 from elbow_helper.agent.community_data import COMMUNITY_DATA_CONTEXT
+from elbow_helper.agent.families.identity_reads import member_fields
 from elbow_helper.agent.plan.format import system_instructions, answer_instructions
 from elbow_helper.agent.conversation.context import estimate_tokens
 
 
 class CommunityDataContextTests(unittest.TestCase):
+    def test_home_roles_describe_assignments_without_following_game_moves(self):
+        for text in (COMMUNITY_DATA_CONTEXT, member_fields(None, 42)['home_clan_basis']):
+            with self.subTest(text=text):
+                text = ' '.join(text.lower().split())
+                for fact in ('assigned at acceptance', 'changed with promotion or demotion within the family',
+                             'home roles define where accounts are supposed to be',
+                             'a member with accounts in different home clans holds multiple home roles',
+                             'roles never follow in-game moves or become stale because of them',
+                             'an account outside its home clan has left or moved'):
+                    self.assertIn(fact, text)
+        for fact in ('Current account location is not historical placement.',
+                     "Multiple home roles remain explicit and linked accounts' current clans can clarify them.",
+                     'Utility roles are extra participation: BEW/War Specialist means extra wars, not a home placement.'):
+            self.assertIn(fact, ' '.join(COMMUNITY_DATA_CONTEXT.split()))
+        self.assertIn('utility roles are extra participation; not historical acceptance, '
+                      'current account location or identification of a main account',
+                      member_fields(None, 42)['home_clan_basis'])
+
     def test_planner_and_final_writer_share_the_same_compact_context(self):
         registry = {tool.definition.name: tool for tool in TOOLS}
         for prompt in (system_instructions(registry), answer_instructions(), answer_instructions(registry)):

@@ -352,7 +352,10 @@ class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(options.get("tool_choice") == "none", route == "recovery")
                         payload = options["messages"][1]["content"]
                         context_json, evidence_json = payload.split("\nAvailable evidence:\n", 1)
-                        context = json.loads(json.loads(context_json)["context"])
+                        frame = json.loads(context_json)
+                        self.assertEqual(frame["asker_wants"], [] if route == "recovery" else ["PLAN_GOAL"])
+                        self.assertNotIn("PLAN_GOAL", system)
+                        context = json.loads(frame["context"])
                         self.assertEqual(context["request"], question)
                         self.assertEqual(context["nearby_conversation"], "Nearby member text.")
                         self.assertEqual(context["conversation_history"], "Earlier subject: Orion.")
@@ -362,8 +365,10 @@ class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
                             self.assertEqual(evidence["sample"]["sections"], raw["sections"])
                             self.assertFalse(evidence["sample"]["source_complete"])
                         serialized = json.dumps(options, ensure_ascii=False)
-                        for marker in ("INTERNAL_", "CATALOGUE_LOCATOR", "PLAN_GOAL", "DATA_LOCATOR"):
+                        for marker in ("INTERNAL_", "CATALOGUE_LOCATOR", "DATA_LOCATOR"):
                             self.assertNotIn(marker, serialized)
+                        self.assertNotIn("PLAN_GOAL", json.dumps(context))
+                        self.assertNotIn("PLAN_GOAL", evidence_json)
                         if route != "recovery":
                             self.assertEqual(evidence["sample"]["history_coverage"]["requested_after"],
                                              "2026-01-19")
@@ -406,6 +411,7 @@ class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_real_writer_can_read_a_remaining_gap_without_a_draft_round(self):
         requests, writers = [], []
+        goals = ["Find the member's linked account", "Read the missing linked account details"]
         source = AsyncMock(side_effect=[{"rows": [{"member_id": 52}], "report_id": "sample:one", "next_offset": 1},
                                         {"rows": [{"member_id": 52, "player_name": "Vega"}]}])
         registry = {"read_sample": RegisteredAgentTool(AgentToolDefinition(
@@ -419,20 +425,24 @@ class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
             if system == ROUTE_INSTRUCTION:
                 return provider_response("research")
             if system != answer_instructions(registry):
-                return provider_response(calls=[call("submit_request_plan", _plan([
-                    {"id": "identity", "capability": "read_sample", "arguments": {}, "depends_on": []}]))])
+                return provider_response(calls=[call("submit_request_plan", {**_plan([
+                    {"id": "identity", "capability": "read_sample", "arguments": {}, "depends_on": []}]),
+                    "goal": goals[0]})])
             writers.append(options)
             prompt, _, evidence = writer_payload(options)
+            self.assertEqual(prompt["asker_wants"], goals[:len(writers)])
+            for goal in goals:
+                self.assertNotIn(goal, system)
             self.assertEqual(evidence["identity"]["rows"], [{"member_id": 52}])
             self.assertNotIn("report_id", evidence["identity"])
             self.assertNotIn("next_offset", evidence["identity"])
             self.assertEqual(prompt["read_handles"]["identity"], {"report_id": "sample:one", "next_offset": 1})
             self.assertFalse(any(message["role"] == "tool" for message in options["messages"]))
             if len(writers) == 1:
-                return provider_response(calls=[call("submit_request_plan", _plan([
+                return provider_response(calls=[call("submit_request_plan", {**_plan([
                     {"id": "account", "capability": "read_sample", "arguments": {
                         "member_id": 52, "report_id": "sample:one", "offset": 1},
-                     "depends_on": []}]))])
+                     "depends_on": []}]), "goal": goals[1]})])
             self.assertEqual(evidence["account"]["rows"], [{"member_id": 52, "player_name": "Vega"}])
             return provider_response("Vega is linked to that member.")
 
@@ -444,6 +454,7 @@ class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(answer, "Vega is linked to that member.")
             self.assertEqual(len(requests), 4)
             self.assertEqual(len(writers), 2)
+            self.assertEqual(writers[0]["messages"][0], writers[1]["messages"][0])
             self.assertEqual(source.await_count, 2)
         finally:
             await model.close()
@@ -543,7 +554,8 @@ class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
                         return provider_response("research")
                     if system in (answer_instructions(), answer_instructions(registry)):
                         writers.append(options)
-                        _, _, evidence = writer_payload(options)
+                        prompt, _, evidence = writer_payload(options)
+                        self.assertEqual(prompt["asker_wants"], ["Answer from the selected data"])
                         limit = evidence["sample"]
                         for key, value in expected.items():
                             self.assertEqual(limit[key], value)

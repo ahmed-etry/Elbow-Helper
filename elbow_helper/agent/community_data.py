@@ -19,8 +19,12 @@ No Elbow Helper links means the member has not gone through /accept; links alone
 prove they have. An unavailable link store is unknown, not no links. ClashPerk links are
 separate. [recruitment/commands.py:perform_accept; account_links/cog.py;
 K/recruitment-promotions.md:Apply to join Brown Elbow]
-Home clan means the configured Discord clan member role; multiple home roles remain
-explicit and linked accounts' current clans can clarify them. Current account location
+Home clan means the configured Discord clan member role, assigned at acceptance and changed
+with promotion or demotion within the family. Home roles define where accounts are supposed
+to be; a member with accounts in different home clans holds multiple home roles. Roles never
+follow in-game moves or become stale because of them; an account outside its home clan has
+left or moved. Multiple home roles remain explicit and linked accounts' current clans can
+clarify them. Current account location
 is not historical placement. Utility roles are extra participation: BEW/War Specialist
 means extra wars, not a home placement. [agent/families/identity_reads.py:member_fields;
 agent/families/domain_facts.py:clan_profile; ../configuration/clans.py]

@@ -168,8 +168,8 @@ class SelfKnowledgeFlowTests(unittest.IsolatedAsyncioTestCase):
         # Captured with fixed instructions before request data. Update only for
         # an intentional instruction or prompt-layout change.
         expected = {
-            'prompt': '433c9ec556ba364df6ff54a6311c0180f6174e9905399e26a33a774fefb1a350',
-            'system_prompt': '4e409612d891fb4b39595011594179d9af1b2c1a8e46b7c537ec1c63ca79f9ff',
+            'prompt': 'a5f81ffb1f888da2716cfe22adc23dbf5c475b3ea71d53c3a1617e11aa5f1a1b',
+            'system_prompt': '917a056119203c3eb7bda776c346edeaa6969c52413df238364cfe5321cd6e28',
         }
         for key, digest in expected.items():
             self.assertEqual(hashlib.sha256(model.request[key].encode()).hexdigest(), digest)

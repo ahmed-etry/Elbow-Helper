@@ -2,8 +2,10 @@
 
 import json
 from dataclasses import replace
+from types import SimpleNamespace
 
 from ..access import accessible_message_channel
+from ..text import message_text
 
 
 REPLY_CONTEXT_INSTRUCTION = (
@@ -54,6 +56,15 @@ def turn_identity(turn):
     return None, ()
 
 
+def _reply_text(message):
+    """Keep complete content and embed text together as one untrusted body."""
+    return message_text(SimpleNamespace(
+        content=getattr(message, "content", ""),
+        embeds=getattr(message, "embeds", ()),
+        attachments=(),
+    ))
+
+
 async def prepare_reply_context(context):
     """Use only already resolved Discord messages and currently authorized turns."""
     reference = getattr(context.source_message, "reference", None)
@@ -76,7 +87,7 @@ async def prepare_reply_context(context):
         author = referenced.author
         result.update(status="resolved", channel_id=channel_id,
                       author={"member_id": author.id, "display_name": author.display_name},
-                      content=getattr(referenced, "content", ""),
+                      content=_reply_text(referenced),
                       source=getattr(referenced, "jump_url", None),
                       reply_to_message_id=getattr(getattr(referenced, "reference", None), "message_id", None))
         context.state.source_channels.add(channel_id)
