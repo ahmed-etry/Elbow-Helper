@@ -161,7 +161,22 @@ def create_api_field_schema(connection):
         id INTEGER PRIMARY KEY, source_kind TEXT NOT NULL, scope_id TEXT NOT NULL,
         state_z BLOB NOT NULL, fast_sampled_at INTEGER, slow_sampled_at INTEGER,
         UNIQUE(source_kind,scope_id))""")
-    connection.execute("""CREATE TABLE api_field_changes (
+    connection.execute(FIELD_CHANGES_STATEMENT.format("api_field_changes"))
+
+
+FIELD_CHANGES_STATEMENT = """CREATE TABLE {} (
         record_id INTEGER NOT NULL REFERENCES api_records(id), observed_at INTEGER NOT NULL,
         patch_z BLOB NOT NULL, source_run_id INTEGER NOT NULL REFERENCES collection_runs(id),
-        PRIMARY KEY(record_id,source_run_id)) WITHOUT ROWID""")
+        PRIMARY KEY(record_id,source_run_id))"""
+
+
+def rebuild_field_changes(connection):
+    # SQLite 3.40.1 misreads a WITHOUT ROWID table whose key is not its leading
+    # columns, so integrity checks falsely report NULLs. Keep rows in an ordinary table.
+    sql = connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='api_field_changes'").fetchone()
+    if sql is None or "WITHOUT ROWID" not in sql[0].upper():
+        return
+    connection.execute(FIELD_CHANGES_STATEMENT.format("api_field_changes_ordinary"))
+    connection.execute("INSERT INTO api_field_changes_ordinary SELECT * FROM api_field_changes")
+    connection.execute("DROP TABLE api_field_changes")
+    connection.execute("ALTER TABLE api_field_changes_ordinary RENAME TO api_field_changes")
