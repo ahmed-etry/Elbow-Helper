@@ -154,7 +154,8 @@ class IdentityFamilyTests(unittest.IsolatedAsyncioTestCase):
                 role.name = name
                 result = await reads.member_accounts(context, {'member_ids': [context.member.id]})
                 projected = answer_evidence({'accounts': family_model_view({
-                    **result, 'family': 'read_member_accounts'})}, guild=context.guild)
+                    **result, 'family': 'read_member_accounts',
+                    'selection': {'include_profile': True}})}, guild=context.guild)
                 row = projected['accounts']['members'][0]
                 self.assertEqual(row['home_clans'], [])
                 self.assertEqual(row['home_clan_status'], 'no_home_role')
