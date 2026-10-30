@@ -106,7 +106,8 @@ async def conversation_evidence(context, arguments):
     if mode == 'attachments':
         if arguments.get('channel_id') or arguments.get('message_id'):
             if not (arguments.get('channel_id') and arguments.get('message_id')):
-                return {'error': 'Choose both the attachment channel and message.', 'cause': 'needs_input'}
+                return {'error': 'Choose both the attachment channel and message.', 'cause': 'invalid_arguments',
+                        'missing_fields': [key for key in ('channel_id', 'message_id') if not arguments.get(key)]}
             channel = await accessible_message_channel(context, arguments['channel_id'])
             if channel is None:
                 return {'error': 'That attachment source is unavailable here.', 'cause': 'scope_refused'}
@@ -164,7 +165,7 @@ async def conversation_evidence(context, arguments):
         channel_id = arguments.get('channel_id') or context.source_message.channel.id
         identifier = arguments.get('message_id') or context.state.reply_context.get('message_id')
         if identifier is None:
-            return {'error': 'Which message should I follow?', 'cause': 'needs_input', 'missing_fields': ['message_id']}
+            return {'error': 'Which message should I follow?', 'cause': 'invalid_arguments', 'missing_fields': ['message_id']}
         rows, visited, gaps = [], set(), []
         for _ in range(10):
             if identifier in visited:
@@ -201,7 +202,8 @@ async def conversation_evidence(context, arguments):
     selected = {key:value for key,value in arguments.items() if key not in ('mode','source_cursor','projection','attachment_ids')}
     if mode == 'message_window':
         if not selected.get('channel_id') or not selected.get('message_id'):
-            return {'error':'Which message and channel should I read?', 'cause':'needs_input'}
+            return {'error':'Which message and channel should I read?', 'cause':'invalid_arguments',
+                    'missing_fields': [key for key in ('channel_id', 'message_id') if not selected.get(key)]}
         selected.pop('mentions',None); selected.pop('author_id',None)
         result = await read_message_context(context, {**selected,'limit':50}, complete_content=True)
     elif mode in ('search', 'author_mentions'):
@@ -216,7 +218,7 @@ async def conversation_evidence(context, arguments):
         result = await search_discord_messages(context, {**selected,'limit':25}, complete_content=True)
     else:
         if not selected.get('channel_id'):
-            return {'error':'Which channel should I read?', 'cause':'needs_input'}
+            return {'error':'Which channel should I read?', 'cause':'invalid_arguments', 'missing_fields': ['channel_id']}
         selected.pop('message_id',None); selected.pop('mentions',None); selected.pop('author_id',None)
         if arguments.get('source_cursor'):
             selected['cursor']=arguments['source_cursor']

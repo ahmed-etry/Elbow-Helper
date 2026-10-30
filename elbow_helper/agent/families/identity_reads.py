@@ -138,7 +138,10 @@ async def member_accounts(context, arguments):
         arguments = {**arguments,**selection}
     selectors = [key for key in ('member_ids', 'account_tags', 'name') if arguments.get(key)]
     if not name_selection and len(selectors) != 1:
-        return {'error': 'Which members, accounts or exact name do you want?', 'cause': 'needs_input'}
+        return {'error': 'Which members, accounts or exact name do you want?',
+                'cause': 'invalid_arguments',
+                **({'invalid_fields': selectors} if selectors else
+                   {'missing_fields': ['member_ids', 'account_tags', 'name', 'account_names', 'cohort_ref']})}
     identifiers = list(arguments.get('member_ids', []))
     tags = sorted({tag for value in arguments.get('account_tags', [])
                    if (tag := normalize_player_tag(value)) is not None})
@@ -475,7 +478,8 @@ async def member_cohort(context, arguments):
         roles.update(identifier for code in arguments['clan_codes']
                      if (identifier := getattr(CLANS[code], field)) is not None)
     if basis == 'role_holders' and not roles:
-        return {'error': 'Which Discord role holders do you want?', 'cause': 'needs_input'}
+        return {'error': 'Which Discord role holders do you want?', 'cause': 'invalid_arguments',
+                'missing_fields': ['role_ids', 'role_name', 'clan_codes']}
     rows = []
     selected_members = [(identifier, context.guild.get_member(identifier)) for identifier in ids] if ids is not None else [(member.id, member) for member in members]
     for identifier, member in selected_members:

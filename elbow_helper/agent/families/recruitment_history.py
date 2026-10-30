@@ -61,7 +61,9 @@ async def recruitment_history(context, arguments):
         if after is None or after >= before:
             raise ValueError
     except (ValueError, TypeError):
-        return {'error': 'Choose a dated recruitment history window.', 'cause': 'needs_input'}
+        return {'error': 'Choose a dated recruitment history window.', 'cause': 'invalid_arguments',
+                **({'missing_fields': ['after']} if not arguments.get('after') else
+                   {'invalid_fields': ['after', 'before']})}
     channel = TRIAL_LIST if stage == 'acceptance_history' else TICKETS_LOG
     result = await read_discord_channel_history(context, {
         'channel_id': channel, 'after': after.isoformat(), 'before': before.isoformat(),

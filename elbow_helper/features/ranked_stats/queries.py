@@ -2,6 +2,7 @@
 
 from collections import defaultdict
 from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta
 import json
 
 
@@ -45,9 +46,25 @@ class RankedQueries:
         return sqlite_revision(self.store.path)
 
     def window(self, *, after, before, selector, values, offset=0, limit=25, include_battles=False):
-        parameters = dict(after=after, before=before, selector=selector, values=values)
-        rows, truncated = self.store.read_window(**parameters)
-        battles, polls, battle_truncated = self.store.read_battle_window(**parameters)
+        # Aggregate raw observations once, after reading disjoint source windows.
+        # Summing per-window account summaries would lose latest profiles, ranks
+        # and the distinction between unknown counts and observed zeroes.
+        rows, battles, polls = [], [], []
+        truncated = battle_truncated = False
+        start, end = datetime.fromisoformat(after), datetime.fromisoformat(before)
+        while start < end:
+            stop = min(start + timedelta(days=90), end)
+            parameters = dict(after=start.isoformat(timespec='microseconds'),
+                              before=stop.isoformat(timespec='microseconds'),
+                              selector=selector, values=values)
+            samples, sample_limit = self.store.read_window(**parameters)
+            records, observations, battle_limit = self.store.read_battle_window(**parameters)
+            rows.extend(samples)
+            battles.extend(records)
+            polls.extend(observations)
+            truncated |= sample_limit
+            battle_truncated |= battle_limit
+            start = stop
         column = {"member_ids": "member_id", "account_tags": "player_tag", "clan_tags": "clan_tag"}[selector]
         snapshots_by_tag, battles_by_tag, polls_by_tag = defaultdict(list), defaultdict(list), defaultdict(list)
         matched = set()
