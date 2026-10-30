@@ -219,7 +219,10 @@ async def attendance(context, arguments, *, separate_seasons=False):
             'missed': sum(row['missed'] for row in observations) if confirmed else None,
             'totals_complete': confirmed,
             **({'season_complete': confirmed and war_count >= 7} if separate_seasons and season else {})})
+    from .member_context import account_owner_profiles
+    member_profiles = account_owner_profiles(result) if unit == 'account' else None
     return {**source, 'rows': result, 'clan_totals': clan_totals,
+            **({'members': member_profiles} if member_profiles is not None else {}),
             'ranked_population': population, 'opportunity_unit': 'account-war',
             'clan_participation': clan_participation(rows, owners, context.guild,
                 arguments.get('clan_codes', sorted({r['clan_code'] for r in rows if r.get('clan_code')}))),

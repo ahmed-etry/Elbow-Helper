@@ -199,18 +199,6 @@ async def cohort_writer_evidence(context, evidence, *, snapshots=None):
             # Transport pages prioritize recent replies; the restored writer
             # snapshot reads the whole exchange in chronological order.
             view['rows'] = sorted(view['rows'], key=lambda row: row.get('message_id', 0))
-        if accounts:
-            # Roles belong to the owner, not each alt. Keep the complete account
-            # set while sending each owner's large role list only once.
-            members = {}
-            for row in view['rows']:
-                member_id = row.get('member_id')
-                if member_id is not None and 'roles' in row:
-                    members.setdefault(member_id, {'member_id': member_id,
-                        'member_name': row.get('member_name'), 'roles': row['roles']})
-                    row.pop('roles')
-            if members:
-                view['members'] = list(members.values())
         projected[identity] = compact_result(view)
     enriched = {tags for tags, activity in populations.values() if activity}
     for identity, (tags, activity) in populations.items():

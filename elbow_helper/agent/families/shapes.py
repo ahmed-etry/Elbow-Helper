@@ -31,10 +31,11 @@ RESULT_FIELDS['read_member_accounts']['rows'][0].update(names('nickname,war_star
 RESULT_FIELDS['read_member_accounts'].update(
     history_reads={kind: names('read_ran,status,after,before,error,cause,coverage,history_coverage')
                    for kind in ('regular_war', 'cwl', 'ranked')},
-    name_resolutions=[{**names('query,status,account_status,member_status'),
-        'matching_members': [{**names('member_id,member_name,username,nickname,match_sources,account_links_status'),
+    name_resolutions=[{**names('query,status,look_in,found_in'),
+        'matching_members': [{**names('member_id,member_name,username,nickname,account_links_status'),
                               'accounts': [names('player_tag,player_name')]}],
-        'candidates': [names('player_tag,player_name,names,sources,member_id,member_name,membership_status')]}])
+        'candidates': [names('player_tag,player_name,names,sources,member_id,member_name,membership_status')],
+        'selected_accounts': [names('player_tag,player_name,member_id,member_name')]}])
 for family in ('read_clan_rosters', 'read_member_accounts', 'read_war_attendance'):
     RESULT_FIELDS[family]['rows'][0].update(
         leadership={'status': None, 'roles': [names('role_id,name')]})
@@ -51,8 +52,19 @@ RESULT_FIELDS['read_member_accounts']['rows'][0].update(
     membership_status=None, home_role_checks=[names('clan_code,role_id,has_role')])
 RESULT_FIELDS['read_member_accounts'].update(names('role_comparison_complete'))
 RESULT_FIELDS['read_member_accounts']['home_role_comparisons'] = [{
-    **names('member_id,member_name,player_tag,player_name,membership_status'),
-    'home_role_checks': [names('clan_code,role_id,has_role')]}]
+    **names('member_id,member_name,player_tag,player_name,clan_codes')}]
+# Discord facts live once per owner, separate from game observations.
+member_fields = ('joined_at', 'nickname', 'roles', 'leadership', 'membership_status',
+    'has_elbow_helper_links', 'family_membership_roles', 'home_clans', 'participation_clans',
+    'home_clan_status', 'home_clan_basis', 'home_role_checks')
+account_row = RESULT_FIELDS['read_member_accounts']['rows'][0]
+RESULT_FIELDS['read_member_accounts']['members'] = [{
+    **names('member_id,member_name,account_tags,account_links_status'),
+    **{field: account_row.pop(field) for field in member_fields}}]
+for family in ('read_clan_rosters', 'read_war_attendance'):
+    RESULT_FIELDS[family]['members'] = [{**names('member_id,member_name,account_tags,membership_status'),
+        'leadership': RESULT_FIELDS[family]['rows'][0]['leadership']}]
+RESULT_FIELDS['read_clan_rosters']['rows'][0].pop('leadership')
 RESULT_FIELDS['read_cwl_results']['clan_results'] = [{
     **names('clan_code,league,completed_wars,scoring_status,ranked_population'),
     'top_rows': RESULT_FIELDS['read_cwl_results']['rows']}]
@@ -89,6 +101,7 @@ RESULT_FIELDS['read_recruitment_pipeline']['rows'][0].update(
     **names('accepted_clan_codes,participation_clan_codes,placement_basis,start_at,embeds,attachment_names'),
     timeline=[WORKFLOW_EVENT], accounts=RESULT_FIELDS['read_member_accounts']['rows'],
     period_status=None, period_evidence=[WORKFLOW_EVENT], undated_evidence=[WORKFLOW_EVENT])
+RESULT_FIELDS['read_recruitment_pipeline']['members'] = RESULT_FIELDS['read_member_accounts']['members']
 RESULT_FIELDS['read_recruitment_pipeline']['source_next_cursor'] = None
 RATIO = names('numerator,denominator,value,display')
 PERFORMANCE = {**names('wars,observed_attacks,measurement_status,accounts'),

@@ -21,6 +21,19 @@ def payload(**values):
 
 
 class DecisionContextTests(unittest.IsolatedAsyncioTestCase):
+    def test_separate_owner_profiles_preserve_unknown_leadership_selections(self):
+        rows = [{'member_id': owner, 'player_tag': tag, 'player_name': tag, 'clan_code': 'BEH'}
+                for owner, tag in ((42, '#P0'), (43, '#Q0'), (43, '#Y0'), (None, '#L0'))]
+        members = [{'member_id': 42, 'leadership': {'status': 'none'}},
+                   {'member_id': 43, 'leadership': {'status': 'unknown'}}]
+        for profiles in (members, {'columns': ['member_id', 'leadership'],
+                                  'rows': [[row['member_id'], row['leadership']] for row in members]}):
+            result = assessment_limits({'roster': {'rows': rows, 'members': profiles,
+                'leadership_filter': {'unverified_accounts': 3}}})
+            self.assertEqual({row['player_tag'] for row in result['unverified_selection']},
+                             {'#Q0', '#Y0', '#L0'})
+        self.assertTrue(all('leadership' not in row for row in rows))
+
     def test_unresolved_selection_identities_are_deduplicated_across_rosters_and_cohorts(self):
         account = {'player_tag': '#P0', 'player_name': 'First', 'clan_code': 'alpha'}
         unlinked = {**account, 'member_id': None, 'leadership': {'status': 'unknown'}}

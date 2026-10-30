@@ -9,6 +9,26 @@ def pick(value, fields):
     return {key: value[key] for key in fields if key in value}
 
 
+def name_resolution_view(resolution):
+    """Keep selection provenance and only the choices still needing a decision."""
+    result = pick(resolution, ('query', 'status', 'look_in', 'found_in'))
+    result['selected_accounts'] = [pick(account, ('player_tag',))
+                                   for account in record_rows(resolution.get('selected_accounts', []))]
+    if resolution.get('status') == 'ambiguous' and resolution.get('found_in') == 'game':
+        result['candidates'] = [pick(account, ('player_tag', 'player_name', 'member_id', 'member_name'))
+                                for account in record_rows(resolution.get('candidates', []))]
+    if (resolution.get('status') == 'ambiguous' and resolution.get('found_in') == 'discord'
+            or any(member.get('account_links_status') in ('no_linked_accounts', 'links_unavailable')
+                   for member in record_rows(resolution.get('matching_members', [])))):
+        result['matching_members'] = []
+        for member in record_rows(resolution.get('matching_members', [])):
+            item = pick(member, ('member_id', 'member_name', 'account_links_status'))
+            item['accounts'] = [pick(account, ('player_tag', 'player_name'))
+                                for account in record_rows(member.get('accounts', []))]
+            result['matching_members'].append(item)
+    return result
+
+
 def record_rows(value):
     if isinstance(value, dict) and set(value) == {'columns', 'rows'}:
         return [dict(zip(value['columns'], row)) for row in value['rows']]
@@ -30,7 +50,7 @@ def account_view(row, *, nested=False):
 
 def roster_role_view(row):
     return pick(row, ('member_id', 'member_name', 'player_tag', 'player_name',
-                      'membership_status', 'home_role_checks', 'home_clans', 'home_clan_status', 'profile_status'))
+                      'profile_status'))
 
 
 def ranked_view(row):
@@ -84,10 +104,19 @@ def participation_view(clans, rows):
 def family_model_view(payload):
     """Keep every selected identity and computed metric; full detail stays retained."""
     data = dict(payload)
+    if isinstance(data.get('name_resolutions'), list):
+        data['name_resolutions'] = [name_resolution_view(item) for item in data['name_resolutions']]
     family = data.get('family')
     rows = data.get('rows')
     if not isinstance(rows, list):
         return data
+    if isinstance(data.get('members'), list):
+        selected_members = {row.get('member_id') or row.get('applicant_member_id') for row in rows}
+        data['members'] = [account_view(member) for member in data['members']
+                           if member.get('member_id') in selected_members]
+        if family == 'read_member_accounts' and not data.get('selection', {}).get('include_roles'):
+            for member in data['members']:
+                member.pop('roles', None)
     if family == 'read_conversation_evidence' and data.get('mode') == 'channel_window':
         data.setdefault('message_content_complete', all(row.get('content_complete') for row in rows))
         data.setdefault('attachment_contents_read', False)
@@ -127,10 +156,6 @@ def family_model_view(payload):
         projected = []
         for row in rows:
             item = account_view(row)
-            if family == 'read_member_accounts' and not data.get('selection', {}).get('include_roles'):
-                # Role changes use their own current-role preview. Repeating
-                # every cosmetic role on every alt obscures account evidence.
-                item.pop('roles', None)
             if 'accounts' in item:
                 item['member_name'] = item.get('member_name') or next((account.get('member_name')
                     for account in item['accounts'] if account.get('member_name')), None)
@@ -170,7 +195,10 @@ def family_model_view(payload):
         if family == 'read_member_accounts' and 'home_role_comparisons' in data:
             # These comparisons are a projection of the same account rows,
             # not a second indivisible copy of the complete roster header.
-            data['home_role_comparisons'] = [roster_role_view(row) for row in projected]
+            selected_tags = {row.get('player_tag') for row in projected}
+            data['home_role_comparisons'] = [pick(row, ('member_id', 'member_name',
+                'player_tag', 'player_name', 'clan_codes')) for row in data['home_role_comparisons']
+                if row.get('player_tag') in selected_tags]
     elif family == 'read_hibernation':
         data['rows'] = [pick(row, ('member_id', 'member_name', 'joined_at', 'started_at',
             'started_ts', 'start_time_status', 'accounts', 'activity_coverage',

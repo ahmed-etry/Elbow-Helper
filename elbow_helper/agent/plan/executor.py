@@ -75,10 +75,20 @@ def resolve_arguments(
         if isinstance(value, dict):
             properties = detail.get("properties", {})
             additional = detail.get("additionalProperties", {})
-            return {name: resolve(item, properties.get(
+            resolved = {name: resolve(item, properties.get(
                         name, additional if isinstance(additional, Mapping) else {}),
                         name if field == "arguments" else f"{field}.{name}")
                     for name, item in value.items()}
+            member_ids = value.get("member_ids")
+            references = (member_ids if isinstance(member_ids, list) else [member_ids])
+            if (isinstance(resolved.get("member_ids"), list) and any(
+                    isinstance(item, dict) and set(item) == {"step", "path"} for item in references)):
+                identifiers = []
+                for identifier in resolved["member_ids"]:
+                    if identifier not in identifiers:
+                        identifiers.append(identifier)
+                resolved["member_ids"] = identifiers
+            return resolved
         if isinstance(value, list):
             items = []
             for index, item in enumerate(value):
