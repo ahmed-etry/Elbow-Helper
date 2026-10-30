@@ -1,10 +1,13 @@
 """War sources queue on their schedule rows; only failed items keep a receipt."""
 
 from . import FamilyStore
+from .projections import canonical_json
 
 
 # A finished item leaves its schedule row exactly as an unqueued one.
 CLEAR = "active_run_id=NULL,ordinal=NULL,queue_status=NULL,started_at=NULL"
+# Outcomes a source's status can record; a private log is never a success.
+OUTCOMES = {"ok", "not_in_war", "private_log", "failed"}
 
 def enqueue(connection, run, ordinal, kind, scope, at):
     connection.execute(
@@ -33,13 +36,23 @@ def queued(connection, run, ordinal, kind, scope):
     return state
 
 
-def outcome(connection, run, state, status, at, *, error=None, response=None, count=None, written=0, complete=True):
+def outcome(connection, run, state, status, at, *, error=None, response=None, count=None, written=0, complete=True,
+            observed=None, label=None):
+    """Close the item and record the check; `observed` replaces the last observation when given."""
+    label = label or ("failed" if status == "failed" else "ok")
+    if label not in OUTCOMES:
+        raise ValueError("invalid_war_outcome")
     connection.execute(
         "UPDATE collection_runs SET attempted=attempted+1,succeeded=succeeded+?,empty=empty+?,failed=failed+?,"
         "rows_written=rows_written+? WHERE id=?",
         (status == "ok", status == "empty", status == "failed", written, run))
-    connection.execute(f"UPDATE war_collection_state SET {CLEAR} WHERE source_kind=? AND scope_id=?",
-                       (state["source_kind"], state["scope_id"]))
+    success = label in {"ok", "not_in_war"}
+    connection.execute(
+        f"UPDATE war_collection_state SET {CLEAR},last_attempt_at=?,last_outcome=?,last_http_status=?,last_run_id=?,"
+        "last_success_at=CASE WHEN ? THEN ? ELSE last_success_at END,observed_json=COALESCE(?,observed_json) "
+        "WHERE source_kind=? AND scope_id=?",
+        (at, label, response.status if response else None, run, success, at,
+         canonical_json(observed) if observed is not None else None, state["source_kind"], state["scope_id"]))
     if status == "failed":
         connection.execute(
             "INSERT INTO collection_items(run_id,ordinal,source_kind,scope_id,status,started_at) "

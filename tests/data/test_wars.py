@@ -16,7 +16,7 @@ from elbow_helper.data.collectors.service import FamilyCollectors
 from elbow_helper.data.collectors.wars import due_jobs, path_for
 from elbow_helper.data.store import FamilyStore
 from elbow_helper.data.store.schema import MIGRATIONS
-from elbow_helper.data.store.war_projection import api_time
+from elbow_helper.data.store.war_projection import api_time, project_war
 from elbow_helper.data.store.wars import SECOND, record_response
 from elbow_helper.infrastructure.persistence.migrations import run_sqlite_migrations
 
@@ -149,16 +149,83 @@ class WarStoreTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual([r["clan_tag"] for r in await self.rows("SELECT * FROM war_sides ORDER BY side")], ["#LQ", "#PY"])
         self.assertEqual(len(await self.rows("SELECT * FROM war_attacks")), 2)
 
-    async def test_types_use_only_explicit_api_evidence(self):
-        for friendly, expected in ((None, "UNKNOWN"), (True, "FRIENDLY"), (False, "REG")):
-            with self.subTest(friendly=friendly):
-                payload = war(friendly=friendly)
-                payload["preparationStartTime"] = f"202610{20 + (friendly is True) + 2 * (friendly is False):02d}T180000.000Z"
-                payload["endTime"] = f"202610{28 + (friendly is True) + 2 * (friendly is False):02d}T180000.000Z"
-                await self.record(payload)
-                self.assertEqual((await self.rows("SELECT type FROM wars ORDER BY id DESC LIMIT 1"))[0]["type"], expected)
+    async def test_untagged_war_type_follows_preparation_and_battle_day_lengths(self):
+        # Preparation start, battle start, end; a pause only lengthens a regular war.
+        cases = (("20261001T000000.000Z", "20261001T230000.000Z", "20261002T230000.000Z", "REG"),
+                 ("20261003T000000.000Z", "20261004T020000.000Z", "20261005T060000.000Z", "REG"),
+                 ("20261006T000000.000Z", "20261006T200000.000Z", "20261007T200000.000Z", "FRIENDLY"),
+                 ("20261008T000000.000Z", "20261008T230000.000Z", "20261009T120000.000Z", "FRIENDLY"),
+                 ("20261010T000000.000Z", "20261010T001500.000Z", "20261010T011500.000Z", "FRIENDLY"))
+        for preparation, start, end, expected in cases:
+            with self.subTest(preparation=preparation):
+                payload = war(end=end)
+                payload.update(preparationStartTime=preparation, startTime=start)
+                await self.record(payload, at=api_time(start))
+                self.assertEqual((await self.rows("SELECT type,type_basis FROM wars ORDER BY id DESC LIMIT 1"))[0],
+                                 {"type": expected, "type_basis": "times"})
+        # Clash sends no friendly marker; a stray field is not evidence.
+        self.assertEqual(project_war(war(friendly=True))["type"], "REG")
         await self.record(war(), kind="cwl_war", scope="#R0")
-        self.assertEqual((await self.rows("SELECT type,war_tag FROM wars WHERE war_tag IS NOT NULL"))[0], {"type": "CWL", "war_tag": "#R0"})
+        self.assertEqual((await self.rows("SELECT type,type_basis,war_tag FROM wars WHERE war_tag IS NOT NULL"))[0],
+                         {"type": "CWL", "type_basis": "war_tag", "war_tag": "#R0"})
+
+    async def test_war_log_confirms_regular_and_a_spanning_log_without_it_makes_it_friendly(self):
+        # Two 24-hour wars against outside clans; only the first was regular.
+        regular = war("warEnded", clans=("#PY", "#GR"))
+        lookalike = war("warEnded", clans=("#PY", "#CU"), end="20261030T180000.000Z")
+        lookalike.update(preparationStartTime="20261028T180000.000Z", startTime="20261029T180000.000Z")
+        await self.record(regular, at=END + 90 * SECOND)
+        await self.record(lookalike, at=END + 2 * 86400 * SECOND)
+        newer = war("warEnded", clans=("#PY", "#LQ"), end="20261101T180000.000Z")
+        page = war_log(newer)
+        page["items"] += war_log(regular)["items"]
+        # A log that has not yet reached past a war's end decides nothing.
+        await self.record(war_log(regular), kind="war_log", at=END + 2 * 86400 * SECOND)
+        self.assertEqual([(r["type"], r["type_basis"]) for r in await self.rows("SELECT * FROM wars ORDER BY id")],
+                         [("REG", "war_log"), ("REG", "times")])
+        attacks = await self.rows("SELECT * FROM war_attacks ORDER BY war_id,attack_order")
+        await self.execute("UPDATE war_collection_state SET checkpoint_json='{}' WHERE source_kind='war_log'")
+        await self.record(page, kind="war_log", at=END + 5 * 86400 * SECOND)
+        self.assertEqual([(r["type"], r["type_basis"]) for r in await self.rows("SELECT * FROM wars ORDER BY id")],
+                         [("REG", "war_log"), ("FRIENDLY", "war_log_absent"), ("REG", "war_log")])
+        self.assertEqual(attacks, await self.rows("SELECT * FROM war_attacks WHERE war_id<3 ORDER BY war_id,attack_order"))
+        # Appearing in a log later still wins over absence.
+        await self.execute("UPDATE war_collection_state SET checkpoint_json='{}' WHERE source_kind='war_log'")
+        await self.record(war_log(lookalike), kind="war_log", at=END + 6 * 86400 * SECOND)
+        self.assertEqual((await self.rows("SELECT type,type_basis FROM wars WHERE id=2"))[0],
+                         {"type": "REG", "type_basis": "war_log"})
+
+    async def test_log_end_a_few_seconds_later_is_the_same_war_in_either_order(self):
+        drifted = war_log(war("warEnded"))
+        drifted["items"][0]["endTime"] = "20261028T180002.000Z"
+        await self.record(war("warEnded"), at=END + 90 * SECOND)
+        await self.record(drifted, kind="war_log", at=END + 300 * SECOND)
+        self.assertEqual(await self.rows("SELECT type,type_basis,end_at FROM wars"),
+                         [{"type": "REG", "type_basis": "war_log", "end_at": END}])
+        later = war("inWar", clans=("#PY", "#CU"), end="20261030T180000.000Z")
+        later.update(preparationStartTime="20261028T180000.000Z", startTime="20261029T180000.000Z")
+        logged = war_log(war("warEnded", clans=("#PY", "#CU")))
+        logged["items"][0]["endTime"] = "20261030T180001.000Z"
+        await self.execute("UPDATE war_collection_state SET checkpoint_json='{}' WHERE source_kind='war_log'")
+        await self.record(logged, kind="war_log", at=END + 3 * 86400 * SECOND)
+        await self.record(later, at=END + 3 * 86400 * SECOND)
+        self.assertEqual([(r["type"], r["type_basis"]) for r in await self.rows("SELECT * FROM wars ORDER BY id")],
+                         [("REG", "war_log"), ("REG", "war_log")])
+
+    async def test_private_log_and_cwl_rounds_never_change_a_war_type(self):
+        lookalike = war("warEnded", clans=("#PY", "#CU"))
+        await self.record(lookalike, at=END + 90 * SECOND)
+        await self.record(war(), kind="cwl_war", scope="#R0", at=END + 90 * SECOND)
+        before = await self.rows("SELECT * FROM wars ORDER BY id")
+        await self.record({"reason": "accessDenied"}, kind="war_log", status=403, at=END + 86400 * SECOND)
+        self.assertEqual(before, await self.rows("SELECT * FROM wars ORDER BY id"))
+        later = war("warEnded", clans=("#PY", "#LQ"), end="20261101T180000.000Z")
+        page = war_log(later)
+        page["items"].append(war_log(war("warEnded", clans=("#PY", "#GR"), end="20261020T180000.000Z"))["items"][0])
+        await self.record(page, kind="war_log", at=END + 5 * 86400 * SECOND)
+        rows = {r["war_tag"] or r["id"]: (r["type"], r["type_basis"]) for r in await self.rows("SELECT * FROM wars")}
+        self.assertEqual(rows["#R0"], ("CWL", "war_tag"))
+        self.assertEqual(rows[1], ("FRIENDLY", "war_log_absent"))
 
     async def test_missing_fields_and_colliding_orders_remain_repairable(self):
         partial = war("warEnded")
@@ -326,7 +393,7 @@ class WarStoreTests(WarFixture, unittest.IsolatedAsyncioTestCase):
     async def test_invalid_values_fail_and_new_nested_fields_do_not_reduce_coverage(self):
         await self.record(war())
         before = await self.rows("SELECT * FROM wars")
-        for update in ({"state": []}, {"type": []}, {"teamSize": -1}, {"endTime": "not a time"}, {"battleModifier": {"tag": "#P0"}}):
+        for update in ({"state": []}, {"startTime": "20261029T180000.000Z"}, {"teamSize": -1}, {"endTime": "not a time"}, {"battleModifier": {"tag": "#P0"}}):
             result = await self.record({**war(), **update})
             self.assertEqual(result["status"], "failed")
             self.assertEqual(before, await self.rows("SELECT * FROM wars"))
@@ -347,10 +414,10 @@ class WarStoreTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         await self.record(war("warEnded"), kind="cwl_war", scope="#R0")
         self.assertEqual((await self.rows("SELECT enabled FROM war_collection_state WHERE scope_id='#R0'"))[0]["enabled"], 0)
 
-    async def test_log_frontier_gap_is_explicit_and_friendly_is_not_guessed(self):
-        await self.record(war_log(war("warEnded", friendly=True)), kind="war_log")
-        self.assertEqual((await self.rows("SELECT type FROM wars"))[0]["type"], "FRIENDLY")
-        different = war("warEnded", clans=("#PY", "#CU"), friendly=False)
+    async def test_log_frontier_gap_is_explicit_and_log_entries_are_regular(self):
+        await self.record(war_log(war("warEnded")), kind="war_log")
+        self.assertEqual((await self.rows("SELECT type,type_basis FROM wars"))[0], {"type": "REG", "type_basis": "war_log"})
+        different = war("warEnded", clans=("#PY", "#CU"))
         await self.record(war_log(different), kind="war_log")
         checkpoint = json.loads((await self.rows("SELECT checkpoint_json FROM war_collection_state WHERE source_kind='war_log' AND scope_id='#PY'"))[0]["checkpoint_json"])
         self.assertTrue(checkpoint["api_history_limit"])
@@ -364,12 +431,13 @@ class WarStoreTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual([r["player_tag"] for r in await self.rows("SELECT * FROM war_members WHERE account_id IS NOT NULL")], ["#P0"])
         self.assertEqual(await self.rows("PRAGMA foreign_key_check"), [])
 
-    async def test_sealed_unknown_type_can_gain_api_evidence_without_rewriting_attacks(self):
+    async def test_sealed_war_gains_log_confirmation_without_rewriting_attacks(self):
         await self.record(war("warEnded"), at=END)
+        self.assertEqual((await self.rows("SELECT type_basis FROM wars"))[0]["type_basis"], "times")
         attacks = await self.rows("SELECT * FROM war_attacks ORDER BY attack_order")
-        await self.record(war_log(war("warEnded", friendly=True)), kind="war_log", at=END + 300 * SECOND)
+        await self.record(war_log(war("warEnded")), kind="war_log", at=END + 300 * SECOND)
         row = (await self.rows("SELECT * FROM wars"))[0]
-        self.assertEqual((row["type"], row["final_at"]), ("FRIENDLY", END))
+        self.assertEqual((row["type"], row["type_basis"], row["final_at"]), ("REG", "war_log", END))
         self.assertEqual(attacks, await self.rows("SELECT * FROM war_attacks ORDER BY attack_order"))
 
     async def test_failed_storage_projection_rolls_back_facts_and_reports_zero_rows(self):
@@ -381,14 +449,45 @@ class WarStoreTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.rows("SELECT * FROM war_sides"), [])
         self.assertEqual((await self.rows("SELECT rows_written FROM collection_runs"))[0]["rows_written"], 0)
 
+    async def test_finished_war_keeps_the_log_result_and_nothing_else_changes(self):
+        await self.record(war("warEnded"), at=END + 90 * SECOND)
+        sides = await self.rows("SELECT * FROM war_sides ORDER BY side")
+        self.assertEqual([r["result"] for r in sides], [None, None])
+        facts = {table: await self.rows(f"SELECT * FROM {table}") for table in ("war_members", "war_attacks")}
+        silent = war_log(war("warEnded"))
+        del silent["items"][0]["result"]
+        await self.record(silent, kind="war_log", at=END + 200 * SECOND)
+        self.assertEqual(sides, await self.rows("SELECT * FROM war_sides ORDER BY side"))
+        page = war_log(war("warEnded"))
+        page["items"][0]["result"] = "win"
+        await self.execute("UPDATE war_collection_state SET checkpoint_json='{}' WHERE source_kind='war_log'")
+        await self.record(page, kind="war_log", at=END + 300 * SECOND)
+        run = (await self.rows("SELECT MAX(id) AS id FROM collection_runs"))[0]["id"]
+        after = await self.rows("SELECT * FROM war_sides ORDER BY side")
+        # Sides sort by tag: #GR is the opponent, #PY the clan that won.
+        self.assertEqual([(r["clan_tag"], r["result"], r["source_run_id"]) for r in after],
+                         [("#GR", "lose", run), ("#PY", "win", run)])
+        self.assertEqual([{k: v for k, v in r.items() if k not in {"result", "source_run_id"}} for r in sides],
+                         [{k: v for k, v in r.items() if k not in {"result", "source_run_id"}} for r in after])
+        self.assertEqual(facts, {table: await self.rows(f"SELECT * FROM {table}") for table in ("war_members", "war_attacks")})
+        row = (await self.rows("SELECT final_at,end_at,content_hash,type_basis FROM wars"))[0]
+        self.assertEqual((row["final_at"], row["end_at"], row["type_basis"]), (END + 90 * SECOND, END, "war_log"))
+        # The same result again writes nothing.
+        await self.execute("UPDATE war_collection_state SET checkpoint_json='{}' WHERE source_kind='war_log'")
+        await self.record(page, kind="war_log", at=END + 400 * SECOND)
+        self.assertEqual(after, await self.rows("SELECT * FROM war_sides ORDER BY side"))
+        self.assertEqual((await self.rows("SELECT rows_written FROM collection_runs ORDER BY id DESC LIMIT 1"))[0]["rows_written"], 0)
+
     async def test_identical_poll_writes_only_the_run_row(self):
         await self.record(war())
         tables = [r["name"] for r in await self.rows("SELECT name FROM sqlite_master WHERE type='table'")]
 
+        moving = {"next_due_at", "last_attempt_at", "last_success_at", "last_run_id"}
+
         async def snapshot():
             rows = {table: await self.rows(f"SELECT * FROM {table}") for table in tables if table != "collection_runs"}
-            # The schedule moves on; nothing else in the checkpoint may change.
-            rows["war_collection_state"] = [{**row, "next_due_at": None} for row in rows["war_collection_state"]]
+            # The schedule and the check's status move on; no war fact may change.
+            rows["war_collection_state"] = [{**row, **dict.fromkeys(moving)} for row in rows["war_collection_state"]]
             return rows
         before = await snapshot()
         report = await self.record(war(), at=self.at + 300 * SECOND)
@@ -398,6 +497,55 @@ class WarStoreTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         runs = await self.rows("SELECT * FROM collection_runs ORDER BY id")
         self.assertEqual(len(runs), 2)
         self.assertEqual((runs[-1]["succeeded"], runs[-1]["rows_written"]), (1, 0))
+        status = (await self.rows("SELECT * FROM war_collection_state WHERE source_kind='current_war' AND scope_id='#PY'"))[0]
+        self.assertEqual((status["last_attempt_at"], status["last_success_at"], status["last_run_id"], status["last_outcome"]),
+                         (self.at + 300 * SECOND, self.at + 300 * SECOND, runs[-1]["id"], "ok"))
+
+    async def test_each_check_records_outcome_and_observation_and_failures_keep_last_success(self):
+        async def status(kind="current_war", scope="#PY"):
+            row = (await self.rows("SELECT * FROM war_collection_state WHERE source_kind=? AND scope_id=?", (kind, scope)))[0]
+            return (row["last_attempt_at"], row["last_success_at"], row["last_outcome"],
+                    row["last_http_status"], json.loads(row["observed_json"]))
+        await self.record(war())
+        war_id = (await self.rows("SELECT id FROM wars"))[0]["id"]
+        seen = {"state": "inWar", "war_id": war_id, "end_at": END}
+        self.assertEqual(await status(), (self.at, self.at, "ok", 200, seen))
+        facts = await self.rows("SELECT * FROM wars")
+        for offset, (payload, code, outcome) in enumerate(((None, None, "failed"), (None, 503, "failed"),
+                                                           ({"reason": "accessDenied.invalidIp"}, 403, "failed"),
+                                                           ({"reason": "accessDenied"}, 403, "private_log")), 1):
+            with self.subTest(code=code, outcome=outcome):
+                at = self.at + offset * 300 * SECOND
+                await self.record(payload, status=code, at=at)
+                self.assertEqual(await status(), (at, self.at, outcome, code, seen))
+                self.assertEqual(facts, await self.rows("SELECT * FROM wars"))
+        await self.record({"state": "notInWar"}, at=self.at + 3000 * SECOND)
+        self.assertEqual(await status(), (self.at + 3000 * SECOND, self.at + 3000 * SECOND, "not_in_war", 200,
+                                          {"state": "notInWar"}))
+        self.assertEqual(facts, await self.rows("SELECT * FROM wars"))
+        at = api_time("20261002T000000.000Z")
+        await self.record(None, kind="cwl_group", status=404, at=at)
+        self.assertEqual((await status("cwl_group"))[2:], ("not_in_war", 404, {"state": "notInWar"}))
+        await self.record(group(), kind="cwl_group", at=at)
+        season = (await self.rows("SELECT id FROM cwl_seasons"))[0]["id"]
+        self.assertEqual((await status("cwl_group"))[2:], ("ok", 200, {"state": "inWar", "season_id": season}))
+        await self.record(war_log(), kind="war_log", at=at)
+        self.assertEqual((await status("war_log"))[2:], ("ok", 200, {"entries": 1, "more": False}))
+        # A partial war is observed but is not a successful check.
+        partial = war("warEnded")
+        partial["opponent"].pop("members")
+        await self.record(partial, at=END + 90 * SECOND)
+        self.assertEqual((await status())[1:3], (self.at + 3000 * SECOND, "failed"))
+        self.assertEqual((await status())[4]["state"], "warEnded")
+
+    async def test_interrupted_check_is_a_failed_attempt(self):
+        await self.record(war())
+        await self.store.call(due_jobs, CLANS, self.at + 300 * SECOND)
+        run = await self.store.begin_run("wars", "family_wars_and_leagues", [("current_war", "#PY")], self.at + 300 * SECOND)
+        await self.store.requested(run, 0)
+        await self.store.finish(run, error="interrupted")
+        row = (await self.rows("SELECT * FROM war_collection_state WHERE source_kind='current_war' AND scope_id='#PY'"))[0]
+        self.assertEqual((row["last_outcome"], row["last_success_at"], row["last_run_id"]), ("failed", self.at, run))
 
     async def test_changed_facts_reference_their_run_and_only_failures_keep_receipts(self):
         await self.record(war("preparation"))
