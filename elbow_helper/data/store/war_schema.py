@@ -94,3 +94,75 @@ STATEMENTS = (
 def create_war_schema(connection):
     for statement in STATEMENTS:
         connection.execute(statement)
+
+
+EVIDENCE_STATEMENTS = (
+    "ALTER TABLE wars ADD COLUMN type_basis TEXT",
+    # Every check updates its source's status, even when no war fact changes.
+    "ALTER TABLE war_collection_state ADD COLUMN last_attempt_at INTEGER",
+    "ALTER TABLE war_collection_state ADD COLUMN last_success_at INTEGER",
+    "ALTER TABLE war_collection_state ADD COLUMN last_outcome TEXT",
+    "ALTER TABLE war_collection_state ADD COLUMN last_http_status INTEGER",
+    "ALTER TABLE war_collection_state ADD COLUMN last_run_id INTEGER REFERENCES collection_runs(id)",
+    "ALTER TABLE war_collection_state ADD COLUMN observed_json TEXT NOT NULL DEFAULT '{}'",
+    # Old clan health war IDs and war cache entries, each mapped once to the
+    # record's war with what the old store said about it at capture.
+    """CREATE TABLE war_legacy_ids (
+        source TEXT NOT NULL CHECK(source IN ('clan_health','war_cache')),
+        legacy_id TEXT NOT NULL, clan_code TEXT NOT NULL,
+        war_id INTEGER NOT NULL REFERENCES wars(id),
+        legacy_label TEXT, capture_state TEXT, captured_at INTEGER, mapped_at INTEGER NOT NULL,
+        PRIMARY KEY(source,legacy_id,clan_code))""",
+    "CREATE INDEX war_legacy_war ON war_legacy_ids(war_id)",
+)
+
+
+def merge_log_doubles(connection):
+    """Fold each log-only copy into its current-war copy; return how many merged.
+
+    Before end-drift matching, a war-log entry whose end was a second or two
+    later became a second war. Only a unique untagged partner with a
+    preparation time qualifies, so two current-war copies never merge.
+    """
+    from .wars import END_DRIFT
+    merged = 0
+    for log_id, end in connection.execute(
+            "SELECT id,end_at FROM wars WHERE preparation_at IS NULL AND war_tag IS NULL").fetchall():
+        sides = connection.execute("SELECT clan_tag FROM war_sides WHERE war_id=? ORDER BY side", (log_id,)).fetchall()
+        if len(sides) != 2:
+            continue
+        partners = connection.execute(
+            "SELECT w.id FROM wars w JOIN war_sides a ON a.war_id=w.id AND a.side=0 AND a.clan_tag=? "
+            "JOIN war_sides b ON b.war_id=w.id AND b.side=1 AND b.clan_tag=? "
+            "WHERE w.preparation_at IS NOT NULL AND w.war_tag IS NULL AND w.end_at BETWEEN ? AND ?",
+            (sides[0][0], sides[1][0], end - END_DRIFT, end + END_DRIFT)).fetchall()
+        if len(partners) != 1:
+            continue
+        war_id = partners[0][0]
+        # The current-war copy keeps its own facts and end; the log adds what it lacks, such as the result.
+        for column in ("name", "level", "badge_json", "stars", "destruction", "attacks", "xp_earned", "result"):
+            connection.execute(
+                f"UPDATE war_sides SET {column}=(SELECT l.{column} FROM war_sides l WHERE l.war_id=? AND l.side=war_sides.side) "
+                f"WHERE war_id=? AND {column} IS NULL", (log_id, war_id))
+        connection.execute("UPDATE war_source_keys SET war_id=? WHERE war_id=?", (war_id, log_id))
+        connection.execute("UPDATE war_collection_state SET war_id=? WHERE war_id=?", (war_id, log_id))
+        connection.execute("DELETE FROM war_sides WHERE war_id=?", (log_id,))
+        connection.execute("DELETE FROM wars WHERE id=?", (log_id,))
+        merged += 1
+    return merged
+
+
+def extend_war_schema(connection):
+    for statement in EVIDENCE_STATEMENTS:
+        connection.execute(statement)
+    merge_log_doubles(connection)
+    from .war_projection import war_type
+    for war_id, war_tag, preparation, start, end in connection.execute(
+            "SELECT id,war_tag,preparation_at,start_at,end_at FROM wars").fetchall():
+        logged = preparation is None or connection.execute(
+            "SELECT 1 FROM war_source_keys WHERE war_id=? AND source_kind='war_log'", (war_id,)).fetchone()
+        connection.execute("UPDATE wars SET type=?,type_basis=? WHERE id=?",
+                           (*war_type(preparation, start, end, war_tag=war_tag, logged=bool(logged)), war_id))
+    # Which log a stored entry came from was not kept, so absence cannot be
+    # judged here. Reading each public log again settles it on the next pass.
+    connection.execute("UPDATE war_collection_state SET next_due_at=0 WHERE source_kind='war_log'")

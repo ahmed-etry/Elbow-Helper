@@ -9,6 +9,12 @@ from .projections import canonical_json, nonnegative_int
 
 CWL_ROUNDS = 7
 CWL_ROSTER_SIZE = 50
+HOUR = 3600 * 1_000_000
+# Clash pauses only lengthen a regular war. Friendly wars offer much shorter
+# choices, so an hour's margin keeps clock rounding from deciding a type.
+REGULAR_PREPARATION = 23 * HOUR
+REGULAR_BATTLE = 24 * HOUR
+CLEAR_MARGIN = HOUR
 
 
 def api_time(value):
@@ -48,15 +54,20 @@ def badge(raw):
     return canonical_json(value) if value is not None else None
 
 
-def war_type(raw, cwl=False):
-    if cwl:
-        return "CWL"
-    explicit = {"regular": "REG", "REG": "REG", "friendly": "FRIENDLY", "FRIENDLY": "FRIENDLY",
-                "cwl": "CWL", "CWL": "CWL"}.get(raw.get("type"), "UNKNOWN")
-    if type(raw.get("isFriendly")) is bool:
-        friendly = "FRIENDLY" if raw["isFriendly"] else "REG"
-        return friendly if explicit in {"UNKNOWN", friendly} else "UNKNOWN"
-    return explicit
+def war_type(preparation, start, end, *, war_tag=None, logged=False):
+    """Return the war type and what decided it; Clash sends no friendly marker.
+
+    A war log lists regular wars only. Without a tag or a log entry, times
+    decide; a later public log that spans the end can still overrule them.
+    """
+    if war_tag:
+        return "CWL", "war_tag"
+    if logged:
+        return "REG", "war_log"
+    if (start - preparation < REGULAR_PREPARATION - CLEAR_MARGIN
+            or end - start < REGULAR_BATTLE - CLEAR_MARGIN):
+        return "FRIENDLY", "times"
+    return "REG", "times"
 
 
 def side_projection(raw, *, destruction_maximum=100):
@@ -202,7 +213,8 @@ def project_war(raw, *, war_tag=None, aggregate=False):
     modifier = raw.get("battleModifier")
     if modifier is not None and not isinstance(modifier, str):
         raise ValueError("invalid_battle_modifier")
-    return {"type": war_type(raw, bool(war_tag)), "war_tag": war_tag,
+    kind, basis = war_type(preparation, start, end, war_tag=war_tag, logged=aggregate)
+    return {"type": kind, "type_basis": basis, "war_tag": war_tag,
             "preparation_at": preparation, "start_at": start, "war_start_at": war_start, "end_at": end, "state": state,
             "team_size": size, "attacks_per_member": per_member,
             "battle_modifier_json": canonical_json(modifier) if modifier is not None else None,

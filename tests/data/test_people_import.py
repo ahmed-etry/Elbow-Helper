@@ -19,7 +19,7 @@ from elbow_helper.data.store.legacy_links import (
 from elbow_helper.data.store.people import mirror_links
 from elbow_helper.data.store import people_import
 from elbow_helper.data.store.api_fields import _pack, unpack
-from elbow_helper.data.store.schema import MIGRATIONS
+from elbow_helper.data.store.schema import MIGRATIONS, SCHEMA_VERSION
 from elbow_helper.infrastructure.persistence.migrations import run_sqlite_migrations
 
 from .test_family_store import player, response
@@ -392,7 +392,7 @@ class LinkServiceTests(_PeopleFixture):
         self.assertEqual(len(await self.rows("SELECT * FROM account_links")), count)
         await self.service.restore_links({**before, "#V0": None}, at=600)
         self.assertEqual(await self.service.read_links(), before)
-        self.assertEqual((await self.rows("PRAGMA user_version"))[0]["user_version"], 8)
+        self.assertEqual((await self.rows("PRAGMA user_version"))[0]["user_version"], SCHEMA_VERSION)
         self.assertEqual(snapshot(self.legacy).version, 1)
         self.assertEqual(len(snapshot(self.legacy).auxiliary["suggestions"]), 1)
         self.assertEqual(await self.rows("PRAGMA foreign_key_check"), [])

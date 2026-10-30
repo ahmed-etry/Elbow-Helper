@@ -12,6 +12,22 @@ from .war_projection import badge, optional_int, project_log_entry, project_war,
 
 
 SECOND = 1_000_000
+# The war log reports a war's end a second or two after the current war did.
+# A clan pair cannot fight twice within this margin.
+END_DRIFT = 60 * SECOND
+# Stronger evidence of a war's type is never replaced by weaker evidence.
+BASIS_RANK = {"times": 0, "war_log_absent": 1, "war_log": 2, "war_tag": 3}
+
+
+def settled_type(old, war):
+    if old is None or BASIS_RANK[war["type_basis"]] >= BASIS_RANK.get(old["type_basis"], -1):
+        return war["type"], war["type_basis"]
+    return old["type"], old["type_basis"]
+
+
+def private_log(response):
+    payload = response.payload if response is not None else None
+    return response is not None and response.status == 403 and isinstance(payload, dict) and payload.get("reason") == "accessDenied"
 
 
 def next_slot(at, seconds):
@@ -71,8 +87,8 @@ def save_war(connection, war, run, at):
     # Match an aggregate backfill only when the clan pair and end are unique.
     matches = {r[0] for r in connection.execute(
             "SELECT w.id FROM wars w JOIN war_sides a ON a.war_id=w.id AND a.side=0 "
-            "JOIN war_sides b ON b.war_id=w.id AND b.side=1 WHERE w.end_at=? AND a.clan_tag=? AND b.clan_tag=?",
-            (war["end_at"], *tags))}
+            "JOIN war_sides b ON b.war_id=w.id AND b.side=1 WHERE w.end_at BETWEEN ? AND ? AND a.clan_tag=? AND b.clan_tag=?",
+            (war["end_at"] - END_DRIFT, war["end_at"] + END_DRIFT, *tags))}
     if war_id is None and len(matches) == 1:
         war_id = next(iter(matches))
     elif war_id is None and war["aggregate"]:
@@ -89,11 +105,17 @@ def save_war(connection, war, run, at):
             connection.execute("INSERT OR IGNORE INTO war_source_keys VALUES (?,?,?)", (kind, key, war_id))
     if sealed(old) or old and old["state"] == "warEnded" and war["state"] != "warEnded":
         if war["war_tag"] and old["war_tag"] is None:
-            connection.execute("UPDATE wars SET type='CWL',war_tag=?,source_run_id=?,last_seen_at=? WHERE id=?",
-                               (war["war_tag"], run, at, war_id))
-        elif old["type"] == "UNKNOWN" and war["type"] != "UNKNOWN":
-            connection.execute("UPDATE wars SET type=?,source_run_id=?,last_seen_at=? WHERE id=?",
-                               (war["type"], run, at, war_id))
+            connection.execute("UPDATE wars SET type='CWL',type_basis='war_tag',war_tag=?,source_run_id=?,last_seen_at=? "
+                               "WHERE id=?", (war["war_tag"], run, at, war_id))
+        elif (settled := settled_type(old, war)) != (old["type"], old["type_basis"]):
+            connection.execute("UPDATE wars SET type=?,type_basis=?,source_run_id=?,last_seen_at=? WHERE id=?",
+                               (*settled, run, at, war_id))
+        if war["aggregate"]:
+            # The current war never carries a result; only the log's is kept.
+            for side, row in enumerate(war["sides"]):
+                if row["result"] is not None:
+                    connection.execute("UPDATE war_sides SET result=?,source_run_id=? WHERE war_id=? AND side=? "
+                                       "AND result IS NOT ?", (row["result"], run, war_id, side, row["result"]))
         return war_id, sealed(old)
     # An identical poll stops here: no fact, member or attack row is touched.
     digest = sha256(canonical_json(war).encode("utf-8")).hexdigest()
@@ -102,9 +124,10 @@ def save_war(connection, war, run, at):
     fields = {key: value for key, value in war.items() if key not in {"sides", "members", "attacks", "aggregate"}}
     if old:
         fields = {key: value for key, value in fields.items() if value is not None}
-        if old["type"] != "UNKNOWN" and fields["type"] == "UNKNOWN":
-            fields["type"] = old["type"]
+        fields["type"], fields["type_basis"] = settled_type(old, war)
         if war["aggregate"]:
+            # The log's end can drift from the stored one; keep the first.
+            fields["end_at"] = old["end_at"]
             fields["roster_complete"] = old["roster_complete"]
             # A last live snapshot cannot establish complete final attacks.
             fields["attacks_complete"] = 0
@@ -288,7 +311,7 @@ def record_response(connection, run, ordinal, kind, scope, response, family_tags
         interval = 86400 if kind == "war_log" else 60 if kind == "cwl_war" else 300
         due, war_id, enabled = next_slot(at, interval), state["war_id"], state["enabled"]
         status, error, count, complete = "ok", None, None, True
-        rolled_back = False
+        rolled_back, observed, label = False, None, None
 
         def recovery(previous, *, force=False):
             if previous and (force or checkpoint.get("recovery_war_id") != previous):
@@ -298,17 +321,19 @@ def record_response(connection, run, ordinal, kind, scope, response, family_tags
         try:
             if kind == "cwl_group" and response is not None and response.error is None and (response.status == 404 or
                     response.ok and isinstance(response.payload, dict) and response.payload.get("state") == "notInWar"):
-                status = "empty"
+                status, label, observed = "empty", "not_in_war", {"state": "notInWar"}
             elif response is None or not response.ok or response.error is not None or not isinstance(response.payload, dict):
                 raise ValueError("fetch_failed")
             elif kind == "cwl_group":
-                save_group(connection, response.payload, scope, family_tags, run, at)
+                season_id = save_group(connection, response.payload, scope, family_tags, run, at)
+                observed = {"state": response.payload["state"], "season_id": season_id}
             elif kind == "war_log":
                 count, checkpoint, more = save_log(connection, response.payload, scope, checkpoint, run, at)
                 due = at if more else due
                 status = "ok" if count else "empty"
+                observed = {"entries": count, "more": more}
             elif kind == "current_war" and response.payload.get("state") == "notInWar":
-                status = "empty"
+                status, label, observed = "empty", "not_in_war", {"state": "notInWar"}
                 recovery(war_id, force=not checkpoint.get("current_empty", False))
                 checkpoint["current_empty"] = True
             else:
@@ -321,6 +346,7 @@ def record_response(connection, run, ordinal, kind, scope, response, family_tags
                     # tags, not the pairings. Never poll an unrelated war again.
                     enabled = 0
                     checkpoint = {"unrelated": True, "clan_tags": sorted(tags)}
+                    observed = {"state": war["state"], "unrelated": True}
                 else:
                     old_id = war_id
                     war_id, complete = save_war(connection, war, run, at)
@@ -346,6 +372,7 @@ def record_response(connection, run, ordinal, kind, scope, response, family_tags
                             else:
                                 due = min(due, end - 300 * SECOND)
                     count = len(war["attacks"])
+                    observed = {"state": war["state"], "war_id": war_id, "end_at": war["end_at"]}
                     complete = complete and (war["state"] != "warEnded" or war["result_complete"])
                     if not complete:
                         status, error = "failed", "partial_war"
@@ -367,13 +394,14 @@ def record_response(connection, run, ordinal, kind, scope, response, family_tags
                 elif at >= end - 300 * SECOND:
                     due = min(at + 60 * SECOND, end + 90 * SECOND)
             status, error, complete = "failed", str(exc) if isinstance(exc, ValueError) else "invalid_payload", False
+            observed, label = None, "private_log" if private_log(response) else "failed"
         connection.execute("RELEASE response_facts")
         written = 0 if rolled_back else connection.total_changes - before
         connection.execute(
             "UPDATE war_collection_state SET next_due_at=?,war_id=?,enabled=?,checkpoint_json=? WHERE source_kind=? AND scope_id=?",
             (due, war_id, enabled, canonical_json(checkpoint), kind, scope))
         war_state.outcome(connection, run, state, status, at, error=error, response=response,
-                          count=count, written=written, complete=complete)
+                          count=count, written=written, complete=complete, observed=observed, label=label)
         finish_seasons(connection, at)
 
 
@@ -382,6 +410,27 @@ def recover_log(connection, scope, war_id, at):
     if old and old["final_at"] is None:
         connection.execute("UPDATE war_collection_state SET next_due_at=MIN(next_due_at,?) WHERE source_kind='war_log' AND scope_id=?",
                            (at, scope))
+
+
+def settle_absent(connection, scope, oldest, newest, run):
+    """A regular-looking war missing from a public log page that spans its end was friendly.
+
+    Any logged war of the same pair since its preparation counts as its entry,
+    so a war whose stored end missed a pause is never turned friendly.
+    """
+    for row in connection.execute(
+            "SELECT w.id,w.preparation_at,a.clan_tag AS first,b.clan_tag AS second FROM wars w "
+            "JOIN war_sides a ON a.war_id=w.id AND a.side=0 JOIN war_sides b ON b.war_id=w.id AND b.side=1 "
+            "WHERE w.type='REG' AND w.type_basis='times' AND w.war_tag IS NULL AND w.end_at>=? AND w.end_at<? "
+            "AND ? IN (a.clan_tag,b.clan_tag)", (oldest, newest, scope)).fetchall():
+        logged = connection.execute(
+            "SELECT 1 FROM wars o JOIN war_sides a ON a.war_id=o.id AND a.side=0 AND a.clan_tag=? "
+            "JOIN war_sides b ON b.war_id=o.id AND b.side=1 AND b.clan_tag=? "
+            "JOIN war_source_keys k ON k.war_id=o.id AND k.source_kind='war_log' WHERE o.end_at>=?",
+            (row["first"], row["second"], row["preparation_at"])).fetchone()
+        if not logged:
+            connection.execute("UPDATE wars SET type='FRIENDLY',type_basis='war_log_absent',source_run_id=? WHERE id=?",
+                               (run, row["id"]))
 
 
 def save_log(connection, raw, scope, checkpoint, run, at):
@@ -410,6 +459,8 @@ def save_log(connection, raw, scope, checkpoint, run, at):
                 {**{k: v for k, v in war.items() if k not in {"cwl_summary", "clan_tag", "end_at"}}, "source_run_id": run})
         else:
             save_war(connection, war, run, at)
+    if projected:
+        settle_absent(connection, scope, min(w["end_at"] for w in projected), max(w["end_at"] for w in projected), run)
     if after and not reached:
         return len(items), {"frontier": frontier, "newest": newest, "after": after}, True
     return len(items), {"frontier": newest or frontier, "history_complete": not frontier or reached,

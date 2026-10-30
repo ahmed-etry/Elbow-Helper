@@ -295,8 +295,9 @@ class ApiFieldTests(unittest.IsolatedAsyncioTestCase):
             with closing(sqlite3.connect(old)) as target:
                 run_sqlite_migrations(target, MIGRATIONS[:5], target_version=5)
                 tables = [r[0] for r in target.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+                columns = {table: [r[1] for r in target.execute(f"PRAGMA table_info({table})")] for table in tables}
                 for table in tables:
-                    rows = [tuple(row) for row in c.execute(f"SELECT * FROM {table}")]
+                    rows = [tuple(row) for row in c.execute(f"SELECT {','.join(columns[table])} FROM {table}")]
                     if table == "donation_snapshots":
                         # Version five used field-name lists, rather than the
                         # compact presence bitmap written by new collectors.
@@ -309,13 +310,19 @@ class ApiFieldTests(unittest.IsolatedAsyncioTestCase):
                 row[1] += HOUR_US // 4
                 target.execute("INSERT INTO donation_snapshots VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", row)
                 target.commit()
-                return {table: target.execute(f"SELECT * FROM {table} ORDER BY rowid").fetchall() for table in tables}
+                return {table: (columns[table], target.execute(f"SELECT * FROM {table} ORDER BY rowid").fetchall())
+                        for table in tables}
 
         before = await self.store.call(copy_old)
         store = FamilyStore(old)
         await store.initialize()
-        for table, rows in before.items():
-            actual = await store.call(lambda c: [tuple(r) for r in c.execute(f"SELECT * FROM {table} ORDER BY rowid")])
+        for table, (columns, rows) in before.items():
+            if table == "war_collection_state":
+                # Version nine reads every war log again to settle war types.
+                kind, due = columns.index("source_kind"), columns.index("next_due_at")
+                rows = [tuple(0 if i == due and row[kind] == "war_log" else v for i, v in enumerate(row)) for row in rows]
+            actual = await store.call(lambda c: [tuple(r) for r in c.execute(
+                f"SELECT {','.join(columns)} FROM {table} ORDER BY rowid")])
             self.assertEqual(actual, rows, table)
         self.assertEqual(await store.call(lambda c: c.execute("PRAGMA user_version").fetchone()[0]), SCHEMA_VERSION)
         self.assertEqual(await store.call(lambda c: c.execute("PRAGMA foreign_key_check").fetchall()), [])
