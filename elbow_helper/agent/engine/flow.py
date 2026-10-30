@@ -553,7 +553,8 @@ class AnswerFlow:
         if self.assessment_requested and not review_only:
             # Listed accounts are written from these authorized rows, not model copies.
             self.answer_accounts = account_index(evidence, selection_limits) or self.answer_accounts
-        subjects = {identity: step.get('arguments', {}) for identity, step in self.steps_by_id.items()}
+        subjects = {identity: {**step.get('arguments', {}), 'capability': step['capability']}
+                    for identity, step in self.steps_by_id.items()}
         evidence = answer_evidence(evidence, guild=self.context.guild, subjects=subjects)
         supplementary = {}
         if self.context.application_owner is not None:

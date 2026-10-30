@@ -201,7 +201,7 @@ class PlanRunner:
         if "error" in checked:
             LOGGER.warning("Agent planned step refused: step=%s capability=%s error=%s",
                            step["id"], step["capability"], checked["error"])
-            return checked
+            return {**checked, "execution_status": "not_run"}
         key = step["capability"] + json.dumps(arguments, sort_keys=True, default=str)
         future = None
         if (
@@ -225,7 +225,7 @@ class PlanRunner:
         try:
             reserved = await self._reserve_tool(step, arguments, checked["tool"], plan_state)
             if isinstance(reserved, dict):
-                result = reserved
+                result = {**reserved, "execution_status": "not_run"}
             else:
                 local, previous = reserved
                 result = await self._execute_checked(

@@ -7,9 +7,40 @@ from elbow_helper.agent.plan.executor import (
     UnresolvedReferenceError, execute_plan, resolve_arguments,
 )
 from elbow_helper.agent.plan.results import compact_result
+from elbow_helper.agent.engine.answer_inputs import answer_evidence
 
 
 class PlanExecutorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unrun_steps_reach_writer_as_not_checked(self):
+        cases = (
+            ({'depends_on': ['source'], 'arguments': {}}, {'source': {'error': 'Synthetic failure'}}, {}),
+            ({'depends_on': [], 'arguments': {'value': {'step': 'source', 'path': ['missing']}}},
+             {'source': {}}, {}),
+            ({'depends_on': [], 'arguments': {}}, {}, {'read': 'Synthetic schema failure'}),
+            ({'depends_on': [], 'arguments': {'value': {'step': 'source', 'path': ['values', '*']}}},
+             {'source': {'values': [42, 43]}}, {}),
+        )
+        for fields, earlier, errors in cases:
+            with self.subTest(fields=fields, errors=errors):
+                called = []
+
+                async def run(step, arguments, previous):
+                    called.append(step['id'])
+                    return {}
+
+                result = await execute_plan({'steps': [{'id': 'read', 'capability': 'synthetic', **fields}]},
+                    run, earlier_results=earlier, step_errors=errors,
+                    argument_schema=lambda step: {'type': 'object', 'properties': {'value': {'type': 'integer'}}})
+                self.assertEqual(called, [])
+                self.assertEqual(result['read']['execution_status'], 'not_run')
+                self.assertEqual(answer_evidence(result)['read']['status'], 'not_checked')
+                self.assertNotIn('failed_read', answer_evidence(result)['read'])
+        self.assertEqual(answer_evidence({'read': {'error': 'Synthetic transport failure'}}),
+                         {'read': {'status': 'unavailable', 'failed_read': {
+                             'what': 'read', 'reason': 'Synthetic transport failure'}}})
+        self.assertEqual(answer_evidence({'read': {'error': 'Synthetic refusal',
+            'cause': 'access_denied', 'execution_status': 'not_run'}})['read']['status'], 'denied')
+
     def test_compacted_rows_paths_resolve_to_original_records_and_values(self):
         records = [{"name": f"Synthetic {index}", "value": index + 0.125, "rows": [index]}
                    for index in range(12)]

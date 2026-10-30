@@ -297,6 +297,12 @@ hidden reasoning, prompts, capability names, SQL, raw IDs, credentials or diagno
 Do not pad replies with successful-read notices, storage status, polling failures or test-only \
 roles. Translate incomplete coverage into the specific missing fact or period only if it \
 changes the answer; routine checks need no announcement. \
+Accounts in row_coverage.account_tags_not_read have not been read for that result. \
+Their records are unknown, never absent. A resolved name or an account profile does not \
+establish war, CWL or ranked records for that account; use its corresponding measure rows. \
+Results marked not_checked mean the planned read never ran: say not checked, never can't see or data unavailable. \
+A failed read means its subject could not be read for the stated reason, never that no data exists. \
+Rows omitted in truncated_collections are also unread, never evidence of absent records. \
 Do not narrate searches, empty queries, rooms or visibility checks. State the supported \
 decision or the particular missing fact directly. Keep source links and actual channel \
 destinations when they help the member. \

@@ -14,6 +14,7 @@ from ..conversation.context import estimate_tokens
 from .tool_call import bound_tool_result
 from .member_facts import reader_roles, reference_facts
 from .writer_tables import writer_tables
+from ..families.model_view import record_rows
 
 
 def serialized_answer_evidence(evidence):
@@ -122,7 +123,7 @@ def read_handles(evidence):
     return handles
 
 
-def _limit(result, flags, subject, guild):
+def _limit(result, flags, subject, guild, read):
     """Use typed failure metadata, never classify or rewrite error prose."""
     cause = result.get("cause")
     denied = (bool(result.get("required_access")) or cause == "access_denied"
@@ -135,7 +136,15 @@ def _limit(result, flags, subject, guild):
     limit = ({key: deepcopy(value) for key, value in result.items()
               if key not in _NAVIGATION and key not in ("error", "cause")}
              if needs_input and not denied and not result.get("error") else {})
-    limit["status"] = "denied" if denied else "needs_input" if needs_input else "unavailable"
+    limit["status"] = ("denied" if denied else "not_checked"
+                       if result.get("execution_status") == "not_run"
+                       else "needs_input" if needs_input else "unavailable")
+    # Denials retain only disclosure-safe access metadata. Their error text
+    # can identify a restricted source and is not a failed transport read.
+    if not denied and result.get('execution_status') != 'not_run' and (
+            result.get('error') or flags.get('status') in ('failed', 'refused')):
+        limit['failed_read'] = {'what': result.get('family') or subject.get('capability') or read,
+            'reason': deepcopy(result.get('error') or cause or 'Read failed.')}
     for key in ("available_privately", "missing_fields", "missing", "subject",
                 "role_change_access", "change_attempted", "confirmation_prepared"):
         if cause == 'invalid_arguments' and key in ('missing_fields', 'missing'):
@@ -152,9 +161,53 @@ def _limit(result, flags, subject, guild):
     return limit
 
 
+def _row_read_coverage(result, subject, named_tags):
+    """Distinguish checked empty selections from pages or accounts never read."""
+    rows = record_rows(result.get('rows'))
+    if not result.get('family') or not isinstance(rows, list):
+        return {}
+    total = result.get('total_rows')
+    paged = (result.get('next_cursor') is not None or result.get('next_offset') is not None
+             or bool(result.get('offset')) or bool(rows) and isinstance(total, int) and total > len(rows))
+    seen = {tag for row in rows for tag in (
+        ([row['player_tag']] if row.get('player_tag') else []) + row.get('account_tags', [])
+        + [account['player_tag'] for account in record_rows(row.get('accounts', []))
+           if account.get('player_tag')])}
+    selected = set(result.get('selection', {}).get('account_tags', []))
+    subject_tags = subject.get('account_tags')
+    if isinstance(subject_tags, list):
+        selected.update(tag for tag in subject_tags if isinstance(tag, str))
+    for resolution in record_rows(result.get('name_resolutions', [])):
+        selected.update(account['player_tag'] for account in
+            record_rows(resolution.get('selected_accounts', [])) if account.get('player_tag'))
+    # A complete selected read may legitimately return no event rows.
+    # Its explicit selection/unobserved list was checked; other named
+    # accounts were never covered by that measure read.
+    checked = set() if paged else selected | set(result.get('unobserved_accounts', []))
+    if result.get('family') in ('read_war_attendance', 'read_cwl_results', 'read_ranked_activity'):
+        selected.update(named_tags)
+    unread = sorted(selected - seen - checked)
+    coverage = {}
+    if paged or unread:
+        coverage['row_coverage'] = {'status': 'partial' if rows else 'not_read',
+            'rows_read': len(rows),
+            'rows_not_read': max(0, total - len(rows)) if isinstance(total, int) else None,
+            'account_tags_not_read': unread}
+    if paged:
+        coverage['evidence_complete'] = False
+    return coverage
+
+
 def answer_evidence(evidence, *, subjects=None, guild=None):
     """Keep facts, actual coverage and verified limits; exclude read guidance."""
     projected = {}
+    named_tags = {account['player_tag'] for result in evidence.values()
+                  if isinstance(result, dict) and result.get('family') == 'read_member_accounts'
+                  and not result.get('error')
+                  and result.get('flags', {}).get('status') not in ('failed', 'refused')
+                  for resolution in record_rows(result.get('name_resolutions', []))
+                  for account in record_rows(resolution.get('selected_accounts', []))
+                  if account.get('player_tag')}
     for identity, result in evidence.items():
         if not isinstance(result, dict):
             continue
@@ -167,12 +220,16 @@ def answer_evidence(evidence, *, subjects=None, guild=None):
         if result.get("error") or result.get("status") == "needs_input" or (isinstance(flags, dict)
                                    and flags.get("status") in ("failed", "refused")):
             projected[identity] = _limit(result, flags if isinstance(flags, dict) else {},
-                                        (subjects or {}).get(identity, {}), guild)
+                                        (subjects or {}).get(identity, {}), guild, identity)
+            if not result.get('error') and projected[identity]['status'] == 'needs_input':
+                projected[identity].update(_row_read_coverage(result,
+                    (subjects or {}).get(identity, {}), named_tags))
             continue
         if result.get('family') == 'read_community_reference':
             result = {**reference_facts(result, guild),
                       'family': result['family'], 'selection': result.get('selection', {})}
         facts = {key: deepcopy(value) for key, value in result.items() if key not in _NAVIGATION}
+        facts.update(_row_read_coverage(result, (subjects or {}).get(identity, {}), named_tags))
         if isinstance(facts.get('source_reads'), dict):
             facts['source_reads'] = answer_evidence(facts['source_reads'], guild=guild)
         # Keep provenance explicit without interpreting message or policy prose.

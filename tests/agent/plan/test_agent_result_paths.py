@@ -19,7 +19,8 @@ class UnresolvedReferenceTests(unittest.IsolatedAsyncioTestCase):
                 "elbow_helper.agent.plan.executor", level="WARNING",
             ) as logs:
                 results = await execute_plan(plan, run)
-            self.assertEqual(results["consumer"], {"error": "A required earlier result is unavailable."})
+            self.assertEqual(results["consumer"], {"error": "A required earlier result is unavailable.",
+                                                   "execution_status": "not_run"})
             self.assertEqual(calls, ["source"])
             self.assertEqual(len(logs.records), 1)
             self.assertIn("consumer", logs.output[0])
