@@ -142,3 +142,6 @@ RESULT_FIELDS['read_conversation_evidence']['rows'][0].update(
     attachments=[names('attachment_id,filename,content_type,size,url')],
     conversation={**names('requester_id,request_message_id,request,delivered_answer,delivery_complete,report_ids'),
                   'resolved_inputs': [names('family,report_id,selection,observed_at')]})
+
+for family in ('read_member_accounts', 'read_member_cohort'):
+    RESULT_FIELDS[family]['configured_role_groups'] = ['']

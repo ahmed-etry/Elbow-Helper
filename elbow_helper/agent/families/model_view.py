@@ -35,11 +35,13 @@ def record_rows(value):
     return value
 
 
-def account_view(row, *, nested=False):
+def account_view(row, *, nested=False, requested_role_ids=()):
     result = pick(row, ('player_tag', 'player_name', 'townHallLevel', 'clan', 'clan_status', 'clan_code', 'donations', 'war_stars', 'ranked_league', 'role',
                        'profile_status', 'war_activity', 'account_purpose', 'observed_at')) if nested else dict(row)
     if isinstance(result.get('roles'), list):
-        result['roles'] = [role for role in result['roles'] if role.get('role_id') != AGENT_TESTER_ROLE_ID]
+        result['roles'] = [role for role in result['roles']
+                           if role.get('role_id') != AGENT_TESTER_ROLE_ID
+                           or role.get('role_id') in requested_role_ids]
     for field in ('ranked_league', 'legacy_league'):
         if isinstance(result.get(field), dict):
             result[field] = pick(result[field], ('id', 'name'))
@@ -161,7 +163,8 @@ def family_model_view(payload):
     elif family in ('read_member_accounts', 'read_member_cohort', 'read_recruitment_pipeline'):
         projected = []
         for row in rows:
-            item = account_view(row)
+            item = account_view(row, requested_role_ids=data.get('selected_role_ids', ())
+                if family == 'read_member_cohort' and data.get('basis') == 'role_holders' else ())
             if 'accounts' in item:
                 item['member_name'] = item.get('member_name') or next((account.get('member_name')
                     for account in item['accounts'] if account.get('member_name')), None)
@@ -171,14 +174,9 @@ def family_model_view(payload):
                     item['accounts'] = [pick(account, ('clan_code', 'player_tag', 'player_name', 'donations',
                         'townHallLevel', 'role', 'account_purpose', 'war_activity', 'observed_at'))
                                         for account in item['accounts']]
-            if family == 'read_member_cohort' and data.get('basis') == 'role_holders':
-                selected_roles = set(data.get('selected_role_ids', ()))
-                item['roles'] = [role for role in item.get('roles', []) if role.get('role_id') in selected_roles]
-            if family == 'read_member_cohort' and data.get('basis') in ('accepted_recruitment', 'clan_rosters'):
-                item.pop('roles', None)
-                if data.get('basis') == 'clan_rosters':
-                    item.pop('joined_at', None)
-                    item.pop('nickname', None)
+            if family == 'read_member_cohort' and data.get('basis') == 'clan_rosters':
+                item.pop('joined_at', None)
+                item.pop('nickname', None)
             if family == 'read_recruitment_pipeline':
                 for field in ('start_ts', 'expected_end_ts', 'remaining_seconds', 'overdue_seconds'):
                     item.pop(field, None)
@@ -193,7 +191,7 @@ def family_model_view(payload):
             projected.append(item)
             if family == 'read_member_cohort' and data.get('activity_coverage'):
                 projected[-1] = pick(item, ('member_id', 'member_name', 'membership_status',
-                    'home_clans', 'home_clan_status', 'home_clan_basis', 'leadership', 'accounts', 'account_tags', 'account_names', 'clan_codes',
+                    'home_clans', 'home_clan_status', 'home_clan_basis', 'leadership', 'roles', 'accounts', 'account_tags', 'account_names', 'clan_codes',
                     'donations', 'war_status', 'wars_observed', 'attacks_used',
                     'attacks_expected', 'missed', 'attack_completion_percent',
                     'war_totals_complete', 'discord_activity_status', 'last_active_day', 'active_streak_days', 'lifetime_messages'))

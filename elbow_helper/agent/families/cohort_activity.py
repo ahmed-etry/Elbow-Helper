@@ -19,7 +19,7 @@ async def roster_cohort(context, arguments):
         owner = (links.get(tag) or {}).get('discord_user_id')
         member = context.guild.get_member(owner) if owner else None
         key = ('member', owner) if owner else ('account', tag or account['clan_code'])
-        row = groups.setdefault(key, {**member_fields(member, owner), 'accounts': [],
+        row = groups.setdefault(key, {**member_fields(member, owner, include_roles=arguments.get('include_roles', False)), 'accounts': [],
             'membership_status': 'links_unavailable' if context.account_links is None else
                 'unlinked' if owner is None else 'present' if member else 'not_in_guild'})
         row['accounts'].append(account)

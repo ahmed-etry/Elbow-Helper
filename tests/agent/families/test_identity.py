@@ -118,7 +118,7 @@ class IdentityFamilyTests(unittest.IsolatedAsyncioTestCase):
                  for slot, field in enumerate(ROLE_PURPOSES) if getattr(clan, field) is not None]
         context.guild.roles = roles
         context.member.roles = roles
-        result = reads.member_fields(context.member, context.member.id)
+        result = reads.member_fields(context.member, context.member.id, include_roles=True)
         by_id = {role.id: role for role in roles}
         for clan in CLANS.values():
             kind = 'participation_clans' if clan.is_utility else 'home_clans'

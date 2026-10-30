@@ -17,7 +17,6 @@ from ..datasets.clash import read_clash
 from ..research.members import _complete_members, _joined_at
 from ..engine.capability_contract import CapabilityContract
 from ..engine.budgets import TOOL_TIMEOUT_SECONDS
-from ..clan_roles import clan_role_purposes
 from .member_context import owner_context, account_owner_profiles, configured_member_roles, PROFILE_ROLE_GROUPS
 from ..read_cache import stored_read
 
@@ -83,9 +82,9 @@ def member_fields(member, identifier, *, include_roles=False, selected_role_ids=
                 'roles; roles never follow in-game moves or become stale because of them; an account '
                 'outside its home clan has left or moved; utility roles are extra participation; '
                 'not historical acceptance, current account location or identification of a main account',
-            'roles': [{'role_id': role.id, 'name': role.name,
-                       'clan_purposes': clan_role_purposes(role.id)} for role in member.roles
-                      if not role.is_default()] if member else []}
+            **({'roles': [role for role in configured_member_roles(member, requested_role_ids=selected_role_ids)
+                          if include_roles or role['role_id'] in selected_role_ids]}
+               if include_roles or selected_role_ids else {})}
 
 
 async def member_accounts(context, arguments):
@@ -229,6 +228,7 @@ async def member_accounts(context, arguments):
             row['member_id'] or 0, row.get('player_tag') or '')),
             'members': members,
             **({'resolved_member_ids': resolved_name_identifiers} if name_selection else {}),
+            **({'configured_role_groups': list(PROFILE_ROLE_GROUPS)} if arguments.get('include_roles') else {}),
             'status': 'needs_input' if name_selection and not name_selection['selection_complete'] else 'resolved',
             'member_count': len(identifiers), 'account_count':None if any(row.get('profile_status')=='links_unavailable' for row in result) else sum(bool(row.get('player_tag')) for row in matched),
             'unknown_profile_count':sum(unknown_account_data(row,arguments) for row in result),
@@ -370,12 +370,12 @@ async def clan_rosters(context, arguments):
         leadership_owners = {(links.get(tag) or {}).get('discord_user_id') for tag in leadership_tags}
         leadership_owners.discard(None)
         leadership_owners.update(row['member_id'] for row in result
-            if row['leadership']['status'] in ('active', 'sleeping') and row['member_id'] is not None)
+            if row.get('leadership', {}).get('status') in ('active', 'sleeping') and row['member_id'] is not None)
         retained = [row for row in result if row.get('role') not in ('leader', 'coLeader')
                     and row.get('member_id') not in leadership_owners]
         leadership_filter = {'excluded_accounts': len(result) - len(retained),
             'unverified_accounts': sum(row.get('player_tag') is not None
-                and row['leadership']['status'] == 'unknown' for row in retained),
+                and row.get('membership_status') != 'present' for row in retained),
             'basis': 'Current Discord leadership and observed leader/co-leader ranks across the selected '
                 'rosters; linked-owner exclusions apply across accounts. Unresolved owners remain unverified.'}
         for summary in summaries:
@@ -386,7 +386,7 @@ async def clan_rosters(context, arguments):
             summary['excluded_accounts'] += removed
             if summary['cohort_accounts'] is not None:
                 summary['cohort_accounts'] = len(accounts)
-            summary['unknown_filter_accounts'] += sum(row['leadership']['status'] == 'unknown'
+            summary['unknown_filter_accounts'] += sum(row.get('membership_status') != 'present'
                                                       for row in accounts)
             distribution = Counter(row.get('townHallLevel') for row in accounts)
             summary['town_halls'] = {str(key): value for key, value in sorted(distribution.items(),
@@ -508,7 +508,9 @@ async def member_cohort(context, arguments):
                 or after and joined is not None and joined < after
                 or before and joined is not None and joined >= before):
             continue
-        rows.append({**member_fields(member, identifier), 'membership_status': 'present' if member else 'not_in_guild', 'selection_status':
+        rows.append({**member_fields(member, identifier, include_roles=arguments.get('include_roles', False),
+                                    selected_role_ids=roles if basis == 'role_holders' else ()),
+                     'membership_status': 'present' if member else 'not_in_guild', 'selection_status':
                      'unknown_date' if (after or before) and joined is None else 'selected',
                      **({'accepted_at': accepted.get(identifier)}
                      if basis == 'accepted_recruitment' else {})})
@@ -589,7 +591,8 @@ TOOLS = (
           'items': {'type': 'string', 'minLength': 1, 'maxLength': 100},
           'description': 'Several names using the same lookup as name; requires look_in. Game matches retain spelling tolerance and owners; Discord matches list linked account names and tags. Alternative to name/member_ids/account_tags/cohort_ref; use one selector.'},
       'after': DATE, 'before': DATE,
-      'include_roles': {'type': 'boolean', 'default': False},
+      'include_roles': {'type': 'boolean', 'default': False,
+          'description': "For questions about this member's roles; lists configured clan, leadership, family and war/support roles only."},
       'name': {'type': 'string', 'minLength': 1, 'maxLength': 100,
                'description': 'One name; requires look_in. Returns matching_members with linked account names and tags or game account candidates with owners. Ambiguity authorizes no actions or pings. Alternative to other selectors.'}}, member_accounts,
      usage_note='look_in: game for in-game names/data; discord for server person (messages, activity, roles, Discord ID); on no match, other side is searched.'),

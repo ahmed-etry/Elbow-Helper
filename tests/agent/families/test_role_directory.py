@@ -10,10 +10,34 @@ from elbow_helper.agent.families.identity_reads import member_cohort
 from elbow_helper.agent.research.members import find_discord_roles
 from elbow_helper.agent.plan.checker import check_plan
 from elbow_helper.agent.families.model_view import family_model_view
+from elbow_helper.configuration.clans import CLANS
+from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID
 from agent.engine.test_agent_plan_flow import _context
 
 
 class RoleDirectoryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_requested_roles_survive_with_only_configured_extras_on_opt_in(self):
+        context = _context()
+        home_id = CLANS['BES'].member_role_id
+        roles = [SimpleNamespace(id=identifier, name=f'Role {identifier}')
+                 for identifier in (27, 28, home_id, AGENT_TESTER_ROLE_ID)]
+        holder = SimpleNamespace(id=101, display_name='Synthetic holder', roles=roles, joined_at=None)
+        context.guild.roles = roles
+        context.guild.members = [context.member, holder]
+        context.guild.get_member = lambda identifier: holder if identifier == holder.id else context.member
+        for selector in ({'role_ids': [27]}, {'role_name': 'Role 27'},
+                         {'role_ids': [27, AGENT_TESTER_ROLE_ID], 'role_match': 'all'}):
+            selected = {27, AGENT_TESTER_ROLE_ID} if selector.get('role_match') == 'all' else {27}
+            for include_roles in (False, True):
+                with self.subTest(selector=selector, include_roles=include_roles):
+                    result = await member_cohort(context, {'basis': 'role_holders', **selector,
+                                                          'include_roles': include_roles})
+                    expected = selected | ({home_id} if include_roles else set())
+                    visible = family_model_view({**result, 'family': 'read_member_cohort'})
+                    for value in (result, visible):
+                        self.assertEqual([row['member_id'] for row in value['rows']], [101])
+                        self.assertEqual({role['role_id'] for role in value['rows'][0]['roles']}, expected)
+
     async def test_unconfigured_role_discovery_and_complete_holders(self):
         context = _context()
         role = SimpleNamespace(id=27, name='Raid Organizers', position=2, managed=False,

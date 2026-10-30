@@ -35,16 +35,16 @@ def owner_context(member, identifier):
                                  if clan.leadership_role_id is not None}
     sleeping = {SLEEPING_CO_ROLE_ID, SLEEPING_CROSS_ROLE_ID}
     applicants = {CO_APPLICANT_ROLE_ID}
+    leadership = {
+        'status': ('active' if held & active else 'sleeping' if held & sleeping else 'applicant'),
+        'roles': [{'role_id': role.id, 'name': getattr(role, 'name', None)}
+                  for role in roles if role.id in active | sleeping | applicants],
+    } if held & (active | sleeping | applicants) else None
     return {
         'member_id': identifier,
         'member_name': member.display_name if member else None,
-        'leadership': {
-            'status': ('unknown' if member is None else 'active' if held & active
-                       else 'sleeping' if held & sleeping
-                       else 'applicant' if held & applicants else 'none'),
-            'roles': [{'role_id': role.id, 'name': getattr(role, 'name', None)}
-                      for role in roles if role.id in active | sleeping | applicants],
-        },
+        'membership_status': 'present' if member else 'not_in_guild' if identifier else 'unlinked',
+        **({'leadership': leadership} if leadership else {}),
     }
 
 
