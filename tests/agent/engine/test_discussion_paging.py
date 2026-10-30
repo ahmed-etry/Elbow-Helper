@@ -27,7 +27,7 @@ class DiscussionPagingTests(unittest.IsolatedAsyncioTestCase):
             index = source.await_count
             return {
                 'rows': [{'message_id': 7000 - index * 100 - row, 'author_id': 81, 'author': 'Sample Member',
-                          'content': 'The earlier allocation was provisional. ' * 4,
+                          'content': 'The earlier allocation was provisional. ' * 5,
                           'content_complete': True, 'attachment_contents_read': False,
                           'source': f'https://discord.com/channels/3/91/{7000 - index * 100 - row}'}
                          for row in range(50)],
@@ -92,7 +92,7 @@ class DiscussionPagingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({row['content'] for row in view['rows']}, {row.content for row in rows})
         self.assertTrue(view['message_content_complete'])
         self.assertFalse(view['attachment_contents_read'])
-        self.assertTrue(all('source' in row and 'author_id' in row for row in view['rows']))
+        self.assertTrue(all('source' not in row and 'author_id' in row for row in view['rows']))
 
     def test_completed_chunk_supersedes_older_source_handle(self):
         first = {'family': 'read_conversation_evidence', 'channel_id': 100, 'mode': 'channel_window',

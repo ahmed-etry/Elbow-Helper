@@ -15,7 +15,8 @@ GROUNDING_INSTRUCTION = (
     "uncertain parts only when they change the requested conclusion. Give the supported "
     "verdict directly; missing measures do not erase observed results. "
     "[[message:ID]] optionally inserts an exact read message. "
-    "Copy message source URLs exactly from evidence; never reconstruct channel or guild IDs."
+    "Link a read message by writing [[message_id]]; it becomes a link under the author's name. "
+    "Never write message URLs or channel or guild IDs."
     " Use readable linked names for citations, never bracketed numeric message IDs."
 )
 GROUNDING_GAPS = {
@@ -34,34 +35,53 @@ class GroundingError(ValueError):
         self.kind = kind
 
 
-def records(value):
-    """Walk ordinary results and the compact column/row model representation."""
+def _walk(value, channel):
+    """Yield each record with the channel of its nearest enclosing read."""
     if isinstance(value, Mapping):
         flags = value.get("flags")
         if "error" in value or isinstance(flags, Mapping) and flags.get("status") in ("failed", "refused"):
             return
+        channel = value.get("channel_id", channel)
         columns, rows = value.get("columns"), value.get("rows")
         if isinstance(columns, list) and isinstance(rows, list):
             for row in rows:
                 if isinstance(row, list) and len(row) == len(columns):
-                    yield from records(dict(zip(columns, row)))
-        yield value
+                    yield from _walk(dict(zip(columns, row)), channel)
+        yield value, channel
         for key, item in value.items():
             if key not in ("columns", "rows") or not isinstance(columns, list):
-                yield from records(item)
+                yield from _walk(item, channel)
     elif isinstance(value, (list, tuple)):
         for item in value:
-            yield from records(item)
+            yield from _walk(item, channel)
 
 
-def messages_from(evidence):
+def records(value):
+    """Walk ordinary results and the compact column/row model representation."""
+    for record, _ in _walk(value, None):
+        yield record
+
+
+def jump_url(guild_id, channel_id, message_id):
+    return f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"
+
+
+def messages_from(evidence, guild_id=None):
+    """Rows carry IDs; the jump link is built here from the guild, channel and message."""
     messages = {}
     conflicts = set()
-    for row in records(evidence):
-        if not all(key in row for key in ("message_id", "author_id", "content", "source")):
+    for row, channel in _walk(evidence, None):
+        if not all(key in row for key in ("message_id", "author_id", "content")):
             continue
         identity = str(row["message_id"])
-        source = row["source"]
+        channel = row.get("channel_id", channel)
+        if "source" in row:
+            source = row["source"]
+        elif guild_id is not None and str(channel).isdigit():
+            source = jump_url(guild_id, channel, identity)
+            row = {**row, "source": source}
+        else:
+            continue
         if (not identity.isdigit() or not isinstance(source, str) or not LINK.fullmatch(source)
                 or source.rsplit("/", 1)[-1] != identity or not isinstance(row["content"], str)
                 or not str(row["author_id"]).isdigit()):
@@ -73,9 +93,9 @@ def messages_from(evidence):
     return {key: value for key, value in messages.items() if key not in conflicts}
 
 
-def ground_answer(answer, evidence):
+def ground_answer(answer, evidence, guild_id=None):
     """Validate source bindings; interpretation belongs to evidence-aware generation."""
-    messages = messages_from(evidence)
+    messages = messages_from(evidence, guild_id)
 
     def render(match):
         row = messages.get(match[1])
@@ -113,9 +133,9 @@ def ground_answer(answer, evidence):
 
 
 
-def partial_answer(answer, evidence, error):
+def partial_answer(answer, evidence, error, guild_id=None):
     """Drop unresolved bindings while retaining useful prose and valid citations."""
-    messages = messages_from(evidence)
+    messages = messages_from(evidence, guild_id)
     binding = re.compile(r"\[\[message:([^\]\n]*)(?:\]\]?|(?=\n|$))")
     dependent = False
 
@@ -135,6 +155,6 @@ def partial_answer(answer, evidence, error):
     cleaned = CITATION.sub(lambda match: match[0] if match[1] in messages else '', cleaned).strip()
     if not cleaned:
         return GROUNDING_GAPS[error.kind]
-    rendered = ground_answer(cleaned, evidence)
+    rendered = ground_answer(cleaned, evidence, guild_id)
     dependent = dependent or not binding.sub("", answer).strip()
     return "\n\n".join((rendered, GROUNDING_GAPS[error.kind])) if dependent else rendered

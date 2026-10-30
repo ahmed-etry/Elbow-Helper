@@ -98,7 +98,7 @@ class AuthorizedDiscussionSharingTests(unittest.IsolatedAsyncioTestCase):
         raw = {key: report.payload for key, report in context.state.reports.items()}
         restored = await cohort_writer_evidence(context, evidence)
         self.assertEqual(len(expand(restored)['first']['rows']), 15)
-        self.assertEqual(len(messages_from(restored)), 15)
+        self.assertEqual(len(messages_from(restored, context.guild.id)), 15)
         self.assertEqual({key: report.payload for key, report in context.state.reports.items()}, raw)
         self.assertEqual(len(first['rows']), 1)
         async def authorize(local, identity):
@@ -108,4 +108,4 @@ class AuthorizedDiscussionSharingTests(unittest.IsolatedAsyncioTestCase):
             denied = await cohort_writer_evidence(context, evidence)
         self.assertEqual(denied['second']['cause'], 'report_unavailable')
         self.assertNotIn('source_reads', denied['first'])
-        self.assertEqual(len(messages_from(denied)), 12)
+        self.assertEqual(len(messages_from(denied, context.guild.id)), 12)

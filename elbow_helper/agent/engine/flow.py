@@ -272,14 +272,15 @@ class AnswerFlow:
             return answer
         answer = await self._checked_figures(answer)
         try:
-            return ground_answer(answer, self.context.state.grounding_evidence)
+            return ground_answer(answer, self.context.state.grounding_evidence, self.context.guild.id)
         except GroundingError as error:
             failure = error
             LOGGER.info("Agent answer source issue: request=%s kind=%s reason=%s",
                         self.request_id, error.kind, error)
             # A rewrite cannot manufacture missing or ambiguous typed data.
             if error.kind != "source":
-                return partial_answer(answer, self.context.state.grounding_evidence, error)
+                return partial_answer(answer, self.context.state.grounding_evidence, error,
+                                      self.context.guild.id)
         try:
             repaired = await self._advance_answer(
                 self._repair_results(), allow_tools=False,
@@ -296,7 +297,7 @@ class AnswerFlow:
                 # Citation repair must not introduce a contradictory figure, and
                 # must not start another numeric repair round.
                 answer = self._append_verified_figures(repaired.content)
-                return ground_answer(answer, self.context.state.grounding_evidence)
+                return ground_answer(answer, self.context.state.grounding_evidence, self.context.guild.id)
         except GroundingError as error:
             failure = error
             LOGGER.info("Agent source repair incomplete: request=%s kind=%s reason=%s",
@@ -305,7 +306,7 @@ class AnswerFlow:
             LOGGER.info("Agent source repair unavailable: request=%s reason=%s",
                         self.request_id, type(error).__name__)
         await require_evidence_access(self.context)
-        return partial_answer(answer, self.context.state.grounding_evidence, failure)
+        return partial_answer(answer, self.context.state.grounding_evidence, failure, self.context.guild.id)
 
     def _limit_plan(self, plan):
         """Apply member limits before checking either an initial or revised plan."""

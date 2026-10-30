@@ -249,9 +249,10 @@ async def prepare_post(context: AgentRequestContext,
         async with context.state.reply_delivery.lock:
             from ..engine.grounding import GroundingError, ground_answer, partial_answer
             try:
-                text = ground_answer(arguments["text"], context.state.grounding_evidence)
+                text = ground_answer(arguments["text"], context.state.grounding_evidence, context.guild.id)
             except GroundingError as error:
-                text = partial_answer(arguments["text"], context.state.grounding_evidence, error)
+                text = partial_answer(arguments["text"], context.state.grounding_evidence, error,
+                                      context.guild.id)
             context.state.reply_to = arguments.get("reply_to")
             context.state.ping_author = arguments.get("ping_author", False)
             context.state.source_channels.add(channel.id)

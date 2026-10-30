@@ -64,7 +64,7 @@ of in-game rank; identify any unresolved selection criteria beside the affected 
 Before returning, check each named shortlist against its actual account rows, not a
 clan or owner aggregate. Recount the selected set before stating totals, comparisons or
 claims about every/only/none. Omit an unnecessary numerical claim when it is unverified.
-Keep the requested rows complete; use full supplied source URLs when citing messages.
+Keep the requested rows complete; cite a message by writing [[message_id]], never a URL.
 State an estimate's basis in one plain sentence. Do not restate data definitions, filters,
 row counts or how sources were read.
 Scores from different comparison groups cannot establish a global best or worst merely
