@@ -8,10 +8,42 @@ import json
 import sqlite3
 from typing import Any, Dict, List, Optional, Tuple
 
+from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
+
 from ..models import GOOD
 from ..models import normalize_player_verdict
+from .regular_wars import delete_war_snapshot, matching_regular_wars, regular_war_identity
 
 class ClanHealthRecords:
+    def _store_regular_war_snapshot(
+        self, war: Dict[str, Any] | None, roster: List[Dict[str, Any]],
+        activity: List[Dict[str, Any]], attacks: List[Dict[str, Any]],
+    ) -> int:
+        """Replace a delayed regular war and its facts as one serialized write."""
+        if not war or not war.get("war_id") or not war.get("clan_code"):
+            return 0
+        with closing(self._db_connect(timeout=30)) as conn, sqlite_transaction(conn, immediate=True):
+            identity = regular_war_identity(war)
+            if identity is not None:
+                matches = matching_regular_wars(conn, identity)
+                incoming_seen = int(war.get("last_seen_ts") or 0)
+                if any(
+                    int(row["last_seen_ts"]) > incoming_seen
+                    or (int(row["last_seen_ts"]) == incoming_seen
+                        and row["state"] == "warEnded" and war.get("state") != "warEnded")
+                    for row in matches
+                ):
+                    return 0
+                for row in matches:
+                    if (row["war_id"], row["clan_code"]) != (war["war_id"], war["clan_code"]):
+                        delete_war_snapshot(conn, row["war_id"], row["clan_code"])
+            return (
+                self._write_war_rows(conn, [war])
+                + self._write_final_war_roster_rows(conn, roster)
+                + self._write_war_activity_rows(conn, activity)
+                + self._write_war_attack_rows(conn, attacks)
+            )
+
     @staticmethod
     def _optional_int(value: Any) -> Optional[int]:
         if value is None:
@@ -202,36 +234,39 @@ class ClanHealthRecords:
         if not rows:
             return 0
         with closing(self._db_connect(timeout=30)) as conn, conn:
-            conn.execute("PRAGMA busy_timeout=30000")
-            cursor = conn.cursor()
-            cursor.executemany(
-                """
-                INSERT OR REPLACE INTO war_activity (
-                    war_id, war_type, clan_code, clan_tag, end_ts, player_tag, player_name,
-                    attacks_expected, attacks_used, stars, destruction, attack_count, source
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [
-                    (
-                        str(r.get("war_id") or ""),
-                        str(r.get("war_type") or "UNKNOWN"),
-                        str(r.get("clan_code") or ""),
-                        str(r.get("clan_tag") or ""),
-                        int(r.get("end_ts") or 0),
-                        str(r.get("player_tag") or ""),
-                        str(r.get("player_name") or ""),
-                        int(r.get("attacks_expected") or 0),
-                        int(r.get("attacks_used") or 0),
-                        float(r.get("stars") or 0.0),
-                        float(r.get("destruction") or 0.0),
-                        int(r.get("attack_count") or 0),
-                        str(r.get("source") or ""),
-                    )
-                    for r in rows
-                    if r.get("war_id") and r.get("player_tag")
-                ],
-            )
-            conn.commit()
+            return self._write_war_activity_rows(conn, rows)
+
+    def _write_war_activity_rows(self, conn: sqlite3.Connection, rows: List[Dict[str, Any]]) -> int:
+        if not rows:
+            return 0
+        cursor = conn.cursor()
+        cursor.executemany(
+            """
+            INSERT OR REPLACE INTO war_activity (
+                war_id, war_type, clan_code, clan_tag, end_ts, player_tag, player_name,
+                attacks_expected, attacks_used, stars, destruction, attack_count, source
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    str(r.get("war_id") or ""),
+                    str(r.get("war_type") or "UNKNOWN"),
+                    str(r.get("clan_code") or ""),
+                    str(r.get("clan_tag") or ""),
+                    int(r.get("end_ts") or 0),
+                    str(r.get("player_tag") or ""),
+                    str(r.get("player_name") or ""),
+                    int(r.get("attacks_expected") or 0),
+                    int(r.get("attacks_used") or 0),
+                    float(r.get("stars") or 0.0),
+                    float(r.get("destruction") or 0.0),
+                    int(r.get("attack_count") or 0),
+                    str(r.get("source") or ""),
+                )
+                for r in rows
+                if r.get("war_id") and r.get("player_tag")
+            ],
+        )
         # Attempted row count (upserts may overwrite existing PKs).
         return len(rows)
 
@@ -240,96 +275,111 @@ class ClanHealthRecords:
         if not valid_rows:
             return 0
         with closing(self._db_connect(timeout=30)) as conn, conn:
-            conn.execute("PRAGMA busy_timeout=30000")
-            conn.executemany(
-                """
-                INSERT INTO wars (
-                    war_id, war_type, clan_code, clan_tag,
-                    opponent_tag, opponent_name,
-                    cwl_season, cwl_season_label, cwl_league, cwl_round,
-                    team_size, attacks_per_member, state,
-                    preparation_start_ts, start_ts, end_ts,
-                    last_seen_ts, source
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(war_id, clan_code) DO UPDATE SET
-                    war_type = excluded.war_type,
-                    clan_tag = excluded.clan_tag,
-                    opponent_tag = CASE
-                        WHEN excluded.opponent_tag != '' THEN excluded.opponent_tag
-                        ELSE wars.opponent_tag
-                    END,
-                    opponent_name = CASE
-                        WHEN excluded.opponent_name != '' THEN excluded.opponent_name
-                        ELSE wars.opponent_name
-                    END,
-                    cwl_season = CASE
-                        WHEN excluded.cwl_season != '' THEN excluded.cwl_season
-                        ELSE wars.cwl_season
-                    END,
-                    cwl_league = CASE
-                        WHEN excluded.cwl_league != '' THEN excluded.cwl_league
-                        ELSE wars.cwl_league
-                    END,
-                    cwl_season_label = CASE
-                        WHEN excluded.cwl_season_label != '' THEN excluded.cwl_season_label
-                        ELSE wars.cwl_season_label
-                    END,
-                    cwl_round = CASE
-                        WHEN excluded.cwl_round > 0 THEN excluded.cwl_round
-                        ELSE wars.cwl_round
-                    END,
-                    team_size = CASE
-                        WHEN excluded.team_size > 0 THEN excluded.team_size
-                        ELSE wars.team_size
-                    END,
-                    attacks_per_member = CASE
-                        WHEN excluded.attacks_per_member > 0 THEN excluded.attacks_per_member
-                        ELSE wars.attacks_per_member
-                    END,
-                    state = excluded.state,
-                    preparation_start_ts = CASE
-                        WHEN excluded.preparation_start_ts > 0 THEN excluded.preparation_start_ts
-                        ELSE wars.preparation_start_ts
-                    END,
-                    start_ts = CASE
-                        WHEN excluded.start_ts > 0 THEN excluded.start_ts
-                        ELSE wars.start_ts
-                    END,
-                    end_ts = CASE
-                        WHEN excluded.end_ts > 0 THEN excluded.end_ts
-                        ELSE wars.end_ts
-                    END,
-                    last_seen_ts = MAX(wars.last_seen_ts, excluded.last_seen_ts),
-                    source = excluded.source
-                """,
-                [
-                    (
-                        str(r.get("war_id") or ""),
-                        str(r.get("war_type") or "UNKNOWN"),
-                        str(r.get("clan_code") or ""),
-                        str(r.get("clan_tag") or ""),
-                        str(r.get("opponent_tag") or ""),
-                        str(r.get("opponent_name") or ""),
-                        str(r.get("cwl_season") or ""),
-                        str(r.get("cwl_season_label") or ""),
-                        str(r.get("cwl_league") or ""),
-                        int(r.get("cwl_round") or 0),
-                        int(r.get("team_size") or 0),
-                        int(r.get("attacks_per_member") or 0),
-                        str(r.get("state") or ""),
-                        int(r.get("preparation_start_ts") or 0),
-                        int(r.get("start_ts") or 0),
-                        int(r.get("end_ts") or 0),
-                        int(r.get("last_seen_ts") or 0),
-                        str(r.get("source") or ""),
-                    )
-                    for r in valid_rows
-                ],
-            )
-            conn.commit()
+            return self._write_war_rows(conn, valid_rows)
+
+    def _write_war_rows(self, conn: sqlite3.Connection, rows: List[Dict[str, Any]]) -> int:
+        valid_rows = [r for r in rows if r.get("war_id") and r.get("clan_code")]
+        if not valid_rows:
+            return 0
+        conn.executemany(
+            """
+            INSERT INTO wars (
+                war_id, war_type, clan_code, clan_tag,
+                opponent_tag, opponent_name,
+                cwl_season, cwl_season_label, cwl_league, cwl_round,
+                team_size, attacks_per_member, state,
+                preparation_start_ts, start_ts, end_ts,
+                last_seen_ts, source
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(war_id, clan_code) DO UPDATE SET
+                war_type = excluded.war_type,
+                clan_tag = excluded.clan_tag,
+                opponent_tag = CASE
+                    WHEN excluded.opponent_tag != '' THEN excluded.opponent_tag
+                    ELSE wars.opponent_tag
+                END,
+                opponent_name = CASE
+                    WHEN excluded.opponent_name != '' THEN excluded.opponent_name
+                    ELSE wars.opponent_name
+                END,
+                cwl_season = CASE
+                    WHEN excluded.cwl_season != '' THEN excluded.cwl_season
+                    ELSE wars.cwl_season
+                END,
+                cwl_league = CASE
+                    WHEN excluded.cwl_league != '' THEN excluded.cwl_league
+                    ELSE wars.cwl_league
+                END,
+                cwl_season_label = CASE
+                    WHEN excluded.cwl_season_label != '' THEN excluded.cwl_season_label
+                    ELSE wars.cwl_season_label
+                END,
+                cwl_round = CASE
+                    WHEN excluded.cwl_round > 0 THEN excluded.cwl_round
+                    ELSE wars.cwl_round
+                END,
+                team_size = CASE
+                    WHEN excluded.team_size > 0 THEN excluded.team_size
+                    ELSE wars.team_size
+                END,
+                attacks_per_member = CASE
+                    WHEN excluded.attacks_per_member > 0 THEN excluded.attacks_per_member
+                    ELSE wars.attacks_per_member
+                END,
+                state = excluded.state,
+                preparation_start_ts = CASE
+                    WHEN excluded.preparation_start_ts > 0 THEN excluded.preparation_start_ts
+                    ELSE wars.preparation_start_ts
+                END,
+                start_ts = CASE
+                    WHEN excluded.start_ts > 0 THEN excluded.start_ts
+                    ELSE wars.start_ts
+                END,
+                end_ts = CASE
+                    WHEN excluded.end_ts > 0 THEN excluded.end_ts
+                    ELSE wars.end_ts
+                END,
+                last_seen_ts = MAX(wars.last_seen_ts, excluded.last_seen_ts),
+                source = excluded.source
+            """,
+            [
+                (
+                    str(r.get("war_id") or ""),
+                    str(r.get("war_type") or "UNKNOWN"),
+                    str(r.get("clan_code") or ""),
+                    str(r.get("clan_tag") or ""),
+                    str(r.get("opponent_tag") or ""),
+                    str(r.get("opponent_name") or ""),
+                    str(r.get("cwl_season") or ""),
+                    str(r.get("cwl_season_label") or ""),
+                    str(r.get("cwl_league") or ""),
+                    int(r.get("cwl_round") or 0),
+                    int(r.get("team_size") or 0),
+                    int(r.get("attacks_per_member") or 0),
+                    str(r.get("state") or ""),
+                    int(r.get("preparation_start_ts") or 0),
+                    int(r.get("start_ts") or 0),
+                    int(r.get("end_ts") or 0),
+                    int(r.get("last_seen_ts") or 0),
+                    str(r.get("source") or ""),
+                )
+                for r in valid_rows
+            ],
+        )
         return len(valid_rows)
 
     def _store_final_war_roster_rows(self, rows: List[Dict[str, Any]]) -> int:
+        valid_rows = [
+            r for r in rows
+            if r.get("war_id") and r.get("clan_code") and r.get("player_tag")
+            and str(r.get("roster_state") or "") in {"inWar", "warEnded"}
+        ]
+        if not valid_rows:
+            return 0
+        with closing(self._db_connect(timeout=30)) as conn, conn:
+            return self._write_final_war_roster_rows(conn, valid_rows)
+
+    def _write_final_war_roster_rows(self, conn: sqlite3.Connection, rows: List[Dict[str, Any]]) -> int:
         valid_rows = [
             r
             for r in rows
@@ -346,84 +396,84 @@ class ClanHealthRecords:
             key = (str(row["war_id"]), str(row["clan_code"]))
             grouped.setdefault(key, []).append(row)
 
-        with closing(self._db_connect(timeout=30)) as conn, conn:
-            conn.execute("PRAGMA busy_timeout=30000")
-            cursor = conn.cursor()
-            for (war_id, clan_code), roster_rows in grouped.items():
-                cursor.execute(
-                    "DELETE FROM war_roster_members WHERE war_id = ? AND clan_code = ?",
-                    (war_id, clan_code),
-                )
-                cursor.executemany(
-                    """
-                    INSERT INTO war_roster_members (
-                        war_id, clan_code, player_tag, player_name,
-                        townhall, map_position,
-                        attacks_expected, attacks_used,
-                        roster_state, captured_ts, source
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    [
-                        (
-                            war_id,
-                            clan_code,
-                            str(r.get("player_tag") or ""),
-                            str(r.get("player_name") or ""),
-                            int(r.get("townhall") or 0),
-                            int(r.get("map_position") or 0),
-                            int(r.get("attacks_expected") or 0),
-                            int(r.get("attacks_used") or 0),
-                            str(r.get("roster_state") or ""),
-                            int(r.get("captured_ts") or 0),
-                            str(r.get("source") or ""),
-                        )
-                        for r in roster_rows
-                    ],
-                )
-            conn.commit()
+        cursor = conn.cursor()
+        for (war_id, clan_code), roster_rows in grouped.items():
+            cursor.execute(
+                "DELETE FROM war_roster_members WHERE war_id = ? AND clan_code = ?",
+                (war_id, clan_code),
+            )
+            cursor.executemany(
+                """
+                INSERT INTO war_roster_members (
+                    war_id, clan_code, player_tag, player_name,
+                    townhall, map_position,
+                    attacks_expected, attacks_used,
+                    roster_state, captured_ts, source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        war_id,
+                        clan_code,
+                        str(r.get("player_tag") or ""),
+                        str(r.get("player_name") or ""),
+                        int(r.get("townhall") or 0),
+                        int(r.get("map_position") or 0),
+                        int(r.get("attacks_expected") or 0),
+                        int(r.get("attacks_used") or 0),
+                        str(r.get("roster_state") or ""),
+                        int(r.get("captured_ts") or 0),
+                        str(r.get("source") or ""),
+                    )
+                    for r in roster_rows
+                ],
+            )
         return len(valid_rows)
 
     def _store_war_attack_rows(self, rows: List[Dict[str, Any]]) -> int:
         if not rows:
             return 0
         with closing(self._db_connect(timeout=30)) as conn, conn:
-            conn.execute("PRAGMA busy_timeout=30000")
-            cursor = conn.cursor()
-            cursor.executemany(
-                """
-                INSERT OR REPLACE INTO war_attacks (
-                    war_id, war_type, clan_code, clan_tag, end_ts, war_state,
-                    player_tag, player_name, attack_order,
-                    defender_tag, defender_name, defender_map_position, defender_townhall,
-                    stars, destruction, fresh_attack, duration, source
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [
-                    (
-                        str(r.get("war_id") or ""),
-                        str(r.get("war_type") or ""),
-                        str(r.get("clan_code") or ""),
-                        str(r.get("clan_tag") or ""),
-                        int(r.get("end_ts") or 0),
-                        str(r.get("war_state") or ""),
-                        str(r.get("player_tag") or ""),
-                        str(r.get("player_name") or ""),
-                        int(r.get("attack_order") or 0),
-                        str(r.get("defender_tag") or ""),
-                        str(r.get("defender_name") or ""),
-                        int(r.get("defender_map_position") or 0),
-                        int(r.get("defender_townhall") or 0),
-                        int(r.get("stars") or 0),
-                        float(r.get("destruction") or 0.0),
-                        1 if r.get("fresh_attack") else 0,
-                        int(r.get("duration") or 0),
-                        str(r.get("source") or ""),
-                    )
-                    for r in rows
-                    if r.get("war_id") and r.get("player_tag")
-                ],
-            )
-            conn.commit()
+            return self._write_war_attack_rows(conn, rows)
+
+    def _write_war_attack_rows(self, conn: sqlite3.Connection, rows: List[Dict[str, Any]]) -> int:
+        if not rows:
+            return 0
+        cursor = conn.cursor()
+        cursor.executemany(
+            """
+            INSERT OR REPLACE INTO war_attacks (
+                war_id, war_type, clan_code, clan_tag, end_ts, war_state,
+                player_tag, player_name, attack_order,
+                defender_tag, defender_name, defender_map_position, defender_townhall,
+                stars, destruction, fresh_attack, duration, source
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    str(r.get("war_id") or ""),
+                    str(r.get("war_type") or ""),
+                    str(r.get("clan_code") or ""),
+                    str(r.get("clan_tag") or ""),
+                    int(r.get("end_ts") or 0),
+                    str(r.get("war_state") or ""),
+                    str(r.get("player_tag") or ""),
+                    str(r.get("player_name") or ""),
+                    int(r.get("attack_order") or 0),
+                    str(r.get("defender_tag") or ""),
+                    str(r.get("defender_name") or ""),
+                    int(r.get("defender_map_position") or 0),
+                    int(r.get("defender_townhall") or 0),
+                    int(r.get("stars") or 0),
+                    float(r.get("destruction") or 0.0),
+                    1 if r.get("fresh_attack") else 0,
+                    int(r.get("duration") or 0),
+                    str(r.get("source") or ""),
+                )
+                for r in rows
+                if r.get("war_id") and r.get("player_tag")
+            ],
+        )
         # Attempted row count (upserts may overwrite existing PKs).
         return len(rows)
 

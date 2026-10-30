@@ -8,8 +8,38 @@ import sqlite3
 
 from elbow_helper.domain.cwl import cwl_season_key
 
+from .regular_wars import delete_war_snapshot, regular_war_identity
 
 LOGGER = logging.getLogger(__name__)
+
+
+def deduplicate_regular_wars(connection: sqlite3.Connection) -> None:
+    """Keep the ended copy, otherwise the most recently observed snapshot."""
+    cursor = connection.execute("SELECT * FROM wars WHERE war_type = 'REG'")
+    names = [column[0] for column in cursor.description]
+    groups = defaultdict(list)
+    for values in cursor.fetchall():
+        row = dict(zip(names, values))
+        identity = regular_war_identity(row)
+        if identity is not None:
+            groups[identity].append(row)
+    counts = defaultdict(int)
+    duplicate_groups = 0
+    for rows in groups.values():
+        if len(rows) < 2:
+            continue
+        duplicate_groups += 1
+        rows.sort(key=lambda row: (
+            row["state"] == "warEnded", int(row["last_seen_ts"] or 0),
+            int(row["end_ts"] or 0), row["war_id"], row["clan_code"],
+        ), reverse=True)
+        for row in rows[1:]:
+            for table, removed in delete_war_snapshot(connection, row["war_id"], row["clan_code"]).items():
+                counts[table] += removed
+    LOGGER.info(
+        "Regular war duplicate migration: groups=%s wars_removed=%s attack_rows_removed=%s rows_removed=%s",
+        duplicate_groups, counts["wars"], counts["war_attacks"], dict(counts),
+    )
 
 
 def key_stored_cwl_seasons(connection: sqlite3.Connection) -> None:

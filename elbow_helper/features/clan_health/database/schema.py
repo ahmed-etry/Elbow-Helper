@@ -9,7 +9,7 @@ from elbow_helper.infrastructure.persistence.versioned import (
     VersionedSQLiteDatabase, validate_sqlite_shape,
 )
 
-from .migrations import key_stored_cwl_seasons
+from .migrations import deduplicate_regular_wars, key_stored_cwl_seasons
 
 
 def create_schema(conn: sqlite3.Connection) -> None:
@@ -336,11 +336,14 @@ def adopt_schema(conn: sqlite3.Connection) -> None:
     validate_schema(conn, warn=False)
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 DATABASE = VersionedSQLiteDatabase(
     "clan health", create_schema, adopt_schema,
-    migrations=(SQLiteMigration(1, "clan health baseline", create_schema),),
+    migrations=(
+        SQLiteMigration(1, "clan health baseline", create_schema),
+        SQLiteMigration(2, "deduplicate delayed regular wars", deduplicate_regular_wars),
+    ),
     target_version=SCHEMA_VERSION, validate=validate_schema,
 )
 
