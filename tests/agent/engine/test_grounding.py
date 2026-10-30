@@ -237,6 +237,25 @@ class GroundingFlowTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn(MESSAGE["content"], answer)
                 self.assertIn(GROUNDING_GAPS["source"], answer)
 
+    async def test_delivered_answer_links_a_message_the_model_saw_without_a_source_url(self):
+        from elbow_helper.agent.families.model_view import family_model_view
+        context = _context()
+        row = {**MESSAGE, "channel_id": 91, "channel": "synthetic", "content_complete": True}
+        view = family_model_view({"family": "read_conversation_evidence", "mode": "search",
+                                  "rows": [row]})
+        self.assertNotIn("source", view["rows"][0])
+        context.state.grounding_evidence = {"read": compact_result(view)}
+        flow = AnswerFlow(context=context, session=None, registry={}, budget=None,
+                          rounder=None, runner=None, request_id=1)
+        link = f"https://discord.com/channels/{context.guild.id}/91/101"
+        answer = await flow._grounded_reply("See [[101]] and [[message:101]].")
+        self.assertIn(f"[Member Alpha]({link})", answer)
+        self.assertIn(f"([message]({link}))", answer)
+        self.assertIn(MESSAGE["content"], answer)
+        # Without the guild the row cannot be linked, so the reference fails closed.
+        with self.assertRaises(GroundingError):
+            ground_answer("[[message:101]]", context.state.grounding_evidence)
+
     async def test_limit_reply_cannot_bypass_reference_validation(self):
         context = _context()
         flow = AnswerFlow(context=context, session=None, registry={}, budget=None,

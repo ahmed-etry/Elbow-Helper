@@ -121,6 +121,12 @@ def family_model_view(payload):
         data.setdefault('message_content_complete', all(row.get('content_complete') for row in rows))
         data.setdefault('attachment_contents_read', False)
         data['rows'] = [readable_history_row(row) for row in rows]
+    if family == 'read_conversation_evidence':
+        # The jump link is rebuilt from guild, channel and message IDs when an answer cites a message.
+        data['rows'] = [{key: value for key, value in row.items() if key != 'source'}
+                        for row in data['rows']]
+    # Source channels are retained access bookkeeping; nothing the model is told to use reads them.
+    data.pop('provenance', None)
     if isinstance(data.get('unknown_accounts'), list):
         projection = roster_role_view if 'home_role_comparisons' in data else account_view
         selected = {row.get('player_tag') for row in rows}
@@ -142,7 +148,13 @@ def family_model_view(payload):
             key: value for key, value in coverage.get('chat_coverage', {}).items()
             if key not in ('channel_ids', 'channel_cursors', 'unavailable_channel_ids')}}
     if family == 'read_clan_rosters':
+        if isinstance(data.get('clans'), list):
+            data['clans'] = [dict(clan) for clan in data['clans']]
         for clan in data.get('clans', []):
+            if isinstance(clan.get('ownership'), dict):
+                # Owner names and per-owner counts are on the rows and members.
+                clan['ownership'] = {key: value for key, value in clan['ownership'].items()
+                                     if key != 'owners'}
             if isinstance(clan.get('profile'), dict):
                 clan['profile'] = pick(clan['profile'], ('clan_code', 'purpose', 'branch',
                     'is_utility', 'configured_cwl_only', 'home_placement_eligible',
@@ -207,7 +219,9 @@ def family_model_view(payload):
             family == 'read_cwl_results' and isinstance(data.get('clan_participation'), list)):
         # Alias reconciliation detail is retained; model receives the checked
         # coverage and account metrics instead of repeated source identities.
-        data['wars_checked'] = len(data.get('war_ids', []))
+        if 'war_ids' in data or 'wars_checked' not in data:
+            data['wars_checked'] = len(data.get('war_ids', []))
+        data.pop('war_ids', None)
         data.pop('war_aliases', None)
         # Names and account details already live on the paged measure rows.
         # Repeating every selected identity in each page makes the header
