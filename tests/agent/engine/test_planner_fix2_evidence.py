@@ -96,7 +96,7 @@ class PlannerFix2EvidenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(evidence['accounts']['rows']), len(tags))
         self.assertTrue(evidence['accounts']['members'])
         self.assertTrue(all('roles' in r for r in evidence['accounts']['members']))
-        self.assertEqual(len(evidence['accounts']['members'][0]['roles']), 81)
+        self.assertEqual([role['role_id'] for role in evidence['accounts']['members'][0]['roles']], [home_id])
         self.assertTrue(all(not r.get('roles') for r in evidence['accounts']['rows']))
         profiles = {row['member_id']: row for row in evidence['accounts']['members']}
         for i, tag in enumerate(tags):
@@ -108,7 +108,7 @@ class PlannerFix2EvidenceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(profile['membership_status'], 'present' if i < 43 else 'not_in_guild')
             self.assertEqual(profile['home_role_checks'], [{'clan_code': 'BES', 'role_id': home_id,
                 'has_role': i != 42 if i < 43 else None}])
-        # Compact model projection cannot mutate the retained full role evidence.
+        # Both projections retain configured role evidence and exclude cosmetic roles.
         retained = json.loads(flow.context.state.reports[flow.completed_results['accounts']['report_id']].payload)
         self.assertEqual({profile['member_id']: profile['roles'] for profile in retained['summary']['members']},
                          {profile['member_id']: profile['roles'] for profile in evidence['accounts']['members']})

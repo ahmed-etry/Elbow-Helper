@@ -74,7 +74,9 @@ class LeadershipSelectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['leadership_filter']['excluded_accounts'], 5)
         self.assertEqual({r['player_tag'] for r in result['rows']}, {'#P4', '#P5', '#P7'})
         unknown = next(r for r in result['rows'] if r['player_tag'] == '#P5')
-        self.assertEqual(unknown['leadership']['status'], 'unknown')
+        self.assertIsNone(unknown['member_id'])
+        self.assertNotIn('leadership', unknown)
+        self.assertGreater(result['leadership_filter']['unverified_accounts'], 0)
 
     async def test_default_rosters_preserve_existing_selection(self):
         context, codes, source = self.fixture()

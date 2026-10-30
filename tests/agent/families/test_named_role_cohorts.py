@@ -31,7 +31,7 @@ class NamedRoleTests(unittest.IsolatedAsyncioTestCase):
         result = await member_cohort(self.context(), {'basis': 'role_holders', 'role_name': 'War Co'})
         self.assertEqual({r['member_id'] for r in result['rows']}, {101, 102})
         self.assertEqual(result['selected_role_ids'], [27])
-        self.assertTrue(all([r['role_id'] for r in row['roles'] if r['name'] == 'War Co'] == [27]
+        self.assertTrue(all([role['role_id'] for role in row['roles']] == [27]
                             for row in result['rows']))
 
     async def test_clan_scope_intersects_named_holders_with_home_role(self):

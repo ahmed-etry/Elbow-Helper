@@ -32,10 +32,10 @@ class DomainEvidenceRegressionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(visible['rows'][0]['clan']['name'], 'Current utility clan')
         self.assertNotIn(AGENT_TESTER_ROLE_ID, [role['role_id'] for role in visible['rows'][0].get('roles', [])])
         self.assertNotIn('Internal test label', str(visible))
-        self.assertIn(AGENT_TESTER_ROLE_ID, [role['role_id'] for role in result['rows'][0]['roles']])
+        self.assertNotIn('roles', result['members'][0])
         profiles['#P0']['status'] = 'unavailable'
         with patch.object(identity_reads, 'profiles', AsyncMock(return_value=profiles)):
             unknown = await tool.handler(context, {'member_ids': [41]})
         self.assertTrue(unknown['unknown_accounts'])
         for account in delivered(unknown)['unknown_accounts']:
-            self.assertNotIn(AGENT_TESTER_ROLE_ID, [role['role_id'] for role in account['roles']])
+            self.assertNotIn('roles', account)
