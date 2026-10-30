@@ -15,6 +15,7 @@ from discord.ext import commands
 
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.infrastructure.clash import ClashClient
+from elbow_helper.infrastructure.discord.publishing import PublishResult
 
 from ..config import ROSTER_POST_BURY_AFTER_MESSAGES
 from .accounts import RosterAccountDirectory
@@ -319,6 +320,34 @@ class RosterPostService:
         except discord.HTTPException:
             return None
 
+    async def _edit_post_message(
+        self,
+        message: discord.Message,
+        **fields: Any,
+    ) -> PublishResult:
+        """Reopen archived roster threads, with one recovery for stale state."""
+        channel = message.channel
+        is_thread = isinstance(channel, discord.Thread)
+        if is_thread and channel.archived:
+            if not await self._bot.publishing.edit_channel(
+                channel, archived=False, reason="Update CWL rosters",
+            ):
+                # Channel failures must not be mistaken for a deleted post.
+                return PublishResult(False)
+
+        result = await self._bot.publishing.edit_message(message, **fields)
+        if (
+            is_thread
+            and isinstance(result.error, discord.HTTPException)
+            and result.error.code == 50083
+        ):
+            if not await self._bot.publishing.edit_channel(
+                channel, archived=False, reason="Update CWL rosters",
+            ):
+                return PublishResult(False)
+            result = await self._bot.publishing.edit_message(message, **fields)
+        return result
+
     async def refresh(self, roster: Roster) -> None:
         posts = await asyncio.to_thread(self._repository.list_posts, roster.id)
         for post in posts:
@@ -331,7 +360,7 @@ class RosterPostService:
                 roster,
                 message_page(message, roster.id),
             )
-            result = await self._bot.publishing.edit_message(
+            result = await self._edit_post_message(
                 message,
                 embeds=embeds,
                 view=self.message_view(roster, page=page, page_count=page_count),
@@ -378,9 +407,15 @@ class RosterPostService:
             )
             return False
 
-        result = await self._bot.publishing.edit_message(message, view=None)
+        result = await self._edit_post_message(message, view=None)
         if not result and not isinstance(result.error, (discord.NotFound, discord.Forbidden)):
-            return False
+            # Failed thread recovery must not trigger another edit in refresh.
+            return isinstance(channel, discord.Thread) and (
+                result.error is None or (
+                    isinstance(result.error, discord.HTTPException)
+                    and result.error.code == 50083
+                )
+            )
 
         await self.remove_deleted_message(post.message_id)
         return True
@@ -463,7 +498,7 @@ class RosterPostService:
             except (discord.Forbidden, discord.HTTPException):
                 failed_message_ids.append(post.message_id)
                 continue
-            result = await self._bot.publishing.edit_message(message, view=None)
+            result = await self._edit_post_message(message, view=None)
             if isinstance(result.error, discord.NotFound):
                 await self.remove_deleted_message(post.message_id)
             elif not result:

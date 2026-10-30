@@ -82,13 +82,8 @@
     "elbow_helper/features/recruitment/tickets.py:TicketMixin.organize_tickets": [
       "reorder"
     ],
-    "elbow_helper/features/rosters/services/posts.py:RosterPostService._retire_if_buried": [
-      "edit_message"
-    ],
-    "elbow_helper/features/rosters/services/posts.py:RosterPostService.disable_all": [
-      "edit_message"
-    ],
-    "elbow_helper/features/rosters/services/posts.py:RosterPostService.refresh": [
+    "elbow_helper/features/rosters/services/posts.py:RosterPostService._edit_post_message": [
+      "edit_channel",
       "edit_message"
     ],
     "elbow_helper/features/wars/board.py:WarBoardMixin._remove_war_board_controls": [

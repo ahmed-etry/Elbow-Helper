@@ -212,6 +212,10 @@ class PublishingQueue:
                         for field, value in signature.items())
                     if destination.kind == "channel" else destination.last == signature
                 )
+                # Threads can auto-archive without an edit through this queue.
+                # Even stale cached state must be recoverable with a reopen.
+                if isinstance(item.target, discord.Thread) and item.fields.get("archived") is False:
+                    identical = False
                 if identical:
                     destination.pending = None
                     self._retire_files(item)
@@ -269,9 +273,10 @@ class PublishingQueue:
                     self._fail(key, destination, error, permanent=True)
                 except discord.HTTPException as error:
                     attempts += 1
-                    if attempts >= HTTP_ATTEMPTS:
+                    if error.code == 50083 or attempts >= HTTP_ATTEMPTS:
                         self._fail(key, destination, error)
                         attempts = 0
+                        retry_at = 0.0
                     else:
                         newer = destination.pending
                         if newer is None:
