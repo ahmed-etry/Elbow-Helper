@@ -183,6 +183,47 @@ class PublishingQueueTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(message.edit.await_count, 6)
         self.assertEqual(len(logs.output), 1)
 
+    async def test_archived_thread_error_fails_immediately_and_allows_identical_next_edit(self):
+        message = self.target()
+        error = discord.HTTPException(
+            SimpleNamespace(status=400, reason="synthetic"),
+            {"code": 50083, "message": "Thread is archived"},
+        )
+        message.edit.side_effect = [error, message]
+        with self.assertLogs("elbow_helper.discord.publishing", "WARNING"):
+            result = await asyncio.wait_for(self.queue.edit_message(message, content="roster"), 0.5)
+        self.assertFalse(result)
+        self.assertIs(result.error, error)
+        message.edit.assert_awaited_once_with(content="roster")
+        self.assertTrue(await self.queue.edit_message(message, content="roster"))
+        self.assertEqual(message.edit.await_count, 2)
+
+    async def test_archived_thread_error_does_not_drop_pending_message_edit(self):
+        message = self.target()
+        started, finish = asyncio.Event(), asyncio.Event()
+        error = discord.HTTPException(
+            SimpleNamespace(status=400, reason="synthetic"),
+            {"code": 50083, "message": "Thread is archived"},
+        )
+
+        async def edit(**fields):
+            if fields["content"] == "first":
+                started.set()
+                await finish.wait()
+                raise error
+            return message
+
+        message.edit.side_effect = edit
+        first = self.queue.edit_message(message, content="first")
+        await started.wait()
+        next_edit = self.queue.edit_message(message, content="next")
+        with self.assertLogs("elbow_helper.discord.publishing", "WARNING"):
+            finish.set()
+            failed, applied = await asyncio.wait_for(asyncio.gather(first, next_edit), 0.5)
+        self.assertIs(failed.error, error)
+        self.assertTrue(applied)
+        self.assertEqual(message.edit.await_count, 2)
+
     async def test_retry_sends_newest_pending_version_and_resolves_replaced_waiter(self):
         message = self.target()
         failed = asyncio.Event()
