@@ -13,6 +13,45 @@ from elbow_helper.agent.research import history
 
 
 class ReferenceFamilyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_author_mentions_with_only_member_id_reaches_search(self):
+        from agent.research.test_agent_search import _context as search_context
+
+        for selector in ({'author_id': 42}, {'mentions': [42]}):
+            with self.subTest(selector=selector):
+                context = search_context()
+                result = await reads.conversation_evidence(context, {'mode': 'author_mentions', **selector})
+                self.assertNotIn('error', result)
+                self.assertEqual(result['rows'], [])
+                context.message_search.search_page.assert_awaited_once()
+                values = context.message_search.search_page.await_args.kwargs
+                for key, value in selector.items():
+                    self.assertEqual(values[key], value)
+                self.assertEqual(values['content'], '')
+                self.assertNotIn('channel_ids', values)
+
+    async def test_search_filters_and_newest_order_reach_shared_search(self):
+        selectors = ({'query': 'synthetic topic'}, {'author_ids': [42, 43]},
+                     {'channel_ids': [91, 92]}, {'before': '2026-09-01'})
+        for selector in selectors:
+            with self.subTest(selector=selector):
+                original = {'matches': [{'message_id': 10}, {'message_id': 20}],
+                            'coverage': {'next_cursor': 'next'}}
+                with patch.object(reads, 'search_discord_messages', AsyncMock(return_value=original)) as search:
+                    result = await reads.conversation_evidence(_context(), {'mode': 'search', **selector})
+                self.assertEqual([row['message_id'] for row in result['rows']], [20, 10])
+                self.assertEqual(result['coverage']['order'], 'newest_first')
+                self.assertEqual(result['source_next_cursor'], 'next')
+                self.assertEqual(search.await_args.args[1], {**selector, 'limit': 25})
+                self.assertTrue(search.await_args.kwargs['complete_content'])
+
+    async def test_author_mentions_without_any_search_selector_is_refused(self):
+        source = AsyncMock()
+        with patch.object(reads, 'search_discord_messages', source):
+            result = await reads.conversation_evidence(_context(), {'mode': 'author_mentions'})
+        self.assertEqual(result['cause'], 'invalid_arguments')
+        self.assertIn('mentions', result['missing_fields'])
+        source.assert_not_awaited()
+
     async def test_transport_pages_start_with_later_replies_and_keep_backward_source_cursor(self):
         original = {'messages': [{'message_id': 20, 'content': 'Revision.'},
                                   {'message_id': 10, 'content': 'Proposal.'}],

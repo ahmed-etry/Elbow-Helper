@@ -44,7 +44,7 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                             "type": "integer",
                             "minimum": 1,
                             "maximum": SEARCH_RESULT_LIMIT,
-                            "default": 5,
+                            "default": 25,
                         },
                         "channel_id": {"type": "integer", "minimum": 1},
                         "channel_ids": {
@@ -56,6 +56,9 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                             "type": "string", "maxLength": 64,
                         },
                         "author_id": {"type": "integer", "minimum": 1},
+                        "author_ids": {"type": "array", "minItems": 1, "maxItems": 200,
+                                       "uniqueItems": True,
+                                       "items": {"type": "integer", "minimum": 1}},
                         "mentions": {"type": "array", "minItems": 1, "maxItems": 20,
                                      "items": {"type": "integer", "minimum": 1}},
                         "after": {"type": "string", "maxLength": 40},
@@ -64,8 +67,8 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                     "additionalProperties": False,
                 },
                 usage_note=(
-                    "Search misses embeds. Read history chunks for discussions or bot logs. "
-                    "Omit query for author history. ISO dates: after inclusive, before exclusive."
+                    "Use words, authors, mentions, channels or dates; any filter suffices. "
+                    "Omit channels for server-wide search. Follow next_cursor for more."
                 ),
             ),
             search_discord_messages,
@@ -73,10 +76,12 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                     ("channel_id", "discord_channel"),
                     ("channel_ids", "discord_channel_set"),
                     ("author_id", "discord_member"),
+                    ("author_ids", "discord_member_set"),
                     ("mentions", "discord_member_set"),
                 ),
                 source_scope="channel_messages",
-                channel_fields=("channel_id", "channel_ids"),
+                # Multi-channel searches drop unavailable channels inside the reader.
+                channel_fields=("channel_id",),
                 result_channel_lists=(("matches", "channel_id"),),
                 result_sources_within_query=True,
             ),

@@ -7,6 +7,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition, TextGenerationEr
 from elbow_helper.infrastructure.ai.agent import AgentReasoningEffort
 
 from ..access import require_evidence_access
+from ..actions.contracts import ActionClass
 from ..conversation.context import estimate_tokens
 from ..families.model_view import record_rows
 from ..models import AgentCapabilityEffect
@@ -295,10 +296,75 @@ async def select_decision_sources(flow):
         flow.budget.next_input_estimate = previous_estimate
 
 
+def _discussion_subjects(flow):
+    """Use typed selections and lookup results, never conversation speakers."""
+    identifiers = set()
+    results = flow.completed_results
+    for step in flow.plan.get('steps', ()):
+        if step['capability'] == 'read_conversation_evidence':
+            continue
+        for key in ('member_id', 'member_ids'):
+            if key not in step['arguments']:
+                continue
+            try:
+                value = resolve_arguments({key: step['arguments'][key]}, results)[key]
+            except UnresolvedReferenceError:
+                continue
+            identifiers.update(item for item in (value if isinstance(value, list) else [value])
+                               if type(item) is int and item > 0)
+    for identity, result in results.items():
+        capability = flow.steps_by_id.get(identity, {}).get('capability', result.get('family'))
+        if (result.get('error') or capability not in (
+                'read_member_accounts', 'read_member_cohort', 'find_discord_members')):
+            continue
+        for key in ('rows', 'members'):
+            identifiers.update(row['member_id'] for row in record_rows(result.get(key, []))
+                               if type(row.get('member_id')) is int and row['member_id'] > 0)
+    if not identifiers:
+        state = getattr(getattr(flow, 'context', None), 'state', None)
+        identifiers.update(getattr(state, 'resolved_members', {}))
+    return sorted(identifiers)
+
+
+def _pending_subject_reads(flow):
+    """Resolve planned subjects before choosing searches or unfiltered windows."""
+    pending = {step['id']: step for step in flow.plan.get('steps', ())
+               if step['id'] not in flow.completed_results}
+    needed = set()
+
+    def include(identity):
+        if identity in flow.completed_results or identity in needed:
+            return True
+        step = pending.get(identity)
+        tool = flow.registry.get(step['capability']) if step else None
+        if (tool is None or getattr(tool, 'effect', None) is not AgentCapabilityEffect.READ
+                or getattr(tool, 'action_class', None) is not ActionClass.READ
+                or step['capability'] == 'read_conversation_evidence'):
+            return False
+        if not all(include(dependency) for dependency in step_dependencies(step)):
+            return False
+        needed.add(identity)
+        return True
+
+    for step in pending.values():
+        if step['capability'] in ('read_member_accounts', 'read_member_cohort', 'find_discord_members'):
+            before = needed.copy()
+            if not include(step['id']):
+                needed = before
+    return [step for identity, step in pending.items() if identity in needed]
+
+
 async def read_decision_discussions(flow):
     """Read selected sources through normal scoped tools before composing advice."""
     if not flow.assessment_requested or 'read_conversation_evidence' not in flow.registry:
         return {}
+    prerequisites = {}
+    if not _discussion_subjects(flow):
+        subject_reads = _pending_subject_reads(flow)
+        if subject_reads:
+            prerequisites = await _read_discussion_steps(flow, subject_reads)
+            completed = {step['id'] for step in subject_reads}
+            flow.plan['steps'] = [step for step in flow.plan['steps'] if step['id'] not in completed]
     planned = {step['arguments'].get('channel_id') for step in flow.plan.get('steps', ())
         if step['capability'] == 'read_conversation_evidence'
         and step['arguments'].get('mode') == 'channel_window'
@@ -313,6 +379,51 @@ async def read_decision_discussions(flow):
                                                else await select_decision_sources(flow))
     selected = list(dict.fromkeys((*flow.discovered_discussion_channels,
                                    *flow.plan.get('discussion_channels', ()))))
+    subjects = _discussion_subjects(flow)
+    if subjects and selected:
+        # Discord ANDs different filters, so authors and mentions are separate searches.
+        search_steps = []
+        new_steps = []
+        for key in ('author_ids', 'mentions'):
+            arguments = {'mode': 'search', key: subjects, 'channel_ids': selected}
+            existing = next((step for identity, step in flow.steps_by_id.items()
+                if step['capability'] == 'read_conversation_evidence'
+                and step['arguments'] == arguments and identity in flow.completed_results), None)
+            scheduled = next((step for step in flow.plan.get('steps', ())
+                if step['capability'] == 'read_conversation_evidence'
+                and step['arguments'] == arguments), None)
+            search_step = existing or scheduled
+            if search_step is None:
+                search_step = {
+                    'id': 'decision_discussion_search_' + str(len(flow.steps_by_id) + len(new_steps)),
+                    'capability': 'read_conversation_evidence', 'arguments': arguments, 'depends_on': []}
+                new_steps.append(search_step)
+            search_steps.append(search_step)
+        search_ids = [step['id'] for step in search_steps]
+        # These selected windows are supplied by the subject searches. Result
+        # references follow the author search; dependencies wait for both.
+        replaced = {step['id'] for step in flow.plan.get('steps', ())
+                    if step['capability'] == 'read_conversation_evidence'
+                    and step['arguments'].get('mode') == 'channel_window'
+                    and step['arguments'].get('channel_id') in selected
+                    and not step['arguments'].get('source_cursor')}
+        def redirect(value):
+            if isinstance(value, dict):
+                if set(value) == {'step', 'path'} and value['step'] in replaced:
+                    return {**value, 'step': search_ids[0]}
+                return {key: redirect(item) for key, item in value.items()}
+            if isinstance(value, list):
+                return [redirect(item) for item in value]
+            return value
+        if replaced:
+            flow.plan['steps'] = [{**step, 'arguments': redirect(step['arguments']),
+                'depends_on': list(dict.fromkeys(
+                    found for identity in step.get('depends_on', [])
+                    for found in (search_ids if identity in replaced else [identity])))}
+                for step in flow.plan['steps'] if step['id'] not in replaced]
+        if not new_steps:
+            return prerequisites
+        return {**prerequisites, **await _read_discussion_steps(flow, new_steps)}
     known = {step['arguments'].get('channel_id') for identity, step in flow.steps_by_id.items()
         if step['capability'] == 'read_conversation_evidence'
         and step['arguments'].get('mode') == 'channel_window'
@@ -322,7 +433,11 @@ async def read_decision_discussions(flow):
         'arguments': {'mode': 'channel_window', 'channel_id': channel, 'limit': 100}, 'depends_on': []}
         for channel in selected if channel not in known and channel not in planned]
     if not steps:
-        return {}
+        return prerequisites
+    return {**prerequisites, **await _read_discussion_steps(flow, steps)}
+
+
+async def _read_discussion_steps(flow, steps):
     results = await flow.runner.run({'goal': 'Read the current decision discussion',
         'effort': 'high', 'output': 'text', 'steps': steps})
     flow.steps_by_id.update({step['id']: step for step in steps})

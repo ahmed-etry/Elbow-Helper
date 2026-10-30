@@ -4,11 +4,12 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
+from datetime import datetime, timezone
 import sqlite3
 from contextlib import closing
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.infrastructure.discord.message_search import DiscordSearchMessage
+from elbow_helper.infrastructure.discord.message_search import DiscordSearchMessage, DiscordSearchPage
 from elbow_helper.configuration.roles import CORE, CO_APPLICANT_ROLE_ID
 from elbow_helper.agent.engine.registry import (
     build_agent_tool_groups, build_agent_tools,
@@ -152,8 +153,8 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
             200: hidden,
         }.get(channel_id)
         message_search = SimpleNamespace(
-            search=AsyncMock(
-                return_value=(
+            search_page=AsyncMock(
+                return_value=DiscordSearchPage((
                     DiscordSearchMessage(
                         message_id=1,
                         channel_id=100,
@@ -170,11 +171,11 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
                         content="hidden result",
                         timestamp="2026-09-14T00:00:00+00:00",
                     ),
-                )
+                ), 0, 5, 2, None, False, False)
             )
         )
         context = SimpleNamespace(
-            private_pass=True, source_message=SimpleNamespace(channel=allowed),
+            private_pass=True, source_message=SimpleNamespace(channel=allowed, created_at=datetime(2026, 9, 17, tzinfo=timezone.utc)),
             guild=guild,
             member=asker,
             bot=SimpleNamespace(fetch_channel=AsyncMock()),
@@ -185,10 +186,7 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
 
         result = await tool.handler(context, {"query": "decision", "limit": 5})
 
-        self.assertEqual(
-            message_search.search.await_args.kwargs["channel_ids"],
-            (100,),
-        )
+        self.assertNotIn("channel_ids", message_search.search_page.await_args.kwargs)
         self.assertEqual(len(result["matches"]), 1)
         self.assertEqual(result["matches"][0]["content"], "visible result")
         self.assertNotIn("hidden result", str(result))

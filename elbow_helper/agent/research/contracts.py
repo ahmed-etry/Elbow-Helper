@@ -295,7 +295,7 @@ def validate_research_coverage(value: Any, *, kind: str) -> dict[str, Any]:
 
 def _validate_search_coverage(value: dict[str, Any]) -> dict[str, Any]:
     required = {
-        "next_cursor", "total_results_estimate", "deep_historical_indexing",
+        "next_cursor", "deep_historical_indexing",
         "offset_limit_reached", "reached_current_indexed_end",
     }
     optional = {
@@ -303,20 +303,28 @@ def _validate_search_coverage(value: dict[str, Any]) -> dict[str, Any]:
         "returned_accessible_matches", "next_offset", "snapshot_before_message_id",
         "total_may_change_while_messages_are_created_or_deleted",
         "retained_storage_limit_reached", "retained_message_limit_reached",
-        "repeated_cursor_detected",
+        "repeated_cursor_detected", "total_results_estimate",
+        "out_of_scope_results_dropped", "pages_scanned", "order",
+        "stopped_at_message_budget", "stopped_at_request_budget",
     }
     if not required <= value.keys() or not value.keys() <= required | optional:
         raise ValueError("Invalid research job coverage")
     cursor = value["next_cursor"]
-    total = value["total_results_estimate"]
     if (
         cursor is not None and (not isinstance(cursor, str) or len(cursor) > 64)
-        or type(total) is not int or total < 0
         or any(type(value[key]) is not bool for key in (
             "deep_historical_indexing", "offset_limit_reached",
             "reached_current_indexed_end",
         ))
     ):
+        raise ValueError("Invalid research job coverage")
+    for key in ("total_results_estimate", "out_of_scope_results_dropped"):
+        if key in value and (type(value[key]) is not int or value[key] < 0):
+            raise ValueError("Invalid research job coverage")
+    pages = value.get("pages_scanned", 1)
+    if type(pages) is not int or not 1 <= pages <= 8:
+        raise ValueError("Invalid research job coverage")
+    if "order" in value and value["order"] != "newest_first":
         raise ValueError("Invalid research job coverage")
     for key in (
         "offset", "requested_page_size", "returned_indexed_matches",
@@ -328,7 +336,8 @@ def _validate_search_coverage(value: dict[str, Any]) -> dict[str, Any]:
     for key in (
         "total_may_change_while_messages_are_created_or_deleted",
         "retained_storage_limit_reached", "retained_message_limit_reached",
-        "repeated_cursor_detected",
+        "repeated_cursor_detected", "stopped_at_message_budget",
+        "stopped_at_request_budget",
     ):
         if key in value and type(value[key]) is not bool:
             raise ValueError("Invalid research job coverage")
@@ -337,7 +346,7 @@ def _validate_search_coverage(value: dict[str, Any]) -> dict[str, Any]:
     accessible = value.get("returned_accessible_matches")
     if (
         page_size is not None and not 1 <= page_size <= MAX_SEARCH_JOB_PAGE_SIZE
-        or indexed is not None and page_size is not None and indexed > page_size
+        or indexed is not None and page_size is not None and indexed > page_size * pages
         or accessible is not None and indexed is not None and accessible > indexed
         or value.get("next_offset") is not None and value["next_offset"] > 9_975
         or value.get("snapshot_before_message_id") is not None

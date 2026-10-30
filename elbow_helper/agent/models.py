@@ -258,6 +258,8 @@ class AgentRequestContext:
     read_cache: Any = None
     fresh_reads: bool = False
     read_dependencies: Any = None
+    # Runner-owned reservation: each search page shares request lookup/evidence caps.
+    reserve_search_page: Callable[[int], Awaitable[int]] | None = None
 
 
 AgentToolHandler = Callable[

@@ -204,13 +204,16 @@ async def conversation_evidence(context, arguments):
             return {'error':'Which message and channel should I read?', 'cause':'needs_input'}
         selected.pop('mentions',None); selected.pop('author_id',None)
         result = await read_message_context(context, {**selected,'limit':50}, complete_content=True)
-    elif mode == 'author_mentions':
-        if not selected.get('channel_id') and not selected.get('after'):
-            return {'error':'Which channel or dated window should I read?', 'cause':'needs_input'}
+    elif mode in ('search', 'author_mentions'):
+        if not any(selected.get(key) for key in ('query', 'author_id', 'author_ids', 'mentions',
+                                                'channel_id', 'channel_ids', 'after', 'before')):
+            return {'error':'Supply search words, a channel, an author, or a date range.', 'cause':'invalid_arguments',
+                    'missing_fields': ['query', 'author_id', 'author_ids', 'mentions',
+                                       'channel_id', 'channel_ids', 'after', 'before']}
         selected.pop('message_id',None)
         if arguments.get('source_cursor'):
             selected['cursor']=arguments['source_cursor']
-        result = await search_discord_messages(context, {**selected,'query':'','limit':25}, complete_content=True)
+        result = await search_discord_messages(context, {**selected,'limit':25}, complete_content=True)
     else:
         if not selected.get('channel_id'):
             return {'error':'Which channel should I read?', 'cause':'needs_input'}
@@ -224,11 +227,12 @@ async def conversation_evidence(context, arguments):
     target = result.get('reply_target')
     if target and target.get('status')=='read' and not any(row['message_id']==target['message_id'] for row in rows):
         rows.append(target)
-    rows.sort(key=lambda row:(row.get('timestamp') or '',row['message_id']), reverse=mode == 'channel_window')
+    newest_first = mode in ('channel_window', 'search', 'author_mentions')
+    rows.sort(key=lambda row:(row.get('timestamp') or '',row['message_id']), reverse=newest_first)
     if isinstance(result.get('coverage'), dict):
         result['coverage'] = {**result['coverage'],
             'source_order': result['coverage'].get('order'),
-            'order': 'newest_first' if mode == 'channel_window' else 'oldest_first'}
+            'order': 'newest_first' if newest_first else 'oldest_first'}
     return {**result,'rows':rows,'mode':mode,'source_next_cursor':result.get('coverage',{}).get('next_cursor'),
             'coverage_note':'Read complete message chunks by meaning. Follow source_next_cursor while relevant discussion is incomplete. An empty window does not prove absence; unread attachments establish no image contents.'}
 
@@ -239,13 +243,20 @@ TOOLS = (
      'clan_codes':CLANS_INPUT,
      'titles':{'type':'array','minItems':1,'maxItems':8,'items':{'type':'string','maxLength':200}},
      'section_ids':{'type':'array','minItems':1,'maxItems':8,'items':{'type':'string','minLength':64,'maxLength':64}}}, community_reference),
- family_tool('read_conversation_evidence','Read full discussion chunks, causal replies or author and mention evidence.',
-    {'mode':{'type':'string','enum':['reply','replay','reply_chain','message_window','channel_window','author_mentions','attachments']},
+ family_tool('read_conversation_evidence','Search full messages or read discussion chunks, causal replies and attachments.',
+    {'mode':{'type':'string','enum':['reply','replay','reply_chain','message_window','channel_window','search','author_mentions','attachments']},
      'projection': {'type': 'string', 'enum': ['messages', 'attachment_text', 'media', 'extract_entities']},
      'attachment_ids': IDS,
      'channel_id':{'type':'integer','minimum':1},'message_id':{'type':'integer','minimum':1},
-     'author_id':{'type':'integer','minimum':1},'mentions':IDS,'after':DATE,'before':DATE,
+     'query':{'type':'string','maxLength':1024},
+     'channel_ids':{'type':'array','minItems':1,'maxItems':20,'uniqueItems':True,
+                    'items':{'type':'integer','minimum':1}},
+     'author_id':{'type':'integer','minimum':1},
+     'author_ids':{'type':'array','minItems':1,'maxItems':200,'uniqueItems':True,
+                   'items':{'type':'integer','minimum':1}},
+     'mentions':IDS,'after':DATE,'before':DATE,
      'source_cursor':{'type':'string','maxLength':64},
      'pages': {'type': 'integer', 'minimum': 1, 'maximum': 8,
-               'description': 'Read consecutive complete history pages before semantic review, within the shared evidence budget.'}}, conversation_evidence),
+               'description': 'Read consecutive complete search or history pages before semantic review, within the shared evidence budget.'}}, conversation_evidence,
+    usage_note='Use search with any filter: query, author_ids, mentions, channels or dates. Omit channels for server-wide search. Continue source_next_cursor with same filters.'),
 )
