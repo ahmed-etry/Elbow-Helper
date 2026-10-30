@@ -159,12 +159,48 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
     def test_interactive_and_export_results_share_the_fetch_memory_bound(self):
         for max_rows in (200, None):
             with self.subTest(max_rows=max_rows), patch(
-                'elbow_helper.agent.datasets.query.MAX_QUERY_RESULT_BYTES', 128):
+                'elbow_helper.agent.datasets.query.MAX_QUERY_RESULT_BYTES', 64):
                 result, touched = self.query('SELECT :value AS text FROM first.accounts',
                                              {'value': 'x' * 100}, max_rows=max_rows)
             self.assertEqual(result['cause'], 'capacity')
             self.assertNotIn('rows', result)
             self.assertFalse(touched)
+
+    def test_result_over_the_size_limit_returns_what_fits_and_says_how_many_rows_were_cut(self):
+        with patch('elbow_helper.agent.datasets.query.MAX_QUERY_RESULT_BYTES', 250):
+            result, _ = self.query('SELECT :value AS text FROM first.accounts', {'value': 'x' * 100})
+        self.assertEqual(result['row_count'], 2)
+        self.assertTrue(result['truncated'])
+        self.assertEqual((result['total_rows'], result['rows_cut']), (5, 3))
+        self.assertIn('size limit', result['instruction'])
+        with patch('elbow_helper.agent.datasets.query.MAX_QUERY_RESULT_BYTES', 250):
+            result, _ = self.query('SELECT :value AS text FROM first.accounts', {'value': 'x' * 100},
+                                   max_rows=None)
+        self.assertEqual(result['cause'], 'capacity')
+
+    def test_row_limit_names_the_rows_cut_and_the_way_to_get_them(self):
+        result, _ = self.query('SELECT id FROM first.accounts ORDER BY id', max_rows=2)
+        self.assertEqual((result['row_count'], result['total_rows'], result['rows_cut']), (2, 5, 3))
+        self.assertIn('Raise max_rows', result['instruction'])
+        result, _ = self.query('WITH RECURSIVE n(i) AS (VALUES(1) UNION ALL SELECT i+1 FROM n WHERE i<1005) '
+                               'SELECT i FROM n', max_rows=1000)
+        self.assertEqual(result['rows_cut'], 5)
+        self.assertNotIn('Raise max_rows', result['instruction'])
+
+    def test_one_row_per_account_for_the_whole_family_comes_back_whole(self):
+        columns = ', '.join(f'i + {offset} AS c{offset}' for offset in range(10))
+        result, _ = self.query('WITH RECURSIVE n(i) AS (VALUES(1) UNION ALL SELECT i+1 FROM n WHERE i<700) '
+                               f'SELECT i, {columns} FROM n', max_rows=1000)
+        self.assertEqual(result['row_count'], 700)
+        self.assertFalse(result['truncated'])
+        self.assertNotIn('rows_cut', result)
+        self.assertNotIn('instruction', result)
+
+    def test_query_time_limit_fits_inside_the_tool_timeout(self):
+        from elbow_helper.agent.datasets.query import QUERY_SECONDS
+        from elbow_helper.agent.engine.budgets import TOOL_TIMEOUT_SECONDS
+        self.assertGreaterEqual(QUERY_SECONDS, 10)
+        self.assertLessEqual(QUERY_SECONDS, TOOL_TIMEOUT_SECONDS - 5)
 
     def test_empty_columns_and_large_cells(self):
         self.assertEqual(

@@ -12,7 +12,7 @@ import time
 
 from ..access import can_access_message_channel, has_reader_access_requirements, require_evidence_access
 
-QUERY_SECONDS = 5.0
+QUERY_SECONDS = 20.0  # a full pass over player_snapshots takes ~10s; tool timeout is 30s
 MAX_QUERY_VALUE_BYTES = 8 * 1024 * 1024
 MAX_QUERY_RESULT_BYTES = 16 * 1024 * 1024
 STATE_NAMES = re.compile(r"\bstate\.(\w+)\b", re.I)
@@ -190,9 +190,10 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=200, *,
                 return {"error": "Use unique result column names."}, set()
             cap = max_rows if max_rows is not None else 100000
             raw_rows, result_bytes, total_rows = [], 0, 0
+            size_limited = False
             for row in cursor:
                 total_rows += 1
-                if len(raw_rows) == cap:
+                if size_limited or len(raw_rows) == cap:
                     if max_rows is None:
                         return {"error": "The export is too large; narrow the query."}, set()
                     # Count the remainder of this cursor, without executing the
@@ -204,22 +205,37 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=200, *,
                                     len(value.encode('utf-8')) if isinstance(value, str) else 32
                                     for value in row)
                 if result_bytes > MAX_QUERY_RESULT_BYTES or (len(raw_rows) + 1) * len(columns) > 100000:
-                    return {"error": "The query result is too large; narrow it or aggregate.", "cause": "capacity"}, set()
+                    if not raw_rows or max_rows is None:
+                        return {"error": "The query result is too large; narrow it or aggregate.", "cause": "capacity"}, set()
+                    size_limited = True
+                    continue
                 raw_rows.append(row)
-            truncated = total_rows > cap
+            truncated = total_rows > len(raw_rows)
             result = {
                 "rows": [
                     {
                         key: _cell(value, truncate=max_rows is not None)
                         for key, value in zip(columns, row)
                     }
-                    for row in raw_rows[:cap]
+                    for row in raw_rows
                 ],
-                "row_count": min(len(raw_rows), cap),
+                "row_count": len(raw_rows),
                 "truncated": truncated,
             }
             if truncated:
                 result["total_rows"] = total_rows
+                result["rows_cut"] = total_rows - len(raw_rows)
+                result["instruction"] = (
+                    "The result is incomplete: " + (
+                        "it is over the size limit for one read, so select fewer columns, "
+                        "filter or group the query."
+                        if size_limited else
+                        f"{max_rows} rows were allowed. "
+                        + ("Raise max_rows (up to 1000) when the whole set fits, otherwise "
+                           "filter or group the query." if max_rows < 1000 else
+                           "Filter or group the query.")
+                    ) + " Do not present these rows as the full answer."
+                )
             if not raw_rows:
                 result["columns"] = columns
             coverage = {
@@ -252,11 +268,9 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=200, *,
         return {"error": "The selected data is unavailable right now."}, set()
 
 
-async def query_context(context, sql, params=None, max_rows=200):
-    from .catalogue import SOURCES
+def reader_levels(context):
+    """Dataset access levels this reader holds within the request scope."""
     from ..access import KNOWN_ACCESS_REQUIREMENTS
-    from ..disclosure import exclude_source
-    await require_evidence_access(context)
     levels = {
         level for level in KNOWN_ACCESS_REQUIREMENTS
         if has_reader_access_requirements(context.guild, context.member.id, {level})
@@ -264,6 +278,14 @@ async def query_context(context, sql, params=None, max_rows=200):
     scope = context.state.scope
     if scope is not None:
         levels &= scope.levels
+    return levels
+
+
+async def query_context(context, sql, params=None, max_rows=200):
+    from .catalogue import SOURCES
+    from ..disclosure import exclude_source
+    await require_evidence_access(context)
+    levels = reader_levels(context)
     state_names = set(STATE_NAMES.findall(_identifiers(sql))) if isinstance(sql, str) else set()
     channel_ids = set()
     if any((source.channel_keyed or source.evidence_channels is not None)

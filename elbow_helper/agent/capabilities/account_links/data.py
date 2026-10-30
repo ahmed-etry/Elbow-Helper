@@ -12,8 +12,10 @@ SOURCES = (
         tables=(
             (
                 "links", "none",
-                "Links Clash account tags to Discord members. One member can have "
-                "multiple linked accounts. Includes the last recorded account name, "
+                "One linked Clash account per row: player_tag to its Discord member "
+                "discord_user_id. Join health tables on player_tag = links.links.player_tag (LEFT JOIN: "
+                "unlinked accounts have no row) and GROUP BY discord_user_id for one row per member. "
+                "One member can have several accounts. Includes the last recorded account name, "
                 "clan and clan role. These links are separate from ClashPerk's.",
             ),
             ("ignored_tags", "recruiter_or_core", "One ignored account tag."),
