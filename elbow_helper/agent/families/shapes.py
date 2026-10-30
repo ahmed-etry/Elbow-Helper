@@ -77,14 +77,14 @@ RESULT_FIELDS['read_member_cohort'].update(names('selected_role_ids'))
 RESULT_FIELDS['read_member_cohort']['rows'][0].update(
     **names('donations,membership_status'),
     war_activity=names('status,wars_observed,attacks_used,attacks_expected,missed,attack_completion_percent,unconfirmed_opportunities,totals_complete'),
-    chat_activity=names('status,latest_observed_at,source'))
+    discord_activity=names('status,last_active_day,active_streak_days,lifetime_messages'))
 RESULT_FIELDS['read_member_cohort']['rows'][0]['accounts'][0].update(names('clan_code,donations,clan_status'))
 RESULT_FIELDS['read_member_cohort']['rows'][0]['accounts'][0]['war_activity'] = RESULT_FIELDS['read_member_cohort']['rows'][0]['war_activity']
 RESULT_FIELDS['read_member_cohort']['rows'][0]['accounts'][0]['clan'] = names('tag,name')
 RESULT_FIELDS['read_member_cohort']['rows'][0].update(names(
-    'account_tags,account_names,clan_codes,war_status,wars_observed,attacks_used,attacks_expected,missed,attack_completion_percent,war_totals_complete,chat_status,latest_chat_at'))
+    'account_tags,account_names,clan_codes,war_status,wars_observed,attacks_used,attacks_expected,missed,attack_completion_percent,war_totals_complete,discord_activity_status,last_active_day,active_streak_days,lifetime_messages'))
 RESULT_FIELDS['read_member_cohort']['activity_coverage'] = {
-    'chat_coverage': names('members_checked,members_not_checked,source_reads_complete,channel_count')}
+    'discord_activity_coverage': names('members_checked,members_not_checked,source_reads_complete,basis')}
 RESULT_FIELDS['read_member_cohort']['clans'] = [names(
     'clan_code,name,tag,basis,status,cohort_accounts,included_accounts,excluded_accounts,unknown_filter_accounts,in_game_members,in_game_capacity,open_in_game_slots')]
 RESULT_FIELDS['read_discord_access'] = {**COMMON, 'rows': [names(

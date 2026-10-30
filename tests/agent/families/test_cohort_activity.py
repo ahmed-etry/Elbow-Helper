@@ -1,35 +1,32 @@
 """Activity joins preserve the full roster and never classify message content."""
+from contextlib import closing
 from dataclasses import replace
 from datetime import datetime, timezone
+from pathlib import Path
+import sqlite3
+from uuid import uuid4
+import threading
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-import discord
-
 from elbow_helper.agent.families.cohort_activity import roster_cohort
-from elbow_helper.agent.families.cohort_activity import chat_projection
+from elbow_helper.agent.families.cohort_activity import discord_activity_projection
 from elbow_helper.agent.families.cohort_activity import war_measures
 from elbow_helper.features.clan_health.attendance import aggregate_attendance
 from elbow_helper.agent.families.model_view import family_model_view
-from elbow_helper.agent.families.identity_reads import TOOLS
+from elbow_helper.features.achievements.queries import AchievementQueries
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.plan.checker import check_plan
 from agent.engine.test_agent_plan_flow import _context
 
 
-class MetadataOnly:
-    channel_id = 91
-    author_id = 42
-    timestamp = '2025-12-15T00:00:00+00:00'
-    message_id = discord.utils.time_snowflake(datetime(2025, 12, 15, tzinfo=timezone.utc))
-
-    @property
-    def content(self):
-        raise AssertionError('Member-written content must not be inspected')
-
-
 class CohortActivityTests(unittest.IsolatedAsyncioTestCase):
+    def activity_database(self):
+        database = Path(f'.activity-test-{uuid4().hex}.sqlite')
+        self.addCleanup(database.unlink, missing_ok=True)
+        return database
+
     def test_completion_uses_confirmed_attack_opportunities_and_preserves_unknowns(self):
         source = [dict(player_tag='#P0', player_name='First', war_id='R1',
                        attacks_used=1, attacks_expected=2, missed=1),
@@ -49,70 +46,69 @@ class CohortActivityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(war_measures([], unavailable=True)['status'], 'source_unavailable')
         self.assertIsNone(war_measures([], unavailable=True)['wars_observed'])
 
-    async def test_partial_channel_pages_keep_their_cursor_and_observations(self):
-        import asyncio
-        import time
-        context = _context()
-        rows = [{'member_id': 42}]
-        first_page = SimpleNamespace(messages=(MetadataOnly(),),
-            next_before_id=MetadataOnly.message_id, reached_window_start=False)
-        async def history(**kwargs):
-            if kwargs['before_id'] > MetadataOnly.message_id:
-                return first_page
-            await asyncio.Event().wait()
-        context = replace(context, message_search=SimpleNamespace(history_page=AsyncMock(side_effect=history)))
-        selection = {'after': '2025-12-01T00:00:00+00:00', 'before': '2026-01-01T00:00:00+00:00'}
-        with patch('elbow_helper.agent.families.cohort_activity.searchable_channel_ids', AsyncMock(return_value=(91,))):
-            partial = await chat_projection(context, rows, selection, deadline=time.monotonic()+0.01)
-        self.assertFalse(partial['source_reads_complete'])
-        self.assertEqual(partial['channel_cursors']['91'], MetadataOnly.message_id)
-        self.assertEqual(rows[0]['chat_activity']['latest_message_id'], MetadataOnly.message_id)
-        context.message_search.history_page = AsyncMock(return_value=SimpleNamespace(
-            messages=(), next_before_id=None, reached_window_start=True))
-        complete = await chat_projection(context, rows, selection, progress=partial)
-        self.assertTrue(complete['source_reads_complete'])
-        self.assertEqual(context.message_search.history_page.call_args.kwargs['before_id'], MetadataOnly.message_id)
-        self.assertEqual(rows[0]['chat_activity']['latest_message_id'], MetadataOnly.message_id)
+    async def test_stored_activity_covers_records_without_channel_reads(self):
+        database = self.activity_database()
+        with closing(sqlite3.connect(database)) as connection, connection:
+            connection.execute('CREATE TABLE user_stats (user_id INTEGER PRIMARY KEY, '
+                'last_activity_date INTEGER, activity_streak INTEGER, message_count INTEGER)')
+            connection.executemany('INSERT INTO user_stats VALUES (?, ?, ?, ?)', [
+                (42, int(datetime(2025, 12, 15, 8, 30, tzinfo=timezone.utc).timestamp()), 4, 123),
+                (43, None, 0, 0)])
+        queries = AchievementQueries(database)
+        event_thread = threading.get_ident()
+        original = queries.member_activity
+        def read(identifiers):
+            self.assertNotEqual(threading.get_ident(), event_thread)
+            return original(identifiers)
+        queries.member_activity = read
+        history = AsyncMock(side_effect=AssertionError('No channel history allowed'))
+        context = replace(_context(), achievement_queries=queries,
+            message_search=SimpleNamespace(history_page=history))
+        rows = [{'member_id': identifier} for identifier in (42, 43, 44, None)]
+        coverage = await discord_activity_projection(context, rows)
+        self.assertEqual([r['discord_activity']['status'] for r in rows],
+                         ['observed', 'no_messages_recorded', 'no_record', 'unlinked'])
+        self.assertEqual(rows[0]['discord_activity'], {'status': 'observed',
+            'last_active_day': '2025-12-15', 'active_streak_days': 4, 'lifetime_messages': 123})
+        self.assertTrue(coverage['source_reads_complete'])
+        self.assertEqual(coverage['members_checked'], 3)
+        self.assertFalse(context.state.source_channels)
+        self.assertFalse(any(key.startswith('channel') for key in coverage))
+        history.assert_not_awaited()
 
-    def test_initial_catalogue_can_collect_and_resume_a_full_cohort(self):
+    async def test_missing_and_failed_activity_store_remain_unknown(self):
+        for queries in (None, SimpleNamespace(member_activity=lambda ids: (_ for _ in ()).throw(
+                RuntimeError('Synthetic unreadable database')))):
+            rows = [{'member_id': 42}]
+            coverage = await discord_activity_projection(replace(_context(), achievement_queries=queries), rows)
+            self.assertEqual(rows[0]['discord_activity']['status'], 'source_unavailable')
+            self.assertFalse(coverage['source_reads_complete'])
+            self.assertEqual(coverage['members_not_checked'], 1)
+
+    def test_missing_malformed_and_read_only_activity_databases(self):
+        database = self.activity_database()
+        queries = AchievementQueries(database)
+        with self.assertRaises(RuntimeError):
+            queries.member_activity([42])
+        self.assertFalse(database.exists())
+        with closing(sqlite3.connect(database)) as connection, connection:
+            connection.execute('CREATE TABLE unrelated (value INTEGER)')
+        with self.assertRaises(RuntimeError):
+            queries.member_activity([42])
+        with closing(queries._connect()) as connection:
+            with self.assertRaises(sqlite3.OperationalError):
+                connection.execute('CREATE TABLE forbidden (value INTEGER)')
+
+    def test_initial_catalogue_supports_chosen_accounts_and_has_no_scan_continuation(self):
         registry = {name: tool for name, tool in build_agent_tools().items() if tool.default_visible}
-        plan = {'goal': 'Read member activity across rosters', 'effort': 'high', 'output': 'text', 'steps': [
-            {'id': 'cohort', 'capability': 'read_member_cohort', 'arguments': {'basis': 'clan_rosters',
-                'include_activity': True, 'after': '2025-12-01T00:00:00+00:00', 'view': 'count'}, 'depends_on': []},
-            {'id': 'resume', 'capability': 'read_member_cohort', 'arguments': {'basis': 'clan_rosters',
-                'activity_ref': {'step': 'cohort', 'path': ['report_id']}, 'view': 'count'}, 'depends_on': ['cohort']}]}
+        plan = {'goal': 'Read selected member activity', 'effort': 'high', 'output': 'text', 'steps': [
+            {'id': 'accounts', 'capability': 'read_member_accounts', 'arguments': {'member_ids': [42]}, 'depends_on': []},
+            {'id': 'activity', 'capability': 'read_member_cohort', 'arguments': {'basis': 'selected',
+                'cohort_ref': {'step': 'accounts', 'path': ['report_id']}, 'include_activity': True,
+                'after': '2025-12-01T00:00:00+00:00', 'view': 'count'}, 'depends_on': ['accounts']}]}
         checked = check_plan(plan, registry)
         self.assertTrue(checked.ok, checked.error)
-
-    async def test_timeout_continues_the_same_immutable_cohort_without_repeating_finished_reads(self):
-        import asyncio
-        context = _context()
-        owner = SimpleNamespace(id=42, display_name='Member', roles=[], joined_at=None)
-        context.guild.get_member = lambda identifier: owner if identifier == 42 else context.member
-        roster = {'rows': [dict(clan_code='BES', player_tag='#P0', player_name='Account', donations=1)],
-                  'count_complete': True, 'clans': []}
-        context = replace(context, account_links=SimpleNamespace(get_links_by_tags=lambda tags: {
-            '#P0': {'discord_user_id': 42}}), message_search=SimpleNamespace(history_page=AsyncMock()))
-        async def stalled(**kwargs):
-            await asyncio.Event().wait()
-        context.message_search.history_page = AsyncMock(side_effect=stalled)
-        tool = next(t for t in TOOLS if t.definition.name == 'read_member_cohort')
-        with patch('elbow_helper.agent.families.identity_reads.clan_rosters', AsyncMock(return_value=roster)), \
-             patch('elbow_helper.agent.families.cohort_activity.selected_wars', AsyncMock(return_value={'rows': []})), \
-             patch('elbow_helper.agent.families.cohort_activity.searchable_channel_ids', AsyncMock(return_value=(91,))), \
-             patch('elbow_helper.agent.families.cohort_activity.TOOL_TIMEOUT_SECONDS', 2):
-            first = await tool.handler(context, {'basis': 'clan_rosters', 'include_activity': True,
-                'after': '2025-12-01T00:00:00+00:00', 'view': 'count'})
-        self.assertEqual(first['activity_coverage']['chat_coverage']['members_not_checked'], 1)
-        retained = context.state.reports[first['report_id']].payload
-        context.message_search.history_page = AsyncMock(return_value=SimpleNamespace(messages=(MetadataOnly(),), next_before_id=None, reached_window_start=True))
-        second = await tool.handler(context, {'basis': 'clan_rosters', 'activity_ref': first['report_id']})
-        self.assertTrue(second['activity_coverage']['chat_coverage']['source_reads_complete'])
-        self.assertEqual(second['rows'][0]['chat_activity']['status'], 'observed')
-        self.assertEqual(context.state.reports[first['report_id']].payload, retained)
-        third = await tool.handler(context, {'basis': 'clan_rosters', 'activity_ref': second['report_id']})
-        self.assertEqual(context.message_search.history_page.await_count, 1)
-        self.assertEqual(second['rows'], third['rows'])
+        self.assertNotIn('activity_ref', registry['read_member_cohort'].definition.parameters['properties'])
 
     async def test_accounts_join_across_clans_and_unlinked_accounts_survive(self):
         context = _context()
@@ -124,16 +120,16 @@ class CohortActivityTests(unittest.IsolatedAsyncioTestCase):
             'count_complete': True, 'clans': []}
         links = SimpleNamespace(get_links_by_tags=lambda tags: {
             tag: {'discord_user_id': 42} for tag in ('#P0', '#P2')})
-        search = SimpleNamespace(history_page=AsyncMock(return_value=SimpleNamespace(
-            messages=(MetadataOnly(),), next_before_id=None, reached_window_start=True)))
-        context = replace(context, account_links=links, message_search=search)
+        search = SimpleNamespace(history_page=AsyncMock(side_effect=AssertionError('No channel reads')))
+        context = replace(context, account_links=links, message_search=search,
+            achievement_queries=SimpleNamespace(member_activity=lambda ids: {42: {'status': 'observed',
+                'last_active_day': '2025-12-15', 'active_streak_days': 2, 'lifetime_messages': 9}}))
         war_rows = [dict(player_tag='#P0', player_name='Account', war_id='W1',
                         attacks_used=2, attacks_expected=2, missed=0),
                     dict(player_tag='#P0', player_name='Account', war_id='W2',
                          attacks_used=0, attacks_expected=1, missed=1)]
         with patch('elbow_helper.agent.families.identity_reads.clan_rosters', AsyncMock(return_value=roster)), \
-             patch('elbow_helper.agent.families.cohort_activity.selected_wars', AsyncMock(return_value={'rows': war_rows, 'coverage': {'historical_collection_complete': False}})), \
-             patch('elbow_helper.agent.families.cohort_activity.searchable_channel_ids', AsyncMock(return_value=(91,))):
+             patch('elbow_helper.agent.families.cohort_activity.selected_wars', AsyncMock(return_value={'rows': war_rows, 'coverage': {'historical_collection_complete': False}})):
             result = await roster_cohort(context, {'include_activity': True, 'after': '2025-12-01T00:00:00+00:00'})
         self.assertEqual(result['account_count'], 3)
         self.assertEqual(result['member_count'], 1)
@@ -145,12 +141,11 @@ class CohortActivityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(member['war_activity']['wars_observed'], 2)
         self.assertEqual(member['war_activity']['attacks_expected'], 3)
         self.assertEqual(member['war_activity']['attack_completion_percent'], 66.67)
-        self.assertEqual(member['chat_activity']['status'], 'observed')
+        self.assertEqual(member['discord_activity']['status'], 'observed')
         self.assertIsNone(unlinked['donations'])
         self.assertIsNone(unlinked['war_activity']['attacks_used'])
-        self.assertEqual(unlinked['chat_activity']['status'], 'unlinked')
-        self.assertEqual(search.history_page.await_count, 1)
-        self.assertEqual(search.history_page.call_args.kwargs['channel_id'], 91)
+        self.assertEqual(unlinked['discord_activity']['status'], 'unlinked')
+        search.history_page.assert_not_awaited()
         visible = family_model_view({**result, 'family': 'read_member_cohort'})
         self.assertEqual({tag for r in visible['rows'] for tag in r['account_tags']}, {'#P0', '#P2', '#P8'})
         self.assertEqual(visible['rows'][0]['donations'], 15)
@@ -173,8 +168,6 @@ class CohortActivityTests(unittest.IsolatedAsyncioTestCase):
         roster = {'rows': [], 'count_complete': True, 'clans': []}
         with patch('elbow_helper.agent.families.identity_reads.clan_rosters', AsyncMock(return_value=roster)), \
              patch('elbow_helper.agent.families.cohort_activity.selected_wars', AsyncMock()) as wars:
-            missing = await roster_cohort(context, {'include_activity': True})
             invalid = await roster_cohort(context, {'include_activity': True, 'after': '2026-02-01T00:00:00+00:00'})
-        self.assertEqual(missing['cause'], 'needs_input')
         self.assertEqual(invalid['cause'], 'invalid_arguments')
         wars.assert_not_awaited()

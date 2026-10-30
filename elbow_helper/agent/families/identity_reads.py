@@ -420,10 +420,6 @@ async def clan_rosters(context, arguments):
 
 async def member_cohort(context, arguments):
     basis = arguments['basis']
-    deadline = time.monotonic() + max(0, TOOL_TIMEOUT_SECONDS - 5)
-    if arguments.get('activity_ref'):
-        from .cohort_activity import continue_activity
-        return await continue_activity(context, arguments, deadline)
     if arguments.get('role_name') and basis != 'role_holders':
         return {'error': 'Use role_holders to select a named role.', 'cause': 'invalid_arguments'}
     if basis == 'clan_rosters':
@@ -431,8 +427,29 @@ async def member_cohort(context, arguments):
         return await roster_cohort(context, arguments)
     if arguments.get('exclude_leadership'):
         return {'error': 'exclude_leadership requires basis=clan_rosters.', 'cause': 'invalid_arguments'}
-    accepted = {}
-    if basis == 'accepted_recruitment':
+    if basis != 'selected' and any(key in arguments for key in ('member_ids', 'cohort_ref')):
+        return {'error': 'Use basis=selected for a chosen set.', 'cause': 'invalid_arguments'}
+    accepted, selected_accounts = {}, None
+    if basis == 'selected':
+        if bool(arguments.get('member_ids')) == bool(arguments.get('cohort_ref')):
+            return {'error': 'Choose member_ids or a read_member_accounts cohort_ref.', 'cause': 'invalid_arguments'}
+        if any(key in arguments for key in ('joined_after', 'joined_before', 'accepted_after', 'accepted_before',
+                                           'role_ids', 'role_name', 'clan_role')):
+            return {'error': 'Choose the member or account set without membership filters.', 'cause': 'invalid_arguments'}
+        if arguments.get('cohort_ref'):
+            selection = await cohort_selection(context, arguments['cohort_ref'], 'member_ids')
+            if 'error' in selection:
+                return selection
+            report = context.state.reports[arguments['cohort_ref']]
+            if report.guild_id != context.guild.id or report.family != 'read_member_accounts':
+                return {'error': 'Choose a read_member_accounts result.', 'cause': 'invalid_arguments'}
+            # Use only the selected rows, never the owner's complete account_tags.
+            selected_accounts = json.loads(report.payload)['rows']
+            ids = sorted({row['member_id'] for row in selected_accounts if row.get('member_id')})
+        else:
+            ids = sorted(set(arguments['member_ids']))
+        coverage = 'Explicitly selected members or selected account rows and their owners; owners do not expand the account selection.'
+    elif basis == 'accepted_recruitment':
         from .workflow_reads import active_trial_rows
         result = await active_trial_rows(context)
         if 'error' in result:
@@ -501,8 +518,13 @@ async def member_cohort(context, arguments):
         (-1 if reverse else 1) * datetime.fromisoformat(row[sort_field]).timestamp() if row.get(sort_field) else 0,
         row['member_id']))
     account_count, unknown_accounts_total = None, 0
-    if basis == 'joined_discord' or arguments.get('include_accounts') or arguments.get('include_activity') or any(key in arguments for key in ACCOUNT_FILTERS):
-        joined_accounts = await member_accounts(context,{'member_ids':[row['member_id'] for row in rows]}) if rows else {'rows':[]}
+    if basis in ('joined_discord', 'selected') or arguments.get('include_accounts') or arguments.get('include_activity') or any(key in arguments for key in ACCOUNT_FILTERS):
+        if selected_accounts is not None:
+            joined_accounts = {'rows': selected_accounts}
+        elif rows:
+            joined_accounts = await member_accounts(context, {'member_ids': [row['member_id'] for row in rows]})
+        else:
+            joined_accounts = {'rows': []}
         if 'error' in joined_accounts:
             return joined_accounts
         by_member = {}
@@ -519,19 +541,33 @@ async def member_cohort(context, arguments):
             row['accounts'] = [{key: value for key, value in account.items() if key not in owner_fields}
                                for account in by_member.get(row['member_id'],[]) if account_matches(account,arguments)]
             row['unknown_account_profiles'] = sum(unknown_account_data(account,arguments) for account in by_member.get(row['member_id'],[]))
+        if selected_accounts is not None:
+            for account in selected_accounts:
+                if account.get('member_id') is None and account_matches(account, arguments):
+                    rows.append({**member_fields(None, None), 'membership_status': 'unlinked',
+                        'selection_status': 'selected', 'accounts': [dict(account)],
+                        'unknown_account_profiles': int(unknown_account_data(account, arguments))})
         unknown_accounts_total = sum(row['unknown_account_profiles'] for row in rows)
         if any(key in arguments for key in ACCOUNT_FILTERS):
             rows = [row for row in rows if any(account.get('player_tag') for account in row['accounts'])]
         account_count = sum(bool(account.get('player_tag')) for row in rows for account in row['accounts'])
-    performance = await performance_projection(context,rows,arguments['performance']) if arguments.get('performance') else None
+    performance = None
+    if arguments.get('performance'):
+        scope = ({'account_tags': {account['player_tag'] for row in rows
+                  for account in row.get('accounts', []) if account.get('player_tag')}}
+                 if selected_accounts is not None else {})
+        performance = await performance_projection(context, rows, arguments['performance'], **scope)
     activity = None
     if arguments.get('include_activity'):
         from .cohort_activity import activity_projection, activity_fields
-        activity = await activity_projection(context, rows, arguments, deadline=deadline)
+        activity = await activity_projection(context, rows, arguments)
         if 'error' in activity:
             return activity
         activity_fields(rows)
-    return {'rows': rows, 'basis': basis, 'coverage': coverage,'member_count':len(rows),'account_count':account_count,
+    return {'rows': rows, 'basis': basis,
+            **({'configured_role_groups': list(PROFILE_ROLE_GROUPS)} if arguments.get('include_roles') else {}),
+            'coverage': coverage, 'member_count': sum(row['member_id'] is not None for row in rows),
+            'account_count': account_count,
             'selection_window': {key: arguments.get(key) for key in date_fields},
             'activity_coverage': activity,
             'selected_role_ids': sorted(roles),
@@ -567,11 +603,16 @@ TOOLS = (
       'sort':{'type':'string','enum':['town_hall','clan','donations','war_stars']}}, clan_rosters,
      usage_note='Default basis is home assignment by Discord role; current_in_game lists who is in game now. exclude_leadership drops leadership owners and alts.'),
  family_tool('read_member_cohort', 'Read named Discord role holders, clan assignments, join dates, trials or roster activity.',
-     {'basis': {'type': 'string', 'enum': ['joined_discord', 'role_holders', 'accepted_recruitment', 'clan_rosters']},
+     {'basis': {'type': 'string', 'enum': ['joined_discord', 'role_holders', 'accepted_recruitment', 'clan_rosters', 'selected']},
       'roster_basis': ROSTER_BASIS,
       'exclude_leadership': EXCLUDE_LEADERSHIP,
-      'include_activity': {'type': 'boolean'}, 'after': DATE, 'before': DATE,
-      'activity_ref': COHORT_REF,
+      'include_activity': {'type': 'boolean', 'description':
+          'Selected-account season donations and war activity within after/before; Discord last_active_day (UTC), '
+          'active_streak_days and lifetime_messages from all-channel achievements records, independent of that period. '
+          'Without after, returns stored Discord activity and marks game war activity not checked.'}, 'after': DATE, 'before': DATE,
+      'member_ids': IDS, 'cohort_ref': {**COHORT_REF, 'description':
+          'With basis=selected, a read_member_accounts report: activity covers exactly its selected accounts and their owners.'},
+      'include_roles': {'type': 'boolean', 'description': "For questions about this member's roles; configured roles only."},
       'role_name': {'type': 'string', 'minLength': 1, 'maxLength': 100,
                     'description': 'Exact guild role name, such as War Co. With clan_codes, intersect its holders with clan home-role holders.'},
       'role_ids': IDS, 'clan_codes': {**CLANS_INPUT, 'description': 'With role_name or role_ids, filter holders by clan home role. Otherwise select configured clan_role.'}, 'role_match': {'type': 'string', 'enum': ['any', 'all']},
@@ -580,6 +621,6 @@ TOOLS = (
       'accepted_after': DATE, 'accepted_before': DATE,
       'include_accounts':{'type':'boolean'}, 'performance':PERFORMANCE, **ACCOUNT_FILTERS,
       'sort': {'type': 'string', 'enum': ['oldest_first', 'newest_first']}}, member_cohort, required=('basis',),
-     contract=CapabilityContract(entity_fields=(('activity_ref', 'family_report'),), retained_fields=('activity_ref',)),
-     usage_note='role_name or role_ids + clan_codes: intersect home roles. include_activity + after: selected members, linked accounts, war and chat metadata.'),
+     contract=CapabilityContract(retained_fields=('cohort_ref',)),
+     usage_note='selected: member_ids or read_member_accounts cohort_ref. include_activity reads stored Discord counters; after adds selected-account war activity.'),
 )

@@ -141,12 +141,6 @@ def family_model_view(payload):
         data['performance_coverage'] = pick(coverage, ('coverage', 'resolved_selection', 'error', 'cause'))
         if 'war_ids' in coverage:
             data['performance_coverage']['wars_checked'] = len(coverage['war_ids'])
-    if isinstance(data.get('activity_coverage'), dict):
-        data.pop('provenance', None)
-        coverage = data['activity_coverage']
-        data['activity_coverage'] = {**coverage, 'chat_coverage': {
-            key: value for key, value in coverage.get('chat_coverage', {}).items()
-            if key not in ('channel_ids', 'channel_cursors', 'unavailable_channel_ids')}}
     if family == 'read_clan_rosters':
         if isinstance(data.get('clans'), list):
             data['clans'] = [dict(clan) for clan in data['clans']]
@@ -202,7 +196,7 @@ def family_model_view(payload):
                     'home_clans', 'home_clan_status', 'home_clan_basis', 'leadership', 'accounts', 'account_tags', 'account_names', 'clan_codes',
                     'donations', 'war_status', 'wars_observed', 'attacks_used',
                     'attacks_expected', 'missed', 'attack_completion_percent',
-                    'war_totals_complete', 'chat_status', 'latest_chat_at'))
+                    'war_totals_complete', 'discord_activity_status', 'last_active_day', 'active_streak_days', 'lifetime_messages'))
         data['rows'] = projected
         if family == 'read_member_accounts' and 'home_role_comparisons' in data:
             # These comparisons are a projection of the same account rows,

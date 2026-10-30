@@ -1,7 +1,6 @@
 """Capabilities survive writer isolation; malformed plans retain useful recovery."""
 import json
 import unittest
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from elbow_helper.agent.conversation.context import bot_read_overview
@@ -9,7 +8,7 @@ from elbow_helper.agent.engine.member_facts import read_topics
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.families import TOOLS
 from elbow_helper.agent.families.core import family_tool
-from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence, complete_activity_reads
+from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence
 from elbow_helper.agent.plan.results import model_result
 from elbow_helper.agent.families.catalogue import FAMILY_INSTRUCTION
 from elbow_helper.agent.plan.format import WRITER_INSTRUCTION
@@ -86,18 +85,3 @@ class CompleteEvaluationEvidenceTests(unittest.IsolatedAsyncioTestCase):
         context.state.report_sources.clear()
         denied = await cohort_writer_evidence(context, results)
         self.assertTrue(all('rows' not in value for value in denied.values()))
-
-    async def test_activity_continuation_does_not_evict_selected_scores_to_fill_chat_gaps(self):
-        from elbow_helper.agent.families.core import FamilyReport
-        context = _context()
-        report = FamilyReport('cohort', context.guild.id, 'read_member_cohort', json.dumps({
-            'rows': [], 'summary': {'basis': 'role_holders', 'padding': 'x' * 400_000,
-                'activity_coverage': {'chat_coverage': {'source_reads_complete': False}}}}))
-        context.state.reports.update(cohort=report, scores=SimpleNamespace(retained_bytes=600_000))
-        runner = SimpleNamespace(tool_calls=1, run=AsyncMock())
-        flow = SimpleNamespace(context=context, runner=runner, completed_results={'members': {
-            'family': 'read_member_cohort', 'basis': 'role_holders', 'report_id': 'cohort',
-            'activity_coverage': {'chat_coverage': {'source_reads_complete': False}}}})
-        await complete_activity_reads(flow)
-        runner.run.assert_not_awaited()
-        self.assertIn('scores', context.state.reports)
