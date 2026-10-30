@@ -3,29 +3,24 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock
 from unittest.mock import patch
-from urllib.parse import urlencode
 
 from elbow_helper.infrastructure.discord.message_search import DiscordMessageSearch
 from elbow_helper.infrastructure.discord.message_search import DiscordMessageHistoryError
 from elbow_helper.infrastructure.discord.message_search import DiscordMessageSearchError
-from elbow_helper.infrastructure.discord.message_search import MAX_SEARCH_QUERY_STRING_BYTES
 
 
 class DiscordMessageSearchTests(unittest.IsolatedAsyncioTestCase):
-    async def test_mentions_only_filter_is_sent_in_every_channel_batch(self):
+    async def test_multiple_author_and_mention_filters_share_one_request(self):
         http = AsyncMock()
         http.request.return_value = {"messages": [], "total_results": 0}
-        await DiscordMessageSearch(http).search(
-            guild_id=1, content="", limit=5, mentions=(42, 43),
-            channel_ids=tuple(10_000_000_000_000_000 + value for value in range(500)),
+        await DiscordMessageSearch(http).search_page(
+            guild_id=1, content="", limit=25, author_ids=(42, 43), mentions=(44, 45),
         )
-        self.assertGreater(http.request.await_count, 1)
-        for call in http.request.await_args_list:
-            self.assertIn(("mentions", "42"), call.kwargs["params"])
-            self.assertIn(("mentions", "43"), call.kwargs["params"])
-        http.request.reset_mock()
-        await DiscordMessageSearch(http).search_page(guild_id=1, content="", limit=5, mentions=(42,))
         http.request.assert_awaited_once()
+        params = http.request.await_args.kwargs["params"]
+        self.assertEqual([value for name, value in params if name == "author_id"], ["42", "43"])
+        self.assertEqual([value for name, value in params if name == "mentions"], ["44", "45"])
+        self.assertNotIn("channel_id", dict(params))
 
     @staticmethod
     def history_message(message_id, *, channel_id=34):
@@ -90,32 +85,18 @@ class DiscordMessageSearchTests(unittest.IsolatedAsyncioTestCase):
         request = http.request.await_args
         self.assertEqual(
             request.kwargs["params"],
-            [("content", "war rule"), ("limit", 5), ("offset", 0)],
+            [("content", "war rule"), ("limit", 5), ("offset", 0),
+             ("sort_by", "timestamp"), ("sort_order", "desc")],
         )
 
-    async def test_broad_channel_filter_is_batched_below_request_line_budget(self):
+    async def test_oversized_explicit_channel_filter_fails_before_http(self):
         http = AsyncMock()
-        http.request.return_value = {"messages": [], "total_results": 0}
         channel_ids = tuple(10_000_000_000_000_000 + value for value in range(500))
-
-        results = await DiscordMessageSearch(http).search(
-            guild_id=1, content="x" * 1_024, limit=5,
-            channel_ids=channel_ids,
-        )
-
-        self.assertEqual(results, ())
-        self.assertGreater(http.request.await_count, 1)
-        sent_ids = []
-        for call in http.request.await_args_list:
-            params = call.kwargs["params"]
-            self.assertLessEqual(
-                len(urlencode(params).encode("ascii")),
-                MAX_SEARCH_QUERY_STRING_BYTES,
+        with self.assertRaises(DiscordMessageSearchError):
+            await DiscordMessageSearch(http).search(
+                guild_id=1, content="x" * 1_024, limit=5, channel_ids=channel_ids,
             )
-            sent_ids.extend(
-                int(value) for name, value in params if name == "channel_id"
-            )
-        self.assertEqual(sent_ids, list(channel_ids))
+        http.request.assert_not_awaited()
 
     async def test_encoded_query_that_cannot_fit_fails_before_http(self):
         http = AsyncMock()

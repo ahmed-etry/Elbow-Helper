@@ -1,5 +1,6 @@
 """Author searches preserve scope through planning and execution."""
 import unittest
+from unittest.mock import AsyncMock, patch
 
 from agent.research.test_agent_search import _context
 from elbow_helper.agent.engine.registry import build_agent_tools
@@ -60,11 +61,22 @@ class SearchContractTests(unittest.IsolatedAsyncioTestCase):
 
         results = await execute_plan(plan, run)
         self.assertNotIn("error", results["history"])
-        context.message_search.search.assert_awaited_once()
-        values = context.message_search.search.await_args.kwargs
+        context.message_search.search_page.assert_awaited_once()
+        values = context.message_search.search_page.await_args.kwargs
         self.assertEqual(values["author_id"], 1)
         self.assertEqual(values["content"], "")
-        self.assertEqual(values["channel_ids"], (100, 200))
+        self.assertNotIn("channel_ids", values)
+
+    async def test_multichannel_preflight_leaves_partial_access_to_the_search_reader(self):
+        from elbow_helper.agent.engine.steps import disclosure_issue
+        context = _context()
+        with patch('elbow_helper.agent.engine.steps.require_evidence_access', AsyncMock()), \
+             patch('elbow_helper.agent.engine.steps.has_lookup_access', return_value=True), \
+             patch('elbow_helper.agent.engine.steps.accessible_message_channel', AsyncMock()) as access:
+            result = await disclosure_issue(context, self.registry, {
+                'capability': 'search_discord_messages', 'arguments': {'channel_ids': [100, 200]}})
+        self.assertEqual(result, {})
+        access.assert_not_awaited()
 
     async def test_empty_unfiltered_search_does_not_fetch_server_history(self):
         context = _context()

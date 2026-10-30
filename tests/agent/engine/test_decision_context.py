@@ -159,6 +159,103 @@ class DecisionContextTests(unittest.IsolatedAsyncioTestCase):
         await read_decision_discussions(flow)
         flow.runner.run.assert_awaited_once()
 
+    async def test_known_assessment_subjects_use_one_search_across_selected_channels(self):
+        for selectors, evidence, previous in (
+            ({'member_ids': [42, 43]}, {}, {}),
+            ({'member_ids': {'step': 'members', 'path': ['rows', '*', 'member_id']}},
+             {'members': {'family': 'read_member_cohort', 'rows': [
+                 {'member_id': 42}, {'member_id': 43}, {'member_id': 42}]}}, {}),
+            ({}, {'members': {'family': 'read_member_accounts', 'members': [
+                {'member_id': 42}, {'member_id': 43}], 'rows': []}}, {}),
+            ({}, {}, {42: 'Synthetic first', 43: 'Synthetic second'}),
+        ):
+            with self.subTest(selectors=selectors, evidence=evidence):
+                result = {f'decision_discussion_search_{index}':
+                          {'family': 'read_conversation_evidence', 'rows': []} for index in (0, 1)}
+                flow = SimpleNamespace(assessment_requested=True, registry={'read_conversation_evidence': object()},
+                    context=SimpleNamespace(state=SimpleNamespace(resolved_members=previous)),
+                    plan={'discussion_channels': [91, 92], 'steps': [{'id': 'measure',
+                          'capability': 'read_war_attendance', 'arguments': selectors}]},
+                    steps_by_id={}, completed_results=dict(evidence), read_results={}, result_views={},
+                    model_results=lambda values: values,
+                    runner=SimpleNamespace(run=AsyncMock(return_value=result), model_results_for=lambda values: values))
+                await read_decision_discussions(flow)
+                steps = flow.runner.run.await_args.args[0]['steps']
+                self.assertEqual([step['arguments'] for step in steps], [
+                    {'mode': 'search', 'author_ids': [42, 43], 'channel_ids': [91, 92]},
+                    {'mode': 'search', 'mentions': [42, 43], 'channel_ids': [91, 92]}])
+                self.assertEqual(len({step['id'] for step in steps}), 2)
+                await read_decision_discussions(flow)
+                flow.runner.run.assert_awaited_once()
+
+    async def test_known_subject_search_replaces_planned_windows_and_preserves_dependents(self):
+        result = {f'decision_discussion_search_{index}':
+                  {'family': 'read_conversation_evidence', 'rows': []} for index in (0, 1)}
+        flow = SimpleNamespace(assessment_requested=True, registry={'read_conversation_evidence': object()},
+            plan={'discussion_channels': [91, 92], 'steps': [
+                {'id': 'first', 'capability': 'read_conversation_evidence',
+                 'arguments': {'mode': 'channel_window', 'channel_id': 91}},
+                {'id': 'second', 'capability': 'read_conversation_evidence',
+                 'arguments': {'mode': 'channel_window', 'channel_id': 92}},
+                {'id': 'measure', 'capability': 'read_war_attendance', 'depends_on': ['first', 'second'],
+                 'arguments': {'member_ids': [42], 'extra': {'step': 'second', 'path': ['rows']}}}]},
+            steps_by_id={}, completed_results={}, read_results={}, result_views={},
+            model_results=lambda values: values,
+            runner=SimpleNamespace(run=AsyncMock(return_value=result), model_results_for=lambda values: values))
+        await read_decision_discussions(flow)
+        self.assertEqual(len(flow.plan['steps']), 1)
+        remaining = flow.plan['steps'][0]
+        self.assertEqual(remaining['depends_on'], ['decision_discussion_search_0', 'decision_discussion_search_1'])
+        self.assertEqual(remaining['arguments']['extra']['step'], 'decision_discussion_search_0')
+        self.assertEqual([step['arguments'] for step in flow.runner.run.await_args.args[0]['steps']], [
+            {'mode': 'search', 'author_ids': [42], 'channel_ids': [91, 92]},
+            {'mode': 'search', 'mentions': [42], 'channel_ids': [91, 92]}])
+
+    async def test_planned_member_lookup_runs_before_deciding_how_to_read_discussions(self):
+        for found, expected in (({'family': 'read_member_accounts', 'rows': [{'member_id': 42}]}, 'search'),
+                                ({'error': 'Lookup unavailable'}, 'channel_window')):
+            with self.subTest(found=found):
+                member_step = {'id': 'members', 'capability': 'read_member_accounts',
+                               'arguments': {'name': 'Synthetic Member'}, 'depends_on': []}
+                calls = []
+                async def run(plan):
+                    calls.append(plan)
+                    step = plan['steps'][0]
+                    if step['id'] == 'members':
+                        return {'members': found}
+                    return {step['id']: {'family': 'read_conversation_evidence', 'rows': []}}
+                flow = SimpleNamespace(assessment_requested=True,
+                    registry={'read_conversation_evidence': object(), 'read_member_accounts':
+                              family_tool('read_member_accounts', 'Look up members.', {}, AsyncMock())},
+                    plan={'discussion_channels': [91], 'steps': [member_step]},
+                    steps_by_id={}, completed_results={}, read_results={}, result_views={},
+                    model_results=lambda values: values,
+                    runner=SimpleNamespace(run=AsyncMock(side_effect=run), model_results_for=lambda values: values))
+                results = await read_decision_discussions(flow)
+                self.assertEqual(calls[0]['steps'], [member_step])
+                self.assertEqual(calls[1]['steps'][0]['arguments']['mode'], expected)
+                if expected == 'search':
+                    self.assertEqual(calls[1]['steps'][0]['arguments']['author_ids'], [42])
+                    self.assertEqual(calls[1]['steps'][1]['arguments']['mentions'], [42])
+                    self.assertNotIn('mentions', calls[1]['steps'][0]['arguments'])
+                self.assertIn('members', results)
+                self.assertEqual(flow.plan['steps'], [])
+
+    async def test_equivalent_planned_subject_search_replaces_windows_without_duplicate_search(self):
+        search = {'id': 'search', 'capability': 'read_conversation_evidence', 'depends_on': [],
+                  'arguments': {'mode': 'search', 'author_ids': [42], 'channel_ids': [91]}}
+        mention = {'id': 'mention', 'capability': 'read_conversation_evidence', 'depends_on': [],
+                   'arguments': {'mode': 'search', 'mentions': [42], 'channel_ids': [91]}}
+        window = {'id': 'window', 'capability': 'read_conversation_evidence',
+                  'arguments': {'mode': 'channel_window', 'channel_id': 91}}
+        flow = SimpleNamespace(assessment_requested=True, registry={'read_conversation_evidence': object()},
+            context=SimpleNamespace(state=SimpleNamespace(resolved_members={42: 'Synthetic'})),
+            plan={'discussion_channels': [91], 'steps': [search, mention, window]},
+            steps_by_id={}, completed_results={}, runner=SimpleNamespace(run=AsyncMock()))
+        self.assertEqual(await read_decision_discussions(flow), {})
+        self.assertEqual(flow.plan['steps'], [search, mention])
+        flow.runner.run.assert_not_awaited()
+
     async def test_discussion_already_in_the_plan_is_not_fetched_twice(self):
         flow = SimpleNamespace(assessment_requested=True, registry={'read_conversation_evidence': object()},
             plan={'discussion_channels': [91], 'steps': [{'id': 'discussion',

@@ -187,10 +187,17 @@ class PrivateSourceTests(unittest.IsolatedAsyncioTestCase):
                     self.context = replace(self.context, message_search=SimpleNamespace(
                         history_page=history_page, search_page=search_page, search=search))
                     result = await reader(self.context, arguments)
-                    self.assertIn("error", result)
+                    if "channel_ids" in arguments:
+                        self.assertNotIn("error", result)
+                        self.assertEqual(result["matches"], [])
+                        self.assertEqual(result["missing_sources"], [
+                            {"channel_id": 201, "cause": "source_unavailable"}])
+                        self.assertNotIn("total_results_estimate", result["coverage"])
+                    else:
+                        self.assertIn("error", result)
+                        self.assertEqual(bool(result.get("available_privately")), revoked is self.peer)
                     self.assertNotIn("Synthetic recruitment evidence", json.dumps(result))
                     self.assertNotIn(201, self.context.state.source_channels)
-                    self.assertEqual(bool(result.get("available_privately")), revoked is self.peer)
 
     async def test_failed_channel_fetch_discards_an_earlier_private_candidate(self):
         await read_message_context(self.context, {"channel_id": 201, "message_id": 123})

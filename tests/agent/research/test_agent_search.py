@@ -66,7 +66,139 @@ class MentionSearchTests(unittest.IsolatedAsyncioTestCase):
         context = _context()
         result = await search_discord_messages(context, {"mentions": [42]})
         self.assertNotIn("error", result)
-        self.assertEqual(context.message_search.search.await_args.kwargs["mentions"], [42])
+        self.assertEqual(context.message_search.search_page.await_args.kwargs["mentions"], [42])
+
+
+class ServerSearchTests(unittest.IsolatedAsyncioTestCase):
+    async def test_words_only_server_search_pages_once_without_channels_or_totals(self):
+        context = _context()
+        context.message_search.search_page.side_effect = (
+            DiscordSearchPage((DiscordSearchMessage(20, 100, 1, "Synthetic", "first", ""),),
+                              0, 25, 80, 25, False, False),
+            DiscordSearchPage((DiscordSearchMessage(10, 200, 2, "Synthetic", "second", ""),),
+                              25, 25, 80, 50, False, False),
+        )
+        first = await search_discord_messages(context, {"query": "topic"})
+        second = await search_discord_messages(context, {
+            "query": "topic", "cursor": first["coverage"]["next_cursor"],
+        })
+        self.assertEqual([row["message_id"] for row in first["matches"]], [20])
+        self.assertEqual([row["message_id"] for row in second["matches"]], [10])
+        self.assertEqual(context.message_search.search_page.await_count, 2)
+        for call, offset in zip(context.message_search.search_page.await_args_list, (0, 25)):
+            self.assertNotIn("channel_ids", call.kwargs)
+            self.assertEqual(call.kwargs["offset"], offset)
+            self.assertEqual(call.kwargs["limit"], 25)
+            self.assertEqual(call.kwargs["content"], "topic")
+            self.assertEqual(call.kwargs["max_id"], 1000)
+        for page in (first, second):
+            self.assertNotIn("total_results_estimate", page["coverage"])
+        context.message_search.search.assert_not_awaited()
+
+    async def test_hidden_and_nonsearchable_results_dropped_but_empty_page_continues(self):
+        context = _context()
+        context.guild.channels[1].permissions_for = lambda _: SimpleNamespace(
+            view_channel=False, read_message_history=False,
+        )
+        context.message_search.search_page.return_value = DiscordSearchPage((
+            DiscordSearchMessage(20, 200, 2, "Hidden", "secret", ""),
+            DiscordSearchMessage(10, 300, 3, "Unknown", "secret", ""),
+        ), 0, 25, 80, 25, False, False)
+        result = await search_discord_messages(context, {"query": "topic"})
+        self.assertEqual(result["matches"], [])
+        self.assertIsNotNone(result["coverage"]["next_cursor"])
+        self.assertNotIn("total_results_estimate", result["coverage"])
+        self.assertNotIn("returned_indexed_matches", result["coverage"])
+        self.assertNotIn("secret", str(result))
+        self.assertEqual(context.state.source_channels, set())
+
+    async def test_explicit_accessible_channels_report_indexed_matches_and_server_wide_does_not(self):
+        context = _context()
+        context.message_search.search_page.return_value = DiscordSearchPage(
+            (DiscordSearchMessage(10, 100, 1, "Member", "topic", ""),), 0, 25, 1, None, False, False)
+        explicit = await search_discord_messages(context, {"query": "topic", "channel_id": 100})
+        self.assertEqual(explicit["coverage"]["returned_indexed_matches"], 1)
+        broad = await search_discord_messages(context, {"query": "topic"})
+        self.assertNotIn("returned_indexed_matches", broad["coverage"])
+
+    async def test_invalid_author_ids_ask_for_author_ids(self):
+        context = _context()
+        for arguments in ({"author_ids": [0]}, {"author_id": -1}, {"author_ids": ["x"]}):
+            with self.subTest(arguments=arguments):
+                result = await search_discord_messages(context, {"query": "topic", **arguments})
+                self.assertEqual(result, {"error": "Supply valid author member IDs."})
+        context.message_search.search_page.assert_not_awaited()
+
+    async def test_server_rechecks_readability_after_search(self):
+        context = _context()
+        async def page(**kwargs):
+            context.guild.channels[0].permissions_for = lambda _: SimpleNamespace(
+                view_channel=False, read_message_history=False,
+            )
+            return DiscordSearchPage((DiscordSearchMessage(20, 100, 1, "Hidden", "secret", ""),),
+                                     0, 25, 80, 25, False, False)
+        context.message_search.search_page.side_effect = page
+        result = await search_discord_messages(context, {"query": "topic"})
+        self.assertEqual(result["matches"], [])
+        self.assertNotIn("total_results_estimate", result["coverage"])
+        self.assertIsNotNone(result["coverage"]["next_cursor"])
+
+    async def test_server_cursor_bound_to_asker_and_every_filter(self):
+        arguments = {"query": "topic", "author_ids": [1, 2], "mentions": [3, 4],
+                     "after": "2015-01-01", "before": "2026-09-01"}
+        for change in ({"query": "other"}, {"author_ids": [1]}, {"mentions": [3]},
+                       {"after": "2016-01-01"}, {"before": "2026-08-01"},
+                       {"channel_ids": [100]}, {"requester": 2}):
+            with self.subTest(change=change):
+                context = _context()
+                context.message_search.search_page.return_value = DiscordSearchPage(
+                    (), 0, 25, 80, 25, False, False)
+                first = await search_discord_messages(context, arguments)
+                changed = dict(change)
+                if "requester" in changed:
+                    context.member = SimpleNamespace(id=changed.pop("requester"))
+                result = await search_discord_messages(context, {
+                    **arguments, **changed, "cursor": first["coverage"]["next_cursor"],
+                })
+                self.assertIn("error", result)
+                context.message_search.search_page.assert_awaited_once()
+
+    async def test_two_authors_in_one_search(self):
+        context = _context()
+        context.message_search.search_page.return_value = DiscordSearchPage(tuple(
+            DiscordSearchMessage(identifier, 100, identifier, "Synthetic", "body", "")
+            for identifier in (1, 2, 3)), 0, 25, 3, None, False, False)
+        result = await search_discord_messages(context, {"author_ids": [1, 2]})
+        self.assertEqual([row["author_id"] for row in result["matches"]], [1, 2])
+        self.assertEqual(context.message_search.search_page.await_args.kwargs["author_ids"], (1, 2))
+        context.message_search.search_page.assert_awaited_once()
+
+    async def test_invalid_typed_filters_do_not_fetch_discord(self):
+        for arguments in ({"author_ids": "1"}, {"author_ids": [True]}, {"author_id": [1, 2]},
+                          {"channel_ids": "100"}, {"channel_ids": [[]]}, {"mentions": [0]}):
+            with self.subTest(arguments=arguments):
+                context = _context()
+                result = await search_discord_messages(context, arguments)
+                self.assertIn("error", result)
+                context.message_search.search_page.assert_not_awaited()
+
+    async def test_multichannel_cursor_continues_after_unavailable_channel_is_dropped(self):
+        context = _context()
+        context.message_search.search_page.return_value = DiscordSearchPage((), 0, 25, 80, 25, False, False)
+        arguments = {"query": "topic", "channel_ids": [100, 200]}
+        first = await search_discord_messages(context, arguments)
+        context.guild.channels[1].permissions_for = lambda _: SimpleNamespace(
+            view_channel=False, read_message_history=False,
+        )
+        second = await search_discord_messages(context, {
+            **arguments, "cursor": first["coverage"]["next_cursor"],
+        })
+        self.assertNotIn("error", second)
+        self.assertEqual(second["missing_sources"], [{"channel_id": 200, "cause": "source_unavailable"}])
+        self.assertNotIn("total_results_estimate", second["coverage"])
+        call = context.message_search.search_page.await_args.kwargs
+        self.assertEqual(call["channel_ids"], (100,))
+        self.assertEqual(call["offset"], 25)
 
 
 def _thread(context, thread_id, *, name, private=False, archived=True):
@@ -211,14 +343,14 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
         })
 
         self.assertEqual(
-            context.message_search.search.await_args.kwargs["channel_ids"],
+            context.message_search.search_page.await_args.kwargs["channel_ids"],
             (100, 200),
         )
         self.assertEqual(context.state.source_channels, {100, 200})
         self.assertEqual(result["matches"], [])
-        context.message_search.search_page.assert_not_awaited()
+        context.message_search.search_page.assert_awaited_once()
 
-    async def test_multiple_channel_search_rejects_mixed_or_inaccessible_scope(self):
+    async def test_multiple_channel_search_rejects_mixed_and_drops_inaccessible_scope(self):
         context = _context()
         mixed = await search_discord_messages(context, {
             "query": "decision", "channel_id": 100,
@@ -231,7 +363,9 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
         denied = await search_discord_messages(context, {
             "query": "decision", "channel_ids": [100, 200],
         })
-        self.assertIn("error", denied)
+        self.assertNotIn("error", denied)
+        self.assertEqual(denied["missing_sources"], [{"channel_id": 200, "cause": "source_unavailable"}])
+        self.assertEqual(context.message_search.search_page.await_args.kwargs["channel_ids"], (100,))
         context.message_search.search.assert_not_awaited()
 
     async def test_invalid_period_does_not_call_discord(self):
@@ -312,7 +446,7 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("coverage", result)
         self.assertEqual(context.state.source_channels, set())
 
-    async def test_out_of_scope_page_is_rejected_without_retaining_source(self):
+    async def test_out_of_scope_result_is_dropped_with_coverage(self):
         context = _context()
         context.message_search.search_page.return_value = DiscordSearchPage(
             (DiscordSearchMessage(12, 200, 1, "Member", "decision", ""),),
@@ -321,9 +455,10 @@ class AgentSearchTests(unittest.IsolatedAsyncioTestCase):
         result = await search_discord_messages(
             context, {"query": "decision", "channel_id": 100},
         )
-        self.assertIn("error", result)
-        self.assertNotIn("coverage", result)
-        self.assertEqual(context.state.source_channels, set())
+        self.assertNotIn("error", result)
+        self.assertEqual(result["matches"], [])
+        self.assertEqual(result["coverage"]["out_of_scope_results_dropped"], 1)
+        self.assertEqual(context.state.source_channels, {100})
 
     async def test_channel_lookup_excludes_hidden_channels(self):
         context = _context()

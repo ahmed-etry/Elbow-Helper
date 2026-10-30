@@ -26,6 +26,7 @@ from elbow_helper.agent.research.contracts import ResearchJobDefinition
 from elbow_helper.agent.research.runner import ResearchJobRunner
 from elbow_helper.agent.models import AgentRequestContext, AgentTurnState
 from elbow_helper.agent.research.report import DiscordResearchReport
+from elbow_helper.agent.reports.community_codec import decode_discord_research
 from elbow_helper.agent.research.tools import (
     cancel_discord_research_job,
     continue_discord_research_job,
@@ -150,6 +151,68 @@ class ResearchJobRepositoryTests(unittest.TestCase):
                 "SELECT COUNT(*) FROM research_jobs",
             ).fetchone()[0]
         self.assertEqual(count, 3)
+
+    def test_checkpoint_without_total_clears_previous_estimate_and_roundtrips_report(self):
+        created = self.create()
+        for index, total_fields in enumerate((
+            {"total_results_estimate": 20, "returned_indexed_matches": 1}, {},
+        )):
+            claimed = self.repository.claim(
+                created.job_id, guild_id=1, conversation_root_id=2,
+                lease_owner="worker", now=1001 + index * 2,
+            )
+            coverage = {
+                "next_cursor": "synthetic.cursor" if index == 0 else None,
+                "deep_historical_indexing": False,
+                "offset_limit_reached": False,
+                "reached_current_indexed_end": index == 1,
+                "requested_page_size": 10, "returned_accessible_matches": 1,
+                "pages_scanned": 1, "order": "newest_first",
+                "stopped_at_message_budget": False,
+                **total_fields,
+            }
+            checkpointed = self.repository.checkpoint_page(
+                claimed, lease_owner="worker", page_messages=(_message(10 + index),),
+                coverage=coverage, now=1002 + index * 2,
+            )
+            self.assertEqual(checkpointed.total_results_estimate, 20 if index == 0 else None)
+            self.repository = ResearchJobRepository(self.path)
+        reopened = self.repository.peek(
+            created.job_id, guild_id=1, conversation_root_id=2, now=1005,
+        )
+        self.assertEqual(reopened, checkpointed)
+        self.assertEqual(reopened.status, "completed")
+        self.assertEqual(len(reopened.messages), 2)
+        self.assertIsNone(reopened.manifest()["total_results_estimate"])
+        self.assertNotIn("total_results_estimate", reopened.coverage)
+        self.assertNotIn("returned_indexed_matches", reopened.coverage)
+        report = DiscordResearchReport.from_job("synthetic.report", reopened)
+        restored = decode_discord_research(json.loads(json.dumps(report.storage_payload())), 1)
+        self.assertEqual(restored, report)
+        self.assertIsNone(restored.manifest()["total_results_estimate"])
+        self.assertNotIn("total_results_estimate", restored.coverage)
+
+    def test_invalid_optional_total_checkpoint_leaves_claim_unchanged(self):
+        created = self.create()
+        claimed = self.repository.claim(
+            created.job_id, guild_id=1, conversation_root_id=2,
+            lease_owner="worker", now=1001,
+        )
+        for total in (None, True, -1, "20"):
+            with self.subTest(total=total):
+                with self.assertRaises(ValueError):
+                    self.repository.checkpoint_page(
+                        claimed, lease_owner="worker", page_messages=(_message(),),
+                        coverage={
+                            "next_cursor": None, "total_results_estimate": total,
+                            "deep_historical_indexing": False,
+                            "offset_limit_reached": False,
+                            "reached_current_indexed_end": True,
+                        }, now=1002,
+                    )
+                self.assertEqual(self.repository.peek(
+                    created.job_id, guild_id=1, conversation_root_id=2, now=1003,
+                ), claimed)
 
     def test_conversation_inventory_is_scoped_ordered_and_does_not_touch(self):
         older = self.create(now=1000)
@@ -780,6 +843,33 @@ class ResearchJobToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job.status, "completed")
         self.assertEqual(job.pages_completed, 1)
         self.assertEqual(job.messages[0]["message_id"], 50)
+
+    async def test_filtered_search_job_retains_report_without_provider_total(self):
+        started = await self.start()
+        accessible = self.search.search_page.return_value.messages[0]
+        self.search.search_page.return_value = DiscordSearchPage(
+            (accessible, DiscordSearchMessage(
+                40, 200, 42, "Synthetic member", "Synthetic evidence",
+                "2026-09-17T09:00:00+00:00",
+            )), 0, 10, 80, None, False, False,
+        )
+        completed = await continue_discord_research_job(
+            self.context, {"job_id": started["job_id"]},
+        )
+        self.assertEqual(completed["status"], "completed")
+        self.assertIsNone(completed["total_results_estimate"])
+        self.assertNotIn("total_results_estimate", completed["coverage"])
+        self.assertEqual(completed["coverage"]["out_of_scope_results_dropped"], 1)
+        self.assertEqual(completed["coverage"]["pages_scanned"], 1)
+        self.context = replace(
+            self.context, research_jobs=ResearchJobRepository(self.repository.path),
+        )
+        retained = await retain_discord_research_report(
+            self.context, {"job_id": started["job_id"]},
+        )
+        self.assertIsNone(retained["total_results_estimate"])
+        self.assertNotIn("total_results_estimate", retained["coverage"])
+        self.assertEqual([row["message_id"] for row in retained["messages"]], [50])
 
     async def test_multi_channel_batch_creates_and_reads_independent_jobs(self):
         started = await start_discord_research_batch(self.context, {

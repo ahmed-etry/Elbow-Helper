@@ -438,7 +438,7 @@ def plan_definition(registry: Mapping[str, RegisteredAgentTool]) -> AgentToolDef
                     "uniqueItems": True, "items": {"type": "integer", "minimum": 1},
                     "description": "Required for assessments. Choose the relevant discussion "
                     "sources by subject and channel purpose from the authorized directory. "
-                    "Full chunks are read before recommendations; no keyword filtering."},
+                    "Known subjects are searched by author and mention; otherwise full channel chunks are read."},
                 "output": {"type": "string", "enum": list(output_forms(registry))},
                 "reply": {"type": "string", "minLength": 1, "maxLength": 1800,
                           "description": "Standalone reply text, also the fallback for an image. Images are sent without text; reactions may accompany them. For text alone use empty steps. Omit reply entirely for reads, files or changes; answer after results."},

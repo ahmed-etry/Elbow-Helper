@@ -303,8 +303,34 @@ class PlanRunner:
     async def _execute_checked(
         self, step, arguments, checked, local, previous, plan_state: PlanExecutionState
     ):
+        search_pages = 0
+
+        async def reserve_search_page(characters):
+            nonlocal search_pages
+            async with self.state_lock:
+                remaining = self.evidence_limit - self.evidence_characters - characters
+                if remaining <= 0:
+                    return 0
+                if search_pages:
+                    if self.tool_calls >= limits.MAX_TOOL_CALLS:
+                        return 0
+                    if local.deadline_monotonic is not None and (
+                        time.monotonic() + limits.TOOL_TIMEOUT_SECONDS
+                        + (0 if plan_state.answer_complete else limits.FINAL_ANSWER_TIME_RESERVE_SECONDS)
+                        + limits.DELIVERY_TIME_RESERVE_SECONDS >= local.deadline_monotonic
+                    ):
+                        return 0
+                    if not plan_state.answer_complete and not self.budget.can_continue_tools(
+                        self.budget.projected_input(plan_state.emitted), result_reserve=8192,
+                    ):
+                        return 0
+                    self.tool_calls += 1
+                search_pages += 1
+                return remaining
+
         local = replace(
             local,
+            reserve_search_page=reserve_search_page,
             member=require_access(
                 local.guild,
                 local.member.id,

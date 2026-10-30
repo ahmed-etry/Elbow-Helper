@@ -744,13 +744,13 @@ class AnswerFlow:
                 self.assessment_requested or self.plan.get('assessment', False))
             if self.assessment_requested and self.budget.request_limits is not None:
                 self.budget.request_limits = limits.ASSESSMENT_LIMITS
-            discussion_results = await read_decision_discussions(self)
             previous_calls = self.runner.tool_calls
-            results = await self.runner.run(self.plan)
+            discussion_results = await read_decision_discussions(self)
+            results = await self.runner.run(self.plan) if self.plan['steps'] else {}
             self.plan_goals.append(self.plan["goal"])
             self.new_evidence = self.runner.tool_calls > previous_calls or any(
                 result.get("cause") in ("invalid_arguments", "sql_schema_error")
-                for result in results.values()
+                for result in (*discussion_results.values(), *results.values())
             )
             self.steps_by_id.update({step["id"]: step for step in self.plan["steps"]})
             self.completed_results.update(results)
@@ -770,7 +770,7 @@ class AnswerFlow:
                                       if step["id"] in results
                                       and self.registry[step["capability"]].action_class is ActionClass.READ
                                       and self.registry[step["capability"]].effect is AgentCapabilityEffect.READ})
-            self.rounder.results_available = bool(results)
+            self.rounder.results_available = bool(discussion_results or results)
             social_steps = self.plan["steps"]
             reply_text = self.decision.rounds[-1].content or ""
             if (social_steps and all(step["capability"] in REPLY_CAPABILITIES for step in social_steps)

@@ -74,7 +74,7 @@ class ResearchTransitionStore:
             raise ValueError("Search coverage does not match its retained page")
         next_cursor = validated_coverage["next_cursor"]
         if claimed.kind == "search":
-            total = validated_coverage["total_results_estimate"]
+            total = validated_coverage.get("total_results_estimate")
             deep = validated_coverage["deep_historical_indexing"]
             provider_limited = validated_coverage["offset_limit_reached"]
             reached_end = validated_coverage["reached_current_indexed_end"]
