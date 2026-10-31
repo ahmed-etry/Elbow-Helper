@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, replace
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Collection, Mapping
 from typing import Any
 
 from elbow_helper.infrastructure.ai import AgentToolResult
@@ -121,6 +121,7 @@ async def read_request(
     direct_capabilities: Callable[[], frozenset[str]] | None = None,
     initial_step: Any = None,
     limit_plan: Callable[[Any], Any] | None = None,
+    report_ids: Callable[[], Collection[str]] | None = None,
 ) -> ReadDecision:
     rounds = []
     pending: tuple[AgentToolResult, ...] = ()
@@ -154,7 +155,7 @@ async def read_request(
                 for call in step.tool_calls:
                     on_check(call.call_id, PlanCheck(False, issue))
         else:
-            check = check_plan(plan, registry)
+            check = check_plan(plan, registry, report_ids=report_ids() if report_ids is not None else None)
             if plan is None:
                 check = PlanCheck(False, 'Plan arguments must be a valid JSON object. Resubmit one valid '
                     'submit_request_plan call. No reads ran; missing results do not establish an access restriction.')

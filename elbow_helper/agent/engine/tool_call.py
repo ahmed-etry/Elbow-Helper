@@ -7,7 +7,7 @@ import logging
 import asyncio
 from dataclasses import fields, replace
 from datetime import datetime, timezone
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 import json
 import time
 from typing import Any
@@ -20,7 +20,7 @@ from ..access import has_lookup_access
 from ..access import require_evidence_access
 from .capability_contract import CapabilityBindError
 from .capability_contract import require_source_provenance
-from ..reports.base import retain_reports
+from ..reports.base import ArtifactCapacityError, retain_reports
 from ..research.member_provenance import member_target_issue
 from . import budgets as limits
 
@@ -257,15 +257,29 @@ def clone_tool_state(state):
 
 
 def merge_tool_state(
-    target: AgentRequestContext, local: AgentRequestContext, previous: Mapping[str, Any]
+    target: AgentRequestContext, local: AgentRequestContext, previous: Mapping[str, Any],
+    protected: Collection[str] = (),
 ) -> None:
+    """Merge a step's state; `protected` reports are still needed by unfinished steps."""
     additions = tuple(
         report
         for key, report in local.state.reports.items()
         if previous["reports"].get(key) is not report
     )
+    protected = set(protected)
     if additions:
-        retain_reports(target.state.reports, additions)
+        kept = protected & (target.state.reports.keys() | {report.report_id for report in additions})
+        try:
+            retain_reports(target.state.reports, additions, protected_report_ids=kept)
+        except ArtifactCapacityError:
+            if not kept:
+                raise
+            # Keeping every needed report is impossible; evict oldest first and
+            # remember which needed ones were lost so dependents can say why.
+            held = set(target.state.reports)
+            retain_reports(target.state.reports, additions)
+            target.state.unkept_reports.update((held & kept) - target.state.reports.keys())
+    target.state.unkept_reports.update(local.state.unkept_reports)
     target.state.source_channels.update(local.state.source_channels)
     target.state.source_access.update(local.state.source_access)
     target.state.required_access.update(local.state.required_access)
@@ -279,7 +293,7 @@ def merge_tool_state(
         destination = getattr(target.state, name)
         selected = getattr(local.state, name)
         for key in previous[name].keys() - selected.keys():
-            if destination.get(key) == previous[name][key]:
+            if key not in protected and destination.get(key) == previous[name][key]:
                 destination.pop(key, None)
         for key, value in selected.items():
             if previous[name].get(key) is not value and previous[name].get(key) != value:

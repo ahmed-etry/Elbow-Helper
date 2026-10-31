@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from typing import Any
 import logging
 import re
@@ -140,6 +140,32 @@ def _reference(value: Any, earlier: set[str]) -> bool:
                     for part in value["path"]))
 
 
+def bind_report_references(
+    step: Mapping[str, Any], registry: Mapping[str, RegisteredAgentTool],
+    step_ids: set[str], report_ids: Collection[str] | None,
+) -> str:
+    """Point a bare step ID in a report field at that step's report; return any error.
+
+    Rewrites the step's arguments in place so the checker, the executor and the
+    report retention all see the same reference. `report_ids` are the reports
+    this request holds; None skips the check of other strings.
+    """
+    arguments = step["arguments"]
+    contract = registry[step["capability"]].contract
+    if not isinstance(arguments, dict) or contract is None:
+        return ""
+    for name, kind in contract.entity_fields:
+        value = arguments.get(name)
+        if kind != "family_report" or not isinstance(value, str):
+            continue
+        if value in step_ids:
+            arguments[name] = {"step": value, "path": ["report_id"]}
+        elif report_ids is not None and value not in report_ids:
+            return (f"{name} must be a report ID held in this request or a result reference. "
+                    'To use an earlier step\'s report, pass {"step": "<id>", "path": ["report_id"]}.')
+    return ""
+
+
 @dataclass(frozen=True, slots=True)
 class StepCheck(PlanCheck):
     tool: RegisteredAgentTool | None = None
@@ -211,7 +237,7 @@ def _mixes_irreversible_changes(steps, registry) -> bool:
     )
 
 
-def check_plan(raw, registry, *, completed_steps=None):
+def check_plan(raw, registry, *, completed_steps=None, report_ids=None):
     """Return a correctable structural error; data errors belong to execution."""
     try:
         required = {"goal", "effort", "output", "steps"}
@@ -249,6 +275,8 @@ def check_plan(raw, registry, *, completed_steps=None):
             return _error("Supply reply text or capability steps.")
         completed = completed_steps or {}
         earlier = set(completed)
+        step_ids = earlier | {step["id"] for step in raw["steps"]
+                              if isinstance(step, dict) and isinstance(step.get("id"), str)}
         step_errors = {}
         after_change = set()
         for key, step in completed.items():
@@ -274,6 +302,8 @@ def check_plan(raw, registry, *, completed_steps=None):
                 not isinstance(dep, str) or dep not in earlier for dep in dependencies
             ):
                 return _error("Depend only on earlier or completed steps.", identity)
+            if issue := bind_report_references(step, registry, step_ids, report_ids):
+                return _error(issue, identity)
             for reference in result_references(step["arguments"]):
                 if not _reference(reference, earlier):
                     return _error(

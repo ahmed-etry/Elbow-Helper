@@ -158,6 +158,7 @@ class AgentTurnState:
     reports: dict[str, ReportArtifact] = field(default_factory=dict)
     report_sources: dict[str, frozenset[int]] = field(default_factory=dict)
     report_access_requirements: dict[str, frozenset[str]] = field(default_factory=dict)
+    unkept_reports: set[str] = field(default_factory=set)
     preserved_reports: dict[str, ReportArtifact] = field(default_factory=dict)
     preserved_report_sources: dict[str, frozenset[int]] = field(default_factory=dict)
     preserved_report_access_requirements: dict[str, frozenset[str]] = field(default_factory=dict)
