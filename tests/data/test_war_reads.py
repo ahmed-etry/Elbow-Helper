@@ -1,0 +1,290 @@
+"""Clan-facing war reads over synthetic record wars, including partial and private paths."""
+
+from contextlib import closing
+import sqlite3
+import unittest
+
+from elbow_helper.data.reads import WarReads
+from elbow_helper.data.store.war_projection import HOUR, api_time
+from elbow_helper.features.clan_health.database.schema import create_schema
+
+from . import test_family_store as fixtures
+from .test_family_store import link
+from .test_wars import END, SECOND, START, WarFixture, war
+from .war_parity import compare_frozen_wars
+
+
+DAY = 24 * HOUR
+BADGE = {"small": "https://example.test/badge"}
+OCTOBER, NOVEMBER = api_time("20261001T000000.000Z"), api_time("20261101T000000.000Z")
+
+
+def friendly(end="20261030T180000.000Z", *, clans=("#PY", "#CU")):
+    # One hour of preparation makes the times decide it was friendly.
+    payload = war("warEnded", clans=clans, end=end)
+    payload.update(preparationStartTime="20261029T170000.000Z", startTime="20261029T180000.000Z")
+    return payload
+
+
+def log_entry(opponent, end, result):
+    return {"endTime": end, "teamSize": 2, "attacksPerMember": 2, "result": result,
+            "clan": {"tag": "#PY", "name": "Clan #PY", "clanLevel": 20, "badgeUrls": BADGE,
+                     "attacks": 2, "stars": 3, "destructionPercentage": 50.0, "expEarned": 10},
+            "opponent": {"tag": opponent, "name": "Other", "clanLevel": 20, "badgeUrls": BADGE,
+                         "attacks": 2, "stars": 2, "destructionPercentage": 40.0}}
+
+
+def league_week(end):
+    return {"endTime": end, "teamSize": 15, "attacksPerMember": 1, "result": "win",
+            "clan": {"tag": "#PY", "name": "Clan #PY", "clanLevel": 20, "badgeUrls": BADGE,
+                     "attacks": 100, "stars": 250, "destructionPercentage": 650.0, "expEarned": 0},
+            "opponent": {"badgeUrls": BADGE, "clanLevel": 0, "stars": 0, "destructionPercentage": 0}}
+
+
+def page(*items):
+    return {"items": list(items), "paging": {"cursors": {}}}
+
+
+class WarReadTests(WarFixture, unittest.IsolatedAsyncioTestCase):
+    links = fixtures.FamilyStoreTests.links
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.reads = WarReads(self.store)
+
+    async def test_current_and_previous_face_the_requested_clan_like_the_board(self):
+        await self.record(war("warEnded"), at=END + 90 * SECOND)
+        later = war("inWar", clans=("#PY", "#CU"), end="20261030T180000.000Z")
+        later.update(preparationStartTime="20261028T180000.000Z", startTime="20261029T180000.000Z")
+        at = END + DAY + HOUR
+        await self.record(later, at=at)
+        current = await self.reads.current("#PY", at)
+        board = current["war"]
+        self.assertEqual((current["state"], current["observed_at"], board["clan"]["clan_tag"],
+                          board["opponent"]["clan_tag"], board["type"]), ("inWar", at, "#PY", "#CU", "REG"))
+        self.assertEqual((board["team_size"], board["clan"]["stars"], board["clan"]["attacks_used"],
+                          board["clan"]["attacks_left"], board["opponent"]["attacks_left"]), (2, 3, 1, 3, 3))
+        self.assertEqual(board["clan"]["townhall_counts"], [{"townhall": 16, "count": 2}])
+        self.assertTrue(current["coverage"]["complete"])
+        previous = (await self.reads.previous("#PY", at))["war"]
+        self.assertEqual((previous["opponent"]["clan_tag"], previous["state"], previous["result"],
+                          previous["result_basis"]), ("#GR", "warEnded", "tie", "final_score"))
+        # notInWar has no current war; the last ended war is still the previous one.
+        await self.record({"state": "notInWar"}, at=at + 3 * DAY)
+        idle = await self.reads.current("#PY", at + 3 * DAY)
+        self.assertEqual((idle["state"], idle["war"]), ("notInWar", None))
+        self.assertEqual((await self.reads.previous("#PY", at + 3 * DAY))["war"]["opponent"]["clan_tag"], "#CU")
+        # A friendly war is the board's previous war unless only regular wars are asked for.
+        await self.record(friendly(end="20261103T180000.000Z", clans=("#PY", "#LQ")) | {
+            "preparationStartTime": "20261102T170000.000Z", "startTime": "20261102T180000.000Z"}, at=at + 6 * DAY)
+        await self.record({"state": "notInWar"}, at=at + 7 * DAY)
+        self.assertEqual((await self.reads.previous("#PY", at + 7 * DAY))["war"]["type"], "FRIENDLY")
+        self.assertEqual((await self.reads.previous("#PY", at + 7 * DAY, types=["REG"]))["war"]["opponent"]["clan_tag"], "#CU")
+        untracked = await self.reads.current("#LQ", at)
+        self.assertEqual((untracked["state"], untracked["war"], untracked["coverage"]["signals"][0]["status"]),
+                         (None, None, "not_tracked"))
+        self.assertIsNone((await self.reads.previous("#LQ", at))["war"])
+
+    async def test_completed_names_misses_keeps_friendly_apart_and_bounds_dates(self):
+        await self.record(war("warEnded"), at=END + 90 * SECOND)
+        await self.record(friendly(), at=END + 3 * DAY)
+        at = END + 4 * DAY
+        result = await self.reads.completed(["#PY"], END, END + DAY, as_of=at)
+        (row,) = result["rows"]
+        self.assertEqual((row["clan"]["clan_tag"], row["opponent"]["clan_tag"], row["result"], row["type"]),
+                         ("#PY", "#GR", "tie", "REG"))
+        self.assertEqual([(m["player_tag"], m["attacks_used"], m["attacks_expected"], m["missed"])
+                          for m in row["missed_attacks"]], [("#P0", 1, 2, 1), ("#P2", 1, 2, 1)])
+        # The same war faces each requested clan in its own row.
+        facing = await self.reads.completed(["#PY", "#GR"], END, END + DAY, as_of=at)
+        self.assertEqual([(r["war_id"], r["clan"]["clan_tag"]) for r in facing["rows"]],
+                         [(row["war_id"], "#GR"), (row["war_id"], "#PY")])
+        # Exclusive end, inclusive start, and nothing that ended after as_of.
+        self.assertEqual((await self.reads.completed(["#PY"], START, END, as_of=at))["rows"], [])
+        self.assertEqual((await self.reads.completed(["#PY"], END, END + DAY, as_of=END - 1))["rows"], [])
+        window = (END, END + 3 * DAY)
+        self.assertEqual([r["type"] for r in (await self.reads.completed(["#PY"], *window, as_of=at))["rows"]], ["REG"])
+        both = await self.reads.completed(["#PY"], *window, types=["REG", "FRIENDLY"], as_of=at)
+        self.assertEqual([(r["type"], r["type_basis"]) for r in both["rows"]], [("FRIENDLY", "times"), ("REG", "times")])
+        page1 = await self.reads.completed(["#PY"], *window, types=["REG", "FRIENDLY"], as_of=at, limit=1)
+        page2 = await self.reads.completed(["#PY"], *window, types=["REG", "FRIENDLY"], as_of=at, limit=1,
+                                           offset=page1["next_offset"])
+        self.assertEqual([page1["rows"][0]["war_id"], page2["rows"][0]["war_id"], page2["next_offset"]],
+                         [both["rows"][0]["war_id"], both["rows"][1]["war_id"], None])
+        self.assertTrue(page1["coverage"]["truncated"])
+
+    async def test_incomplete_lineups_and_unfinished_wars_leave_misses_unknown(self):
+        partial = war("warEnded")
+        partial["clan"].pop("members")
+        await self.record(partial, at=END + 90 * SECOND)
+        # The last capture was mid-war; the end passed without a final check.
+        unfinished = war("inWar", clans=("#PY", "#CU"), end="20261030T180000.000Z")
+        unfinished.update(preparationStartTime="20261028T180000.000Z", startTime="20261029T180000.000Z")
+        await self.record(unfinished, at=END + DAY + HOUR)
+        at = END + 5 * DAY
+        result = await self.reads.completed(["#PY"], END, END + 3 * DAY, as_of=at)
+        self.assertEqual([(r["opponent"]["clan_tag"], r["missed_attacks"]) for r in result["rows"]],
+                         [("#CU", None), ("#GR", None)])
+        causes = {war["war_id"]: war["causes"] for war in result["coverage"]["incomplete_wars"]}
+        self.assertEqual(sorted(causes.values()), [["lineup_incomplete", "attacks_incomplete"], ["not_final"]])
+        self.assertFalse(result["coverage"]["complete"])
+        rows = (await self.reads.participation(["#PY"], END, END + 3 * DAY, as_of=at))["rows"]
+        self.assertEqual([(r["player_tag"], r["attacks_used"], r["missed"], r["final"]) for r in rows],
+                         [("#P0", 1, None, False), ("#P2", 0, None, False)])
+
+    async def test_participation_counts_hits_stars_triples_and_groups_by_owner(self):
+        await self.links(END, link(100))
+        await self.record(war("warEnded"), at=END + 90 * SECOND)
+        at = END + DAY
+        rows = (await self.reads.participation(["#PY"], END, END + DAY, as_of=at))["rows"]
+        self.assertEqual([(r["player_tag"], r["attacks_used"], r["attacks_expected"], r["missed"], r["stars"],
+                           r["triples"], r["destruction"], r["attacks_measured"]) for r in rows],
+                         [("#P0", 1, 2, 1, 3, 1, 100.0, 1), ("#P2", 1, 2, 1, 3, 1, 100.0, 1)])
+        only = await self.reads.participation(["#PY"], END, END + DAY, player_tags=["#P2"], as_of=at)
+        self.assertEqual([r["player_tag"] for r in only["rows"]], ["#P2"])
+        grouped = await self.reads.participation(["#PY"], END, END + DAY, group_by="owner", as_of=at)
+        self.assertEqual([(g["unit"], g["member_id"], g["player_tags"], g["wars"], g["missed"], g["totals_complete"])
+                          for g in grouped["rows"]],
+                         [("account", None, ["#P2"], 1, 1, True), ("member", 100, ["#P0"], 1, 1, True)])
+        self.assertEqual(grouped["ownership_basis"], "owner at as_of")
+        # Before the link existed the account was unowned.
+        early = await self.reads.participation(["#PY"], END, END + DAY, group_by="owner", as_of=END - 1)
+        self.assertEqual(early["rows"], [])
+        # One unknown miss makes the owner's total unknown, never smaller.
+        unfinished = war("inWar", clans=("#PY", "#CU"), end="20261030T180000.000Z")
+        unfinished.update(preparationStartTime="20261028T180000.000Z", startTime="20261029T180000.000Z")
+        await self.record(unfinished, at=END + DAY + HOUR)
+        wide = await self.reads.participation(["#PY"], END, END + 3 * DAY, group_by="owner", as_of=END + 5 * DAY)
+        member = next(g for g in wide["rows"] if g["unit"] == "member")
+        self.assertEqual((member["wars"], member["opportunities"], member["attacks_used"], member["missed"],
+                          member["totals_complete"]), (2, 2, 2, None, False))
+
+    async def test_attacks_carry_both_town_halls_positions_and_freshness(self):
+        repeated = war("warEnded")
+        repeated["clan"]["members"][1]["attacks"][0]["defenderTag"] = "#Q0"
+        repeated["opponent"]["members"][1].pop("bestOpponentAttack")
+        await self.record(repeated, at=END + 90 * SECOND)
+        at = END + DAY
+        attacks = (await self.reads.attacks(["#PY"], END, END + DAY, as_of=at))["rows"]
+        self.assertEqual([(a["attack_order"], a["attacker_tag"], a["defender_tag"], a["attacker_townhall"],
+                           a["defender_townhall"], a["defender_position"], a["stars"], a["fresh"]) for a in attacks],
+                         [(1, "#P0", "#Q0", 16, 16, 1, 3, True), (3, "#P2", "#Q0", 16, 16, 1, 3, False)])
+        defenses = (await self.reads.attacks(["#PY"], END, END + DAY, direction="defenses", as_of=at))["rows"]
+        self.assertEqual([(a["attack_order"], a["attacker_tag"], a["defender_tag"], a["defender_position"])
+                          for a in defenses], [(2, "#Q0", "#P0", 1), (4, "#Q2", "#P2", 2)])
+        selected = await self.reads.attacks(["#PY"], END, END + DAY, player_tags=["#P2"], as_of=at)
+        self.assertEqual([a["attack_order"] for a in selected["rows"]], [3])
+
+    async def test_attacks_without_the_opponent_lineup_leave_defenders_unknown(self):
+        partial = war("warEnded")
+        partial["opponent"].pop("members")
+        await self.record(partial, at=END + 90 * SECOND)
+        attacks = (await self.reads.attacks(["#PY"], END, END + DAY, as_of=END + DAY))
+        self.assertEqual([(a["defender_tag"], a["defender_townhall"], a["defender_position"], a["fresh"])
+                          for a in attacks["rows"]], [("#Q0", None, None, True), ("#Q2", None, None, True)])
+        defenses = await self.reads.attacks(["#PY"], END, END + DAY, direction="defenses", as_of=END + DAY)
+        self.assertEqual(defenses["rows"], [])
+        self.assertFalse(defenses["coverage"]["complete"])
+
+    async def test_log_results_count_log_entries_once_and_keep_private_apart(self):
+        october = "20261010T080000.000Z"
+        await self.record(page(log_entry("#GR", "20261020T180000.000Z", "win"),
+                               log_entry("#CU", "20261015T180000.000Z", "lose"), league_week(october),
+                               log_entry("#LQ", "20260930T180000.000Z", "win")),
+                          kind="war_log", at=NOVEMBER + HOUR)
+        # A league round is never a log entry; only the week's summary counts.
+        await self.record(war("warEnded", clans=("#PY", "#CU"), end=october), kind="cwl_war", scope="#R0",
+                          at=NOVEMBER + HOUR)
+        counted = await self.reads.log_results("#PY", "2026-10", NOVEMBER + 2 * HOUR)
+        self.assertEqual({key: counted[key] for key in ("status", "wins", "losses", "ties", "total", "unknown_result")},
+                         {"status": "available", "wins": 2, "losses": 1, "ties": 0, "total": 3, "unknown_result": 0})
+        self.assertEqual([entry["kind"] for entry in counted["entries"]], ["war", "war", "league_week"])
+        self.assertEqual((counted["after"], counted["before"]), (OCTOBER, NOVEMBER))
+        self.assertTrue(counted["coverage"]["read_after_month"])
+        self.assertTrue(counted["coverage"]["complete"])
+        empty = await self.reads.log_results("#PY", "2026-08", NOVEMBER + 2 * HOUR)
+        self.assertEqual((empty["status"], empty["total"]), ("available", 0))
+        # Read before the month ended, the count may still grow.
+        self.assertFalse((await self.reads.log_results("#PY", "2026-11", NOVEMBER + 2 * HOUR))["coverage"]["complete"])
+        await self.record({"reason": "accessDenied"}, kind="war_log", scope="#LQ", status=403, at=NOVEMBER)
+        private = await self.reads.log_results("#LQ", "2026-10", NOVEMBER + HOUR)
+        self.assertEqual((private["status"], private["total"], private["entries"]), ("private_log", None, []))
+        self.assertEqual((await self.reads.log_results("#GR", "2026-10", NOVEMBER))["status"], "unavailable")
+
+    async def test_log_results_keep_the_old_newest_fifty_meaning(self):
+        letters = "0289PYLQGRJCUV"
+        newer = [log_entry(f"#{letters[i // 14]}{letters[i % 14]}V", f"202611{i // 2 + 2:02d}T{6 + i % 2:02d}0000.000Z", "win")
+                 for i in range(50)]
+        await self.record(page(*newer, log_entry("#GR", "20261020T180000.000Z", "lose")), kind="war_log",
+                          at=api_time("20261201T000000.000Z"))
+        result = await self.reads.log_results("#PY", "2026-10", api_time("20261201T000000.000Z"))
+        self.assertEqual((result["total"], result["beyond_log_window"]["losses"]), (0, 1))
+        self.assertEqual((await self.reads.log_results("#PY", "2026-11", api_time("20261201T000000.000Z")))["wins"], 50)
+
+    async def test_health_views_keep_capture_time_and_completed_meanings(self):
+        await self.record(war("preparation"), at=START - HOUR)
+        await self.record(war(), at=self.at)
+        capture = await self.reads.health_activity(["#PY"], START, self.at, as_of=self.at)
+        self.assertEqual([(r["player_tag"], r["state"], r["time"], r["time_basis"], r["attacks_used"],
+                           r["attacks_expected"], r["stars"]) for r in capture["rows"]],
+                         [("#P0", "inWar", self.at, "last_check", 1, 2, 3), ("#P2", "inWar", self.at, "last_check", 0, 2, 0)])
+        self.assertEqual(capture["bounds"], "inclusive")
+        self.assertEqual((await self.reads.health_activity(["#PY"], START, self.at - 1, as_of=self.at))["rows"], [])
+        self.assertEqual((await self.reads.health_activity(["#PY"], START, END + DAY, view="completed",
+                                                           as_of=self.at))["rows"], [])
+        await self.record(war("warEnded"), at=END + 90 * SECOND)
+        await self.record(friendly(), at=END + 3 * DAY)
+        at = END + 4 * DAY
+        ended = await self.reads.health_activity(["#PY"], END, END + 3 * DAY, view="completed", as_of=at)
+        self.assertEqual({(r["time"], r["time_basis"], r["type"]) for r in ended["rows"]}, {(END, "war_end", "REG")})
+        self.assertEqual((await self.reads.health_activity(["#PY"], START, END, view="completed", as_of=at))["rows"], [])
+        self.assertEqual(len((await self.reads.health_activity(["#PY"], START, END, as_of=at))["rows"]), 2)
+        with_friendly = await self.reads.health_activity(["#PY"], END, END + 3 * DAY, types=["REG", "FRIENDLY"], as_of=at)
+        self.assertEqual(sorted({r["type"] for r in with_friendly["rows"]}), ["FRIENDLY", "REG"])
+        with self.assertRaises(ValueError):
+            await self.reads.health_activity(["#PY"], END, END + DAY, types=["CWL"])
+
+    async def test_parity_rehearsal_matches_old_wars_and_explains_differences(self):
+        await self.record(war("warEnded"), at=END + 90 * SECOND)
+        path = self.path.parent / "clan_health.db"
+        end = END // SECOND
+        with closing(sqlite3.connect(path)) as old:
+            create_schema(old)
+            for war_id, opponent in (("REG:#PY:a:#GR", "#GR"), ("REG:#PY:b:#CU", "#CU")):
+                old.execute("INSERT INTO wars(war_id,war_type,clan_code,clan_tag,opponent_tag,team_size,attacks_per_member,"
+                            "state,end_ts,last_seen_ts) VALUES (?,'REG','ONE','#PY',?,2,2,'warEnded',?,?)",
+                            (war_id, opponent, end if opponent == "#GR" else end - 3 * 86400, end))
+            for order, tag, defender, used in ((1, "#P0", "#Q0", 1), (3, "#P2", "#Q2", 2)):
+                old.execute("INSERT INTO war_roster_members(war_id,clan_code,player_tag,player_name,attacks_expected,"
+                            "attacks_used,roster_state,captured_ts) VALUES ('REG:#PY:a:#GR','ONE',?,'Old',2,?,'warEnded',?)",
+                            (tag, used, end))
+                old.execute("INSERT INTO war_attacks(war_id,war_type,clan_code,clan_tag,end_ts,war_state,player_tag,"
+                            "player_name,attack_order,defender_tag,stars) VALUES ('REG:#PY:a:#GR','REG','ONE','#PY',?,"
+                            "'warEnded',?,'Old',?,?,3)", (end, tag, order, defender))
+            old.commit()
+        result = await compare_frozen_wars(self.reads, path, {"ONE": "#PY"}, as_of=END + DAY)
+        self.assertEqual([row["old_war_id"] for row in result["matched"]], ["REG:#PY:a:#GR"])
+        self.assertEqual([(row["old_war_id"], row["reason"]) for row in result["only_old"]],
+                         [("REG:#PY:b:#CU", "not in record")])
+        self.assertEqual([(d["field"], d["old"], d["new"], d["reason"]) for d in result["differences"]],
+                         [("clan_attacks_used", 3, 2, "unexplained"), ("#P2/attacks_used", 2, 1, "unexplained")])
+        self.assertEqual(result["only_record"], [])
+
+    async def test_arguments_are_bounded_and_explicit(self):
+        for call in (lambda: self.reads.completed(["#PY"], None, END),
+                     lambda: self.reads.completed(["#PY"], END, END),
+                     lambda: self.reads.completed([], START, END),
+                     lambda: self.reads.completed(["#PY"], START, END, types=["OTHER"]),
+                     lambda: self.reads.completed(["#PY"], START, END, limit=201),
+                     lambda: self.reads.participation(["#PY"], START, END, group_by="clan"),
+                     lambda: self.reads.attacks(["#PY"], START, END, direction="both"),
+                     lambda: self.reads.health_activity(["#PY"], START, END, view="live"),
+                     lambda: self.reads.log_results("#PY", "2026-13"),
+                     lambda: self.reads.log_results("#PY", "2026-1"),
+                     lambda: self.reads.current("not a tag")):
+            with self.assertRaises(ValueError):
+                await call()
+
+
+if __name__ == "__main__":
+    unittest.main()
