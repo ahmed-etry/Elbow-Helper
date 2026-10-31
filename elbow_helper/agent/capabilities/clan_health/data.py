@@ -26,7 +26,8 @@ SOURCES = (
                 "the player_snapshots townhall at or before end_ts), never raw star averages. "
                 "Regular-war attacks start in February but wars and war_roster_members cover regular "
                 "wars only from mid-June 2026, so LEFT JOIN both; earlier attacks cannot be checked "
-                "for friendly wars.",
+                "for friendly wars. One war can have several war_ids, doubling rows; "
+                "read_war_attendance merges them.",
             ),
             (
                 "war_roster_members", "none",
@@ -36,7 +37,9 @@ SOURCES = (
             (
                 "war_activity", "none",
                 "One account in one war: attacks_used of attacks_expected (missed = expected - used), "
-                "stars and destruction summed over its attacks. Filter on end_ts (UTC seconds).",
+                "stars and destruction summed over its attacks. Filter on end_ts (UTC seconds). "
+                "Rows double like war_attacks and end_ts can be provisional; read_war_attendance "
+                "merges them.",
             ),
             (
                 "raid_member_activity", "none",
@@ -59,9 +62,9 @@ SOURCES = (
             ),
             (
                 "report_runs", "none",
-                "One health computation; partial=1 means incomplete clan coverage; "
-                "use partial=0 and latest created_ts for complete runs; "
-                "cycle bounds are UTC Unix seconds.",
+                "One health computation; partial is a collection-cycle flag, not clan coverage: "
+                "judge a run by the clans and players its report_players rows hold, skipping runs "
+                "with none or with missing clans; cycle bounds are UTC Unix seconds.",
             ),
             (
                 "report_players", "none",

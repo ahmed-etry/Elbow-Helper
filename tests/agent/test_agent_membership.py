@@ -37,15 +37,18 @@ class MembershipReadTests(unittest.IsolatedAsyncioTestCase):
             self.addCleanup(patcher.stop)
         self.arguments = {"after": "2026-10-02", "before": "2026-10-07", "history_after": "2026-10-01"}
 
-    def snapshot(self, day, tags, *, partial=0):
-        run = f"run-{day}"
+    def snapshot(self, day, tags, *, partial=0, every_clan=True, hour=0):
+        """Store one run; every_clan adds a steady account to each clan the tags leave out."""
+        run = f"run-{day}-{hour}"
+        present = {code for _, code in tags}
+        steady = [(f"#Q{code}", code) for code in CLANS if every_clan and code not in present]
         with closing(sqlite3.connect(self.path)) as conn, conn:
             conn.execute("INSERT INTO report_runs VALUES (?,?,'2026-10','BACKGROUND_ALL',?,0,0)",
-                         (run, ts(day), partial))
+                         (run, ts(day) + hour * 3600, partial))
             conn.executemany(
                 "INSERT INTO report_players (run_id,season_key,clan_code,player_tag,player_name,status,flags_json,note) "
                 "VALUES (?,'2026-10',?,?,?,'Good','[]','')",
-                [(run, code, tag, "Synthetic " + tag) for tag, code in tags],
+                [(run, code, tag, "Synthetic " + tag) for tag, code in [*tags, *steady]],
             )
 
     async def test_new_returning_and_transfer_observations_include_bounds(self):
@@ -72,7 +75,7 @@ class MembershipReadTests(unittest.IsolatedAsyncioTestCase):
         code = self.codes[0]
         self.snapshot(1, [("#P0", code)])
         self.snapshot(2, [("#P2", code)])
-        self.snapshot(3, [("#P8", code)], partial=1)
+        self.snapshot(3, [("#P8", code)], every_clan=False)
         self.snapshot(6, [("#P0", code)])
         result = await read_membership_history(self.context, {**self.arguments, "history_after": "2026-10-02"})
         event = next(row for row in result["events"] if row["player_tag"] == "#P0")
@@ -82,6 +85,22 @@ class MembershipReadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["coverage"]["max_snapshot_gap_seconds"], 4 * 86400)
         self.assertTrue(result["limitations"]["earlier_membership_outside_window_unknown"])
         self.assertNotIn("#P8", str(result))
+
+    async def test_runs_are_judged_by_clan_coverage_not_the_partial_flag(self):
+        code = self.codes[0]
+        self.snapshot(1, [("#P0", code)])
+        # A run saved with no players and one missing clans would make #P0 depart and return.
+        self.snapshot(2, [], every_clan=False)
+        self.snapshot(2, [("#P2", code)], every_clan=False, hour=6)
+        self.snapshot(3, [("#P0", code), ("#P8", code)], partial=1)
+        result = await read_membership_history(self.context, self.arguments)
+        events = {row["player_tag"]: row for row in result["events"]}
+        self.assertNotIn("#P0", events)
+        self.assertNotIn("#P2", events)
+        self.assertEqual(events["#P8"]["kind"], "first_observed")
+        self.assertEqual(result["coverage"]["snapshot_count"], 2)
+        self.assertEqual(result["coverage"]["observed_before"], "2026-10-03T00:00:00+00:00")
+        self.assertTrue(result["limitations"]["snapshots_missing_clans_excluded"])
 
     async def test_a_refused_window_is_a_planner_error(self):
         result = await read_membership_history(self.context, {**self.arguments, "history_after": "2025-01-01"})
@@ -103,15 +122,19 @@ class MembershipReadTests(unittest.IsolatedAsyncioTestCase):
 
     def test_representative_history_uses_index_and_bounds_rows(self):
         with closing(sqlite3.connect(self.path)) as conn, conn:
-            conn.executemany("INSERT INTO report_runs VALUES (?,?,'2026-10','BACKGROUND_ALL',0,0,0)",
-                             [(f"synthetic-{i}", ts(1) + i * 60) for i in range(5000)])
+            runs = [(f"synthetic-{i}", ts(1) + i * 60, i % 2) for i in range(5000)]
+            conn.executemany("INSERT INTO report_runs VALUES (?,?,'2026-10','BACKGROUND_ALL',?,0,0)", runs)
+            conn.executemany(
+                "INSERT INTO report_players (run_id,season_key,clan_code,player_tag,player_name,status,flags_json,note) "
+                "VALUES (?,'2026-10',?,?,'Synthetic','Good','[]','')",
+                [(run, code, "#Q" + code) for run, _, _ in runs for code in CLANS])
             plan = conn.execute(
                 "EXPLAIN QUERY PLAN SELECT run_id,created_ts FROM report_runs "
-                "WHERE scope='BACKGROUND_ALL' AND partial=0 AND created_ts>=? AND created_ts<? "
-                "ORDER BY created_ts DESC,run_id DESC LIMIT 129", (ts(1), ts(7)),
+                "WHERE scope='BACKGROUND_ALL' AND created_ts>=? AND created_ts<? "
+                "ORDER BY created_ts DESC,run_id DESC", (ts(1), ts(7)),
             ).fetchall()
         self.assertIn("idx_report_runs_membership", str(plan))
         runs, rows, clipped = read_observations(self.path, ts(1), ts(7))
         self.assertEqual(len(runs), 128)
         self.assertTrue(clipped)
-        self.assertEqual(rows, [])
+        self.assertEqual(len(rows), 128 * len(CLANS))
