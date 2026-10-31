@@ -434,6 +434,9 @@ def plan_definition(registry: Mapping[str, RegisteredAgentTool]) -> AgentToolDef
                 "assessment": {"type": "boolean", "description":
                     "True for a planning, decision or member judgment request. "
                     "Read the relevant recent discussion and establish intent before recommending."},
+                "advice": {"type": "boolean", "description":
+                    "True only when the request asks what to do or to choose; false for facts, stats "
+                    "or lists, even when the asker will act on them."},
                 "discussion_channels": {"type": "array", "minItems": 1, "maxItems": 4,
                     "uniqueItems": True, "items": {"type": "integer", "minimum": 1},
                     "description": "Required for assessments. Choose the relevant discussion "

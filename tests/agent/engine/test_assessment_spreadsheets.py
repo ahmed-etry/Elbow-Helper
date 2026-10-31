@@ -263,7 +263,7 @@ class AssessmentSpreadsheetTests(unittest.IsolatedAsyncioTestCase):
                 context = _context(directory)
                 flow, _, _, _ = cost.RequestCostTests().flow([])
                 flow.context = context
-                flow.assessment_requested = True
+                flow.assessment_requested = flow.advice_requested = True
                 flow.rounder.final_attempted = True
                 flow.answer_accounts = index()
                 flow._run = AsyncMock(return_value='invalid' if repair else decision())

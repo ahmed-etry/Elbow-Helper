@@ -249,7 +249,7 @@ def check_plan(raw, registry, *, completed_steps=None, report_ids=None):
     """Return a correctable structural error; data errors belong to execution."""
     try:
         required = {"goal", "effort", "output", "steps"}
-        if not isinstance(raw, dict) or not required <= set(raw) or set(raw) - required - {"reply", "self_target", "finish_after_reads", "assessment", "discussion_channels"}:
+        if not isinstance(raw, dict) or not required <= set(raw) or set(raw) - required - {"reply", "self_target", "finish_after_reads", "assessment", "advice", "discussion_channels"}:
             return _error("Supply goal, effort, output and steps.")
         if not isinstance(raw["goal"], str) or not 1 <= len(raw["goal"].strip()) <= 240:
             return _error("Write a short goal.")
@@ -259,6 +259,8 @@ def check_plan(raw, registry, *, completed_steps=None, report_ids=None):
             return _error('Use a boolean finish_after_reads flag.')
         if 'assessment' in raw and type(raw['assessment']) is not bool:
             return _error('Use a boolean assessment flag.')
+        if 'advice' in raw and type(raw['advice']) is not bool:
+            return _error('Use a boolean advice flag.')
         if raw["effort"] not in ("low", "high", "max"):
             return _error("Choose low, high or max effort.")
         if raw["output"] not in output_forms(registry):

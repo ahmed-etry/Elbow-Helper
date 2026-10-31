@@ -50,7 +50,7 @@ from .named_replies import named_reply
 from .evidence_delta import EvidenceDelta, access_refused
 from .answer_inputs import answer_evidence, read_handles, bounded_answer_evidence, serialized_answer_evidence
 from .cohort_evidence import cohort_writer_evidence, cohort_review_evidence, restorable_reference
-from .assessment import DECISION_ANSWER_INSTRUCTION, assessment_limits, deliver_decision_answer, discussion_ids, read_decision_discussions
+from .assessment import DECISION_ADVICE_INSTRUCTION, DECISION_ANSWER_INSTRUCTION, assessment_limits, deliver_decision_answer, discussion_ids, parse_decision, read_decision_discussions, without_new_choices
 from .account_lists import account_index
 from .recommended_actions import action_catalogue, prepare_recommended_actions
 from ..research.directory import scoped_channel_directory
@@ -111,6 +111,7 @@ class AnswerFlow:
         self.scope_repair_attempted = False
         self.evidence_delta = EvidenceDelta()
         self.assessment_requested = False
+        self.advice_requested = False
         self.correction_granted = False
         self.plan_limit_logged = False
         self.discussion_message_ids = set()
@@ -155,16 +156,16 @@ class AnswerFlow:
             decision_content = answer
             try:
                 answer = await deliver_decision_answer(self.context, answer, self.discussion_message_ids,
-                                                       accounts=self.answer_accounts)
+                                                       accounts=self.answer_accounts, advice=self.advice_requested)
             except ValueError as error:
                 repaired = await self._repair_decision_format(answer, error)
-                decision_content = repaired.content
+                decision_content = without_new_choices(answer, repaired.content)
                 try:
-                    answer = await deliver_decision_answer(self.context, repaired.content,
-                        self.discussion_message_ids, accounts=self.answer_accounts)
+                    answer = await deliver_decision_answer(self.context, decision_content,
+                        self.discussion_message_ids, accounts=self.answer_accounts, advice=self.advice_requested)
                 except ValueError as invalid:
                     raise TextGenerationError('Decision response could not be validated.') from invalid
-            assessed_decision = json.loads(decision_content)
+            assessed_decision = parse_decision(decision_content, self.advice_requested)
             assessed_answer = (json.loads(answer)['answer']
                                if assessed_decision.get('needs_private_evidence') else answer)
         self.decision_composed = self.assessment_requested
@@ -318,10 +319,11 @@ class AnswerFlow:
         """Apply member limits before checking either an initial or revised plan."""
         if not isinstance(plan, dict) or leadership_asker(self.context):
             return plan
-        if "assessment" not in plan and plan.get("effort") != "max":
+        if "assessment" not in plan and "advice" not in plan and plan.get("effort") != "max":
             return plan
         plan = dict(plan)
         plan.pop("assessment", None)
+        plan.pop("advice", None)
         if plan.get("effort") == "max":
             plan["effort"] = "high"
         if not self.plan_limit_logged:
@@ -337,7 +339,8 @@ class AnswerFlow:
                 else min((effort, AgentReasoningEffort.HIGH), key=list(AgentReasoningEffort).index))
 
     def _decision_instruction(self):
-        return DECISION_ANSWER_INSTRUCTION + '\n' + action_catalogue(self.recommendation_registry)
+        instruction = DECISION_ADVICE_INSTRUCTION if self.advice_requested else DECISION_ANSWER_INSTRUCTION
+        return instruction + '\n' + action_catalogue(self.recommendation_registry)
 
     async def _advance_answer(self, results=(), **options):
         """Keep lookups cheap and give assessments the final reasoning allowance.
@@ -386,7 +389,7 @@ class AnswerFlow:
         """Repair the response shape without resending the full research context."""
         repair_rules = ('Preserve the draft facts and source links; add no facts or advice. '
               'An unavailable discussion does not establish a decision. '
-              'Keep readable facts and ask about the unresolved choice.')
+              'Keep readable facts. Keep the draft\'s open choices and question; add none.')
         error_instruction = 'Correct the invalid decision response: ' + str(error)
         instruction = error_instruction + '\n' + repair_rules
         if self.final_session_factory is not None:
@@ -749,6 +752,7 @@ class AnswerFlow:
         while self.rounder.rounds < limits.MAX_MODEL_ROUNDS:
             self.assessment_requested = leadership_asker(self.context) and (
                 self.assessment_requested or self.plan.get('assessment', False))
+            self.advice_requested = self.advice_requested or self.plan.get('advice', False)
             if self.assessment_requested and self.budget.request_limits is not None:
                 self.budget.request_limits = limits.ASSESSMENT_LIMITS
             previous_calls = self.runner.tool_calls

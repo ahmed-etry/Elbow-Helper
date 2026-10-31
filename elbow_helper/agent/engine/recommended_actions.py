@@ -129,7 +129,7 @@ def _resolved_target(context, item, tool, accounts):
 async def prepare_recommended_actions(flow, decision):
     """Offer optional changes without rewriting the finished assessment."""
     if (decision['intent_source'] == 'unresolved' or decision['open_choices']
-            or not decision['recommendation'].strip() or not decision.get('recommended_actions')):
+            or not decision.get('recommendation', '').strip() or not decision.get('recommended_actions')):
         return ()
     context = flow.context
     original_count = len(context.state.proposed_changes)

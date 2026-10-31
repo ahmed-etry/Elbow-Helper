@@ -129,7 +129,7 @@ class ResearchCapacityTests(unittest.IsolatedAsyncioTestCase):
                 content = json.dumps({'intent': 'Evaluate the selected accounts with their documented purpose',
                     'intent_source': 'discussion', 'discussion_message_ids': [401 + continuation_reads],
                     'settled_choices': [], 'open_choices': [], 'facts': finding,
-                    'question': '', 'recommendation': ''})
+                    'question': ''})
                 return AgentStep(content, (), AgentUsage(projected, 1000))
 
         class Model:

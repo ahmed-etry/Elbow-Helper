@@ -1,12 +1,69 @@
-"""A refused read keeps one correction round before the answer."""
+"""Open choices belong to unresolved requests; a refused read keeps one correction before the answer."""
 import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
+from elbow_helper.agent.engine.assessment import decision_answer, parse_decision, without_new_choices
 from elbow_helper.agent.engine.budgets import ASSESSMENT_LIMITS
 from elbow_helper.infrastructure.ai import AgentStep, AgentUsage
 from agent.engine import test_request_cost as cost
+
+
+def decision(**overrides):
+    payload = {'intent': 'Count the active members', 'intent_source': 'request',
+               'discussion_message_ids': [], 'settled_choices': [], 'open_choices': [],
+               'facts': 'Synthetic counts.', 'question': '', 'recommendation': ''}
+    return json.dumps({**payload, **overrides})
+
+
+class DecisionChoiceTests(unittest.IsolatedAsyncioTestCase):
+    def test_an_invented_open_choice_is_emptied_for_a_resolved_request(self):
+        content = decision(open_choices=['Which threshold counts'], question='Which threshold?')
+        for source in ('request', 'discussion'):
+            with self.subTest(source=source):
+                payload = decision(intent_source=source, discussion_message_ids=[7] if source == 'discussion' else [],
+                                   open_choices=['Which threshold counts'], question='Which threshold?')
+                parsed = parse_decision(payload, True)
+                self.assertEqual((parsed['open_choices'], parsed['question']), ([], ''))
+                self.assertEqual(decision_answer(payload, {7}, advice=True), 'Synthetic counts.')
+        self.assertEqual(decision_answer(content, set(), advice=True), 'Synthetic counts.')
+
+    def test_an_unresolved_request_keeps_its_one_question(self):
+        content = decision(intent_source='unresolved', open_choices=['Which clan'], question='Which clan?')
+        self.assertEqual(parse_decision(content, True)['open_choices'], ['Which clan'])
+        self.assertEqual(decision_answer(content, set(), advice=True), 'Synthetic counts.\n\nWhich clan?')
+        with self.assertRaises(ValueError):
+            decision_answer(decision(intent_source='unresolved'), set(), advice=True)
+
+    def test_a_draft_that_is_not_json_still_fails_validation(self):
+        with self.assertRaises(ValueError):
+            decision_answer('not json', set(), advice=False)
+        with self.assertRaises(ValueError):
+            decision_answer('[]', set(), advice=False)
+
+    def test_a_repair_cannot_add_open_choices_the_draft_lacked(self):
+        draft = decision(intent_source='unresolved', question='Which clan?', open_choices=['Which clan'])
+        repaired = decision(intent_source='unresolved', question='Which clan?',
+                            open_choices=['Which clan', 'Which threshold counts as bad enough'])
+        kept = json.loads(without_new_choices(draft, repaired))
+        self.assertEqual(kept['open_choices'], ['Which clan'])
+        invented = json.loads(without_new_choices(decision(), repaired))
+        self.assertEqual(invented['open_choices'], [])
+        self.assertEqual(json.loads(without_new_choices('not json', repaired))['open_choices'], [])
+        self.assertEqual(without_new_choices(draft, 'not json'), 'not json')
+
+    async def test_a_format_repair_that_invents_a_choice_ends_without_a_question(self):
+        flow, _, _, _ = cost.RequestCostTests().flow([])
+        flow.assessment_requested = True
+        flow.advice_requested = False
+        flow.rounder.final_attempted = True
+        # The draft has no facts, so only the repair can fix it.
+        flow._run = AsyncMock(return_value=decision(facts=''))
+        invented = decision(open_choices=['Which threshold counts'], question='Which threshold?')
+        flow._repair_decision_format = AsyncMock(return_value=SimpleNamespace(content=invented))
+        self.assertEqual(await flow.run(), 'Synthetic counts.')
+        flow._repair_decision_format.assert_awaited_once()
 
 
 class CorrectionRoundTests(unittest.IsolatedAsyncioTestCase):
