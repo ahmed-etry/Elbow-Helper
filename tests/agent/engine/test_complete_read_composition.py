@@ -219,7 +219,7 @@ class CompleteReadCompositionTests(unittest.IsolatedAsyncioTestCase):
         visible = evidence['results']['wars']
         self.assertEqual(len(visible['rows']), 54)
         self.assertEqual([row['attacks_used'] for row in visible['rows']], list(range(54)))
-        self.assertTrue(all(row['wars_observed'] == 10 for row in visible['rows']))
+        self.assertEqual(visible['row_rendering']['rows']['same_on_every_row']['wars_observed'], 10)
         self.assertNotIn('evidence_complete', visible)
         self.assertFalse(visible['coverage']['historical_collection_complete'])
         self.assertNotIn('war_ids', visible['rows'][0])

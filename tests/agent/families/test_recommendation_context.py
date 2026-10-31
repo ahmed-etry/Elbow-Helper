@@ -90,14 +90,17 @@ class RecommendationContextTests(unittest.IsolatedAsyncioTestCase):
                'accounts': [{'player_tag': '#P0', 'townHallLevel': 12, 'role': 'coLeader',
                              'account_purpose': None}],
                'war_status': 'joined_without_attacking', 'wars_observed': 1}
-        visible = family_model_view({'family': 'read_member_cohort', 'basis': 'clan_rosters',
-            'activity_coverage': {'discord_activity_coverage': {}}, 'rows': [row]})['rows'][0]
+        view = family_model_view({'family': 'read_member_cohort', 'basis': 'clan_rosters',
+            'activity_coverage': {'discord_activity_coverage': {}}, 'rows': [row]})
+        visible = view['rows'][0]
         self.assertEqual(visible['leadership']['status'], 'active')
         self.assertEqual(visible['accounts'][0]['townHallLevel'], 12)
         self.assertIn('account_purpose', visible['accounts'][0])
         self.assertIsNone(visible['accounts'][0]['account_purpose'])
         self.assertEqual(visible['wars_observed'], 1)
-        self.assertEqual(visible['home_clan_basis'], row['home_clan_basis'])
+        # The explanation is identical on every row, so the view states it once.
+        self.assertNotIn('home_clan_basis', visible)
+        self.assertEqual(view['home_clan_basis'], row['home_clan_basis'])
 
     def test_sleeping_leadership_context_does_not_grant_workflow_access(self):
         member = SimpleNamespace(id=12, display_name='Synthetic sleeping captain',

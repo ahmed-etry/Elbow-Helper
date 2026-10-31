@@ -14,6 +14,7 @@ from ..conversation.context import estimate_tokens
 from .tool_call import bound_tool_result
 from .member_facts import reader_roles, reference_facts
 from .writer_tables import writer_tables
+from .writer_rows import WRITER_ROW_FAMILIES, compact_writer_rows
 from ..families.model_view import record_rows
 
 
@@ -230,6 +231,8 @@ def answer_evidence(evidence, *, subjects=None, guild=None):
                       'family': result['family'], 'selection': result.get('selection', {})}
         facts = {key: deepcopy(value) for key, value in result.items() if key not in _NAVIGATION}
         facts.update(_row_read_coverage(result, (subjects or {}).get(identity, {}), named_tags))
+        if result.get('family') in WRITER_ROW_FAMILIES:
+            facts = compact_writer_rows(facts, result['family'])
         if isinstance(facts.get('source_reads'), dict):
             facts['source_reads'] = answer_evidence(facts['source_reads'], guild=guild)
         # Keep provenance explicit without interpreting message or policy prose.

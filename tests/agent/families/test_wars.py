@@ -47,7 +47,14 @@ class WarFamilyTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual({row['player_tag']: row['missed'] for row in result['rows']},
                              {'#P0': 2, '#Q0': 1, '#P2': 0})
             projected = answer_evidence({'attendance': result}, guild=context.guild)
-            self.assertEqual(projected['attendance']['rows'], result['rows'])
+            # The writer states fields identical on every row, or repeating another field, once.
+            rendering = projected['attendance']['row_rendering']['rows']
+            restored = [{**rendering['same_on_every_row'], **row} for row in projected['attendance']['rows']]
+            self.assertEqual(len(restored), len(result['rows']))
+            for row, original in zip(restored, result['rows']):
+                for key, value in original.items():
+                    if key not in rendering['omitted_when_repeated'] and not isinstance(value, dict):
+                        self.assertEqual(row[key], value, key)
 
     async def test_rate_ranking_is_selected_before_top_n(self):
         rows = [{'player_tag': tag, 'player_name': tag, 'clan_code': 'BEH', 'war_id': tag,

@@ -44,10 +44,12 @@ class ActivityNoPeriodTests(unittest.IsolatedAsyncioTestCase):
             for field in ('last_active_day', 'active_streak_days', 'lifetime_messages'):
                 self.assertEqual(rows[identifier][field], record[field])
         self.assertEqual(rows[404]['discord_activity_status'], 'no_record')
+        # Fields identical on every row are stated once for the whole table.
+        same = writer['row_rendering']['rows']['same_on_every_row']
+        self.assertEqual(same['war_status'], 'not_checked')
+        self.assertIsNone(same['wars_observed'])
+        self.assertIsNone(same['attacks_used'])
         for row in rows.values():
-            self.assertEqual(row['war_status'], 'not_checked')
-            self.assertIsNone(row['wars_observed'])
-            self.assertIsNone(row['attacks_used'])
             for account in row['accounts']:
                 self.assertEqual(account['war_activity']['status'], 'not_checked')
         coverage = writer['activity_coverage']
