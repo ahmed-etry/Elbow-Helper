@@ -104,7 +104,7 @@ class AnswerCompositionTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual([row['body'] for row in rows],
                                          [body] if visibility == 'public' else [])
                         self.assertEqual(evidence['policy']['selection_complete'], visibility == 'public')
-                        self.assertIn('otherwise say the clan rule is unavailable here', system)
+                        self.assertIn("If\nthat clan's rule was not read, say it is unavailable here", system)
                         return provider_response(final)
                     self.assertIn('bec-war-discussion', str(options['messages']))
                     self.assertIn('use current_channel, its parent/category', system)

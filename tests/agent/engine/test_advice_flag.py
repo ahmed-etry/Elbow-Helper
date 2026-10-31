@@ -32,8 +32,8 @@ class SchemaTests(unittest.TestCase):
     def test_without_advice_the_instruction_drops_the_recommendation_sentences(self):
         self.assertEqual(DECISION_ANSWER_INSTRUCTION, decision_instruction(False))
         self.assertEqual(DECISION_ADVICE_INSTRUCTION, decision_instruction(True))
-        for text in ('Recommendation addresses the requested next step', 'stating the assumption it rests on',
-                     'A request for advice permits a provisional\nrecommendation', 'facts, recommendation and question', '"recommendation"',
+        for text in ('recommendation answers the requested next step', 'stating the assumption it rests on',
+                     'unadopted\nproposals', 'facts, recommendation and question', '"recommendation"',
                      'Use recommended_actions'):
             self.assertIn(text, DECISION_ADVICE_INSTRUCTION)
             self.assertNotIn(text, DECISION_ANSWER_INSTRUCTION)
