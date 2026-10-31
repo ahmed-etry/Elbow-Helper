@@ -183,6 +183,10 @@ def export_report(report, kind):
                            sheet_rows=tuple(sheet_rows))
 
 
+UNKEPT_REPORT = {'error': 'That report was too large to keep while later reads ran. '
+                          'Narrow its members, clans or period.', 'cause': 'capacity'}
+
+
 def family_tool(name, description, properties, reader, *, required=(), contract=None, usage_note=None):
     async def handle(context, arguments):
         await require_evidence_access(context)
@@ -192,6 +196,8 @@ def family_tool(name, description, properties, reader, *, required=(), contract=
         identifier = arguments.get('report_id')
         if identifier:
             report = context.state.reports.get(identifier)
+            if report is None and identifier in context.state.unkept_reports:
+                return dict(UNKEPT_REPORT)
             if (not isinstance(report, FamilyReport) or report.guild_id != context.guild.id
                     or report.family != name or not await authorize_report(context, identifier)):
                 return {'error': 'That report is no longer available here.', 'cause': 'report_unavailable'}

@@ -3,7 +3,7 @@ import asyncio
 import json
 from collections import defaultdict
 
-from .core import FamilyReport
+from .core import FamilyReport, UNKEPT_REPORT
 from .war_metrics import aggregate_performance
 from ..reports.tools import authorize_report
 
@@ -90,6 +90,8 @@ def unknown_account_data(row, arguments):
 
 async def cohort_selection(context, identifier, selector):
     report = context.state.reports.get(identifier)
+    if report is None and identifier in context.state.unkept_reports:
+        return dict(UNKEPT_REPORT)
     if (not isinstance(report,FamilyReport) or report.family not in (
         'read_member_cohort','read_member_accounts','read_clan_rosters','read_recruitment_pipeline','read_cwl_results')
             or not await authorize_report(context,identifier)):

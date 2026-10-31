@@ -101,6 +101,33 @@ def resolve_arguments(
     return resolve(dict(arguments), schema or {})
 
 
+def referenced_report_ids(
+    arguments: Any, results: Mapping[str, Mapping[str, Any]], report_ids: set[str],
+) -> set[str]:
+    """Retained report identities that unfinished arguments name or resolve to."""
+    found: set[str] = set()
+
+    def visit(value):
+        if isinstance(value, dict) and set(value) == {"step", "path"}:
+            try:
+                value = _walk(results[value["step"]], value["path"])
+            except (KeyError, IndexError, TypeError):
+                return
+            if isinstance(value, dict) and set(value) == {"step", "path"}:
+                return
+            visit(value)
+        elif isinstance(value, dict):
+            for item in value.values():
+                visit(item)
+        elif isinstance(value, list):
+            for item in value:
+                visit(item)
+        elif isinstance(value, str) and value in report_ids:
+            found.add(value)
+    visit(arguments)
+    return found
+
+
 async def execute_plan(
     plan: Mapping[str, Any],
     run: Callable[[Mapping[str, Any], Mapping[str, Any], Mapping[str, Any]], Awaitable[Mapping[str, Any]]],

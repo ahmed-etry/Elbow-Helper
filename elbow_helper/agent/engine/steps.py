@@ -7,6 +7,7 @@ import logging
 import asyncio
 from copy import deepcopy
 from dataclasses import dataclass, replace
+from dataclasses import field as dataclass_field
 from collections.abc import Mapping
 import json
 import time
@@ -21,7 +22,7 @@ from ..access import message_channel_unavailable
 from ..access import require_evidence_access
 from ..reports.tools import original_tool
 from ..plan.checker import check_plan, check_step
-from ..plan.executor import execute_plan
+from ..plan.executor import execute_plan, referenced_report_ids
 from ..plan.results import model_result, model_view
 from . import budgets as limits
 from functools import partial
@@ -89,6 +90,8 @@ class PlanExecutionState:
     original: dict[str, Any]
     emitted: list[AgentToolResult]
     answer_complete: bool = False
+    finished: set[str] = dataclass_field(default_factory=set)
+    payloads: dict[str, Mapping[str, Any]] = dataclass_field(default_factory=dict)
 
 
 class PlanRunner:
@@ -176,6 +179,7 @@ class PlanRunner:
         try:
             result = await self._run_one(step, arguments, earlier_results, plan_state=plan_state)
             status = "completed"
+            plan_state.finished.add(step["id"])
             return result
         except asyncio.CancelledError:
             status = "cancelled"
@@ -385,6 +389,19 @@ class PlanRunner:
             step, arguments, checked["scope"], local, previous, payload, checked["contract"], plan_state,
         )
 
+    def _reports_still_needed(self, current, plan_state: PlanExecutionState) -> set[str]:
+        """Reports that steps of this plan other than `current` have yet to use."""
+        known = {**self.results, **plan_state.payloads}
+        retained = set(self.context.state.reports)
+        retained.update(report_id for report_id in (
+            payload.get("report_id") for payload in plan_state.payloads.values())
+            if isinstance(report_id, str))
+        needed: set[str] = set()
+        for step in plan_state.plan["steps"]:
+            if step["id"] != current["id"] and step["id"] not in plan_state.finished:
+                needed |= referenced_report_ids(step["arguments"], known, retained)
+        return needed
+
     async def _record_result(
         self,
         step,
@@ -442,7 +459,10 @@ class PlanRunner:
                     local.state.report_sources.get(identifier, frozenset()),
                     local.state.report_access_requirements.get(identifier, frozenset()),
                 )
-            merge_tool_state(self.context, local, previous)
+            plan_state.payloads[step["id"]] = payload
+            merge_tool_state(
+                self.context, local, previous, self._reports_still_needed(step, plan_state),
+            )
             self.source_identities.update(local.state.report_sources)
             self._remember_sources(payload, scope, arguments)
             self.context.state.evidence.append(

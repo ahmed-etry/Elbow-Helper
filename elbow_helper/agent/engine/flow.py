@@ -127,6 +127,11 @@ class AnswerFlow:
     def _direct_capabilities(self):
         return SOCIAL_CAPABILITIES.intersection(self.registry) if self.rounder.social_route else frozenset()
 
+    def _held_report_ids(self):
+        state = self.context.state
+        return {*state.reports, *state.unkept_reports, *state.preserved_report_sources,
+                *self.runner.report_snapshots, *self.runner.source_identities}
+
     async def run(self) -> str:
         assessed_decision = None
         assessed_answer = None
@@ -729,6 +734,7 @@ class AnswerFlow:
                 self.context, answer, self_target=(plan or {}).get("self_target", False),
             ),
             direct_capabilities=self._direct_capabilities,
+            report_ids=self._held_report_ids,
             initial_step=initial_step,
             limit_plan=self._limit_plan,
         )
@@ -1112,7 +1118,8 @@ class AnswerFlow:
         next_plan = self._limit_plan(next_plan)
         if next_plan is None and (len(model_step.tool_calls) != 1 or model_step.tool_calls[0].name != PLAN_TOOL_NAME):
             raise PlanNotSettled("The revision did not supply a request plan.")
-        check = check_plan(next_plan, self.registry, completed_steps=self.runner.completed_steps)
+        check = check_plan(next_plan, self.registry, completed_steps=self.runner.completed_steps,
+                           report_ids=self._held_report_ids())
         if check.ok and (issue := social_reply_issue(next_plan, model_step.content)):
             check = replace(check, ok=False, error=issue)
         if self.context.operator_debug is not None:
@@ -1154,6 +1161,7 @@ class AnswerFlow:
                 raise PlanNotSettled("The correction did not supply a request plan.")
             check = check_plan(
                 next_plan, self.registry, completed_steps=self.runner.completed_steps,
+                report_ids=self._held_report_ids(),
             )
             if check.ok and (issue := social_reply_issue(next_plan, corrected.content)):
                 check = replace(check, ok=False, error=issue)
