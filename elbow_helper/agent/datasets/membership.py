@@ -19,6 +19,30 @@ from .. import record_identity
 RUN_LIMIT = 128
 ROW_LIMIT = 100_000
 GAP_SECONDS = 48 * 3600
+COVERAGE_BATCH = 64
+
+
+def complete_runs(conn, history_after, before):
+    """Up to RUN_LIMIT + 1 newest runs holding players from every family clan.
+
+    The partial flag records a collection-cycle state, not clan coverage, so a run
+    is judged by its rows: an empty or clan-short run would invent departures and
+    returns.
+    """
+    candidates = conn.execute(
+        "SELECT run_id, created_ts FROM report_runs "
+        "WHERE scope='BACKGROUND_ALL' AND created_ts>=? AND created_ts<? "
+        "ORDER BY created_ts DESC, run_id DESC",
+        (history_after, before),
+    )
+    runs = []
+    while len(runs) <= RUN_LIMIT and (batch := [dict(row) for row in candidates.fetchmany(COVERAGE_BATCH)]):
+        marks = ",".join("?" for _ in batch)
+        clans = {row["run_id"]: row["clans"] for row in conn.execute(
+            f"SELECT run_id, COUNT(DISTINCT clan_code) AS clans FROM report_players "
+            f"WHERE run_id IN ({marks}) GROUP BY run_id", [run["run_id"] for run in batch])}
+        runs.extend(run for run in batch if clans.get(run["run_id"], 0) >= len(CLANS))
+    return runs[:RUN_LIMIT + 1]
 
 
 def read_observations(path, history_after, before):
@@ -28,12 +52,7 @@ def read_observations(path, history_after, before):
         conn.execute("PRAGMA query_only=ON")
         conn.set_progress_handler(lambda: int(time.monotonic() >= deadline), 1000)
         conn.execute("BEGIN")
-        runs = [dict(row) for row in conn.execute(
-            "SELECT run_id, created_ts FROM report_runs "
-            "WHERE scope='BACKGROUND_ALL' AND partial=0 AND created_ts>=? AND created_ts<? "
-            "ORDER BY created_ts DESC, run_id DESC LIMIT ?",
-            (history_after, before, RUN_LIMIT + 1),
-        )]
+        runs = complete_runs(conn, history_after, before)
         clipped = len(runs) > RUN_LIMIT
         runs = runs[:RUN_LIMIT]
         rows = []
@@ -133,7 +152,7 @@ async def read_membership_history(context, arguments):
         },
         "limitations": {"observations_only": True, "arrivals_between_snapshots": True,
                         "earlier_membership_outside_window_unknown": True,
-                        "partial_snapshots_excluded": True},
+                        "snapshots_missing_clans_excluded": True},
         "flags": {"status": "partial", "truncated": clipped, "limits": ["bounded_membership_observations"]},
     }
 
