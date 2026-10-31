@@ -16,6 +16,7 @@ from ..access import accessible_message_channel, require_evidence_access
 from ..models import AgentRequestContext, RegisteredAgentTool
 from ..member_names import duplicate_names, identity_fields
 from ..capabilities.validation import invalid_arguments
+from ..plan.input_rules import RULES
 from ..capabilities.hibernation.report import HibernationReport
 from ..clan_roles import clan_role_purposes
 from .member_identity import clarification, matching_members
@@ -236,6 +237,15 @@ def member_tools():
                         "offset": {"type": "integer", "minimum": 0},
                         "limit": {"type": "integer", "minimum": 1, "maximum": MEMBER_DETAILS_LIMIT},
                     }, "required": [], "additionalProperties": False,
+                    RULES: [
+                        {"needs": ["member_ids", "role_ids", "hibernation_report_id", "sort",
+                                   "joined_after", "joined_before"],
+                         "error": "Choose member IDs, role IDs or a join-date sort/window."},
+                        {"with": ["hibernation_report_id"], "forbids": ["member_ids", "role_ids"],
+                         "error": "Use a hibernation report instead of member or role IDs."},
+                        {"aware": ["joined_after", "joined_before"],
+                         "error": "Use timezone-aware Discord join dates."},
+                    ],
                 },
                 usage_note=(
                     "hibernation_report_id selects the full workflow cohort before paging. "

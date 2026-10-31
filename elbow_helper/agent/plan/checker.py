@@ -20,6 +20,7 @@ from ..reports.tools import (COMPARE_NAME, READ_NAME, original_arguments, origin
                             unsupported_fields, unsupported_field_error)
 from .format import REPLY_CAPABILITIES, output_forms
 from .arguments import argument_errors, schema_variant
+from .input_rules import input_rule_issue
 
 LOGGER = logging.getLogger(__name__)
 
@@ -31,10 +32,13 @@ class PlanCheck:
     step_id: str = ""
     offered: tuple[str, ...] = ()
     step_errors: Mapping[str, str] = field(default_factory=dict)
+    # The fields an input rule names, for one step or per refused step of a plan.
+    fields: tuple[str, ...] = ()
+    step_fields: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
 
-def _error(message, step_id="", offered=()):
-    return PlanCheck(False, message, step_id, offered)
+def _error(message, step_id="", offered=(), fields=()):
+    return PlanCheck(False, message, step_id, offered, fields=fields)
 
 
 def _valid_value(
@@ -208,6 +212,10 @@ def check_step(
             set(dependencies),
         ):
             return _error("Use the fields supported by this report kind.", step_id)
+    issue, fields = input_rule_issue(original_arguments(arguments) if selected else arguments,
+                                     (selected or tool).definition.parameters)
+    if issue:
+        return _error(issue, step_id, fields=fields)
     if validate_scope is not None:
         issue = validate_scope(selected or tool)
         if issue:
@@ -277,7 +285,7 @@ def check_plan(raw, registry, *, completed_steps=None, report_ids=None):
         earlier = set(completed)
         step_ids = earlier | {step["id"] for step in raw["steps"]
                               if isinstance(step, dict) and isinstance(step.get("id"), str)}
-        step_errors = {}
+        step_errors, step_fields = {}, {}
         after_change = set()
         for key, step in completed.items():
             if registry[step["capability"]].action_class in (
@@ -323,6 +331,8 @@ def check_plan(raw, registry, *, completed_steps=None, report_ids=None):
             checked = check_step(step, registry)
             if not checked.ok:
                 step_errors[identity] = checked.error
+                if checked.fields:
+                    step_fields[identity] = checked.fields
             earlier.add(identity)
         if _mixes_irreversible_changes(raw["steps"], registry):
             return _error("Only irreversible changes of the same kind may share a preview.")
@@ -332,7 +342,7 @@ def check_plan(raw, registry, *, completed_steps=None, report_ids=None):
             return _error("Include the selected output capability in the steps.")
         if sum(step["capability"] == "prepare_spreadsheet" for step in raw["steps"]) > 1:
             return _error("Put every table in one spreadsheet as separate sheets.")
-        return PlanCheck(True, step_errors=step_errors)
+        return PlanCheck(True, step_errors=step_errors, step_fields=step_fields)
     except Exception:
         LOGGER.exception("Agent plan check failed unexpectedly")
         return _error("Correct the plan fields and values.")

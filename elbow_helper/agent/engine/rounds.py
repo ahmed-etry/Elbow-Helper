@@ -151,6 +151,7 @@ class ModelRounds:
         continuation_instruction=None,
         continued=False,
         final=False,
+        correction=False,
     ):
         # Planning, continuations and repairs share a floor. A plan can ask
         # for more reasoning, but cannot downgrade a later answer or repair.
@@ -185,7 +186,7 @@ class ModelRounds:
         projected = self.budget.projected_input(results) + estimate_tokens(
             continuation_instruction or ""
         )
-        if allow_tools and not self.budget.request_can_research(projected):
+        if allow_tools and not self.budget.request_can_research(projected, correction=correction):
             if self.budget.request_limits and self.budget.request_limits.final_output_tokens:
                 # Assessment reviews contain pages, not the final tables or
                 # decision protocol. Let AnswerFlow prepare its full final;

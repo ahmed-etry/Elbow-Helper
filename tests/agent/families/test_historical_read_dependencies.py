@@ -5,7 +5,10 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.agent.families import war_reads
+from elbow_helper.features.cwl.config import CWL_CLAN_CODES
 from agent.engine.test_agent_plan_flow import _context
+
+CODE = CWL_CLAN_CODES[0]
 
 
 class HistoricalReadDependencyTests(unittest.IsolatedAsyncioTestCase):
@@ -13,7 +16,7 @@ class HistoricalReadDependencyTests(unittest.IsolatedAsyncioTestCase):
         Snapshot = make_dataclass('Snapshot', [('rows', tuple), ('seasons', tuple)])
         Row = make_dataclass('Row', [('player_tag', str), ('clan_code', str),
             ('season', str), ('rank', int)])
-        snapshot = Snapshot((Row('#P0', 'alpha', '2025-04', 1),), ('2025-04',))
+        snapshot = Snapshot((Row('#P0', CODE, '2025-04', 1),), ('2025-04',))
         for selection in ({}, {'season': '2025-04'}, {'history_limit': 2},
                           {'season_keys': ['2025-04']}):
             with self.subTest(selection=selection):
@@ -21,9 +24,9 @@ class HistoricalReadDependencyTests(unittest.IsolatedAsyncioTestCase):
                 current = AsyncMock(return_value=[])
                 context = replace(_context(), cwl_queries=SimpleNamespace(performance=performance))
                 with patch.object(war_reads, 'current_leagues', current), patch(
-                        'elbow_helper.configuration.clans.CLAN_ORDER', ['alpha']):
+                        'elbow_helper.configuration.clans.CLAN_ORDER', [CODE]):
                     result = await war_reads.cwl_results(context,
-                        {'metric': 'performance', 'clan_codes': ['alpha'], **selection})
+                        {'metric': 'performance', 'clan_codes': [CODE], **selection})
                 self.assertNotIn('error', result)
                 self.assertEqual(result['rows'][0]['player_tag'], '#P0')
                 current.assert_not_awaited()
@@ -32,7 +35,7 @@ class HistoricalReadDependencyTests(unittest.IsolatedAsyncioTestCase):
         current = AsyncMock(return_value=[])
         with patch.object(war_reads, 'current_leagues', current):
             result = await war_reads.cwl_results(replace(_context(), cwl_queries=None),
-                {'metric': 'performance', 'clan_codes': ['alpha']})
+                {'metric': 'performance', 'clan_codes': [CODE]})
         self.assertEqual(result['cause'], 'missing_setup')
         current.assert_not_awaited()
 

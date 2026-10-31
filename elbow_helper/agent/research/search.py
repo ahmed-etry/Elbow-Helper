@@ -106,13 +106,14 @@ async def _search_scope(context, arguments):
     if not query and not any(arguments.get(key) for key in (
         "channel_id", "channel_ids", "author_id", "author_ids", "mentions", "after", "before",
     )):
-        return {"error": "Supply search words, a channel, an author, or a date range."}
+        return {"error": "Supply search words, a channel, an author, or a date range.",
+                "cause": "invalid_arguments"}
     limit = bounded_int(arguments.get("limit"), default=25, minimum=1,
                         maximum=SEARCH_RESULT_LIMIT)
     requested_channel = arguments.get("channel_id")
     requested_channels = arguments.get("channel_ids")
     if requested_channel is not None and requested_channels is not None:
-        return {"error": "Use channel_id or channel_ids, not both."}
+        return {"error": "Use channel_id or channel_ids, not both.", "cause": "invalid_arguments"}
     if requested_channels is not None and not isinstance(requested_channels, (list, tuple)):
         return {"error": "Supply between one and twenty distinct channel IDs."}
     explicit_ids = ((requested_channel,) if requested_channel is not None
@@ -143,9 +144,10 @@ async def _search_scope(context, arguments):
         after = search_date(arguments.get("after"))
         before = search_date(arguments.get("before"))
     except (ValueError, TypeError, AttributeError):
-        return {"error": "Use ISO 8601 dates or timestamps for the search period."}
+        return {"error": "Use ISO 8601 dates or timestamps for the search period.",
+                "cause": "invalid_arguments"}
     if after is not None and before is not None and after >= before:
-        return {"error": "The search start must be earlier than its end."}
+        return {"error": "The search start must be earlier than its end.", "cause": "invalid_arguments"}
     min_id = discord.utils.time_snowflake(after) - 1 if after is not None else None
     requested_max_id = discord.utils.time_snowflake(before) if before is not None else None
     author_ids = arguments.get("author_ids", ())

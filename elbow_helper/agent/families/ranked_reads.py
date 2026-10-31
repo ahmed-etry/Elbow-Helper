@@ -12,6 +12,7 @@ from ..datasets.findings import battle_aggregate
 from ..datasets.battle_logs import battle_date
 from ..research.history import search_date
 
+SELECTOR_ERROR = 'Choose members, accounts or clans.'
 
 def merge_battles(stored, live, tag, after, before):
     """Use the collector's identity; conflicting copies do not enter numeric totals."""
@@ -131,4 +132,8 @@ TOOLS = (family_tool('read_ranked_activity','Read ranked activity, complete acco
     {'member_ids':IDS,'account_tags':TAGS,'clan_tags':TAGS,'after':DATE,'before':DATE,
      'membership_basis': {'type': 'string', 'enum': ['community', 'current_in_game']},
      'season': {'type': 'string', 'maxLength': 20},
-     'include_battles':{'type':'boolean'},'cohort_ref':COHORT_REF},ranked_activity, required=('after',)),)
+     'include_battles':{'type':'boolean'},'cohort_ref':COHORT_REF},ranked_activity, required=('after',),
+    # The selector refusals of read_ranked_stats, checked before any read runs.
+    rules=({'needs': ['member_ids', 'account_tags', 'clan_tags', 'cohort_ref'], 'error': SELECTOR_ERROR},
+           {'only_one': ['member_ids', 'account_tags', 'clan_tags'], 'error': SELECTOR_ERROR},
+           {'with': ['cohort_ref'], 'forbids': ['member_ids'], 'error': SELECTOR_ERROR})),)

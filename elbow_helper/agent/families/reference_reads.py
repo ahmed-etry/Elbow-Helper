@@ -239,6 +239,20 @@ async def conversation_evidence(context, arguments):
             'coverage_note':'Read complete message chunks by meaning. Follow source_next_cursor while relevant discussion is incomplete. An empty window does not prove absence; unread attachments establish no image contents.'}
 
 
+# The mode refusals of conversation_evidence, checked before any read runs.
+CONVERSATION_RULES = (
+    *({'when': {'mode': ['attachments']}, 'with': [given], 'needs_all': [needed],
+       'error': 'Choose both the attachment channel and message.'}
+      for given, needed in (('channel_id', 'message_id'), ('message_id', 'channel_id'))),
+    {'when': {'mode': ['message_window']}, 'needs_all': ['channel_id', 'message_id'],
+     'error': 'Which message and channel should I read?'},
+    {'when': {'mode': ['search', 'author_mentions']},
+     'needs': ['query', 'author_id', 'author_ids', 'mentions', 'channel_id', 'channel_ids', 'after', 'before'],
+     'error': 'Supply search words, a channel, an author, or a date range.'},
+    {'when': {'mode': ['search', 'author_mentions']}, 'only_one': ['channel_id', 'channel_ids'],
+     'error': 'Use channel_id or channel_ids, not both.'},
+    {'when': {'mode': ['channel_window']}, 'needs_all': ['channel_id'], 'error': 'Which channel should I read?'})
+
 TOOLS = (
  family_tool('read_community_reference','Read sourced clan, role and workflow facts, approved headings or complete reference sections.',
     {'reference_kind':{'type':'string','enum':['knowledge','clans','roles','workflows','bot_workflows']},
@@ -260,5 +274,6 @@ TOOLS = (
      'source_cursor':{'type':'string','maxLength':64},
      'pages': {'type': 'integer', 'minimum': 1, 'maximum': 8,
                'description': 'Read consecutive complete search or history pages before semantic review, within the shared evidence budget.'}}, conversation_evidence,
+    rules=CONVERSATION_RULES,
     usage_note='Use search with any filter: query, author_ids, mentions, channels or dates. Omit channels for server-wide search. Continue source_next_cursor with same filters.'),
 )

@@ -17,7 +17,14 @@ from .contracts import (
     DiscordResearchJob, MAX_RESEARCH_BATCH_JOBS, ResearchJobDefinition,
 )
 from .history import HISTORY_PAGE_LIMIT, SEARCH_RESULT_LIMIT
+from ..plan.input_rules import RULES
 
+BATCH_RULES = [
+    {"when": {"kind": ["search"]}, "needs": ["query", "author_id", "after", "before"],
+     "error": "Supply search words, an author, or a date range."},
+    {"when": {"kind": ["history"]}, "needs_all": ["after"], "error": "History research requires a start date."},
+    {"when": {"kind": ["history"]}, "forbids": ["query"], "error": "History research does not use search words."},
+]
 
 TOOL_CONTRACTS = {
     "start_discord_research_batch": CapabilityContract(
@@ -96,6 +103,7 @@ def research_batch_tools() -> tuple[RegisteredAgentTool, ...]:
                 parameters={
                     "type": "object", "properties": properties,
                     "required": list(required), "additionalProperties": False,
+                    **({RULES: BATCH_RULES} if name == "start_discord_research_batch" else {}),
                 },
             ),
             handler,
@@ -137,18 +145,20 @@ async def start_discord_research_batch(
         if after is not None and after >= before:
             raise ValueError("Invalid research period")
     except ValueError:
-        return {"error": "Use a valid research period whose start is before its end."}
+        return {"error": "Use a valid research period whose start is before its end.",
+                "cause": "invalid_arguments"}
     if kind == "history":
         if after is None:
-            return {"error": "History research requires a start date."}
+            return {"error": "History research requires a start date.", "cause": "invalid_arguments"}
         if query:
-            return {"error": "History research does not use search words."}
+            return {"error": "History research does not use search words.", "cause": "invalid_arguments"}
         maximum_page_size, default_page_size = HISTORY_PAGE_LIMIT, 25
     else:
         if not query and not any(
             arguments.get(key) for key in ("author_id", "after", "before")
         ):
-            return {"error": "Supply search words, an author, or a date range."}
+            return {"error": "Supply search words, an author, or a date range.",
+                    "cause": "invalid_arguments"}
         maximum_page_size, default_page_size = SEARCH_RESULT_LIMIT, 10
     page_size = arguments.get("page_size", default_page_size)
     if type(page_size) is not int or not 1 <= page_size <= maximum_page_size:

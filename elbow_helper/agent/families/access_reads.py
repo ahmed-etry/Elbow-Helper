@@ -65,7 +65,9 @@ TOOLS = (family_tool('read_discord_access',
     {'channel_ids': IDS, 'role_ids': IDS, 'member_ids': IDS,
      'role_names': {'type': 'array', 'minItems': 1, 'maxItems': 25, 'uniqueItems': True,
                     'items': {'type': 'string', 'minLength': 1, 'maxLength': 100}}},
-    discord_access, contract=CapabilityContract(
+    discord_access, rules=({'needs': ['role_ids', 'role_names', 'member_ids'],
+                            'error': 'Which roles or members should I compare?'},),
+    contract=CapabilityContract(
         entity_fields=(('channel_ids', 'discord_channel_set'), ('role_ids', 'discord_role_set'),
                        ('member_ids', 'discord_member_set')),
         source_scope='channel_status', channel_fields=('channel_ids',),

@@ -21,6 +21,10 @@ from .history import (
     HISTORY_PAGE_LIMIT, SEARCH_RESULT_LIMIT,
 )
 from .batches import research_batch_tools
+from ..plan.input_rules import RULES
+
+SEARCH_RULES = [{"needs": ["query", "author_id", "after", "before"],
+                 "error": "Supply search words, an author, or a date range."}]
 
 
 TOOL_CONTRACTS = {
@@ -168,6 +172,7 @@ def research_tools() -> tuple[RegisteredAgentTool, ...]:
                 parameters={
                     "type": "object", "properties": properties,
                     "required": list(required), "additionalProperties": False,
+                    **({RULES: SEARCH_RULES} if name == "start_discord_research_job" else {}),
                 },
             ),
             handler,
@@ -200,7 +205,7 @@ async def start_discord_research_job(
     if author_id is not None and (type(author_id) is not int or author_id <= 0):
         return {"error": "A valid author ID is required."}
     if not query and not any(arguments.get(key) for key in ("author_id", "after", "before")):
-        return {"error": "Supply search words, an author, or a date range."}
+        return {"error": "Supply search words, an author, or a date range.", "cause": "invalid_arguments"}
     try:
         after = _search_date(arguments.get("after"))
         before = _search_date(arguments.get("before"))
@@ -209,7 +214,8 @@ async def start_discord_research_job(
         if after is not None and after >= before:
             raise ValueError("Invalid research period")
     except ValueError:
-        return {"error": "Use a valid search period whose start is before its end."}
+        return {"error": "Use a valid search period whose start is before its end.",
+                "cause": "invalid_arguments"}
     page_size = arguments.get("page_size", 10)
     if (
         type(page_size) is not int

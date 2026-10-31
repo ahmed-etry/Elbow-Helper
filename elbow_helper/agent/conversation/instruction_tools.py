@@ -55,7 +55,7 @@ async def remember_task_instruction(context: AgentRequestContext, arguments: Map
             replaces_id=arguments.get("replaces_id"),
         )
     except ValueError as error:
-        return {"error": str(error)}
+        return {"error": str(error), "cause": "invalid_arguments"}
     context.state.working = working
     context.state.source_channels.add(instruction.source_channel_id)
     return {"instruction": asdict(instruction), "working_state_version": working.version,
@@ -69,6 +69,6 @@ async def retire_task_instruction(context: AgentRequestContext, arguments: Mappi
             arguments["instruction_id"], member_id=context.member.id, message_id=context.source_message.id,
         )
     except ValueError as error:
-        return {"error": str(error)}
+        return {"error": str(error), "cause": "invalid_arguments"}
     return {"instruction_id": arguments["instruction_id"], "active": False,
             "working_state_version": context.state.working.version, "action_authorized": False}

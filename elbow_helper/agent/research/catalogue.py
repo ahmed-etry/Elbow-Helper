@@ -4,6 +4,7 @@ from __future__ import annotations
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool
+from ..plan.input_rules import RULES
 from .history import read_discord_channel_history, find_discord_channels, read_message_context
 from .search import search_discord_messages
 from .history import (
@@ -65,6 +66,11 @@ def discord_tools() -> tuple[RegisteredAgentTool, ...]:
                         "before": {"type": "string", "maxLength": 40},
                     },
                     "additionalProperties": False,
+                    RULES: [{"needs": ["query", "channel_id", "channel_ids", "author_id", "author_ids",
+                                       "mentions", "after", "before"],
+                             "error": "Supply search words, a channel, an author, or a date range."},
+                            {"only_one": ["channel_id", "channel_ids"],
+                             "error": "Use channel_id or channel_ids, not both."}],
                 },
                 usage_note=(
                     "Use words, authors, mentions, channels or dates; any filter suffices. "

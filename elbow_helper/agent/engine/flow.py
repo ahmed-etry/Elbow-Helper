@@ -111,6 +111,7 @@ class AnswerFlow:
         self.scope_repair_attempted = False
         self.evidence_delta = EvidenceDelta()
         self.assessment_requested = False
+        self.correction_granted = False
         self.plan_limit_logged = False
         self.discussion_message_ids = set()
         self.decision_composed = False
@@ -1034,6 +1035,10 @@ class AnswerFlow:
             raise AgentLimitReached(AGENT_RESEARCH_UNFINISHED)
         self.budget.output_reserve = available
         fresh_review = self.assessment_requested and self.final_session_factory is not None
+        # One correction of a refused read is kept however large the writer evidence is.
+        correction = not self.correction_granted and any(
+            value.get("cause") == "invalid_arguments" or value.get("status") == "needs_input"
+            for value in results.values())
         allow_more = (
             self.new_evidence
             and not terminal
@@ -1042,7 +1047,7 @@ class AnswerFlow:
             and self.runner.tool_calls < limits.MAX_TOOL_CALLS
             and self.runner.evidence_characters < self.runner.evidence_limit
             and (fresh_review or (
-                self.budget.request_can_research(projected)
+                self.budget.request_can_research(projected, correction=correction)
                 and self.budget.can_continue_tools(projected, result_reserve=8192)))
             and (
                 self.context.deadline_monotonic is None
@@ -1058,10 +1063,12 @@ class AnswerFlow:
             # Results are in this fresh session's prompt. This is the same
             # provider round that previously produced a draft or another plan.
             pending = ()
-            allow_more = (self.budget.request_can_research(self.budget.next_input_estimate)
+            allow_more = (self.budget.request_can_research(
+                    self.budget.next_input_estimate, correction=correction)
                 and self.budget.can_continue_tools(self.budget.next_input_estimate, result_reserve=8192))
         elif fresh_review:
             allow_more = False
+        self.correction_granted |= correction and allow_more
         if not allow_more:
             # Choose the final protocol before ModelRounds disables tools.
             # The preceding review admission uses its compact input and the
@@ -1076,6 +1083,7 @@ class AnswerFlow:
             allow_tools=allow_more,
             max_output_tokens=available,
             continuation_instruction=LIMIT_ANSWER_INSTRUCTION if not allow_more else None,
+            correction=correction and allow_more,
         )
         if (not step.tool_calls and step.content
                 and (issue := unprepared_change_issue(step.content, self.context.state.proposed_changes))
@@ -1085,6 +1093,7 @@ class AnswerFlow:
             step = await self._advance_answer(
                 (), allow_tools=True,
                 max_output_tokens=available, continuation_instruction=issue,
+                correction=correction,
             )
         if not step.tool_calls:
             if not step.content:

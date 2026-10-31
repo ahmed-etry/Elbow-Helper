@@ -69,7 +69,8 @@ class VerificationFixTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCas
         self.assertFalse(session.calls[-1][1])
         error = json.loads(session.calls[1][0][0].content)["results"]["members"]
         self.assertEqual(error["cause"], "invalid_arguments")
-        self.assertEqual(set(error["invalid_fields"]), {"member_ids", "role_ids", "sort"})
+        # The plan check refuses it now and names every field that can select members.
+        self.assertLessEqual({"member_ids", "role_ids", "sort"}, set(error["invalid_fields"]))
         self.assertIn("member_ids", error["argument_schema"]["properties"])
 
     async def test_additional_key_private_signal_without_withheld_evidence_never_reaches_delivery(self):

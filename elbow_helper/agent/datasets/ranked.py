@@ -14,6 +14,9 @@ from ..research.history import search_date
 from ..capabilities.validation import invalid_arguments
 from .clash import read_clash
 from ..read_cache import stored_read
+from ..plan.input_rules import RULES
+
+SELECTORS = ["member_ids", "account_tags", "clan_tags"]
 
 
 def history_coverage(result, after, before):
@@ -177,7 +180,9 @@ def ranked_tools():
                 "limit": {"type": "integer", "minimum": 1, "maximum": 25, "default": 25},
                 "max_age_seconds": {"type": "integer", "minimum": 0, "maximum": 30,
                                     "default": 30},
-            }, "required": ["after"], "additionalProperties": False},
+            }, "required": ["after"], "additionalProperties": False,
+             RULES: [{"needs": SELECTORS, "error": "Choose members, accounts or clans."},
+                     {"only_one": SELECTORS, "error": "Choose members, accounts or clans."}]},
             usage_note="Choose one selector; long periods are read in windows. Attacks count stored ranked/Legend records, including losses; check coverage. Quotas null; dates UTC.",
         ), read_ranked_stats,
         contract=CapabilityContract(entity_fields=(("member_ids", "discord_member_set"),

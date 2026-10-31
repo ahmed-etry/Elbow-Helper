@@ -23,6 +23,7 @@ from ..access import require_evidence_access
 from ..reports.tools import original_tool
 from ..plan.checker import check_plan, check_step
 from ..plan.executor import execute_plan, referenced_report_ids
+from ..plan.input_rules import without_rules
 from ..plan.results import model_result, model_view
 from . import budgets as limits
 from functools import partial
@@ -254,7 +255,9 @@ class PlanRunner:
         checked = check_step({**step, "arguments": arguments}, self.registry, resolved=True)
         if not checked.ok:
             return {"error": checked.error, "offered": checked.offered,
-                    "cause": "invalid_arguments", "argument_schema": self.registry[name].definition.parameters}
+                    "cause": "invalid_arguments",
+                    **({"invalid_fields": list(checked.fields)} if checked.fields else {}),
+                    "argument_schema": without_rules(self.registry[name].definition.parameters)}
         try:
             scope = compile_capability_call(
                 checked.tool, arguments, self.source_identities, contract=checked.contract,
@@ -380,7 +383,7 @@ class PlanRunner:
         except ValueError:
             payload = {"error": "Invalid lookup result"}
         if payload.get("cause") == "invalid_arguments":
-            payload.update(capability=step["capability"], argument_schema=tool.definition.parameters)
+            payload.update(capability=step["capability"], argument_schema=without_rules(tool.definition.parameters))
         if tool.effect is AgentCapabilityEffect.ARTIFACT and "error" not in payload:
             # Retained legacy title provenance remains part of artifact access.
             local.state.required_access.update(local.state.knowledge_title_access)
@@ -494,18 +497,18 @@ class PlanRunner:
             emitted=[],
             answer_complete=answer_complete,
         )
+        checked = check_plan(plan, self.registry, completed_steps=self.completed_steps)
         try:
             result = await execute_plan(
                 plan,
                 partial(self.run_one, plan_state=plan_state),
                 max_concurrency=4,
                 earlier_results=self.results,
-                argument_schema=lambda step: (
+                argument_schema=lambda step: without_rules(
                     self.registry[step["capability"]].definition.parameters
                 ),
-                step_errors=check_plan(
-                    plan, self.registry, completed_steps=self.completed_steps,
-                ).step_errors,
+                step_errors=checked.step_errors,
+                step_fields=checked.step_fields,
                 parallel=lambda step: self.registry[step["capability"]].effect
                 is AgentCapabilityEffect.READ and self.registry[step["capability"]].action_class
                 is ActionClass.READ,
