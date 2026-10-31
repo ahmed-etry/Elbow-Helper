@@ -1,6 +1,7 @@
 """Collect existing sources without changing any feature's source of truth."""
 
 import asyncio
+from collections import Counter
 from datetime import datetime
 import logging
 
@@ -28,6 +29,11 @@ PLAYER_INTERVAL_SECONDS = 60 * 60
 LINK_INTERVAL_SECONDS = 5 * 60
 DISCORD_INTERVAL_SECONDS = 24 * 60 * 60
 SCHEDULE_CHECK_SECONDS = 30
+WARNING_WINDOW_US = 60 * 60 * 1_000_000
+
+
+def _counts(reasons) -> str:
+    return ", ".join(f"{code}={count}" for code, count in sorted(reasons.items()))
 
 
 def _timestamp(value: datetime | None) -> int | None:
@@ -58,6 +64,7 @@ class FamilyCollectors(commands.Cog):
         self._player_lock = asyncio.Lock()
         self._war_lock = asyncio.Lock()
         self._source_locks = {name: asyncio.Lock() for name in SOURCE_COLLECTORS}
+        self._quiet = {}
         self._closing = False
 
     async def cog_load(self):
@@ -107,6 +114,34 @@ class FamilyCollectors(commands.Cog):
                 LOGGER.warning("Family %s scheduling failed; will retry", name)
             await asyncio.sleep(SCHEDULE_CHECK_SECONDS)
 
+    def _warn(self, collector, run, failed, error, reasons=None):
+        # Source collectors poll many accounts and groups, so a stuck account fails
+        # every run. Their item failures warn once an hour; runs in between are
+        # counted, by failure reason, and reported by the next warning.
+        # Everything else warns each time.
+        reasons = reasons or {}
+        quiet = None
+        if error is None and collector in SOURCE_COLLECTORS:
+            now = now_us()
+            window = self._quiet.setdefault(collector, {"since": None, "runs": 0, "failed": 0, "reasons": Counter()})
+            if window["since"] is not None and now - window["since"] < WARNING_WINDOW_US:
+                window["runs"] += 1
+                window["failed"] += failed
+                window["reasons"].update(reasons)
+                return
+            quiet = (window["runs"], window["failed"], _counts(window["reasons"])) if window["runs"] else None
+            window.update(since=now, runs=0, failed=0, reasons=Counter())
+        code = error or "item_failure"
+        if reasons:
+            code += " " + _counts(reasons)
+        if quiet:
+            LOGGER.warning("Family %s collection failed or partial (run=%s, failed=%s, code=%s; "
+                           "%s more runs and %s failed items since the last warning: %s)",
+                           collector, run, failed, code, *quiet)
+        else:
+            LOGGER.warning("Family %s collection failed or partial (run=%s, failed=%s, code=%s)",
+                           collector, run, failed, code)
+
     async def _run(self, collector, scope_kind, specs, operation):
         run = None
         error = None
@@ -127,8 +162,8 @@ class FamilyCollectors(commands.Cog):
                 except Exception:
                     error = "store_unavailable"
             if error or report and report["failed"]:
-                LOGGER.warning("Family %s collection failed or partial (run=%s, failed=%s, code=%s)",
-                               collector, run, report["failed"] if report else "unknown", error or "item_failure")
+                self._warn(collector, run, report["failed"] if report else "unknown", error,
+                           report.get("reasons") if report else None)
         if cancelled:
             raise asyncio.CancelledError
         return report

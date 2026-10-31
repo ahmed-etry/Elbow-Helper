@@ -298,6 +298,9 @@ class SourceTests(unittest.IsolatedAsyncioTestCase):
             baseline = await self.rows("SELECT * FROM api_field_changes")
             duplicate = deepcopy(data)
             duplicate["body"]["items"].append(deepcopy(duplicate["body"]["items"][0]))
+            if kind == "battle_log":
+                # A word-for-word repeat is one battle; a different entry with the same identity is a conflict.
+                duplicate["body"]["items"][-1]["future"] = "conflict"
             malformed = deepcopy(data)
             malformed["body"]["paging"] = {"cursors": {"after": 123}}
             invalid_json = deepcopy(data)
@@ -314,7 +317,8 @@ class SourceTests(unittest.IsolatedAsyncioTestCase):
             history = await self.rows("SELECT * FROM api_field_changes")
             for status in (403, 404, 429, 500, 503):
                 _, result = await self.record(data, at + DAY, status=status)
-                self.assertEqual(result["failed"], 1)
+                # A ranked group that does not exist is an answer, covered below.
+                self.assertEqual(result["failed"], 0 if (data["kind"], status) == ("ranked_group", 404) else 1)
             invalid = deepcopy(data)
             if data["kind"] == "ranked_group":
                 invalid["body"]["members"] = None
@@ -574,7 +578,8 @@ class SourceCollectorTests(unittest.IsolatedAsyncioTestCase):
                 c.execute("INSERT INTO player_ranked_references VALUES (1,?,NULL,NULL,'#PP9',123,?)", (BASE, run))
         await self.store.call(seed)
         self.client.get.return_value = response({"reason": "unknownException"}, 500)
-        with self.assertLogs("elbow_helper.data.collectors.service", level="WARNING"):
-            await collect_sources(self.owner, "ranked_groups")
+        with self.assertNoLogs("elbow_helper.data.collectors.service", level="WARNING"):
+            report = await collect_sources(self.owner, "ranked_groups")
+        self.assertEqual((report["failed"], report["empty"]), (0, 1))
         self.client.get.assert_awaited_once_with("/leaguegroup/%23PP9/123?playerTag=%23P0", attempts=1, fresh=True)
         self.assertEqual(await self.store.call(due_sources, "ranked_groups", CLANS, BASE + 10 * DAY), [])

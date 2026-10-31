@@ -27,6 +27,8 @@ DAY = 86400 * SECOND
 RANKED_INTERVAL = 6 * 3600 * SECOND
 RANKED_WEEK = 7 * DAY
 RANKED_FINAL_GRACE = 300 * SECOND
+# Clash fills a player's group tag with this when they had no ranked group that season.
+NO_GROUP = "#0"
 INTERVALS = {"battle_log": 3600 * SECOND, "league_history": DAY, "ranked_group": RANKED_INTERVAL,
              "capital_raids": 3600 * SECOND, "catalogue": DAY, "goldpass": DAY, "legend_seasons": DAY}
 KINDS = {"battle_logs": ("battle_log",), "league_history": ("league_history",),
@@ -53,7 +55,7 @@ def ranked_references(connection, accounts, at):
         for row in rows:
             for prefix in ("current", "previous"):
                 pair = row[f"{prefix}_group_tag"], row[f"{prefix}_season_id"]
-                if pair[0] and pair[1] is not None:
+                if pair[0] and pair[0] != NO_GROUP and pair[1] is not None:
                     scope = canonical_json([account["player_tag"], *pair])
                     result[scope] = at < pair[1] * SECOND + RANKED_WEEK + RANKED_FINAL_GRACE
     return result
@@ -126,7 +128,7 @@ def _save_list(connection, kind, scope, raw, checkpoint, run, at):
         raise ValueError("unexpected_pagination")
     if after and after == checkpoint.get("after"):
         raise ValueError("repeated_cursor")
-    seen, overlap = set(), False
+    seen, overlap = {}, False
     for item in items:
         source_at, final = None, False
         if kind == "battle_log":
@@ -149,8 +151,11 @@ def _save_list(connection, kind, scope, raw, checkpoint, run, at):
                 raise ValueError("invalid_catalogue_identity")
             key = canonical_json(item["id"])
         if key in seen:
+            # Clash can repeat a battle word for word; two different entries sharing one identity stay a conflict.
+            if kind == "battle_log" and seen[key] == item:
+                continue
             raise ValueError("duplicate_source_identity")
-        seen.add(key)
+        seen[key] = item
         overlap |= (save_battle(connection, scope, item, run, at) if kind == "battle_log" else
                     _entity(connection, kind, scope, key, item, run, at, source_at=source_at, final=final))
     # Keep all envelope fields, including empty lists and future metadata, but
@@ -184,8 +189,11 @@ def record_source(connection, run, ordinal, job, response, at):
         connection.execute("SAVEPOINT source_facts")
         before = connection.total_changes
         try:
-            if kind == "ranked_group" and not job["current"] and response and response.status == 500:
-                enabled, error = 0, "old_season_unavailable"
+            if kind == "ranked_group" and response and response.status == 404:
+                # No such group: an answer, not a failure. A finished season will not gain one.
+                status, error, enabled = "empty", "group_not_found", int(job["current"])
+            elif kind == "ranked_group" and not job["current"] and response and response.status == 500:
+                status, error, enabled = "unavailable", "old_season_unavailable", 0
             elif response and response.ok and response.error is None:
                 raw = response.payload
                 canonical_json(raw)
@@ -211,10 +219,12 @@ def record_source(connection, run, ordinal, job, response, at):
                 else:
                     error = None
                 written = connection.total_changes - before
-        except (ValueError, TypeError, OverflowError):
+        except (ValueError, TypeError, OverflowError) as exc:
             connection.execute("ROLLBACK TO source_facts")
             checkpoint = json.loads(state["checkpoint_json"])
-            status, error, written = "failed", "invalid_payload", 0
+            # Only the code's own check names are kept; library messages and payload text never are.
+            reason = str(exc) if type(exc) is ValueError and str(exc).isidentifier() else type(exc).__name__.lower()
+            status, error, written = "failed", f"invalid_payload:{reason}", 0
         connection.execute("RELEASE source_facts")
         connection.execute("UPDATE family_api_state SET next_due_at=?,enabled=?,checkpoint_json=? "
                            "WHERE source_kind=? AND scope_id=?", (due, enabled, canonical_json(checkpoint), kind, scope))

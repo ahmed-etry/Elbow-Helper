@@ -22,22 +22,23 @@ def requested(connection, run, ordinal, at):
 
 
 def outcome(connection, run, state, status, at, *, error=None, response=None, count=None, written=0):
+    """Failed, nothing-there (empty with a code) and unavailable polls keep an item; clean polls do not."""
     connection.execute(
         "UPDATE collection_runs SET attempted=attempted+1,succeeded=succeeded+?,empty=empty+?,failed=failed+?,"
         "rows_written=rows_written+?,origin_attempts=COALESCE(origin_attempts,0)+?,cache_hits=COALESCE(cache_hits,0)+? WHERE id=?",
-        (status == "ok", status == "empty", status == "failed", written,
+        (status == "ok", status in {"empty", "unavailable"}, status == "failed", written,
          response.attempts if response else 0, bool(response and response.attempts == 0), run))
     connection.execute(
         f"UPDATE family_api_state SET {CLEAR},last_attempt_at=?,last_status=?,last_http_status=?,last_run_id=? "
         "WHERE source_kind=? AND scope_id=?",
         (at, error or status, response.status if response else None, run, state["source_kind"], state["scope_id"]))
-    if status == "failed":
+    if status == "failed" or error is not None:
         connection.execute(
-            "INSERT INTO collection_items(run_id,ordinal,source_kind,scope_id,status,started_at) VALUES (?,?,?,?,'failed',?)",
-            (run, state["ordinal"], state["source_kind"], state["scope_id"], state["started_at"]))
+            "INSERT INTO collection_items(run_id,ordinal,source_kind,scope_id,status,started_at) VALUES (?,?,?,?,?,?)",
+            (run, state["ordinal"], state["source_kind"], state["scope_id"], status, state["started_at"]))
         item = FamilyStore.item(connection, run, state["ordinal"])["id"]
         FamilyStore.outcome(connection, item, status, at, error=error, response=response,
-                            count=count, written=written, complete=False)
+                            count=count, written=written, complete=status == "empty")
 
 
 def finish(connection, run, at, *, interrupted=False):
@@ -52,4 +53,6 @@ def finish(connection, run, at, *, interrupted=False):
     status = ("interrupted" if interrupted else "partial" if failed + skipped and ok + empty else
               "failed" if failed + skipped else "empty" if not ok else "ok")
     connection.execute("UPDATE collection_runs SET finished_at=?,status=? WHERE id=?", (at, status, run))
-    return {"status": status, "failed": failed, "succeeded": ok, "empty": empty}
+    reasons = {row[0] or "unknown": row[1] for row in connection.execute(
+        "SELECT error_code,COUNT(*) FROM collection_items WHERE run_id=? AND status='failed' GROUP BY 1", (run,))}
+    return {"status": status, "failed": failed, "succeeded": ok, "empty": empty, "reasons": reasons}
