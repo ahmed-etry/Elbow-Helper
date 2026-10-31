@@ -36,10 +36,22 @@ class JoinCohortEvidenceTests(unittest.IsolatedAsyncioTestCase):
         profiles = {tag: {'status': 'ok', 'data': {'name': tag,
                     'clan': {'tag': CLANS[code].tag, 'name': CLANS[code].name}}}
                     for tag, code in (('#P0', 'BE1'), ('#Q0', 'BEH'))}
+        selection = {'basis': 'joined_discord',
+                     'joined_after': '2026-09-01T00:00:00Z', 'joined_before': '2026-10-01T00:00:00Z'}
         with patch.object(identity_reads, 'profiles', AsyncMock(return_value=profiles)):
-            result = await identity_reads.member_cohort(context, {'basis': 'joined_discord',
-                'joined_after': '2026-09-01T00:00:00Z', 'joined_before': '2026-10-01T00:00:00Z'})
-        visible = answer_evidence({'joins': family_model_view({**result, 'family': 'read_member_cohort'})})['joins']
+            result = await identity_reads.member_cohort(context, selection)
+        plain = answer_evidence({'joins': family_model_view(
+            {**result, 'family': 'read_member_cohort', 'selection': selection})})['joins']
+        for row in plain['rows']:
+            # Join date and family roles define a join cohort; home clans wait for include_profile.
+            self.assertIn('joined_at', row)
+            self.assertIn('family_membership_roles', row)
+            self.assertNotIn('home_clans', row)
+            self.assertNotIn('home_clan_basis', row)
+        self.assertIn('configured non-utility Discord clan member roles', plain['home_clan_basis'])
+        self.assertEqual(len(plain['rows']), 4)
+        visible = answer_evidence({'joins': family_model_view({**result, 'family': 'read_member_cohort',
+            'selection': {**selection, 'include_profile': True}})})['joins']
         rows = {row['member_id']: row for row in visible['rows']}
         self.assertEqual(set(rows), {1, 2, 3, 4})
         self.assertTrue(rows[1]['family_membership_roles']['member']['held'])

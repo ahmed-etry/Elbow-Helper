@@ -374,6 +374,10 @@ TOOLS = (
     {'stage':{'type':'string','enum':['pipeline','tickets','requester_tickets','active_trials','trial_followups','ticket_reminders','lifecycle','ticket_evidence','acceptance_history','ticket_log']},
      'ticket_channel_id':TICKET,'member_ids':IDS,'after':{'type':'string','format':'date-time'},
      'include_accounts':{'type':'boolean'},'performance':PERFORMANCE,
+     'include_profile':{'type':'boolean','description':
+         'With include_accounts: clan role.'},
+     'include_standing':{'type':'boolean','description':
+         'With include_accounts: leagues, trophies, donations, career war stars.'},
      'before':{'type':'string','format':'date-time'},'source_cursor':{'type':'string','maxLength':200}}, recruitment,
      usage_note='requester_tickets: requester-owned readable tickets, no staff access. Other stages require recruitment access. Destination scope applies.'),
  family_tool('read_hibernation','Read active hibernation, Discord join dates and observed activity since its start.',

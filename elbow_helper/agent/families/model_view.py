@@ -5,11 +5,11 @@ from ..research.history import readable_history_row
 from .cwl_summary import CWL_ANALYSIS_FIELDS
 
 
-# read_member_accounts returns these only on include_profile; the retained report keeps them all.
+# Member lookups return these only on include_profile or include_standing; the retained report keeps them all.
 MEMBER_PROFILE_FIELDS = ('nickname', 'joined_at', 'family_membership_roles', 'home_clans',
                          'participation_clans', 'home_clan_status')
-ACCOUNT_PROFILE_FIELDS = ('role', 'ranked_league', 'legacy_league', 'trophies', 'donations',
-                          'war_stars', 'observed_at')
+ACCOUNT_PROFILE_FIELDS = ('role',)
+ACCOUNT_STANDING_FIELDS = ('ranked_league', 'legacy_league', 'trophies', 'donations', 'war_stars')
 
 
 def pick(value, fields):
@@ -116,6 +116,51 @@ def participation_view(clans, rows):
     return result
 
 
+def cohort_profile_fields(selection):
+    """Member fields a cohort keeps without include_profile: those its selection is made of."""
+    kept = set()
+    if selection.get('basis') in ('joined_discord', 'accepted_recruitment'):
+        kept.update(('joined_at', 'family_membership_roles'))
+    if (selection.get('basis') == 'clan_rosters' or selection.get('clan_codes')
+            or selection.get('clan_role')):
+        kept.update(('home_clans', 'participation_clans', 'home_clan_status'))
+    return kept
+
+
+def account_profile_drops(selection):
+    """Account fields left out unless include_profile or include_standing asks for them."""
+    drops = set()
+    if not selection.get('include_profile'):
+        drops.update(ACCOUNT_PROFILE_FIELDS)
+    if not selection.get('include_standing'):
+        drops.update(ACCOUNT_STANDING_FIELDS)
+    if not (selection.get('include_profile') or selection.get('include_standing')):
+        drops.add('observed_at')
+    return drops
+
+
+def plain_member_row(item, data, family, selection):
+    """Drop profile, roles, history and the repeated home clan explanation unless requested."""
+    item = dict(item)
+    basis = item.pop('home_clan_basis', None)
+    if basis is not None:
+        # One copy on the view; it was identical on every row.
+        data.setdefault('home_clan_basis', basis)
+    roster = family == 'read_member_cohort' and selection.get('basis') == 'clan_rosters'
+    if not selection.get('include_profile'):
+        kept = cohort_profile_fields(selection) if family == 'read_member_cohort' else set()
+        item = omit(item, set(MEMBER_PROFILE_FIELDS) - kept)
+    if isinstance(item.get('accounts'), list) and not roster:
+        item['accounts'] = [omit(account, account_profile_drops(selection)) for account in item['accounts']]
+    if not selection.get('include_roles') and selection.get('basis') != 'role_holders':
+        item.pop('roles', None)
+    if not selection.get('include_history'):
+        item.pop('record_history', None)
+        if isinstance(item.get('accounts'), list):
+            item['accounts'] = [omit(account, ('record_history',)) for account in item['accounts']]
+    return item
+
+
 def family_model_view(payload):
     """Keep every selected identity and computed metric; full detail stays retained."""
     data = dict(payload)
@@ -125,7 +170,11 @@ def family_model_view(payload):
     rows = data.get('rows')
     if not isinstance(rows, list):
         return data
-    plain_accounts = family == 'read_member_accounts' and not data.get('selection', {}).get('include_profile')
+    selection = data.get('selection') if isinstance(data.get('selection'), dict) else {}
+    plain_accounts = family == 'read_member_accounts' and not selection.get('include_profile')
+    account_drops = account_profile_drops(selection) if family == 'read_member_accounts' else set()
+    # Cohorts and recruitment rows follow member lookups: profile, roles and history only on request.
+    plain_rows = family in ('read_member_cohort', 'read_recruitment_pipeline')
     if isinstance(data.get('members'), list):
         selected_members = {row.get('member_id') or row.get('applicant_member_id') for row in rows}
         data['members'] = [account_view(member) for member in data['members']
@@ -134,7 +183,7 @@ def family_model_view(payload):
             # The home clan explanation is stated once in the planner context, never per member.
             data['members'] = [omit(member, ('home_clan_basis', *(MEMBER_PROFILE_FIELDS if plain_accounts else ())))
                                for member in data['members']]
-        if family == 'read_member_accounts' and not data.get('selection', {}).get('include_roles'):
+        if family == 'read_member_accounts' and not selection.get('include_roles'):
             for member in data['members']:
                 member.pop('roles', None)
     if family == 'read_conversation_evidence' and data.get('mode') == 'channel_window':
@@ -152,8 +201,7 @@ def family_model_view(payload):
         selected = {row.get('player_tag') for row in rows}
         data['unknown_accounts'] = [projection(row) for row in data['unknown_accounts']
                                    if row.get('player_tag') in selected]
-        if plain_accounts:
-            data['unknown_accounts'] = [omit(row, ACCOUNT_PROFILE_FIELDS) for row in data['unknown_accounts']]
+        data['unknown_accounts'] = [omit(row, account_drops) for row in data['unknown_accounts']]
     if isinstance(data.get('clan_facts'), list):
         data['clan_facts'] = [pick(row, ('clan_code', 'name', 'tag', 'operational_cwl_only',
             'configured_cwl_only', 'membership_basis', 'configured_membership_basis',
@@ -208,8 +256,9 @@ def family_model_view(payload):
                         key: pick(value, ('numerator', 'denominator')) if isinstance(value, dict) else value
                         for key, value in metrics.items() if key != 'accounts'}
                         for kind, metrics in item['attack_performance'].items()}
-            if plain_accounts:
-                item = omit(item, ACCOUNT_PROFILE_FIELDS)
+            item = omit(item, account_drops)
+            if plain_rows:
+                item = plain_member_row(item, data, family, {'basis': data.get('basis'), **selection})
             projected.append(item)
             if family == 'read_member_cohort' and data.get('activity_coverage'):
                 projected[-1] = pick(item, ('member_id', 'member_name', 'membership_status',

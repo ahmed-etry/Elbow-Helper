@@ -129,7 +129,7 @@ class CohortWriterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(rows), 203)
         self.assertEqual(sum(r['member_id'] is not None for r in rows), 183)
         self.assertEqual([r['donations'] for r in rows], list(range(203)))
-        self.assertTrue(all(r['attacks_used'] == 6 for r in rows))
+        self.assertEqual(writer['row_rendering']['rows']['same_on_every_row']['attacks_used'], 6)
         self.assertFalse(flow.context.state.attachments)
         self.assertFalse(flow.context.state.proposed_changes)
 
