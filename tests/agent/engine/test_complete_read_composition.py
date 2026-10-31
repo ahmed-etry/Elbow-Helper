@@ -24,7 +24,7 @@ class CaptureModel(_Model):
 
 def decision_payload(facts='Supported conclusion.'):
     return json.dumps({'intent': 'Established objective', 'intent_source': 'request',
-        'discussion_message_ids': [], 'settled_choices': [], 'open_choices': [], 'facts': facts, 'question': '', 'recommendation': ''})
+        'discussion_message_ids': [], 'settled_choices': [], 'open_choices': [], 'facts': facts, 'question': ''})
 
 
 class CompleteReadCompositionTests(unittest.IsolatedAsyncioTestCase):

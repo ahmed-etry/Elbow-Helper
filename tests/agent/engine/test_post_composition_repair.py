@@ -28,7 +28,7 @@ class PostCompositionRepairTests(unittest.IsolatedAsyncioTestCase):
     def flow(self, *, assessment=True, workbook=False, correction=None):
         steps = [AgentStep(correction, (), AgentUsage(1000, 100))] if correction else []
         flow, session, model, usage = cost.RequestCostTests().flow(steps)
-        flow.assessment_requested = assessment
+        flow.assessment_requested = flow.advice_requested = assessment
         flow.rounder.final_attempted = True
         flow.rounder.rounds = 4
         flow.answer_accounts = {'#S0': {'name': 'Synthetic account', 'town_hall': 10}}

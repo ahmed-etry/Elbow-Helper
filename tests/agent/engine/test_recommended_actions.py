@@ -67,7 +67,7 @@ class RecommendedActionTests(unittest.IsolatedAsyncioTestCase):
         context = replace(flow.context, **context_fields)
         context.state.resolved_members.update({51: 'Synthetic A', 52: 'Synthetic B', 53: 'Synthetic C'})
         flow.context = flow.runner.context = context
-        flow.assessment_requested = True
+        flow.assessment_requested = flow.advice_requested = True
         flow.rounder.final_attempted = True
         flow._run = AsyncMock(return_value=content)
         return flow
@@ -126,7 +126,8 @@ class RecommendedActionTests(unittest.IsolatedAsyncioTestCase):
     async def test_empty_actions_and_unsettled_answers_never_prepare_changes(self):
         for fields in ({'recommended_actions': []}, {'recommendation': ''}, {'recommendation': ' \t'},
                        {'intent_source': 'unresolved', 'question': 'Which next step?'},
-                       {'open_choices': ['Approach'], 'question': 'Which approach?'}):
+                       {'intent_source': 'unresolved', 'open_choices': ['Approach'],
+                        'question': 'Which approach?'}):
             with self.subTest(fields=fields):
                 flow = self.flow(decision([action()], **fields))
                 # Action-like request wording cannot override the structural gates.
@@ -365,14 +366,14 @@ class RecommendedActionTests(unittest.IsolatedAsyncioTestCase):
     async def test_tool_disabled_final_composition_can_prepare_the_recommendation(self):
         flow = self.flow(decision())
         del flow._run
-        flow.assessment_requested = False
+        flow.assessment_requested = flow.advice_requested = False
         flow.rounder.final_attempted = False
         flow.final_session_factory = None
         read = RegisteredAgentTool(AgentToolDefinition('read_value', 'Synthetic read.', {
             'type': 'object', 'properties': {}, 'additionalProperties': False}),
             AsyncMock(return_value={'value': 7}))
         flow.registry['read_value'] = read
-        plan = {'goal': 'Assess the selected people', 'effort': 'high', 'assessment': True,
+        plan = {'goal': 'Assess the selected people', 'effort': 'high', 'assessment': True, 'advice': True,
                 'finish_after_reads': True, 'output': 'text', 'steps': [
                     {'id': 'read', 'capability': 'read_value', 'arguments': {}, 'depends_on': []}]}
         flow.session.steps = [_model_step(plan), cost.response(decision([action()]))]

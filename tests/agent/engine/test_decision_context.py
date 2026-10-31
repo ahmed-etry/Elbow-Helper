@@ -121,14 +121,18 @@ class DecisionContextTests(unittest.IsolatedAsyncioTestCase):
             decision_answer(payload(question=''), set())
 
     def test_an_explicit_goal_does_not_resolve_an_open_operational_choice(self):
-        content = payload(intent='Open event signups', intent_source='request',
+        content = payload(intent='Open event signups', intent_source='unresolved',
             open_choices=['One session or two sessions'],
             facts='Seven volunteers are confirmed.', recommendation='',
             question='Do you want one session or two?')
         self.assertEqual(decision_answer(content, set()),
             'Seven volunteers are confirmed.\n\nDo you want one session or two?')
         with self.assertRaises(ValueError):
-            decision_answer(payload(intent_source='request', open_choices=['Session format'], question=''), set())
+            decision_answer(payload(intent_source='unresolved', open_choices=['Session format'], question=''), set())
+        # A request whose intent is established carries neither choices nor a question.
+        self.assertEqual(decision_answer(payload(intent_source='request', open_choices=['Session format'],
+            facts='Seven volunteers are confirmed.', recommendation='',
+            question='Do you want one session or two?'), set()), 'Seven volunteers are confirmed.')
 
     def test_only_actual_discussion_rows_can_establish_intent(self):
         results = {'nearby': {'rows': [{'message_id': 1}]},

@@ -544,7 +544,7 @@ class PlanFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("required earlier result", session.calls[1][0][0].content)
 
     async def test_declared_assessment_uses_max_effort_final_composition(self):
-        plan = {**_plan([_step("first")], effort="high"), "assessment": True, 'finish_after_reads': True}
+        plan = {**_plan([_step("first")], effort="high"), "assessment": True, 'advice': True, 'finish_after_reads': True}
         session = _Session([_model_step(plan),
                             AgentStep(json.dumps({'intent': 'Established objective', 'intent_source': 'request',
                                 'discussion_message_ids': [], 'settled_choices': [], 'open_choices': [], 'facts': '', 'question': '',
