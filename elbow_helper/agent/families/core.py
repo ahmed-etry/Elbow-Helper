@@ -20,6 +20,7 @@ from ..reports.base import retain_report, ArtifactCapacityError
 from ..reports.tools import authorize_report
 from ..conversation.findings import family_revisions
 from ..read_cache import ReadDependencies
+from ..plan.input_rules import RULES
 
 COMMON = {
     'fresh': {'type': 'boolean', 'description': 'Force fresh source reads, including nested reads. Use for a requested recheck.'},
@@ -187,7 +188,7 @@ UNKEPT_REPORT = {'error': 'That report was too large to keep while later reads r
                           'Narrow its members, clans or period.', 'cause': 'capacity'}
 
 
-def family_tool(name, description, properties, reader, *, required=(), contract=None, usage_note=None):
+def family_tool(name, description, properties, reader, *, required=(), rules=(), contract=None, usage_note=None):
     async def handle(context, arguments):
         await require_evidence_access(context)
         offset, limit = arguments.get('offset', 0), arguments.get('limit', 500)
@@ -198,8 +199,12 @@ def family_tool(name, description, properties, reader, *, required=(), contract=
             report = context.state.reports.get(identifier)
             if report is None and identifier in context.state.unkept_reports:
                 return dict(UNKEPT_REPORT)
+            if (isinstance(report, FamilyReport) and report.guild_id == context.guild.id
+                    and report.family != name):
+                return {'error': 'That report_id belongs to ' + report.family + '; continue it with that read.',
+                        'cause': 'invalid_arguments', 'invalid_fields': ['report_id']}
             if (not isinstance(report, FamilyReport) or report.guild_id != context.guild.id
-                    or report.family != name or not await authorize_report(context, identifier)):
+                    or not await authorize_report(context, identifier)):
                 return {'error': 'That report is no longer available here.', 'cause': 'report_unavailable'}
             if arguments.get('fresh') or set(arguments) - set(COMMON):
                 return {'error': 'Read a new snapshot to change its selection.', 'cause': 'invalid_arguments'}
@@ -343,9 +348,12 @@ def family_tool(name, description, properties, reader, *, required=(), contract=
         contract = replace(contract,entity_fields=(*contract.entity_fields,('cohort_ref','family_report')))
     contract = replace(contract, entity_fields=(*contract.entity_fields, ("report_id", "family_report")),
                        retained_fields=(*contract.retained_fields, "report_id"))
+    # A report_id continuation carries its selection, so selection rules skip it.
+    checks = [{'needs_all': [field], 'error': 'Please specify ' + field + '.'} for field in required]
+    checks = [{**rule, 'unless': ['report_id']} for rule in (*checks, *rules)]
     return RegisteredAgentTool(AgentToolDefinition(name, description,
         {'type': 'object', 'properties': {**properties, **COMMON},
-         'required': [], 'additionalProperties': False},
+         'required': [], 'additionalProperties': False, **({RULES: checks} if checks else {})},
         usage_note=usage_note or 'Fresh selection or report_id + cursor continuation. Follow next_cursor to completion. Exports use every retained row.'),
         handle, contract=contract,
         returns='report_id,rows:[{typed family fields}],total_rows,next_offset,complete_snapshot')

@@ -369,6 +369,16 @@ async def promotion(context, arguments):
 
 
 TICKET = {'type':'integer','minimum':1}
+# The stage refusals of recruitment and recruitment_history, checked before any read runs.
+WINDOWED = [None, 'pipeline', 'tickets', 'active_trials', 'trial_followups', 'ticket_reminders', 'lifecycle']
+WORKFLOW_PERIOD = 'Choose a timezone-aware start before the workflow window ends.'
+RECRUITMENT_RULES = (
+    {'when': {'stage': ['ticket_evidence']}, 'needs_all': ['ticket_channel_id', 'after'],
+     'error': 'Which recruitment ticket and date window should I read?'},
+    {'when': {'stage': ['acceptance_history', 'ticket_log']}, 'needs_all': ['after'],
+     'error': 'Choose a dated recruitment history window.'},
+    {'when': {'stage': WINDOWED}, 'with': ['before'], 'needs': ['after'], 'error': WORKFLOW_PERIOD},
+    {'when': {'stage': WINDOWED}, 'aware': ['after', 'before'], 'error': WORKFLOW_PERIOD})
 TOOLS = (
  family_tool('read_recruitment_pipeline','Read recruitment tickets, active trials, follow-ups and lifecycle evidence.',
     {'stage':{'type':'string','enum':['pipeline','tickets','requester_tickets','active_trials','trial_followups','ticket_reminders','lifecycle','ticket_evidence','acceptance_history','ticket_log']},
@@ -379,6 +389,7 @@ TOOLS = (
      'include_standing':{'type':'boolean','description':
          'With include_accounts: leagues, trophies, donations, career war stars.'},
      'before':{'type':'string','format':'date-time'},'source_cursor':{'type':'string','maxLength':200}}, recruitment,
+     rules=RECRUITMENT_RULES,
      usage_note='requester_tickets: requester-owned readable tickets, no staff access. Other stages require recruitment access. Destination scope applies.'),
  family_tool('read_hibernation','Read active hibernation, Discord join dates and observed activity since its start.',
     {'member_ids':IDS,'include_activity':{'type':'boolean'},

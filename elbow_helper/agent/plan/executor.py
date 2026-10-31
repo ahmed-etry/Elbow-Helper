@@ -136,6 +136,7 @@ async def execute_plan(
     parallel: Callable[[Mapping[str, Any]], bool] | None = None,
     step_errors: Mapping[str, str] | None = None,
     argument_schema: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    step_fields: Mapping[str, tuple[str, ...]] | None = None,
 ) -> dict[str, Mapping[str, Any]]:
     """Run independent steps together and wait for dependencies."""
     if max_concurrency < 1:
@@ -160,6 +161,8 @@ async def execute_plan(
                 "error": step_errors[step["id"]], "cause": "invalid_arguments",
                 "execution_status": "not_run",
                 "capability": step["capability"],
+                **({"invalid_fields": list(step_fields[step["id"]])}
+                   if step["id"] in (step_fields or {}) else {}),
                 **({"argument_schema": argument_schema(step)} if argument_schema else {}),
             }
         try:

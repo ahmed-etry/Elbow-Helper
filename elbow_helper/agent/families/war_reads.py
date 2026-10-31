@@ -9,6 +9,7 @@ from collections import defaultdict
 
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.features.clan_health.attendance import aggregate_attendance
+from elbow_helper.features.cwl.config import CWL_CLAN_CODES
 from .core import family_tool, IDS, TAGS, DATE
 from ..datasets.clash import read_clash
 from .war_metrics import aggregate_performance
@@ -17,13 +18,36 @@ from ..read_cache import stored_read
 
 CLANS_INPUT = {'type': 'array', 'minItems': 1, 'maxItems': 9, 'uniqueItems': True,
                'items': {'type': 'string', 'enum': list(CLANS)}}
-SELECTION = {'clan_codes': CLANS_INPUT, 'season': {'type': 'string', 'maxLength': 20},
+SEASON = {'type': 'string', 'maxLength': 20, 'pattern': r'^\d{4}-(0[1-9]|1[0-2])(-catchup)?$'}
+SELECTION = {'clan_codes': CLANS_INPUT, 'season': SEASON,
              'season_keys': {'type': 'array', 'minItems': 1, 'maxItems': 12,
-                             'uniqueItems': True, 'items': {'type': 'string', 'maxLength': 20}},
+                             'uniqueItems': True, 'items': SEASON},
              'latest_completed': {'type': 'integer', 'minimum': 1, 'maximum': 100,
                                   'description': 'Number of individual completed wars across the selected clans, not seasons. Use only for a requested war subset; omit for season ASS/bonus.'},
              'after': DATE, 'before': DATE, 'war_ids': {'type': 'array', 'minItems': 1,
              'maxItems': 56, 'items': {'type': 'string', 'maxLength': 100}}}
+# The same refusals as period() and single_selection(), checked before any read runs.
+WINDOW_RULES = (
+    {'with': ['before'], 'needs': ['after'], 'error': 'Choose a complete date window with its end after its start.'},
+    {'aware': ['after', 'before'], 'error': 'Choose timezone-aware dates.'})
+WAR_SELECTORS = ['season', 'season_keys', 'war_ids', 'latest_completed', 'after']
+ONE_SELECTION = 'Choose one season selection, war selection or date window.'
+HISTORICAL = ['season', 'season_keys', 'after', 'before', 'war_ids', 'latest_completed', 'history_limit']
+ATTENDANCE_RULES = (*WINDOW_RULES,
+    {'only_one': WAR_SELECTORS, 'error': ONE_SELECTION},
+    {'needs': WAR_SELECTORS, 'error': 'Which season, wars or date window do you want?'})
+CWL_RULES = (*WINDOW_RULES,
+    {'when': {'metric': ['ass', 'bonus', 'attendance']}, 'only_one': [*WAR_SELECTORS, 'history_limit'],
+     'error': ONE_SELECTION},
+    {'when': {'metric': ['ass', 'bonus']}, 'needs': ['clan_codes'], 'error': 'Which clan should I score?'},
+    {'when': {'metric': ['ass', 'bonus']}, 'within': {'clan_codes': list(CWL_CLAN_CODES)},
+     'error': 'Not CWL clans: {values}.'},
+    {'when': {'metric': ['signup_pool', 'assigned_rosters']}, 'forbids': HISTORICAL,
+     'error': 'Current roster cycles do not support historical selectors.'},
+    {'when': {'metric': ['mega_ass']}, 'forbids': ['season_keys'],
+     'error': 'Choose the MEGA ASS history depth rather than separate season scores.'},
+    {'when': {'metric': ['mega_ass', 'league']}, 'forbids': ['after', 'before', 'war_ids', 'latest_completed'],
+     'error': 'Choose ASS or bonus for an explicit subset of wars.'})
 
 
 def period(arguments):
@@ -40,16 +64,30 @@ def period(arguments):
     return after, before
 
 
+def single_selection(context, arguments):
+    """Arguments with the window closed, and its bounds, once exactly one selector is used."""
+    if arguments.get('after') and not arguments.get('before'):
+        arguments = {**arguments, 'before': context.source_message.created_at.isoformat()}
+    after, before = period(arguments)
+    selectors = [bool(arguments.get(key)) for key in ('season', 'season_keys', 'war_ids', 'latest_completed', 'history_limit')]
+    if sum(selectors) + (after is not None) > 1:
+        raise ValueError('Choose one season selection, war selection or date window.')
+    return arguments, after, before
+
+
+def cwl_clan_error(codes):
+    """A planner error naming selected clans that take no part in CWL."""
+    unknown = [code for code in codes if code not in CWL_CLAN_CODES]
+    if unknown:
+        return {'error': 'Not CWL clans: ' + ', '.join(unknown) + '.', 'cause': 'invalid_arguments',
+                'invalid_fields': ['clan_codes']}
+
+
 async def selected_wars(context, arguments, war_type):
     if context.cwl_queries is None:
         return {'error': 'Stored war evidence is not available.', 'cause': 'missing_setup'}
     try:
-        if arguments.get('after') and not arguments.get('before'):
-            arguments = {**arguments, 'before': context.source_message.created_at.isoformat()}
-        after, before = period(arguments)
-        selectors = [bool(arguments.get(key)) for key in ('season', 'season_keys', 'war_ids', 'latest_completed', 'history_limit')]
-        if sum(selectors) + (after is not None) > 1:
-            raise ValueError('Choose one season selection, war selection or date window.')
+        arguments, after, before = single_selection(context, arguments)
         if arguments.get('season_keys') and war_type != 'CWL' or war_type == 'both' and arguments.get('season'):
             sources = []
             for season in arguments.get('season_keys', [arguments.get('season')]):
@@ -170,13 +208,17 @@ async def attendance(context, arguments, *, separate_seasons=False):
         requested_members = set(arguments.get('member_ids', [])) | {owners[tag] for tag in selected_tags if tag in owners}
         missing = [(None, member) for member in sorted(requested_members - observed_members)]
         missing.extend((tag, None) for tag in sorted(selected_tags - observed_tags) if tag not in owners)
+    # With a stored lineup for every checked war, an account in none of them is a known zero.
+    # A war without a lineup, or a selection that checked no war, leaves it unknown.
+    absent_known = 'wars_without_rosters' in source and bool(source.get('war_ids')) and not source['wars_without_rosters']
     for tag, member in missing:
         result.append({'member_id': member, 'player_tag': tag, 'player_name': None,
             'account_tags': [tag] if tag else sorted(t for t in selected_tags if owners.get(t) == member),
-            'war_ids': [], 'attacks_used': None, 'attacks_expected': None, 'missed': None,
+            'war_ids': [], 'attacks_used': 0 if absent_known else None,
+            'attacks_expected': 0 if absent_known else None, 'missed': 0 if absent_known else None,
             'miss_rate': None, 'unconfirmed_opportunities': 0, 'unit': 'account' if tag else unit,
-            'missing_link': member is None and unit == 'member', 'totals_complete': False,
-            'observation_status': 'no_stored_participation'})
+            'missing_link': member is None and unit == 'member', 'totals_complete': absent_known,
+            'observation_status': 'not_in_checked_lineups' if absent_known else 'no_stored_participation'})
     opportunities = defaultdict(list)
     for item in rows:
         owner = owners.get(item['player_tag'])
@@ -190,7 +232,8 @@ async def attendance(context, arguments, *, separate_seasons=False):
         key = ('account', row['player_tag']) if row['player_tag'] else ('member', row['member_id'])
         if separate_seasons:
             key = (row.get('season'), row.get('clan_code'), key)
-        row['participation_status'] = participation_status(opportunities[key])
+        row['participation_status'] = ('not_in_checked_lineups' if row.get('observation_status') == 'not_in_checked_lineups'
+                                       else participation_status(opportunities[key]))
         row['attack_performance'] = {field: value for field, value in
             aggregate_performance(opportunities[key]).items() if field != 'accounts'}
         member = context.guild.get_member(row['member_id']) if row['member_id'] else None
@@ -231,6 +274,7 @@ async def attendance(context, arguments, *, separate_seasons=False):
                 'warring': 'Joined a stored war and attacked at least once in the selected period.',
                 'joined_without_attacking': 'Joined stored wars but used no attacks; confirmed final participation only.',
                 'unknown': 'Attack participation is incomplete or not stored.',
+                'not_in_checked_lineups': 'In none of the checked wars, all of which have stored lineups; zero opportunities.',
                 'counting': 'Distinct members within each clan; unlinked accounts counted separately. A member appearing in several clans is counted in each, so clan counts cannot be summed as unique people.'},
             'ownership_basis': 'current bot links; historical ownership unknown',
             'interpretation': 'Participation describes selected account-war opportunities, not a member reliability verdict. '
@@ -260,7 +304,16 @@ async def cwl_results(context, arguments):
         return await cwl_rosters(context, arguments)
     metric = arguments.get('metric', 'performance')
     clan = arguments.get('clan_codes', [])
+    if metric in ('ass', 'bonus') or metric in ('performance', 'mega_ass') and len(clan) == 1:
+        refused = cwl_clan_error(clan)
+        if refused:
+            return refused
     if metric in ('ass', 'bonus') and len(clan) > 1:
+        # Options every clan would refuse alike are one mistake to correct, not a gap per clan.
+        try:
+            single_selection(context, arguments)
+        except ValueError as error:
+            return {'error': str(error), 'cause': 'invalid_arguments'}
         rows, summaries, gaps, population = [], [], [], 0
         for code in clan:
             part = await cwl_results(context, {**{key: value for key, value in arguments.items()
@@ -273,6 +326,8 @@ async def cwl_results(context, arguments):
             summaries.append({'clan_code': code, **{key: value for key, value in part.items()
                 if key not in ('rows', 'unobserved_accounts', 'selected_group_metrics',
                                'score_comparisons', 'analysis_scope')}})
+        if gaps and not summaries and all(gap['cause'] == 'invalid_arguments' for gap in gaps):
+            return {'error': gaps[0]['error'], 'cause': 'invalid_arguments'}
         selected_rows = rows[:arguments['top_n']] if arguments.get('top_n') else rows
         for summary in summaries:
             summary['top_rows'] = [row for row in selected_rows
@@ -471,6 +526,7 @@ TOOLS = (
       'unit': {'type': 'string', 'enum': ['account', 'member']},
       'member_ids': IDS, 'account_tags': TAGS,
       'cohort_ref':{'type':'string','minLength':1,'maxLength':32}}, attendance, required=('war_type',),
+     rules=ATTENDANCE_RULES,
      usage_note='Select season/season_keys, war_ids, latest_completed or dates first. Resolve relative periods from season evidence; account filters do not select a period.'),
  family_tool('read_cwl_results', 'Read current CWL signup/assigned rosters, season results, ASS, bonus and clan leagues.',
      {**SELECTION, 'metric': {'type': 'string', 'enum': ['signup_pool', 'assigned_rosters', 'performance', 'attendance', 'ass', 'mega_ass', 'bonus', 'league'],
@@ -479,7 +535,7 @@ TOOLS = (
       'history_limit': {'type': 'integer', 'minimum': 1, 'maximum': 12,
                         'description': 'Recent completed seasons for attendance, performance or MEGA ASS. Counts seasons, not wars. Use alone without another period selector.'}, 'account_tags': TAGS,
       'sheet_by': {'type': 'string', 'enum': ['clan_code']},
-      'cohort_ref':{'type':'string','minLength':1,'maxLength':32}}, cwl_results,
+      'cohort_ref':{'type':'string','minLength':1,'maxLength':32}}, cwl_results, rules=CWL_RULES,
      usage_note='history_limit counts seasons; latest_completed counts wars. ASS/bonus accept multiple clan_codes; latest per clan. For a tab per clan: sheet_by=clan_code.'),
  family_tool('read_current_war', 'Read current war state and unused attacks for family clans.',
      {'clan_codes': CLANS_INPUT, 'account_tags': TAGS,

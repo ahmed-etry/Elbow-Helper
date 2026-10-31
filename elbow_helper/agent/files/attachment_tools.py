@@ -147,7 +147,8 @@ async def list_supported_attachments(
                 "channel_id": message.channel.id,
             })
     await require_evidence_access(context)
-    return {"attachments": candidates, "count": len(candidates)}
+    return {"attachments": candidates, "count": len(candidates),
+            "coverage": "Supported files on the request and its replied message."}
 
 
 async def import_csv_attachment(

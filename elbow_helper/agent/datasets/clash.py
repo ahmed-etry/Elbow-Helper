@@ -16,6 +16,7 @@ from ..engine.capability_contract import CapabilityContract
 from ..models import RegisteredAgentTool
 from ..research.history import search_date
 from ..capabilities.validation import invalid_arguments
+from ..plan.input_rules import RULES
 from .battle_logs import select_battles
 from .clash_cache import MAX_AGE_SECONDS
 from ..read_cache import LIVE_READ_SECONDS, read_scope
@@ -415,6 +416,9 @@ def clash_tools():
                                         "default": LIVE_READ_SECONDS},
                 },
                 "required": ["kind", "tags"], "additionalProperties": False,
+                RULES: [{"when": {"kind": [kind for kind in ENDPOINTS if kind != "battle_log"]},
+                         "forbids": ["order", "offset", "after", "before", "aggregate"],
+                         "error": "Use order, offset, dates and aggregates for battle logs only."}],
             },
             usage_note="Max 200 players/20 others; fields overrides detail. CWL-only clans need a seasonal CWL cohort first; player.warStars is cumulative.",
         ),

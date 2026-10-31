@@ -10,7 +10,7 @@ from elbow_helper.configuration.clans import CLANS, CLAN_ORDER
 from elbow_helper.configuration.roles import MEMBER_ROLE_ID, TRIAL_ROLE_ID
 from elbow_helper.domain.player_tags import normalize_player_tag
 from .core import family_tool, IDS, TAGS, DATE
-from .war_reads import CLANS_INPUT
+from .war_reads import CLANS_INPUT, WINDOW_RULES
 from .projections import ACCOUNT_FILTERS, COHORT_REF, PERFORMANCE, account_matches, cohort_selection, performance_projection, unknown_account_filter, unknown_account_data
 from ..access import require_evidence_access
 from ..datasets.clash import read_clash
@@ -217,6 +217,11 @@ async def member_accounts(context, arguments):
     if arguments.get('after'):
         from .account_activity import account_activity
         history_reads = await account_activity(context, matched, arguments)
+        # A refused window is the planner's mistake to correct, not history that is missing.
+        refused = next((read for read in history_reads.values() if read['status'] == 'invalid_selection'
+                        and read.get('cause') == 'invalid_arguments' and read.get('error')), None)
+        if refused:
+            return {'error': refused['error'], 'cause': 'invalid_arguments'}
     from .domain_facts import clan_profile
     current_clans = {row.get('clan', {}).get('tag') for row in matched if row.get('clan')}
     await require_evidence_access(context)
@@ -587,6 +592,42 @@ async def member_cohort(context, arguments):
             'unknown_join_dates': sum(row['joined_at'] is None for row in rows)}
 
 
+# The selector refusals of member_accounts and member_cohort, checked before any read runs.
+ONE_SELECTOR = 'Use one selector: name, account_names, member_ids, account_tags or cohort_ref.'
+ACCOUNT_RULES = (*WINDOW_RULES,
+    {'needs': ['member_ids', 'account_tags', 'name', 'account_names', 'cohort_ref'],
+     'error': 'Which members, accounts or exact name do you want?'},
+    {'only_one': ['name', 'account_names', 'member_ids', 'account_tags'], 'error': ONE_SELECTOR},
+    {'with': ['cohort_ref'], 'forbids': ['name', 'account_names', 'account_tags'], 'error': ONE_SELECTOR},
+    *({'with': [field], 'needs_all': ['look_in'],
+       'error': 'look_in is required for name lookups; choose game or discord.'} for field in ('name', 'account_names')))
+BASES = ('joined_discord', 'role_holders', 'accepted_recruitment', 'clan_rosters', 'selected')
+CHOSEN_SET = 'Choose member_ids or a read_member_accounts cohort_ref.'
+COHORT_RULES = (
+    {'when': {'basis': [basis for basis in BASES if basis != 'role_holders']}, 'forbids': ['role_name'],
+     'error': 'Use role_holders to select a named role.'},
+    {'when': {'basis': [basis for basis in BASES if basis != 'clan_rosters']}, 'forbids': ['exclude_leadership'],
+     'error': 'exclude_leadership requires basis=clan_rosters.'},
+    {'when': {'basis': ['joined_discord', 'role_holders', 'accepted_recruitment']},
+     'forbids': ['member_ids', 'cohort_ref'], 'error': 'Use basis=selected for a chosen set.'},
+    {'when': {'basis': ['selected']}, 'needs': ['member_ids', 'cohort_ref'], 'error': CHOSEN_SET},
+    {'when': {'basis': ['selected']}, 'only_one': ['member_ids', 'cohort_ref'], 'error': CHOSEN_SET},
+    {'when': {'basis': ['selected']}, 'forbids': ['joined_after', 'joined_before', 'accepted_after',
+                                                 'accepted_before', 'role_ids', 'role_name', 'clan_role'],
+     'error': 'Choose the member or account set without membership filters.'},
+    {'when': {'basis': ['accepted_recruitment']}, 'forbids': ['joined_after', 'joined_before'],
+     'error': 'Choose acceptance dates separately from Discord join dates.'},
+    {'when': {'basis': ['joined_discord', 'role_holders']}, 'aware': ['joined_after', 'joined_before'],
+     'error': 'Choose timezone-aware join dates.'},
+    {'when': {'basis': ['accepted_recruitment']}, 'aware': ['accepted_after', 'accepted_before'],
+     'error': 'Choose timezone-aware join dates.'},
+    {'when': {'basis': ['role_holders']}, 'with': ['role_name'], 'forbids': ['role_ids', 'clan_role'],
+     'error': 'Choose a role name or role IDs or a configured clan role.'},
+    {'when': {'basis': ['role_holders']}, 'with': ['role_ids', 'clan_codes'], 'forbids': ['clan_role'],
+     'error': 'Choose role IDs or a configured clan role.'},
+    {'when': {'basis': ['role_holders']}, 'needs': ['role_ids', 'role_name', 'clan_codes'],
+     'error': 'Which Discord role holders do you want?'})
+
 TOOLS = (
  family_tool('read_member_accounts', 'Look up names on a chosen side, then join linked accounts and owners.',
      {'member_ids': IDS, 'account_tags': TAGS, 'cohort_ref':COHORT_REF, **ACCOUNT_FILTERS,
@@ -606,6 +647,7 @@ TOOLS = (
           'description': "Leagues, trophies, donations, career war stars."},
       'name': {'type': 'string', 'minLength': 1, 'maxLength': 100,
                'description': 'One name; requires look_in. Returns matching_members with linked account names and tags or game account candidates with owners. Ambiguity authorizes no actions or pings. Alternative to other selectors.'}}, member_accounts,
+     rules=ACCOUNT_RULES,
      usage_note='look_in: game for in-game names/data; discord for server person (messages, activity, roles, Discord ID); on no match, other side is searched.'),
  family_tool('read_clan_rosters', 'Read every selected clan roster, TH distribution, capacity and donations.',
      {'clan_codes': CLANS_INPUT, 'basis': ROSTER_BASIS,
@@ -641,6 +683,7 @@ TOOLS = (
       'accepted_after': DATE, 'accepted_before': DATE,
       'include_accounts':{'type':'boolean'}, 'performance':PERFORMANCE, **ACCOUNT_FILTERS,
       'sort': {'type': 'string', 'enum': ['oldest_first', 'newest_first']}}, member_cohort, required=('basis',),
+     rules=COHORT_RULES,
      contract=CapabilityContract(retained_fields=('cohort_ref',)),
      usage_note='selected: member_ids or read_member_accounts cohort_ref. include_activity reads stored Discord counters; after adds selected-account war activity.'),
 )

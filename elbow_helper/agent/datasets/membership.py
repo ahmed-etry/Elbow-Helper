@@ -100,7 +100,8 @@ async def read_membership_history(context, arguments):
                 or not isinstance(codes, list) or len(codes) > 20 or any(code not in CLANS for code in codes)):
             raise ValueError("Invalid membership selection")
     except (ValueError, TypeError, AttributeError):
-        return {"error": "Use ISO dates within ninety days, valid clan codes and a page of 1..25."}
+        return {"error": "Use ISO dates within ninety days, valid clan codes and a page of 1..25.",
+                "cause": "invalid_arguments"}
     try:
         observed = await record_identity.history(context, history_after, before)
         if observed is None:
@@ -111,7 +112,8 @@ async def read_membership_history(context, arguments):
         runs, rows, clipped = observed
         events = membership_events(runs, rows, after.timestamp(), codes)
     except (sqlite3.Error, OSError, ValueError):
-        return {"error": "Membership observations could not be read within their bounds."}
+        return {"error": "Membership observations could not be read within their bounds.",
+                "cause": "source_unavailable"}
     await require_evidence_access(context)
     selected = events[offset:offset + limit]
     next_offset = offset + len(selected) if offset + len(selected) < len(events) else None

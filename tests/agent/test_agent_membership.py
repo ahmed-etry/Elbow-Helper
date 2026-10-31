@@ -83,6 +83,10 @@ class MembershipReadTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["limitations"]["earlier_membership_outside_window_unknown"])
         self.assertNotIn("#P8", str(result))
 
+    async def test_a_refused_window_is_a_planner_error(self):
+        result = await read_membership_history(self.context, {**self.arguments, "history_after": "2025-01-01"})
+        self.assertEqual(result["cause"], "invalid_arguments")
+
     async def test_empty_invalid_and_clipped_windows_are_explicit(self):
         empty = await read_membership_history(self.context, self.arguments)
         self.assertIsNone(empty["coverage"]["observed_after"])

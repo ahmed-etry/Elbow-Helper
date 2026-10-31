@@ -76,7 +76,12 @@ class ContextBudget:
             - (self.request_final_reserve if allow_tools else repair_reserve),
         ))
 
-    def request_can_research(self, projected_input: int) -> bool:
+    def request_can_research(self, projected_input: int, *, correction: bool = False) -> bool:
+        """A correction of failed reads is not weighed against the writer's evidence size.
+
+        The final evidence is bounded to the remaining input room when it is
+        written, so a large estimate must not skip the one fix of a refused read.
+        """
         policy = self.request_limits
         final_input = projected_input
         final_rounds = 1
@@ -84,6 +89,8 @@ class ContextBudget:
             final_input = (self.final_input_estimate if self.final_input_estimate is not None
                            else projected_input)
             final_rounds += policy.answer_repair_rounds
+        if correction:
+            final_rounds = 0
         return policy is None or (
             self.spent_rounds < policy.rounds - 1 - policy.answer_repair_rounds
             and self.spent_input + projected_input + final_rounds * final_input + 8192 <= policy.input_tokens

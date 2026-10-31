@@ -100,7 +100,8 @@ async def find_agent_files(context: AgentRequestContext,
             "message_id": message_id, "file_name": item.filename, "size": item.size,
         } for item in message.attachments)
     await require_evidence_access(context)
-    return {"files": files, "next_offset": offset + limit if offset + limit < len(reply_ids) else None}
+    return {"files": files, "next_offset": offset + limit if offset + limit < len(reply_ids) else None,
+            "coverage": "Files on the bot's own replies in this conversation."}
 
 
 def post_mentions(context: Any, arguments: Mapping[str, Any], text: str) -> discord.AllowedMentions:

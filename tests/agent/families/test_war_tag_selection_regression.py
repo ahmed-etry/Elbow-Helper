@@ -63,7 +63,9 @@ class WarTagSelectionTests(unittest.IsolatedAsyncioTestCase):
         missing = await self.tools['read_war_attendance'].handler(self.context, {
             'war_type': 'CWL', 'latest_completed': 1, 'account_tags': ['yo']})
         self.assertEqual(missing['rows'][0]['player_tag'], '#Y0')
-        self.assertIsNone(missing['rows'][0]['attacks_used'])
+        # Every checked war has a stored lineup, so an account in none of them is a known zero.
+        self.assertEqual(missing['rows'][0]['attacks_used'], 0)
+        self.assertEqual(missing['rows'][0]['participation_status'], 'not_in_checked_lineups')
 
     async def test_current_war_uses_canonical_tags_and_invalid_tags_do_not_query_sources(self):
         result = await self.tools['read_current_war'].handler(self.context, {
