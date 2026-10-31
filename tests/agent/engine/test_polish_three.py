@@ -155,7 +155,7 @@ class PlanningRegressionTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTest
         self.assertEqual(len(session.calls), 1)
         self.assertEqual([len(writer.calls) for writer in writers], [1, 1])
         self.assertIn("Player A", captured[0]["prompt"])
-        self.assertIn("Attachment failures do not make retrieved rows unavailable", captured[-1]["system_prompt"])
+        self.assertIn("A failed attachment does not make retrieved rows unavailable", captured[-1]["system_prompt"])
 
     async def test_recorded_size_research_compacts_before_323k_tokens(self):
         async def read(_, arguments):

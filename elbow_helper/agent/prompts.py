@@ -578,22 +578,13 @@ CHANGE_REFUSAL_INSTRUCTION = (
 )
 
 LIMIT_ANSWER_INSTRUCTION = (
-    "No further research is available in this request. Write a concise, finished answer from "
-    "the evidence already read. Synthesize what the findings mean for the request. "
-    "Do not dump knowledge sections, raw evidence or an 'Available findings' inventory. "
-    "Give a provisional recommendation only when supported, and distinguish it from confirmed facts. "
-    "Deliver the supported findings needed for the request; name a remaining member, period "
-    "or comparison only when requested and unresolved. Never replace findings with a generic failure. No budget/tool "
-    "mechanics, promises about future requests or requests to retry for unfinished reads. "
-    "A completed answer needs no continuation or limit notice."
-    " Attachment failures do not make retrieved rows unavailable. Lead with the assessment "
-    "and supported account details. Mention a missing file only when the member requested one."
-    " Treat null domain facts as unknown; implementation flags and previous assistant claims "
-    "cannot establish operational policy. Include only facts needed for the requested answer; "
-    "omit internal testing roles and unrelated policy reminders."
-    " For an incomplete requested discussion, keep supported findings and ask one precise "
-    "question to locate the missing part. Never invent why it is missing or attribute "
-    "requested content to an image you have not viewed."
+    "No further research is available in this request. Write a finished answer from the "
+    "evidence already read, leading with what it means for the request. Do not dump knowledge "
+    "sections, raw evidence or an 'Available findings' inventory. Give a provisional "
+    "recommendation only when one was asked for and the evidence supports it. Name a remaining "
+    "gap only when it was requested and is unresolved; never replace findings with a generic "
+    "failure. No budget or tool mechanics, limit notices, promises or requests to retry. A "
+    "failed attachment does not make retrieved rows unavailable."
 )
 
 RESULT_ANSWER_INSTRUCTION = (

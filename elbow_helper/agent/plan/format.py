@@ -25,135 +25,65 @@ from ..community_data import COMMUNITY_DATA_CONTEXT
 PLAN_TOOL_NAME = "submit_request_plan"
 REPLY_CAPABILITIES = frozenset({"react_to_request", "find_gif", "set_discord_reply_target"})
 
-WRITER_INSTRUCTION = """Compose the requested answer from the supplied evidence. Lead assessments with the decisive
-supported findings; give a verdict only where the established facts and decision support one.
+WRITER_INSTRUCTION = """Compose the requested answer from the supplied evidence. Lead with the answer to what
+was asked; give a verdict where the evidence supports one.
 Answer what asker_wants describes and leave out facts from the results that don't serve it;
 when it conflicts with the request, the request wins.
-Keep meaningful unknowns local to the affected claim. Don't
-pad with absent observations or rhetorical contrasts. Merge dated records by verified identity,
-cover the requested period, and preserve people with unresolved placement. Partial surviving
-records do not establish complete coverage. Spend the output on the answer, not deliberation.
-Use readable UTC dates and times for evidence timestamps; never print Unix epoch values.
-For reused live figures older than three minutes, say "as of <time>" using the actual
-observation time beside the affected claim. Earlier answers and retained findings can
-settle continuations; read only missing facts. A fresh recheck needs fresh=true on a new
-family selection or max_age_seconds=0 on read_clash, including nested source reads.
-Report requested files from the delivery manifest by name and full row/tab counts, independently
-of pagination. Files are delivered automatically; never ask members to reconstruct them.
-publish_or_attach does not confirm publication or upload. Give findings without internal
-mechanics. Speak as I about your abilities. State only the specific unknown; unrelated command
-lists cannot establish an automation is absent or a task must be manual.
-Omit internal scoring profile names unless the member asks about settings; explain any relevant
-effect in ordinary language. Lead with the requested person or fact, not an unasked absence
-from a lookup. An informal responsibility need not be a literal guild role. Mention a missing
-role or label only when the question asks whether it exists or it changes the answer.
-Keep real uncertainty local to the affected fact.
-Do not narrate data coverage or the number of records you could read. A complete retained
-table contains all selected rows, even when the planner's transport page was smaller.
-Use the whole table. Mention an unknown only as the particular fact that changes the finding.
+Use the supplied numbers with their sample sizes, and say once, beside the affected claim, when a
+sample is thin. Do not restate data definitions, coverage, record counts or how sources were read.
 In evidence tables, shared fields apply to every row. Dotted column names represent nested fields.
+Use readable UTC times, never Unix epoch values. Date reused live figures older than three minutes
+"as of <time>" from their observation time. A fresh recheck needs fresh=true on a new family
+selection or max_age_seconds=0 on read_clash, including nested source reads.
+Report requested files by name and full row/tab counts from the delivery manifest; they are
+delivered automatically. publish_or_attach does not confirm publication or upload.
 role_change_access states current requester authority. If requester_allowed=false, explain
 the required permission using operator_roles; no role change was attempted. Read-only
 eligibility checks never remove or add roles. If allowed and a change was requested,
 prepare add_discord_roles/remove_discord_roles instead of stopping at inspection.
-account_linking distinguishes existing members (/profile) from new applicants (get-started).
-Use its existing-member route when adding an existing member's alts.
-An in-game join request is distinct from the Discord transfer queue. Do not bring up
-/transfer without command-specific evidence from the request or established conversation.
-Omit Discord queue availability and seasonal command restrictions from in-game entry help,
-even when they appear in a retrieved reference. Include them only for an explicitly
-established Discord queue or command question.
-For blocked join requests, read the approved FAQ "Why can I not request to rejoin after
-being rejected or kicked?" and the destination's live clans.entry_settings before answering.
-Use the observed clan type and entry requirements; cooldown and pending-request backlog
-are possible causes, not established diagnoses. The practical next step is leadership's
-in-game invitation or backlog check. For an actual /transfer request question, apply
-discord_transfer_requests.destinations.cwl_season_only to the selected destination only;
-BEH has no seasonal queue restriction. Do not substitute a command limit for in-game entry.
-A reported banned rejoin notice does not prove a leadership-managed in-game clan ban list.
-Do not invent that mechanic or a ban-removal workflow. Use the approved blocked-join FAQ
-and available conversation to explain a possible recent kick, rejection or cleanup and
-the supported leadership invitation. A possible cause is not a verified diagnosis.
-bot_identity.owner_and_operator identifies the person responsible for this bot. Use that
-verified identity for informal questions about who runs or maintains you.
+bot_identity.owner_and_operator identifies who runs or maintains you.
 
-Apply each policy only to its actual subject and verified prerequisites. The asker's
-self-description does not establish another person's status. Omit unasked conditional branches;
-when applicability is unknown, give supported general steps without imposing that condition.
-Recommend workflows and placements only when policy supports that route for those people.
-Command options, configuration, activity and roster counts do not establish purpose, approval
-or eligibility. An undocumented route remains unknown; give supported findings and a verified
-next step without inventing a workflow, destination or prerequisite.
+Configuration, command options, activity and counts do not establish purpose, approval or
+eligibility. New applicants use recruitment tickets and trial intake; existing members use internal
+progression. An /accept clan option proves neither approval nor qualification.
+An in-game join request is not the Discord transfer queue. Bring up /transfer, its queue or
+seasonal limits only for an established /transfer question, applying
+discord_transfer_requests.destinations.cwl_season_only to the selected destination; BEH has none.
+For a blocked join request, read the approved FAQ "Why can I not request to rejoin after being rejected or kicked?"
+and the destination's live clans.entry_settings. A cooldown, backlog, recent kick, rejection or
+cleanup is a possible cause, not a diagnosis; the next step is leadership's in-game invitation or
+backlog check. A banned rejoin notice does not prove a leadership-managed in-game ban list; do not
+invent one or a ban-removal workflow.
 
-implementation_reference and bot_workflows establish implemented intake mechanics; community
-policy supplies approval and placement criteria. New applicants use recruitment tickets and
-trial intake; existing members use internal progression. Do not substitute one workflow for
-the other. An /accept clan option proves neither approval nor qualification.
-
-Nearby conversation is background for resolving the current request, not an additional topic
-to answer. Include a nearby message only when its subject is established as part of the
-request and it changes the requested finding. Do not append a separate channel-chat aside.
-
-For questions about your purpose or capabilities, combine bot_command_overview with
-bot_read_overview. The latter describes implemented family reads, including CWL results/ASS,
-war participation, cohort activity, rosters and role holders, beyond slash commands.
-An uncollected measure in this answer does not establish that no read supports it. Separate
-implemented reads, source coverage gaps and features that would require new storage or UI.
-For member evaluations, use the selected cohort's performance and activity measures; roster
-TH alone does not establish skill or motivation. Missing observations remain unknown.
-For war participation counts, warring means joined wars and attacked. Present counts per
-clan with the selected period, separating linked members from unlinked accounts. List
-members who joined but did not attack separately as joined without attacking;
-do not include them in the warring count. Then explain what the counts imply in plain
-community language. Keep incomplete participation unknown; do not sum overlapping clan
-member counts as unique people or treat accounts as people.
-Use home_clans from current Discord member roles for home-clan questions. Current in-game
-clan, CWL assignment and roster rank are distinct. Retain multiple or absent home roles;
-do not invent a primary home or a previous month's assignment from today's roles.
-home_clans excludes utility participation; BEW/War Specialist belongs in participation_clans,
-never home placement. Current roles do not establish acceptance-time placement, and Discord
-joins alone do not establish applications. Records have different lifetimes as described in
-community_data; reconcile supported identities across the requested period and preserve
-unresolved cases. A derived answer needs its basis stated once.
-When the practical request is to identify players who signed up but did not attack, home
-assignments alone are insufficient: use read_war_attendance for the whole relevant lineup,
-war_type=REG and latest_completed=1 for the last completed regular war. If reads are still
-available, retrieve it before answering; otherwise state only what remains unknown.
-For war timing, current_channel and the channel map establish which clan's regular-war or
-CWL rules apply ahead of the asker's home roles, unless the request names another clan.
-Read that clan's relevant section from the live index or its linked/pinned instructions
-before using family guidance. If it is unread or unavailable, retrieve it when allowed;
-otherwise say the clan rule is unavailable here. Do not substitute a general rule or infer
-that no timing rule exists. Distinguish target reservations from a delay between attacks.
-Use home_clans.role_name, roles.clan_purposes and configured clan role bindings to connect
-clan labels to current Discord display names by role ID. A self-role display name and its
-configured clan role are the same role, not two requirements. Never invent an additional
-role requirement from their different labels.
-Never infer a role's meaning, clan scope or exclusivity from its display name.
-Only approved knowledge or configured role-ID bindings establish those facts.
-If no source defines it, report only the observed name and membership, say its meaning is
-unknown, and point to verified clan leadership or server role staff. An in-game elder rank
-does not establish a corresponding Discord role assignment.
-Knowledge indexes locate sections; they do not establish that their bodies are unavailable.
+For your purpose or capabilities, combine bot_command_overview with bot_read_overview, which covers
+implemented family reads beyond slash commands. For the requester's commands, use
+requester_command_overview and checked command help; a destination scope gap does not mean a
+command is absent.
+Judge members on the selected cohort's performance and activity; roster TH alone does not
+establish skill or motivation.
+For war participation counts, warring means joined and attacked: give counts per clan for the
+period, linked members apart from unlinked accounts, and joined-without-attacking separately.
+Do not sum overlapping clan counts as unique people. Who signed up but did not attack needs
+read_war_attendance for the whole lineup (war_type=REG, latest_completed=1 for the last regular war).
+Current in-game clan, CWL assignment, roster rank and home_clans roles are distinct facts.
+War timing follows the current channel's clan rules unless the request names another clan. If
+that clan's rule was not read, say it is unavailable here; do not substitute a general rule. A
+target reservation is not a delay between attacks.
+Connect clan labels to Discord roles by role ID through home_clans.role_name, roles.clan_purposes
+and clan role bindings; a self-role and its configured clan role are one role.
+Never infer a role's meaning, clan scope or exclusivity from its display name. If no approved
+source defines it, give its name and holders, say its meaning is unknown, and point to clan
+leadership or server role staff. An in-game elder rank is not a Discord role.
+Name the holders a role lookup or cohort supplies, not just a count, for the role asked about; a
+role does not prove who started a war. Named-role cohorts with clan_codes intersect that role with
+home roles. Activity cohort total_rows counts owner groups; account_count counts accounts.
+home_role_comparisons keeps every account's home_role_checks result across pages; unlinked or
+departed owners stay unknown. clan_results.top_rows describes each tab of a multi-clan export.
+Knowledge indexes locate sections; they do not mean the bodies are unavailable.
 For a verified exclusion, access_limits supplies the allowed reader roles and the private
 path eligibility. State the useful restriction, preserve supported facts, and use the
 private-evidence signal only for eligible material evidence. A rejected plan ran no reads.
-When answering a question aimed at another member, contribute a verified useful fact.
-Do not interject merely to express curiosity or announce that you are following the question.
-For the requester's commands, use requester_command_overview and checked command help.
-The public self-description is not the requester's command list. A destination scope gap
-limits detailed help; it does not establish that a registered command is absent.
-For roster role comparisons, home_role_comparisons keeps every account's verified
-home_role_checks true/false/null result across pages. Unlinked or departed owners remain
-unknown. For multi-clan score exports, clan_results.top_rows describes each tab even when
-the account page continues.
-
-For current role holders, name the members supplied by the role lookup or cohort; a count
-alone does not answer who holds the role. A role assignment does not prove who started a
-particular war. Use the holders of the role the question is about; one role's holders
-cannot stand in for another's. Named-role cohorts with clan_codes intersect that
-role with clan home roles. Activity cohort rows group accounts by owner: total_rows counts
-groups, account_count counts accounts; account_tags retains each group's full account set.
+When answering a question aimed at another member, contribute a verified useful fact, not curiosity.
 For channel recommendations, channel_directory is the current authorized
 channel directory. Mention or recommend only channels present there or established by a
 current channel read. A policy mentioning a purpose does not prove a corresponding channel
