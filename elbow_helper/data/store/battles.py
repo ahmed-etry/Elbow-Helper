@@ -26,11 +26,23 @@ def _pack(value):
     return zlib.compress(canonical_json(value).encode("utf-8"))
 
 
+def opponent_key(raw):
+    """The opponent's tag, or their name when Clash sends a battle without a usable tag."""
+    tag = normalize_player_tag(raw.get("opponentPlayerTag"))
+    if tag is not None:
+        return tag
+    name = raw.get("opponentName")
+    return "name:" + (name if isinstance(name, str) else "")
+
+
 def identity(raw):
-    if (not isinstance(raw, dict) or api_time(raw.get("battleTimestamp")) is None
-            or type(raw.get("attack")) is not bool or normalize_player_tag(raw.get("opponentPlayerTag")) is None):
-        raise ValueError("invalid_battle_identity")
-    return canonical_json([raw["battleTimestamp"], normalize_player_tag(raw["opponentPlayerTag"]), raw["attack"]])
+    if not isinstance(raw, dict):
+        raise ValueError("bad_battle_entry")
+    if api_time(raw.get("battleTimestamp")) is None:
+        raise ValueError("missing_time")
+    if type(raw.get("attack")) is not bool:
+        raise ValueError("bad_direction")
+    return canonical_json([raw["battleTimestamp"], opponent_key(raw), raw["attack"]])
 
 
 def _string(connection, value):
@@ -60,7 +72,7 @@ def save_battle(connection, account, raw, run, at):
     resources, extra = [None] * len(RESOURCES), dict(raw)
     for key in ("battleTimestamp", "attack"):
         extra.pop(key)
-    if raw["opponentPlayerTag"] == opponent:
+    if raw.get("opponentPlayerTag") == opponent:
         extra.pop("opponentPlayerTag")
     for bit, key in enumerate(OPTIONAL):
         value = raw.get(key)
@@ -110,8 +122,9 @@ def read_battle_fields(connection, scope):
         return {}
     def string(identifier):
         return connection.execute("SELECT value FROM battle_strings WHERE id=?", (identifier,)).fetchone()[0]
-    raw = {"battleTimestamp": row["timestamp_text"], "opponentPlayerTag": string(row["opponent_string_id"]),
-           "attack": bool(row["is_attack"])}
+    raw = {"battleTimestamp": row["timestamp_text"], "attack": bool(row["is_attack"])}
+    if string(row["opponent_string_id"]).startswith("#"):
+        raw["opponentPlayerTag"] = string(row["opponent_string_id"])
     resources = json.loads(zlib.decompress(row["resources_z"]))
     for bit, key in enumerate(OPTIONAL):
         if not row["presence"] & (1 << bit):
