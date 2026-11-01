@@ -80,7 +80,7 @@ class RefusalRepairTests(unittest.IsolatedAsyncioTestCase):
             'Please specify after.', 'Which season, wars or date window do you want?'})
 
     async def test_missing_period_and_required_family_argument_are_repairable(self):
-        context = replace(_context(), cwl_queries=Mock())
+        context = replace(_context(), cwl_queries=Mock(), bot=SimpleNamespace(war_reads=Mock()))
         results = [await war_reads.selected_wars(context, {}, 'both')]
         with patch.object(cohort_activity, 'selected_wars', AsyncMock()) as wars:
             activity = await cohort_activity.activity_projection(context, [], {})

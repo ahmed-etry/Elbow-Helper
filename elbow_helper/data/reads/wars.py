@@ -9,6 +9,8 @@ an incomplete lineup or attack list never becomes a zero.
 from datetime import datetime, timezone
 import json
 
+from elbow_helper.infrastructure.persistence.revisions import sqlite_revision
+
 from .core import RecordReads, page, pagination, placeholders, tags, timestamp
 from .coverage import SECOND, envelope, war_side_coverage, war_signal
 from .people import ownership
@@ -79,7 +81,30 @@ def side_view(connection, war, row):
             "townhall_counts": counts}
 
 
-def war_view(connection, war, clan, at):
+def lineup(connection, war_id, side):
+    """One side's lineup by map position, each account with its stored attacks in order.
+
+    An attack whose attacker is unknown cannot be placed; coverage says so.
+    """
+    attacks = {}
+    for row in connection.execute(
+            "SELECT a.attacker_member_id,a.attack_order,a.stars,a.destruction,a.duration,"
+            "COALESCE(d.player_tag,json_extract(a.extra_json,'$.defender_tag')) AS defender_tag "
+            "FROM war_attacks a LEFT JOIN war_members d ON d.id=a.defender_member_id WHERE a.war_id=? "
+            "AND a.attacker_member_id IS NOT NULL AND COALESCE(json_extract(a.extra_json,'$.stub'),0)=0 "
+            "ORDER BY a.attack_order", (war_id,)):
+        attacks.setdefault(row["attacker_member_id"], []).append(
+            {key: row[key] for key in ("attack_order", "defender_tag", "stars", "destruction", "duration")})
+    return [{"player_tag": row["player_tag"], "name": row["name"], "townhall": row["townhall"],
+             "map_position": row["source_map_position"], "attacks_expected": row["attacks_expected"],
+             "attacks_used": row["attacks_used"], "attacks": attacks.get(row["id"], [])}
+            for row in connection.execute(
+                "SELECT id,player_tag,name,townhall,source_map_position,attacks_expected,attacks_used FROM war_members "
+                "WHERE war_id=? AND side=? ORDER BY source_map_position IS NULL,source_map_position,player_tag",
+                (war_id, side))]
+
+
+def war_view(connection, war, clan, at, lineups=False):
     sides = {row["clan_tag"]: row for row in connection.execute("SELECT * FROM war_sides WHERE war_id=?", (war["id"],))}
     own, other = sides[clan], next(row for tag, row in sides.items() if tag != clan)
     # Clash's log result wins; a final score decides only when the log has none.
@@ -93,7 +118,7 @@ def war_view(connection, war, clan, at):
     legacy = [dict(row) for row in connection.execute(
         "SELECT source,legacy_id,clan_code,legacy_label,capture_state,captured_at FROM war_legacy_ids "
         "WHERE war_id=? ORDER BY source,legacy_id,clan_code", (war["id"],))]
-    return {"war_id": war["id"], "clan_tag": clan, "type": war["type"], "type_basis": war["type_basis"],
+    view = {"war_id": war["id"], "clan_tag": clan, "type": war["type"], "type_basis": war["type_basis"],
             "war_tag": war["war_tag"], "state": war["state"], "preparation_at": war["preparation_at"],
             "start_at": war["start_at"], "end_at": war["end_at"], "team_size": war["team_size"],
             "attacks_per_member": war["attacks_per_member"],
@@ -101,6 +126,10 @@ def war_view(connection, war, clan, at):
             "first_seen_at": war["first_seen_at"], "last_seen_at": war["last_seen_at"], "final_at": war["final_at"],
             "result": result, "result_basis": basis, "clan": side_view(connection, war, own),
             "opponent": side_view(connection, war, other), "legacy_ids": legacy, "coverage": coverage}
+    if lineups:
+        for key, row in (("clan", own), ("opponent", other)):
+            view[key]["members"] = lineup(connection, war["id"], row["side"])
+    return view
 
 
 def side_of(connection, war_id, clan):
@@ -108,21 +137,37 @@ def side_of(connection, war_id, clan):
 
 
 def member_rows(connection, war, clan, coverage):
-    """One row per account in the clan's lineup; missed only once the end and every attack are known."""
-    known = war["state"] == "warEnded" and coverage["own"]["attacks_complete"]
+    """One row per account in the clan's lineup; missed only once the war ended and the count is final.
+
+    Counts are final when every attack is stored, or when the accounts' used
+    attacks add up to the clan's reported total: no attack can have come after
+    the capture. Early wars copied from old participation rows prove it this way.
+    An account that used every attack is final either way. A total the copy
+    summed from those same used attacks proves nothing, so it never counts.
+    """
+    lineup = connection.execute(
+        "SELECT m.player_tag,m.name,m.townhall,m.source_map_position,m.attacks_expected,m.attacks_used,"
+        "COUNT(a.attack_order) AS measured,COALESCE(SUM(a.stars),0) AS stars,COALESCE(SUM(a.stars=3),0) AS triples,"
+        "COALESCE(SUM(a.destruction),0) AS destruction FROM war_members m LEFT JOIN war_attacks a "
+        "ON a.war_id=m.war_id AND a.attacker_member_id=m.id AND COALESCE(json_extract(a.extra_json,'$.stub'),0)=0 "
+        "WHERE m.war_id=? AND m.side=? GROUP BY m.id ORDER BY m.player_tag",
+        (war["id"], side_of(connection, war["id"], clan))).fetchall()
+    reported = coverage["own"]["attacks_reported"]
+    extra = connection.execute("SELECT extra_json FROM war_sides WHERE war_id=? AND clan_tag=?",
+                               (war["id"], clan)).fetchone()[0]
+    counted = (reported is not None and "attacks" not in json.loads(extra).get("derived", ()) and bool(lineup)
+               and all(row["attacks_expected"] is not None and row["attacks_used"] is not None for row in lineup)
+               and sum(row["attacks_used"] for row in lineup) == reported)
+    final = war["state"] == "warEnded" and (coverage["own"]["attacks_complete"] or counted)
     rows = []
-    for row in connection.execute(
-            "SELECT m.player_tag,m.name,m.townhall,m.source_map_position,m.attacks_expected,m.attacks_used,"
-            "COUNT(a.attack_order) AS measured,COALESCE(SUM(a.stars),0) AS stars,COALESCE(SUM(a.stars=3),0) AS triples,"
-            "COALESCE(SUM(a.destruction),0) AS destruction FROM war_members m LEFT JOIN war_attacks a "
-            "ON a.war_id=m.war_id AND a.attacker_member_id=m.id AND COALESCE(json_extract(a.extra_json,'$.stub'),0)=0 "
-            "WHERE m.war_id=? AND m.side=? GROUP BY m.id ORDER BY m.player_tag",
-            (war["id"], side_of(connection, war["id"], clan))):
+    for row in lineup:
         expected, used = row["attacks_expected"], row["attacks_used"]
+        counts = expected is not None and used is not None
+        known = counts and war["state"] == "warEnded" and (final or used >= expected)
         rows.append({"war_id": war["id"], "clan_tag": clan, "type": war["type"], "end_at": war["end_at"],
                      "player_tag": row["player_tag"], "player_name": row["name"], "townhall": row["townhall"],
                      "map_position": row["source_map_position"], "attacks_expected": expected, "attacks_used": used,
-                     "missed": max(0, expected - used) if known and expected is not None and used is not None else None,
+                     "missed": max(0, expected - used) if known else None,
                      "stars": row["stars"], "triples": row["triples"], "destruction": row["destruction"],
                      "attacks_measured": row["measured"], "final": war["state"] == "warEnded",
                      "attacks_complete": coverage["own"]["attacks_complete"]})
@@ -226,12 +271,20 @@ class WarReads(RecordReads):
     uses each account's owner at as_of, not the owner at war time.
     """
 
-    async def current(self, clan, as_of=None):
-        """What the war board shows now: the clan's latest current-war check."""
-        return await self._read(self._current, clan_tags([clan])[0], timestamp(as_of))
+    def cache_revision(self):
+        """The record's commit revision; any write, a war check included, changes it."""
+        path = getattr(self.store, "path", None)
+        return sqlite_revision(path) if path is not None else None
+
+    async def current(self, clan, as_of=None, *, lineups=False):
+        """What the war board shows now: the clan's latest current-war check.
+
+        With lineups, both sides list their accounts and stored attacks.
+        """
+        return await self._read(self._current, clan_tags([clan])[0], timestamp(as_of), bool(lineups))
 
     @staticmethod
-    def _current(connection, clan, at):
+    def _current(connection, clan, at, lineups=False):
         signal = war_signal(connection, "current_war", clan, at)
         state = connection.execute("SELECT war_id FROM war_collection_state WHERE source_kind='current_war' "
                                    "AND scope_id=?", (clan,)).fetchone()
@@ -239,17 +292,17 @@ class WarReads(RecordReads):
         war = None
         if observed not in (None, "notInWar") and state and state["war_id"]:
             row = connection.execute("SELECT * FROM wars WHERE id=?", (state["war_id"],)).fetchone()
-            war = war_view(connection, row, clan, at) if row else None
+            war = war_view(connection, row, clan, at, lineups) if row else None
         return {"clan_tag": clan, "state": observed, "checked_at": signal["last_attempt_at"],
                 "observed_at": signal["last_good_at"], "war": war, "coverage": envelope([signal], at=at)}
 
-    async def previous(self, clan, as_of=None, *, types=("FRIENDLY", "REG")):
+    async def previous(self, clan, as_of=None, *, types=("FRIENDLY", "REG"), lineups=False):
         """The clan's last ended non-league war before the current one, as the board's Previous War."""
         return await self._read(self._previous, clan_tags([clan])[0], timestamp(as_of),
-                                war_types(types, ("FRIENDLY", "REG")))
+                                war_types(types, ("FRIENDLY", "REG")), bool(lineups))
 
     @staticmethod
-    def _previous(connection, clan, at, types):
+    def _previous(connection, clan, at, types, lineups=False):
         signals = [war_signal(connection, kind, clan, at) for kind in ("current_war", "war_log")]
         state = connection.execute("SELECT w.* FROM war_collection_state s JOIN wars w ON w.id=s.war_id "
                                    "WHERE s.source_kind='current_war' AND s.scope_id=?", (clan,)).fetchone()
@@ -260,7 +313,7 @@ class WarReads(RecordReads):
             f"SELECT w.* FROM wars w JOIN war_sides s ON s.war_id=w.id AND s.clan_tag=? WHERE w.war_tag IS NULL "
             f"AND w.type IN ({placeholders(types)}) AND w.first_seen_at<=? AND w.end_at<=? AND w.id IS NOT ? "
             "ORDER BY w.end_at DESC,w.id DESC LIMIT 1", (clan, *types, at, before, exclude)).fetchone()
-        return {"clan_tag": clan, "war": war_view(connection, row, clan, at) if row else None,
+        return {"clan_tag": clan, "war": war_view(connection, row, clan, at, lineups) if row else None,
                 "coverage": envelope(signals, at=at)}
 
     async def completed(self, clans, after, before, *, types=REGULAR, as_of=None, limit=200, offset=0):

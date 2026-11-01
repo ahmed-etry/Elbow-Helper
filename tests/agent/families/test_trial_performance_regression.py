@@ -17,6 +17,7 @@ from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.features.recruitment.queries import RecruitmentQueries
 from agent.capabilities.recruitment.test_agent_recruitment import _Channel
 from agent.engine.test_agent_plan_flow import _context
+from agent.families.record_stub import regular_wars_from, with_record
 from agent.families.test_compact_family_regressions import delivered, unpack
 
 
@@ -40,12 +41,13 @@ class TrialPerformanceRegressionTests(unittest.IsolatedAsyncioTestCase):
                             VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
                             (identity, kind, 'BEH', CLANS['BEH'].tag, 100, 'warEnded', tag, tag,
                              index, '#Y0', stars, 100 if stars == 3 else 40))
-            context = replace(_context(), cwl_queries=CwlQueries(repository, lambda: {}),
+            context = with_record(replace(_context(), cwl_queries=CwlQueries(repository, lambda: {}),
                 recruitment_queries=RecruitmentQueries(lambda: {'100': {
                     'start': '2026-09-01T00:00:00+00:00', 'days': 7, 'applicant_id': 41}},
                     clock=lambda: datetime(2026, 9, 4, tzinfo=timezone.utc)),
                 account_links=SimpleNamespace(get_links_by_tags=lambda tags: {
-                    tag: {'discord_user_id': 41} for tag in tags}))
+                    tag: {'discord_user_id': 41} for tag in tags})))
+            self.enterContext(regular_wars_from(repository))
             tool = next(tool for tool in workflow_reads.TOOLS if tool.definition.name == 'read_recruitment_pipeline')
             report = await tool.handler(context, {'stage': 'active_trials',
                 'performance': {'war_type': 'both', 'latest_completed': 2}})
@@ -94,10 +96,11 @@ class TrialPerformanceRegressionTests(unittest.IsolatedAsyncioTestCase):
                          'Candidate', 1, '#Q0', 3, 100))
             state = {str(index + 200): {'start': '2026-09-01T00:00:00+00:00', 'days': 7,
                      'applicant_id': index + 1000} for index in range(14)}
-            context = replace(_context(), cwl_queries=CwlQueries(repository, lambda: {}),
+            context = with_record(replace(_context(), cwl_queries=CwlQueries(repository, lambda: {}),
                 recruitment_queries=RecruitmentQueries(lambda: state,
                     clock=lambda: datetime(2026, 9, 4, tzinfo=timezone.utc)),
-                account_links=SimpleNamespace(get_links_by_tags=lambda tags: {'#P0': {'discord_user_id': 1000}}))
+                account_links=SimpleNamespace(get_links_by_tags=lambda tags: {'#P0': {'discord_user_id': 1000}})))
+            self.enterContext(regular_wars_from(repository))
             channels = {index + 200: _Channel(index + 200) for index in range(14)}
             for channel in channels.values():
                 channel.guild = context.guild

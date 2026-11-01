@@ -9,7 +9,7 @@ from .queries import WarQueries
 
 
 async def setup(bot: ElbowHelperBot) -> None:
-    await bot.add_cog(WarManager(bot, bot.clash_client))
+    await bot.add_cog(WarManager(bot))
     await bot.add_cog(WarStatements(bot), guild=discord.Object(GUILD_ID))
 
 

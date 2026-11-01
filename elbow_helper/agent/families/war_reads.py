@@ -14,7 +14,8 @@ from .core import family_tool, IDS, TAGS, DATE
 from ..datasets.clash import read_clash
 from .war_metrics import aggregate_performance
 from .cwl_summary import cwl_analysis
-from ..read_cache import stored_read
+from . import record_wars
+from ..read_cache import source_revision, stored_read
 
 CLANS_INPUT = {'type': 'array', 'minItems': 1, 'maxItems': 9, 'uniqueItems': True,
                'items': {'type': 'string', 'enum': list(CLANS)}}
@@ -83,8 +84,30 @@ def cwl_clan_error(codes):
                 'invalid_fields': ['clan_codes']}
 
 
+async def record_selection(context, selection):
+    """Regular wars from the family record; league wars come from stored league history."""
+    dependencies = getattr(context, 'read_dependencies', None)
+    if dependencies is not None:
+        # As stored reads do: taken before the read, and only while reads are cached.
+        reads = record_wars.war_reads(context)
+        revision = (await asyncio.to_thread(source_revision, reads)
+                    if getattr(context, 'read_cache', None) is not None else None)
+        dependencies.observe(context, reads, revision)
+    try:
+        regular = await record_wars.regular_wars(context, **{key: selection[key] for key in (
+            'clan_codes', 'after_ts', 'before_ts', 'war_ids', 'latest_completed') if key in selection})
+    except record_wars.FAILURES:
+        return dict(record_wars.UNAVAILABLE)
+    if selection['war_type'] == 'REG':
+        return regular
+    league = await stored_read(context, context.cwl_queries, 'attendance', **{**selection, 'war_type': 'CWL'})
+    return record_wars.combine(regular, league, selection.get('latest_completed'))
+
+
 async def selected_wars(context, arguments, war_type):
-    if context.cwl_queries is None:
+    # Regular wars need the family record; league wars need stored league history.
+    if (war_type != 'CWL' and record_wars.war_reads(context) is None
+            or war_type != 'REG' and context.cwl_queries is None):
         return {'error': 'Stored war evidence is not available.', 'cause': 'missing_setup'}
     try:
         arguments, after, before = single_selection(context, arguments)
@@ -117,12 +140,17 @@ async def selected_wars(context, arguments, war_type):
                 or arguments.get('war_ids') or arguments.get('latest_completed')):
             return {'error': 'Which season, wars or date window do you want?', 'cause': 'invalid_arguments',
                     'missing_fields': ['season', 'season_keys', 'after', 'war_ids', 'latest_completed', 'history_limit']}
-        return await stored_read(context, context.cwl_queries, 'attendance',
-            clan_codes=arguments.get('clan_codes', list(CLANS)), war_type=war_type,
+        selection = dict(clan_codes=arguments.get('clan_codes', list(CLANS)), war_type=war_type,
             after_ts=after, before_ts=before, season=season,
             war_ids=arguments.get('war_ids', ()),
             **{key: arguments[key] for key in ('season_keys', 'history_limit') if arguments.get(key)},
             **({'latest_completed': arguments['latest_completed']} if arguments.get('latest_completed') else {}))
+        if war_type == 'CWL':
+            return await stored_read(context, context.cwl_queries, 'attendance', **selection)
+        # Recent seasons are a league selection, refused for regular wars as league history refuses them.
+        if arguments.get('history_limit'):
+            raise ValueError('Invalid CWL history limit')
+        return await record_selection(context, selection)
     except ValueError as error:
         return {'error': str(error), 'cause': 'invalid_arguments'}
     except (OSError, sqlite3.Error):
@@ -486,10 +514,12 @@ async def cwl_results(context, arguments):
 
 async def current_war(context, arguments):
     codes = arguments.get('clan_codes', list(CLANS))
-    source = await read_clash(context, {'kind': 'current_war', 'tags': [CLANS[code].tag for code in codes],
-                                       'detail': 'full', 'limit': 50})
-    if 'error' in source:
-        return source
+    if record_wars.war_reads(context) is None:
+        return {'error': 'Stored war evidence is not available.', 'cause': 'missing_setup'}
+    try:
+        source = await record_wars.current_wars(context, codes)
+    except record_wars.FAILURES:
+        return dict(record_wars.UNAVAILABLE)
     rows = []
     by_tag = {item['tag']: item for item in source['items']}
     for code in codes:
@@ -498,7 +528,7 @@ async def current_war(context, arguments):
         state = data.get('state')
         members = []
         for row in data.get('clan', {}).get('members', []):
-            used = len(row.get('attacks', []))
+            used = item.get('attacks_used', {}).get(row['tag'], len(row.get('attacks', [])))
             expected = data.get('attacksPerMember')
             remaining = max(0,expected-used) if type(expected) is int and expected>0 else None
             if arguments.get('account_tags') and row['tag'] not in arguments['account_tags']:
@@ -514,8 +544,10 @@ async def current_war(context, arguments):
                      'score': {side: {key: data.get(side, {}).get(key) for key in ('attacks', 'stars', 'destructionPercentage')}
                                for side in ('clan', 'opponent')},
                      'members': sorted(members, key=lambda row: (row['map_position'] is None,
-                         row['map_position'] or 0, row['player_tag'])) if arguments.get('include_roster', True) else []})
-    return {'rows': rows, 'coverage': 'current API observation; unused attacks are not misses before war ends'}
+                         row['map_position'] or 0, row['player_tag'])) if arguments.get('include_roster', True) else [],
+                     'observed_at': item.get('observed_at')})
+    return {'rows': rows, 'coverage': 'latest collected current-war check; a failed or overdue check gives no war; '
+                                      'unused attacks are not misses before war ends'}
 
 
 TOOLS = (

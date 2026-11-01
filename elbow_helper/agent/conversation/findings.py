@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 import json
 
-from ..read_cache import source_revision
+from ..read_cache import named_source, source_revision
 
 
 LIVE_FIGURE_GRACE_SECONDS = 3 * 60
@@ -27,10 +27,12 @@ def family_revisions(context, family):
     if family in ('read_war_attendance', 'read_cwl_results', 'read_member_accounts',
                   'read_member_cohort', 'read_clan_rosters'):
         sources['cwl_queries'] = source_revision(getattr(context, 'cwl_queries', None)) if observed else None
+    if family in ('read_war_attendance', 'read_member_accounts', 'read_member_cohort'):
+        sources['war_reads'] = source_revision(named_source(context, 'war_reads')) if observed else None
     if family in ('read_ranked_activity', 'read_member_accounts', 'read_member_cohort'):
         sources['ranked_queries'] = source_revision(getattr(context, 'ranked_queries', None)) if observed else None
     return {name: version for name, version in sources.items()
-            if getattr(context, name, None) is not None}
+            if named_source(context, name) is not None}
 
 
 def report_is_current(context, report):
@@ -39,7 +41,7 @@ def report_is_current(context, report):
     versions = summary.get('source_versions')
     if versions is None:
         return False
-    return all(version is not None and version == source_revision(getattr(context, name, None))
+    return all(version is not None and version == source_revision(named_source(context, name))
                for name, version in versions.items())
 
 

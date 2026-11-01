@@ -5,8 +5,9 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
-from elbow_helper.agent.families import identity_reads, war_reads
+from elbow_helper.agent.families import identity_reads, record_wars, war_reads
 from agent.engine.test_agent_plan_flow import _context
+from agent.families.record_stub import with_record
 
 
 class CohortSelectionRegressionTests(unittest.IsolatedAsyncioTestCase):
@@ -38,7 +39,8 @@ class CohortSelectionRegressionTests(unittest.IsolatedAsyncioTestCase):
         source = {'rows': [{'player_tag': tag, 'player_name': tag, 'war_id': '#C0',
                            'clan_code': 'BEH', 'attacks_expected': 2, 'attacks_used': 1, 'missed': 1}
                           for tag in ('#P0', '#Q0', '#R0')], 'war_ids': ['#C0'], 'coverage': {}}
-        context = replace(context, cwl_queries=SimpleNamespace(attendance=lambda **selection: source))
+        context = with_record(context)
+        self.enterContext(patch.object(record_wars, 'regular_wars', AsyncMock(return_value=source)))
         result = await attendance_tool.handler(context, {'cohort_ref': cohort['report_id'],
             'war_type': 'REG', 'season': '2026-09'})
         self.assertEqual([row['player_tag'] for row in result['rows']], ['#P0'])

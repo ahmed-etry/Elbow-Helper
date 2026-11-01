@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.configuration.clans import CLANS
+from elbow_helper.agent.families import record_wars
 from elbow_helper.agent.families.war_reads import TOOLS
 from elbow_helper.features.clan_health.database import ClanHealthRepository
 from elbow_helper.features.cwl.queries import CwlQueries
@@ -36,9 +37,11 @@ class WarTagSelectionTests(unittest.IsolatedAsyncioTestCase):
                 VALUES(?,?,?,?,?,?,?,?,?)''', ('#C0', 'BEH', '#P0', 'Account', 17, 1, 1, 'warEnded', 1))
         payload = {'state': 'inWar', 'attacksPerMember': 2, 'clan': {'members': [
             {'tag': tag, 'name': tag, 'attacks': []} for tag in ('#P0', '#Q0')]}}
-        self.transport = AsyncMock(return_value=SimpleNamespace(ok=True, status=200, payload=payload))
+        # The record's latest current-war check for the clan.
+        self.current = self.enterContext(patch.object(record_wars, 'current_wars', AsyncMock(
+            return_value={'items': [{'tag': CLANS['BEH'].tag, 'status': 'ok', 'data': payload}]})))
         self.context = replace(_context(), cwl_queries=CwlQueries(repository, lambda: {}),
-            bot=SimpleNamespace(clash_client=SimpleNamespace(configured=True, get=self.transport)),
+            bot=SimpleNamespace(war_reads=SimpleNamespace()),
             account_links=SimpleNamespace(get_links_by_tags=lambda tags: {
                 tag: {'discord_user_id': 41} for tag in tags}))
         self.tools = {tool.definition.name: tool for tool in TOOLS}
@@ -71,7 +74,7 @@ class WarTagSelectionTests(unittest.IsolatedAsyncioTestCase):
         result = await self.tools['read_current_war'].handler(self.context, {
             'clan_codes': ['BEH'], 'account_tags': ['po']})
         self.assertEqual([row['player_tag'] for row in result['rows'][0]['members']], ['#P0'])
-        self.transport.reset_mock()
+        self.current.reset_mock()
         with patch.object(self.context.cwl_queries, 'attendance', Mock()) as stored:
             for name, selection in [('read_current_war', {}),
                 ('read_war_attendance', {'war_type': 'CWL', 'latest_completed': 1}),
@@ -79,4 +82,4 @@ class WarTagSelectionTests(unittest.IsolatedAsyncioTestCase):
                 refused = await self.tools[name].handler(self.context, {**selection, 'account_tags': ['invalid!']})
                 self.assertEqual(refused['cause'], 'invalid_arguments')
             stored.assert_not_called()
-        self.transport.assert_not_awaited()
+        self.current.assert_not_awaited()

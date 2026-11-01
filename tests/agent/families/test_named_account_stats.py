@@ -28,6 +28,7 @@ from elbow_helper.agent.plan.format import capability_list
 from elbow_helper.features.clan_health.database import ClanHealthRepository
 from elbow_helper.features.cwl.queries import CwlQueries
 from agent.engine.test_agent_plan_flow import _context
+from agent.families.record_stub import regular_wars_from, with_record
 
 
 def rosters(accounts=()):
@@ -422,8 +423,9 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
             ranked = Mock(return_value={'accounts': [], 'stored_battles': [], 'total_accounts': 0,
                 'next_offset': None, 'complete': True, 'coverage_complete': False,
                 'unobserved_selections': ['#P0'], 'limitations': []})
-            context = replace(context_with_names(linked=[('#P0', 'Amber Comet'), ('#Q0', 'Other Beacon')]),
-                cwl_queries=cwl, ranked_queries=SimpleNamespace(window=ranked))
+            context = with_record(replace(context_with_names(linked=[('#P0', 'Amber Comet'), ('#Q0', 'Other Beacon')]),
+                cwl_queries=cwl, ranked_queries=SimpleNamespace(window=ranked)))
+            regular = self.enterContext(regular_wars_from(repository))
             tool = next(tool for tool in identity_reads.TOOLS if tool.definition.name == 'read_member_accounts')
             arguments = {'look_in': 'game', 'account_names': ['ambercomet'], 'after': '2025-11-02T00:00:00+00:00',
                          'before': '2026-01-01T00:00:00+00:00'}
@@ -446,10 +448,12 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((activity['regular_war']['attacks_used'], activity['regular_war']['missed']), (1, 1))
             self.assertEqual(activity['cwl']['war_ids'], ['#P8'])
             self.assertEqual(activity['cwl']['attacks_used'], 1)
-            self.assertEqual({call.kwargs['war_type'] for call in cwl.attendance.call_args_list}, {'REG', 'CWL'})
-            for call in cwl.attendance.call_args_list:
+            # League wars from stored league history, regular wars from the record.
+            self.assertEqual({call.kwargs['war_type'] for call in cwl.attendance.call_args_list}, {'CWL'})
+            for call in [*cwl.attendance.call_args_list, *regular.await_args_list]:
                 self.assertEqual(set(call.kwargs['clan_codes']), set(CLANS))
                 self.assertEqual(call.kwargs['after_ts'], int(datetime(2025, 11, 2, tzinfo=timezone.utc).timestamp()))
+            regular.assert_awaited_once()
             self.assertEqual(ranked.call_args.kwargs['values'], ('#P0',))
             self.assertEqual(ranked.call_args.kwargs['selector'], 'account_tags')
             self.assertEqual(set(result['history_reads']), set(account_activity.HISTORY_KINDS))
