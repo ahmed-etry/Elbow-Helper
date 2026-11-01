@@ -17,7 +17,6 @@ from elbow_helper.data.store import wars_import
 from elbow_helper.data.store.legacy_links import ImportMismatch
 from elbow_helper.data.store.wars_import import copy_at_startup, import_wars, snapshot_wars
 from elbow_helper.data.store.war_projection import HOUR
-from elbow_helper.features.clan_health.attendance import _participation_only_wars
 from elbow_helper.features.clan_health.database.schema import create_schema
 
 from .test_wars import END, SECOND, START, WarFixture, war, war_log
@@ -325,7 +324,7 @@ class ImportTests(ImportFixture, unittest.IsolatedAsyncioTestCase):
             {m["player_tag"]: m["side"] for m in await self.rows("SELECT player_tag,side FROM war_members")},
             {"#P0": 1, "#P2": 1, "#Q0": 0, "#Q2": 0})
 
-    async def test_early_wars_with_final_participation_only_are_found_the_way_attendance_finds_them(self):
+    async def test_early_wars_with_final_participation_only_become_one_war_each(self):
         stored_end, early, other = END_S, END_S - 20 * 86400, END_S - 30 * 86400
         stored_id, paused = old_id(stored_end), old_id(stored_end + 3600)
         first, last = old_id(early, opponent="#CU"), old_id(early + 7200, opponent="#CU")
@@ -345,23 +344,18 @@ class ImportTests(ImportFixture, unittest.IsolatedAsyncioTestCase):
             old_attacks(old, unfinished, [(1, "#P0", "#Q0", 3)], end=other, state="inWar")
             old_activity(old, "REG:garbage", [("#P0", 1)], source=LIVE)
             old_attacks(old, "REG:orphan", [(1, "#P0", "#Q0", 3)])
-        with closing(sqlite3.connect(self.health)) as old:
-            old.row_factory = sqlite3.Row
-            stored = [dict(r) for r in old.execute("SELECT * FROM wars WHERE state='warEnded'")]
-            found, _ = _participation_only_wars(old, ["ONE"], stored)
         result = await self.run_import()
         checks = result["checks"]
         created = await self.rows("SELECT * FROM wars WHERE type_basis='legacy_unchecked'")
-        self.assertEqual(len(created), len(found))
+        self.assertEqual(len(created), 1)
         self.assertEqual((created[0]["type"], created[0]["preparation_at"], created[0]["team_size"], created[0]["state"],
                           created[0]["end_at"]), ("REG", None, None, "warEnded", (early + 7200) * SECOND))
         ours = await self.rows("SELECT war_id,legacy_id FROM war_legacy_ids")
         grouped = {}
         for row in ours:
             grouped.setdefault(row["war_id"], set()).add(row["legacy_id"])
-        # The same wars with the same IDs as the attendance finds, plus the stored war and its late capture.
-        self.assertEqual({frozenset(info["aliases"]) for _, info in found},
-                         {frozenset(grouped[row["id"]]) for row in created})
+        # The early war keeps both of its captures' IDs; the stored war keeps its late capture's.
+        self.assertEqual(grouped[created[0]["id"]], {first, last})
         self.assertIn(frozenset({stored_id, paused}), {frozenset(ids) for ids in grouped.values()})
         members = await self.rows("SELECT player_tag,attacks_used,townhall,source_map_position FROM war_members "
                                   "WHERE war_id=? ORDER BY player_tag", (created[0]["id"],))

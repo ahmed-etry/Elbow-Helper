@@ -1,133 +1,42 @@
-"""Canonical completed-war attendance from feature-owned stored evidence."""
+"""Completed league-war attendance from clan health's stored league history.
+
+Regular wars are read from the family record; this snapshot holds league wars only.
+"""
 from collections import Counter, defaultdict
 from contextlib import closing
-from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sqlite3
 
 from elbow_helper.domain.player_tags import normalize_player_tag
 
-# Regular wars saved before the wars table only have participation and attacks.
-FINAL_PARTICIPATION_SOURCES = ('currentwar_api:warEnded', 'currentwar_api:warEnded_scheduled')
-# A Clash pause moves the end time, and with it the war ID, of the same war.
-CAPTURE_WINDOW_SECONDS = 72 * 3600
-
 
 def _identity(war):
-    tag = war['war_id'].removeprefix('REG:').removeprefix('CWL:')
+    tag = war['war_id'].removeprefix('CWL:')
     real_tag = normalize_player_tag(tag) if tag.startswith('#') else None
     side = normalize_player_tag(war['clan_tag'])
     if real_tag and side:
         return ('tag', real_tag, side), True
-    dimensions = (side, normalize_player_tag(war['opponent_tag']),
-                  war['preparation_start_ts'], war['start_ts'],
-                  war['team_size'], war['attacks_per_member'])
-    if war['war_type'] == 'REG' and all(dimensions):
-        return ('regular', *dimensions), True
     return ('unproven', war['clan_code'], war['war_id']), False
-
-
-def _participation_identity(war_id, clan_tag):
-    """Regular war IDs are REG:<clan>:<end time>:<opponent> when Clash gives no war tag."""
-    parts = war_id.split(':')
-    if len(parts) != 4 or parts[0] != 'REG':
-        return None
-    side, opponent = normalize_player_tag(parts[1]), normalize_player_tag(parts[3])
-    if not side or side != normalize_player_tag(clan_tag) or not opponent:
-        return None
-    try:
-        end = datetime.strptime(parts[2], '%Y%m%dT%H%M%S.%fZ').replace(tzinfo=timezone.utc)
-    except ValueError:
-        return None
-    return side, opponent, int(end.timestamp())
-
-
-def _participation_only_wars(connection, clan_codes, stored_wars):
-    """Regular wars with final participation but no wars row, one per war.
-
-    Captures within the pause window of each other, or of a stored ended war
-    against the same opponent, are the same war; only the latest final
-    capture supplies the lineup and attacks.
-    """
-    activity = [dict(row) for row in connection.execute('''
-        SELECT war_id, clan_code, clan_tag, end_ts, player_tag, player_name,
-               attacks_expected, attacks_used, source
-        FROM war_activity AS activity
-        WHERE war_type='REG' AND clan_code IN (SELECT value FROM json_each(?))
-          AND NOT EXISTS (SELECT 1 FROM wars WHERE wars.war_id=activity.war_id
-                          AND wars.clan_code=activity.clan_code)
-        ORDER BY clan_code, war_id, player_tag
-    ''', (json.dumps(clan_codes),)).fetchmany(200001)]
-    if len(activity) > 200000:
-        raise ValueError('Choose a smaller period; the complete attendance snapshot is too large.')
-    captures = defaultdict(list)
-    for row in activity:
-        captures[(row['clan_code'], row['war_id'])].append(row)
-    stored_ends = defaultdict(list)
-    for war in stored_wars:
-        if war['war_type'] == 'REG' and war['end_ts']:
-            stored_ends[(war['clan_code'], normalize_player_tag(war['clan_tag']),
-                         normalize_player_tag(war['opponent_tag']))].append(war['end_ts'])
-    clusters, by_side = [], defaultdict(list)
-    for (clan, war_id), rows in captures.items():
-        identity = _participation_identity(war_id, rows[0]['clan_tag'])
-        if identity is None:
-            clusters.append((('unproven', clan, war_id), None, [(None, war_id)]))
-        else:
-            by_side[(clan, *identity[:2])].append((identity[2], war_id))
-    for side, items in by_side.items():
-        items.sort()
-        cluster = []
-        for item in items:
-            if cluster and item[0] - cluster[0][0] > CAPTURE_WINDOW_SECONDS:
-                clusters.append((('participation', *side, cluster[0][0]), side, cluster))
-                cluster = []
-            cluster.append(item)
-        clusters.append((('participation', *side, cluster[0][0]), side, cluster))
-    found, rosters = [], {}
-    for key, side, items in clusters:
-        clan, war_ids = key[1], [war_id for _, war_id in items]
-        final = {war_id: [row for row in captures[(clan, war_id)]
-                          if row['source'] in FINAL_PARTICIPATION_SOURCES] for war_id in war_ids}
-        final = {war_id: rows for war_id, rows in final.items() if rows}
-        if not final:
-            continue
-        if side is not None and any(abs(stored - end) <= CAPTURE_WINDOW_SECONDS
-                                    for stored in stored_ends[side] for end, _ in items):
-            continue
-        chosen = max(final, key=lambda war_id: (max(row['end_ts'] for row in final[war_id]), war_id))
-        lineup = final[chosen]
-        rosters[(clan, chosen)] = [{**row, 'roster_state': 'warEnded', 'captured_ts': row['end_ts']}
-                                   for row in lineup]
-        war = {'war_id': chosen, 'war_type': 'REG', 'clan_code': clan, 'clan_tag': lineup[0]['clan_tag'],
-               'opponent_tag': side[2] if side else None, 'cwl_season': '',
-               'preparation_start_ts': None, 'start_ts': None,
-               'end_ts': max(row['end_ts'] for row in lineup)}
-        found.append((key, {'identity_proven': side is not None, 'war': war,
-            'wars': [{'war_id': war_id, 'source': source} for war_id in war_ids
-                     for source in sorted({row['source'] for row in captures[(clan, war_id)]})],
-            'aliases': sorted(war_ids), 'evidence': [chosen]}))
-    return found, rosters
 
 
 def attendance_snapshot(path, *, clan_codes, war_type, after_ts=None, before_ts=None,
                         season=None, war_ids=(), latest_completed=None, season_keys=(), history_limit=None):
+    if war_type != 'CWL':
+        raise ValueError('Stored war history holds league wars only; regular wars are in the family record.')
     if history_limit is not None:
-        if war_type != 'CWL' or type(history_limit) is not int or not 1 <= history_limit <= 12:
+        if type(history_limit) is not int or not 1 <= history_limit <= 12:
             raise ValueError('Invalid CWL history limit')
         if season or season_keys or war_ids or latest_completed or after_ts is not None or before_ts is not None:
             raise ValueError('Choose recent seasons or an explicit period, not both.')
-    kinds = ['REG', 'CWL'] if war_type == 'both' else [war_type]
     with closing(sqlite3.connect(Path(path).resolve().as_uri() + '?mode=ro', uri=True, timeout=5)) as connection:
         connection.row_factory = sqlite3.Row
         connection.execute('BEGIN')
         wars = [dict(row) for row in connection.execute('''
-            SELECT * FROM wars WHERE state='warEnded'
-              AND war_type IN (SELECT value FROM json_each(?))
+            SELECT * FROM wars WHERE state='warEnded' AND war_type='CWL'
               AND clan_code IN (SELECT value FROM json_each(?))
             ORDER BY last_seen_ts, war_id
-        ''', (json.dumps(kinds), json.dumps(clan_codes))).fetchmany(5001)]
+        ''', (json.dumps(clan_codes),)).fetchmany(5001)]
         if len(wars) > 5000:
             raise ValueError('Choose fewer clans; stored war identities exceed the snapshot bound.')
         groups = {}
@@ -140,12 +49,6 @@ def attendance_snapshot(path, *, clan_codes, war_type, after_ts=None, before_ts=
             war = max(group['wars'], key=lambda row: (row['last_seen_ts'], row['war_id']))
             reconciled.append((key, {**group, 'war': war,
                 'aliases': sorted({row['war_id'] for row in group['wars']})}))
-        participation_rosters = {}
-        if 'REG' in kinds:
-            participation_wars, participation_rosters = _participation_only_wars(connection, clan_codes, wars)
-            if len(wars) + len(participation_wars) > 5000:
-                raise ValueError('Choose fewer clans; stored war identities exceed the snapshot bound.')
-            reconciled.extend(participation_wars)
         component_seasons = list(season_keys)
         if history_limit is not None:
             by_season_clan = defaultdict(list)
@@ -189,13 +92,12 @@ def attendance_snapshot(path, *, clan_codes, war_type, after_ts=None, before_ts=
     roster_by_war, attacks_by_war = defaultdict(list), defaultdict(list)
     for row in rosters:
         roster_by_war[(row['clan_code'], row['war_id'])].append(row)
-    roster_by_war.update(participation_rosters)
     for row in attacks:
         attacks_by_war[(row['clan_code'], row['war_id'])].append(row)
     rows, empty_wars, conflicts, uncertain_ids, alias_sources = [], [], [], [], []
     for _, group in selected:
         war, aliases = group['war'], group['aliases']
-        evidence = group.get('evidence', aliases)
+        evidence = aliases
         clan = war['clan_code']
         reasons = []
         if not group['identity_proven']:
@@ -265,10 +167,6 @@ def attendance_snapshot(path, *, clan_codes, war_type, after_ts=None, before_ts=
         'duplicate_identities_removed': sum(len(group['aliases']) - 1 for _, group in selected),
         'coverage': {'query_complete': True, 'historical_collection_complete': False,
                      'exact_ranking': not (conflicts or empty_wars),
-                     'regular_wars_not_checked_for_friendly': sum(
-                         group['war']['war_type'] == 'REG'
-                         and not (group['war']['preparation_start_ts'] and group['war']['start_ts'])
-                         for _, group in selected),
                      'basis': 'stored completed wars; aliases are reconciled before period selection'}}
 
 

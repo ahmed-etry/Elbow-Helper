@@ -67,7 +67,11 @@ def _validated_clan_members(
 
 
 class ClanHealthCollector:
-    """Collect live Clash data and persist normalized Clan Health activity."""
+    """Collect live Clash data and persist normalized Clan Health activity.
+
+    Regular wars are not collected here: the family collectors check them for
+    the family record, which health reads.
+    """
 
     def __init__(
         self,
@@ -78,20 +82,13 @@ class ClanHealthCollector:
         self._clash_client = clash_client
         self.repository = repository
         self.analyzer = analyzer
-        self._war_end_tasks: dict[str, asyncio.Task] = {}
-        self._war_end_scheduled: dict[str, int] = {}
         self._cwl_war_end_tasks: dict[str, asyncio.Task] = {}
         self._cwl_war_end_scheduled: dict[str, int] = {}
 
     def close(self) -> None:
-        for task in (
-            *self._war_end_tasks.values(),
-            *self._cwl_war_end_tasks.values(),
-        ):
+        for task in self._cwl_war_end_tasks.values():
             if not task.done():
                 task.cancel()
-        self._war_end_tasks.clear()
-        self._war_end_scheduled.clear()
         self._cwl_war_end_tasks.clear()
         self._cwl_war_end_scheduled.clear()
 
@@ -578,80 +575,6 @@ class ClanHealthCollector:
         stored_attacks = await asyncio.to_thread(self.repository.store_war_attacks, attack_rows)
         return len(war_ids), stored_wars + stored_rosters + stored + stored_attacks, warnings
 
-    async def _ingest_regular_war_for_clan(
-        self,
-        *,
-        clan_code: str,
-    ) -> Tuple[int, int, List[str]]:
-        clan_tag = CLAN_TAGS[clan_code]
-        warnings: List[str] = []
-        current_path = f"/clans/{encode_clash_tag(clan_tag)}/currentwar"
-        war_payload = await self._fetch_coc_json(current_path)
-        if not war_payload:
-            return 0, 0, warnings
-        war_state = str(war_payload.get("state") or "").strip()
-        if war_state not in {"preparation", "inWar", "warEnded"}:
-            return 0, 0, warnings
-        end_time = str(war_payload.get("endTime") or "")
-        war_tag = str(war_payload.get("tag") or "")
-        opp = war_payload.get("opponent", {}) or {}
-        opp_tag = str(opp.get("tag") or "")
-        war_id = f"REG:{war_tag or f'{clan_tag}:{end_time}:{opp_tag}'}"
-        source = f"currentwar_api:{war_state}"
-        war_row = self._extract_war_row(
-            war_payload=war_payload,
-            clan_code=clan_code,
-            clan_tag=clan_tag,
-            war_id=war_id,
-            war_type="REG",
-            source=source,
-        )
-        roster_rows = self._extract_final_war_roster_rows(
-            war_payload=war_payload,
-            clan_code=clan_code,
-            clan_tag=clan_tag,
-            war_id=war_id,
-            source=source,
-        )
-        rows = self._extract_war_member_rows(
-            war_payload=war_payload,
-            clan_code=clan_code,
-            clan_tag=clan_tag,
-            war_id=war_id,
-            war_type="REG",
-            source=source,
-        )
-        attack_rows = self._extract_war_attack_rows(
-            war_payload=war_payload,
-            clan_code=clan_code,
-            clan_tag=clan_tag,
-            war_id=war_id,
-            war_type="REG",
-            source=source,
-        )
-        stored = await asyncio.to_thread(
-            self.repository.store_regular_war_snapshot,
-            war_row, roster_rows, rows, attack_rows,
-        )
-        if war_state in {"preparation", "inWar"}:
-            end_dt = self._coc_time_to_dt(war_payload.get("endTime"))
-            if end_dt:
-                self._schedule_war_end_capture(clan_code, int(end_dt.timestamp()))
-        return (1 if rows else 0), stored, warnings
-
-    def _schedule_war_end_capture(self, clan_code: str, end_ts: int) -> None:
-        # Idempotent: same endTime + live task → skip; new/changed endTime → cancel prior and reschedule.
-        existing_task = self._war_end_tasks.get(clan_code)
-        existing_end = self._war_end_scheduled.get(clan_code)
-        if existing_end == end_ts and existing_task and not existing_task.done():
-            return
-        if existing_task and not existing_task.done():
-            existing_task.cancel()
-        self._war_end_scheduled[clan_code] = end_ts
-        self._war_end_tasks[clan_code] = asyncio.create_task(
-            self._run_war_end_capture(clan_code=clan_code, expected_end_ts=end_ts)
-        )
-
     def _schedule_cwl_war_end_capture(self, war_tag: str, clan_code: str, end_ts: int) -> None:
         existing_task = self._cwl_war_end_tasks.get(war_tag)
         existing_end = self._cwl_war_end_scheduled.get(war_tag)
@@ -667,81 +590,6 @@ class ClanHealthCollector:
                 expected_end_ts=end_ts,
             )
         )
-
-    async def _run_war_end_capture(self, *, clan_code: str, expected_end_ts: int) -> None:
-        clan_tag = CLAN_TAGS[clan_code]
-        try:
-            delay = (expected_end_ts + 90) - int(time.time())
-            if delay > 0:
-                await asyncio.sleep(delay)
-            if self._clash_client.configured:
-                path = f"/clans/{encode_clash_tag(clan_tag)}/currentwar"
-                for attempt in range(2):
-                    payload = await self._fetch_coc_json(path)
-                    if not payload:
-                        return
-                    state = str(payload.get("state") or "").strip()
-                    end_dt = self._coc_time_to_dt(payload.get("endTime"))
-                    payload_end_ts = int(end_dt.timestamp()) if end_dt else 0
-                    if state == "warEnded":
-                        war_tag = str(payload.get("tag") or "")
-                        end_time_str = str(payload.get("endTime") or "")
-                        opp_tag = str((payload.get("opponent") or {}).get("tag") or "")
-                        war_id = f"REG:{war_tag or f'{clan_tag}:{end_time_str}:{opp_tag}'}"
-                        source = "currentwar_api:warEnded_scheduled"
-                        war_row = self._extract_war_row(
-                            war_payload=payload,
-                            clan_code=clan_code,
-                            clan_tag=clan_tag,
-                            war_id=war_id,
-                            war_type="REG",
-                            source=source,
-                        )
-                        roster_rows = self._extract_final_war_roster_rows(
-                            war_payload=payload,
-                            clan_code=clan_code,
-                            clan_tag=clan_tag,
-                            war_id=war_id,
-                            source=source,
-                        )
-                        rows = self._extract_war_member_rows(
-                            war_payload=payload,
-                            clan_code=clan_code,
-                            clan_tag=clan_tag,
-                            war_id=war_id,
-                            war_type="REG",
-                            source=source,
-                        )
-                        attack_rows = self._extract_war_attack_rows(
-                            war_payload=payload,
-                            clan_code=clan_code,
-                            clan_tag=clan_tag,
-                            war_id=war_id,
-                            war_type="REG",
-                            source=source,
-                        )
-                        await asyncio.to_thread(
-                            self.repository.store_regular_war_snapshot,
-                            war_row, roster_rows, rows, attack_rows,
-                        )
-                        return
-                    # Rolled over into a new war — abandon; the 20-min loop will reschedule.
-                    if payload_end_ts and payload_end_ts != expected_end_ts:
-                        return
-                    # Clock skew: API still says inWar at endTime+90s. Retry once at +3min.
-                    if state == "inWar" and attempt == 0:
-                        await asyncio.sleep(180)
-                        continue
-                    return
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            LOGGER.exception("War-end capture failed clan=%s", clan_code)
-        finally:
-            if self._war_end_scheduled.get(clan_code) == expected_end_ts:
-                self._war_end_scheduled.pop(clan_code, None)
-            if self._war_end_tasks.get(clan_code) is asyncio.current_task():
-                self._war_end_tasks.pop(clan_code, None)
 
     async def _run_cwl_war_end_capture(self, *, war_tag: str, clan_code: str, expected_end_ts: int) -> None:
         clan_tag = CLAN_TAGS[clan_code]
@@ -816,27 +664,22 @@ class ClanHealthCollector:
             if self._cwl_war_end_tasks.get(war_tag) is asyncio.current_task():
                 self._cwl_war_end_tasks.pop(war_tag, None)
 
-    async def ingest_family_war_activity(
+    async def ingest_family_cwl_activity(
         self,
     ) -> Tuple[int, int, List[str]]:
+        """Store league wars; the family collectors check regular wars for the family record."""
         total_wars = 0
         total_rows = 0
         warnings: List[str] = []
         for clan_code in CLAN_ORDER:
-            # CWL and regular wars are ingested separately because API endpoints differ.
-            if clan_code in CWL_CLAN_CODES:
-                war_cwl_wars, war_cwl_rows, war_cwl_warnings = await self._ingest_war_cwl_for_clan(
-                    clan_code=clan_code,
-                )
-            else:
-                war_cwl_wars, war_cwl_rows, war_cwl_warnings = 0, 0, []
-            reg_wars, reg_rows, reg_warnings = await self._ingest_regular_war_for_clan(
+            if clan_code not in CWL_CLAN_CODES:
+                continue
+            war_cwl_wars, war_cwl_rows, war_cwl_warnings = await self._ingest_war_cwl_for_clan(
                 clan_code=clan_code,
             )
-            total_wars += war_cwl_wars + reg_wars
-            total_rows += war_cwl_rows + reg_rows
+            total_wars += war_cwl_wars
+            total_rows += war_cwl_rows
             warnings.extend(war_cwl_warnings)
-            warnings.extend(reg_warnings)
         return total_wars, total_rows, warnings
 
     async def try_live_player_row(

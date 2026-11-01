@@ -1,9 +1,8 @@
 """The agent's war tools and joins read regular and current wars from the family record.
 
 Synthetic wars are written through the collectors' own storage path into a
-family record. The same wars stored the old way serve as the reference for
-per-account results: they reach the tools through the same attendance
-shape. No Discord, Clash or LLM call is made.
+family record; league wars stay in stored league history. No Discord,
+Clash or LLM call is made.
 """
 
 from contextlib import closing
@@ -27,7 +26,6 @@ from elbow_helper.features.hibernation.queries import HibernationQueries
 from elbow_helper.infrastructure.persistence.revisions import release_sqlite_revision
 
 from agent.engine.test_agent_plan_flow import _context
-from agent.families.record_stub import regular_wars_from
 from tests.data.test_wars import END, SECOND, WarFixture, war
 
 DAY = 86400 * SECOND
@@ -79,13 +77,12 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                                bot=SimpleNamespace(war_reads=self.reads))
 
     async def both_wars(self):
-        """The same two ended regular wars in the record and stored the old way."""
+        """Two ended regular wars in the record."""
         for payload, at in ((war("warEnded"), END + 90 * SECOND), (later_war(), END + 2 * DAY + 90 * SECOND)):
             await self.record(payload, at=at)
-            self.old_war(payload)
 
-    def old_war(self, payload, kind="REG", identity=None):
-        identity = identity or old_id(payload)
+    def old_war(self, payload, kind, identity):
+        """A league war in stored league history."""
         with closing(sqlite3.connect(self.old.path)) as connection, connection:
             connection.execute(
                 "INSERT INTO wars(war_id,war_type,clan_code,clan_tag,opponent_tag,cwl_season,state,preparation_start_ts,"
@@ -107,41 +104,31 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                          member["name"], attack["order"], attack["defenderTag"], attack["stars"],
                          attack["destructionPercentage"]))
 
-    async def read(self, reference, call, context=None):
-        """A call on the record, or with regular wars from the same wars stored the old way."""
-        context = context or self.context
-        if not reference:
-            return await call(context)
-        with regular_wars_from(self.old):
-            return await call(context)
+    async def attendance(self, arguments):
+        return await war_reads.attendance(self.context, arguments)
 
-    async def attendance(self, reference, arguments):
-        return await self.read(reference, lambda context: war_reads.attendance(context, arguments))
-
-    async def test_attendance_matches_the_same_wars_stored_the_old_way_and_keeps_coverage(self):
+    async def test_attendance_counts_each_recorded_war_and_keeps_coverage(self):
         await self.both_wars()
         arguments = {"war_type": "REG", "clan_codes": ["BEH"], **OCTOBER}
-        old, new = await self.attendance(True, arguments), await self.attendance(False, arguments)
-        self.assertEqual(comparable(new), comparable(old))
-        self.assertEqual(comparable(new)["#P0"][:4], ([old_id(war("warEnded")), old_id(later_war())], 2, 4, 2))
-        self.assertEqual(new["war_ids"], old["war_ids"])
-        self.assertEqual(new["clan_totals"], old["clan_totals"])
+        new = await self.attendance(arguments)
+        wars = [old_id(war("warEnded")), old_id(later_war())]
+        self.assertEqual(comparable(new), {"#P0": (wars, 2, 4, 2, 0, "warring", 6, 2, 2),
+                                           "#P2": (wars, 2, 4, 2, 0, "warring", 6, 2, 2)})
+        self.assertEqual(new["war_ids"], wars)
         self.assertEqual((new["clan_totals"][0]["wars"], new["clan_totals"][0]["missed"]), (2, 4))
         coverage = new["coverage"]
         self.assertEqual((coverage["source"], coverage["regular_wars_not_checked_for_friendly"],
                           coverage["friendly_wars_not_counted"], coverage["wars_not_final"]),
                          ("family_record", 0, 0, 0))
         self.assertEqual({row["signal"] for row in coverage["source_status"]}, {"current_war", "war_log"})
-        # The tool itself returns the same report either way.
-        tool = TOOLS["read_war_attendance"]
-        reports = [await self.read(reference, lambda context: tool.handler(context, arguments))
-                   for reference in (True, False)]
-        self.assertEqual(reports[0]["rows"], reports[1]["rows"])
+        # The tool itself returns the same rows.
+        report = await TOOLS["read_war_attendance"].handler(self.context, arguments)
+        self.assertEqual(comparable(report), comparable(new))
 
     async def test_regular_wars_never_read_the_old_stored_wars(self):
         await self.both_wars()
         with patch.object(self.context.cwl_queries, "attendance", side_effect=AssertionError) as old:
-            result = await self.attendance(False, {"war_type": "REG", "clan_codes": ["BEH"], **OCTOBER})
+            result = await self.attendance({"war_type": "REG", "clan_codes": ["BEH"], **OCTOBER})
         self.assertEqual(len(result["war_ids"]), 2)
         old.assert_not_called()
 
@@ -159,20 +146,19 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
     async def test_known_zero_stays_zero_and_a_missing_lineup_leaves_it_unknown(self):
         await self.both_wars()
         arguments = {"war_type": "REG", "clan_codes": ["BEH"], "account_tags": ["#Y0"], **OCTOBER}
-        for reference in (True, False):
-            (row,) = (await self.attendance(reference, arguments))["rows"]
-            self.assertEqual((row["attacks_used"], row["missed"], row["participation_status"]),
-                             (0, 0, "not_in_checked_lineups"))
+        (row,) = (await self.attendance(arguments))["rows"]
+        self.assertEqual((row["attacks_used"], row["missed"], row["participation_status"]),
+                         (0, 0, "not_in_checked_lineups"))
         # A window without wars checked nothing; absence stays unknown.
         empty = {**arguments, "after": "2026-09-01T00:00:00+00:00", "before": "2026-10-01T00:00:00+00:00"}
-        (row,) = (await self.attendance(False, empty))["rows"]
+        (row,) = (await self.attendance(empty))["rows"]
         self.assertEqual((row["attacks_used"], row["observation_status"]), (None, "no_stored_participation"))
         # A war the record knows without its lineup leaves every absence unknown.
         partial = war("warEnded", clans=("#PY", "#LQ"), end="20261020T180000.000Z")
         partial.update(preparationStartTime="20261018T180000.000Z", startTime="20261019T180000.000Z")
         partial["clan"].pop("members")
         await self.record(partial, at=END + 3 * DAY)
-        result = await self.attendance(False, arguments)
+        result = await self.attendance(arguments)
         self.assertEqual(result["wars_without_rosters"], [old_id(partial)])
         self.assertIsNone(result["rows"][0]["attacks_used"])
         self.assertFalse(result["coverage"]["exact_ranking"])
@@ -185,7 +171,7 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         await self.record(early, at=END + 90 * SECOND)
         # As the old copy writes them: no team size or times to judge friendly by.
         await self.execute("UPDATE wars SET team_size=NULL,type_basis='legacy_unchecked',preparation_at=NULL,start_at=NULL")
-        result = await self.attendance(False, {"war_type": "REG", "clan_codes": ["BEH"], **OCTOBER})
+        result = await self.attendance({"war_type": "REG", "clan_codes": ["BEH"], **OCTOBER})
         self.assertEqual({row["player_tag"]: row["missed"] for row in result["rows"]}, {"#P0": 1, "#P2": 1})
         self.assertEqual(result["coverage"]["regular_wars_not_checked_for_friendly"], 1)
         self.assertEqual(result["wars_without_rosters"], [])
@@ -209,7 +195,7 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         friendly = war("warEnded", clans=("#PY", "#LQ"), end="20261025T180000.000Z")
         friendly.update(preparationStartTime="20261024T170000.000Z", startTime="20261024T180000.000Z")
         await self.record(friendly, at=END + 3 * DAY)
-        result = await self.attendance(False, {"war_type": "REG", "clan_codes": ["BEH"], **OCTOBER})
+        result = await self.attendance({"war_type": "REG", "clan_codes": ["BEH"], **OCTOBER})
         self.assertEqual(result["war_ids"], [old_id(war("warEnded")), old_id(later_war())])
         self.assertEqual(result["coverage"]["friendly_wars_not_counted"], 1)
 
@@ -222,9 +208,9 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         await self.store.call(lambda c: (map_legacy_war(c, "clan_health", earlier, "BEH", war_id, at=self.now), c.commit()))
         for selected in ([first], [earlier], ["CWL:#R0", earlier], ["not an id"]):
             with self.subTest(selected=selected):
-                result = await self.attendance(False, {"war_type": "REG", "clan_codes": ["BEH"], "war_ids": selected})
+                result = await self.attendance({"war_type": "REG", "clan_codes": ["BEH"], "war_ids": selected})
                 self.assertEqual(result["war_ids"], [first] if selected != ["not an id"] else [])
-        self.assertIn(earlier, (await self.attendance(False, {"war_type": "REG", "clan_codes": ["BEH"],
+        self.assertIn(earlier, (await self.attendance({"war_type": "REG", "clan_codes": ["BEH"],
                                                               "war_ids": [first]}))["war_aliases"][0]["aliases"])
 
     async def test_latest_wars_and_both_kinds_rank_together(self):
@@ -232,18 +218,17 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         league = war("warEnded", clans=("#PY", "#LQ"), end="20261029T180000.000Z")
         self.old_war(league, kind="CWL", identity="CWL:#R0")
         latest = {"clan_codes": ["BEH"], "latest_completed": 1}
-        self.assertEqual((await self.attendance(False, {"war_type": "REG", **latest}))["war_ids"], [old_id(later_war())])
-        for count, expected in ((2, [old_id(later_war()), "CWL:#R0"]), (3, [old_id(war("warEnded")), old_id(later_war()), "CWL:#R0"])):
-            arguments = {"war_type": "both", "clan_codes": ["BEH"], "latest_completed": count}
-            old, new = await self.attendance(True, arguments), await self.attendance(False, arguments)
+        self.assertEqual((await self.attendance({"war_type": "REG", **latest}))["war_ids"], [old_id(later_war())])
+        for count, expected, used in ((2, [old_id(later_war()), "CWL:#R0"], 2),
+                                      (3, [old_id(war("warEnded")), old_id(later_war()), "CWL:#R0"], 3)):
+            new = await self.attendance({"war_type": "both", "clan_codes": ["BEH"], "latest_completed": count})
             self.assertEqual(sorted(new["war_ids"]), sorted(expected))
-            self.assertEqual(comparable(new), comparable(old))
-        both = await self.attendance(False, {"war_type": "both", "clan_codes": ["BEH"], **OCTOBER})
+            self.assertEqual(comparable(new)["#P0"][1:4], (used, 2 * used, used))
+        both = await self.attendance({"war_type": "both", "clan_codes": ["BEH"], **OCTOBER})
         self.assertEqual(set(both["coverage"]), {"query_complete", "historical_collection_complete", "exact_ranking",
                                                  "regular_wars_not_checked_for_friendly", "friendly_wars_not_counted",
                                                  "regular", "league", "basis"})
-        self.assertEqual(comparable(both), comparable(await self.attendance(True, {
-            "war_type": "both", "clan_codes": ["BEH"], **OCTOBER})))
+        self.assertEqual(comparable(both)["#P0"][:4], (sorted([*expected]), 3, 6, 3))
 
     async def test_record_failures_are_unavailable_not_empty(self):
         await self.both_wars()
@@ -299,28 +284,18 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         await self.record(war("inWar", clans=("#PY", "#CU"), end="20261105T180000.000Z"), at=END + 6 * DAY)
         self.assertFalse(report_is_current(context, report))
 
-    async def test_trial_and_cohort_joins_match_the_same_wars_stored_the_old_way(self):
+    async def test_trial_and_cohort_joins_read_the_recorded_wars(self):
         await self.both_wars()
         selection = {"war_type": "REG", "clan_codes": ["BEH"], **OCTOBER}
-        joined = []
-        for reference in (True, False):
-            rows = [{"applicant_member_id": 41}]
-            coverage = await self.read(reference, lambda context: projections.performance_projection(
-                context, rows, selection))
-            self.assertNotIn("error", coverage)
-            joined.append((rows[0]["war_attendance"], rows[0]["attack_performance"]))
-        self.assertEqual(joined[1], joined[0])
-        self.assertEqual(joined[1][0]["attacks_expected"], 8)
-        self.assertEqual(joined[1][1]["REG"]["account_war_opportunities"], 4)
-        cohorts = []
-        for reference in (True, False):
-            rows = [{"member_id": 41, "accounts": [{"player_tag": "#P0", "clan_code": "BEH"},
-                                                   {"player_tag": "#Y0", "clan_code": "BEH"}]}]
-            await self.read(reference, lambda context: cohort_activity.activity_projection(
-                context, rows, {"clan_codes": ["BEH"], **OCTOBER}))
-            cohorts.append((rows[0]["war_activity"], [account["war_activity"] for account in rows[0]["accounts"]]))
-        self.assertEqual(cohorts[1], cohorts[0])
-        self.assertEqual((cohorts[1][0]["wars_observed"], cohorts[1][0]["missed"]), (2, 2))
+        rows = [{"applicant_member_id": 41}]
+        coverage = await projections.performance_projection(self.context, rows, selection)
+        self.assertNotIn("error", coverage)
+        self.assertEqual((rows[0]["war_attendance"]["attacks_expected"], rows[0]["war_attendance"]["missed"]), (8, 4))
+        self.assertEqual(rows[0]["attack_performance"]["REG"]["account_war_opportunities"], 4)
+        rows = [{"member_id": 41, "accounts": [{"player_tag": "#P0", "clan_code": "BEH"},
+                                               {"player_tag": "#Y0", "clan_code": "BEH"}]}]
+        await cohort_activity.activity_projection(self.context, rows, {"clan_codes": ["BEH"], **OCTOBER})
+        self.assertEqual((rows[0]["war_activity"]["wars_observed"], rows[0]["war_activity"]["missed"]), (2, 2))
 
     async def test_hibernation_keeps_overlapping_war_attacks_unknown(self):
         await self.both_wars()
@@ -338,14 +313,9 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         context = replace(context, source_message=message, hibernation_queries=HibernationQueries(
             lambda: {"41": {"hibernation_date": f"<t:{started}:F>"}}))
         tool = next(tool for tool in WORKFLOW_TOOLS if tool.definition.name == "read_hibernation")
-        results = []
-        for reference in (True, False):
-            result = await self.read(reference, lambda context: tool.handler(
-                context, {"include_activity": True, "activity_kinds": ["regular_war"]}), context)
-            self.assertNotIn("error", result)
-            results.append({account["player_tag"]: account for account in result["rows"][0]["accounts"]})
-        self.assertEqual(results[1], results[0])
-        account = results[1]["#P0"]
+        result = await tool.handler(context, {"include_activity": True, "activity_kinds": ["regular_war"]})
+        self.assertNotIn("error", result)
+        account = {account["player_tag"]: account for account in result["rows"][0]["accounts"]}["#P0"]
         self.assertIsNone(account["observed_regular_war_attacks_since_start"])
         self.assertEqual(account["observed_regular_war_attacks_in_post_start_wars"], 1)
         self.assertEqual([war["war_id"] for war in account["regular_war_overlapping_war_participation"]],

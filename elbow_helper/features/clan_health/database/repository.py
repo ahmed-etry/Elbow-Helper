@@ -33,7 +33,6 @@ class ClanHealthRepository(
     store_report = ClanHealthRecords._store_report
     store_war_activity = ClanHealthRecords._store_war_activity_rows
     store_wars = ClanHealthRecords._store_war_rows
-    store_regular_war_snapshot = ClanHealthRecords._store_regular_war_snapshot
     store_final_war_rosters = (
         ClanHealthRecords._store_final_war_roster_rows
     )
@@ -55,10 +54,8 @@ class ClanHealthRepository(
     )
 
     baseline_snapshot = ClanHealthAggregates._get_baseline_snapshot
-    war_activity = ClanHealthAggregates._load_war_activity_breakdown
-    clan_war_counts = (
-        ClanHealthAggregates._load_clan_war_window_counts_by_type
-    )
+    cwl_war_activity = ClanHealthAggregates._load_cwl_war_activity
+    cwl_war_counts = ClanHealthAggregates._load_cwl_war_counts
     raid_weekend_count = (
         ClanHealthAggregates._count_raid_weekends_in_window
     )
@@ -74,11 +71,11 @@ class ClanHealthRepository(
     )
 
     search_players = ClanHealthHistory._search_health_players
-    latest_activity_season = (
-        ClanHealthHistory._latest_activity_season_for_player
+    latest_stored_activity_ts = (
+        ClanHealthHistory._latest_stored_activity_ts_for_player
     )
     snapshot_history = ClanHealthHistory._load_snapshot_history
-    player_war_attacks = ClanHealthHistory._load_player_war_attacks
+    player_cwl_attacks = ClanHealthHistory._load_player_cwl_attacks
     player_raid_activity = (
         ClanHealthHistory._load_player_raid_member_activity
     )

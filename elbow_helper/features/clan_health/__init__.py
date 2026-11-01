@@ -13,11 +13,12 @@ from .api import ClanHealthCollector
 from .database import ClanHealthRepository
 from .cog import ClanHealth
 from .queries import ClanHealthQueries
+from .record_wars import RegularWars
 
 
 async def setup(bot: ElbowHelperBot) -> None:
     repository = ClanHealthRepository()
-    analyzer = ClanHealthAnalyzer(repository)
+    analyzer = ClanHealthAnalyzer(repository, RegularWars(bot.war_reads))
     collector = ClanHealthCollector(
         bot.clash_client,
         repository,

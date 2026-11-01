@@ -8,8 +8,8 @@ from datetime import datetime, timedelta
 import sqlite3
 from typing import Any, Dict, List, Optional
 
-from ..config import UTC
-from ..seasons import _season_key_for_datetime
+
+
 class ClanHealthHistory:
     def _search_health_players(
         self, current: str, limit: int = 25, *, offset: int = 0,
@@ -90,8 +90,8 @@ class ClanHealthHistory:
         finally:
             conn.close()
 
-    def _latest_activity_season_for_player(self, player_tag: str) -> Optional[str]:
-        """Find newest season using any stored activity, not only report rows."""
+    def _latest_stored_activity_ts_for_player(self, player_tag: str) -> int:
+        """Newest snapshot, league attack or raid of the player; regular wars are in the family record."""
         with closing(self._db_connect()) as conn, conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -100,7 +100,7 @@ class ClanHealthHistory:
                 FROM (
                     SELECT MAX(captured_ts) AS ts FROM player_snapshots WHERE player_tag = ?
                     UNION ALL
-                    SELECT MAX(end_ts) AS ts FROM war_attacks WHERE player_tag = ?
+                    SELECT MAX(end_ts) AS ts FROM war_attacks WHERE player_tag = ? AND war_type = 'CWL'
                     UNION ALL
                     SELECT MAX(end_ts) AS ts FROM raid_member_activity WHERE player_tag = ?
                 )
@@ -108,11 +108,7 @@ class ClanHealthHistory:
                 (player_tag, player_tag, player_tag),
             )
             row = cursor.fetchone()
-            latest_ts = int(row[0]) if row and row[0] is not None else 0
-        if latest_ts <= 0:
-            return None
-        season_key = _season_key_for_datetime(datetime.fromtimestamp(latest_ts, tz=UTC))
-        return season_key
+            return int(row[0]) if row and row[0] is not None else 0
 
     def _load_snapshot_history(self, player_tag: str, limit: int = 60) -> List[Dict[str, Any]]:
         with closing(self._db_connect()) as conn, conn:
@@ -132,7 +128,7 @@ class ClanHealthHistory:
             rows = [dict(row) for row in cursor.fetchall()]
             return rows
 
-    def _load_player_war_attacks(
+    def _load_player_cwl_attacks(
         self,
         *,
         player_tag: str,
@@ -140,6 +136,7 @@ class ClanHealthHistory:
         cycle_end: datetime,
         limit: int = 500,
     ) -> List[Dict[str, Any]]:
+        """League-war attacks; regular-war attacks come from the family record."""
         with closing(self._db_connect()) as conn, conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
@@ -152,7 +149,7 @@ class ClanHealthHistory:
                         defender_tag, defender_name, defender_map_position, defender_townhall,
                         stars, destruction, fresh_attack, duration, source
                     FROM war_attacks
-                    WHERE player_tag = ? AND end_ts >= ? AND end_ts <= ?
+                    WHERE player_tag = ? AND war_type = 'CWL' AND end_ts >= ? AND end_ts <= ?
                     ORDER BY end_ts DESC, war_id DESC, attack_order ASC
                     LIMIT ?
                     """,
@@ -172,7 +169,7 @@ class ClanHealthHistory:
                         defender_tag, defender_name, defender_map_position, defender_townhall,
                         stars, destruction, fresh_attack, duration, source
                     FROM war_attacks
-                    WHERE player_tag = ? AND end_ts >= ? AND end_ts <= ?
+                    WHERE player_tag = ? AND war_type = 'CWL' AND end_ts >= ? AND end_ts <= ?
                     ORDER BY end_ts DESC, war_id DESC, attack_order ASC
                     """,
                     (

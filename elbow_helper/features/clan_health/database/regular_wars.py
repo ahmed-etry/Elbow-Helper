@@ -1,4 +1,4 @@
-"""Stable identity and removal of superseded untagged regular-war snapshots."""
+"""Stable identity and removal of superseded untagged regular-war snapshots in old backups."""
 
 from __future__ import annotations
 
@@ -18,24 +18,11 @@ def regular_war_identity(row) -> tuple[str, str, int] | None:
     return None
 
 
-def matching_regular_wars(connection: sqlite3.Connection, identity) -> list[dict]:
-    cursor = connection.execute(
-        "SELECT war_id, clan_code, war_type, clan_tag, opponent_tag, "
-        "preparation_start_ts, state, last_seen_ts FROM wars "
-        "WHERE war_type = 'REG' AND clan_tag = ? AND opponent_tag = ? "
-        "AND preparation_start_ts = ?",
-        identity,
-    )
-    names = [column[0] for column in cursor.description]
-    rows = [dict(zip(names, values)) for values in cursor.fetchall()]
-    return [row for row in rows if regular_war_identity(row) == identity]
-
-
 def delete_war_snapshot(connection: sqlite3.Connection, war_id: str, clan_code: str) -> dict[str, int]:
     """Delete dependent facts explicitly; deployed databases do not use cascades.
 
     Discover war-keyed tables so additional stored facts cannot be orphaned.
-    The caller owns the transaction, including replacement snapshot writes.
+    The caller owns the transaction.
     """
     tables = [row[0] for row in connection.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"

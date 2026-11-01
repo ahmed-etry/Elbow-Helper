@@ -6,14 +6,12 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
-import math
 from typing import Any, Mapping
 
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.domain.player_tags import normalize_player_tag
 
 from .database import ClanHealthRepository
-from .evidence import load_player_health
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,55 +59,6 @@ class ClanHealthReportSnapshot:
     clan_code: str
     rows: tuple[ClanHealthPlayerRow, ...]
     issues: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
-class HistoricalRegularWar:
-    war_id: str
-    clan_code: str
-    clan_tag: str
-    opponent_tag: str | None
-    opponent_name: str | None
-    team_size: int
-    attacks_per_member: int
-    preparation_start_ts: int
-    start_ts: int
-    end_ts: int
-    last_seen_ts: int
-    roster_entries: int
-    attack_rows: int
-    roster_complete: bool
-    attack_details_complete: bool
-    issues: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class HistoricalRegularWarMember:
-    war_id: str
-    end_ts: int
-    player_tag: str
-    player_name: str
-    townhall: int
-    map_position: int
-    attacks_expected: int
-    attacks_used: int
-    attacks_missed: int
-    attack_details_recorded: int
-    attack_details_complete: bool
-    stars: int
-    destruction: float
-    fresh_attacks: int
-
-
-@dataclass(frozen=True, slots=True)
-class HistoricalRegularWarHistory:
-    read_at: str
-    clan_code: str
-    wars: tuple[HistoricalRegularWar, ...]
-    members: tuple[HistoricalRegularWarMember, ...]
-    next_before_war_id: str | None
-    ended_from_ts: int | None = None
-    ended_before_ts: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,9 +123,6 @@ class ClanHealthQueries:
             offset=offset, clan_code=clan_code,
         )
         return tuple(rows)
-
-    async def player_health(self, player_tag: str, *, days: int) -> Mapping[str, Any]:
-        return await asyncio.to_thread(load_player_health, self._repository, player_tag, days)
 
     async def report_runs(
         self, clan_code: str, *, before_run_id: str | None = None,
@@ -255,152 +201,6 @@ class ClanHealthQueries:
         if not runs:
             return None
         return await self.report(clan_code, runs[0].run_id)
-
-    async def regular_war_history(
-        self, clan_code: str, *, history_limit: int = 10,
-        before_war_id: str | None = None,
-        ended_from_ts: int | None = None,
-        ended_before_ts: int | None = None,
-    ) -> HistoricalRegularWarHistory:
-        if clan_code not in CLANS:
-            raise ValueError("Unknown Brown Elbow clan code")
-        if type(history_limit) is not int or not 1 <= history_limit <= 20:
-            raise ValueError("Invalid regular-war history limit")
-        if before_war_id is not None and (
-            not isinstance(before_war_id, str) or not before_war_id
-            or len(before_war_id) > 300
-        ):
-            raise ValueError("Invalid regular-war history cursor")
-        for bound in (ended_from_ts, ended_before_ts):
-            if bound is not None and (type(bound) is not int or bound < 0):
-                raise ValueError("Invalid regular-war end-time boundary")
-        if (
-            ended_from_ts is not None and ended_before_ts is not None
-            and ended_from_ts >= ended_before_ts
-        ):
-            raise ValueError("Regular-war end-time window must be increasing")
-        data = await asyncio.to_thread(
-            self._repository.regular_war_history,
-            clan_code=clan_code, history_limit=history_limit + 1,
-            before_war_id=before_war_id,
-            ended_from_ts=ended_from_ts, ended_before_ts=ended_before_ts,
-        )
-        raw_wars = data["wars"]
-        has_more = len(raw_wars) > history_limit
-        selected_wars = raw_wars[:history_limit]
-        selected_ids = {str(row["war_id"]) for row in selected_wars}
-        roster_by_war: dict[str, list[Mapping[str, Any]]] = {}
-        for row in data["roster"]:
-            war_id = str(row.get("war_id") or "")
-            if war_id in selected_ids:
-                roster_by_war.setdefault(war_id, []).append(row)
-        attacks_by_member: dict[tuple[str, str], list[Mapping[str, Any]]] = {}
-        attacks_by_war: dict[str, int] = {}
-        for row in data["attacks"]:
-            war_id = str(row.get("war_id") or "")
-            if war_id not in selected_ids:
-                continue
-            tag = normalize_player_tag(row.get("player_tag"))
-            if tag is None:
-                raise ValueError("Invalid account in stored regular-war attacks")
-            attacks_by_member.setdefault((war_id, tag), []).append(row)
-            attacks_by_war[war_id] = attacks_by_war.get(war_id, 0) + 1
-        wars = []
-        members = []
-        for raw_war in selected_wars:
-            war_id = str(raw_war.get("war_id") or "")
-            if not war_id or len(war_id) > 300:
-                raise ValueError("Invalid stored regular-war identity")
-            team_size = _required_int(raw_war.get("team_size"), minimum=1, maximum=50)
-            attacks_per_member = _required_int(
-                raw_war.get("attacks_per_member"), minimum=1, maximum=2,
-            )
-            roster = roster_by_war.get(war_id, [])
-            issues = []
-            normalized_roster = []
-            for row in roster:
-                tag = normalize_player_tag(row.get("player_tag"))
-                if tag is None:
-                    raise ValueError("Invalid account in stored regular-war roster")
-                normalized_roster.append((row, tag))
-            tags = [tag for _, tag in normalized_roster]
-            if len(tags) != len(set(tags)):
-                raise ValueError("Duplicate account in stored regular-war roster")
-            roster_complete = len(roster) == team_size
-            if not roster_complete:
-                issues.append(f"incomplete_roster:{len(roster)}/{team_size}")
-            details_complete = True
-            roster_tags = set(tags)
-            for row, tag in normalized_roster:
-                expected = _required_int(
-                    row.get("attacks_expected"), minimum=0, maximum=attacks_per_member,
-                )
-                if expected != attacks_per_member:
-                    raise ValueError("Invalid stored regular-war attack allowance")
-                used = _required_int(
-                    row.get("attacks_used"), minimum=0, maximum=expected,
-                )
-                attacks = attacks_by_member.get((war_id, tag), [])
-                stars = 0
-                destruction = 0.0
-                fresh_attacks = 0
-                for attack in attacks:
-                    stars += _required_int(attack.get("stars"), minimum=0, maximum=3)
-                    destruction += _required_float(
-                        attack.get("destruction"), minimum=0, maximum=100,
-                    )
-                    fresh_attacks += _required_int(
-                        attack.get("fresh_attack"), minimum=0, maximum=1,
-                    )
-                detail_complete = len(attacks) == used
-                if not detail_complete:
-                    details_complete = False
-                    issues.append(f"attack_detail_mismatch:{tag}:{used}/{len(attacks)}")
-                members.append(HistoricalRegularWarMember(
-                    war_id=war_id,
-                    end_ts=_required_int(raw_war.get("end_ts"), minimum=1),
-                    player_tag=tag,
-                    player_name=_required_text(row.get("player_name"), maximum=100),
-                    townhall=_required_int(row.get("townhall"), minimum=0, maximum=20),
-                    map_position=_required_int(row.get("map_position"), minimum=0, maximum=50),
-                    attacks_expected=expected, attacks_used=used,
-                    attacks_missed=expected - used,
-                    attack_details_recorded=len(attacks),
-                    attack_details_complete=detail_complete,
-                    stars=stars, destruction=destruction,
-                    fresh_attacks=fresh_attacks,
-                ))
-            orphan_attacks = sum(
-                len(values) for (attack_war_id, tag), values in attacks_by_member.items()
-                if attack_war_id == war_id and tag not in roster_tags
-            )
-            if orphan_attacks:
-                details_complete = False
-                issues.append(f"orphan_attack_details:{orphan_attacks}")
-            wars.append(HistoricalRegularWar(
-                war_id=war_id, clan_code=clan_code,
-                clan_tag=_required_text(raw_war.get("clan_tag"), maximum=20),
-                opponent_tag=_optional_bounded_text(raw_war.get("opponent_tag"), maximum=20),
-                opponent_name=_optional_bounded_text(raw_war.get("opponent_name"), maximum=100),
-                team_size=team_size, attacks_per_member=attacks_per_member,
-                preparation_start_ts=_required_int(raw_war.get("preparation_start_ts"), minimum=0),
-                start_ts=_required_int(raw_war.get("start_ts"), minimum=0),
-                end_ts=_required_int(raw_war.get("end_ts"), minimum=1),
-                last_seen_ts=_required_int(raw_war.get("last_seen_ts"), minimum=1),
-                roster_entries=len(roster), attack_rows=attacks_by_war.get(war_id, 0),
-                roster_complete=roster_complete,
-                attack_details_complete=details_complete,
-                issues=tuple(issues),
-            ))
-        members.sort(key=lambda row: (
-            -row.end_ts, row.map_position, row.player_name.casefold(), row.player_tag,
-        ))
-        return HistoricalRegularWarHistory(
-            read_at=datetime.now(timezone.utc).isoformat(), clan_code=clan_code,
-            wars=tuple(wars), members=tuple(members),
-            next_before_war_id=(wars[-1].war_id if has_more and wars else None),
-            ended_from_ts=ended_from_ts, ended_before_ts=ended_before_ts,
-        )
 
     async def family_movement_history(
         self, *, interval_limit: int = 10,
@@ -553,25 +353,8 @@ def _required_int(
     return value
 
 
-def _required_float(value: Any, *, minimum: float, maximum: float) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError("Invalid stored regular-war number")
-    result = float(value)
-    if not math.isfinite(result) or not minimum <= result <= maximum:
-        raise ValueError("Invalid stored regular-war number")
-    return result
-
-
 def _required_text(value: Any, *, maximum: int) -> str:
     if not isinstance(value, str) or not value or len(value) > maximum:
-        raise ValueError("Invalid stored regular-war text")
-    return value
-
-
-def _optional_bounded_text(value: Any, *, maximum: int) -> str | None:
-    if value is None or value == "":
-        return None
-    if not isinstance(value, str) or len(value) > maximum:
         raise ValueError("Invalid stored regular-war text")
     return value
 
@@ -596,6 +379,4 @@ __all__ = [
     "ClanHealthPlayerRow", "ClanHealthQueries", "ClanHealthReportRun",
     "ClanHealthReportSnapshot", "CompleteFamilySnapshotRun",
     "FamilyAccountMovement", "FamilyMovementHistory", "FamilySnapshotInterval",
-    "HistoricalRegularWar",
-    "HistoricalRegularWarHistory", "HistoricalRegularWarMember",
 ]

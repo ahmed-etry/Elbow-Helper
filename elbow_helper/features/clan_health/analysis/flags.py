@@ -88,22 +88,19 @@ class ClanHealthFlagMixin:
     ) -> None:
         cg_window_state = _clan_games_window_state(cycle_start=cycle_start, cycle_end=cycle_end) if cycle_start and cycle_end else "N/A"
         raid_window_state = _raid_weekend_window_state(cycle_start=cycle_start, cycle_end=cycle_end) if cycle_start and cycle_end else "N/A"
-        clan_war_counts_by_type: Dict[str, Dict[str, int]] = {}
+        regular_wars_by_clan: Dict[str, int] = {}
         family_cwl_available = 0
         if cycle_start and cycle_end:
-            clan_war_counts_by_type = self.repository.clan_war_counts(
-                cycle_start_ts=int(cycle_start.timestamp()),
-                cycle_end_ts=int(cycle_end.timestamp()),
+            window = {
+                "cycle_start_ts": int(cycle_start.timestamp()),
+                "cycle_end_ts": int(cycle_end.timestamp()),
+            }
+            # Regular wars come from the family record, league wars from stored league history.
+            regular_wars_by_clan = self.regular_wars.war_counts(
+                **window,
                 clan_codes={str(r.get("clan_code") or "") for r in players if str(r.get("clan_code") or "")},
             )
-            family_counts = self.repository.clan_war_counts(
-                cycle_start_ts=int(cycle_start.timestamp()),
-                cycle_end_ts=int(cycle_end.timestamp()),
-            )
-            family_cwl_available = max(
-                (int(counts.get("cwl") or 0) for counts in family_counts.values()),
-                default=0,
-            )
+            family_cwl_available = max(self.repository.cwl_war_counts(**window).values(), default=0)
 
         for row in players:
             clan_code = str(row.get("clan_code") or "")
@@ -112,8 +109,7 @@ class ClanHealthFlagMixin:
             profile_name = str(rules.get("_profile_name") or "casual").strip().lower()
             row["clan_profile"] = profile_name
 
-            available_counts = clan_war_counts_by_type.get(clan_code, {})
-            regular_available = int(available_counts.get("regular") or 0)
+            regular_available = int(regular_wars_by_clan.get(clan_code) or 0)
             cwl_available = family_cwl_available
 
             regular_result = self._assess_war_participation(

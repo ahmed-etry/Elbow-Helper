@@ -23,7 +23,7 @@ class ClanHealthSnapshotMixin:
         if not self.clash_client.configured:
             return
         async with self._background_lock:
-            ingested_wars, ingested_rows, ingest_warnings = await self.collector.ingest_family_war_activity()
+            ingested_wars, ingested_rows, ingest_warnings = await self.collector.ingest_family_cwl_activity()
             if ingest_warnings:
                 LOGGER.info(
                     "War ingest warnings=%s top=%s wars=%s rows=%s",
@@ -54,9 +54,10 @@ class ClanHealthSnapshotMixin:
         ingested_wars = 0
         ingested_rows = 0
         now_ts = int(now.timestamp())
-        # Keep family war activity fresh for participation/performance overlays.
+        # Keep league wars fresh for participation/performance overlays; the
+        # family collectors keep regular wars fresh in the family record.
         if (now_ts - int(self._last_war_ingest_ts)) > 900:
-            ingested_wars, ingested_rows, ingest_warnings = await self.collector.ingest_family_war_activity()
+            ingested_wars, ingested_rows, ingest_warnings = await self.collector.ingest_family_cwl_activity()
             self._last_war_ingest_ts = now_ts
             warnings.extend(ingest_warnings)
         # Build a consistent all-family snapshot for this rolling window.

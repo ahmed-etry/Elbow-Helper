@@ -49,6 +49,7 @@ class ClanHealth(
         self.queries = ClanHealthQueries(repository)
         self.analyzer = analyzer
         self.collector = collector
+        self.regular_wars = analyzer.regular_wars
         self._last_war_ingest_ts = 0
         self._last_snapshot_ts = 0
         self._last_background_log_sig: Optional[Tuple[Any, ...]] = None

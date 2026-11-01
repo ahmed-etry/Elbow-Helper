@@ -28,7 +28,7 @@ from elbow_helper.agent.plan.format import capability_list
 from elbow_helper.features.clan_health.database import ClanHealthRepository
 from elbow_helper.features.cwl.queries import CwlQueries
 from agent.engine.test_agent_plan_flow import _context
-from agent.families.record_stub import regular_wars_from, with_record
+from agent.families.record_stub import regular_id, regular_war, regular_wars_from, with_record
 
 
 def rosters(accounts=()):
@@ -401,12 +401,15 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
         with TemporaryDirectory() as directory:
             repository = ClanHealthRepository(Path(directory) / 'stats.db')
             repository.initialize()
+            def day(text):
+                return int(datetime.fromisoformat(text).replace(tzinfo=timezone.utc).timestamp())
+
+            selected, earlier = (regular_war('BEH', day(end), {'#P0': (used, []), '#Q0': (used, [])},
+                                             start_ts=day(end) - 50)
+                                 for end, used in (('2025-12-01', 1), ('2025-10-01', 0)))
             with closing(sqlite3.connect(repository.path)) as connection, connection:
-                for identity, kind, end, expected, used in (
-                        ('#P2', 'REG', '2025-12-01', 2, 1),
-                        ('#P8', 'CWL', '2025-12-02', 1, 1),
-                        ('#P9', 'REG', '2025-10-01', 2, 0)):
-                    timestamp = int(datetime.fromisoformat(end).replace(tzinfo=timezone.utc).timestamp())
+                for identity, kind, end, expected, used in (('#P8', 'CWL', '2025-12-02', 1, 1),):
+                    timestamp = day(end)
                     connection.execute('''INSERT INTO wars(war_id,war_type,clan_code,clan_tag,
                         state,preparation_start_ts,start_ts,end_ts,last_seen_ts,team_size,attacks_per_member)
                         VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
@@ -425,7 +428,7 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
                 'unobserved_selections': ['#P0'], 'limitations': []})
             context = with_record(replace(context_with_names(linked=[('#P0', 'Amber Comet'), ('#Q0', 'Other Beacon')]),
                 cwl_queries=cwl, ranked_queries=SimpleNamespace(window=ranked)))
-            regular = self.enterContext(regular_wars_from(repository))
+            regular = self.enterContext(regular_wars_from(selected, earlier))
             tool = next(tool for tool in identity_reads.TOOLS if tool.definition.name == 'read_member_accounts')
             arguments = {'look_in': 'game', 'account_names': ['ambercomet'], 'after': '2025-11-02T00:00:00+00:00',
                          'before': '2026-01-01T00:00:00+00:00'}
@@ -444,7 +447,7 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
                 projected = await cohort_writer_evidence(context, {'stats': result})
             self.assertEqual([row['player_tag'] for row in result['rows']], ['#P0'])
             activity = result['rows'][0]['activity']
-            self.assertEqual(activity['regular_war']['war_ids'], ['#P2'])
+            self.assertEqual(activity['regular_war']['war_ids'], [regular_id(selected)])
             self.assertEqual((activity['regular_war']['attacks_used'], activity['regular_war']['missed']), (1, 1))
             self.assertEqual(activity['cwl']['war_ids'], ['#P8'])
             self.assertEqual(activity['cwl']['attacks_used'], 1)
