@@ -1,7 +1,6 @@
 """Collect existing sources without changing any feature's source of truth."""
 
 import asyncio
-from collections import Counter
 from datetime import datetime
 import logging
 import time
@@ -31,11 +30,15 @@ PLAYER_INTERVAL_SECONDS = 60 * 60
 LINK_INTERVAL_SECONDS = 5 * 60
 DISCORD_INTERVAL_SECONDS = 24 * 60 * 60
 SCHEDULE_CHECK_SECONDS = 30
-WARNING_WINDOW_US = 60 * 60 * 1_000_000
+# Stands for the whole collector in the failures it is known to have, next to its items.
+RUN_KEY = ("collector", "")
+LISTED_ITEMS = 5
 
 
-def _counts(reasons) -> str:
-    return ", ".join(f"{code}={count}" for code, count in sorted(reasons.items()))
+def _described(failures) -> str:
+    """Name a few failing items and how each fails; `failures` maps (kind, scope) to the reason."""
+    named = [f"{kind} {scope}".strip() + f" ({how})" for (kind, scope), how in failures.items()]
+    return ", ".join(named[:LISTED_ITEMS]) + (f", and {len(named) - LISTED_ITEMS} more" if len(named) > LISTED_ITEMS else "")
 
 
 def _timestamp(value: datetime | None) -> int | None:
@@ -68,7 +71,8 @@ class FamilyCollectors(commands.Cog):
         self._player_lock = asyncio.Lock()
         self._war_lock = asyncio.Lock()
         self._source_locks = {name: asyncio.Lock() for name in SOURCE_COLLECTORS}
-        self._quiet = {}
+        # What each collector is known to be failing at: {collector: {(kind, scope): how}}.
+        self._failing = {}
         self._closing = False
 
     async def cog_load(self):
@@ -140,33 +144,25 @@ class FamilyCollectors(commands.Cog):
                 LOGGER.warning("Family %s scheduling failed; will retry", name)
             await asyncio.sleep(SCHEDULE_CHECK_SECONDS)
 
-    def _warn(self, collector, run, failed, error, reasons=None):
-        # Source collectors poll many accounts and groups, so a stuck account fails
-        # every run. Their item failures warn once an hour; runs in between are
-        # counted, by failure reason, and reported by the next warning.
-        # Everything else warns each time.
-        reasons = reasons or {}
-        quiet = None
-        if error is None and collector in SOURCE_COLLECTORS:
-            now = now_us()
-            window = self._quiet.setdefault(collector, {"since": None, "runs": 0, "failed": 0, "reasons": Counter()})
-            if window["since"] is not None and now - window["since"] < WARNING_WINDOW_US:
-                window["runs"] += 1
-                window["failed"] += failed
-                window["reasons"].update(reasons)
-                return
-            quiet = (window["runs"], window["failed"], _counts(window["reasons"])) if window["runs"] else None
-            window.update(since=now, runs=0, failed=0, reasons=Counter())
-        code = error or "item_failure"
-        if reasons:
-            code += " " + _counts(reasons)
-        if quiet:
-            LOGGER.warning("Family %s collection failed or partial (run=%s, failed=%s, code=%s; "
-                           "%s more runs and %s failed items since the last warning: %s)",
-                           collector, run, failed, code, *quiet)
-        else:
-            LOGGER.warning("Family %s collection failed or partial (run=%s, failed=%s, code=%s)",
-                           collector, run, failed, code)
+    def _note(self, collector, run, specs, error, problems):
+        # A failure warns when it starts and the collector logs once when it ends; a run that fails the same
+        # way again is only a debug line. A new item failing, or an item failing another way, warns again.
+        # `problems` is None when nothing failed. Only items polled in this run can recover; a run that
+        # ended in an error says nothing about its items.
+        known = self._failing.setdefault(collector, {})
+        current = {RUN_KEY: error} if error else {
+            (kind, scope): f"HTTP {status}" if status not in (None, 200) else code or "unknown"
+            for kind, scope, status, code in problems or ()}
+        polled = set() if error else {RUN_KEY, *specs}
+        recovered = {key: known.pop(key) for key in [key for key in known if key in polled and key not in current]}
+        started = {key: how for key, how in current.items() if known.get(key) != how}
+        if started:
+            LOGGER.warning("Family %s collection failing (run=%s): %s", collector, run, _described(started))
+        elif current:
+            LOGGER.debug("Family %s collection still failing (run=%s): %s", collector, run, _described(current))
+        if recovered:
+            LOGGER.info("Family %s collection recovered (run=%s): %s", collector, run, _described(recovered))
+        known.update(current)
 
     async def _run(self, collector, scope_kind, specs, operation):
         run = None
@@ -187,9 +183,15 @@ class FamilyCollectors(commands.Cog):
                     report = await self.store.finish(run, error=error)
                 except Exception:
                     error = "store_unavailable"
-            if error or report and report["failed"]:
-                self._warn(collector, run, report["failed"] if report else "unknown", error,
-                           report.get("reasons") if report else None)
+            problems = None
+            if error is None and report and (report["failed"] or self._failing.get(collector)):
+                try:
+                    problems = await self.store.call(FamilyStore.problems, run)
+                except Exception:
+                    # The items cannot be named; the failure is still reported, as the collector's.
+                    error = "item_failure"
+            if error or problems or self._failing.get(collector):
+                self._note(collector, run, specs, error, problems)
         if cancelled:
             raise asyncio.CancelledError
         return report

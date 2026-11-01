@@ -13,7 +13,7 @@ from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 from .api_fields import collect_fields
 from .battles import identity as battle_key, save_battle
 from .projections import canonical_json, nonnegative_int
-from . import source_state
+from . import LOG_UNAVAILABLE, source_state
 from .war_projection import api_time
 
 
@@ -194,6 +194,9 @@ def record_source(connection, run, ordinal, job, response, at):
                 status, error, enabled = "empty", "group_not_found", int(job["current"])
             elif kind == "ranked_group" and not job["current"] and response and response.status == 500:
                 status, error, enabled = "unavailable", "old_season_unavailable", 0
+            elif kind == "battle_log" and response and response.status == 500 and state["last_http_status"] == 500:
+                # The last poll of this account's log also answered 500: keep polling it on schedule, but not as a failure.
+                status, error = "unavailable", LOG_UNAVAILABLE
             elif response and response.ok and response.error is None:
                 raw = response.payload
                 canonical_json(raw)

@@ -652,6 +652,38 @@ class WarCollectorTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.client.get.await_count, 4)
         self.assertNotIn("private transport detail", str(await self.rows("SELECT * FROM collection_items")))
 
+    async def test_a_war_source_failing_again_warns_once_and_recovery_logs_once(self):
+        service = "elbow_helper.data.collectors.service"
+        broken = True
+
+        def fetch(path, **kwargs):
+            if "warlog" in path:
+                return response({"items": [], "paging": {"cursors": {}}})
+            if "%23LQ" in path:
+                if broken:
+                    raise TimeoutError("private transport detail")
+                return response({"state": "notInWar"})
+            return response(war())
+        self.client.get.side_effect = fetch
+        now = {"at": self.at}
+        with patch("elbow_helper.data.collectors.service.now_us", side_effect=lambda: now["at"]), patch(
+                "elbow_helper.data.collectors.wars.now_us", side_effect=lambda: now["at"]):
+            with self.assertLogs(service, level="WARNING") as first:
+                await self.collector.collect_wars()
+            self.assertEqual(len(first.output), 1)
+            self.assertIn("current_war #LQ (fetch_failed)", first.output[0])
+            now["at"] += 10 * 60 * SECOND
+            with self.assertNoLogs(service, level="INFO"):
+                report = await self.collector.collect_wars()
+            self.assertEqual(report["failed"], 1)
+            broken = False
+            now["at"] += 10 * 60 * SECOND
+            with self.assertLogs(service, level="INFO") as recovered:
+                report = await self.collector.collect_wars()
+        self.assertEqual(report["failed"], 0)
+        self.assertEqual(len(recovered.output), 1)
+        self.assertIn("current_war #LQ", recovered.output[0])
+
     async def test_group_discovery_fetches_unique_tags_same_pass_then_only_relevant_mutable(self):
         self.at = api_time("20261002T000000.000Z")
         def fetch(path, **kwargs):

@@ -129,6 +129,47 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([row["error_code"] for row in items[:2]], ["fetch_failed", "fetch_failed"])
         self.assertNotIn("private detail", str(items))
 
+    async def test_a_clan_failing_again_stays_quiet_until_it_changes_or_recovers(self):
+        service = "elbow_helper.data.collectors.service"
+        good = [clan_response(0, [player()]), clan_response(1, [])]
+        self.client.get.side_effect = [TimeoutError("private detail"), good[1]]
+        with self.assertLogs(service, level="WARNING") as first:
+            await self.collectors.collect_clans()
+        self.assertEqual(len(first.output), 1)
+        self.assertIn("clan_profile #PY (fetch_failed)", first.output[0])
+        self.assertNotIn("private detail", first.output[0])
+        self.client.get.side_effect = [TimeoutError("private detail"), good[1]]
+        with self.assertNoLogs(service, level="INFO"):
+            report = await self.collectors.collect_clans()
+        self.assertEqual(report["failed"], 2)
+        self.client.get.side_effect = [good[0], clan_response(1, [])]
+        with self.assertLogs(service, level="INFO") as recovered:
+            report = await self.collectors.collect_clans()
+        self.assertEqual(report["failed"], 0)
+        self.assertEqual(len(recovered.output), 1)
+        self.assertIn("recovered", recovered.output[0])
+        self.client.get.side_effect = [TimeoutError("private detail"), good[1]]
+        with self.assertLogs(service, level="WARNING") as again:
+            await self.collectors.collect_clans()
+        self.assertEqual(len(again.output), 1)
+
+    async def test_a_collector_error_repeating_warns_once_and_recovery_logs_once(self):
+        service = "elbow_helper.data.collectors.service"
+        self.bot.get_cog = lambda name: None
+        with self.assertLogs(service, level="WARNING") as first:
+            await self.collectors.collect_links()
+        self.assertEqual(len(first.output), 1)
+        self.assertIn("collector (collector_error)", first.output[0])
+        with self.assertNoLogs(service, level="INFO"):
+            await self.collectors.collect_links()
+        self.bot.get_cog = lambda name: SimpleNamespace(get_all_links=link)
+        with self.assertLogs(service, level="INFO") as recovered:
+            await self.collectors.collect_links()
+        self.assertEqual(len(recovered.output), 1)
+        self.assertIn("recovered", recovered.output[0])
+        with self.assertNoLogs(service, level="INFO"):
+            await self.collectors.collect_links()
+
     async def test_link_service_runs_in_worker_and_failure_retains_ownership(self):
         await self.collectors.collect_links()
         self.assertNotEqual(self.source_thread, threading.get_ident())
