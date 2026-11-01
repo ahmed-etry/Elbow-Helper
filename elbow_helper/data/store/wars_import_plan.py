@@ -5,7 +5,7 @@ every other source row is either carried by an observation or counted in the
 ledger with the reason it is left out.
 """
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -25,8 +25,14 @@ from .wars import SECOND
 FINAL_SOURCES = ("currentwar_api:warEnded", "currentwar_api:warEnded_scheduled")
 # Same window as the old attendance: a Clash pause moves a war's end, and its old ID, by up to this much.
 CAPTURE_WINDOW = 72 * 3600 * SECOND
+# The old bot checked a war in battle day every few minutes. A war whose end has passed and whose last check
+# came this close to that end is ended with what that check saw; an earlier last check proves nothing.
+LAST_CHECK_MARGIN = 30 * 60 * SECOND
 STATES = {"preparation": 0, "inWar": 1, "warEnded": 2}
-KINDS = ("payload", "table", "participation")
+# A regular war's possible sizes. The old activity rows hold the whole lineup, attackers or not, so a capture
+# with one of these counts is the team; any other count is a visibly incomplete lineup.
+TEAM_SIZES = frozenset(range(5, 51, 5))
+KINDS =("payload", "table", "participation")
 HISTORY = "war_board_history"
 TABLES = {
     "wars": (("war_id", "war_type", "clan_code", "clan_tag", "opponent_tag", "opponent_name", "team_size",
@@ -55,7 +61,11 @@ class WarSnapshot:
 
 
 def snapshot_wars(health_path, cache_path=None, at=None):
-    """Read both sources once, consistently and read-only; neither file is adopted or upgraded."""
+    """Read both sources once, read-only; neither file is adopted or upgraded.
+
+    Every old table is read in one read transaction, so the old bot writing meanwhile can't mix two states;
+    the war board cache, which the old bot replaces whole, is read once. The copy works only from this.
+    """
     path = Path(health_path).resolve()
     rows = {}
     try:
@@ -164,8 +174,14 @@ class Plan:
         self.observations, self.stored = [], {}
         self.old_wars = defaultdict(set)
         self.activity, self.attacks = defaultdict(list), defaultdict(list)
+        # Per clan: wars left unfinished by the old bot and what the copy did with each; the old IDs that
+        # were only ever captured in preparation, by what became of them; wars known only from activity rows,
+        # by whether their lineup gives the team size.
+        self.repairs, self.preparation_ids = defaultdict(Counter), defaultdict(Counter)
+        self.lineups = defaultdict(Counter)
         self.table_wars()
         self.lineups_and_attacks()
+        self.stuck_wars()
         self.participation()
         self.payloads()
 
@@ -276,6 +292,65 @@ class Plan:
             entry["extra"]["legacy"]["activity"] = values
             entry["rows"].append(("war_activity", code))
 
+    @staticmethod
+    def battle_day_seen(observation):
+        """Any attack, any capture after preparation or any used attack shows the battle day was observed."""
+        if observation["attacks"]:
+            return True
+        for entry in observation["members"].values():
+            legacy = entry["extra"]["legacy"]
+            sources = (legacy.get("activity", {}).get("source"), legacy.get("source"))
+            if entry["used"] or legacy.get("roster_state") in ("inWar", "warEnded") or any(
+                    state_of(source) in ("inWar", "warEnded") for source in sources if source):
+                return True
+        return False
+
+    def stuck_wars(self):
+        """Regular war rows whose end has passed but that the old bot never saved as ended.
+
+        A battle day last checked within ``LAST_CHECK_MARGIN`` of the end becomes an ended war at that end,
+        with what the last check saw. A war whose battle day was never observed stays in preparation, so no
+        one is ever counted as missing its attacks. The old row's own state stays on its old ID.
+        """
+        for (code, _), observation in self.stored.items():
+            if observation["state"] == "warEnded" or observation["end"] > self.frozen.frozen_at:
+                continue
+            if observation["state"] == "preparation":
+                if not self.battle_day_seen(observation):
+                    self.repairs[code]["preparation_never_in_battle"] += 1
+                    continue
+                self.repairs[code]["preparation_battle_seen"] += 1
+                observation["state"] = "inWar"
+            if observation["end"] - observation["seen"] <= LAST_CHECK_MARGIN:
+                observation["state"], observation["repaired"] = "warEnded", True
+                self.repairs[code]["ended_after_last_check"] += 1
+            else:
+                self.repairs[code]["last_check_too_early"] += 1
+
+    def battle_day_capture(self, code, items):
+        """The latest battle-day capture of a war never captured after its end, if it proves the end.
+
+        Activity rows of an ongoing war carry their capture time as ``end_ts``; the ID carries the real end.
+        Returns the capture's ID, its rows, the real end and the check time, or the reason it proves nothing.
+        """
+        best = None
+        for end, war_id in items:
+            rows = [(row, who) for row, who in self.activity[code, war_id] if state_of(row["source"]) == "inWar"]
+            if rows:
+                checked = max(row["end_ts"] for row, _ in rows)
+                if best is None or (checked, war_id) > (best[3], best[0]):
+                    best = (war_id, rows, end, checked)
+        if best is None:
+            return "no_battle_day"
+        if best[2] * SECOND > self.frozen.frozen_at or (best[2] - best[3]) * SECOND > LAST_CHECK_MARGIN:
+            return "no_final_capture"
+        return best
+
+    def count_preparation_ids(self, code, war_ids, outcome):
+        for war_id in war_ids:
+            if all(state_of(row["source"]) == "preparation" for row, _ in self.activity[code, war_id]):
+                self.preparation_ids[code][outcome] += 1
+
     def exclude(self, key, reason):
         for table, rows in (("war_activity", self.activity), ("war_attacks", self.attacks)):
             if rows.get(key):
@@ -286,7 +361,10 @@ class Plan:
 
         Captures within the pause window of each other, or of an ended war
         that has its own row, are the same war; the latest final capture
-        supplies the lineup and attacks.
+        supplies the lineup and attacks, and its row count the team size. A war never captured after its end
+        is ended by its last battle-day capture when that came close to the
+        end (``battle_day_capture``); it only adds IDs to a war row of the
+        same pair nearby, whatever that row's state.
         """
         for key in self.attacks.keys() - self.activity.keys():
             # An attack list without any lineup of the same capture has no war to belong to.
@@ -302,8 +380,9 @@ class Plan:
                 by_side[code, identity[0], identity[1]].append((identity[2], war_id))
         for key in unproven:
             self.exclude(key, "unproven_identity")
-        stored_ends = defaultdict(list)
+        stored_ends, stored_any = defaultdict(list), defaultdict(list)
         for (code, _), observation in self.stored.items():
+            stored_any[code, observation["tag"], observation["opponent"]].append(observation)
             if observation["state"] == "warEnded":
                 stored_ends[code, observation["tag"], observation["opponent"]].append(observation)
         window = CAPTURE_WINDOW // SECOND
@@ -322,41 +401,63 @@ class Plan:
             final = {war_id: [(row, who) for row, who in self.activity[code, war_id] if row["source"] in FINAL_SOURCES]
                      for war_id in war_ids}
             final = {war_id: rows for war_id, rows in final.items() if rows}
+            repaired = None
             if not final:
-                for war_id in war_ids:
-                    self.exclude((code, war_id), "no_final_capture")
-                continue
+                # Never captured after its end: a last battle-day check close enough to the end still ends it.
+                repaired = self.battle_day_capture(code, items)
+                if isinstance(repaired, str):
+                    self.count_preparation_ids(code, war_ids, repaired)
+                    for war_id in war_ids:
+                        self.exclude((code, war_id), repaired)
+                    continue
+                final = {repaired[0]: repaired[1]}
             aliases = [("clan_health", war_id, code, "REG", max(
                 (state_of(row["source"]) for row, _ in self.activity[code, war_id] if state_of(row["source"])),
                 key=STATES.get, default=None), None) for war_id in war_ids]
             nearest = min(((abs(stored["end"] // SECOND - end), stored["end"], id(stored), stored)
-                           for stored in stored_ends[code, tag, opponent] for end, _ in items), default=None)
+                           for stored in (stored_any if repaired else stored_ends)[code, tag, opponent]
+                           for end, _ in items), default=None)
             if nearest is not None and nearest[0] <= window:
                 # A capture of a war that has its own row only adds that war's IDs.
                 nearest[3]["aliases"].extend(aliases)
+                self.count_preparation_ids(code, war_ids, "covered_by_stored_war")
                 for war_id in war_ids:
                     self.exclude((code, war_id), "covered_by_stored_war")
                 continue
-            chosen = max(final, key=lambda war_id: (max(row["end_ts"] for row, _ in final[war_id]), war_id))
-            end = max(row["end_ts"] for row, _ in final[chosen]) * SECOND
+            self.count_preparation_ids(code, war_ids, "battle_day_war")
+            if repaired:
+                # The ID holds the real end; a battle-day row's end_ts is only when it was captured.
+                chosen, end, seen, attack_state = repaired[0], repaired[2] * SECOND, repaired[3] * SECOND, "inWar"
+                self.repairs[code]["ended_after_last_check"] += 1
+            else:
+                chosen = max(final, key=lambda war_id: (max(row["end_ts"] for row, _ in final[war_id]), war_id))
+                end = seen = max(row["end_ts"] for row, _ in final[chosen]) * SECOND
+                attack_state = "warEnded"
             observation = {
                 "kind": "participation", "code": code, "tag": tag, "opponent": opponent,
                 "pair": tuple(sorted((tag, opponent))), "prep": None, "start": None, "end": end, "state": "warEnded",
-                "team_size": None, "apm": None, "names": {}, "seen": end, "members": {}, "attacks": {},
-                "aliases": aliases, "rows": []}
+                "team_size": None, "apm": None, "names": {}, "seen": seen, "members": {}, "attacks": {},
+                "aliases": aliases, "rows": [], **({"repaired": True} if repaired else {})}
             used = {id(row) for row, _ in final[chosen]}
             for row, who in final[chosen]:
                 observation["members"][tag, who] = lineup_entry(
                     name=row["player_name"], townhall=0, position=0, expected=row["attacks_expected"],
                     used=row["attacks_used"], code=code, table="war_activity", fields=["name", "tag"],
                     legacy={"activity": activity_values(row), "from_activity": True})
+            # The capture's whole lineup gives the team size, unless it is visibly incomplete.
+            members = observation["members"].values()
+            if len(members) in TEAM_SIZES and all(entry["expected"] is not None for entry in members):
+                observation["team_size"], observation["team_derived"] = len(members), True
+                self.lineups[code]["team_size_from_lineup"] += 1
+            else:
+                self.lineups[code]["lineup_incomplete"] += 1
             for war_id in war_ids:
                 for row, _ in self.activity[code, war_id]:
                     if id(row) not in used:
                         self.ledger["war_activity", code, "excluded:" + (
                             "not_final_row" if war_id == chosen else "not_chosen_capture")] += 1
                 for row, who in self.attacks[code, war_id]:
-                    if war_id != chosen or row["war_state"] != "warEnded":
+                    if war_id != chosen or row["war_state"] != attack_state:
                         self.ledger["war_attacks", code, "excluded:" + (
                             "not_final_row" if war_id == chosen else "not_chosen_capture")] += 1
                     else:
@@ -441,8 +542,10 @@ class Plan:
             groups[find(index)].append(observation)
         events = []
         for observations in groups.values():
-            # Newest state first, then fuller evidence: a full payload, a lineup table, bare participation.
-            observations.sort(key=lambda o: (-STATES[o["state"]], KINDS.index(o["kind"]), -o["seen"], o["aliases"][0][1]))
+            # Newest state first, a real end capture before an end proven by the last check, then fuller
+            # evidence: a full payload, a lineup table, bare participation.
+            observations.sort(key=lambda o: (-STATES[o["state"]], bool(o.get("repaired")), KINDS.index(o["kind"]),
+                                             -o["seen"], o["aliases"][0][1]))
             events.append({"observations": observations, "pair": observations[0]["pair"],
                            "ends": sorted({o["end"] for o in observations}),
                            "ambiguous": any(o.get("ambiguous") for o in observations)})

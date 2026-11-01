@@ -189,16 +189,22 @@ def war_side_coverage(connection, war_id, clan_tag):
 
     def side(row):
         members = connection.execute(
-            "SELECT COUNT(*),COALESCE(SUM(name IS NULL OR townhall IS NULL OR source_map_position IS NULL),0) "
+            "SELECT COUNT(*),COALESCE(SUM(name IS NULL OR townhall IS NULL OR source_map_position IS NULL),0),"
+            "COALESCE(SUM(attacks_expected IS NULL OR attacks_used IS NULL),0) "
             "FROM war_members WHERE war_id=? AND side=?", (war_id, row["side"])).fetchone()
         stored = connection.execute(
             "SELECT COUNT(*) FROM war_attacks a JOIN war_members m ON m.id=a.attacker_member_id "
             "WHERE a.war_id=? AND m.side=? AND COALESCE(json_extract(a.extra_json,'$.stub'),0)=0",
             (war_id, row["side"])).fetchone()[0]
-        lineup = war["team_size"] is not None and members[0] == war["team_size"] and not members[1]
+        counted = war["team_size"] is not None and members[0] == war["team_size"]
+        lineup = counted and not members[1]
+        # Every attack, and so every miss, needs each member's expected and used attacks, not their town hall
+        # or map position.
+        attacks = (counted and not members[2] and not unattributed and row["attacks"] is not None
+                   and stored == row["attacks"])
         return {"clan_tag": row["clan_tag"], "team_size": war["team_size"], "members": members[0],
                 "lineup_complete": lineup, "attacks_reported": row["attacks"], "attacks_stored": stored,
-                "attacks_complete": lineup and not unattributed and row["attacks"] is not None and stored == row["attacks"]}
+                "attacks_complete": attacks}
 
     other = next(row for tag, row in sides.items() if tag != clan_tag)
     return {"war_id": war_id, "type": war["type"], "type_basis": war["type_basis"], "state": war["state"],
