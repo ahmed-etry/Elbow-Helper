@@ -538,6 +538,25 @@ class PlayerCollectorTests(PlayerTestCase):
         self.assertEqual([row["player_tag"] for row in await self.store.call(due_accounts, HOUR_US + 100)], ["#P0", "#Y0"])
         self.assertEqual(len(await self.store.call(due_accounts, 24 * HOUR_US + 100)), 3)
 
+    async def test_an_account_failing_every_hour_warns_once_and_recovery_logs_once(self):
+        service = "elbow_helper.data.collectors.service"
+        await self.roster(10, [player(), player("#Q0")])
+        self.client.get.side_effect = [TimeoutError("private"), response(profile("#Q0"))]
+        with self.assertLogs(service, level="WARNING") as first:
+            await self.collect(100)
+        self.assertEqual(len(first.output), 1)
+        self.assertIn("player_profile #P0 (fetch_failed)", first.output[0])
+        self.client.get.side_effect = [TimeoutError("private"), response(profile("#Q0"))]
+        with self.assertNoLogs(service, level="INFO"):
+            result = await self.collect(HOUR_US + 100)
+        self.assertEqual(result["failed"], 1)
+        self.client.get.side_effect = [response(profile()), response(profile("#Q0"))]
+        with self.assertLogs(service, level="INFO") as recovered:
+            result = await self.collect(2 * HOUR_US + 100)
+        self.assertEqual(result["failed"], 0)
+        self.assertEqual(len(recovered.output), 1)
+        self.assertIn("player_profile #P0", recovered.output[0])
+
     async def test_cancelled_profile_pass_marks_unattempted_accounts_skipped(self):
         await self.roster(10, [player(), player("#Q0")])
         entered = asyncio.Event()

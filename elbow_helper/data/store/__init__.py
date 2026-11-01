@@ -14,6 +14,10 @@ from .schema import MIGRATIONS, SCHEMA_VERSION, create_schema
 from .projections import canonical_json
 
 
+# A battle log Clash keeps answering with HTTP 500: that account's log is unavailable, not a failed collection.
+LOG_UNAVAILABLE = "log_unavailable"
+
+
 def now_us() -> int:
     return time.time_ns() // 1000
 
@@ -120,6 +124,13 @@ class FamilyStore:
 
     async def finish(self, run: int, *, error: str | None = None) -> dict:
         return await self.call(self._finish_run, run, error)
+
+    @staticmethod
+    def problems(connection, run: int) -> list[tuple]:
+        """The run's failed items, with the unavailable logs that are still a problem: (kind, scope, HTTP status, code)."""
+        return [tuple(row) for row in connection.execute(
+            "SELECT source_kind,scope_id,http_status,error_code FROM collection_items "
+            "WHERE run_id=? AND (status='failed' OR error_code=?) ORDER BY ordinal", (run, LOG_UNAVAILABLE))]
 
     async def requested(self, run: int, ordinal: int) -> None:
         await self.call(self._requested, run, ordinal)

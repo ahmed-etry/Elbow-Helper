@@ -177,26 +177,126 @@ class SourceWarningTests(unittest.IsolatedAsyncioTestCase):
         with patch("elbow_helper.data.collectors.sources.now_us", return_value=at), patch(f"{SERVICE}.now_us", return_value=at):
             return await collect_sources(self.owner, collector)
 
-    async def test_a_failing_collector_warns_once_an_hour_with_the_runs_it_held_back(self):
-        minute = 60 * 1_000_000
+    async def test_a_battle_log_answering_500_every_time_warns_once_and_recovery_logs_once(self):
+        hour = 3600 * 1_000_000
         self.client.get.return_value = response(None, 500)
         with self.assertLogs(SERVICE, level="WARNING") as first:
-            await self.poll("battle_logs", BASE)
+            report = await self.poll("battle_logs", BASE)
+        self.assertEqual((report["failed"], report["status"]), (1, "failed"))
         self.assertEqual(len(first.output), 1)
-        self.assertNotIn("more runs", first.output[0])
-        self.assertIn("fetch_failed=1", first.output[0])
+        self.assertIn("battle_log #P0 (HTTP 500)", first.output[0])
+        with self.assertNoLogs(SERVICE, level="INFO"):
+            for later in (1, 2, 3):
+                report = await self.poll("battle_logs", BASE + later * hour)
+                self.assertEqual((report["failed"], report["empty"], report["status"]), (0, 1, "empty"))
+        items = await self.rows("SELECT status,error_code,http_status FROM collection_items WHERE source_kind='battle_log' ORDER BY id")
+        self.assertEqual([(row["status"], row["error_code"], row["http_status"]) for row in items],
+                         [("failed", "fetch_failed", 500)] + [("unavailable", "log_unavailable", 500)] * 3)
+        state = (await self.rows("SELECT * FROM family_api_state WHERE source_kind='battle_log'"))[0]
+        self.assertEqual((state["enabled"], state["next_due_at"]), (1, BASE + 4 * hour))
+        self.assertEqual(self.client.get.await_count, 4)
+        self.client.get.return_value = response({"items": []})
+        with self.assertLogs(SERVICE, level="INFO") as recovered:
+            report = await self.poll("battle_logs", BASE + 4 * hour)
+        self.assertEqual(report["failed"], 0)
+        self.assertEqual(len(recovered.output), 1)
+        self.assertIn("recovered", recovered.output[0])
+        self.assertIn("battle_log #P0 (HTTP 500)", recovered.output[0])
+        with self.assertNoLogs(SERVICE, level="INFO"):
+            await self.poll("battle_logs", BASE + 5 * hour)
+
+    async def test_a_500_after_a_good_poll_is_a_failure_again(self):
+        hour = 3600 * 1_000_000
+        self.client.get.return_value = response({"items": []})
+        await self.poll("battle_logs", BASE)
+        self.client.get.return_value = response(None, 500)
+        with self.assertLogs(SERVICE, level="WARNING") as logs:
+            report = await self.poll("battle_logs", BASE + hour)
+        self.assertEqual((report["failed"], len(logs.output)), (1, 1))
+
+    async def test_only_battle_logs_treat_a_repeated_500_as_unavailable(self):
+        self.client.get.return_value = response(None, 500)
+        with self.assertLogs(SERVICE, level="WARNING") as logs:
+            for index in range(3):
+                report = await self.poll("league_history", BASE + index)
+                self.assertEqual(report["failed"], 1)
+        self.assertEqual(len(logs.output), 1)
+        self.assertEqual(len(await self.rows("SELECT * FROM collection_items WHERE status='failed'")), 3)
+
+    async def test_a_one_off_failure_warns_once_and_recovery_logs_once(self):
+        fail = True
+
+        async def fetch(path, **options):
+            if fail and path.startswith("/labels/clans"):
+                raise TimeoutError("private detail")
+            return response(sample("goldpass")["body"] if path.startswith("/goldpass") else sample("catalogue")["body"])
+        self.client.get.side_effect = fetch
+        with self.assertLogs(SERVICE, level="WARNING") as first:
+            await self.poll("reference_data", BASE)
+        self.assertEqual(len(first.output), 1)
+        self.assertIn("catalogue /labels/clans (fetch_failed)", first.output[0])
+        self.assertNotIn("private detail", first.output[0])
+        fail = False
+        with self.assertLogs(SERVICE, level="INFO") as second:
+            report = await self.poll("reference_data", BASE + 1)
+        self.assertEqual(report["failed"], 0)
+        self.assertEqual(len(second.output), 1)
+        self.assertIn("recovered", second.output[0])
+        with self.assertNoLogs(SERVICE, level="INFO"):
+            await self.poll("reference_data", BASE + 2)
+
+    async def test_repeated_failures_stay_quiet_but_a_new_item_or_a_new_kind_of_failure_warns(self):
+        broken = {"/labels/clans": 503}
+
+        async def fetch(path, **options):
+            if path.split("?")[0] in broken:
+                return response(None, broken[path.split("?")[0]])
+            return response(sample("goldpass")["body"] if path.startswith("/goldpass") else sample("catalogue")["body"])
+        self.client.get.side_effect = fetch
+        with self.assertLogs(SERVICE, level="WARNING") as first:
+            await self.poll("reference_data", BASE)
+        self.assertEqual(len(first.output), 1)
         with self.assertNoLogs(SERVICE, level="WARNING"):
-            await self.poll("battle_logs", BASE + 10 * minute)
-            await self.poll("battle_logs", BASE + 20 * minute)
-        with self.assertLogs(SERVICE, level="WARNING") as later:
-            report = await self.poll("battle_logs", BASE + 61 * minute)
-        self.assertEqual(report["failed"], 1)
-        self.assertEqual(len(later.output), 1)
-        self.assertIn("2 more runs and 2 failed items since the last warning: fetch_failed=2", later.output[0])
-        with self.assertLogs(SERVICE, level="WARNING") as other:
-            await self.poll("league_history", BASE + 62 * minute)
-        self.assertEqual(len(other.output), 1)
-        self.assertEqual(len(await self.rows("SELECT * FROM collection_items WHERE status='failed'")), 5)
+            await self.poll("reference_data", BASE + 1)
+        broken["/labels/players"] = 503
+        with self.assertLogs(SERVICE, level="WARNING") as new_item:
+            await self.poll("reference_data", BASE + 2)
+        self.assertEqual(len(new_item.output), 1)
+        self.assertIn("/labels/players (HTTP 503)", new_item.output[0])
+        self.assertNotIn("/labels/clans", new_item.output[0])
+        broken["/labels/clans"] = 502
+        with self.assertLogs(SERVICE, level="WARNING") as new_kind:
+            await self.poll("reference_data", BASE + 3)
+        self.assertEqual(len(new_kind.output), 1)
+        self.assertIn("/labels/clans (HTTP 502)", new_kind.output[0])
+        self.assertNotIn("/labels/players", new_kind.output[0])
+        with self.assertNoLogs(SERVICE, level="WARNING"):
+            await self.poll("reference_data", BASE + 4)
+        broken.pop("/labels/players")
+        with self.assertLogs(SERVICE, level="INFO") as one_recovered:
+            await self.poll("reference_data", BASE + 5)
+        self.assertEqual(len(one_recovered.output), 1)
+        self.assertIn("/labels/players", one_recovered.output[0])
+        self.assertNotIn("/labels/clans", one_recovered.output[0])
+
+    async def test_the_same_failure_is_a_debug_line(self):
+        self.client.get.return_value = response(None, 503)
+        with self.assertLogs(SERVICE, level="WARNING"):
+            await self.poll("league_history", BASE)
+        with self.assertLogs(SERVICE, level="DEBUG") as logs:
+            await self.poll("league_history", BASE + 1)
+        self.assertEqual([record.levelname for record in logs.records], ["DEBUG"])
+        self.assertIn("still failing", logs.output[0])
+
+    async def test_a_failure_to_list_the_items_is_still_reported_once(self):
+        self.client.get.return_value = response(None, 503)
+        with patch(f"{SERVICE}.FamilyStore.problems", side_effect=OSError("unavailable")):
+            with self.assertLogs(SERVICE, level="WARNING") as first:
+                await self.poll("league_history", BASE)
+            with self.assertNoLogs(SERVICE, level="WARNING"):
+                await self.poll("league_history", BASE + 1)
+        self.assertEqual(len(first.output), 1)
+        self.assertIn("item_failure", first.output[0])
 
     async def test_missing_and_unavailable_groups_do_not_warn_and_no_group_is_not_asked(self):
         run = (await self.rows("SELECT id FROM collection_runs"))[0]["id"]
