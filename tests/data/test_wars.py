@@ -501,6 +501,63 @@ class WarStoreTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual((status["last_attempt_at"], status["last_success_at"], status["last_run_id"], status["last_outcome"]),
                          (self.at + 300 * SECOND, self.at + 300 * SECOND, runs[-1]["id"], "ok"))
 
+    async def cwl(self, payload, at=None):
+        return await self.record(payload, kind="cwl_war", scope="#R0", at=at)
+
+    def swapped(self, payload, old="#P2", new="#P8"):
+        payload = deepcopy(payload)
+        for member in payload["clan"]["members"]:
+            if member["tag"] == old:
+                member["tag"], member["name"] = new, f"Player {new}"
+        return payload
+
+    async def lineup(self):
+        return [r["player_tag"] for r in await self.rows("SELECT player_tag FROM war_members WHERE player_tag LIKE '#P%' ORDER BY player_tag")]
+
+    async def flags(self):
+        row = (await self.rows("SELECT roster_complete,attacks_complete FROM wars"))[0]
+        return row["roster_complete"], row["attacks_complete"]
+
+    async def test_preparation_day_swap_replaces_the_member_and_stays_complete(self):
+        await self.cwl(war("preparation", clans=("#PY", "#GR")))
+        self.assertEqual(await self.lineup(), ["#P0", "#P2"])
+        report = await self.cwl(war("preparation", clans=("#PY", "#GR")), at=self.at + 60 * SECOND)
+        self.assertEqual(report["status"], "ok")
+        report = await self.cwl(self.swapped(war("preparation", clans=("#PY", "#GR"))), at=self.at + 120 * SECOND)
+        self.assertEqual(report["status"], "ok")
+        self.assertEqual(await self.lineup(), ["#P0", "#P8"])
+        self.assertEqual(await self.flags(), (1, 1))
+        self.assertEqual(len(await self.rows("SELECT * FROM war_members")), 4)
+
+    async def test_member_with_attacks_stays_when_the_lineup_changes(self):
+        await self.cwl(war(clans=("#PY", "#GR")))
+        report = await self.cwl(self.swapped(war(clans=("#PY", "#GR")), "#P0"), at=self.at + 60 * SECOND)
+        self.assertEqual(report["status"], "failed")
+        self.assertEqual(await self.lineup(), ["#P0", "#P2", "#P8"])
+        self.assertEqual(await self.flags(), (0, 0))
+        self.assertEqual(len(await self.rows("SELECT * FROM war_attacks WHERE attacker_member_id IS NOT NULL")), 2)
+
+    async def test_ended_war_keeps_its_stored_members(self):
+        await self.cwl(war("warEnded", clans=("#PY", "#GR")), at=END + 90 * SECOND)
+        before = await self.rows("SELECT * FROM war_members ORDER BY id")
+        await self.cwl(self.swapped(war("warEnded", clans=("#PY", "#GR"))), at=END + 150 * SECOND)
+        self.assertEqual(before, await self.rows("SELECT * FROM war_members ORDER BY id"))
+        self.assertEqual(await self.flags(), (1, 1))
+
+    async def test_war_flagged_partial_by_a_swap_recovers_on_the_next_identical_poll(self):
+        await self.cwl(war("preparation", clans=("#PY", "#GR")))
+        swapped = self.swapped(war("preparation", clans=("#PY", "#GR")))
+        await self.cwl(swapped, at=self.at + 60 * SECOND)
+        # The state the old code left behind: stale member stored, flags dropped, payload already seen.
+        await self.execute("INSERT INTO war_members(war_id,side,player_tag,extra_json,source_run_id) "
+                           "SELECT war_id,side,'#P2',extra_json,source_run_id FROM war_members WHERE player_tag='#P8'")
+        await self.execute("UPDATE wars SET roster_complete=0,attacks_complete=0")
+        self.assertEqual(await self.lineup(), ["#P0", "#P2", "#P8"])
+        report = await self.cwl(swapped, at=self.at + 120 * SECOND)
+        self.assertEqual(report["status"], "ok")
+        self.assertEqual(await self.lineup(), ["#P0", "#P8"])
+        self.assertEqual(await self.flags(), (1, 1))
+
     async def test_each_check_records_outcome_and_observation_and_failures_keep_last_success(self):
         async def status(kind="current_war", scope="#PY"):
             row = (await self.rows("SELECT * FROM war_collection_state WHERE source_kind=? AND scope_id=?", (kind, scope)))[0]
