@@ -29,8 +29,10 @@ from ..analysis.verdicts import (
     normalize_player_verdict,
     trend_from_verdicts,
 )
+from ..record_wars import newest_attacks
 from ..seasons import (
     _latest_completed_season_key,
+    _season_key_for_datetime,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -153,6 +155,9 @@ class ClanHealthPlayerCommandMixin:
 
     @staticmethod
     def _hit_type_label(is_fresh: Any) -> str:
+        # Unknown when an earlier attack on that defender may be missing.
+        if is_fresh is None:
+            return "-"
         return "First hit" if bool(is_fresh) else "Cleanup"
 
     @staticmethod
@@ -215,6 +220,26 @@ class ClanHealthPlayerCommandMixin:
             return True
         latest_stored_end = datetime.fromtimestamp(latest_stored_end_ts, tz=UTC)
         return latest_stored_end < latest_completed_end
+
+    def _latest_activity_season(self, player_tag: str) -> Optional[str]:
+        """The season of the player's newest stored activity, regular-war attacks included."""
+        stored = self.repository.latest_stored_activity_ts(player_tag)
+        # Only a regular-war attack newer than everything else can change the season.
+        regular = self.regular_wars.latest_attack_ts(player_tag=player_tag, after_ts=stored)
+        latest = max(stored, regular or 0)
+        return _season_key_for_datetime(datetime.fromtimestamp(latest, tz=UTC)) if latest > 0 else None
+
+    def _player_war_attacks(self, player_tag: str, cycle_start: datetime, cycle_end: datetime) -> List[Dict[str, Any]]:
+        """Regular-war attacks from the family record and league-war attacks from stored league history."""
+        return newest_attacks(
+            self.regular_wars.attacks(
+                player_tag=player_tag, cycle_start_ts=int(cycle_start.timestamp()),
+                cycle_end_ts=int(cycle_end.timestamp()),
+            ),
+            self.repository.player_cwl_attacks(
+                player_tag=player_tag, cycle_start=cycle_start, cycle_end=cycle_end, limit=0,
+            ),
+        )
 
     @staticmethod
     def _clan_code_fallback(*rows: Dict[str, Any]) -> Optional[str]:
@@ -311,10 +336,7 @@ class ClanHealthPlayerCommandMixin:
         date_from: str | None = None, date_to: str | None = None,
     ) -> PlayerHealthExport | None:
         report_lookup_season = (
-            await asyncio.to_thread(
-                self.repository.latest_activity_season,
-                player_tag,
-            )
+            await asyncio.to_thread(self._latest_activity_season, player_tag)
             or trend_season_key
         )
         if window_mode == "last_7d":
@@ -364,11 +386,7 @@ class ClanHealthPlayerCommandMixin:
             )
 
         war_attack_rows = await asyncio.to_thread(
-            self.repository.player_war_attacks,
-            player_tag=player_tag,
-            cycle_start=cycle_start,
-            cycle_end=cycle_end,
-            limit=0,
+            self._player_war_attacks, player_tag, cycle_start, cycle_end,
         )
         raid_member_rows = await asyncio.to_thread(
             self.repository.player_raid_activity,
@@ -526,11 +544,7 @@ class ClanHealthPlayerCommandMixin:
                     limit=80,
                 )
                 war_attack_rows = await asyncio.to_thread(
-                    self.repository.player_war_attacks,
-                    player_tag=player_tag,
-                    cycle_start=cycle_start,
-                    cycle_end=cycle_end,
-                    limit=0,
+                    self._player_war_attacks, player_tag, cycle_start, cycle_end,
                 )
                 raid_member_rows = await asyncio.to_thread(
                     self.repository.player_raid_activity,

@@ -299,6 +299,97 @@ class WarReadTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.reads.health_activity(["#PY"], END, END + DAY, types=["CWL"])
 
+    async def test_health_totals_sum_each_account_over_one_snapshot_and_keep_unknown_counts_apart(self):
+        await self.record(war(), at=self.at)
+        # The ongoing war counts as last captured, its attacks so far included.
+        capture = await self.reads.health_totals(["#PY"], START, self.at, player_tags=["#P0", "#P2", "#Q0"], as_of=self.at)
+        self.assertEqual([(r["player_tag"], r["wars"], r["attacks_expected"], r["attacks_used"], r["stars"],
+                           r["attacks_measured"], r["wars_without_counts"]) for r in capture["rows"]],
+                         [("#P0", 1, 2, 1, 3, 1, 0), ("#P2", 1, 2, 0, 0, 0, 0)])
+        self.assertEqual((capture["view"], capture["bounds"], capture["coverage"]["wars_selected"]), ("capture", "inclusive", 1))
+        self.assertEqual((await self.reads.health_totals(["#PY"], START, self.at, view="completed",
+                                                         player_tags=["#P0"], as_of=self.at))["rows"], [])
+        await self.record(war("warEnded"), at=END + 90 * SECOND)
+        await self.record(friendly(), at=END + 3 * DAY)
+        at = END + 4 * DAY
+        ended = await self.reads.health_totals(["#PY"], START, at, player_tags=["#P0"], as_of=at)
+        self.assertEqual([(r["wars"], r["attacks_expected"], r["attacks_used"], r["triples"], r["destruction"])
+                          for r in ended["rows"]], [(1, 2, 1, 1, 100.0)])
+        # A war that does not know a count adds the war, never a used or missed attack.
+        await self.execute("UPDATE war_members SET attacks_expected=NULL WHERE player_tag='#P0'")
+        (unknown,) = (await self.reads.health_totals(["#PY"], START, at, player_tags=["#P0"], as_of=at))["rows"]
+        self.assertEqual((unknown["wars"], unknown["wars_without_counts"], unknown["attacks_expected"],
+                          unknown["attacks_used"]), (1, 1, 0, 0))
+        # Friendly wars are counted only when asked for.
+        both = await self.reads.health_totals(["#PY"], START, at, player_tags=["#P2"], types=["REG", "FRIENDLY"], as_of=at)
+        self.assertEqual(both["rows"][0]["wars"], 2)
+        counts = await self.reads.health_war_counts(["#PY", "#LQ"], START, at, as_of=at)
+        self.assertEqual(counts["clans"], {"#PY": {"wars": 1, "wars_with_lineup": 1},
+                                           "#LQ": {"wars": 0, "wars_with_lineup": 0}})
+        self.assertEqual((await self.reads.health_war_counts(["#PY"], START, at, types=["REG", "FRIENDLY"],
+                                                             as_of=at))["clans"]["#PY"]["wars"], 2)
+        # A war known only from the log has no lineup to count.
+        await self.execute("DELETE FROM war_members WHERE war_id=(SELECT war_id FROM war_sides WHERE clan_tag='#PY' "
+                           "AND war_id IN (SELECT id FROM wars WHERE type='REG'))")
+        self.assertEqual((await self.reads.health_war_counts(["#PY"], START, at, as_of=at))["clans"]["#PY"],
+                         {"wars": 1, "wars_with_lineup": 0})
+        for call in (lambda: self.reads.health_totals(["#PY"], START, END, player_tags=[]),
+                     lambda: self.reads.health_totals(["#PY"], START, END, player_tags=["#P0"], view="live"),
+                     lambda: self.reads.health_war_counts(["#PY"], START, END, types=["CWL"])):
+            with self.assertRaises(ValueError):
+                await call()
+
+    async def test_a_copied_attack_without_an_opponent_lineup_shows_the_old_capture_of_its_defender(self):
+        await self.record(war("warEnded"), at=END + 90 * SECOND)
+        at = END + DAY
+        # The record places the defender by its own lineup; the old capture fills the rest.
+        legacy = ('{"attacker_tag":"#P0","defender_tag":"#Q0","legacy":{"defender_name":"Old","defender_position":4,'
+                  '"defender_townhall":15,"fresh_attack":true},"stub":false}')
+        await self.execute("UPDATE war_attacks SET defender_member_id=NULL,extra_json=? WHERE attack_order=1", (legacy,))
+        # The clan's attack count is unknown, so the record cannot itself call a first hit.
+        await self.execute("UPDATE war_sides SET attacks=NULL WHERE clan_tag='#PY'")
+        rows = (await self.reads.attacks(["#PY"], END, END + DAY, as_of=at))["rows"]
+        self.assertEqual([(a["attack_order"], a["defender_tag"], a["defender_name"], a["defender_townhall"],
+                           a["defender_position"], a["defender_basis"], a["fresh"], a["fresh_basis"]) for a in rows],
+                         [(1, "#Q0", "Old", 15, 1, "old_capture", True, "old_capture"),
+                          (3, "#Q2", "Player #Q2", 16, 2, "lineup", None, "attacks")])
+        # A defender the record holds without a town hall takes the old capture's; the lineup is
+        # then incomplete, so no position is known except the old capture's.
+        await self.execute("UPDATE war_members SET townhall=NULL WHERE player_tag='#Q2'")
+        await self.execute("UPDATE war_attacks SET extra_json=? WHERE attack_order=3", (
+            '{"legacy":{"defender_townhall":14,"defender_position":3,"fresh_attack":false},"stub":false}',))
+        row = (await self.reads.attacks(["#PY"], END, END + DAY, as_of=at))["rows"][1]
+        self.assertEqual((row["defender_name"], row["defender_townhall"], row["defender_position"], row["defender_basis"],
+                          row["fresh"], row["fresh_basis"]), ("Player #Q2", 14, 3, "old_capture", False, "old_capture"))
+
+    async def fresh_by_order(self):
+        rows = (await self.reads.attacks(["#PY"], END, END + DAY, as_of=END + DAY))["rows"]
+        return {row["attack_order"]: row["fresh"] for row in rows}
+
+    async def test_a_first_hit_before_the_first_unsaved_attack_is_still_proven(self):
+        # Clash numbers both sides' attacks in one sequence: the clan's 1 and 3, the opponent's 2 and 4.
+        await self.record(war("warEnded"), at=END + 90 * SECOND)
+        self.assertEqual(await self.fresh_by_order(), {1: True, 3: True})
+        await self.execute("DELETE FROM war_attacks WHERE attack_order=3")
+        self.assertEqual(await self.fresh_by_order(), {1: True})
+        # Without the opponent's count, the missing number cannot be found.
+        await self.execute("UPDATE war_sides SET attacks=NULL WHERE clan_tag='#GR'")
+        self.assertEqual(await self.fresh_by_order(), {1: None})
+
+    async def test_an_attack_after_an_unsaved_one_stays_unknown(self):
+        await self.record(war("warEnded"), at=END + 90 * SECOND)
+        await self.execute("DELETE FROM war_attacks WHERE attack_order=1")
+        self.assertEqual(await self.fresh_by_order(), {3: None})
+
+    async def test_a_saved_attack_without_a_defender_is_a_gap(self):
+        await self.record(war("warEnded"), at=END + 90 * SECOND)
+        # The clan made a third attack, numbered 5, that is not saved.
+        await self.execute("UPDATE war_sides SET attacks=3 WHERE clan_tag='#PY'")
+        self.assertEqual(await self.fresh_by_order(), {1: True, 3: True})
+        # Attack 2 could then have been on attack 3's defender.
+        await self.execute("UPDATE war_attacks SET defender_member_id=NULL WHERE attack_order=2")
+        self.assertEqual(await self.fresh_by_order(), {1: True, 3: None})
+
     async def test_parity_rehearsal_matches_old_wars_and_explains_differences(self):
         await self.record(war("warEnded"), at=END + 90 * SECOND)
         path = self.path.parent / "clan_health.db"

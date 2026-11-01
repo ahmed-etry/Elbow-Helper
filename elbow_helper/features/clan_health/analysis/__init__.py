@@ -8,6 +8,7 @@ from typing import Any
 from ..config import CLAN_PROFILE_BY_CODE
 from ..config import PROFILE_NAMES
 from ..database import ClanHealthRepository
+from ..record_wars import RegularWars
 from .flags import ClanHealthFlagMixin
 from .overlays import ClanHealthOverlayMixin
 from .sheets import ClanHealthSheetMixin
@@ -20,10 +21,11 @@ class ClanHealthAnalyzer(
     ClanHealthFlagMixin,
     ClanHealthSheetMixin,
 ):
-    """Apply scoring policy to data supplied by Clan Health storage."""
+    """Apply scoring policy to data supplied by Clan Health storage and the family record's regular wars."""
 
-    def __init__(self, repository: ClanHealthRepository):
+    def __init__(self, repository: ClanHealthRepository, regular_wars: RegularWars):
         self.repository = repository
+        self.regular_wars = regular_wars
 
     @staticmethod
     def profile_for_clan(clan_code: str | None) -> str:

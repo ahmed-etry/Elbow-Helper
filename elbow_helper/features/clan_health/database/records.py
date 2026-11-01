@@ -8,42 +8,11 @@ import json
 import sqlite3
 from typing import Any, Dict, List, Optional, Tuple
 
-from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
-
 from ..models import GOOD
 from ..models import normalize_player_verdict
-from .regular_wars import delete_war_snapshot, matching_regular_wars, regular_war_identity
+
 
 class ClanHealthRecords:
-    def _store_regular_war_snapshot(
-        self, war: Dict[str, Any] | None, roster: List[Dict[str, Any]],
-        activity: List[Dict[str, Any]], attacks: List[Dict[str, Any]],
-    ) -> int:
-        """Replace a delayed regular war and its facts as one serialized write."""
-        if not war or not war.get("war_id") or not war.get("clan_code"):
-            return 0
-        with closing(self._db_connect(timeout=30)) as conn, sqlite_transaction(conn, immediate=True):
-            identity = regular_war_identity(war)
-            if identity is not None:
-                matches = matching_regular_wars(conn, identity)
-                incoming_seen = int(war.get("last_seen_ts") or 0)
-                if any(
-                    int(row["last_seen_ts"]) > incoming_seen
-                    or (int(row["last_seen_ts"]) == incoming_seen
-                        and row["state"] == "warEnded" and war.get("state") != "warEnded")
-                    for row in matches
-                ):
-                    return 0
-                for row in matches:
-                    if (row["war_id"], row["clan_code"]) != (war["war_id"], war["clan_code"]):
-                        delete_war_snapshot(conn, row["war_id"], row["clan_code"])
-            return (
-                self._write_war_rows(conn, [war])
-                + self._write_final_war_roster_rows(conn, roster)
-                + self._write_war_activity_rows(conn, activity)
-                + self._write_war_attack_rows(conn, attacks)
-            )
-
     @staticmethod
     def _optional_int(value: Any) -> Optional[int]:
         if value is None:

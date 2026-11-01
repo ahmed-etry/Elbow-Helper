@@ -1,6 +1,4 @@
-"""Synthetic war identity, ranking, missing captures and current-war boundaries."""
-import sqlite3
-from contextlib import closing
+"""Synthetic war ranking, missing captures and current-war boundaries."""
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -12,6 +10,7 @@ from elbow_helper.features.clan_health.attendance import aggregate_attendance
 from elbow_helper.agent.families import record_wars, war_reads
 from elbow_helper.configuration.clans import CLANS
 from agent.engine.test_agent_plan_flow import _context
+from agent.families.record_stub import regular_id, regular_war, regular_wars_from
 
 
 def recorded(context=None):
@@ -32,34 +31,18 @@ class WarFamilyTests(unittest.IsolatedAsyncioTestCase):
         with TemporaryDirectory() as directory:
             repository = ClanHealthRepository(Path(directory) / 'wars.db')
             repository.initialize()
-            with closing(sqlite3.connect(repository.path)) as connection, connection:
-                for identity, kind, code, state, end in (
-                    ('old', 'REG', 'BEC', 'warEnded', 100),
-                    ('latest', 'REG', 'BEC', 'warEnded', 200),
-                    ('ongoing', 'REG', 'BEC', 'inWar', 300),
-                    ('other_clan', 'REG', 'BEH', 'warEnded', 400),
-                    ('league', 'CWL', 'BEC', 'warEnded', 500),
-                ):
-                    connection.execute('''INSERT INTO wars(war_id,war_type,clan_code,clan_tag,
-                        opponent_tag,state,preparation_start_ts,start_ts,end_ts,last_seen_ts,
-                        team_size,attacks_per_member) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
-                        (identity, kind, code, CLANS[code].tag, '#R0', state,
-                         end - 90, end - 80, end, end, 3, 2))
-                    for tag, name, used in (('#P0', 'Zero', 0), ('#Q0', 'One', 1), ('#P2', 'Both', 2)):
-                        connection.execute('''INSERT INTO war_roster_members(war_id,clan_code,
-                            player_tag,player_name,attacks_expected,attacks_used,roster_state,captured_ts)
-                            VALUES(?,?,?,?,?,?,?,?)''', (identity, code, tag, name, 2, used, state, end))
+            lineup = {'#P0': (0, []), '#Q0': (1, [2]), '#P2': (2, [3, 1])}
+            latest = regular_war('BEC', 200, lineup, opponent='#R0', start_ts=120)
+            wars = [regular_war('BEC', 100, lineup, opponent='#R0', start_ts=20), latest,
+                    regular_war('BEH', 400, lineup, opponent='#R0', start_ts=320)]
             context = recorded(replace(_context(), cwl_queries=CwlQueries(repository, lambda: {})))
             tool = next(tool for tool in war_reads.TOOLS if tool.definition.name == 'read_war_attendance')
-            # A snapshot in the attendance shape the record's regular wars use.
-            regular = AsyncMock(side_effect=lambda context, **selection: repository.attendance(
-                war_type='REG', **selection))
-            with patch.object(record_wars, 'regular_wars', regular):
+            with regular_wars_from(*wars) as regular:
                 result = await tool.handler(context, {
                     'clan_codes': ['BEC'], 'war_type': 'REG', 'latest_completed': 1})
             self.assertEqual(regular.await_args.kwargs, {'clan_codes': ['BEC'], 'after_ts': None, 'before_ts': None,
                                                          'war_ids': (), 'latest_completed': 1})
-            self.assertEqual(result['war_ids'], ['latest'])
+            self.assertEqual(result['war_ids'], [regular_id(latest)])
             self.assertEqual({row['player_tag']: row['missed'] for row in result['rows']},
                              {'#P0': 2, '#Q0': 1, '#P2': 0})
             projected = answer_evidence({'attendance': result}, guild=context.guild)
@@ -143,39 +126,6 @@ class WarFamilyTests(unittest.IsolatedAsyncioTestCase):
         regular.assert_not_awaited()
         league.assert_not_called()
 
-    def test_incompatible_quotas_and_missing_identity_do_not_collapse_wars(self):
-        with TemporaryDirectory() as directory:
-            repository = ClanHealthRepository(Path(directory) / 'wars.db')
-            repository.initialize()
-            with closing(sqlite3.connect(repository.path)) as connection, connection:
-                for identity, quota, start in [('first', 1, 20), ('second', 2, 20), ('unknown', 2, 0)]:
-                    connection.execute('''INSERT INTO wars(war_id,war_type,clan_code,clan_tag,opponent_tag,
-                        state,preparation_start_ts,start_ts,end_ts,last_seen_ts,team_size,attacks_per_member)
-                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
-                        (identity, 'REG', 'BEH', '#P0', '#Q0', 'warEnded', 10, start, 100, 1, 2, quota))
-            result = repository.attendance(clan_codes=['BEH'], war_type='REG')
-        self.assertEqual(len(result['war_ids']), 3)
-        self.assertEqual(result['duplicate_identities_removed'], 0)
-        self.assertEqual(result['unproven_war_ids'], ['unknown'])
-        self.assertFalse(result['coverage']['exact_ranking'])
-
-    def test_conflicting_final_rosters_keep_unknown_misses(self):
-        with TemporaryDirectory() as directory:
-            repository = ClanHealthRepository(Path(directory) / 'wars.db')
-            repository.initialize()
-            with closing(sqlite3.connect(repository.path)) as connection, connection:
-                for identity, expected in [('old', 1), ('new', 2)]:
-                    connection.execute('''INSERT INTO wars(war_id,war_type,clan_code,clan_tag,opponent_tag,
-                        state,preparation_start_ts,start_ts,end_ts,last_seen_ts,team_size,attacks_per_member)
-                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
-                        (identity, 'REG', 'BEH', '#P0', '#Q0', 'warEnded', 10, 20, 100, 1, 1, 2))
-                    connection.execute('''INSERT INTO war_roster_members(war_id,clan_code,player_tag,
-                        player_name,attacks_expected,attacks_used,roster_state,captured_ts)
-                        VALUES(?,?,?,?,?,?,?,?)''', (identity, 'BEH', '#P0', 'Synthetic', expected, 0, 'warEnded', 1))
-            result = repository.attendance(clan_codes=['BEH'], war_type='REG')
-        self.assertIsNone(result['rows'][0]['missed'])
-        self.assertIn('conflicting_final_rosters', result['identity_conflicts'][0]['reasons'])
-
     async def test_current_war_joins_clan_tags_instead_of_response_position(self):
         response = {'items': [{'tag': CLANS[code].tag, 'status': 'ok',
                               'data': {'state': state, 'clan': {}}}
@@ -184,28 +134,12 @@ class WarFamilyTests(unittest.IsolatedAsyncioTestCase):
             result = await war_reads.current_war(recorded(), {'clan_codes': ['BEH', 'BE4']})
         self.assertEqual([row['state'] for row in result['rows']], ['inWar', 'preparation'])
 
-    def test_alternate_end_ids_are_canonical_before_window_filter_and_aggregation(self):
-        with TemporaryDirectory() as directory:
-            repository = ClanHealthRepository(Path(directory)/'wars.db')
-            repository.initialize()
-            with closing(sqlite3.connect(repository.path)) as connection, connection:
-                for identity, end, seen in [('old', 100, 1), ('new', 110, 2)]:
-                    connection.execute('''INSERT INTO wars(war_id,war_type,clan_code,clan_tag,opponent_tag,
-                        state,preparation_start_ts,start_ts,end_ts,last_seen_ts,team_size,attacks_per_member) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
-                        (identity,'REG','BEH','#P0','#Q0','warEnded',10,20,end,seen,2,2))
-                    for tag, expected, used in [('#P0',2,1),('#Q0',2,0)]:
-                        connection.execute('''INSERT INTO war_roster_members(war_id,clan_code,player_tag,
-                            player_name,attacks_expected,attacks_used,roster_state,captured_ts)
-                            VALUES(?,?,?,?,?,?,?,?)''', (identity,'BEH',tag,tag,expected,used,'warEnded',seen))
-            snapshot = repository.attendance(clan_codes=['BEH'],war_type='REG',after_ts=105,before_ts=120)
-            self.assertEqual(snapshot['war_ids'], ['new'])
-            self.assertEqual(snapshot['duplicate_identities_removed'], 1)
-            rows = aggregate_attendance(snapshot['rows'], {'#P0':41,'#Q0':41}, 'member')
-            self.assertEqual(len(rows), 1)
-            self.assertEqual(rows[0]['missed'], 3)
-            self.assertEqual(rows[0]['attacks_expected'], 4)
-            self.assertEqual(rows[0]['miss_rate'], .75)
-            self.assertEqual(repository.attendance(clan_codes=['BEH'],war_type='REG',before_ts=105)['rows'], [])
+    def test_two_accounts_of_one_member_add_up_into_one_member_row(self):
+        rows = aggregate_attendance([{'player_tag': tag, 'player_name': tag, 'war_id': 'one',
+                                      'attacks_expected': 2, 'attacks_used': used, 'missed': 2 - used}
+                                     for tag, used in [('#P0', 1), ('#Q0', 0)]], {'#P0': 41, '#Q0': 41}, 'member')
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]['missed'], rows[0]['attacks_expected'], rows[0]['miss_rate']), (3, 4, .75))
 
     def test_unconfirmed_final_capture_is_not_a_zero_miss(self):
         rows = aggregate_attendance([{'player_tag':'#P0','player_name':'Synthetic','war_id':'one',

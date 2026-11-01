@@ -183,6 +183,24 @@ def positions(connection, war_id, side, complete):
     return {row[0]: index for index, row in enumerate(members, 1)}
 
 
+def first_gap(connection, war_id, attacks):
+    """The first of Clash's attack orders that the record cannot place on a defender.
+
+    Clash numbers both sides' attacks 1, 2, 3... in one sequence, so with both
+    sides' attack counts known, a missing number is an unsaved attack. An attack
+    saved without its defender is a gap too. Every attack before the first gap
+    is saved with its defender. Without both counts no order is safe.
+    """
+    reported = [row[0] for row in connection.execute("SELECT attacks FROM war_sides WHERE war_id=?", (war_id,))]
+    orders = {attack["attack_order"] for attack in attacks}
+    if len(reported) != 2 or None in reported or any(not 1 <= order <= sum(reported) for order in orders):
+        return 1
+    gaps = set(range(1, sum(reported) + 1)) - orders
+    gaps.update(attack["attack_order"] for attack in attacks
+                if (attack["defender_tag"] or json.loads(attack["extra_json"]).get("defender_tag")) is None)
+    return min(gaps, default=sum(reported) + 1)
+
+
 def capture_time(war, current, at):
     """When a war was last known as captured: its end once ended, else its last check."""
     if war["state"] == "warEnded":
@@ -368,7 +386,11 @@ class WarReads(RecordReads):
 
     async def attacks(self, clans, after, before, *, types=REGULAR, player_tags=None, direction="attacks",
                       view="completed", as_of=None, limit=200, offset=0):
-        """Attack detail with both town halls; defenses are the opponent's attacks on the clan."""
+        """Attack detail with both town halls; defenses are the opponent's attacks on the clan.
+
+        An attack copied from old clan health, whose defender the record cannot
+        place, shows the defender and first hit as the old capture saw them.
+        """
         pagination(limit, offset)
         if direction not in ("attacks", "defenses") or view not in VIEWS:
             raise ValueError("Expected attacks or defenses and a completed or capture view")
@@ -397,6 +419,7 @@ class WarReads(RecordReads):
                 extra = json.loads(attack["extra_json"])
                 defender = attack["defender_tag"] or extra.get("defender_tag")
                 first.setdefault(defender, attack["attack_order"])
+            gap = first_gap(connection, war["id"], attacks)
             for attack in attacks:
                 extra = json.loads(attack["extra_json"])
                 # A known defender places an unattributed attacker on the other side.
@@ -408,20 +431,29 @@ class WarReads(RecordReads):
                 defender = attack["defender_tag"] or extra.get("defender_tag")
                 if selected is not None and (attacker if direction == "attacks" else defender) not in selected:
                     continue
-                # Freshness needs every earlier attack on that defender.
+                # Freshness needs every earlier attack on that defender: all the side's attacks,
+                # or every attack before this one by Clash's order.
                 fresh = (False if first[defender] < attack["attack_order"] else
-                         True if complete[side]["attacks_complete"] else None)
+                         True if complete[side]["attacks_complete"] or attack["attack_order"] < gap else None)
+                # Old clan health kept only its own lineup, so a copied attack's defender may be
+                # missing or incomplete in the record; the old capture's view of the defender and
+                # of a first hit is kept with the attack and fills what the record does not know.
+                legacy = extra.get("legacy") if isinstance(extra.get("legacy"), dict) else {}
+                known = {"defender_name": attack["defender_name"], "defender_townhall": attack["defender_townhall"],
+                         "defender_position": places[1 - side].get(defender)}
+                filled = {key: legacy.get(key) for key, value in known.items() if value is None and legacy.get(key)}
                 rows.append({"war_id": war["id"], "clan_tag": clan, "type": war["type"], "state": war["state"],
                              "time": time, "time_basis": basis, "attack_order": attack["attack_order"],
                              "attacker_tag": attacker, "attacker_name": attack["attacker_name"],
                              "attacker_townhall": attack["attacker_townhall"],
                              "attacker_map_position": attack["attacker_map_position"],
-                             "defender_tag": defender, "defender_name": attack["defender_name"],
-                             "defender_townhall": attack["defender_townhall"],
+                             "defender_tag": defender, **known, **filled,
                              "defender_map_position": attack["defender_map_position"],
-                             "defender_position": places[1 - side].get(defender),
+                             "defender_basis": "old_capture" if filled else "lineup",
                              "stars": attack["stars"], "destruction": attack["destruction"],
-                             "duration": attack["duration"], "fresh": fresh})
+                             "duration": attack["duration"],
+                             "fresh": fresh if fresh is not None else legacy.get("fresh_attack"),
+                             "fresh_basis": "old_capture" if fresh is None and "fresh_attack" in legacy else "attacks"})
         result = page(rows[offset:offset + limit + 1], limit, offset)
         result.update(direction=direction, view=view,
                       coverage=window_coverage(connection, clans, types, after, before, at, checked, result["truncated"]))
@@ -499,3 +531,64 @@ class WarReads(RecordReads):
         result.update(view=view, bounds="inclusive" if view == "capture" else "exclusive_end",
                       coverage=window_coverage(connection, clans, types, after, before, at, checked, result["truncated"]))
         return result
+
+    async def health_totals(self, clans, after, before, *, player_tags, view="capture", types=REGULAR, as_of=None):
+        """Each selected account's health totals over the clans' wars in one of the two views.
+
+        One row per account found in a lineup: its wars, the expected and used
+        attacks of the wars that know both, the wars that do not, and its
+        stored attacks with their stars, triples and destruction. At most 200
+        accounts, so one read covers a window no page could.
+        """
+        if view not in VIEWS:
+            raise ValueError("Expected a completed or capture view")
+        return await self._read(self._health_totals, clan_tags(clans), *window(after, before),
+                                war_types(types, ("FRIENDLY", "REG")), clan_tags(player_tags), view, timestamp(as_of))
+
+    @staticmethod
+    def _health_totals(connection, clans, after, before, types, selected, view, at):
+        totals, checked = {}, []
+        for war, clan, _, _ in select_wars(connection, clans, after, before, types, at, view):
+            # A war without a selected account in the clan's lineup adds nothing.
+            if not connection.execute(
+                    f"SELECT 1 FROM war_members WHERE war_id=? AND side=? AND player_tag IN ({placeholders(selected)}) "
+                    "LIMIT 1", (war["id"], side_of(connection, war["id"], clan), *selected)).fetchone():
+                continue
+            coverage = war_side_coverage(connection, war["id"], clan)
+            checked.append((war, clan, coverage))
+            for row in member_rows(connection, war, clan, coverage):
+                if row["player_tag"] not in selected:
+                    continue
+                total = totals.setdefault(row["player_tag"], {
+                    "player_tag": row["player_tag"], "wars": 0, "wars_without_counts": 0, "attacks_expected": 0,
+                    "attacks_used": 0, "stars": 0, "triples": 0, "destruction": 0, "attacks_measured": 0})
+                total["wars"] += 1
+                if row["attacks_expected"] is None or row["attacks_used"] is None:
+                    total["wars_without_counts"] += 1
+                else:
+                    total["attacks_expected"] += row["attacks_expected"]
+                    total["attacks_used"] += row["attacks_used"]
+                for field in ("stars", "triples", "destruction", "attacks_measured"):
+                    total[field] += row[field]
+        return {"rows": [totals[tag] for tag in sorted(totals)], "view": view,
+                "bounds": "inclusive" if view == "capture" else "exclusive_end",
+                "coverage": window_coverage(connection, clans, types, after, before, at, checked, False)}
+
+    async def health_war_counts(self, clans, after, before, *, view="capture", types=REGULAR, as_of=None):
+        """Per clan, its wars in one of the two views and how many of them have a stored lineup."""
+        if view not in VIEWS:
+            raise ValueError("Expected a completed or capture view")
+        return await self._read(self._health_war_counts, clan_tags(clans), *window(after, before),
+                                war_types(types, ("FRIENDLY", "REG")), view, timestamp(as_of))
+
+    @staticmethod
+    def _health_war_counts(connection, clans, after, before, types, view, at):
+        counts = {clan: {"wars": 0, "wars_with_lineup": 0} for clan in clans}
+        checked = []
+        for war, clan, _, _ in select_wars(connection, clans, after, before, types, at, view):
+            coverage = war_side_coverage(connection, war["id"], clan)
+            checked.append((war, clan, coverage))
+            counts[clan]["wars"] += 1
+            counts[clan]["wars_with_lineup"] += coverage["own"]["members"] > 0
+        return {"clans": counts, "view": view, "bounds": "inclusive" if view == "capture" else "exclusive_end",
+                "coverage": window_coverage(connection, clans, types, after, before, at, checked, False)}

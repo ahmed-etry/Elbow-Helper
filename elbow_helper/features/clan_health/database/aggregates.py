@@ -25,13 +25,14 @@ class ClanHealthAggregates:
             # Baseline is the latest snapshot at or before cycle start.
             return cursor.fetchone()
 
-    def _load_war_activity_breakdown(
+    def _load_cwl_war_activity(
         self,
         *,
         cycle_start_ts: int,
         cycle_end_ts: int,
         player_tags: Optional[Set[str]] = None,
     ) -> Dict[str, Dict[str, Any]]:
+        """League wars per account; regular wars come from the family record."""
         with closing(self._db_connect()) as conn, conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
@@ -48,20 +49,14 @@ class ClanHealthAggregates:
                 f"""
                 SELECT
                     player_tag,
-                    COUNT(DISTINCT war_id) AS war_events_joined,
-                    SUM(attacks_expected) AS attacks_expected,
-                    SUM(attacks_used) AS attacks_used,
+                    COUNT(DISTINCT war_id) AS cwl_events_joined,
+                    SUM(attacks_expected) AS cwl_attacks_expected,
+                    SUM(attacks_used) AS cwl_attacks_used,
                     SUM(stars) AS stars,
                     SUM(destruction) AS destruction,
-                    SUM(attack_count) AS attack_count,
-                    COUNT(DISTINCT CASE WHEN war_type = 'REG' THEN war_id END) AS regular_war_events_joined,
-                    SUM(CASE WHEN war_type = 'REG' THEN attacks_expected ELSE 0 END) AS regular_attacks_expected,
-                    SUM(CASE WHEN war_type = 'REG' THEN attacks_used ELSE 0 END) AS regular_attacks_used,
-                    COUNT(DISTINCT CASE WHEN war_type = 'CWL' THEN war_id END) AS cwl_events_joined,
-                    SUM(CASE WHEN war_type = 'CWL' THEN attacks_expected ELSE 0 END) AS cwl_attacks_expected,
-                    SUM(CASE WHEN war_type = 'CWL' THEN attacks_used ELSE 0 END) AS cwl_attacks_used
+                    SUM(attack_count) AS attack_count
                 FROM war_activity
-                WHERE end_ts >= ? AND end_ts <= ?{where_player}
+                WHERE war_type = 'CWL' AND end_ts >= ? AND end_ts <= ?{where_player}
                 GROUP BY player_tag
                 """,
                 params,
@@ -69,13 +64,14 @@ class ClanHealthAggregates:
             rows = cursor.fetchall()
         return {str(r["player_tag"]): dict(r) for r in rows}
 
-    def _load_clan_war_window_counts_by_type(
+    def _load_cwl_war_counts(
         self,
         *,
         cycle_start_ts: int,
         cycle_end_ts: int,
         clan_codes: Optional[Set[str]] = None,
-    ) -> Dict[str, Dict[str, int]]:
+    ) -> Dict[str, int]:
+        """League wars per clan code; regular wars come from the family record."""
         with closing(self._db_connect()) as conn, conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
@@ -90,24 +86,15 @@ class ClanHealthAggregates:
                 params.extend(codes)
             cursor.execute(
                 f"""
-                SELECT
-                    clan_code,
-                    COUNT(DISTINCT CASE WHEN war_type = 'REG' THEN war_id END) AS regular_wars_in_window,
-                    COUNT(DISTINCT CASE WHEN war_type = 'CWL' THEN war_id END) AS cwl_wars_in_window
+                SELECT clan_code, COUNT(DISTINCT war_id) AS cwl_wars_in_window
                 FROM war_activity
-                WHERE end_ts >= ? AND end_ts <= ?{where_codes}
+                WHERE war_type = 'CWL' AND end_ts >= ? AND end_ts <= ?{where_codes}
                 GROUP BY clan_code
                 """,
                 params,
             )
             rows = cursor.fetchall()
-        return {
-            str(r["clan_code"]): {
-                "regular": int(r["regular_wars_in_window"] or 0),
-                "cwl": int(r["cwl_wars_in_window"] or 0),
-            }
-            for r in rows
-        }
+        return {str(r["clan_code"]): int(r["cwl_wars_in_window"] or 0) for r in rows}
 
     def _count_raid_weekends_in_window(self, *, cycle_start_ts: int, cycle_end_ts: int) -> int:
         with closing(self._db_connect()) as conn, conn:

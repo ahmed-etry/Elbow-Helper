@@ -1,14 +1,11 @@
-"""Delayed regular wars must contribute exactly one complete snapshot."""
+"""Old backups upgrade with one copy of each delayed regular war."""
 
 from contextlib import closing
-from copy import deepcopy
 from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
 
-from elbow_helper.features.clan_health.api import ClanHealthCollector
 from elbow_helper.features.clan_health.database import ClanHealthRepository
 from elbow_helper.features.clan_health.database import schema
 from elbow_helper.features.clan_health.database.migrations import deduplicate_regular_wars
@@ -64,34 +61,19 @@ class DuplicateRegularWarTests(unittest.TestCase):
             conn.execute(f"PRAGMA user_version={version}")
 
     def assert_one_complete(self, end):
-        self.assertEqual(len(self.rows("wars")), 1)
-        self.assertEqual(self.rows("wars")[0][0], f"REG:#CLAN:{end}:#OPP")
+        war_id = f"REG:#CLAN:{end}:#OPP"
+        self.assertEqual([row[0] for row in self.rows("wars")], [war_id])
         self.assertEqual(len(self.rows("war_attacks")), 2)
         self.assertEqual(len(self.rows("war_roster_members")), 1)
-        activity = self.repo.war_activity(cycle_start_ts=0, cycle_end_ts=1000)["#PLAYER"]
-        self.assertEqual(activity["regular_war_events_joined"], 1)
-        self.assertEqual(activity["attacks_expected"], 2)
-        self.assertEqual(activity["attacks_used"], 2)
-        self.assertEqual(activity["attacks_expected"] - activity["attacks_used"], 0)
-        self.assertEqual(self.repo.clan_war_counts(cycle_start_ts=0, cycle_end_ts=1000),
-                         {"TEST": {"regular": 1, "cwl": 0}})
-
-    def test_midwar_end_shift_replaces_all_facts_and_counts_once(self):
-        self.repo.store_regular_war_snapshot(*snapshot())
-        self.repo.store_regular_war_snapshot(*snapshot(360, state="warEnded", seen=500, used=2))
-        self.assert_one_complete(360)
-
-    def test_preparation_start_stable_when_battle_start_and_end_shift(self):
-        self.repo.store_regular_war_snapshot(*snapshot(state="preparation", used=0))
-        self.repo.store_regular_war_snapshot(*snapshot(360, start=260, state="warEnded", seen=500, used=2))
-        self.assert_one_complete(360)
+        (activity,) = self.rows("war_activity")
+        self.assertEqual((activity[0], activity[7], activity[8]), (war_id, 2, 2))
 
     def test_different_preparations_clans_opponents_and_unknown_identity_stay_separate(self):
         variants = [snapshot(), snapshot(360, prep=110), snapshot(370, clan="#OTHER", code="OTHER"),
                     snapshot(380, opponent="#OTHER"), snapshot(390, prep=0), snapshot(400, prep=0),
                     snapshot(410, opponent=""), snapshot(420, opponent="")]
         for data in variants:
-            self.repo.store_regular_war_snapshot(*data)
+            self.legacy_store(data)
         self.downgrade()
         self.upgrade()
         self.assertEqual(len(self.rows("wars")), len(variants))
@@ -101,42 +83,12 @@ class DuplicateRegularWarTests(unittest.TestCase):
             for tag in ("#WARONE", "#WARTWO"):
                 self.legacy_store(snapshot(war_id=f"{prefix}:{tag}", war_type=war_type))
         before = self.state()
-        self.repo.store_regular_war_snapshot(*snapshot())
-        self.repo.store_regular_war_snapshot(*snapshot(360, seen=500))
+        self.legacy_store(snapshot())
+        self.legacy_store(snapshot(360, seen=500))
         self.downgrade()
         self.upgrade()
         for table, rows in before.items():
             self.assertEqual([row for row in self.rows(table) if row[0] in {r[0] for r in rows}], rows)
-
-    def test_stale_snapshot_cannot_resurrect_duplicate_or_overwrite_same_id(self):
-        current = snapshot(360, state="warEnded", seen=500, used=2)
-        self.repo.store_regular_war_snapshot(*current)
-        before = self.state()
-        for old in (snapshot(seen=400), snapshot(360, seen=400), snapshot(seen=500)):
-            self.assertEqual(self.repo.store_regular_war_snapshot(*old), 0)
-            self.assertEqual(self.state(), before)
-
-    def test_live_keeps_newest_snapshot_even_if_older_copy_is_ended(self):
-        self.repo.store_regular_war_snapshot(*snapshot(state="warEnded", seen=400))
-        self.repo.store_regular_war_snapshot(*snapshot(360, seen=500, used=2))
-        self.assert_one_complete(360)
-
-    def test_write_failure_rolls_back_superseded_deletion_and_new_facts(self):
-        self.repo.store_regular_war_snapshot(*snapshot())
-        before = self.state()
-        with closing(sqlite3.connect(self.path)) as conn:
-            conn.execute("CREATE TRIGGER fail_attack BEFORE INSERT ON war_attacks "
-                         "BEGIN SELECT RAISE(ABORT, 'synthetic write failure'); END")
-        with self.assertRaisesRegex(sqlite3.IntegrityError, "synthetic write failure"):
-            self.repo.store_regular_war_snapshot(*snapshot(360, seen=500, used=2))
-        self.assertEqual(self.state(), before)
-
-    def test_missing_war_row_writes_nothing(self):
-        war, roster, activity, attacks = snapshot()
-        for invalid in (None, {}, {**war, "war_id": ""}, {**war, "clan_code": ""}):
-            with self.subTest(war=invalid):
-                self.assertEqual(self.repo.store_regular_war_snapshot(invalid, roster, activity, attacks), 0)
-                self.assertTrue(all(not rows for rows in self.state().values()))
 
     def test_existing_invalid_row_writes_still_skip_database_creation(self):
         repo = ClanHealthRepository(Path(self.temp.name) / "unused.db")
@@ -163,10 +115,8 @@ class DuplicateRegularWarTests(unittest.TestCase):
         with closing(sqlite3.connect(self.path)) as conn, conn:
             deduplicate_regular_wars(conn)
         self.assertEqual(self.state(), before)
-        aggregate = self.repo.war_activity(cycle_start_ts=0, cycle_end_ts=700)["#PLAYER"]
-        self.assertEqual(aggregate["regular_war_events_joined"], 2)
-        self.assertEqual(aggregate["attacks_expected"], 4)
-        self.assertEqual(aggregate["attacks_used"], 4)
+        self.assertEqual(sorted((row[0], row[7], row[8]) for row in self.rows("war_activity")),
+                         [("REG:#CLAN:300:#OPP", 2, 2), ("REG:#CLAN:660:#OPP", 2, 2), ("REG:#CLAN:900:#OPP", 2, 0)])
 
     def test_unversioned_backup_also_receives_cleanup(self):
         self.legacy_store(snapshot())
@@ -195,43 +145,18 @@ class DuplicateRegularWarTests(unittest.TestCase):
 
     def test_all_war_keyed_tables_cleaned_with_clan_scope(self):
         old = snapshot()
-        self.repo.store_regular_war_snapshot(*old)
+        self.legacy_store(old)
+        self.legacy_store(snapshot(360, state="warEnded", seen=500, used=2))
         with closing(sqlite3.connect(self.path)) as conn, conn:
             conn.execute('CREATE TABLE "extra facts" (war_id TEXT, clan_code TEXT, value TEXT)')
             conn.executemany('INSERT INTO "extra facts" VALUES (?, ?, ?)', [
                 (old[0]["war_id"], "TEST", "superseded"),
                 (old[0]["war_id"], "OTHER", "keep"),
             ])
-        self.repo.store_regular_war_snapshot(*snapshot(360, seen=500))
+        self.downgrade()
+        self.upgrade()
         self.assertEqual(self.rows("extra facts"), [(old[0]["war_id"], "OTHER", "keep")])
 
 
-class RegularWarIngestTests(unittest.IsolatedAsyncioTestCase):
-    async def test_poll_and_scheduled_capture_use_same_atomic_storage(self):
-        with tempfile.TemporaryDirectory() as directory:
-            repo = ClanHealthRepository(Path(directory) / "health.db")
-            client = MagicMock(configured=True)
-            collector = ClanHealthCollector(client, repo, MagicMock())
-            payload = {
-                "state": "inWar", "preparationStartTime": "20260101T000000.000Z",
-                "startTime": "20260102T000000.000Z", "endTime": "20260103T000000.000Z",
-                "teamSize": 1, "attacksPerMember": 2,
-                "clan": {"tag": "#CLAN", "members": [{"tag": "#PLAYER", "name": "Synthetic",
-                    "mapPosition": 1, "attacks": [{"order": 1, "defenderTag": "#DEFENDER"}]}]},
-                "opponent": {"tag": "#OPP", "members": []},
-            }
-            ended = deepcopy(payload)
-            ended["state"] = "warEnded"
-            ended["endTime"] = "20260103T010000.000Z"
-            ended["clan"]["members"][0]["attacks"].append({"order": 2, "defenderTag": "#DEFENDER"})
-            with (
-                patch("elbow_helper.features.clan_health.api.CLAN_TAGS", {"TEST": "#CLAN"}),
-                patch.object(collector, "_fetch_coc_json", new=AsyncMock(side_effect=[payload, ended])),
-                patch.object(collector, "_schedule_war_end_capture"),
-            ):
-                await collector._ingest_regular_war_for_clan(clan_code="TEST")
-                await collector._run_war_end_capture(clan_code="TEST", expected_end_ts=1)
-            with closing(sqlite3.connect(repo.path)) as conn:
-                self.assertEqual(conn.execute("SELECT COUNT(*) FROM wars").fetchone()[0], 1)
-                self.assertEqual(conn.execute("SELECT COUNT(*) FROM war_attacks").fetchone()[0], 2)
-                self.assertEqual(conn.execute("SELECT state FROM wars").fetchone()[0], "warEnded")
+if __name__ == "__main__":
+    unittest.main()

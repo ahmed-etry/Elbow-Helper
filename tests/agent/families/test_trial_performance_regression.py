@@ -17,7 +17,7 @@ from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.features.recruitment.queries import RecruitmentQueries
 from agent.capabilities.recruitment.test_agent_recruitment import _Channel
 from agent.engine.test_agent_plan_flow import _context
-from agent.families.record_stub import regular_wars_from, with_record
+from agent.families.record_stub import regular_id, regular_war, regular_wars_from, with_record
 from agent.families.test_compact_family_regressions import delivered, unpack
 
 
@@ -27,32 +27,32 @@ class TrialPerformanceRegressionTests(unittest.IsolatedAsyncioTestCase):
             repository = ClanHealthRepository(Path(directory) / 'wars.db')
             repository.initialize()
             with closing(sqlite3.connect(repository.path)) as connection, connection:
-                for kind, identity, expected in [('REG', '#R0', 2), ('CWL', '#C0', 1)]:
-                    connection.execute('''INSERT INTO wars(war_id,war_type,clan_code,clan_tag,
-                        opponent_tag,state,start_ts,end_ts,last_seen_ts) VALUES(?,?,?,?,?,?,?,?,?)''',
-                        (identity, kind, 'BEH', CLANS['BEH'].tag, '#Y0', 'warEnded', 20, 100, 1))
-                    for index, (tag, stars) in enumerate([('#P0', 3), ('#Q0', 1)], 1):
-                        connection.execute('''INSERT INTO war_roster_members(war_id,clan_code,
-                            player_tag,player_name,attacks_expected,attacks_used,roster_state,captured_ts)
-                            VALUES(?,?,?,?,?,?,?,?)''',
-                            (identity, 'BEH', tag, tag, expected, 1, 'warEnded', 1))
-                        connection.execute('''INSERT INTO war_attacks(war_id,war_type,clan_code,
-                            clan_tag,end_ts,war_state,player_tag,player_name,attack_order,defender_tag,stars,destruction)
-                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
-                            (identity, kind, 'BEH', CLANS['BEH'].tag, 100, 'warEnded', tag, tag,
-                             index, '#Y0', stars, 100 if stars == 3 else 40))
+                connection.execute('''INSERT INTO wars(war_id,war_type,clan_code,clan_tag,
+                    opponent_tag,state,start_ts,end_ts,last_seen_ts) VALUES(?,?,?,?,?,?,?,?,?)''',
+                    ('#C0', 'CWL', 'BEH', CLANS['BEH'].tag, '#Y0', 'warEnded', 20, 100, 1))
+                for index, (tag, stars) in enumerate([('#P0', 3), ('#Q0', 1)], 1):
+                    connection.execute('''INSERT INTO war_roster_members(war_id,clan_code,
+                        player_tag,player_name,attacks_expected,attacks_used,roster_state,captured_ts)
+                        VALUES(?,?,?,?,?,?,?,?)''',
+                        ('#C0', 'BEH', tag, tag, 1, 1, 'warEnded', 1))
+                    connection.execute('''INSERT INTO war_attacks(war_id,war_type,clan_code,
+                        clan_tag,end_ts,war_state,player_tag,player_name,attack_order,defender_tag,stars,destruction)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
+                        ('#C0', 'CWL', 'BEH', CLANS['BEH'].tag, 100, 'warEnded', tag, tag,
+                         index, '#Y0', stars, 100 if stars == 3 else 40))
+            regular = regular_war('BEH', 100, {'#P0': (1, [3]), '#Q0': (1, [1])}, opponent='#Y0', start_ts=20)
             context = with_record(replace(_context(), cwl_queries=CwlQueries(repository, lambda: {}),
                 recruitment_queries=RecruitmentQueries(lambda: {'100': {
                     'start': '2026-09-01T00:00:00+00:00', 'days': 7, 'applicant_id': 41}},
                     clock=lambda: datetime(2026, 9, 4, tzinfo=timezone.utc)),
                 account_links=SimpleNamespace(get_links_by_tags=lambda tags: {
                     tag: {'discord_user_id': 41} for tag in tags})))
-            self.enterContext(regular_wars_from(repository))
+            self.enterContext(regular_wars_from(regular))
             tool = next(tool for tool in workflow_reads.TOOLS if tool.definition.name == 'read_recruitment_pipeline')
             report = await tool.handler(context, {'stage': 'active_trials',
                 'performance': {'war_type': 'both', 'latest_completed': 2}})
             candidate = unpack(delivered(report)['rows'])[0]
-            self.assertEqual(report['rows'][0]['war_attendance']['war_ids'], ['#C0', '#R0'])
+            self.assertEqual(report['rows'][0]['war_attendance']['war_ids'], ['#C0', regular_id(regular)])
             self.assertEqual(candidate['war_attendance']['attacks_expected'], 6)
             for kind in ('REG', 'CWL'):
                 metrics = candidate['attack_performance'][kind]
@@ -78,29 +78,29 @@ class TrialPerformanceRegressionTests(unittest.IsolatedAsyncioTestCase):
             repository = ClanHealthRepository(Path(directory) / 'wars.db')
             repository.initialize()
             with closing(sqlite3.connect(repository.path)) as connection, connection:
-                for kind, identity in (('REG', '#R0'), ('CWL', '#C0')):
-                    connection.execute('''INSERT INTO wars(war_id,war_type,clan_code,clan_tag,
-                        opponent_tag,cwl_season,cwl_league,cwl_round,team_size,attacks_per_member,
-                        state,preparation_start_ts,start_ts,end_ts,last_seen_ts)
-                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                        (identity, kind, 'BEH', CLANS['BEH'].tag, '#Q0', '2026-09',
-                         'Champion League III', 1, 15, 1, 'warEnded', 10, 20, 100, 1))
-                    connection.execute('''INSERT INTO war_roster_members(war_id,clan_code,player_tag,
-                        player_name,townhall,attacks_expected,attacks_used,roster_state,captured_ts)
-                        VALUES(?,?,?,?,?,?,?,?,?)''',
-                        (identity, 'BEH', '#P0', 'Candidate', 18, 1, 1, 'warEnded', 1))
-                    connection.execute('''INSERT INTO war_attacks(war_id,war_type,clan_code,clan_tag,
-                        end_ts,war_state,player_tag,player_name,attack_order,defender_tag,stars,destruction)
-                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
-                        (identity, kind, 'BEH', CLANS['BEH'].tag, 100, 'warEnded', '#P0',
-                         'Candidate', 1, '#Q0', 3, 100))
+                connection.execute('''INSERT INTO wars(war_id,war_type,clan_code,clan_tag,
+                    opponent_tag,cwl_season,cwl_league,cwl_round,team_size,attacks_per_member,
+                    state,preparation_start_ts,start_ts,end_ts,last_seen_ts)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                    ('#C0', 'CWL', 'BEH', CLANS['BEH'].tag, '#Q0', '2026-09',
+                     'Champion League III', 1, 15, 1, 'warEnded', 10, 20, 100, 1))
+                connection.execute('''INSERT INTO war_roster_members(war_id,clan_code,player_tag,
+                    player_name,townhall,attacks_expected,attacks_used,roster_state,captured_ts)
+                    VALUES(?,?,?,?,?,?,?,?,?)''',
+                    ('#C0', 'BEH', '#P0', 'Candidate', 18, 1, 1, 'warEnded', 1))
+                connection.execute('''INSERT INTO war_attacks(war_id,war_type,clan_code,clan_tag,
+                    end_ts,war_state,player_tag,player_name,attack_order,defender_tag,stars,destruction)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
+                    ('#C0', 'CWL', 'BEH', CLANS['BEH'].tag, 100, 'warEnded', '#P0',
+                     'Candidate', 1, '#Q0', 3, 100))
+            regular = regular_war('BEH', 100, {'#P0': (1, [3])}, opponent='#Q0', start_ts=20, attacks_per_member=1)
             state = {str(index + 200): {'start': '2026-09-01T00:00:00+00:00', 'days': 7,
                      'applicant_id': index + 1000} for index in range(14)}
             context = with_record(replace(_context(), cwl_queries=CwlQueries(repository, lambda: {}),
                 recruitment_queries=RecruitmentQueries(lambda: state,
                     clock=lambda: datetime(2026, 9, 4, tzinfo=timezone.utc)),
                 account_links=SimpleNamespace(get_links_by_tags=lambda tags: {'#P0': {'discord_user_id': 1000}})))
-            self.enterContext(regular_wars_from(repository))
+            self.enterContext(regular_wars_from(regular))
             channels = {index + 200: _Channel(index + 200) for index in range(14)}
             for channel in channels.values():
                 channel.guild = context.guild

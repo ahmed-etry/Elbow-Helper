@@ -15,7 +15,7 @@ from elbow_helper.features.clan_health.database import ClanHealthRepository
 from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.features.hibernation.queries import HibernationQueries
 from agent.engine.test_agent_plan_flow import _context
-from agent.families.record_stub import regular_wars_from, with_record
+from agent.families.record_stub import regular_war, regular_wars_from, with_record
 
 
 class HibernationWarTimingTests(unittest.IsolatedAsyncioTestCase):
@@ -23,11 +23,11 @@ class HibernationWarTimingTests(unittest.IsolatedAsyncioTestCase):
         with TemporaryDirectory() as directory:
             repository = ClanHealthRepository(Path(directory) / 'wars.db')
             repository.initialize()
+            regular = [regular_war('BEH', end, {tag: (1, []) for tag in (('#P0', '#Q0') if start == 1000 else ('#P0',))},
+                                   start_ts=start)
+                       for start, end in [(900, 1100), (1000, 1200), (None, 1300), (800, 999)]]
             with closing(sqlite3.connect(repository.path)) as connection, connection:
-                for kind, identity, start, end in [
-                    ('REG', '#C0', 900, 1100), ('REG', '#C2', 1000, 1200),
-                    ('REG', '#C8', None, 1300), ('REG', '#C9', 800, 999),
-                    ('CWL', '#R0', 900, 1100), ('CWL', '#R2', 1000, 1200)]:
+                for kind, identity, start, end in [('CWL', '#R0', 900, 1100), ('CWL', '#R2', 1000, 1200)]:
                     connection.execute('''INSERT INTO wars(war_id,war_type,clan_code,clan_tag,
                         opponent_tag,state,start_ts,end_ts,last_seen_ts)
                         VALUES(?,?,?,?,?,?,?,?,?)''',
@@ -48,7 +48,7 @@ class HibernationWarTimingTests(unittest.IsolatedAsyncioTestCase):
                 account_links=SimpleNamespace(get_links_for_members=lambda ids: {
                     41: [{'player_tag': '#P0'}, {'player_tag': '#Q0'}]})))
             tool = next(tool for tool in TOOLS if tool.definition.name == 'read_hibernation')
-            with regular_wars_from(repository):
+            with regular_wars_from(*regular):
                 result = await tool.handler(context, {'include_activity': True,
                     'activity_kinds': ['regular_war', 'cwl']})
             self.assertNotIn('error', result)

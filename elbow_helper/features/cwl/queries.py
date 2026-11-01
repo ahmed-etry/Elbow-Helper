@@ -251,7 +251,7 @@ class CwlQueries:
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def attendance(self, **selection):
-        """Read stored regular/CWL participation, including incomplete seasons."""
+        """Read stored league-war participation, including incomplete seasons."""
         return self._history.attendance(**selection)
 
     def cache_revision(self):

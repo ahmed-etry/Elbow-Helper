@@ -139,41 +139,46 @@ class ClanHealthOverlayMixin:
         }
         if not player_tags:
             return
-        aggregate = self.repository.war_activity(
-            cycle_start_ts=int(cycle_start.timestamp()),
-            cycle_end_ts=int(cycle_end.timestamp()),
-            player_tags=player_tags,
-        )
+        window = {
+            "cycle_start_ts": int(cycle_start.timestamp()),
+            "cycle_end_ts": int(cycle_end.timestamp()),
+        }
+        # Regular wars come from the family record, league wars from stored league history.
+        regular = self.regular_wars.activity(**window, player_tags=player_tags)
+        league = self.repository.cwl_war_activity(**window, player_tags=player_tags)
         for row in rows:
             tag = str(row.get("player_tag") or "")
-            stats = aggregate.get(tag)
-            if not stats:
+            reg, cwl = regular.get(tag), league.get(tag)
+            if not reg and not cwl:
                 row["war_events_joined"] = 0
                 continue
+            reg, cwl = reg or {}, cwl or {}
             # War overlays replace timeframe war fields so scoring always uses family-wide logs.
-            row["war_events_joined"] = int(stats.get("war_events_joined") or 0)
-            expected = int(stats.get("attacks_expected") or 0)
-            used = int(stats.get("attacks_used") or 0)
+            # A regular war whose counts the record does not know adds no expected or used attacks.
+            reg_joined = int(reg.get("wars") or 0)
+            reg_expected = int(reg.get("attacks_expected") or 0)
+            reg_used = int(reg.get("attacks_used") or 0)
+            cwl_joined = int(cwl.get("cwl_events_joined") or 0)
+            cwl_expected = int(cwl.get("cwl_attacks_expected") or 0)
+            cwl_used = int(cwl.get("cwl_attacks_used") or 0)
+            expected = reg_expected + cwl_expected
+            used = reg_used + cwl_used
+            row["war_events_joined"] = reg_joined + cwl_joined
             row["war_hits_expected"] = expected
             row["war_hits_used"] = used
             row["war_missed"] = max(0, expected - used)
-            row["war_stars_total"] = float(stats.get("stars") or 0.0)
-            row["war_destruction_total"] = float(stats.get("destruction") or 0.0)
-            row["war_attack_count"] = int(stats.get("attack_count") or 0)
-            row["regular_war_events_joined"] = int(stats.get("regular_war_events_joined") or 0)
-            row["regular_war_hits_expected"] = int(stats.get("regular_attacks_expected") or 0)
-            row["regular_war_hits_used"] = int(stats.get("regular_attacks_used") or 0)
-            row["regular_war_missed"] = max(
-                0,
-                int(stats.get("regular_attacks_expected") or 0) - int(stats.get("regular_attacks_used") or 0),
-            )
-            row["cwl_events_joined"] = int(stats.get("cwl_events_joined") or 0)
-            row["cwl_hits_expected"] = int(stats.get("cwl_attacks_expected") or 0)
-            row["cwl_hits_used"] = int(stats.get("cwl_attacks_used") or 0)
-            row["cwl_missed"] = max(
-                0,
-                int(stats.get("cwl_attacks_expected") or 0) - int(stats.get("cwl_attacks_used") or 0),
-            )
+            # Stars and destruction cover the stored attacks, which the attack count counts.
+            row["war_stars_total"] = float(reg.get("stars") or 0) + float(cwl.get("stars") or 0.0)
+            row["war_destruction_total"] = float(reg.get("destruction") or 0) + float(cwl.get("destruction") or 0.0)
+            row["war_attack_count"] = int(reg.get("attacks_measured") or 0) + int(cwl.get("attack_count") or 0)
+            row["regular_war_events_joined"] = reg_joined
+            row["regular_war_hits_expected"] = reg_expected
+            row["regular_war_hits_used"] = reg_used
+            row["regular_war_missed"] = max(0, reg_expected - reg_used)
+            row["cwl_events_joined"] = cwl_joined
+            row["cwl_hits_expected"] = cwl_expected
+            row["cwl_hits_used"] = cwl_used
+            row["cwl_missed"] = max(0, cwl_expected - cwl_used)
 
     def _apply_family_raid_activity(
         self,

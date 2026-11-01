@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import gc
 from pathlib import Path
 from types import SimpleNamespace
@@ -67,7 +68,7 @@ class _SnapshotHarness(ClanHealthSnapshotMixin):
 
         self.collector = SimpleNamespace(
             collect_clan_live=AsyncMock(side_effect=collect_clan_live),
-            ingest_family_war_activity=AsyncMock(return_value=(0, 0, [])),
+            ingest_family_cwl_activity=AsyncMock(return_value=(0, 0, [])),
         )
         self.analyzer = SimpleNamespace(
             apply_war_activity=MagicMock(),
@@ -85,6 +86,7 @@ class _SnapshotHarness(ClanHealthSnapshotMixin):
         self._last_startup_sync_ts = 0
         self._last_background_log_sig = None
         self._last_background_log_ts = 0
+        self._background_lock = asyncio.Lock()
 
     @staticmethod
     def _warning_preview(warnings, *, limit):
@@ -105,6 +107,15 @@ class BackgroundSnapshotCompletenessTests(unittest.IsolatedAsyncioTestCase):
         await harness._run_background_snapshot_cycle(trigger="loop")
 
         self.assertFalse(harness.repository.store_report.call_args.kwargs["partial"])
+
+    async def test_stale_war_data_refreshes_only_league_wars(self) -> None:
+        harness = _SnapshotHarness(incomplete_clan=None)
+        harness._last_war_ingest_ts = 0
+
+        await harness._run_background_snapshot_cycle(trigger="loop")
+        await harness._war_log_loop.coro(harness)
+
+        self.assertEqual(harness.collector.ingest_family_cwl_activity.await_count, 2)
 
 
 class CompleteReportSelectionTests(unittest.TestCase):

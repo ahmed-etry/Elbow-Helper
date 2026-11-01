@@ -17,37 +17,6 @@ def _row(tag, *, name="Player", clan="BEH", status="Good", missed=0, donations=1
     }
 
 
-def _war(war_id, end_ts, *, team_size=2):
-    return {
-        "war_id": war_id, "war_type": "REG", "clan_code": "BEH",
-        "clan_tag": "#P0", "opponent_tag": "#P8", "opponent_name": "Opponent",
-        "team_size": team_size, "attacks_per_member": 2, "state": "warEnded",
-        "preparation_start_ts": end_ts - 2, "start_ts": end_ts - 1,
-        "end_ts": end_ts, "last_seen_ts": end_ts + 1, "source": "test",
-    }
-
-
-def _roster(war_id, tag, name, position, used):
-    return {
-        "war_id": war_id, "clan_code": "BEH", "player_tag": tag,
-        "player_name": name, "townhall": 18, "map_position": position,
-        "attacks_expected": 2, "attacks_used": used,
-        "roster_state": "warEnded", "captured_ts": 999, "source": "test",
-    }
-
-
-def _attack(war_id, tag, order, end_ts):
-    return {
-        "war_id": war_id, "war_type": "REG", "clan_code": "BEH",
-        "clan_tag": "#P0", "end_ts": end_ts, "war_state": "warEnded",
-        "player_tag": tag, "player_name": tag, "attack_order": order,
-        "defender_tag": "#P8", "defender_name": "Target",
-        "defender_map_position": 1, "defender_townhall": 18,
-        "stars": 3, "destruction": 100.0, "fresh_attack": 1,
-        "duration": 100, "source": "test",
-    }
-
-
 class ClanHealthQueryTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -144,78 +113,6 @@ class ClanHealthQueryTests(unittest.IsolatedAsyncioTestCase):
             await self.queries.report_runs("NOPE")
         with self.assertRaises(ValueError):
             await self.queries.report_runs("BEH", before_run_id="")
-
-    async def test_regular_war_history_pages_exact_wars_and_preserves_coverage_gaps(self):
-        self.repository.store_wars([_war("old", 100), _war("new", 200)])
-        self.repository.store_final_war_rosters([
-            _roster("old", "#P0", "Alpha", 1, 2),
-            _roster("old", "#P2", "Beta", 2, 0),
-            _roster("new", "#P0", "Alpha", 1, 1),
-            _roster("new", "#P8", "Gamma", 2, 2),
-        ])
-        self.repository.store_war_attacks([
-            _attack("old", "#P0", 1, 100), _attack("old", "#P0", 2, 100),
-            _attack("new", "#P0", 1, 200), _attack("new", "#P8", 1, 200),
-        ])
-        first = await self.queries.regular_war_history("BEH", history_limit=1)
-        self.assertEqual([war.war_id for war in first.wars], ["new"])
-        self.assertEqual(first.next_before_war_id, "new")
-        rows = {row.player_tag: row for row in first.members}
-        self.assertEqual(rows["#P0"].attacks_missed, 1)
-        self.assertEqual(rows["#P8"].attacks_missed, 0)
-        self.assertFalse(rows["#P8"].attack_details_complete)
-        self.assertEqual(first.wars[0].issues, ("attack_detail_mismatch:#P8:2/1",))
-
-        second = await self.queries.regular_war_history(
-            "BEH", history_limit=1, before_war_id=first.next_before_war_id,
-        )
-        self.assertEqual([war.war_id for war in second.wars], ["old"])
-        self.assertIsNone(second.next_before_war_id)
-        self.assertEqual(sum(row.attacks_missed for row in second.members), 2)
-
-        with self.assertRaises(ValueError):
-            await self.queries.regular_war_history(
-                "BEH", history_limit=1, before_war_id="missing",
-            )
-
-    async def test_regular_war_history_filters_end_time_before_loading_war_rows(self):
-        self.repository.store_wars([
-            _war("old", 100), _war("selected", 200), _war("new", 300),
-        ])
-        history = await self.queries.regular_war_history(
-            "BEH", ended_from_ts=150, ended_before_ts=250,
-        )
-        self.assertEqual([war.war_id for war in history.wars], ["selected"])
-        self.assertEqual(history.ended_from_ts, 150)
-        self.assertEqual(history.ended_before_ts, 250)
-        self.assertIsNone(history.next_before_war_id)
-
-        with self.assertRaisesRegex(ValueError, "increasing"):
-            await self.queries.regular_war_history(
-                "BEH", ended_from_ts=250, ended_before_ts=150,
-            )
-
-    async def test_regular_war_history_rejects_noncanonical_duplicate_accounts(self):
-        self.repository.store_wars([_war("war", 100)])
-        self.repository.store_final_war_rosters([
-            _roster("war", "#P0", "Alpha", 1, 1),
-            _roster("war", "P0", "Alpha duplicate", 2, 1),
-        ])
-        with self.assertRaisesRegex(ValueError, "Duplicate account"):
-            await self.queries.regular_war_history("BEH")
-
-    async def test_regular_war_history_rejects_malformed_optional_text(self):
-        self.repository.store_wars([_war("war", 100, team_size=1)])
-        self.repository.store_final_war_rosters([
-            _roster("war", "#P0", "Alpha", 1, 1),
-        ])
-        with sqlite3.connect(self.repository.path) as connection, connection:
-            connection.execute(
-                "UPDATE wars SET opponent_name = ? WHERE war_id = ?",
-                (b"not text", "war"),
-            )
-        with self.assertRaisesRegex(ValueError, "text"):
-            await self.queries.regular_war_history("BEH")
 
     async def test_family_movement_history_uses_consecutive_complete_runs_and_pages(self):
         self.store("r1", created=100, start=1, end=90, rows=[
