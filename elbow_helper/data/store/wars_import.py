@@ -4,8 +4,7 @@ The sources are frozen read-only (see ``wars_import_plan``): the old clan
 health tables ``wars``, ``war_roster_members``, ``war_attacks`` and
 ``war_activity``, and the war board history of ``war_cache.json``. Each
 source row ends up imported, matched to what the record already has, or
-counted with a reason; any bad row, count mismatch or source change aborts
-the whole copy. Facts the record already has are never overwritten, and every
+counted with a reason; any bad row or count mismatch aborts the whole copy. Facts the record already has are never overwritten, and every
 old ID stays as an alias of the record's war.
 """
 
@@ -45,8 +44,8 @@ class Importer:
         self.pairs, self.accounts = {}, {}
         self.created, self.aliases = {}, {}
         self.inserted_members, self.inserted_attacks = [], []
-        self.matches, self.conflicts, self.ambiguous = [], [], []
-        self.methods, self.kinds = Counter(), Counter()
+        self.matches, self.conflicts, self.ambiguous, self.repaired = [], [], [], []
+        self.methods, self.kinds, self.repaired_states = Counter(), Counter(), Counter()
         self.checks = {}
 
     def note(self, rows, outcome):
@@ -142,11 +141,14 @@ class Importer:
         c, best, at = self.connection, event["observations"][0], self.at
         payload = best["war"] if best["kind"] == "payload" else None
         prep, start, team, apm = (self.first(event, key) for key in ("prep", "start", "team_size", "apm"))
+        # A team size counted from an activity lineup is the copy's own finding, not a field the old data had.
+        derived_team = next((o for o in event["observations"] if o["team_size"] is not None), {}).get("team_derived")
         kind, basis = (payload["type"], payload["type_basis"]) if payload else (
             war_type(prep, start, best["end"]) if prep and start else ("REG", UNCHECKED))
         presence = payload["field_presence_json"] if payload else canonical_json(sorted(
             name for name, value in (("attacksPerMember", apm), ("endTime", best["end"]), ("preparationStartTime", prep),
-                                     ("startTime", start), ("state", best["state"]), ("teamSize", team))
+                                     ("startTime", start), ("state", best["state"]),
+                                     ("teamSize", None if derived_team else team))
             if value is not None))
         values = {
             "type": kind, "type_basis": basis, "war_tag": None, "preparation_at": prep, "start_at": start,
@@ -166,6 +168,7 @@ class Importer:
                            tuple(values.values())).lastrowid
         for side, tag in enumerate(event["pair"]):
             facts, extra, derived = self.side_facts(event, tag)
+            derived = derived + ["team_size"] if derived_team else derived
             extra = extra or canonical_json({"field_presence": ["name"] if facts["name"] else [], "legacy": True,
                                              **({"derived": derived} if derived else {})})
             c.execute("INSERT INTO war_sides(war_id,side,clan_tag,name,level,badge_json,stars,destruction,attacks,"
@@ -225,12 +228,15 @@ class Importer:
             self.accounts[tag] = row[0] if row else None
         return self.accounts[tag]
 
-    @staticmethod
-    def versus(winner, other, fields):
+    def versus(self, winner, other, fields):
         """What becomes of an old capture's row when a better capture of the same war has its own."""
         if same(winner[1], other[1], fields):
+            # The same fact under another old ID or capture of this war.
+            self.stats[other[0]["code"]]["duplicate_rows"] += len(other[1]["rows"])
             return "matched"
-        return "excluded:older_capture" if STATES[other[0]["state"]] < STATES[winner[0]["state"]] else "conflict"
+        older = STATES[other[0]["state"]] < STATES[winner[0]["state"]] or (
+            other[0].get("repaired") and not winner[0].get("repaired"))
+        return "excluded:older_capture" if older else "conflict"
 
     def add_members(self, war_id, event):
         c = self.connection
@@ -377,8 +383,18 @@ class Importer:
                 self.note(o["rows"], "imported" if match is None else "matched")
             for code in {o["code"] for o in event["observations"]}:
                 self.stats[code]["unique_wars"] += 1
+            # Several old IDs of one clan for one war: pauses, preparation captures and repeated captures.
+            for code, n in Counter(alias[2] for o in event["observations"] for alias in o["aliases"]
+                                   if alias[0] == "clan_health").items():
+                self.stats[code]["merged_ids"] += n - 1
             row = self.connection.execute("SELECT type,type_basis,state FROM wars WHERE id=?", (war_id,)).fetchone()
             self.kinds["/".join(row)] += 1
+            repaired = [alias[1] for o in event["observations"] if o.get("repaired") for alias in o["aliases"]]
+            if repaired:
+                self.repaired_states[row["state"]] += 1
+                if len(self.repaired) < MAX_LISTED:
+                    self.repaired.append({"war_id": war_id, "state": row["state"], "created": match is None,
+                                          "legacy": repaired})
 
     # Checks --------------------------------------------------------------------------------
 
@@ -433,7 +449,11 @@ class Importer:
         for code in sorted({code for (_, code, _) in self.ledger} | set(self.stats) | set(self.plan.old_wars)):
             clans[code] = {"old_wars": len(self.plan.old_wars.get(code, ())),
                            **{key: self.stats[code][key] for key in (
-                               "unique_wars", "aliases", "aliases_added", "lineup_rows", "attacks", "unlinked_accounts")},
+                               "unique_wars", "aliases", "aliases_added", "merged_ids", "duplicate_rows", "lineup_rows",
+                               "attacks", "unlinked_accounts")},
+                           "stuck_wars": dict(sorted(self.plan.repairs[code].items())),
+                           "preparation_only_ids": dict(sorted(self.plan.preparation_ids[code].items())),
+                           "activity_lineups": dict(sorted(self.plan.lineups[code].items())),
                            "excluded": {table: dict(sorted(counts.items())) for table, counts in reasons[code].items()}}
         return {"source_rows": {table: len(rows) for table, rows in self.frozen.rows.items()} | {
                     HISTORY: 2 * len(self.frozen.history)},
@@ -441,13 +461,24 @@ class Importer:
                 "clans": clans,
                 "wars": {"events": len(events), "created": len(events) - sum(self.methods.values()),
                          "matched_existing": dict(sorted(self.methods.items())), "by_type_state": dict(sorted(self.kinds.items())),
-                         "ambiguous": len(self.ambiguous)},
+                         "ambiguous": len(self.ambiguous), "ended_after_last_check": dict(sorted(self.repaired_states.items()))},
                 "inserted": {"lineup_rows": len(self.inserted_members), "attacks": len(self.inserted_attacks)},
-                "matched_existing": self.matches, "record_conflicts": self.conflicts, "ambiguous": self.ambiguous}
+                "matched_existing": self.matches, "record_conflicts": self.conflicts, "ambiguous": self.ambiguous,
+                "ended_after_last_check": self.repaired}
+
+
+def copy_at_startup(connection, health_path, cache_path, *, clans=None):
+    """The once-only startup copy; None when the record already holds it, without reading the old files.
+
+    Wars the old files gain after the copy are not added: the collector owns every war from then on.
+    """
+    if connection.execute("SELECT 1 FROM imports WHERE topic=?", (TOPIC,)).fetchone() is not None:
+        return None
+    return import_wars(connection, health_path, cache_path, clans=clans)
 
 
 def import_wars(connection, health_path, cache_path=None, frozen=None, *, clans=None):
-    """Caller holds the family writer; the old war writers and end captures must be stopped.
+    """Caller holds the family writer. The old bot may keep writing: the copy is of one consistent snapshot.
 
     ``clans`` maps clan codes to tags (the family's nine by default). A repeat
     with unchanged sources adds nothing; changed sources are reconciled by the
@@ -472,8 +503,6 @@ def import_wars(connection, health_path, cache_path=None, frozen=None, *, clans=
         written = len(importer.inserted_members) + len(importer.inserted_attacks)
         connection.execute("UPDATE collection_runs SET rows_written=? WHERE id=?", (written, run))
         connection.execute("UPDATE collection_items SET written_count=? WHERE id=?", (written, item))
-        if snapshot_wars(health_path, cache_path, frozen.frozen_at).digest != frozen.digest:
-            raise ImportMismatch("legacy_changed_during_import", checks)
         mapping = digest(sorted([*key, war_id] for key, war_id in importer.aliases.items()))
         connection.execute(
             "INSERT INTO imports VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(topic) DO UPDATE SET "

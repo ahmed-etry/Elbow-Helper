@@ -214,5 +214,6 @@ class LinkSwitchTests(_PeopleFixture):
                 self.assertEqual(loaded, ["other features"])
                 self.assertEqual(bot.synced_command_count, 0)
                 self.assertIs(bot.family_collectors.store, bot.link_service.store)
-                self.assertEqual(len(bot.family_collectors._tasks), 9)
+                # Nine schedules and the once-only copy of the old wars.
+                self.assertEqual(len(bot.family_collectors._tasks), 10)
                 await bot.close()

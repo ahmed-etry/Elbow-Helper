@@ -17,7 +17,9 @@ from elbow_helper.infrastructure.discord.usage import on_interaction
 from elbow_helper.infrastructure.discord.publishing import PublishingQueue
 from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.configuration.files import FAMILY_DATABASE, ACCOUNT_LINKS_DATABASE
+from elbow_helper.configuration.files import (
+    ACCOUNT_LINKS_DATABASE, CLAN_HEALTH_DATABASE, FAMILY_DATABASE, WAR_CACHE_FILE,
+)
 from elbow_helper.data.collectors import FamilyCollectors
 from elbow_helper.data.store import FamilyStore
 from elbow_helper.data.links import LinkService
@@ -104,7 +106,10 @@ def create_bot(
 
     bot.people_reads = PeopleReads(store, link_service=bot.link_service)
     bot.membership_reads = MembershipReads(store)
-    bot.family_collectors = FamilyCollectors(bot, store, clash_client, CLANS.values())
+    bot.family_collectors = FamilyCollectors(
+        bot, store, clash_client, CLANS.values(),
+        old_wars=(paths.data_root / CLAN_HEALTH_DATABASE, paths.data_root / WAR_CACHE_FILE),
+    )
 
     async def start_links_topic():
         await bot.link_service.startup()

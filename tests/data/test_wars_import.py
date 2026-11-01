@@ -1,16 +1,21 @@
 """The regular-war import: all-or-nothing, repeatable, alias-keeping and never over the record's own facts."""
 
+import asyncio
 from contextlib import closing
 from datetime import datetime, timezone
 import json
 import sqlite3
+import threading
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
+from elbow_helper.data.collectors.service import FamilyCollectors
 from elbow_helper.data.reads import WarReads
+from elbow_helper.data.reads.coverage import war_side_coverage
 from elbow_helper.data.store import wars_import
 from elbow_helper.data.store.legacy_links import ImportMismatch
-from elbow_helper.data.store.wars_import import import_wars, snapshot_wars
+from elbow_helper.data.store.wars_import import copy_at_startup, import_wars, snapshot_wars
 from elbow_helper.data.store.war_projection import HOUR
 from elbow_helper.features.clan_health.attendance import _participation_only_wars
 from elbow_helper.features.clan_health.database.schema import create_schema
@@ -191,19 +196,49 @@ class ImportTests(ImportFixture, unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ImportMismatch, "war_pair_mismatch"):
             await self.run_import()
         self.assertEqual(await self.dump(), before)
-        # A source that changes while the copy runs, and a check that fails, leave nothing either.
+        # A check that fails leaves nothing either.
         await self.execute("DELETE FROM war_legacy_ids")
         before = await self.dump()
-        real = snapshot_wars(self.health)
-        changed = real.__class__(real.version, "changed", real.frozen_at, real.rows, real.history)
-        with patch.object(wars_import, "snapshot_wars", lambda *args, **kwargs: changed):
-            with self.assertRaisesRegex(ImportMismatch, "legacy_changed_during_import"):
-                await self.run_import(frozen=real)
-        self.assertEqual(await self.dump(), before)
         with patch.object(wars_import.Importer, "verify", side_effect=ImportMismatch("lineup_mismatch")):
             with self.assertRaisesRegex(ImportMismatch, "lineup_mismatch"):
                 await self.run_import()
         self.assertEqual(await self.dump(), before)
+
+    async def test_the_old_bot_writing_during_the_copy_cannot_break_it(self):
+        await self.regular_war()
+        later = old_id(END_S + 4 * 86400)
+        real_write = wars_import.Importer.write
+
+        def write_meanwhile(importer, events):
+            # The old bot saves a new war and changes a lineup while the copy writes the record.
+            with self.old() as old, old:
+                old_war(old, later, end=END_S + 4 * 86400)
+                old_lineup(old, later, [("#P0", 2)])
+                old.execute("UPDATE war_roster_members SET attacks_used=2 WHERE war_id=?", (old_id(END_S),))
+            return real_write(importer, events)
+        with patch.object(wars_import.Importer, "write", write_meanwhile):
+            result = await self.run_import()
+        # The copy is of the snapshot it read: the new war and the changed lineup are not in it.
+        self.assertTrue(result["imported"])
+        self.assertEqual(len(await self.rows("SELECT * FROM wars")), 1)
+        self.assertEqual([m["attacks_used"] for m in await self.rows("SELECT attacks_used FROM war_members")], [1, 1])
+        self.assertEqual(len(await self.rows("SELECT * FROM imports WHERE topic='wars_regular'")), 1)
+
+    async def test_one_read_transaction_takes_every_old_table_from_one_state(self):
+        await self.regular_war()
+        statements = []
+        real_connect = sqlite3.connect
+
+        def traced(*args, **kwargs):
+            connection = real_connect(*args, **kwargs)
+            connection.set_trace_callback(statements.append)
+            return connection
+        with patch("elbow_helper.data.store.wars_import_plan.sqlite3.connect", traced):
+            snapshot_wars(self.health)
+        reads = [i for i, s in enumerate(statements) if s.startswith("SELECT war_id")]
+        self.assertEqual(len(reads), 4)
+        begin, end = statements.index("BEGIN"), statements.index("COMMIT")
+        self.assertTrue(all(begin < i < end for i in reads))
 
     async def test_unreadable_sources_stop_the_copy(self):
         await self.regular_war()
@@ -305,8 +340,8 @@ class ImportTests(ImportFixture, unittest.IsolatedAsyncioTestCase):
             old_attacks(old, first, [(1, "#P0", "#Q0", 1)], end=early)
             old_attacks(old, last, [(1, "#P0", "#Q0", 3), (2, "#P0", "#Q2", 2), (3, "#P2", "#Q8", 1)], end=early + 7200)
             old_attacks(old, last, [(4, "#P2", "#Q2", 1)], end=early + 7200, state="inWar")
-            # Never captured after it ended, and an ID that cannot say its opponent.
-            old_activity(old, unfinished, [("#P0", 1)], source=LIVE, end=other)
+            # Last captured hours before it ended, and an ID that cannot say its opponent.
+            old_activity(old, unfinished, [("#P0", 1)], source=LIVE, end=other - 20 * 3600)
             old_attacks(old, unfinished, [(1, "#P0", "#Q0", 3)], end=other, state="inWar")
             old_activity(old, "REG:garbage", [("#P0", 1)], source=LIVE)
             old_attacks(old, "REG:orphan", [(1, "#P0", "#Q0", 3)])
@@ -386,8 +421,10 @@ class ImportTests(ImportFixture, unittest.IsolatedAsyncioTestCase):
     async def test_changed_sources_are_reconciled_by_the_same_checked_copy(self):
         await self.regular_war()
         later = old_id(END_S + 4 * 86400)
+        # Last checked hours before its end, so the copy cannot end it yet.
+        checked = END_S + 4 * 86400 - 20 * 3600
         with self.old() as old, old:
-            old_war(old, later, state="inWar", end=END_S + 4 * 86400)
+            old_war(old, later, state="inWar", end=END_S + 4 * 86400, seen=checked)
             old_lineup(old, later, [("#P0", 0)], state="inWar", source=LIVE)
         first = await self.run_import()
         self.assertEqual(first["checks"]["wars"]["created"], 1)
@@ -406,7 +443,7 @@ class ImportTests(ImportFixture, unittest.IsolatedAsyncioTestCase):
         self.assertTrue(second["imported"])
         self.assertEqual(second["checks"]["wars"]["created"], 1)
         advanced = (await self.rows("SELECT * FROM wars WHERE id=?", (created["id"],)))[0]
-        self.assertEqual((advanced["state"], advanced["last_seen_at"]), ("warEnded", (END_S + 4 * 86400 + 600) * SECOND))
+        self.assertEqual((advanced["state"], advanced["last_seen_at"]), ("warEnded", (checked + 500) * SECOND))
         alias = (await self.rows("SELECT capture_state FROM war_legacy_ids WHERE legacy_id=?", (later,)))[0]
         self.assertEqual(alias["capture_state"], "warEnded")
         self.assertEqual(len(await self.rows("SELECT * FROM wars")), 3)
@@ -415,6 +452,238 @@ class ImportTests(ImportFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.rows("SELECT attacks_used FROM war_members WHERE war_id=?", (created["id"],)))[0]["attacks_used"], 0)
         third = await self.run_import()
         self.assertFalse(third["imported"])
+
+
+PREP = "currentwar_api:preparation"
+
+
+class CleaningTests(ImportFixture, unittest.IsolatedAsyncioTestCase):
+    """Old wars the old bot never saved as ended, doubles and provisional end times."""
+
+    async def missed(self, end_s):
+        people = await WarReads(self.store).participation(["#PY"], (end_s - 3600) * SECOND, (end_s + 3600) * SECOND,
+                                                          as_of=END + 40 * DAY)
+        return {row["player_tag"]: row["missed"] for row in people["rows"]}
+
+    async def war_ending(self, end_s):
+        return (await self.rows("SELECT * FROM wars WHERE end_at=?", (end_s * SECOND,)))[0]
+
+    async def test_a_war_left_in_battle_day_ends_at_its_end_when_last_checked_minutes_before(self):
+        near, early, live = END_S, END_S - 5 * 86400, END_S + 40 * 86400
+        with self.old() as old, old:
+            old_war(old, old_id(near), state="inWar", seen=near - 600)
+            old_lineup(old, old_id(near), [("#P0", 2), ("#P2", 1)], state="inWar", at=near - 600, source=LIVE)
+            old_attacks(old, old_id(near), [(1, "#P0", "#Q0", 3), (2, "#P0", "#Q2", 2), (3, "#P2", "#Q0", 1)],
+                        end=near - 600, state="inWar")
+            # Battle-day rows carry their capture time where the end belongs.
+            old.execute("UPDATE war_activity SET end_ts=? WHERE war_id=?", (near - 600, old_id(near)))
+            # Last checked the day before its end; and a war still running when the copy runs.
+            old_war(old, old_id(early, opponent="#CU"), opponent="#CU", state="inWar", end=early, seen=early - 20 * 3600)
+            old_lineup(old, old_id(early, opponent="#CU"), [("#P0", 1), ("#P2", 0)], state="inWar", source=LIVE)
+            old_war(old, old_id(live, opponent="#LQ"), opponent="#LQ", state="inWar", end=live, seen=live - 3600)
+        result = await self.run_import()
+        ended = await self.war_ending(near)
+        self.assertEqual((ended["state"], ended["final_at"], ended["last_seen_at"]), ("warEnded", None, (near - 600) * SECOND))
+        side = (await self.rows("SELECT attacks,extra_json FROM war_sides WHERE war_id=? AND clan_tag='#PY'", (ended["id"],)))[0]
+        self.assertEqual((side["attacks"], json.loads(side["extra_json"])["derived"]), (3, ["attacks"]))
+        # Its old ID still says what the old bot last saw.
+        alias = (await self.rows("SELECT capture_state FROM war_legacy_ids WHERE war_id=?", (ended["id"],)))[0]
+        self.assertEqual(alias["capture_state"], "inWar")
+        self.assertEqual(await self.missed(near), {"#P0": 0, "#P2": 1})
+        # The others keep their battle day: no one is counted as missing attacks there.
+        self.assertEqual((await self.war_ending(early))["state"], "inWar")
+        self.assertEqual(await self.missed(early), {"#P0": None, "#P2": None})
+        self.assertEqual((await self.war_ending(live))["state"], "inWar")
+        checks = result["checks"]
+        self.assertEqual(checks["clans"]["ONE"]["stuck_wars"], {"ended_after_last_check": 1, "last_check_too_early": 1})
+        self.assertEqual(checks["wars"]["ended_after_last_check"], {"warEnded": 1})
+        self.assertEqual([(war["war_id"], war["created"], war["legacy"]) for war in checks["ended_after_last_check"]],
+                         [(ended["id"], True, [old_id(near)])])
+
+    async def test_a_war_left_in_preparation_is_ended_only_when_its_battle_day_was_seen(self):
+        never, battled = END_S, END_S - 5 * 86400
+        with self.old() as old, old:
+            old_war(old, old_id(never), state="preparation", seen=never - 30 * 3600)
+            old_lineup(old, old_id(never), [("#P0", 0), ("#P2", 0)], state="preparation", source=PREP)
+            # An attack proves the battle day; the last check came minutes before the end.
+            old_war(old, old_id(battled, opponent="#CU"), opponent="#CU", state="preparation", end=battled,
+                    seen=battled - 300)
+            old_lineup(old, old_id(battled, opponent="#CU"), [("#P0", 1), ("#P2", 0)], state="preparation", source=PREP)
+            old_attacks(old, old_id(battled, opponent="#CU"), [(1, "#P0", "#Q0", 3)], end=battled, state="inWar")
+        result = await self.run_import()
+        self.assertEqual((await self.war_ending(never))["state"], "preparation")
+        self.assertEqual(await self.missed(never), {"#P0": None, "#P2": None})
+        self.assertEqual((await self.war_ending(battled))["state"], "warEnded")
+        self.assertEqual(result["checks"]["clans"]["ONE"]["stuck_wars"], {
+            "ended_after_last_check": 1, "preparation_battle_seen": 1, "preparation_never_in_battle": 1})
+
+    async def test_a_war_known_only_from_battle_day_captures_ends_at_the_end_its_id_holds(self):
+        end, other = END_S - 10 * 86400, END_S - 20 * 86400
+        early, last = old_id(end - 3600, opponent="#CU"), old_id(end, opponent="#CU")
+        lineup = [("#P0", 2), ("#P2", 1), ("#P8", 0), ("#PP", 0), ("#PL", 0)]
+        with self.old() as old, old:
+            # A preparation capture under an earlier ID, then battle-day captures under the ID the pause gave it.
+            old_activity(old, early, [(player, 0) for player, _ in lineup], source=PREP, end=end - 30 * 3600)
+            old_activity(old, last, lineup, source=LIVE, end=end - 480)
+            old_attacks(old, last, [(1, "#P0", "#Q0", 3), (2, "#P0", "#Q2", 2), (3, "#P2", "#Q0", 1)],
+                        end=end - 480, state="inWar")
+            # Only ever captured in preparation: never a war, never an ID.
+            old_activity(old, old_id(other, opponent="#LQ"), [("#P0", 0)], source=PREP, end=other - 30 * 3600)
+        result = await self.run_import()
+        war_row = await self.war_ending(end)
+        self.assertEqual((war_row["state"], war_row["type_basis"], war_row["last_seen_at"]),
+                         ("warEnded", "legacy_unchecked", (end - 480) * SECOND))
+        members = await self.rows("SELECT player_tag,attacks_used FROM war_members WHERE war_id=? ORDER BY player_tag",
+                                  (war_row["id"],))
+        self.assertEqual([(m["player_tag"], m["attacks_used"]) for m in members], sorted(lineup))
+        self.assertEqual(len(await self.rows("SELECT * FROM war_attacks WHERE war_id=?", (war_row["id"],))), 3)
+        aliases = await self.rows("SELECT legacy_id,capture_state FROM war_legacy_ids ORDER BY legacy_id")
+        self.assertEqual({(a["legacy_id"], a["capture_state"]) for a in aliases}, {(early, "preparation"), (last, "inWar")})
+        self.assertEqual(len(await self.rows("SELECT * FROM wars")), 1)
+        # The lineup's count is the team size, marked as the copy's own finding; misses need no town hall.
+        self.assertEqual(war_row["team_size"], 5)
+        self.assertNotIn("teamSize", json.loads(war_row["field_presence_json"]))
+        side = (await self.rows("SELECT extra_json FROM war_sides WHERE war_id=? AND clan_tag='#PY'", (war_row["id"],)))[0]
+        self.assertEqual(json.loads(side["extra_json"])["derived"], ["attacks", "team_size"])
+        self.assertEqual(await self.missed(end), {"#P0": 0, "#P2": 1, "#P8": 2, "#PP": 2, "#PL": 2})
+        clan = result["checks"]["clans"]["ONE"]
+        self.assertEqual(clan["stuck_wars"], {"ended_after_last_check": 1})
+        self.assertEqual(clan["activity_lineups"], {"team_size_from_lineup": 1})
+        self.assertEqual(clan["preparation_only_ids"], {"battle_day_war": 1, "no_battle_day": 1})
+        self.assertEqual(clan["excluded"]["war_activity"], {"no_battle_day": 1, "not_chosen_capture": 5})
+        self.assertEqual(clan["merged_ids"], 1)
+        # A member without their expected attacks takes the proof away.
+        await self.execute("UPDATE war_members SET attacks_expected=NULL WHERE player_tag='#PL'")
+        self.assertEqual(set((await self.missed(end)).values()), {None})
+
+    async def test_an_activity_lineup_that_is_not_a_whole_team_proves_no_misses(self):
+        end = END_S - 10 * 86400
+        with self.old() as old, old:
+            old_activity(old, old_id(end, opponent="#CU"), [("#P0", 2), ("#P2", 1), ("#P8", 0), ("#PP", 0)], end=end)
+            old_attacks(old, old_id(end, opponent="#CU"), [(1, "#P0", "#Q0", 3), (2, "#P0", "#Q2", 2),
+                                                           (3, "#P2", "#Q0", 1)], end=end)
+        result = await self.run_import()
+        self.assertIsNone((await self.war_ending(end))["team_size"])
+        self.assertEqual(set((await self.missed(end)).values()), {None})
+        self.assertEqual(result["checks"]["clans"]["ONE"]["activity_lineups"], {"lineup_incomplete": 1})
+
+    async def test_misses_need_every_attack_the_war_reports(self):
+        # A whole lineup, but one attack missing from the saved list: who made it can't be told.
+        end = END_S - 10 * 86400
+        lineup = [("#P0", 2), ("#P2", 1), ("#P8", 0), ("#PP", 0), ("#PL", 0)]
+        with self.old() as old, old:
+            old_activity(old, old_id(end, opponent="#CU"), lineup, end=end)
+            old_attacks(old, old_id(end, opponent="#CU"), [(1, "#P0", "#Q0", 3), (3, "#P2", "#Q0", 1)], end=end)
+        await self.run_import()
+        war_id = (await self.war_ending(end))["id"]
+        self.assertEqual(set((await self.missed(end)).values()), {None})
+        coverage = await self.store.call(war_side_coverage, war_id, "#PY")
+        self.assertEqual((coverage["own"]["attacks_reported"], coverage["own"]["attacks_stored"]), (3, 2))
+
+    async def test_doubled_old_ids_of_one_war_are_merged_with_their_rows_counted_once(self):
+        first, second = old_id(END_S), old_id(END_S + 600)
+        with self.old() as old, old:
+            for war_id, end in ((first, END_S), (second, END_S + 600)):
+                old_war(old, war_id, end=end)
+                old.execute("UPDATE wars SET preparation_start_ts=?,start_ts=? WHERE war_id=?",
+                            (END_S - 2 * 86400, END_S - 86400, war_id))
+                old_lineup(old, war_id, [("#P0", 1), ("#P2", 1)])
+                old_attacks(old, war_id, [(1, "#P0", "#Q0", 3), (2, "#P2", "#Q2", 2)])
+        result = await self.run_import()
+        self.assertEqual(len(await self.rows("SELECT * FROM wars")), 1)
+        self.assertEqual(len(await self.rows("SELECT * FROM war_legacy_ids")), 2)
+        self.assertEqual(result["checks"]["inserted"], {"lineup_rows": 2, "attacks": 2})
+        clan = result["checks"]["clans"]["ONE"]
+        # Two lineup entries (each a lineup and an activity row) and two attacks under the second ID.
+        self.assertEqual((clan["unique_wars"], clan["merged_ids"], clan["duplicate_rows"]), (1, 1, 6))
+
+
+class StartupTests(ImportFixture, unittest.IsolatedAsyncioTestCase):
+    """The copy runs once at startup, before the first war pass, and a failure changes nothing."""
+
+    def collectors(self):
+        bot = SimpleNamespace(boot_complete=asyncio.Event(), guild_id=1, get_guild=lambda guild_id: None)
+        collectors = FamilyCollectors(bot, self.store, SimpleNamespace(get=AsyncMock()), (), old_wars=(self.health, None))
+        return bot, collectors
+
+    def startup(self, gate=None, order=None):
+        def copy(connection, health, cache):
+            if gate is not None:
+                gate.wait(10)
+            if order is not None:
+                order.append("copy")
+            return copy_at_startup(connection, health, cache, clans=CLANS)
+        return patch("elbow_helper.data.collectors.service.copy_at_startup", copy)
+
+    async def test_a_later_start_reads_nothing_and_adds_nothing(self):
+        await self.regular_war()
+        _, collectors = self.collectors()
+        with self.startup(), self.assertLogs("elbow_helper.data.collectors.service", level="INFO") as logs:
+            await collectors._copy_old_wars()
+        self.assertEqual(len(logs.records), 1)
+        self.assertIn("Old wars copied", logs.output[0])
+        settled = await self.dump()
+        with self.startup(), patch.object(wars_import, "snapshot_wars", side_effect=AssertionError("read")), \
+                self.assertNoLogs("elbow_helper.data.collectors.service", level="INFO"):
+            await collectors._copy_old_wars()
+        self.assertEqual(await self.dump(), settled)
+        # The old files changing later does not bring the copy back.
+        with self.old() as old, old:
+            old.execute("UPDATE war_roster_members SET attacks_used=2")
+        self.assertIsNone(await self.store.call(copy_at_startup, self.health, None, clans=CLANS))
+        self.assertEqual(await self.dump(), settled)
+
+    async def test_a_failed_copy_logs_one_line_changes_nothing_and_runs_again_at_the_next_start(self):
+        await self.regular_war()
+        with self.old() as old, old:
+            old.execute("UPDATE war_attacks SET stars=7")
+        before = await self.dump()
+        _, collectors = self.collectors()
+        with self.startup(), self.assertLogs("elbow_helper.data.collectors.service", level="INFO") as logs:
+            await collectors._copy_old_wars()
+        self.assertEqual(len(logs.records), 1)
+        self.assertEqual(logs.records[0].levelname, "WARNING")
+        self.assertIn("ImportMismatch: bad_row:war_attacks", logs.output[0])
+        self.assertNotIn("\n", logs.output[0])
+        self.assertEqual(await self.dump(), before)
+        with self.old() as old, old:
+            old.execute("UPDATE war_attacks SET stars=3")
+        with self.startup():
+            await collectors._copy_old_wars()
+        self.assertEqual(len(await self.rows("SELECT * FROM imports WHERE topic='wars_regular'")), 1)
+
+    async def test_the_first_war_pass_waits_for_the_copy_even_when_it_fails(self):
+        for broken in (False, True):
+            with self.subTest(broken=broken):
+                await self.execute("DELETE FROM imports")
+                with self.old() as old, old:
+                    old.executescript("DELETE FROM wars; DELETE FROM war_roster_members; DELETE FROM war_attacks; "
+                                      "DELETE FROM war_activity;")
+                    old_war(old, old_id(END_S))
+                    old_lineup(old, old_id(END_S), [("#P0", 1)])
+                    old.execute("UPDATE wars SET state='over'" if broken else "SELECT 1")
+                bot, collectors = self.collectors()
+                order, gate = [], threading.Event()
+                passes = AsyncMock(side_effect=lambda: order.append("war pass"))
+                collectors.collect_wars = passes
+                for name in ("collect_clans", "collect_players", "scan_discord"):
+                    setattr(collectors, name, AsyncMock())
+                with self.startup(gate, order), patch("elbow_helper.data.collectors.service.collect_sources", AsyncMock()), \
+                        patch("elbow_helper.data.collectors.service.due_jobs", return_value=[{"due": True}]), \
+                        self.assertLogs("elbow_helper.data.collectors.service", level="INFO"):
+                    await collectors.cog_load()
+                    bot.boot_complete.set()
+                    await asyncio.sleep(0.3)
+                    passes.assert_not_awaited()
+                    gate.set()
+                    for _ in range(100):
+                        if passes.await_count:
+                            break
+                        await asyncio.sleep(0.05)
+                    await collectors.cog_unload()
+                self.assertEqual(order, ["copy", "war pass"])
+                marker = await self.rows("SELECT * FROM imports WHERE topic='wars_regular'")
+                self.assertEqual(len(marker), 0 if broken else 1)
 
 
 if __name__ == "__main__":
