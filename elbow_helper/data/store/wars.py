@@ -62,6 +62,17 @@ def _account(connection, tag):
     return row[0] if row else None
 
 
+def left_lineup(connection, war_id, war):
+    """Stored members that a running war's latest roster no longer lists and that never attacked or were attacked."""
+    if war["aggregate"] or war["state"] == "warEnded" or not war["roster_complete"]:
+        return []
+    lineup = {(m["side"], m["player_tag"]) for m in war["members"]}
+    return [row["id"] for row in connection.execute(
+        "SELECT id,side,player_tag FROM war_members m WHERE war_id=? AND NOT EXISTS (SELECT 1 FROM war_attacks a "
+        "WHERE a.war_id=m.war_id AND m.id IN (a.attacker_member_id,a.defender_member_id))", (war_id,))
+        if (row["side"], row["player_tag"]) not in lineup]
+
+
 def save_war(connection, war, run, at):
     tags = [s["clan_tag"] for s in war["sides"]]
     pair = ":".join(tags)
@@ -117,9 +128,10 @@ def save_war(connection, war, run, at):
                     connection.execute("UPDATE war_sides SET result=?,source_run_id=? WHERE war_id=? AND side=? "
                                        "AND result IS NOT ?", (row["result"], run, war_id, side, row["result"]))
         return war_id, sealed(old)
-    # An identical poll stops here: no fact, member or attack row is touched.
+    # An identical poll stops here: no fact, member or attack row is touched,
+    # unless a lineup change left members behind that must now be dropped.
     digest = sha256(canonical_json(war).encode("utf-8")).hexdigest()
-    if old and old["content_hash"] == digest:
+    if old and old["content_hash"] == digest and not left_lineup(connection, war_id, war):
         return war_id, bool(old["roster_complete"] and old["attacks_complete"])
     fields = {key: value for key, value in war.items() if key not in {"sides", "members", "attacks", "aggregate"}}
     if old:
@@ -155,6 +167,9 @@ def save_war(connection, war, run, at):
         side, tag = row.pop("side"), row.pop("player_tag")
         row.update(account_id=_account(connection, tag), source_run_id=run)
         put(connection, "war_members", {"war_id": war_id, "side": side, "player_tag": tag}, row)
+    # Until the war ends, the latest roster is the lineup.
+    for member_id in left_lineup(connection, war_id, war):
+        connection.execute("DELETE FROM war_members WHERE id=?", (member_id,))
     for row in connection.execute("SELECT id,player_tag FROM war_members WHERE war_id=?", (war_id,)):
         tag = row["player_tag"]
         member_ids[tag] = None if tag in member_ids else row["id"]
@@ -181,9 +196,10 @@ def save_war(connection, war, run, at):
         put(connection, "war_attacks", {"war_id": war_id, "attack_order": order}, {**row, "source_run_id": run})
     if complete:
         stored_orders = {r[0] for r in connection.execute("SELECT attack_order FROM war_attacks WHERE war_id=?", (war_id,))}
-        stored_members = {(r[0], r[1]) for r in connection.execute("SELECT side,player_tag FROM war_members WHERE war_id=?", (war_id,))}
         if stored_orders != {a["attack_order"] for a in war["attacks"]}:
             complete = False
+    if war["roster_complete"]:
+        stored_members = {(r[0], r[1]) for r in connection.execute("SELECT side,player_tag FROM war_members WHERE war_id=?", (war_id,))}
         if stored_members != {(m["side"], m["player_tag"]) for m in war["members"]}:
             complete = False
             connection.execute("UPDATE wars SET roster_complete=0 WHERE id=?", (war_id,))
