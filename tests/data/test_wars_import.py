@@ -554,7 +554,8 @@ class CleaningTests(ImportFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(clan["merged_ids"], 1)
         # A member without their expected attacks takes the proof away.
         await self.execute("UPDATE war_members SET attacks_expected=NULL WHERE player_tag='#PL'")
-        self.assertEqual(set((await self.missed(end)).values()), {None})
+        # Only an account that used every attack keeps its zero.
+        self.assertEqual(await self.missed(end), {"#P0": 0, "#P2": None, "#P8": None, "#PP": None, "#PL": None})
 
     async def test_an_activity_lineup_that_is_not_a_whole_team_proves_no_misses(self):
         end = END_S - 10 * 86400
@@ -564,7 +565,7 @@ class CleaningTests(ImportFixture, unittest.IsolatedAsyncioTestCase):
                                                            (3, "#P2", "#Q0", 1)], end=end)
         result = await self.run_import()
         self.assertIsNone((await self.war_ending(end))["team_size"])
-        self.assertEqual(set((await self.missed(end)).values()), {None})
+        self.assertEqual(await self.missed(end), {"#P0": 0, "#P2": None, "#P8": None, "#PP": None})
         self.assertEqual(result["checks"]["clans"]["ONE"]["activity_lineups"], {"lineup_incomplete": 1})
 
     async def test_misses_need_every_attack_the_war_reports(self):
@@ -576,7 +577,7 @@ class CleaningTests(ImportFixture, unittest.IsolatedAsyncioTestCase):
             old_attacks(old, old_id(end, opponent="#CU"), [(1, "#P0", "#Q0", 3), (3, "#P2", "#Q0", 1)], end=end)
         await self.run_import()
         war_id = (await self.war_ending(end))["id"]
-        self.assertEqual(set((await self.missed(end)).values()), {None})
+        self.assertEqual(await self.missed(end), {"#P0": 0, "#P2": None, "#P8": None, "#PP": None, "#PL": None})
         coverage = await self.store.call(war_side_coverage, war_id, "#PY")
         self.assertEqual((coverage["own"]["attacks_reported"], coverage["own"]["attacks_stored"]), (3, 2))
 

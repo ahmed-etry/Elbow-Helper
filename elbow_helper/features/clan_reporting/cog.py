@@ -11,11 +11,9 @@ import discord
 from discord.ext import commands
 
 from elbow_helper.core.background import start_resilient_loop
-from elbow_helper.infrastructure.clash import ClashClient
 from elbow_helper.configuration.channels import CLAN_LEADERSHIP_CHANNELS
 from elbow_helper.configuration.roles import ELDER_ROLE_ID
 
-from .api import ClanReportingApiMixin
 from .elders import ClanReportingElderMixin
 from .helpers import ClanReportingHelperMixin
 from .state import load_state
@@ -29,7 +27,6 @@ LOGGER = logging.getLogger(__name__)
 class ClanReporting(
     ClanReportingWarMixin,
     ClanReportingElderMixin,
-    ClanReportingApiMixin,
     ClanReportingHelperMixin,
     commands.Cog,
 ):
@@ -38,12 +35,11 @@ class ClanReporting(
     def __init__(
         self,
         bot: commands.Bot,
-        clash_client: ClashClient,
         account_links,
     ):
         self.bot = bot
-        self.clash_client = clash_client
         self.account_links = account_links
+        self.war_reads = getattr(bot, "war_reads", None)
         self.state = load_state()
         self.queries = ClanReportingQueries(account_links.get_missing_elder_rows)
         self._board_last_repost_at: dict[str, float] = {}

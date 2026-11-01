@@ -15,6 +15,7 @@ from elbow_helper.features.clan_health.database import ClanHealthRepository
 from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.features.hibernation.queries import HibernationQueries
 from agent.engine.test_agent_plan_flow import _context
+from agent.families.record_stub import regular_wars_from, with_record
 
 
 class HibernationWarTimingTests(unittest.IsolatedAsyncioTestCase):
@@ -42,13 +43,14 @@ class HibernationWarTimingTests(unittest.IsolatedAsyncioTestCase):
                 role.is_default = lambda: False
             log = SimpleNamespace(**{**vars(context.source_message.channel), 'id': HIBERNATION_LOG})
             context.guild.get_channel_or_thread = lambda identifier: log if identifier == HIBERNATION_LOG else context.source_message.channel
-            context = replace(context, cwl_queries=CwlQueries(repository, lambda: {}),
+            context = with_record(replace(context, cwl_queries=CwlQueries(repository, lambda: {}),
                 hibernation_queries=HibernationQueries(lambda: {'41': {'hibernation_date': '<t:1000:F>'}}),
                 account_links=SimpleNamespace(get_links_for_members=lambda ids: {
-                    41: [{'player_tag': '#P0'}, {'player_tag': '#Q0'}]}))
+                    41: [{'player_tag': '#P0'}, {'player_tag': '#Q0'}]})))
             tool = next(tool for tool in TOOLS if tool.definition.name == 'read_hibernation')
-            result = await tool.handler(context, {'include_activity': True,
-                'activity_kinds': ['regular_war', 'cwl']})
+            with regular_wars_from(repository):
+                result = await tool.handler(context, {'include_activity': True,
+                    'activity_kinds': ['regular_war', 'cwl']})
             self.assertNotIn('error', result)
             by_tag = {account['player_tag']: account for account in result['rows'][0]['accounts']}
             overlap, within = by_tag['#P0'], by_tag['#Q0']

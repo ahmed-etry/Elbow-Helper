@@ -16,6 +16,11 @@ def build_war_id(data: Dict[str, Any]) -> str:
     return f"{prep}-{end}-{opponent_tag}"
 
 
+def missed_attack_line(name: Optional[str], remaining: int) -> str:
+    attack_label = "attack" if remaining == 1 else "attacks"
+    return f"{name or 'Unknown'} — {remaining} {attack_label}"
+
+
 class HelperMixin:
 
     def _coctime_to_dt(self, value: Optional[str]) -> Optional[datetime]:
@@ -68,9 +73,7 @@ class HelperMixin:
             used = len(m.get("attacks", []) or [])
             remaining = max(0, per - used)
             if remaining:
-                name = m.get("name") or "Unknown"
-                attack_label = "attack" if remaining == 1 else "attacks"
-                missed.append(f"{name} — {remaining} {attack_label}")
+                missed.append(missed_attack_line(m.get("name"), remaining))
         return missed
 
     def _to_superscript(self, value: int) -> str:

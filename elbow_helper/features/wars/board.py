@@ -13,7 +13,6 @@ import discord
 from elbow_helper.configuration.channels import CLAN_WAR_CHANNELS
 from elbow_helper.configuration.clans import CLAN_CODES_BY_NAME
 from .config import WAR_BOARD_CLAN_CODES
-from .helpers import build_war_id
 from .rendering import build_war_board_embed
 from .rendering import coc_time_to_datetime
 from .rendering import normalize_war_state
@@ -32,34 +31,6 @@ def _embed_without_timestamp(embed: discord.Embed) -> dict[str, Any]:
             for dynamic_key in ("proxy_url", "height", "width"):
                 media.pop(dynamic_key, None)
     return payload
-
-
-def _merge_war_log_result(
-    snapshot: dict[str, Any],
-    result: dict[str, Any],
-) -> dict[str, Any]:
-    """Apply final war-log aggregates without losing the captured lineups."""
-    merged = deepcopy(snapshot)
-    merged["state"] = "warEnded"
-    for key in ("teamSize", "attacksPerMember", "endTime"):
-        if result.get(key) is not None:
-            merged[key] = result[key]
-    for side in ("clan", "opponent"):
-        source = result.get(side)
-        if not isinstance(source, dict):
-            continue
-        target = merged.setdefault(side, {})
-        for key in (
-            "tag",
-            "name",
-            "badgeUrls",
-            "stars",
-            "attacks",
-            "destructionPercentage",
-        ):
-            if source.get(key) is not None:
-                target[key] = source[key]
-    return merged
 
 
 class PreviousWarView(discord.ui.View):
@@ -102,8 +73,7 @@ class PreviousWarView(discord.ui.View):
 
 class WarBoardMixin:
     def _previous_war_snapshot(self, clan_code: str) -> dict[str, Any] | None:
-        history = getattr(self, "war_board_history", {})
-        entry = history.get(clan_code) if isinstance(history, dict) else None
+        entry = self.record_boards.get(clan_code)
         previous = entry.get("previous") if isinstance(entry, dict) else None
         if (
             isinstance(previous, dict)
@@ -123,52 +93,18 @@ class WarBoardMixin:
             return None
         return PreviousWarView(self, clan_code)
 
-    def _register_war_board_views(self) -> None:
-        for clan_code, entry in self.war_board_registry.items():
-            history = self.war_board_history.get(clan_code, {})
-            current = history.get("current")
-            if not isinstance(current, dict):
-                continue
-            state = normalize_war_state(current.get("state"))
-            view = self._war_board_view(clan_code, state)
-            message_id = entry.get("message")
-            if view is not None and isinstance(message_id, int):
-                self.bot.add_view(view, message_id=message_id)
-
-    async def _record_war_board_snapshot(
-        self,
-        clan_name: str,
-        clan_code: str,
-        data: dict[str, Any],
-    ) -> None:
-        history = getattr(self, "war_board_history", None)
-        if not isinstance(history, dict):
-            history = {}
-            self.war_board_history = history
-        original = deepcopy(history.get(clan_code, {}))
-        entry = history.setdefault(clan_code, {})
-        current = entry.get("current")
-        incoming = deepcopy(data)
-
-        if isinstance(current, dict) and build_war_id(current) != build_war_id(incoming):
-            previous: dict[str, Any] | None = None
-            if normalize_war_state(current.get("state")) == "warended":
-                previous = deepcopy(current)
-            else:
-                fetch_result = getattr(self, "_fetch_war_log_result", None)
-                if callable(fetch_result):
-                    result = await fetch_result(clan_name, current)
-                    if isinstance(result, dict):
-                        previous = _merge_war_log_result(current, result)
-            if previous is None:
-                entry.pop("previous", None)
-            else:
-                entry["previous"] = previous
-
-        entry["current"] = incoming
-        if entry != original:
-            self.cache["war_board_history"] = history
-            await self._save_cache_async()
+    def _register_war_board_view(self, clan_code: str) -> None:
+        entry = self.war_board_registry.get(clan_code)
+        if entry is None:
+            return
+        current = self.record_boards.get(clan_code, {}).get("current")
+        if not isinstance(current, dict):
+            return
+        state = normalize_war_state(current.get("state"))
+        view = self._war_board_view(clan_code, state)
+        message_id = entry.get("message")
+        if view is not None and isinstance(message_id, int):
+            self.bot.add_view(view, message_id=message_id)
 
     @staticmethod
     def _message_control_ids(message: discord.Message) -> set[str]:
@@ -240,15 +176,6 @@ class WarBoardMixin:
         if clan_code not in WAR_BOARD_CLAN_CODES:
             return
         state = normalize_war_state(data.get("state"))
-        observations = getattr(self, "war_observations", None)
-        if not isinstance(observations, dict):
-            observations = {}
-            self.war_observations = observations
-        observations[clan_code] = {
-            "state": "cwl" if data.get("warTag") else state,
-            "observed_at": datetime.now(timezone.utc).isoformat(),
-            "war_id": build_war_id(data) if not data.get("warTag") and state != "notinwar" else None,
-        }
         if data.get("warTag"):
             await self._remove_war_board_controls(clan_code)
             return
@@ -257,7 +184,6 @@ class WarBoardMixin:
             return
         if state not in {"preparation", "inwar", "warended"}:
             return
-        await self._record_war_board_snapshot(clan_name, clan_code, data)
 
         channel = await self._war_board_channel(clan_code)
         if channel is None:

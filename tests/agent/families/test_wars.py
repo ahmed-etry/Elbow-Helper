@@ -9,9 +9,19 @@ from unittest.mock import AsyncMock, Mock, patch
 from dataclasses import replace
 from elbow_helper.features.clan_health.database import ClanHealthRepository
 from elbow_helper.features.clan_health.attendance import aggregate_attendance
-from elbow_helper.agent.families import war_reads
+from elbow_helper.agent.families import record_wars, war_reads
 from elbow_helper.configuration.clans import CLANS
 from agent.engine.test_agent_plan_flow import _context
+
+
+def recorded(context=None):
+    """A context whose bot has the family record's war reads."""
+    return replace(context or _context(), bot=SimpleNamespace(war_reads=SimpleNamespace()))
+
+
+def current_checks(response):
+    """The record's latest current-war checks, in the shape the current-war tool reads."""
+    return patch.object(record_wars, 'current_wars', AsyncMock(return_value=response))
 
 
 class WarFamilyTests(unittest.IsolatedAsyncioTestCase):
@@ -39,10 +49,16 @@ class WarFamilyTests(unittest.IsolatedAsyncioTestCase):
                         connection.execute('''INSERT INTO war_roster_members(war_id,clan_code,
                             player_tag,player_name,attacks_expected,attacks_used,roster_state,captured_ts)
                             VALUES(?,?,?,?,?,?,?,?)''', (identity, code, tag, name, 2, used, state, end))
-            context = replace(_context(), cwl_queries=CwlQueries(repository, lambda: {}))
+            context = recorded(replace(_context(), cwl_queries=CwlQueries(repository, lambda: {})))
             tool = next(tool for tool in war_reads.TOOLS if tool.definition.name == 'read_war_attendance')
-            result = await tool.handler(context, {
-                'clan_codes': ['BEC'], 'war_type': 'REG', 'latest_completed': 1})
+            # A snapshot in the attendance shape the record's regular wars use.
+            regular = AsyncMock(side_effect=lambda context, **selection: repository.attendance(
+                war_type='REG', **selection))
+            with patch.object(record_wars, 'regular_wars', regular):
+                result = await tool.handler(context, {
+                    'clan_codes': ['BEC'], 'war_type': 'REG', 'latest_completed': 1})
+            self.assertEqual(regular.await_args.kwargs, {'clan_codes': ['BEC'], 'after_ts': None, 'before_ts': None,
+                                                         'war_ids': (), 'latest_completed': 1})
             self.assertEqual(result['war_ids'], ['latest'])
             self.assertEqual({row['player_tag']: row['missed'] for row in result['rows']},
                              {'#P0': 2, '#Q0': 1, '#P2': 0})
@@ -88,16 +104,44 @@ class WarFamilyTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result['missing_sources'])
 
     async def test_regular_season_resolves_to_utc_dates_without_a_cwl_season_filter(self):
-        query = Mock(return_value={'rows': [], 'war_ids': [], 'coverage': {}})
-        context = replace(_context(), cwl_queries=SimpleNamespace(attendance=query))
-        await war_reads.selected_wars(context, {'season': '2026-09', 'clan_codes': ['BEH']}, 'REG')
-        self.assertEqual(query.call_args.kwargs['after_ts'], 1788220800)
-        self.assertEqual(query.call_args.kwargs['before_ts'], 1790812800)
-        self.assertIsNone(query.call_args.kwargs['season'])
-        query.reset_mock()
-        result = await war_reads.selected_wars(context, {'season': '2026-09', 'war_ids': ['one']}, 'REG')
-        self.assertEqual(result['cause'], 'invalid_arguments')
-        query.assert_not_called()
+        query = AsyncMock(return_value={'rows': [], 'war_ids': [], 'coverage': {}})
+        league = Mock()
+        context = recorded(replace(_context(), cwl_queries=SimpleNamespace(attendance=league)))
+        with patch.object(record_wars, 'regular_wars', query):
+            await war_reads.selected_wars(context, {'season': '2026-09', 'clan_codes': ['BEH']}, 'REG')
+            self.assertEqual(query.await_args.kwargs['after_ts'], 1788220800)
+            self.assertEqual(query.await_args.kwargs['before_ts'], 1790812800)
+            self.assertNotIn('season', query.await_args.kwargs)
+            query.reset_mock()
+            result = await war_reads.selected_wars(context, {'season': '2026-09', 'war_ids': ['one']}, 'REG')
+            self.assertEqual(result['cause'], 'invalid_arguments')
+            query.assert_not_awaited()
+        league.assert_not_called()
+
+    async def test_each_war_kind_needs_its_own_stored_source(self):
+        league = Mock(return_value={'rows': [], 'war_ids': [], 'coverage': {}})
+        window = {'clan_codes': ['BEH'], 'after': '2026-09-01T00:00:00+00:00', 'before': '2026-10-01T00:00:00+00:00'}
+        without_record = replace(_context(), cwl_queries=SimpleNamespace(attendance=league))
+        without_league = recorded(replace(_context(), cwl_queries=None))
+        for context, kind in ((without_record, 'REG'), (without_record, 'both'), (without_league, 'CWL'),
+                              (without_league, 'both')):
+            with self.subTest(kind=kind, record=context is without_league):
+                result = await war_reads.selected_wars(context, window, kind)
+                self.assertEqual(result['cause'], 'missing_setup')
+        league.assert_not_called()
+        # League history alone still answers league wars.
+        self.assertNotIn('error', await war_reads.selected_wars(without_record, window, 'CWL'))
+        self.assertEqual((await war_reads.current_war(_context(), {'clan_codes': ['BEH']}))['cause'], 'missing_setup')
+
+    async def test_recent_seasons_are_refused_for_regular_wars_before_any_read(self):
+        regular, league = AsyncMock(), Mock()
+        context = recorded(replace(_context(), cwl_queries=SimpleNamespace(attendance=league)))
+        with patch.object(record_wars, 'regular_wars', regular):
+            for kind in ('REG', 'both'):
+                result = await war_reads.selected_wars(context, {'history_limit': 1}, kind)
+                self.assertEqual((result['cause'], result['error']), ('invalid_arguments', 'Invalid CWL history limit'))
+        regular.assert_not_awaited()
+        league.assert_not_called()
 
     def test_incompatible_quotas_and_missing_identity_do_not_collapse_wars(self):
         with TemporaryDirectory() as directory:
@@ -136,8 +180,8 @@ class WarFamilyTests(unittest.IsolatedAsyncioTestCase):
         response = {'items': [{'tag': CLANS[code].tag, 'status': 'ok',
                               'data': {'state': state, 'clan': {}}}
                              for code, state in [('BE4', 'preparation'), ('BEH', 'inWar')]]}
-        with patch.object(war_reads, 'read_clash', AsyncMock(return_value=response)):
-            result = await war_reads.current_war(_context(), {'clan_codes': ['BEH', 'BE4']})
+        with current_checks(response):
+            result = await war_reads.current_war(recorded(), {'clan_codes': ['BEH', 'BE4']})
         self.assertEqual([row['state'] for row in result['rows']], ['inWar', 'preparation'])
 
     def test_alternate_end_ids_are_canonical_before_window_filter_and_aggregation(self):
@@ -173,8 +217,8 @@ class WarFamilyTests(unittest.IsolatedAsyncioTestCase):
         for state, missed in [('inWar', None), ('warEnded', 2)]:
             response = {'items':[{'tag':CLANS['BEH'].tag, 'status':'ok', 'data':{
                 'state':state,'attacksPerMember':2,'clan':{'members':[{'tag':'#P0','name':'Synthetic'}]}}}]}
-            with patch.object(war_reads,'read_clash',AsyncMock(return_value=response)):
-                result = await war_reads.current_war(_context(), {'clan_codes':['BEH']})
+            with current_checks(response):
+                result = await war_reads.current_war(recorded(), {'clan_codes':['BEH']})
             member = result['rows'][0]['members'][0]
             self.assertEqual(member['unused_attacks'], 2)
             self.assertEqual(member['missed'], missed)
@@ -195,7 +239,7 @@ class WarFamilyTests(unittest.IsolatedAsyncioTestCase):
     async def test_current_war_unknown_attack_quota_stays_unknown_after_end(self):
         response = {'items':[{'tag':CLANS['BEH'].tag,'status':'ok','data':{
             'state':'warEnded','clan':{'members':[{'tag':'#P0','name':'Synthetic'}]}}}]}
-        with patch.object(war_reads,'read_clash',AsyncMock(return_value=response)):
-            result = await war_reads.current_war(_context(),{'clan_codes':['BEH']})
+        with current_checks(response):
+            result = await war_reads.current_war(recorded(),{'clan_codes':['BEH']})
         self.assertIsNone(result['rows'][0]['members'][0]['unused_attacks'])
         self.assertIsNone(result['rows'][0]['members'][0]['missed'])

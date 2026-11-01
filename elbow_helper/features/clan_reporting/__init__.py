@@ -19,7 +19,7 @@ async def setup(bot: ElbowHelperBot) -> None:
     account_links = bot.get_cog("AccountLinks")
     if account_links is None:
         raise RuntimeError("ClanReporting requires AccountLinks")
-    cog = ClanReporting(bot, bot.clash_client, account_links)
+    cog = ClanReporting(bot, account_links)
     await bot.add_cog(cog)
     account_links.set_board_refresher(cog)
     for clan_code in CLAN_LEADERSHIP_CHANNELS:

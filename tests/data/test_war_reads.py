@@ -85,6 +85,30 @@ class WarReadTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                          (None, None, "not_tracked"))
         self.assertIsNone((await self.reads.previous("#LQ", at))["war"])
 
+    async def test_lineups_list_both_sides_with_their_attacks_only_when_asked(self):
+        await self.record(war("warEnded"), at=END + 90 * SECOND)
+        later = war("inWar", clans=("#PY", "#CU"), end="20261030T180000.000Z")
+        later.update(preparationStartTime="20261028T180000.000Z", startTime="20261029T180000.000Z")
+        at = END + DAY + HOUR
+        await self.record(later, at=at)
+        self.assertNotIn("members", (await self.reads.current("#PY", at))["war"]["clan"])
+        board = (await self.reads.current("#PY", at, lineups=True))["war"]
+        self.assertEqual([(m["player_tag"], m["map_position"], m["townhall"], m["attacks_used"], m["attacks_expected"],
+                           [(a["attack_order"], a["defender_tag"], a["stars"], a["destruction"]) for a in m["attacks"]])
+                          for m in board["clan"]["members"]],
+                         [("#P0", 1, 16, 1, 2, [(1, "#Q0", 3, 100.0)]), ("#P2", 2, 16, 0, 2, [])])
+        self.assertEqual([(m["player_tag"], [a["attack_order"] for a in m["attacks"]]) for m in board["opponent"]["members"]],
+                         [("#Q0", [2]), ("#Q2", [])])
+        previous = (await self.reads.previous("#PY", at, lineups=True))["war"]
+        self.assertEqual([len(m["attacks"]) for m in previous["clan"]["members"]], [1, 1])
+        self.assertEqual(previous["opponent"]["members"][1]["attacks"][0]["defender_tag"], "#P2")
+        # An attack whose attacker is unknown is left out; coverage says the attacks are incomplete.
+        await self.execute("UPDATE war_attacks SET attacker_member_id=NULL WHERE war_id=? AND attack_order=1",
+                           (board["war_id"],))
+        unplaced = (await self.reads.current("#PY", at, lineups=True))["war"]
+        self.assertEqual(unplaced["clan"]["members"][0]["attacks"], [])
+        self.assertFalse(unplaced["coverage"]["own"]["attacks_complete"])
+
     async def test_completed_names_misses_keeps_friendly_apart_and_bounds_dates(self):
         await self.record(war("warEnded"), at=END + 90 * SECOND)
         await self.record(friendly(), at=END + 3 * DAY)
@@ -131,6 +155,37 @@ class WarReadTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         rows = (await self.reads.participation(["#PY"], END, END + 3 * DAY, as_of=at))["rows"]
         self.assertEqual([(r["player_tag"], r["attacks_used"], r["missed"], r["final"]) for r in rows],
                          [("#P0", 1, None, False), ("#P2", 0, None, False)])
+
+    async def test_final_counts_without_every_attack_still_give_known_misses(self):
+        # Early copied wars list each account's final count but not where it stands on the map.
+        early = war("warEnded")
+        for member in early["clan"]["members"]:
+            member.pop("townhallLevel")
+        await self.record(early, at=END + 90 * SECOND)
+        at = END + DAY
+        rows = (await self.reads.participation(["#PY"], END, END + DAY, as_of=at))["rows"]
+        self.assertEqual([(r["player_tag"], r["missed"], r["attacks_complete"]) for r in rows],
+                         [("#P0", 1, True), ("#P2", 1, True)])
+        # One attack is missing from the saved list, but the accounts' used attacks still add up to the clan's total.
+        await self.execute("DELETE FROM war_attacks WHERE attack_order=1")
+        rows = (await self.reads.participation(["#PY"], END, END + DAY, as_of=at))["rows"]
+        self.assertEqual([(r["player_tag"], r["missed"], r["attacks_complete"]) for r in rows],
+                         [("#P0", 1, False), ("#P2", 1, False)])
+        # A total the copy summed from those same counts proves nothing.
+        await self.execute("UPDATE war_sides SET extra_json='{\"derived\": [\"attacks\"]}' WHERE clan_tag='#PY'")
+        rows = (await self.reads.participation(["#PY"], END, END + DAY, as_of=at))["rows"]
+        self.assertEqual([r["missed"] for r in rows], [None, None])
+        await self.execute("UPDATE war_sides SET extra_json='{}' WHERE clan_tag='#PY'")
+        # The clan's total counts an attack no account holds: only an account with every attack used is final.
+        await self.execute("UPDATE war_members SET attacks_used=2 WHERE player_tag='#P0'")
+        await self.execute("UPDATE war_sides SET attacks=4 WHERE clan_tag='#PY'")
+        rows = (await self.reads.participation(["#PY"], END, END + DAY, as_of=at))["rows"]
+        self.assertEqual([(r["player_tag"], r["missed"]) for r in rows], [("#P0", 0), ("#P2", None)])
+        self.assertIsNone((await self.reads.completed(["#PY"], END, END + DAY, as_of=at))["rows"][0]["missed_attacks"])
+        # Before the war ends nothing is final, not even a full account.
+        await self.execute("UPDATE wars SET state='inWar'")
+        rows = (await self.reads.participation(["#PY"], END, END + DAY, as_of=at))["rows"]
+        self.assertEqual([r["missed"] for r in rows], [None, None])
 
     async def test_participation_counts_hits_stars_triples_and_groups_by_owner(self):
         await self.links(END, link(100))

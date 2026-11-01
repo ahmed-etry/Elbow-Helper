@@ -126,7 +126,8 @@ class WarQueries:
         )
 
     def _copied_state(self, clan_code: str) -> tuple[dict[str, Any], dict[str, Any] | None]:
-        raw_history = getattr(self._manager, "war_board_history", {})
+        # The record's latest current and previous wars, as the board shows them.
+        raw_history = getattr(self._manager, "record_boards", {})
         raw_observations = getattr(self._manager, "war_observations", {})
         history = raw_history.get(clan_code, {}) if isinstance(raw_history, dict) else {}
         observation = raw_observations.get(clan_code) if isinstance(raw_observations, dict) else None

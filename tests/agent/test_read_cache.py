@@ -39,10 +39,18 @@ from elbow_helper.features.cwl.bonus.config import BonusConfigRepository
 from elbow_helper.features.ranked_stats.queries import RankedQueries
 from elbow_helper.features.ranked_stats.store import RankedStore
 from elbow_helper.infrastructure.persistence.revisions import release_sqlite_revision
+from elbow_helper.agent.families import record_wars
 from agent.engine.test_agent_plan_flow import _context
+from agent.families.record_stub import with_record
 from agent.test_compact_clash import read_context, synthetic_player, synthetic_clan
 from features.test_ranked_stats import battle, observation, save_log, stamp
 from elbow_helper.configuration.clans import CLANS
+
+# The record's regular wars when none are selected.
+EMPTY_REGULAR = {'rows': [], 'war_ids': [], 'war_aliases': [], 'wars_without_rosters': [], 'identity_conflicts': [],
+                 'unproven_war_ids': [], 'duplicate_identities_removed': 0,
+                 'coverage': {'exact_ranking': True, 'regular_wars_not_checked_for_friendly': 0,
+                              'friendly_wars_not_counted': 0}}
 
 
 def context():
@@ -287,22 +295,22 @@ class StoredCacheTests(unittest.IsolatedAsyncioTestCase):
                 source = CwlQueries(repository, lambda: {})
                 source.attendance = Mock(wraps=source.attendance)
                 local = replace(_context(), cwl_queries=source, read_cache=ReadCache())
-                for kind in ('REG', 'CWL'):
-                    args = {'clan_codes': ['BEH'], 'latest_completed': 1}
-                    first = await selected_wars(local, args, kind)
-                    with patch('elbow_helper.agent.read_cache.monotonic', return_value=10**10):
-                        self.assertEqual(await selected_wars(local, args, kind), first)
-                    self.assertEqual(source.attendance.call_count, 1 if kind == 'REG' else 4)
-                    with closing(sqlite3.connect(repository.path)) as connection, connection:
-                        connection.execute('''INSERT INTO wars(war_id,war_type,clan_code,clan_tag,
-                            opponent_tag,state,preparation_start_ts,start_ts,end_ts,last_seen_ts,
-                            team_size,attacks_per_member) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
-                            (kind, kind, 'BEH', '#P0', '#Q0', 'warEnded', 1, 2, 100, 100, 1, 2))
-                    await selected_wars(local, args, kind)
-                    with closing(sqlite3.connect(repository.path)) as connection, connection:
-                        connection.execute('UPDATE wars SET last_seen_ts=101 WHERE war_id=?', (kind,))
-                    await selected_wars(local, args, kind)
-                self.assertEqual(source.attendance.call_count, 6)
+                # League wars are cached; regular wars come from the record, tracked by its revision.
+                args = {'clan_codes': ['BEH'], 'latest_completed': 1}
+                first = await selected_wars(local, args, 'CWL')
+                with patch('elbow_helper.agent.read_cache.monotonic', return_value=10**10):
+                    self.assertEqual(await selected_wars(local, args, 'CWL'), first)
+                self.assertEqual(source.attendance.call_count, 1)
+                with closing(sqlite3.connect(repository.path)) as connection, connection:
+                    connection.execute('''INSERT INTO wars(war_id,war_type,clan_code,clan_tag,
+                        opponent_tag,state,preparation_start_ts,start_ts,end_ts,last_seen_ts,
+                        team_size,attacks_per_member) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
+                        ('CWL', 'CWL', 'BEH', '#P0', '#Q0', 'warEnded', 1, 2, 100, 100, 1, 2))
+                await selected_wars(local, args, 'CWL')
+                with closing(sqlite3.connect(repository.path)) as connection, connection:
+                    connection.execute("UPDATE wars SET last_seen_ts=101 WHERE war_id='CWL'")
+                await selected_wars(local, args, 'CWL')
+                self.assertEqual(source.attendance.call_count, 3)
                 source.performance = Mock(wraps=source.performance)
                 first = await stored_read(local, source, 'performance', season='2026-09')
                 self.assertEqual(await stored_read(local, source, 'performance', season='2026-09'), first)
@@ -466,15 +474,17 @@ class FollowupFindingsTests(unittest.IsolatedAsyncioTestCase):
             ('read_hibernation', {'include_activity': True, 'activity_kinds': ['regular_war']}),
         ):
             with self.subTest(family=family):
-                revision = ['one']
+                revision, record_revision = ['one'], ['first']
                 wars = {'rows': [{'player_tag': '#P0', 'war_type': 'REG', 'war_id': 'synthetic',
-                    'start_ts': 2, 'end_ts': 10, 'attacks_used': 1, 'final_capture': True}], 'war_ids': ['synthetic']}
+                    'start_ts': 2, 'end_ts': 10, 'attacks_used': 1, 'final_capture': True}], 'war_ids': ['synthetic'],
+                    'coverage': {}}
                 source = SimpleNamespace(cache_revision=lambda: revision[0], attendance=Mock(return_value=wars))
-                local = replace(context(), cwl_queries=source,
+                local = with_record(replace(context(), cwl_queries=source,
                     account_links=SimpleNamespace(get_links_for_members=lambda ids: {2: [{'player_tag': '#P0'}]}),
                     examination_queries=SimpleNamespace(case_registrations=lambda: [SimpleNamespace(ticket_channel_id=4)],
                         case_snapshot=lambda **kw: SimpleNamespace(cases=[SimpleNamespace(
-                            applicant_member_id=2, workflow_status='open', ticket_channel_id=4)])))
+                            applicant_member_id=2, workflow_status='open', ticket_channel_id=4)]))),
+                    SimpleNamespace(cache_revision=lambda: record_revision[0]))
                 async def performance(nested, rows, selection):
                     result = await stored_read(nested, nested.cwl_queries, 'attendance', **selection)
                     for row in rows:
@@ -487,11 +497,17 @@ class FollowupFindingsTests(unittest.IsolatedAsyncioTestCase):
                      patch.object(workflow_reads, 'complete_snapshot', AsyncMock(return_value={'rows': [{'member_id': 2, 'started_ts': 1}]})), \
                      patch.object(workflow_reads, 'member_fields', side_effect=lambda member, identifier: {'member_id': identifier}), \
                      patch.object(workflow_reads, 'asdict', side_effect=vars), \
-                     patch.object(workflow_reads, 'performance_projection', side_effect=performance):
+                     patch.object(workflow_reads, 'performance_projection', side_effect=performance), \
+                     patch.object(record_wars, 'regular_wars', AsyncMock(return_value=EMPTY_REGULAR)):
                     result = await tool.handler(local, arguments)
                 report = local.state.reports[result['report_id']]
-                self.assertEqual(result['source_versions'], {'cwl_queries': 'one'})
+                # Hibernation reads regular wars from the record and league wars from league history.
+                record = family == 'read_hibernation'
+                self.assertEqual(result['source_versions'],
+                                 {'cwl_queries': 'one', **({'war_reads': 'first'} if record else {})})
                 self.assertTrue(report_is_current(local, report))
+                record_revision[0] = 'new war check'
+                self.assertEqual(report_is_current(local, report), not record)
                 revision[0] = 'corrected'
                 self.assertFalse(report_is_current(local, report))
 
@@ -500,10 +516,12 @@ class FollowupFindingsTests(unittest.IsolatedAsyncioTestCase):
         def attendance(**kw):
             return {'rows': [{'player_tag': '#P0', 'player_name': 'Synthetic', 'war_id': 'war',
                 'clan_code': 'BES', 'attacks_used': 1 if revision[0] == 'one' else 2,
-                'attacks_expected': 2, 'missed': 1 if revision[0] == 'one' else 0}], 'coverage': {}}
+                'attacks_expected': 2, 'missed': 1 if revision[0] == 'one' else 0}], 'war_ids': ['war'], 'coverage': {}}
         source = SimpleNamespace(cache_revision=lambda: revision[0], attendance=Mock(side_effect=attendance))
-        local = replace(_context(), cwl_queries=source, read_cache=ReadCache(),
-            account_links=SimpleNamespace(get_links_by_tags=lambda tags: {'#P0': {'discord_user_id': 42}}))
+        local = with_record(replace(_context(), cwl_queries=source, read_cache=ReadCache(),
+            account_links=SimpleNamespace(get_links_by_tags=lambda tags: {'#P0': {'discord_user_id': 42}})),
+            SimpleNamespace(cache_revision=lambda: 'record'))
+        self.enterContext(patch.object(record_wars, 'regular_wars', AsyncMock(return_value=EMPTY_REGULAR)))
         owner = SimpleNamespace(id=42, display_name='Synthetic owner', roles=[], joined_at=None)
         local.guild.get_member = lambda identifier: owner if identifier == 42 else local.member
         roster = {'rows': [{'clan_code': 'BES', 'player_tag': '#P0', 'player_name': 'Synthetic', 'donations': 1}],
@@ -517,7 +535,7 @@ class FollowupFindingsTests(unittest.IsolatedAsyncioTestCase):
             revision[0] = 'corrected'
             self.assertFalse(report_is_current(local, local.state.reports[first['report_id']]))
             fresh = await tool.handler(local, {**selection, 'fresh': True})
-        self.assertEqual(fresh['source_versions'], {'cwl_queries': 'corrected'})
+        self.assertEqual(fresh['source_versions'], {'cwl_queries': 'corrected', 'war_reads': 'record'})
         self.assertEqual(fresh['rows'][0]['attacks_used'], 2)
         self.assertEqual(source.attendance.call_count, 2)
         self.assertEqual(rosters.await_count, 2)

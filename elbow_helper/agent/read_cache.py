@@ -148,6 +148,16 @@ def source_revision(source):
     return value if isinstance(value, str) and value else None
 
 
+# Stored sources whose revisions follow reports; the record's war reads belong to the bot.
+TRACKED_SOURCES = ('cwl_queries', 'ranked_queries', 'war_reads')
+
+
+def named_source(context, name):
+    if name == 'war_reads':
+        return getattr(getattr(context, 'bot', None), 'war_reads', None)
+    return getattr(context, name, None)
+
+
 def normalized_arguments(arguments):
     # These are schema-defined sets, never words or patterns in member text.
     return {name: sorted(set(value)) if name in (
@@ -172,12 +182,12 @@ class ReadDependencies:
             self.versions[name] = revision
 
     def observe(self, context, source, revision):
-        for name in ('cwl_queries', 'ranked_queries'):
-            if getattr(context, name, None) is source:
+        for name in TRACKED_SOURCES:
+            if named_source(context, name) is source:
                 self.inherit({name: revision})
 
     def checked(self, context):
-        if self.invalid or any(revision != source_revision(getattr(context, name, None))
+        if self.invalid or any(revision != source_revision(named_source(context, name))
                                for name, revision in self.versions.items() if revision is not None):
             return None
         return dict(self.versions)

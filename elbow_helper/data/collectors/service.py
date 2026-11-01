@@ -258,7 +258,12 @@ class FamilyCollectors(commands.Cog):
             async def operation(run):
                 await collect_pass(self, run, jobs)
 
-            return await self._run("wars", "family_wars_and_leagues", specs, operation)
+            report = await self._run("wars", "family_wars_and_leagues", specs, operation)
+            # War features may follow the record; they judge each check's freshness themselves.
+            dispatch = getattr(self.bot, "dispatch", None)
+            if callable(dispatch):
+                dispatch("family_wars_collected")
+            return report
 
     async def collect_links(self):
         if getattr(self.bot, "link_service", None) is not None:

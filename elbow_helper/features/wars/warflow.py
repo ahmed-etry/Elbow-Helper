@@ -123,7 +123,7 @@ class WarflowMixin:
                     return
                 in_flight.add(war_id)
                 try:
-                    missed = self._compute_missed(data)
+                    missed = await self._missed_attack_lines(clan, data)
                     end_time = self._coctime_to_dt(data.get("endTime"))
                     prep_start = self._coctime_to_dt(data.get("preparationStartTime"))
                     if prep_start is None:

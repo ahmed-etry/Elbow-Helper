@@ -10,9 +10,6 @@ from elbow_helper.configuration.clans import CLAN_NAMES
 
 CACHE_FILE = "data/war/war_cache.json"
 NOTICE_TTL = 48 * 60 * 60  # Fallback cleanup when no newer summary replaces it.
-WAR_FETCH_RETRIES = 3
-WAR_FETCH_BACKOFF_SECONDS = 1.5
-WAR_FETCH_WARNING_COOLDOWN_SECONDS = 300.0
 PROCESSED_WAR_RETENTION = 1500
 WAR_BOARD_CLAN_CODES = ("BEH", "BE4", "BES", "BE1", "BEM", "BEC", "BEE")
 

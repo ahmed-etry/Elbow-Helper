@@ -39,36 +39,6 @@ def save_cache(cache: Dict[str, Any]) -> None:
 
 class StateMixin:
 
-    def _load_war_board_history(self) -> Dict[str, Dict[str, Dict[str, Any]]]:
-        raw_history = self.cache.get("war_board_history")
-        if not isinstance(raw_history, dict):
-            return {}
-
-        history: Dict[str, Dict[str, Dict[str, Any]]] = {}
-        for clan_code, entry in raw_history.items():
-            if not isinstance(clan_code, str) or not isinstance(entry, dict):
-                continue
-            normalized: Dict[str, Dict[str, Any]] = {}
-            for key in ("current", "previous"):
-                snapshot = entry.get(key)
-                if (
-                    isinstance(snapshot, dict)
-                    and isinstance(snapshot.get("clan"), dict)
-                    and isinstance(snapshot.get("opponent"), dict)
-                    and isinstance(snapshot.get("state"), str)
-                ):
-                    normalized[key] = snapshot
-            if normalized:
-                history[clan_code] = normalized
-
-        if history != raw_history:
-            if history:
-                self.cache["war_board_history"] = history
-            else:
-                self.cache.pop("war_board_history", None)
-            save_cache(self.cache)
-        return history
-
     def _load_war_role_state(
         self,
     ) -> tuple[Dict[str, Dict[str, int]], Dict[str, set[int]]]:

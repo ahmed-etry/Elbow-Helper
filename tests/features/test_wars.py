@@ -21,6 +21,7 @@ from elbow_helper.features.wars.emojis import WarEmojiSet
 from elbow_helper.features.wars.config import NOTICE_TTL
 from elbow_helper.features.wars.config import WAR_BOARD_CLAN_CODES
 from elbow_helper.features.wars.helpers import HelperMixin
+from elbow_helper.features.wars.record import RecordMixin
 from elbow_helper.features.wars.rendering import build_war_board_embed
 from elbow_helper.features.wars.rendering import build_war_summary_embed
 from elbow_helper.features.wars.roles import WarRoleMixin
@@ -338,12 +339,14 @@ async def _messages(messages):
         yield message
 
 
-class _WarSummaryManager(WarflowMixin, HelperMixin, StateMixin, TaskMixin):
+class _WarSummaryManager(RecordMixin, WarflowMixin, HelperMixin, StateMixin, TaskMixin):
     pass
 
 
 def _war_summary_manager() -> tuple[_WarSummaryManager, MagicMock, MagicMock]:
     manager = _WarSummaryManager()
+    # The record does not hold this war; misses are named from the lineup.
+    manager.war_reads = MagicMock(completed=AsyncMock(return_value={"rows": []}))
     manager.cache = {}
     manager.summary_registry = {}
     manager.processed_war_order = []
@@ -578,6 +581,7 @@ class WarEmojiTests(unittest.IsolatedAsyncioTestCase):
 class WarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_new_wars_edit_the_registered_message_instead_of_posting_again(self) -> None:
         manager = WarBoardMixin()
+        manager.record_boards = {}
         manager.war_board_registry = {}
         manager.cache = {}
         manager._save_cache_async = AsyncMock()
@@ -616,6 +620,7 @@ class WarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unchanged_board_is_not_edited_or_posted_again(self) -> None:
         manager = WarBoardMixin()
+        manager.record_boards = {}
         manager.war_board_registry = {
             "BEH": {"channel": CLAN_WAR_CHANNELS["BEH"], "message": 900}
         }
@@ -647,6 +652,7 @@ class WarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_existing_controls_are_removed_on_refresh(self) -> None:
         manager = WarBoardMixin()
+        manager.record_boards = {}
         manager.war_board_registry = {
             "BEH": {"channel": CLAN_WAR_CHANNELS["BEH"], "message": 900}
         }
@@ -678,7 +684,6 @@ class WarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_next_war_adds_access_to_the_completed_previous_war(self) -> None:
         manager = WarBoardMixin()
         manager.war_board_registry = {}
-        manager.war_board_history = {}
         manager.cache = {}
         manager._save_cache_async = AsyncMock()
         manager.war_emojis = MagicMock()
@@ -696,7 +701,9 @@ class WarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
         manager.bot.get_channel.return_value = channel
 
         ended = _war_payload("warEnded")
+        manager.record_boards = {"BEH": {"current": ended}}
         await manager._update_war_board("Hellbow", ended)
+        self.assertIsNone(channel.send.await_args.kwargs["view"])
 
         posted.embeds = [build_war_board_embed(ended, _war_emojis())]
         posted.components = []
@@ -706,47 +713,17 @@ class WarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
         upcoming["endTime"] = "20260724T210000.000Z"
         upcoming["opponent"]["tag"] = "#NEXT"
         upcoming["opponent"]["name"] = "Next Rival"
+        # The record refresh keeps the ended war as the board's previous war.
+        manager.record_boards = {"BEH": {"current": upcoming, "previous": ended}}
 
         await manager._update_war_board("Hellbow", upcoming)
 
-        previous = manager.war_board_history["BEH"]["previous"]
-        self.assertEqual(previous["state"], "warEnded")
-        self.assertEqual(previous["opponent"]["tag"], "#RIVAL")
         self.assertIsInstance(posted.edit.await_args.kwargs["view"], PreviousWarView)
-
-    async def test_missed_final_poll_uses_war_log_result_with_captured_lineups(
-        self,
-    ) -> None:
-        manager = WarBoardMixin()
-        live = _war_payload("inWar")
-        manager.war_board_history = {"BEH": {"current": live}}
-        manager.cache = {"war_board_history": manager.war_board_history}
-        manager._save_cache_async = AsyncMock()
-        final_result = deepcopy(live)
-        final_result["clan"].pop("members")
-        final_result["opponent"].pop("members")
-        final_result["clan"]["stars"] = 10
-        final_result["opponent"]["stars"] = 8
-        manager._fetch_war_log_result = AsyncMock(return_value=final_result)
-
-        upcoming = _war_payload("preparation")
-        upcoming["preparationStartTime"] = "20260722T210000.000Z"
-        upcoming["startTime"] = "20260723T210000.000Z"
-        upcoming["endTime"] = "20260724T210000.000Z"
-        upcoming["opponent"]["tag"] = "#NEXT"
-
-        await manager._record_war_board_snapshot("Hellbow", "BEH", upcoming)
-
-        previous = manager.war_board_history["BEH"]["previous"]
-        self.assertEqual(previous["state"], "warEnded")
-        self.assertEqual(previous["clan"]["stars"], 10)
-        self.assertEqual(len(previous["clan"]["members"]), 2)
-        manager._fetch_war_log_result.assert_awaited_once_with("Hellbow", live)
 
     async def test_previous_war_button_returns_the_ended_embed_privately(self) -> None:
         manager = WarBoardMixin()
         previous = _war_payload("warEnded")
-        manager.war_board_history = {"BEH": {"previous": previous}}
+        manager.record_boards = {"BEH": {"previous": previous}}
         manager.war_emojis = MagicMock()
         manager.war_emojis.get = AsyncMock(return_value=_war_emojis())
         interaction = MagicMock()
@@ -772,7 +749,7 @@ class WarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
         manager.war_board_registry = {
             "BEH": {"channel": CLAN_WAR_CHANNELS["BEH"], "message": 900}
         }
-        manager.war_board_history = {
+        manager.record_boards = {
             "BEH": {
                 "current": _war_payload("preparation"),
                 "previous": _war_payload("warEnded"),
@@ -780,26 +757,10 @@ class WarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):
         }
         manager.bot = MagicMock(publishing=MagicMock(wraps=PublishingQueue()))
 
-        manager._register_war_board_views()
+        manager._register_war_board_view("BEH")
+        manager._register_war_board_view("BE4")
 
         manager.bot.add_view.assert_called_once()
         view = manager.bot.add_view.call_args.args[0]
         self.assertIsInstance(view, PreviousWarView)
         self.assertEqual(manager.bot.add_view.call_args.kwargs["message_id"], 900)
-
-
-class WarBoardHistoryStateTests(unittest.TestCase):
-    def test_history_loader_discards_malformed_snapshots(self) -> None:
-        manager = StateMixin()
-        valid = _war_payload("warEnded")
-        manager.cache = {
-            "war_board_history": {
-                "BEH": {"current": valid, "previous": "bad"},
-                "BAD": {"current": {"state": "inWar"}},
-            }
-        }
-
-        with patch("elbow_helper.features.wars.state.save_cache"):
-            history = manager._load_war_board_history()
-
-        self.assertEqual(history, {"BEH": {"current": valid}})

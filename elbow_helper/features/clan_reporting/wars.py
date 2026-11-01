@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sqlite3
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Optional
 
 import discord
 from discord.ext import tasks
@@ -67,8 +68,10 @@ class ClanReportingWarMixin:
         if not clan_tag:
             return False
 
-        war_log = await self._fetch_war_log(clan_tag, limit=50)
-        wins, losses, ties = self._count_war_results(war_log, month_start, month_end)
+        status, (wins, losses, ties) = await self._month_war_counts(clan_tag, month_start, month_end)
+        if status == "waiting":
+            return False
+        log_available = status == "available"
         total = wins + losses + ties
         month_label = month_start.strftime("%B %Y")
 
@@ -83,7 +86,7 @@ class ClanReportingWarMixin:
             )
 
         clan_label = CLAN_NAMES.get(clan_code, clan_code)
-        if war_log is None:
+        if not log_available:
             embed = _new_summary_embed()
             embed.description = "The war log isn't available."
         elif total == 0:
@@ -115,25 +118,28 @@ class ClanReportingWarMixin:
 
         summaries[clan_code] = new_message.id
         save_state(self.state)
-        return war_log is not None
+        return log_available
 
-    def _count_war_results(
-        self, war_log: Optional[list[dict[str, Any]]], month_start: datetime, month_end: datetime
-    ) -> tuple[int, int, int]:
-        if not war_log:
-            return 0, 0, 0
+    async def _month_war_counts(
+        self, clan_tag: str, month_start: datetime, month_end: datetime
+    ) -> tuple[str, tuple[int, int, int]]:
+        """Wins, losses and ties of the recorded war log's newest 50 entries ended in the month.
 
-        wins = losses = ties = 0
-        for entry in war_log:
-            end_time = self._parse_warlog_time(entry.get("endTime"))
-            if not end_time or not (month_start <= end_time < month_end):
-                continue
-
-            result = (entry.get("result") or "").lower()
-            if result == "win":
-                wins += 1
-            elif result == "lose":
-                losses += 1
-            elif result == "tie":
-                ties += 1
-        return wins, losses, ties
+        The status is "available", "unavailable" (no log to count; the notice
+        stays pending) or "waiting" (nothing to post yet, try again later).
+        """
+        if self.war_reads is None:
+            LOGGER.warning("Monthly war summary for %s waits: the family record's war reads are unavailable", clan_tag)
+            return "waiting", (0, 0, 0)
+        try:
+            recorded = await self.war_reads.log_results(clan_tag, month_start.strftime("%Y-%m"))
+        except (sqlite3.Error, OSError, RuntimeError):
+            LOGGER.exception("Failed to read the recorded war log for %s", clan_tag)
+            return "waiting", (0, 0, 0)
+        if recorded["status"] != "available":
+            return "unavailable", (0, 0, 0)
+        if not recorded["coverage"]["read_after_month"]:
+            # A log read before the month ended may lack its last wars.
+            LOGGER.info("Monthly war summary for %s waits for a war log read after the month", clan_tag)
+            return "waiting", (0, 0, 0)
+        return "available", (recorded["wins"], recorded["losses"], recorded["ties"])

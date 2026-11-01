@@ -31,7 +31,7 @@ def _war(state="inWar", *, members=2):
 class WarQueryTests(unittest.TestCase):
     def manager(self, history=None, observations=None):
         return SimpleNamespace(
-            war_board_history=history or {}, war_observations=observations or {},
+            record_boards=history or {}, war_observations=observations or {},
         )
 
     def test_observed_current_snapshot_separates_remaining_from_missed_attacks(self):
@@ -89,22 +89,18 @@ class WarQueryTests(unittest.TestCase):
             )
 
 
-class WarObservationTests(unittest.IsolatedAsyncioTestCase):
-    async def test_board_poll_records_not_in_war_and_cwl_without_replacing_history(self):
+class WarBoardStateTests(unittest.IsolatedAsyncioTestCase):
+    async def test_not_in_war_and_cwl_only_remove_controls_and_keep_the_board(self):
         manager = WarBoardMixin()
-        manager.war_observations = {}
-        manager.war_board_history = {"BEH": {"current": _war("warEnded")}}
+        manager.record_boards = {"BEH": {"current": _war("warEnded")}}
         manager._remove_war_board_controls = AsyncMock()
+        manager._war_board_channel = AsyncMock()
 
         await manager._update_war_board("Hellbow", {"state": "notInWar"})
-        self.assertEqual(manager.war_observations["BEH"]["state"], "notinwar")
-        self.assertIn("current", manager.war_board_history["BEH"])
-
-        await manager._update_war_board(
-            "Hellbow", {"state": "inWar", "warTag": "#P0"},
-        )
-        self.assertEqual(manager.war_observations["BEH"]["state"], "cwl")
-        manager._remove_war_board_controls.assert_awaited()
+        await manager._update_war_board("Hellbow", {"state": "inWar", "warTag": "#P0"})
+        self.assertEqual(manager._remove_war_board_controls.await_count, 2)
+        manager._war_board_channel.assert_not_awaited()
+        self.assertIn("current", manager.record_boards["BEH"])
 
 
 if __name__ == "__main__":
