@@ -20,6 +20,8 @@ from elbow_helper.features.cwl.war_board import orient_cwl_war
 from elbow_helper.features.cwl.war_board import select_cwl_board_wars
 from elbow_helper.features.cwl.router import CwlRouterMixin
 from elbow_helper.features.wars.emojis import EMPTY_WAR_EMOJIS
+from elbow_helper.features.wars.helpers import HelperMixin
+from elbow_helper.features.wars.rendering import build_war_board_embed
 from elbow_helper.configuration.channels import CLAN_CWL_INFO_CHANNELS
 from elbow_helper.configuration.clans import CLAN_TAGS
 
@@ -114,6 +116,83 @@ class CwlWarSelectionTests(unittest.TestCase):
 
         self.assertFalse(cwl_board_snapshot_is_complete([battle]))
         self.assertTrue(cwl_board_snapshot_is_complete(battle_and_prep))
+
+
+def _without_attacks_per_member(war: dict[str, object], team_size: int = 15) -> dict[str, object]:
+    """A CWL round as Clash answers it: no attacksPerMember."""
+    payload = dict(war)
+    del payload["attacksPerMember"]
+    payload["teamSize"] = team_size
+    payload["clan"] = {**payload["clan"], "attacks": 11}
+    payload["opponent"] = {**payload["opponent"], "attacks": 13}
+    return payload
+
+
+class CwlAttacksLeftTests(unittest.TestCase):
+    def test_cwl_round_without_attacks_per_member_has_one_attack_each(self) -> None:
+        payload = _without_attacks_per_member(_cwl_war("inWar", 2))
+
+        description = build_war_board_embed(payload, EMPTY_WAR_EMOJIS).description
+
+        self.assertIn("4 left", description)
+        self.assertIn("2 left", description)
+        self.assertNotIn("19 left", description)
+        self.assertNotIn("17 left", description)
+
+    def test_cwl_round_marked_by_the_record_tag_has_one_attack_each(self) -> None:
+        payload = _without_attacks_per_member(_cwl_war("inWar", 2))
+        payload["warTag"] = payload.pop("_warTag")
+
+        description = build_war_board_embed(payload, EMPTY_WAR_EMOJIS).description
+
+        self.assertIn("4 left", description)
+        self.assertIn("2 left", description)
+
+    def test_cwl_round_keeps_the_value_clash_gives(self) -> None:
+        payload = _without_attacks_per_member(_cwl_war("inWar", 2))
+        payload["attacksPerMember"] = 1
+
+        description = build_war_board_embed(payload, EMPTY_WAR_EMOJIS).description
+
+        self.assertIn("4 left", description)
+
+    def test_regular_war_without_attacks_per_member_still_has_two(self) -> None:
+        payload = _without_attacks_per_member(_cwl_war("inWar", 2))
+        del payload["_warTag"]
+
+        description = build_war_board_embed(payload, EMPTY_WAR_EMOJIS).description
+
+        self.assertIn("19 left", description)
+        self.assertIn("17 left", description)
+
+    def test_regular_war_keeps_the_value_clash_gives(self) -> None:
+        payload = _without_attacks_per_member(_cwl_war("inWar", 2))
+        del payload["_warTag"]
+        payload["attacksPerMember"] = 2
+
+        description = build_war_board_embed(payload, EMPTY_WAR_EMOJIS).description
+
+        self.assertIn("19 left", description)
+
+    def test_unusable_value_falls_back_by_war_kind(self) -> None:
+        cwl = _without_attacks_per_member(_cwl_war("inWar", 2))
+        cwl["attacksPerMember"] = "many"
+        regular = dict(cwl)
+        del regular["_warTag"]
+
+        self.assertIn("4 left", build_war_board_embed(cwl, EMPTY_WAR_EMOJIS).description)
+        self.assertIn("19 left", build_war_board_embed(regular, EMPTY_WAR_EMOJIS).description)
+
+    def test_cwl_missed_attacks_count_one_per_member_without_the_value(self) -> None:
+        payload = _without_attacks_per_member(_cwl_war("warEnded", 2), team_size=1)
+
+        self.assertEqual(HelperMixin()._compute_missed(payload), ["Player — 1 attack"])
+
+    def test_regular_missed_attacks_still_count_two_without_the_value(self) -> None:
+        payload = _without_attacks_per_member(_cwl_war("warEnded", 2), team_size=1)
+        del payload["_warTag"]
+
+        self.assertEqual(HelperMixin()._compute_missed(payload), ["Player — 2 attacks"])
 
 
 class CwlLeagueWarFetchTests(unittest.IsolatedAsyncioTestCase):

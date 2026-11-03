@@ -14,6 +14,7 @@ from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
 from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
 
 from .emojis import WarEmojiSet
+from .helpers import attacks_per_member
 
 
 WAR_STATE_COLORS = {
@@ -97,10 +98,7 @@ def _war_stats(
     fire = emojis.icon("fire", "🔥")
     clan_stars = str(_as_int(clan.get("stars")))
     opponent_stars = str(_as_int(opponent.get("stars")))
-    total_attacks = (
-        _as_int(data.get("teamSize"))
-        * _as_int(data.get("attacksPerMember"), 2)
-    )
+    total_attacks = _as_int(data.get("teamSize")) * attacks_per_member(data)
     clan_attacks = f"{max(0, total_attacks - _attack_count(clan))} left"
     opponent_attacks = f"{max(0, total_attacks - _attack_count(opponent))} left"
     clan_destruction = f"{_as_float(clan.get('destructionPercentage')):.2f}%"
