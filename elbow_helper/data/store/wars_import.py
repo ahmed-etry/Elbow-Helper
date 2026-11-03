@@ -1,4 +1,4 @@
-"""All-or-nothing copy of the old regular-war data into the family record.
+"""All-or-nothing copy of the old regular-war data into the family record; league wars are ``wars_import_cwl``.
 
 The sources are frozen read-only (see ``wars_import_plan``): the old clan
 health tables ``wars``, ``war_roster_members``, ``war_attacks`` and
@@ -15,6 +15,7 @@ import json
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 
+from . import wars_import_cwl
 from .legacy_links import ImportMismatch, digest
 from .legacy_wars import map_legacy_war
 from .link_state import receipt
@@ -468,13 +469,23 @@ class Importer:
 
 
 def copy_at_startup(connection, health_path, cache_path, *, clans=None):
-    """The once-only startup copy; None when the record already holds it, without reading the old files.
+    """The once-only startup copy of regular and league wars; None when the record already holds both,
+    without reading the old files.
 
-    Wars the old files gain after the copy are not added: the collector owns every war from then on.
+    Both parts share one snapshot and one transaction: a failure in either keeps nothing. Returns each part's
+    result, None for a part an earlier start already copied. Wars the old files gain after the copy are not
+    added: the collector owns every war from then on.
     """
-    if connection.execute("SELECT 1 FROM imports WHERE topic=?", (TOPIC,)).fetchone() is not None:
+    done = {row[0] for row in connection.execute("SELECT topic FROM imports WHERE topic IN (?,?)",
+                                                 (TOPIC, wars_import_cwl.TOPIC))}
+    if done == {TOPIC, wars_import_cwl.TOPIC}:
         return None
-    return import_wars(connection, health_path, cache_path, clans=clans)
+    frozen = snapshot_wars(health_path, cache_path)
+    clans = {code: clan.tag for code, clan in CLANS.items()} if clans is None else clans
+    with sqlite_transaction(connection, immediate=True):
+        regular = None if TOPIC in done else write_regular(connection, frozen, clans)
+        league = None if wars_import_cwl.TOPIC in done else wars_import_cwl.write_cwl(connection, frozen, clans)
+    return {"regular": regular, "cwl": league}
 
 
 def import_wars(connection, health_path, cache_path=None, frozen=None, *, clans=None):
@@ -486,30 +497,35 @@ def import_wars(connection, health_path, cache_path=None, frozen=None, *, clans=
     """
     frozen = snapshot_wars(health_path, cache_path) if frozen is None else frozen
     clans = {code: clan.tag for code, clan in CLANS.items()} if clans is None else clans
+    with sqlite_transaction(connection, immediate=True):
+        return write_regular(connection, frozen, clans)
+
+
+def write_regular(connection, frozen, clans):
+    """The regular-war part of the copy, inside the caller's transaction; returns its result, marker written."""
     ledger = Counter()
     plan = Plan(frozen, clans, ledger)
     events = plan.events()
-    with sqlite_transaction(connection, immediate=True):
-        marker = connection.execute("SELECT * FROM imports WHERE topic=?", (TOPIC,)).fetchone()
-        if marker is not None and marker["source_digest"] == frozen.digest:
-            return {"imported": False, "source_version": frozen.version, "source_digest": frozen.digest,
-                    "frozen_at": marker["frozen_at"], "checks": json.loads(marker["checks_json"])}
-        item = receipt(connection, COLLECTOR, TOPIC, frozen.frozen_at, len(events))
-        run = connection.execute("SELECT run_id FROM collection_items WHERE id=?", (item,)).fetchone()[0]
-        importer = Importer(connection, frozen, plan, ledger, run)
-        importer.write(events)
-        importer.verify()
-        checks = importer.checks = importer.report(events)
-        written = len(importer.inserted_members) + len(importer.inserted_attacks)
-        connection.execute("UPDATE collection_runs SET rows_written=? WHERE id=?", (written, run))
-        connection.execute("UPDATE collection_items SET written_count=? WHERE id=?", (written, item))
-        mapping = digest(sorted([*key, war_id] for key, war_id in importer.aliases.items()))
-        connection.execute(
-            "INSERT INTO imports VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(topic) DO UPDATE SET "
-            "source_version=excluded.source_version,source_digest=excluded.source_digest,frozen_at=excluded.frozen_at,"
-            "current_links_digest=excluded.current_links_digest,checked_at=excluded.checked_at,"
-            "checks_json=excluded.checks_json,source_item_id=excluded.source_item_id",
-            (TOPIC, frozen.version, frozen.digest, frozen.frozen_at, mapping, frozen.frozen_at,
-             canonical_json(checks), item))
-        return {"imported": True, "source_version": frozen.version, "source_digest": frozen.digest,
-                "frozen_at": frozen.frozen_at, "checks": checks}
+    marker = connection.execute("SELECT * FROM imports WHERE topic=?", (TOPIC,)).fetchone()
+    if marker is not None and marker["source_digest"] == frozen.digest:
+        return {"imported": False, "source_version": frozen.version, "source_digest": frozen.digest,
+                "frozen_at": marker["frozen_at"], "checks": json.loads(marker["checks_json"])}
+    item = receipt(connection, COLLECTOR, TOPIC, frozen.frozen_at, len(events))
+    run = connection.execute("SELECT run_id FROM collection_items WHERE id=?", (item,)).fetchone()[0]
+    importer = Importer(connection, frozen, plan, ledger, run)
+    importer.write(events)
+    importer.verify()
+    checks = importer.checks = importer.report(events)
+    written = len(importer.inserted_members) + len(importer.inserted_attacks)
+    connection.execute("UPDATE collection_runs SET rows_written=? WHERE id=?", (written, run))
+    connection.execute("UPDATE collection_items SET written_count=? WHERE id=?", (written, item))
+    mapping = digest(sorted([*key, war_id] for key, war_id in importer.aliases.items()))
+    connection.execute(
+        "INSERT INTO imports VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(topic) DO UPDATE SET "
+        "source_version=excluded.source_version,source_digest=excluded.source_digest,frozen_at=excluded.frozen_at,"
+        "current_links_digest=excluded.current_links_digest,checked_at=excluded.checked_at,"
+        "checks_json=excluded.checks_json,source_item_id=excluded.source_item_id",
+        (TOPIC, frozen.version, frozen.digest, frozen.frozen_at, mapping, frozen.frozen_at,
+         canonical_json(checks), item))
+    return {"imported": True, "source_version": frozen.version, "source_digest": frozen.digest,
+            "frozen_at": frozen.frozen_at, "checks": checks}

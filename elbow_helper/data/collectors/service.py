@@ -120,10 +120,18 @@ class FamilyCollectors(commands.Cog):
                            "(%s: %s)", type(error).__name__, error)
             return
         if result is not None:
-            checks = result["checks"]
-            LOGGER.info("Old wars copied into the family record in %.1fs: %s wars (%s new), %s lineup rows, %s attacks",
-                        time.perf_counter() - started, checks["wars"]["events"], checks["wars"]["created"],
-                        checks["inserted"]["lineup_rows"], checks["inserted"]["attacks"])
+            parts = []
+            if result["regular"] is not None:
+                checks = result["regular"]["checks"]
+                parts.append(f"{checks['wars']['events']} wars ({checks['wars']['created']} new), "
+                             f"{checks['inserted']['lineup_rows']} lineup rows, {checks['inserted']['attacks']} attacks")
+            if result["cwl"] is not None:
+                checks = result["cwl"]["checks"]
+                parts.append(f"{checks['inserted']['seasons']} league weeks ({len(checks['seasons'])} found), "
+                             f"{checks['inserted']['wars']} league wars, {checks['inserted']['lineup_rows']} league "
+                             f"lineup rows, {checks['inserted']['attacks']} league attacks")
+            LOGGER.info("Old wars copied into the family record in %.1fs: %s", time.perf_counter() - started,
+                        "; ".join(parts))
 
     async def _schedule(self, name, seconds, collect, *, startup=False, after=None):
         await self.bot.boot_complete.wait()

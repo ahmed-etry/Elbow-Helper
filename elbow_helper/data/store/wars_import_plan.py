@@ -1,4 +1,6 @@
-"""Frozen reads of the old regular-war data, grouped into the wars they describe.
+"""Frozen reads of the old war data, with the regular wars grouped into the wars they describe.
+
+The league rows read here are copied by ``wars_import_cwl``.
 
 Nothing here touches the family record. A bad row raises before any write;
 every other source row is either carried by an observation or counted in the
@@ -36,7 +38,8 @@ KINDS =("payload", "table", "participation")
 HISTORY = "war_board_history"
 TABLES = {
     "wars": (("war_id", "war_type", "clan_code", "clan_tag", "opponent_tag", "opponent_name", "team_size",
-              "attacks_per_member", "state", "preparation_start_ts", "start_ts", "end_ts", "last_seen_ts"),
+              "attacks_per_member", "state", "preparation_start_ts", "start_ts", "end_ts", "last_seen_ts",
+              "cwl_season", "cwl_season_label", "cwl_league", "cwl_round", "source"),
              ("war_id", "clan_code")),
     "war_roster_members": (("war_id", "clan_code", "player_tag", "player_name", "townhall", "map_position",
                             "attacks_expected", "attacks_used", "roster_state", "captured_ts", "source"),
