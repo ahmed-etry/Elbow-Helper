@@ -86,7 +86,7 @@ class FamilyCollectors(commands.Cog):
         self._tasks = [
             *((copy,) if copy is not None else ()),
             asyncio.create_task(self._schedule("clans", CLAN_INTERVAL_SECONDS, self.collect_clans)),
-            asyncio.create_task(self._schedule("players", PLAYER_INTERVAL_SECONDS, self.collect_players)),
+            asyncio.create_task(self._schedule("players", PLAYER_INTERVAL_SECONDS, self.collect_players, after=copy)),
             asyncio.create_task(self._schedule("wars", SCHEDULE_CHECK_SECONDS, self.collect_wars, after=copy)),
             asyncio.create_task(self._schedule("discord", DISCORD_INTERVAL_SECONDS, self.scan_discord, startup=True)),
         ]
@@ -135,6 +135,11 @@ class FamilyCollectors(commands.Cog):
                 checks = result["ranked"]["checks"]
                 parts.append(f"{checks['inserted']['battles']} ranked battles, "
                              f"{checks['inserted']['watch_facts']} battle-log watch facts")
+            if result.get("profiles") is not None:
+                checks = result["profiles"]["checks"]
+                parts.append(f"{checks['inserted']['player_counters']} profile counter rows, "
+                             f"{checks['inserted']['old_profile_totals']} old total rows, "
+                             f"{checks['created_accounts']} old accounts")
             LOGGER.info("Old wars copied into the family record in %.1fs: %s", time.perf_counter() - started,
                         "; ".join(parts))
 

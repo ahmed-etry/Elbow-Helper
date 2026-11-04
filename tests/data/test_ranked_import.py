@@ -22,7 +22,7 @@ from elbow_helper.data.store.link_state import receipt
 from elbow_helper.data.store.people import mirror_links
 from elbow_helper.data.store.projections import canonical_json
 from elbow_helper.data.store.ranked_import import snapshot_ranked, timestamp
-from elbow_helper.data.store.schema import MIGRATIONS
+from elbow_helper.data.store.schema import MIGRATIONS, SCHEMA_VERSION
 from elbow_helper.data.store.sources import record_source
 from elbow_helper.features.ranked_stats.schema import create_schema
 from elbow_helper.infrastructure.persistence.migrations import SQLiteMigration, SQLiteMigrationError, run_sqlite_migrations
@@ -303,7 +303,7 @@ class CopyTests(RankedFixture, unittest.IsolatedAsyncioTestCase):
         self.assertIn("forced_failure", logs.output[0])
         self.assertEqual(await self.dump(), before)
         await owner._copy_old_wars()
-        self.assertEqual(len(await self.rows("SELECT * FROM imports")), 3)
+        self.assertEqual(len(await self.rows("SELECT * FROM imports")), 4)
 
     async def test_battle_pass_waits_for_shared_copy_even_after_failure(self):
         owner = self.collectors()
@@ -379,7 +379,7 @@ class WatchTests(RankedFixture, unittest.IsolatedAsyncioTestCase):
         def fail(c):
             MIGRATIONS[10].apply(c)
             raise ValueError("synthetic_failure")
-        with patch("elbow_helper.data.store.MIGRATIONS", (*MIGRATIONS[:10], SQLiteMigration(11, "failed", fail))):
+        with patch("elbow_helper.data.store.MIGRATIONS", (*MIGRATIONS[:10], SQLiteMigration(11, "failed", fail), *MIGRATIONS[11:])):
             with self.assertRaises(SQLiteMigrationError):
                 await FamilyStore(path).initialize()
         with closing(sqlite3.connect(path)) as c:
@@ -387,5 +387,5 @@ class WatchTests(RankedFixture, unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(c.execute("SELECT name FROM sqlite_master WHERE name='battle_log_coverage'").fetchone())
         store = FamilyStore(path)
         await store.initialize()
-        self.assertEqual(await store.call(lambda c: c.execute("PRAGMA user_version").fetchone()[0]), 11)
+        self.assertEqual(await store.call(lambda c: c.execute("PRAGMA user_version").fetchone()[0]), SCHEMA_VERSION)
         self.assertEqual(await store.call(lambda c: c.execute("SELECT player_tag FROM accounts").fetchone()[0]), "#P0")

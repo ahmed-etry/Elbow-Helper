@@ -99,7 +99,7 @@ class FamilyStoreTests(unittest.IsolatedAsyncioTestCase):
             "account_links", "account_link_metadata", "clans", "clan_observations", "clan_counters",
             "clan_membership", "donation_snapshots", "collection_runs", "collection_items",
             "player_observations", "item_catalog", "player_items", "hero_equipment", "player_counters",
-            "player_collection_state", "player_coverage",
+            "player_collection_state", "player_coverage", "old_profile_totals", "profile_history_coverage",
             "wars", "war_source_keys", "war_sides", "war_members", "war_attacks", "cwl_seasons", "cwl_log_summaries",
             "cwl_clans", "cwl_players", "cwl_rounds", "cwl_season_sources", "war_collection_state", "api_records", "api_field_changes", "player_ranked_references",
             "family_api_state", "family_api_entities",

@@ -17,7 +17,8 @@ def member(connection, discord_id, at):
 def account(connection, tag, at):
     connection.execute(
         "INSERT INTO accounts(player_tag,first_observed_at,tracking_status) VALUES (?,?,'observed') "
-        "ON CONFLICT(player_tag) DO NOTHING", (tag, at),
+        "ON CONFLICT(player_tag) DO UPDATE SET first_observed_at=excluded.first_observed_at,"
+        "tracking_status='observed' WHERE accounts.first_observed_at IS NULL", (tag, at),
     )
     return connection.execute("SELECT id FROM accounts WHERE player_tag=?", (tag,)).fetchone()[0]
 

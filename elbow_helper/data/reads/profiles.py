@@ -6,6 +6,7 @@ from ..store.api_fields import unpack
 from ..store.player_projection import COUNTERS
 from .coverage import signal
 from .core import MAX_PAGE
+from .profile_history import counter_values, observation_source, old_coverage
 
 
 def leaf_state(connection, kind, scope, at):
@@ -52,25 +53,21 @@ def roster_fields(connection, clan_tag, at):
 def summary(connection, tag, at, cache=None):
     account = connection.execute("SELECT * FROM accounts WHERE player_tag=? AND first_observed_at<=?", (tag, at)).fetchone()
     coverage = signal(connection, "player_profile", tag, at, account_id=account["id"] if account else None)
-    fields, observed, sources, metadata = {}, {}, {}, None
+    fields, observed, sources, metadata, conflicts = {}, {}, {}, None, {}
     signals = [coverage]
     if account:
         for row in connection.execute(
-                "SELECT p.* FROM player_observations p WHERE account_id=? AND observed_at<=? AND observed_at=("
+                "SELECT p.*,r.collector FROM player_observations p JOIN collection_runs r ON r.id=p.source_run_id "
+                "WHERE account_id=? AND observed_at<=? AND observed_at=("
                 "SELECT MAX(observed_at) FROM player_observations WHERE account_id=p.account_id "
                 "AND field_key=p.field_key AND observed_at<=?)", (account["id"], at, at)):
             fields[row["field_key"]] = json.loads(row["value_json"])
             observed[row["field_key"]] = row["observed_at"]
-            sources[row["field_key"]] = "player_profile"
-        counter = connection.execute("SELECT * FROM player_counters WHERE account_id=? AND sampled_at<=? "
-                                     "ORDER BY sampled_at DESC LIMIT 1", (account["id"], at)).fetchone()
-        if counter:
-            presence = json.loads(counter["field_presence_json"]).get("fields", 0)
-            for index, (key, column) in enumerate(COUNTERS.items()):
-                present = key in presence if isinstance(presence, list) else bool(presence & (1 << index))
-                if present:
-                    fields[key], observed[key] = counter[column], counter["sampled_at"]
-                    sources[key] = "player_profile"
+            sources[row["field_key"]] = observation_source(row)
+        values, dates, origins = counter_values(connection, account["id"], at, conflicts=conflicts)
+        fields.update(values)
+        observed.update(dates)
+        sources.update(origins)
         alias = connection.execute("SELECT n.name,n.from_at,i.source_kind,i.scope_id FROM account_aliases n "
                                    "JOIN collection_items i ON i.id=n.source_item_id WHERE n.account_id=? AND n.from_at<=? "
                                    "ORDER BY n.from_at DESC LIMIT 1", (account["id"], at)).fetchone()
@@ -112,9 +109,12 @@ def summary(connection, tag, at, cache=None):
             "ranked_league": fields.get("leagueTier"), "legacy_league": fields.get("league"),
             "role": fields.get("role"), "clan": fields.get("clan"), "fields": fields,
             "field_observed_at": observed, "field_sources": sources,
+            "field_conflicts": conflicts,
             "field_presence": {key: key in fields and fields[key] is not None for key in required},
             "first_observed_at": account["first_observed_at"] if account else None,
-            "coverage": coverage, "signals": signals, "link_metadata": metadata}
+            "coverage": coverage, "signals": signals, "link_metadata": metadata,
+            "history_coverage": {"old_sources": old_coverage(connection, account["id"]) if account else [],
+                                 "used_sources": sorted(set(sources.values())), "collector_signal": "coverage"}}
 
 
 def account_history(connection, tag, at):

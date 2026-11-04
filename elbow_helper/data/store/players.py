@@ -263,7 +263,9 @@ def collect_player(connection, run, ordinal, account_id, tag, response, at):
             # contract still needs a collection item. Keep one only on a rename.
             item = player_state.evidence(connection, run, ordinal, account_id, tag, state["started_at"])
             account_name(connection, account_id, profile.fields["name"], at, item)
-        connection.execute("UPDATE accounts SET last_profile_at=? WHERE id=?", (at, account_id))
+        connection.execute("UPDATE accounts SET last_profile_at=?,first_observed_at=COALESCE(first_observed_at,?),"
+                           "tracking_status=CASE WHEN first_observed_at IS NULL THEN 'observed' ELSE tracking_status END "
+                           "WHERE id=?", (at, at, account_id))
         complete = profile.complete and equipment_complete
         collect_fields(connection, "player_profile", tag, payload, run, at, complete=complete)
         completeness = {
