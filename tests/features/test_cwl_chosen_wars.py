@@ -1,57 +1,73 @@
-"""Chosen CWL wars are checked against synthetic stored metadata before scoring."""
+"""Chosen CWL wars are checked against synthetic family-record weeks before scoring."""
 
-from contextlib import closing
-from pathlib import Path
-import sqlite3
+import asyncio
+import json
 import tempfile
 import unittest
 
-from elbow_helper.features.clan_health.database import ClanHealthRepository
-from elbow_helper.features.cwl.queries import CwlQueries
+from elbow_helper.configuration.clans import CLANS
+
+from tests.features.cwl_record_stub import SECOND, LeagueRecord, league_war, member
+
+END = 1788000000
 
 
-class ChosenWarStorageTests(unittest.TestCase):
-    def setUp(self):
+class ChosenWarStorageTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        self.repository = ClanHealthRepository(Path(temporary.name) / "wars.sqlite3")
-        self.repository.initialize()
-        with closing(sqlite3.connect(self.repository.path)) as connection, connection:
-            connection.executemany(
-                "INSERT INTO wars (war_id, war_type, clan_code, clan_tag, last_seen_ts, "
-                "state, cwl_season, cwl_round, cwl_league) VALUES (?, ?, ?, '', 1, ?, ?, 1, ?)",
-                [
-                    ("CWL:#DONE", "CWL", "BEH", "warEnded", "2026-08", "Champion League II"),
-                    ("CWL:#ACTIVE", "CWL", "BEH", "inWar", "2026-08", "Champion League II"),
-                    ("CWL:#OTHER", "CWL", "BE1", "warEnded", "2026-08", "Champion League II"),
-                    ("REGULAR", "Random", "BEH", "warEnded", "", ""),
-                ],
-            )
-        self.queries = CwlQueries(self.repository, lambda: {})
+        self.record = await LeagueRecord(temporary.name).initialize()
+        await self.record.week("BEH", "2026-08", [
+            league_war("#C0", 1, END, [member("#P0")]),
+            league_war("#C2", 2, END + 86400, [member("#P0")], state="inWar"),
+            # A league war against another family clan belongs to both clans.
+            league_war("#C9", 3, END + 2 * 86400, [member("#P2")], opponent=CLANS["BE1"].tag),
+        ], league="Champion League II", final=False)
+        await self.record.week("BE1", "2026-08", [league_war("#C8", 1, END, [member("#Q0")])],
+                               league="Champion League II")
+        await self.regular_war("REGULAR")
+        self.history = self.record.history()
+        self.queries = self.record.queries()
 
-    def test_unknown_and_unfinished_wars_are_named_together(self):
-        with self.assertRaisesRegex(ValueError, "Unknown CWL war IDs: #UNKNOWN.*#ACTIVE"):
-            self.queries.ass_wars(clan_code="BEH", war_ids=["#UNKNOWN", "CWL:#ACTIVE"])
+    async def regular_war(self, legacy_id):
+        """A regular war of the clan, known by an old clan-health ID."""
+        def write(c):
+            run = c.execute("SELECT MAX(id) FROM collection_runs").fetchone()[0]
+            war_id = c.execute(
+                "INSERT INTO wars(type,end_at,state,first_seen_at,last_seen_at,roster_complete,attacks_complete,"
+                "result_complete,content_hash,field_presence_json,source_run_id) "
+                "VALUES ('REG',?,'warEnded',?,?,1,1,1,'synthetic','[]',?)",
+                (END * SECOND, END * SECOND, END * SECOND, run)).lastrowid
+            for side, tag in enumerate(sorted((CLANS["BEH"].tag, "#Q8"))):
+                c.execute("INSERT INTO war_sides(war_id,side,clan_tag,extra_json,source_run_id) VALUES (?,?,?,?,?)",
+                          (war_id, side, tag, json.dumps({}), run))
+            c.execute("INSERT INTO war_legacy_ids(source,legacy_id,clan_code,war_id,mapped_at) "
+                      "VALUES ('clan_health',?,'BEH',?,0)", (legacy_id, war_id))
+            c.commit()
+        await self.record.store.call(write)
 
-    def test_other_clan_and_regular_wars_are_refused(self):
-        for key, error in (("#OTHER", "another clan than BEH: CWL:#OTHER"),
+    async def test_unknown_and_unfinished_wars_are_named_together(self):
+        with self.assertRaisesRegex(ValueError, "Unknown CWL war IDs: #UNKNOWN; Unfinished CWL wars: CWL:#C2"):
+            await asyncio.to_thread(self.queries.ass_wars, clan_code="BEH", war_ids=["#UNKNOWN", "CWL:#C2"])
+
+    async def test_other_clan_and_regular_wars_are_refused(self):
+        for key, error in (("#C8", "another clan than BEH: CWL:#C8"),
                            ("REGULAR", "Not CWL wars: REGULAR")):
             with self.subTest(key=key), self.assertRaisesRegex(ValueError, error):
-                self.queries.ass_wars(clan_code="BEH", war_ids=[key])
+                await asyncio.to_thread(self.queries.ass_wars, clan_code="BEH", war_ids=[key])
 
-    def test_only_the_chosen_finished_war_is_loaded(self):
-        wars = self.repository.scoring_wars("BEH", ["#DONE"])
-        self.assertEqual([war["war_id"] for war in wars], ["CWL:#DONE"])
+    async def test_only_the_chosen_finished_war_is_loaded(self):
+        wars = await asyncio.to_thread(self.history.scoring_wars, "BEH", ["#C0"])
+        self.assertEqual([war["war_id"] for war in wars], ["CWL:#C0"])
         self.assertEqual(wars[0]["state"], "warEnded")
-        self.assertEqual(wars[0]["roster"], [])
+        self.assertEqual([row["player_tag"] for row in wars[0]["roster"]], ["#P0"])
         self.assertEqual(wars[0]["attacks"], [])
 
-    def test_same_war_stored_for_both_clans_uses_the_requested_clan(self):
-        with closing(sqlite3.connect(self.repository.path)) as connection, connection:
-            connection.execute(
-                "INSERT INTO wars (war_id, war_type, clan_code, clan_tag, last_seen_ts, "
-                "state, cwl_season) VALUES ('CWL:#DONE', 'CWL', 'BE1', '', 1, "
-                "'warEnded', '2026-08')",
-            )
-        wars = self.repository.scoring_wars("BEH", ["#DONE"])
-        self.assertEqual([war["clan_code"] for war in wars], ["BEH"])
+    async def test_a_war_between_two_family_clans_uses_the_requested_clan(self):
+        wars = await asyncio.to_thread(self.history.scoring_wars, "BEH", ["#C9"])
+        self.assertEqual([(war["clan_code"], war["war_id"]) for war in wars], [("BEH", "CWL:#C9")])
+        self.assertEqual([row["player_tag"] for row in wars[0]["roster"]], ["#P2"])
+
+
+if __name__ == "__main__":
+    unittest.main()

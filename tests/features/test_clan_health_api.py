@@ -5,7 +5,7 @@ from datetime import datetime
 import json
 from pathlib import Path
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from elbow_helper.domain.player_tags import encode_clash_tag
 from elbow_helper.features.clan_health.api import ClanHealthCollector
@@ -34,13 +34,8 @@ class PlayerLevelCollectionTests(unittest.IsolatedAsyncioTestCase):
                 "memberList": [{"tag": profile["tag"], "name": profile["name"]}],
             }
 
-        with (
-            patch.object(collector, "_fetch_coc_json", side_effect=fetch),
-            patch.object(
-                collector, "_fetch_cwl_wars_for_clan",
-                new=AsyncMock(return_value=([], [])),
-            ),
-        ):
+        # League wars come from the family record; the live collection asks Clash for none.
+        with patch.object(collector, "_fetch_coc_json", side_effect=fetch) as fetched:
             result, warnings = await collector.collect_clan_live(
                 clan_code="BEH",
                 cycle_start=datetime(2026, 10, 12, tzinfo=UTC),
@@ -49,6 +44,8 @@ class PlayerLevelCollectionTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(warnings, [])
         self.assertEqual(len(result["players"]), 1)
+        self.assertFalse(any("league" in call.args[0] for call in fetched.call_args_list))
+        self.assertNotIn("war_cwl_wars_in_window", result["metrics"])
         return result["players"][0]
 
     async def test_profile_separates_all_current_pets_from_home_troops(self) -> None:

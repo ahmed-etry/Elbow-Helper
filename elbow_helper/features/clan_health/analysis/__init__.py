@@ -21,11 +21,12 @@ class ClanHealthAnalyzer(
     ClanHealthFlagMixin,
     ClanHealthSheetMixin,
 ):
-    """Apply scoring policy to data supplied by Clan Health storage and the family record's regular wars."""
+    """Apply scoring policy to data supplied by Clan Health storage and the family record's wars."""
 
-    def __init__(self, repository: ClanHealthRepository, regular_wars: RegularWars):
+    def __init__(self, repository: ClanHealthRepository, regular_wars: RegularWars, league_wars: RegularWars):
         self.repository = repository
         self.regular_wars = regular_wars
+        self.league_wars = league_wars
 
     @staticmethod
     def profile_for_clan(clan_code: str | None) -> str:

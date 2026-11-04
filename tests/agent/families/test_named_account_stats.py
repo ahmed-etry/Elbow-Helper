@@ -1,10 +1,9 @@
 """Synthetic named-account resolution and dated activity through retained reports."""
 
-from contextlib import closing
+import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-import sqlite3
 import json
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -29,6 +28,7 @@ from elbow_helper.features.clan_health.database import ClanHealthRepository
 from elbow_helper.features.cwl.queries import CwlQueries
 from agent.engine.test_agent_plan_flow import _context
 from agent.families.record_stub import regular_id, regular_war, regular_wars_from, with_record
+from tests.features.cwl_record_stub import LeagueRecord, attack, league_war, member
 
 
 def rosters(accounts=()):
@@ -260,15 +260,15 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
             repository.store_snapshots(1, [
                 {'clan_code': 'BEH', 'player_tag': '#P0', 'player_name': 'Silver Kite'},
                 {'clan_code': '#OUTSIDE', 'player_tag': '#Q0', 'player_name': 'Copper Finch'}])
-            repository.store_final_war_rosters([
-                {'war_id': '#P2', 'clan_code': 'BEH', 'player_tag': '#Y0',
-                 'player_name': 'Golden Finch', 'roster_state': 'warEnded'},
-                {'war_id': '#P2', 'clan_code': '#OUTSIDE', 'player_tag': '#L0',
-                 'player_name': 'Velvet Quill', 'roster_state': 'warEnded'},
-                {'war_id': '#P2', 'clan_code': '#OUTSIDE', 'player_tag': '#Y0',
-                 'player_name': 'Outside Alias', 'roster_state': 'warEnded'}])
-            context = replace(context_with_names(), cwl_queries=CwlQueries(repository, lambda: {}))
-            self.assertEqual(context.cwl_queries.account_names(), [
+            record = await LeagueRecord(directory).initialize()
+            # The opponent's bases carry names too; only family lineups name accounts.
+            await record.week('BEH', '2026-09', [league_war(
+                '#P2', 1, 1788000000, [member('#Y0', name='Golden Finch')],
+                [attack(1, '#Y0', '#L0'), attack(2, '#Y0', '#Y2')], opponent='#C0')])
+            await record.execute("UPDATE war_members SET name=CASE player_tag WHEN '#L0' THEN 'Velvet Quill' "
+                                 "ELSE 'Outside Alias' END WHERE player_tag IN ('#L0','#Y2')")
+            context = replace(context_with_names(), cwl_queries=CwlQueries(record.history(repository), lambda: {}))
+            self.assertEqual(await asyncio.to_thread(context.cwl_queries.account_names), [
                 {'player_tag': '#P0', 'player_name': 'Silver Kite'},
                 {'player_tag': '#Y0', 'player_name': 'Golden Finch'}])
             with patch.object(account_names, 'read_clash', AsyncMock(return_value=rosters())):
@@ -399,29 +399,21 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_dated_account_read_uses_real_stored_reg_and_cwl_records_and_ranked_query(self):
         with TemporaryDirectory() as directory:
-            repository = ClanHealthRepository(Path(directory) / 'stats.db')
-            repository.initialize()
             def day(text):
                 return int(datetime.fromisoformat(text).replace(tzinfo=timezone.utc).timestamp())
 
             selected, earlier = (regular_war('BEH', day(end), {'#P0': (used, []), '#Q0': (used, [])},
                                              start_ts=day(end) - 50)
                                  for end, used in (('2025-12-01', 1), ('2025-10-01', 0)))
-            with closing(sqlite3.connect(repository.path)) as connection, connection:
-                for identity, kind, end, expected, used in (('#P8', 'CWL', '2025-12-02', 1, 1),):
-                    timestamp = day(end)
-                    connection.execute('''INSERT INTO wars(war_id,war_type,clan_code,clan_tag,
-                        state,preparation_start_ts,start_ts,end_ts,last_seen_ts,team_size,attacks_per_member)
-                        VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
-                        (identity, kind, 'BEH', CLANS['BEH'].tag, 'warEnded', timestamp-100,
-                         timestamp-50, timestamp, timestamp, 2, expected))
-                    for tag, name in (('#P0', 'Amber Comet'), ('#Q0', 'Other Beacon')):
-                        connection.execute('''INSERT INTO war_roster_members(war_id,clan_code,
-                            player_tag,player_name,attacks_expected,attacks_used,roster_state,captured_ts)
-                            VALUES(?,?,?,?,?,?,?,?)''',
-                            (identity, 'BEH', tag, name, expected, used, 'warEnded', timestamp))
-            cwl = CwlQueries(repository, lambda: {})
-            self.assertEqual({row['player_tag'] for row in cwl.account_names()}, {'#P0', '#Q0'})
+            record = await LeagueRecord(directory).initialize()
+            timestamp = day('2025-12-02')
+            await record.week('BEH', '2025-12', [league_war(
+                '#P8', 1, timestamp, [member(tag, name=name) for tag, name in
+                                      (('#P0', 'Amber Comet'), ('#Q0', 'Other Beacon'))],
+                start=timestamp - 50, team_size=2)])
+            cwl = record.queries()
+            self.assertEqual({row['player_tag'] for row in await asyncio.to_thread(cwl.account_names)},
+                             {'#P0', '#Q0'})
             cwl.attendance = Mock(wraps=cwl.attendance)
             ranked = Mock(return_value={'accounts': [], 'stored_battles': [], 'total_accounts': 0,
                 'next_offset': None, 'complete': True, 'coverage_complete': False,
@@ -449,9 +441,9 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
             activity = result['rows'][0]['activity']
             self.assertEqual(activity['regular_war']['war_ids'], [regular_id(selected)])
             self.assertEqual((activity['regular_war']['attacks_used'], activity['regular_war']['missed']), (1, 1))
-            self.assertEqual(activity['cwl']['war_ids'], ['#P8'])
+            self.assertEqual(activity['cwl']['war_ids'], ['CWL:#P8'])
             self.assertEqual(activity['cwl']['attacks_used'], 1)
-            # League wars from stored league history, regular wars from the record.
+            # League wars through the CWL queries, regular wars through the record's war reads.
             self.assertEqual({call.kwargs['war_type'] for call in cwl.attendance.call_args_list}, {'CWL'})
             for call in [*cwl.attendance.call_args_list, *regular.await_args_list]:
                 self.assertEqual(set(call.kwargs['clan_codes']), set(CLANS))

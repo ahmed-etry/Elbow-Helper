@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import tempfile
@@ -35,34 +37,19 @@ class CwlTransferRosterTests(unittest.TestCase):
             },
         )
 
-    def test_current_group_state_confirms_completed_spin(self) -> None:
-        self.assertTrue(
-            CwlTransferMixin._league_group_has_started(
-                {"season": "2026-08-01", "state": "preparation", "rounds": []},
-            )
-        )
-
-    def test_real_war_tag_confirms_spin_when_group_state_is_unknown(self) -> None:
-        self.assertTrue(
-            CwlTransferMixin._league_group_has_started(
-                {
-                    "season": "2026-08",
-                    "state": "unknown",
-                    "rounds": [{"warTags": ["#WAR"]}],
-                },
-            )
-        )
-
-    def test_searching_group_has_not_started(self) -> None:
-        self.assertFalse(
-            CwlTransferMixin._league_group_has_started(
-                {
-                    "season": "2026-08",
-                    "state": "searching",
-                    "rounds": [{"warTags": ["#0"]}],
-                },
-            )
-        )
+    def test_spin_statuses_come_from_the_record_and_clash_is_not_asked(self) -> None:
+        workflow = CwlTransferMixin()
+        workflow.clash_client = SimpleNamespace(configured=False, get=AsyncMock())
+        statuses = {"BEH": "started", "BE4": "not_started", "BES": "unavailable"}
+        workflow.cwl_groups = SimpleNamespace(spin_status=AsyncMock(side_effect=lambda code, now: statuses[code]))
+        moment = datetime(2026, 11, 1, 9, tzinfo=timezone.utc)
+        with self.assertLogs("elbow_helper.features.cwl.transfers", "WARNING"):
+            result = asyncio.run(workflow._cwl_spin_statuses(set(statuses), moment))
+        self.assertEqual(result, ({"BEH"}, {"BES"}))
+        self.assertEqual({call.args for call in workflow.cwl_groups.spin_status.await_args_list},
+                         {(code, moment) for code in statuses})
+        workflow.clash_client.get.assert_not_awaited()
+        self.assertEqual(asyncio.run(workflow._cwl_spin_statuses(set(), moment)), (set(), set()))
 
     def test_native_roster_mismatches_use_live_account_clans_and_deduplicate_members(self) -> None:
         roster_members = {

@@ -18,7 +18,7 @@ from .record_wars import RegularWars
 
 async def setup(bot: ElbowHelperBot) -> None:
     repository = ClanHealthRepository()
-    analyzer = ClanHealthAnalyzer(repository, RegularWars(bot.war_reads))
+    analyzer = ClanHealthAnalyzer(repository, RegularWars(bot.war_reads), RegularWars(bot.war_reads, types=("CWL",)))
     collector = ClanHealthCollector(
         bot.clash_client,
         repository,

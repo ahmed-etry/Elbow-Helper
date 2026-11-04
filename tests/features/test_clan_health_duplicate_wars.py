@@ -27,6 +27,12 @@ def snapshot(end=300, *, prep=100, start=200, state="inWar", seen=400,
     return war, roster, activity, attacks
 
 
+def write(conn, table, row, **defaults):
+    values = {**defaults, **row}
+    conn.execute(f'INSERT INTO "{table}" ({",".join(values)}) VALUES ({",".join("?" for _ in values)})',
+                 tuple(values.values()))
+
+
 class DuplicateRegularWarTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -45,11 +51,20 @@ class DuplicateRegularWarTests(unittest.TestCase):
         )}
 
     def legacy_store(self, data):
+        """Rows as the old bot's war writers left them in a backup."""
         war, roster, activity, attacks = data
-        self.repo.store_wars([war])
-        self.repo.store_final_war_rosters(roster)
-        self.repo.store_war_activity(activity)
-        self.repo.store_war_attacks(attacks)
+        with closing(sqlite3.connect(self.path)) as conn, conn:
+            write(conn, "wars", war, cwl_season="", cwl_season_label="", cwl_league="", cwl_round=0,
+                  opponent_name="", source="")
+            for row in roster:
+                write(conn, "war_roster_members", row, townhall=0, map_position=0, source="")
+            for row in activity:
+                write(conn, "war_activity", row, stars=0.0, destruction=0.0, source="")
+            for row in attacks:
+                write(conn, "war_attacks", {key: value for key, value in row.items()
+                                            if key not in ("attacks_expected", "attacks_used", "attack_count")},
+                      defender_name="", defender_map_position=0, defender_townhall=0, stars=0, destruction=0.0,
+                      fresh_attack=0, duration=0, source="")
 
     def upgrade(self):
         with closing(sqlite3.connect(self.path)) as conn:
@@ -89,12 +104,6 @@ class DuplicateRegularWarTests(unittest.TestCase):
         self.upgrade()
         for table, rows in before.items():
             self.assertEqual([row for row in self.rows(table) if row[0] in {r[0] for r in rows}], rows)
-
-    def test_existing_invalid_row_writes_still_skip_database_creation(self):
-        repo = ClanHealthRepository(Path(self.temp.name) / "unused.db")
-        self.assertEqual(repo.store_wars([{"clan_code": "TEST"}]), 0)
-        self.assertEqual(repo.store_final_war_rosters([{"war_id": "REG:#INVALID"}]), 0)
-        self.assertFalse(repo.path.exists())
 
     def test_upgrade_prefers_ended_else_latest_and_runs_once(self):
         self.legacy_store(snapshot(state="warEnded", seen=400, used=2))

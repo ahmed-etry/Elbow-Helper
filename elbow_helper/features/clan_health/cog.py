@@ -50,7 +50,7 @@ class ClanHealth(
         self.analyzer = analyzer
         self.collector = collector
         self.regular_wars = analyzer.regular_wars
-        self._last_war_ingest_ts = 0
+        self.league_wars = analyzer.league_wars
         self._last_snapshot_ts = 0
         self._last_background_log_sig: Optional[Tuple[Any, ...]] = None
         self._last_background_log_ts = 0
@@ -63,15 +63,11 @@ class ClanHealth(
 
         await asyncio.to_thread(self.repository.initialize)
         await asyncio.to_thread(seed_missing_configs)
-        start_resilient_loop(self._war_log_loop)
         start_resilient_loop(self._snapshot_log_loop)
 
     def cog_unload(self) -> None:
-        if self._war_log_loop.is_running():
-            self._war_log_loop.cancel()
         if self._snapshot_log_loop.is_running():
             self._snapshot_log_loop.cancel()
-        self.collector.close()
 
     async def _wait_for_boot_complete(self) -> None:
         await self.bot.wait_until_ready()

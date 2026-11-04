@@ -1,49 +1,39 @@
 """Hibernation joins real completed-war evidence without inventing attack dates."""
-from contextlib import closing
 from dataclasses import replace
 from datetime import datetime, timezone
-from pathlib import Path
-import sqlite3
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 
-from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.channels import HIBERNATION_LOG
 from elbow_helper.agent.families.workflow_reads import TOOLS
-from elbow_helper.features.clan_health.database import ClanHealthRepository
-from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.features.hibernation.queries import HibernationQueries
 from agent.engine.test_agent_plan_flow import _context
 from agent.families.record_stub import regular_war, regular_wars_from, with_record
+from tests.features.cwl_record_stub import LeagueRecord, attack, league_war, member
 
 
 class HibernationWarTimingTests(unittest.IsolatedAsyncioTestCase):
     async def test_overlapping_wars_keep_unknown_attack_counts_and_explicit_war_end_dates(self):
         with TemporaryDirectory() as directory:
-            repository = ClanHealthRepository(Path(directory) / 'wars.db')
-            repository.initialize()
             regular = [regular_war('BEH', end, {tag: (1, []) for tag in (('#P0', '#Q0') if start == 1000 else ('#P0',))},
                                    start_ts=start)
                        for start, end in [(900, 1100), (1000, 1200), (None, 1300), (800, 999)]]
-            with closing(sqlite3.connect(repository.path)) as connection, connection:
-                for kind, identity, start, end in [('CWL', '#R0', 900, 1100), ('CWL', '#R2', 1000, 1200)]:
-                    connection.execute('''INSERT INTO wars(war_id,war_type,clan_code,clan_tag,
-                        opponent_tag,state,start_ts,end_ts,last_seen_ts)
-                        VALUES(?,?,?,?,?,?,?,?,?)''',
-                        (identity, kind, 'BEH', CLANS['BEH'].tag, '#Q2', 'warEnded', start, end, 1))
-                    for tag in ('#P0', '#Q0') if start == 1000 else ('#P0',):
-                        connection.execute('''INSERT INTO war_roster_members(war_id,clan_code,
-                            player_tag,player_name,attacks_expected,attacks_used,roster_state,captured_ts)
-                            VALUES(?,?,?,?,?,?,?,?)''',
-                            (identity, 'BEH', tag, tag, 2, 1, 'warEnded', 1))
+            record = await LeagueRecord(directory).initialize()
+            await record.week('BEH', '1970-01', [
+                league_war(identity, round_no, end, [member(tag, name=tag, expected=2, used=1) for tag in
+                                                     (('#P0', '#Q0') if start == 1000 else ('#P0',))],
+                           [attack(order, tag, '#Q8') for order, tag in enumerate(
+                               (('#P0', '#Q0') if start == 1000 else ('#P0',)), 1)],
+                           opponent='#Q2', start=start, attacks_per_member=2)
+                for round_no, identity, start, end in [(1, '#R0', 900, 1100), (2, '#R2', 1000, 1200)]])
             context = _context()
             for role in context.member.roles:
                 role.name = 'Access'
                 role.is_default = lambda: False
             log = SimpleNamespace(**{**vars(context.source_message.channel), 'id': HIBERNATION_LOG})
             context.guild.get_channel_or_thread = lambda identifier: log if identifier == HIBERNATION_LOG else context.source_message.channel
-            context = with_record(replace(context, cwl_queries=CwlQueries(repository, lambda: {}),
+            context = with_record(replace(context, cwl_queries=record.queries(),
                 hibernation_queries=HibernationQueries(lambda: {'41': {'hibernation_date': '<t:1000:F>'}}),
                 account_links=SimpleNamespace(get_links_for_members=lambda ids: {
                     41: [{'player_tag': '#P0'}, {'player_tag': '#Q0'}]})))

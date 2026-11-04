@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 import re
 from typing import Any, Protocol
 
+from elbow_helper.domain.cwl import SEASON_KEY
+
 from .config import CLAN_NAME_TO_CODE, CWL_CLAN_NAMES, CWL_CLAN_TAGS
 from .roster.analysis import (
     build_ass_season_metrics,
@@ -21,6 +23,8 @@ MAX_HISTORY_SEASONS = 12
 
 
 class CwlHistorySource(Protocol):
+    def cache_revision(self) -> str | None: ...
+
     def attendance(self, **selection) -> dict[str, Any]: ...
 
     def account_names(self) -> list[dict[str, str]]: ...
@@ -255,9 +259,8 @@ class CwlQueries:
         return self._history.attendance(**selection)
 
     def cache_revision(self):
-        from elbow_helper.infrastructure.persistence.revisions import sqlite_revision
-        path = getattr(self._history, 'path', None)
-        version = sqlite_revision(path) if path is not None else None
+        revision = getattr(self._history, 'cache_revision', None)
+        version = revision() if callable(revision) else None
         if self._bonus_config is not None:
             revision = getattr(self._bonus_config, 'cache_revision', None)
             settings = revision() if callable(revision) else None
@@ -282,7 +285,7 @@ class CwlQueries:
             raise ValueError("Invalid CWL history limit")
         if season is not None and (
             not isinstance(season, str)
-            or re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])(?:-catchup)?", season) is None
+            or re.fullmatch(SEASON_KEY, season) is None
         ):
             raise ValueError("Invalid CWL season")
         if clan_code is not None and clan_code not in CWL_CLAN_NAMES:

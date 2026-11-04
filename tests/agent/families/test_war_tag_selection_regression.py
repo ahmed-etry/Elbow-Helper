@@ -1,10 +1,7 @@
 """Canonical structured tags select the same real war and API evidence."""
-from contextlib import closing
 from dataclasses import replace
 from datetime import datetime
 import json
-from pathlib import Path
-import sqlite3
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
@@ -13,34 +10,25 @@ from unittest.mock import AsyncMock, Mock, patch
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.agent.families import record_wars
 from elbow_helper.agent.families.war_reads import TOOLS
-from elbow_helper.features.clan_health.database import ClanHealthRepository
-from elbow_helper.features.cwl.queries import CwlQueries
 from agent.engine.test_agent_plan_flow import _context
+from tests.features.cwl_record_stub import LeagueRecord, league_war, member
 
 
 class WarTagSelectionTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
+    async def asyncSetUp(self):
         directory = TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        repository = ClanHealthRepository(Path(directory.name) / 'wars.db')
-        repository.initialize()
+        record = await LeagueRecord(directory.name).initialize()
         end = int(datetime.fromisoformat('2026-09-05T00:00:00+00:00').timestamp())
-        with closing(sqlite3.connect(repository.path)) as connection, connection:
-            connection.execute('''INSERT INTO wars(war_id,war_type,clan_code,clan_tag,
-                opponent_tag,cwl_season,cwl_league,cwl_round,team_size,attacks_per_member,
-                state,preparation_start_ts,start_ts,end_ts,last_seen_ts)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                ('#C0', 'CWL', 'BEH', CLANS['BEH'].tag, '#Q0', '2026-09',
-                 'Master League I', 1, 15, 1, 'warEnded', end - 200, end - 100, end, 1))
-            connection.execute('''INSERT INTO war_roster_members(war_id,clan_code,player_tag,
-                player_name,townhall,attacks_expected,attacks_used,roster_state,captured_ts)
-                VALUES(?,?,?,?,?,?,?,?,?)''', ('#C0', 'BEH', '#P0', 'Account', 17, 1, 1, 'warEnded', 1))
+        await record.week('BEH', '2026-09', [league_war(
+            '#C0', 1, end, [member('#P0', name='Account', townhall=17)], start=end - 100, team_size=15)],
+            league='Master League I')
         payload = {'state': 'inWar', 'attacksPerMember': 2, 'clan': {'members': [
             {'tag': tag, 'name': tag, 'attacks': []} for tag in ('#P0', '#Q0')]}}
         # The record's latest current-war check for the clan.
         self.current = self.enterContext(patch.object(record_wars, 'current_wars', AsyncMock(
             return_value={'items': [{'tag': CLANS['BEH'].tag, 'status': 'ok', 'data': payload}]})))
-        self.context = replace(_context(), cwl_queries=CwlQueries(repository, lambda: {}),
+        self.context = replace(_context(), cwl_queries=record.queries(),
             bot=SimpleNamespace(war_reads=SimpleNamespace()),
             account_links=SimpleNamespace(get_links_by_tags=lambda tags: {
                 tag: {'discord_user_id': 41} for tag in tags}))

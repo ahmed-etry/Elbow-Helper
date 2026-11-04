@@ -1,4 +1,8 @@
-"""Clan Health storage composition and supported read/write contract."""
+"""Clan Health storage composition and supported read/write contract.
+
+Regular and league wars live in the family record; this store's old war
+tables stay as read-only history for the startup copy.
+"""
 
 from __future__ import annotations
 
@@ -6,12 +10,11 @@ from pathlib import Path
 
 from ..config import DB_PATH
 from .aggregates import ClanHealthAggregates
-from .cwl import ClanHealthCwlReads
+from .directory import ClanHealthDirectoryReads
 from .history import ClanHealthHistory
 from .movements import ClanHealthMovementReads
 from .records import ClanHealthRecords
 from .schema import ClanHealthSchema
-from .wars import ClanHealthWarReads
 
 
 class ClanHealthRepository(
@@ -19,8 +22,7 @@ class ClanHealthRepository(
     ClanHealthRecords,
     ClanHealthAggregates,
     ClanHealthHistory,
-    ClanHealthCwlReads,
-    ClanHealthWarReads,
+    ClanHealthDirectoryReads,
     ClanHealthMovementReads,
 ):
     """Own all SQL and stored-shape conversion for Clan Health data."""
@@ -31,12 +33,6 @@ class ClanHealthRepository(
     initialize = ClanHealthSchema._init_db
     store_snapshots = ClanHealthRecords._store_snapshots
     store_report = ClanHealthRecords._store_report
-    store_war_activity = ClanHealthRecords._store_war_activity_rows
-    store_wars = ClanHealthRecords._store_war_rows
-    store_final_war_rosters = (
-        ClanHealthRecords._store_final_war_roster_rows
-    )
-    store_war_attacks = ClanHealthRecords._store_war_attack_rows
     store_raid_activity = (
         ClanHealthRecords._store_raid_member_activity_rows
     )
@@ -54,8 +50,6 @@ class ClanHealthRepository(
     )
 
     baseline_snapshot = ClanHealthAggregates._get_baseline_snapshot
-    cwl_war_activity = ClanHealthAggregates._load_cwl_war_activity
-    cwl_war_counts = ClanHealthAggregates._load_cwl_war_counts
     raid_weekend_count = (
         ClanHealthAggregates._count_raid_weekends_in_window
     )
@@ -75,7 +69,6 @@ class ClanHealthRepository(
         ClanHealthHistory._latest_stored_activity_ts_for_player
     )
     snapshot_history = ClanHealthHistory._load_snapshot_history
-    player_cwl_attacks = ClanHealthHistory._load_player_cwl_attacks
     player_raid_activity = (
         ClanHealthHistory._load_player_raid_member_activity
     )

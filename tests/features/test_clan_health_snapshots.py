@@ -5,7 +5,6 @@ import gc
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
-import time
 import unittest
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -81,7 +80,6 @@ class _SnapshotHarness(ClanHealthSnapshotMixin):
             store_snapshots=MagicMock(),
             store_report=MagicMock(),
         )
-        self._last_war_ingest_ts = int(time.time())
         self._last_snapshot_ts = 0
         self._last_startup_sync_ts = 0
         self._last_background_log_sig = None
@@ -108,14 +106,14 @@ class BackgroundSnapshotCompletenessTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(harness.repository.store_report.call_args.kwargs["partial"])
 
-    async def test_stale_war_data_refreshes_only_league_wars(self) -> None:
+    async def test_the_cycle_collects_no_wars_the_family_record_holds_them(self) -> None:
         harness = _SnapshotHarness(incomplete_clan=None)
-        harness._last_war_ingest_ts = 0
 
         await harness._run_background_snapshot_cycle(trigger="loop")
-        await harness._war_log_loop.coro(harness)
 
-        self.assertEqual(harness.collector.ingest_family_cwl_activity.await_count, 2)
+        harness.collector.ingest_family_cwl_activity.assert_not_awaited()
+        harness.analyzer.apply_war_activity.assert_called_once()
+        self.assertFalse(hasattr(ClanHealthSnapshotMixin, "_war_log_loop"))
 
 
 class CompleteReportSelectionTests(unittest.TestCase):

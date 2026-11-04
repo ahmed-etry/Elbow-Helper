@@ -24,7 +24,7 @@ import discord
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from discord.ext import tasks
+from discord.ext import commands, tasks
 
 from elbow_helper.domain.player_tags import encode_clash_tag
 from elbow_helper.configuration.clans import CLAN_NAMES
@@ -40,6 +40,7 @@ from .config import DASHBOARD_REFRESH_RETRIES
 from .config import DASHBOARD_STATE_FILE
 from .config import DASHBOARD_THREADS
 from .config import DASHBOARD_WARNING_COOLDOWN_SECONDS
+from .config import FIRST_WAR_CHECK_WAIT_SECONDS
 from .config import HERO_SUM_CACHE_SECONDS
 from .config import LEAGUE_NAME_CACHE_SECONDS
 from .config import MANUAL_DASHBOARD_REFRESH_COOLDOWN_SECONDS
@@ -1002,9 +1003,23 @@ class CwlDashboardMixin:
             await self._refresh_dashboard_with_retry(clan_code, context="loop")
 
 
+    @commands.Cog.listener()
+    async def on_family_wars_collected(self) -> None:
+        self._first_war_check.set()
+
+
+    async def _wait_for_first_war_check(self) -> None:
+        """League wars read as stale until the collectors check them after a start; refreshing first would post that."""
+        try:
+            await asyncio.wait_for(self._first_war_check.wait(), FIRST_WAR_CHECK_WAIT_SECONDS)
+        except asyncio.TimeoutError:
+            pass
+
+
     @dashboard_loop.before_loop
     async def before_dashboard_loop(self) -> None:
         await wait_for_boot_complete(self.bot)
+        await self._wait_for_first_war_check()
         if not self.clash_client.configured:
             return
         for clan_code in DASHBOARD_THREADS:

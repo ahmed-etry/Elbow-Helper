@@ -222,24 +222,19 @@ class ClanHealthPlayerCommandMixin:
         return latest_stored_end < latest_completed_end
 
     def _latest_activity_season(self, player_tag: str) -> Optional[str]:
-        """The season of the player's newest stored activity, regular-war attacks included."""
+        """The season of the player's newest stored activity, war attacks included."""
         stored = self.repository.latest_stored_activity_ts(player_tag)
-        # Only a regular-war attack newer than everything else can change the season.
-        regular = self.regular_wars.latest_attack_ts(player_tag=player_tag, after_ts=stored)
-        latest = max(stored, regular or 0)
+        # Only a war attack newer than everything else can change the season.
+        latest = stored
+        for wars in (self.regular_wars, self.league_wars):
+            latest = max(latest, wars.latest_attack_ts(player_tag=player_tag, after_ts=latest) or 0)
         return _season_key_for_datetime(datetime.fromtimestamp(latest, tz=UTC)) if latest > 0 else None
 
     def _player_war_attacks(self, player_tag: str, cycle_start: datetime, cycle_end: datetime) -> List[Dict[str, Any]]:
-        """Regular-war attacks from the family record and league-war attacks from stored league history."""
-        return newest_attacks(
-            self.regular_wars.attacks(
-                player_tag=player_tag, cycle_start_ts=int(cycle_start.timestamp()),
-                cycle_end_ts=int(cycle_end.timestamp()),
-            ),
-            self.repository.player_cwl_attacks(
-                player_tag=player_tag, cycle_start=cycle_start, cycle_end=cycle_end, limit=0,
-            ),
-        )
+        """Regular-war and league-war attacks from the family record."""
+        window = {"player_tag": player_tag, "cycle_start_ts": int(cycle_start.timestamp()),
+                  "cycle_end_ts": int(cycle_end.timestamp())}
+        return newest_attacks(self.regular_wars.attacks(**window), self.league_wars.attacks(**window))
 
     @staticmethod
     def _clan_code_fallback(*rows: Dict[str, Any]) -> Optional[str]:

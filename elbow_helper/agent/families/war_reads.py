@@ -5,9 +5,11 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 import sqlite3
 import json
+import re
 from collections import defaultdict
 
 from elbow_helper.configuration.clans import CLANS
+from elbow_helper.domain.cwl import SEASON_KEY
 from elbow_helper.features.clan_health.attendance import aggregate_attendance
 from elbow_helper.features.cwl.config import CWL_CLAN_CODES
 from .core import family_tool, IDS, TAGS, DATE
@@ -19,7 +21,7 @@ from ..read_cache import source_revision, stored_read
 
 CLANS_INPUT = {'type': 'array', 'minItems': 1, 'maxItems': 9, 'uniqueItems': True,
                'items': {'type': 'string', 'enum': list(CLANS)}}
-SEASON = {'type': 'string', 'maxLength': 20, 'pattern': r'^\d{4}-(0[1-9]|1[0-2])(-catchup)?$'}
+SEASON = {'type': 'string', 'maxLength': 20, 'pattern': f'^{SEASON_KEY}$'}
 SELECTION = {'clan_codes': CLANS_INPUT, 'season': SEASON,
              'season_keys': {'type': 'array', 'minItems': 1, 'maxItems': 12,
                              'uniqueItems': True, 'items': SEASON},
@@ -85,7 +87,7 @@ def cwl_clan_error(codes):
 
 
 async def record_selection(context, selection):
-    """Regular wars from the family record; league wars come from stored league history."""
+    """Regular wars from the family record's war reads; league wars from the CWL queries over the same record."""
     dependencies = getattr(context, 'read_dependencies', None)
     if dependencies is not None:
         # As stored reads do: taken before the read, and only while reads are cached.
@@ -105,7 +107,7 @@ async def record_selection(context, selection):
 
 
 async def selected_wars(context, arguments, war_type):
-    # Regular wars need the family record; league wars need stored league history.
+    # Regular wars need the record's war reads; league wars need the CWL queries.
     if (war_type != 'CWL' and record_wars.war_reads(context) is None
             or war_type != 'REG' and context.cwl_queries is None):
         return {'error': 'Stored war evidence is not available.', 'cause': 'missing_setup'}
@@ -127,13 +129,13 @@ async def selected_wars(context, arguments, war_type):
                         'exact_ranking': all(source['coverage'].get('exact_ranking', False) for source in sources)}}
         season = arguments.get('season')
         for key in arguments.get('season_keys', []) or ([season] if season else []):
-            month = key.removesuffix('-catchup')
+            if not isinstance(key, str) or re.fullmatch(SEASON_KEY, key) is None:
+                raise ValueError('Choose a season in YYYY-MM form, or a CWL season key a read returned.')
+            month = key[:7]
             start = datetime.fromisoformat(month + '-01').replace(tzinfo=timezone.utc)
-            if start.strftime('%Y-%m') != month:
-                raise ValueError('Choose a season in YYYY-MM form, with an optional CWL catchup suffix.')
             if war_type == 'REG':
                 if key != month:
-                    raise ValueError('Catchup seasons select CWL wars only.')
+                    raise ValueError('Season keys other than YYYY-MM select CWL wars only.')
                 end = start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1)
                 after, before, season = int(start.timestamp()), int(end.timestamp()), None
         if not (after is not None or season or arguments.get('season_keys') or arguments.get('history_limit')

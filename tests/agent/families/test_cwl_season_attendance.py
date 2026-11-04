@@ -1,6 +1,11 @@
-"""Recent-season attendance keeps complete season units and comparable periods."""
+"""Recent-season attendance keeps complete season units and comparable periods.
+
+League weeks come from the family record, which holds each war once, so no
+alias can double an opportunity or complete a season.
+"""
 from contextlib import closing
 from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
 from tempfile import TemporaryDirectory
@@ -11,36 +16,46 @@ from elbow_helper.configuration.clans import CLANS
 from elbow_helper.features.clan_health.database import ClanHealthRepository
 from elbow_helper.features.cwl.config import CWL_CLAN_NAMES
 from elbow_helper.features.cwl.queries import CwlQueries
+from elbow_helper.agent.families import war_reads
 from elbow_helper.agent.families.war_reads import cwl_results
 from agent.engine.test_agent_plan_flow import _context
+from agent.families.record_stub import with_record
+from tests.features.cwl_record_stub import LeagueRecord, attack, league_war, member
+
+MONTHS = {2: 'Q', 3: 'R', 4: 'J'}
+
+
+def end_of(month, round_number, day=2):
+    return int(datetime(2025, month, day, 8, tzinfo=timezone.utc).timestamp()) + round_number * 86400
 
 
 class SeasonAttendanceTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
+    async def asyncSetUp(self):
+        self.codes = list(CWL_CLAN_NAMES)[:2]
+        self.context = await self.build()
+
+    async def build(self, *, counts=((2, 7), (3, 7), (4, 3)), second=None, unlisted=()):
+        """Each clan plays every season; #P0 misses round 1. ``second`` adds an account to the first clan."""
         temporary = TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        repository = ClanHealthRepository(Path(temporary.name) / 'wars.db')
-        repository.initialize()
-        self.repository = repository
-        self.codes = list(CWL_CLAN_NAMES)[:2]
-        with closing(sqlite3.connect(repository.path)) as connection, connection:
-            for month, count in ((2, 7), (3, 7), (4, 3)):
-                for clan_index, code in enumerate(self.codes):
-                    for round_number in range(count):
-                        # Both clan sides deliberately share the same war tag.
-                        identity = '#' + {2: 'Q', 3: 'R', 4: 'J'}[month] + 'P' + '0289PYL'[round_number]
-                        end = month * 10000 + round_number * 100
-                        connection.execute('''INSERT INTO wars(war_id,war_type,clan_code,clan_tag,
-                            opponent_tag,state,preparation_start_ts,start_ts,end_ts,last_seen_ts,
-                            team_size,attacks_per_member,cwl_season) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                            (identity, 'CWL', code, CLANS[code].tag, '#Q0', 'warEnded',
-                             end - 90, end - 80, end, end, 1, 1, f'2025-{month:02}'))
-                        used = 0 if round_number == 0 else 1
-                        connection.execute('''INSERT INTO war_roster_members(war_id,clan_code,
-                            player_tag,player_name,attacks_expected,attacks_used,roster_state,captured_ts)
-                            VALUES(?,?,?,?,?,?,?,?)''',
-                            (identity, code, '#P0', 'Synthetic account', 1, used, 'warEnded', end))
-        self.context = replace(_context(), cwl_queries=CwlQueries(repository, lambda: {}))
+        self.record = await LeagueRecord(temporary.name).initialize()
+        for month, count in counts:
+            for clan_index, code in enumerate(self.codes):
+                wars = []
+                for round_number in range(count):
+                    identity = '#' + MONTHS[month] + 'PC'[clan_index] + '0289PYL'[round_number]
+                    lineup = [member('#P0', name='Synthetic account', used=0 if round_number == 0 else 1)]
+                    if second and clan_index == 0:
+                        lineup.append(member('#P2', name='Synthetic second account', used=second(identity)))
+                    if (code, identity) in unlisted:
+                        lineup = []
+                    attacks = [attack(index, row['tag'], '#Q0') for index, row in enumerate(lineup, 1) if row['used']]
+                    wars.append(league_war(identity, round_number + 1, end_of(month, round_number), lineup, attacks,
+                                           team_size=max(1, len(lineup))))
+                await self.record.week(code, f'2025-{month:02}', wars)
+        self.history = self.record.history()
+        self.queries = CwlQueries(self.history, lambda: {})
+        return replace(_context(), cwl_queries=self.queries)
 
     async def test_recent_seasons_include_all_wars_and_keep_per_clan_totals(self):
         result = await cwl_results(self.context, {'metric': 'attendance',
@@ -75,59 +90,27 @@ class SeasonAttendanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['period_unit'], 'war')
         self.assertLess(sum(row['wars'] for row in result['clan_totals']), 7)
 
-    async def test_multiple_seasons_use_one_reconciled_snapshot_without_roster_history_reads(self):
-        with (patch.object(self.repository, 'roster_history', side_effect=AssertionError('unnecessary read')),
-              patch.object(self.repository, 'attendance', wraps=self.repository.attendance) as read):
+    async def test_multiple_seasons_use_one_snapshot_without_roster_history_reads(self):
+        with (patch.object(self.history, 'roster_history', side_effect=AssertionError('unnecessary read')),
+              patch.object(self.history, 'attendance', wraps=self.history.attendance) as read):
             result = await cwl_results(self.context, {'metric': 'attendance',
                 'clan_codes': self.codes, 'history_limit': 2})
         self.assertEqual(read.call_count, 1)
         self.assertEqual(len(result['war_aliases']), 28)
-        self.assertEqual(len(result['war_ids']), 14)
+        self.assertEqual(len(result['war_ids']), 28)
+        self.assertEqual(result['duplicate_identities_removed'], 0)
         self.assertTrue(all(row['season_complete'] for row in result['clan_totals']))
 
-    async def test_duplicate_alias_cannot_complete_a_six_war_season(self):
-        with closing(sqlite3.connect(self.repository.path)) as conn, conn:
-            conn.execute("DELETE FROM wars WHERE cwl_season='2025-03' AND war_id='#RPL'")
-            columns = [row[1] for row in conn.execute('PRAGMA table_info(wars)')]
-            for code in self.codes:
-                row = list(conn.execute("SELECT * FROM wars WHERE clan_code=? AND cwl_season='2025-03' LIMIT 1", (code,)).fetchone())
-                row[columns.index('war_id')] = 'CWL:' + row[columns.index('war_id')]
-                conn.execute('INSERT INTO wars VALUES (' + ','.join('?' for _ in row) + ')', row)
-        result = await cwl_results(self.context, {'metric': 'attendance', 'clan_codes': self.codes, 'history_limit': 1})
+    async def test_a_six_war_season_is_not_complete(self):
+        context = await self.build(counts=((2, 7), (3, 6)))
+        result = await cwl_results(context, {'metric': 'attendance', 'clan_codes': self.codes, 'history_limit': 1})
         self.assertEqual(result['component_seasons'], ['2025-02'])
 
-    async def test_aliases_reconcile_rosters_and_attacks_without_doubling_opportunities(self):
-        code = self.codes[0]
-        with closing(sqlite3.connect(self.repository.path)) as conn, conn:
-            columns = [row[1] for row in conn.execute('PRAGMA table_info(wars)')]
-            row = list(conn.execute("SELECT * FROM wars WHERE clan_code=? AND cwl_season='2025-03' ORDER BY end_ts LIMIT 1", (code,)).fetchone())
-            tag = row[columns.index('war_id')]
-            row[columns.index('war_id')] = 'CWL:' + tag
-            conn.execute('INSERT INTO wars VALUES (' + ','.join('?' for _ in row) + ')', row)
-            conn.execute('''INSERT INTO war_roster_members(war_id,clan_code,player_tag,player_name,
-                attacks_expected,attacks_used,roster_state,captured_ts) VALUES(?,?,?,?,1,0,'warEnded',?)''',
-                ('CWL:' + tag, code, '#P0', 'Synthetic alias', 99999))
-            for identity in (tag, 'CWL:' + tag):
-                conn.execute('''INSERT INTO war_attacks(war_id,war_type,clan_code,clan_tag,
-                    player_tag,player_name,attack_order,defender_tag,stars,destruction,war_state,end_ts)
-                    VALUES(?,'CWL',?,?,?,'Synthetic account',1,'#Q0',3,100,'warEnded',30600)''',
-                    (identity, code, CLANS[code].tag, '#P0'))
-        result = await cwl_results(self.context, {'metric': 'attendance', 'clan_codes': self.codes, 'history_limit': 2})
-        self.assertEqual(result['duplicate_identities_removed'], 1)
-        total = next(row for row in result['clan_totals'] if row['clan_code'] == code and row['season'] == '2025-03')
-        self.assertEqual((total['wars'], total['attacks_used'], total['attacks_expected'], total['missed']), (7, 7, 7, 0))
-        other = next(row for row in result['clan_totals'] if row['clan_code'] == self.codes[1] and row['season'] == '2025-03')
-        self.assertEqual(other['missed'], 1)
-
     async def test_repeat_misses_stay_account_level_even_with_a_shared_member(self):
-        with closing(sqlite3.connect(self.repository.path)) as conn, conn:
-            conn.execute("""INSERT INTO war_roster_members
-                SELECT war_id,clan_code,'#P2','Synthetic second account',townhall,map_position,
-                    attacks_expected,CASE WHEN war_id='#QP0' THEN 0 ELSE 1 END,roster_state,captured_ts,source
-                FROM war_roster_members WHERE clan_code=?""", (self.codes[0],))
+        context = await self.build(second=lambda identity: 0 if identity == '#QP0' else 1)
         links = Mock()
         links.get_links_by_tags.return_value = {tag: {'discord_user_id': 42} for tag in ('#P0', '#P2')}
-        result = await cwl_results(replace(self.context, account_links=links),
+        result = await cwl_results(replace(context, account_links=links),
             {'metric': 'attendance', 'clan_codes': self.codes, 'history_limit': 2})
         missed = {}
         for row in result['rows']:
@@ -139,9 +122,8 @@ class SeasonAttendanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(missed[self.codes[0], '#P2'], {'2025-02'})
 
     async def test_missing_final_roster_is_reported_without_complete_totals(self):
-        with closing(sqlite3.connect(self.repository.path)) as conn, conn:
-            conn.execute("DELETE FROM war_roster_members WHERE clan_code=? AND war_id='#RP0'", (self.codes[0],))
-        result = await cwl_results(self.context, {'metric': 'attendance', 'clan_codes': self.codes, 'history_limit': 1})
+        context = await self.build(unlisted={(self.codes[0], '#RP0')})
+        result = await cwl_results(context, {'metric': 'attendance', 'clan_codes': self.codes, 'history_limit': 1})
         total = next(row for row in result['clan_totals'] if row['clan_code'] == self.codes[0])
         self.assertEqual(total['wars'], 7)
         self.assertFalse(total['totals_complete'])
@@ -149,14 +131,63 @@ class SeasonAttendanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(total['missed'])
         self.assertFalse(result['coverage']['exact_ranking'])
 
+    async def test_missing_attack_keeps_the_existing_unknown_attendance_display(self):
+        context = await self.build(second=lambda identity: 1)
+        await self.record.execute(
+            "DELETE FROM war_attacks WHERE attacker_member_id IN (SELECT m.id FROM war_members m "
+            "JOIN wars w ON w.id=m.war_id WHERE w.war_tag='#RP0' AND m.player_tag='#P2')")
+        result = await cwl_results(context, {'metric': 'attendance', 'clan_codes': self.codes[:1],
+                                             'season': '2025-03'})
+        row = next(row for row in result['rows'] if row['player_tag'] == '#P0')
+        self.assertEqual(row['unconfirmed_opportunities'], 1)
+        self.assertFalse(row['totals_complete'])
+        self.assertIsNone(result['clan_totals'][0]['missed'])
+        self.assertFalse(result['coverage']['exact_ranking'])
+        self.assertEqual(result['unproven_war_ids'], ['CWL:#RP0'])
+
+    async def test_a_season_key_stored_with_a_suffix_stays_reachable(self):
+        await self.record.week(self.codes[0], '2026-06-other', [league_war(
+            '#UP0', 1, end_of(6, 0, day=20), [member('#P0', used=0)], team_size=1)])
+        result = await cwl_results(self.context, {'metric': 'attendance', 'clan_codes': self.codes[:1],
+                                                  'season': '2026-06-other'})
+        self.assertEqual(result['war_ids'], ['CWL:#UP0'])
+        self.assertEqual(result['clan_totals'][0]['missed'], 1)
+        refused = await war_reads.selected_wars(with_record(self.context), {'clan_codes': self.codes[:1],
+                                                                            'season': '2026-06-other'}, 'REG')
+        self.assertEqual(refused['cause'], 'invalid_arguments')
+        invalid = await war_reads.selected_wars(self.context, {'clan_codes': self.codes[:1], 'season': 'June'}, 'CWL')
+        self.assertEqual(invalid['cause'], 'invalid_arguments')
+
+    async def test_an_unreadable_record_is_unavailable_not_empty(self):
+        with patch.object(self.history, 'attendance', side_effect=sqlite3.OperationalError('locked')):
+            result = await cwl_results(self.context, {'metric': 'attendance', 'clan_codes': self.codes,
+                                                      'history_limit': 1})
+        self.assertEqual(result['cause'], 'source_unavailable')
+
     def test_sql_guide_and_joins_keep_both_sides_of_a_shared_war_distinct(self):
+        """The old store's war tables stay readable as history."""
         from types import SimpleNamespace
         from elbow_helper.agent.datasets.sources import DataSource
         from elbow_helper.agent.datasets.guide import DataGuide
         from elbow_helper.agent.datasets.query import run_query
-        source = DataSource('health', self.repository.path, tables=tuple(
+        temporary = TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        repository = ClanHealthRepository(Path(temporary.name) / 'wars.db')
+        repository.initialize()
+        with closing(sqlite3.connect(repository.path)) as connection, connection:
+            for code in self.codes:
+                for round_number in range(7):
+                    # Both clan sides deliberately share the same war tag.
+                    identity = '#RP' + '0289PYL'[round_number]
+                    connection.execute('''INSERT INTO wars(war_id,war_type,clan_code,clan_tag,opponent_tag,state,
+                        end_ts,last_seen_ts,team_size,attacks_per_member,cwl_season) VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+                        (identity, 'CWL', code, CLANS[code].tag, '#Q0', 'warEnded', 1, 1, 1, 1, '2025-03'))
+                    connection.execute('''INSERT INTO war_roster_members(war_id,clan_code,player_tag,player_name,
+                        attacks_expected,attacks_used,roster_state,captured_ts) VALUES(?,?,?,?,?,?,?,?)''',
+                        (identity, code, '#P0', 'Synthetic account', 1, 1, 'warEnded', 1))
+        source = DataSource('health', repository.path, tables=tuple(
             (name, 'none', 'Synthetic war evidence') for name in ('wars', 'war_roster_members', 'war_attacks')))
-        paths = SimpleNamespace(project_root=self.repository.path.parent, data_root=self.repository.path.parent)
+        paths = SimpleNamespace(project_root=repository.path.parent, data_root=repository.path.parent)
         guide = DataGuide(paths, (source,)).for_levels(set())
         self.assertIn('war_id TEXT PK1', guide)
         self.assertIn('clan_code TEXT PK2', guide)

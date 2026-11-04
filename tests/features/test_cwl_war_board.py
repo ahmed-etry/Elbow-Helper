@@ -196,32 +196,18 @@ class CwlAttacksLeftTests(unittest.TestCase):
 
 
 class CwlLeagueWarFetchTests(unittest.IsolatedAsyncioTestCase):
-    async def test_round_total_includes_future_placeholder_rounds(self) -> None:
+    async def test_league_wars_come_from_the_family_record(self) -> None:
+        # Round totals, seasons and staleness are covered with real record weeks in test_cwl_record.
         manager = CwlRouterMixin()
-        manager._leaguegroup_cache = {}
-        manager._war_cache = {}
         war = _cwl_war("inWar", 1)
-        war["startTime"] = "20260703T080000.000Z"
-        manager._fetch_json = AsyncMock(
-            side_effect=[
-                {
-                    "season": "2026-07-01",
-                    "rounds": [
-                        {"warTags": ["#WAR1"]},
-                        {"warTags": ["#0"]},
-                        {"warTags": ["#0"]},
-                    ],
-                },
-                war,
-            ]
-        )
+        manager.cwl_groups = SimpleNamespace(wars=AsyncMock(return_value=[war]))
+        manager.clash_client = SimpleNamespace(get=AsyncMock())
 
         wars = await manager._get_league_wars("BEH")
 
-        self.assertEqual(len(wars), 1)
-        self.assertEqual(wars[0]["_total_rounds"], 3)
-        self.assertEqual(manager._leaguegroup_cache["BEH"]["total_rounds"], 3)
-        self.assertEqual(wars[0]["_season"], "2026-07")
+        self.assertEqual(wars, [war])
+        manager.cwl_groups.wars.assert_awaited_once_with("BEH")
+        manager.clash_client.get.assert_not_awaited()
 
 
 class CwlWarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):

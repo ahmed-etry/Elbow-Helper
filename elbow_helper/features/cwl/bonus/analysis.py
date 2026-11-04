@@ -1,8 +1,7 @@
-"""CWL bonus API fetch and scoring analysis."""
+"""CWL bonus scoring analysis over stored league wars."""
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import sqlite3
 from typing import Any
@@ -13,11 +12,9 @@ from typing import Set
 from typing import Tuple
 from typing import Protocol
 
-from elbow_helper.domain.player_tags import encode_clash_tag
 from elbow_helper.infrastructure.clash import ClashClient
 from elbow_helper.configuration.clans import CLAN_NAMES
 from ..config import CLAN_DELTA_STAR_MULTIPLIERS
-from ..config import CWL_CLAN_TAGS
 
 LOGGER = logging.getLogger(__name__)
 
@@ -35,6 +32,13 @@ class BonusWarSource(Protocol):
     ) -> list[dict[str, Any]]: ...
 
 
+class LeagueGroupSource(Protocol):
+    async def current_wars(
+        self,
+        clan_code: str,
+    ) -> Tuple[List[Dict[str, Any]], List[str]]: ...
+
+
 class BonusAnalysisService:
     """Load CWL war data and calculate bonus scoring results."""
 
@@ -42,9 +46,12 @@ class BonusAnalysisService:
         self,
         clash_client: ClashClient,
         repository: BonusWarSource,
+        groups: LeagueGroupSource | None = None,
     ):
+        # Clash serves the dashboards' player and clan profiles; league data comes from the record.
         self._clash_client = clash_client
         self._repository = repository
+        self._groups = groups
 
     async def fetch_json(
         self,
@@ -68,58 +75,10 @@ class BonusAnalysisService:
         self,
         clan_code: str,
     ) -> Tuple[List[Dict[str, Any]], List[str]]:
-        """Fetch active CWL payloads for live dashboard views."""
-        warnings: List[str] = []
-        clan_tag = CWL_CLAN_TAGS.get(clan_code)
-        if not clan_tag:
-            return [], [f"{clan_code}: clan tag not configured."]
-
-        group_path = f"/clans/{encode_clash_tag(clan_tag)}/currentwar/leaguegroup"
-        group = await self.fetch_json(group_path)
-        if not group:
+        """The clan's league wars for live dashboard views, as the family record holds them."""
+        if self._groups is None:
             return [], [f"{clan_code}: failed to fetch league group."]
-
-        war_refs: List[Tuple[int, str]] = []
-        round_index = 1
-        for round_data in group.get("rounds", []) or []:
-            for war_tag in round_data.get("warTags", []) or []:
-                if war_tag and war_tag != "#0":
-                    war_refs.append((round_index, war_tag))
-            round_index += 1
-        if not war_refs:
-            return [], [f"{clan_code}: no league wars found."]
-
-        sem = asyncio.Semaphore(6)
-        failed_wars = 0
-
-        async def fetch_war(ref: Tuple[int, str]) -> Optional[Dict[str, Any]]:
-            nonlocal failed_wars
-            round_no, war_tag = ref
-            war_path = f"/clanwarleagues/wars/{encode_clash_tag(war_tag)}"
-            async with sem:
-                war = await self.fetch_json(war_path)
-            if not war:
-                failed_wars += 1
-                return None
-            if war.get("clan", {}).get("tag") != clan_tag and war.get("opponent", {}).get("tag") != clan_tag:
-                return None
-            war["_round"] = round_no
-            war["_warTag"] = war_tag
-            return war
-
-        fetched = await asyncio.gather(*(fetch_war(ref) for ref in war_refs))
-        wars = [war for war in fetched if war]
-        wars.sort(key=lambda row: (row.get("_round") or 0, row.get("_warTag") or ""))
-        if failed_wars:
-            if failed_wars == 1:
-                warnings.append(f"{clan_code}: 1 CWL war couldn't be loaded.")
-            else:
-                warnings.append(
-                    f"{clan_code}: {failed_wars} CWL wars couldn't be loaded."
-                )
-        if not wars:
-            warnings.append(f"No CWL wars were found for {clan_code}.")
-        return wars, warnings
+        return await self._groups.current_wars(clan_code)
 
 
     def seasons(

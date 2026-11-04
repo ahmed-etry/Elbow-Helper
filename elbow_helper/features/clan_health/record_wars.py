@@ -1,9 +1,10 @@
-"""Regular wars for clan health, from the family record.
+"""Regular and league wars for clan health, from the family record.
 
-The collectors check every clan's war; clan health asks for no regular war
+The collectors check every clan's war and league; clan health asks for no war
 itself. Health keeps old clan health's view of wars: each war as last
 captured, an ongoing one at its last check, in a window that includes both
-ends. League wars stay on clan health's own stored league history.
+ends. A league war counts its final lineup: a player swapped out before
+battle day was never in the war, so never joined or missed it.
 
 Regular means the wars the record holds as regular. Wars the record proves
 friendly are left out. A count the record does not know adds nothing: it
@@ -42,7 +43,7 @@ def newest_attacks(*sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def attack_row(row: dict[str, Any], codes: dict[str, str]) -> dict[str, Any]:
     """A record attack as clan health's attack rows show it, by clan codes keyed by tag."""
     return {
-        "war_id": row["war_id"], "war_type": "REG", "clan_code": codes.get(row["clan_tag"], ""),
+        "war_id": row["war_id"], "war_type": row["type"], "clan_code": codes.get(row["clan_tag"], ""),
         "clan_tag": row["clan_tag"], "end_ts": row["time"] // SECOND, "war_state": row["state"],
         "player_tag": row["attacker_tag"], "player_name": row["attacker_name"],
         "attack_order": row["attack_order"], "defender_tag": row["defender_tag"],
@@ -72,10 +73,14 @@ def _spans(start_ts: int, end_ts: int) -> list[tuple[int, int]]:
 
 
 class RegularWars:
-    """Regular-war evidence for clan health, read on the calling worker thread."""
+    """War evidence of one kind for clan health, read on the calling worker thread.
 
-    def __init__(self, reads, clans=CLANS):
+    Regular wars by default; ``types=("CWL",)`` reads league wars the same way.
+    """
+
+    def __init__(self, reads, clans=CLANS, types=("REG",)):
         self.reads = reads
+        self.types = tuple(types)
         # Family clan tags by clan code.
         self.tags = {code: clan.tag for code, clan in clans.items()}
         self.codes = {tag: code for code, tag in self.tags.items()}
@@ -89,7 +94,7 @@ class RegularWars:
 
     def activity(self, *, cycle_start_ts: int, cycle_end_ts: int,
                  player_tags: Iterable[str]) -> dict[str, dict[str, Any]]:
-        """Each account's regular wars across the family, by account tag."""
+        """Each account's wars across the family, by account tag."""
         # Rows carry the record's tag spelling; health rows keep their own. A
         # tag that is not a valid Clash tag sat in no war.
         spelled = {}
@@ -102,7 +107,8 @@ class RegularWars:
         for after, before in _spans(cycle_start_ts, cycle_end_ts) if selected else ():
             for index in range(0, len(selected), TAGS_PER_READ):
                 chunk = selected[index:index + TAGS_PER_READ]
-                totals = self._run(self.reads.health_totals(self._clans(), after, before, player_tags=chunk))
+                totals = self._run(self.reads.health_totals(self._clans(), after, before, player_tags=chunk,
+                                                            types=self.types))
                 for row in totals["rows"]:
                     tag = spelled[row["player_tag"]]
                     total = result.setdefault(tag, dict.fromkeys(row, 0) | {"player_tag": row["player_tag"]})
@@ -113,11 +119,11 @@ class RegularWars:
 
     def war_counts(self, *, cycle_start_ts: int, cycle_end_ts: int,
                    clan_codes: Iterable[str] | None = None) -> dict[str, int]:
-        """Regular wars with a stored lineup, per clan code."""
+        """Wars with a stored lineup, per clan code."""
         clans = self._clans(clan_codes)
         result = {}
         for after, before in _spans(cycle_start_ts, cycle_end_ts) if clans else ():
-            counts = self._run(self.reads.health_war_counts(clans, after, before))
+            counts = self._run(self.reads.health_war_counts(clans, after, before, types=self.types))
             for tag, value in counts["clans"].items():
                 if value["wars_with_lineup"]:
                     code = self.codes[tag]
@@ -133,18 +139,19 @@ class RegularWars:
             offset = 0
             while offset is not None and (limit is None or len(rows) < limit):
                 page = self._run(self.reads.attacks(self._clans(), after, before, player_tags=[player_tag],
-                                                    view="capture", limit=PAGE_ROWS, offset=offset))
+                                                    types=self.types, view="capture", limit=PAGE_ROWS,
+                                                    offset=offset))
                 rows.extend(page["rows"])
                 offset = page["next_offset"]
         return rows if limit is None else rows[:limit]
 
     def attacks(self, *, player_tag: str, cycle_start_ts: int, cycle_end_ts: int) -> list[dict[str, Any]]:
-        """The account's regular-war attacks, newest war first, as clan health's attack rows."""
+        """The account's attacks, newest war first, as clan health's attack rows."""
         return [attack_row(row, self.codes)
                 for row in self._attack_rows(player_tag, cycle_start_ts, cycle_end_ts, None)]
 
     def latest_attack_ts(self, *, player_tag: str, after_ts: int = FLOOR, until_ts: int | None = None) -> int | None:
-        """When the account's newest regular-war attack was last captured, if after ``after_ts``."""
+        """When the account's newest attack was last captured, if after ``after_ts``."""
         end = int(until_ts if until_ts is not None else datetime.now(timezone.utc).timestamp())
         rows = self._attack_rows(player_tag, max(int(after_ts), FLOOR), end, 1)
         return rows[0]["time"] // SECOND if rows else None

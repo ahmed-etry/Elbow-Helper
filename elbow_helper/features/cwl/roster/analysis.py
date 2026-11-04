@@ -290,7 +290,7 @@ class CwlRosterAnalysisMixin:
         self,
         history_limit: int | None,
     ) -> dict[str, Any]:
-        return self.clan_health_repository.roster_history(history_limit)
+        return self.cwl_history.roster_history(history_limit)
 
     @staticmethod
     def _profiles_for_roster_history(

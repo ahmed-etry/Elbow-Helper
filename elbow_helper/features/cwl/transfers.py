@@ -25,17 +25,14 @@ from elbow_helper.features.rosters.models import LinkedAccount
 from elbow_helper.features.rosters.models import RosterMember
 from elbow_helper.features.rosters.services.profiles import fetch_account_profiles
 
-from elbow_helper.domain.player_tags import encode_clash_tag
 from elbow_helper.configuration.channels import CLAN_TRANSFERS
 from elbow_helper.configuration.clans import CLAN_NAMES
 from elbow_helper.configuration.roles import CWL_HELPERS
 from elbow_helper.configuration.roles import LEAD_PLUS
 from elbow_helper.infrastructure.persistence import read_json
-from elbow_helper.domain.cwl import cwl_season_key
 from elbow_helper.infrastructure.persistence import write_json_atomic
 from .config import CLAN_LINKS
 from .config import CWL_CLAN_CODES
-from .config import CWL_CLAN_TAGS
 from .config import TRANSFER_STATE_FILE
 from .config import TRANSFER_REMINDER_RETENTION_HOURS
 
@@ -502,61 +499,24 @@ class CwlTransferMixin:
         return codes & valid_codes, unknown
 
 
-    @staticmethod
-    def _league_group_has_started(group: Dict[str, Any]) -> bool:
-        state = str(group.get("state") or "").strip()
-        if state in {"preparation", "inWar", "warEnded", "ended"}:
-            return True
-        return any(
-            war_tag and war_tag != "#0"
-            for round_data in group.get("rounds", []) or []
-            for war_tag in round_data.get("warTags", []) or []
-        )
-
-
     async def _cwl_spin_statuses(
         self,
         clan_codes: Set[str],
         now: Optional[datetime] = None,
     ) -> tuple[Set[str], Set[str]]:
-        """Return clans with confirmed spins and clans whose status was unavailable."""
+        """Return clans with confirmed spins and clans whose status was unavailable.
+
+        The family record's latest league-group check decides; see ``CwlGroups.spin_status``.
+        """
         if not clan_codes:
             return set(), set()
-        if not self.clash_client.configured:
-            return set(), set(clan_codes)
-
-        expected_season = (now or datetime.now(dt_timezone.utc)).strftime("%Y-%m")
+        moment = now or datetime.now(dt_timezone.utc)
 
         async def load(clan_code: str) -> tuple[str, str]:
-            clan_tag = CWL_CLAN_TAGS.get(clan_code)
-            if not clan_tag:
-                return clan_code, "unavailable"
-            response = await self.clash_client.get(
-                f"/clans/{encode_clash_tag(clan_tag)}/currentwar/leaguegroup",
-                attempts=1,
-                timeout_seconds=15,
-                fresh=True,
-            )
-            if response.status == 404:
-                return clan_code, "not_started"
-            group = response.payload_object
-            if response.status != 200 or group is None:
-                LOGGER.warning(
-                    "Could not check CWL spin status clan=%s status=%s error=%s",
-                    clan_code,
-                    response.status,
-                    response.error,
-                )
-                return clan_code, "unavailable"
-            if not self._league_group_has_started(group):
-                return clan_code, "not_started"
-            wars = await self._get_league_wars(clan_code)
-            season = cwl_season_key(wars)
-            if not season:
-                return clan_code, "unavailable"
-            if season == expected_season:
-                return clan_code, "started"
-            return clan_code, "not_started"
+            status = await self.cwl_groups.spin_status(clan_code, moment)
+            if status == "unavailable":
+                LOGGER.warning("Could not check CWL spin status clan=%s: no recent league group check", clan_code)
+            return clan_code, status
 
         statuses = await asyncio.gather(*(load(code) for code in clan_codes))
         started = {code for code, status in statuses if status == "started"}

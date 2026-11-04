@@ -1,37 +1,16 @@
-"""Shared CWL calendar rules."""
+"""Shared CWL calendar rules.
+
+One league a month, signed up and spun on days 1-11. A league's season key is
+the month the collector stores for it (YYYY-MM); a key stored with a suffix,
+such as June 2026's second league, is read as stored.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
-from datetime import datetime, timedelta, timezone
-from typing import Any
+from datetime import datetime, timezone
 
-
-def cwl_season_key(wars: Iterable[Mapping[str, Any]]) -> str:
-    """Key a league by its earliest UTC start, estimated from each war's round."""
-    starts = []
-    for war in wars:
-        if not isinstance(war, Mapping):
-            continue
-        round_number = war.get("cwl_round", war.get("_round"))
-        if type(round_number) is not int or not 1 <= round_number <= 7:
-            continue
-        try:
-            if war.get("start_ts"):
-                start = datetime.fromtimestamp(float(war["start_ts"]), tz=timezone.utc)
-            elif isinstance(war.get("_start_dt"), datetime):
-                start = war["_start_dt"]
-            else:
-                start = datetime.strptime(war["startTime"], "%Y%m%dT%H%M%S.%fZ")
-            if start.tzinfo is None:
-                start = start.replace(tzinfo=timezone.utc)
-            starts.append(start.astimezone(timezone.utc) - timedelta(days=round_number - 1))
-        except (KeyError, TypeError, ValueError, OverflowError, OSError):
-            continue
-    if not starts:
-        return ""
-    first = min(starts)
-    return first.strftime("%Y-%m") + ("-catchup" if first.day > 10 else "")
+# A season key: the league's month, with an optional stored suffix.
+SEASON_KEY = r"\d{4}-(0[1-9]|1[0-2])(-[a-z]+)?"
 
 
 def is_cwl_window(reference: datetime | None = None) -> bool:

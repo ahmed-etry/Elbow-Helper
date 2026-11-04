@@ -95,12 +95,12 @@ class ClanHealthFlagMixin:
                 "cycle_start_ts": int(cycle_start.timestamp()),
                 "cycle_end_ts": int(cycle_end.timestamp()),
             }
-            # Regular wars come from the family record, league wars from stored league history.
+            # Regular and league wars both come from the family record.
             regular_wars_by_clan = self.regular_wars.war_counts(
                 **window,
                 clan_codes={str(r.get("clan_code") or "") for r in players if str(r.get("clan_code") or "")},
             )
-            family_cwl_available = max(self.repository.cwl_war_counts(**window).values(), default=0)
+            family_cwl_available = max(self.league_wars.war_counts(**window).values(), default=0)
 
         for row in players:
             clan_code = str(row.get("clan_code") or "")

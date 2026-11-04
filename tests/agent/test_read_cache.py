@@ -33,12 +33,12 @@ from elbow_helper.agent.research.history import read_discord_channel_history
 from elbow_helper.agent.research.history_cache import history_page
 from elbow_helper.agent.research.history_cache import HISTORY_PAGE_SECONDS
 from elbow_helper.agent.families import workflow_reads, identity_reads
-from elbow_helper.features.clan_health.database import ClanHealthRepository
 from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.features.cwl.bonus.config import BonusConfigRepository
 from elbow_helper.features.ranked_stats.queries import RankedQueries
 from elbow_helper.features.ranked_stats.store import RankedStore
-from elbow_helper.infrastructure.persistence.revisions import release_sqlite_revision
+from elbow_helper.infrastructure.persistence.revisions import release_sqlite_revision, sqlite_revision
+from tests.features.cwl_record_stub import LeagueRecord, league_war, member
 from elbow_helper.agent.families import record_wars
 from agent.engine.test_agent_plan_flow import _context
 from agent.families.record_stub import with_record
@@ -273,7 +273,8 @@ class StoredCacheTests(unittest.IsolatedAsyncioTestCase):
                 connection.execute('CREATE TABLE synthetic (value INTEGER)')
             try:
                 settings.write_text('{"revision":1}', encoding='utf-8')
-                source = CwlQueries(SimpleNamespace(path=path), lambda: {}, bonus_config=BonusConfigRepository())
+                history = SimpleNamespace(cache_revision=lambda: sqlite_revision(path))
+                source = CwlQueries(history, lambda: {}, bonus_config=BonusConfigRepository())
                 source.bonus_wars = Mock(return_value={'rows': []})
                 local = replace(_context(), cwl_queries=source, read_cache=ReadCache())
                 with patch('elbow_helper.features.cwl.bonus.config.BONUS_CONFIG_FILE', settings):
@@ -289,26 +290,20 @@ class StoredCacheTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_finished_wars_and_cwl_survive_time_but_invalidate_on_insert_and_correction(self):
         with TemporaryDirectory() as directory:
-            repository = ClanHealthRepository(Path(directory) / 'wars.db')
-            repository.initialize()
+            record = await LeagueRecord(directory).initialize()
             try:
-                source = CwlQueries(repository, lambda: {})
+                source = record.queries()
                 source.attendance = Mock(wraps=source.attendance)
                 local = replace(_context(), cwl_queries=source, read_cache=ReadCache())
-                # League wars are cached; regular wars come from the record, tracked by its revision.
+                # League wars are cached by the family record's revision.
                 args = {'clan_codes': ['BEH'], 'latest_completed': 1}
                 first = await selected_wars(local, args, 'CWL')
                 with patch('elbow_helper.agent.read_cache.monotonic', return_value=10**10):
                     self.assertEqual(await selected_wars(local, args, 'CWL'), first)
                 self.assertEqual(source.attendance.call_count, 1)
-                with closing(sqlite3.connect(repository.path)) as connection, connection:
-                    connection.execute('''INSERT INTO wars(war_id,war_type,clan_code,clan_tag,
-                        opponent_tag,state,preparation_start_ts,start_ts,end_ts,last_seen_ts,
-                        team_size,attacks_per_member) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
-                        ('CWL', 'CWL', 'BEH', '#P0', '#Q0', 'warEnded', 1, 2, 100, 100, 1, 2))
+                await record.week('BEH', '2026-09', [league_war('#C0', 1, 100, [member('#P0')], start=2)])
                 await selected_wars(local, args, 'CWL')
-                with closing(sqlite3.connect(repository.path)) as connection, connection:
-                    connection.execute("UPDATE wars SET last_seen_ts=101 WHERE war_id='CWL'")
+                await record.execute("UPDATE wars SET last_seen_at=101000000 WHERE war_tag='#C0'")
                 await selected_wars(local, args, 'CWL')
                 self.assertEqual(source.attendance.call_count, 3)
                 source.performance = Mock(wraps=source.performance)
@@ -316,7 +311,7 @@ class StoredCacheTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(await stored_read(local, source, 'performance', season='2026-09'), first)
                 source.performance.assert_called_once()
             finally:
-                release_sqlite_revision(repository.path)
+                release_sqlite_revision(record.path)
 
     async def test_stored_ranked_window_is_invalidated_by_new_battles_and_backfill(self):
         with TemporaryDirectory() as directory:
