@@ -138,6 +138,7 @@ class PlanRunner:
         self.tool_calls = 0
         self.evidence_characters = 0
         self.discussion_reads = False
+        self.data_query_reads = False
         self.model_results = {}
         self.sent_summaries = {}
 
@@ -145,8 +146,10 @@ class PlanRunner:
     def evidence_limit(self):
         # Conversations carry many speakers and citation envelopes. Their
         # chunks still share the existing token, round and deadline budgets.
-        return (limits.MAX_DISCUSSION_EVIDENCE_CHARACTERS if self.discussion_reads
-                else limits.MAX_EVIDENCE_CHARACTERS)
+        limit = (limits.MAX_DISCUSSION_EVIDENCE_CHARACTERS if self.discussion_reads
+                 else limits.MAX_EVIDENCE_CHARACTERS)
+        # The schema guide and a whole-family SQL summary share this room.
+        return max(limit, limits.MAX_QUERY_EVIDENCE_CHARACTERS) if self.data_query_reads else limit
 
     def _remember_sources(self, payload, scope, arguments):
         channels = set(scope.get("bound_source_channels", ()))
@@ -417,13 +420,17 @@ class PlanRunner:
         plan_state: PlanExecutionState,
     ):
         async with self.state_lock:
+            query_data = (step['capability'] == 'query_bot_data'
+                          or step['capability'] == 'open_capability_group' and 'data_guide' in payload)
+            self.data_query_reads |= query_data
             summaries = {key: values.copy() for key, values in self.sent_summaries.items()}
             structured_content = json.dumps(payload, ensure_ascii=False, default=str, separators=(",", ":"))
             limit = self.budget.result_character_limit(
                 plan_state.emitted,
                 pending_call_ids=(step["id"],),
                 maximum=min(
-                    limits.MAX_TOOL_RESULT_CHARACTERS,
+                    (limits.MAX_QUERY_RESULT_CHARACTERS if query_data
+                     else limits.MAX_TOOL_RESULT_CHARACTERS),
                     self.evidence_limit - self.evidence_characters,
                 ),
             )

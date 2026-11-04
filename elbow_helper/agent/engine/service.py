@@ -21,7 +21,6 @@ from ..actions.contracts import ActionClass
 from ..discord_actions.roles import role_change_access
 from ..access import (
     AgentAccessLost,
-    has_lookup_access,
     leadership_asker,
     require_evidence_access,
 )
@@ -178,11 +177,6 @@ class AgentService:
         full_registry = {name: tool for name, tool in registry.items()
                          if tool.default_visible and name != "find_gif"}
         if family_catalogue:
-            data_query = specialist_registry.get("query_bot_data")
-            if data_query is not None and has_lookup_access(
-                    context, data_query.contract.required_access if data_query.contract else frozenset()):
-                # Long-period and many-account comparisons need it from the first plan.
-                full_registry["query_bot_data"] = data_query
             full_registry["open_capability_group"] = discovery_tool(
                 specialist_registry, registry, lambda: (session.replace_tools((plan_definition(registry),)),
                                                       setattr(budget, "request_limits", limits.RESEARCH_LIMITS)),

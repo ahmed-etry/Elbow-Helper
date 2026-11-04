@@ -26,8 +26,7 @@ class RankedFamilyTests(unittest.IsolatedAsyncioTestCase):
             'read_discord_access', 'find_discord_roles', 'read_discord_role_change_preview',
             'read_cwl_results', 'read_member_accounts', 'read_clan_rosters', 'read_member_cohort',
             'read_recruitment_pipeline', 'read_hibernation', 'read_current_war', 'read_promotion_cases',
-            'read_community_reference', 'read_ranked_activity', 'read_conversation_evidence', 'read_bot_command_help',
-            'query_bot_data'})
+            'read_community_reference', 'read_ranked_activity', 'read_conversation_evidence', 'read_bot_command_help'})
 
     async def test_seasonal_clan_activity_uses_community_accounts_not_parked_members(self):
         roster = {'rows': [{'player_tag': '#Q0'}], 'clans': [{'clan_code': 'BE4', 'basis': 'league_group_cohort'}]}

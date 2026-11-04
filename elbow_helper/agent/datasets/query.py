@@ -13,6 +13,7 @@ import time
 from ..access import can_access_message_channel, has_reader_access_requirements, require_evidence_access
 
 QUERY_SECONDS = 20.0  # a full pass over player_snapshots takes ~10s; tool timeout is 30s
+DEFAULT_QUERY_ROWS = 1000
 MAX_QUERY_VALUE_BYTES = 8 * 1024 * 1024
 MAX_QUERY_RESULT_BYTES = 16 * 1024 * 1024
 STATE_NAMES = re.compile(r"\bstate\.(\w+)\b", re.I)
@@ -53,7 +54,7 @@ def _identifiers(sql):
     ).lower()
 
 
-def run_query(sources, paths, levels, sql, params=None, max_rows=200, *,
+def run_query(sources, paths, levels, sql, params=None, max_rows=DEFAULT_QUERY_ROWS, *,
               channel_ids=None, read_channels=None):
     """Use a fresh connection; return touched levels separately from data."""
     if not isinstance(sql, str) or not 1 <= len(sql) <= 4000:
@@ -131,6 +132,11 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=200, *,
                 try:
                     doc = source.resolve(paths).read_text(encoding="utf-8")
                     data = json.loads(doc)
+                    if source.excluded_keys:
+                        if not isinstance(data, dict):
+                            raise ValueError("Invalid object state")
+                        data = {key: value for key, value in data.items() if key not in source.excluded_keys}
+                        doc = json.dumps(data)
                     if source.evidence_channels is not None:
                         evidence_channels = source.evidence_channels(data)
                         if channel_ids is None or not evidence_channels <= channel_ids:
@@ -212,6 +218,7 @@ def run_query(sources, paths, levels, sql, params=None, max_rows=200, *,
                 raw_rows.append(row)
             truncated = total_rows > len(raw_rows)
             result = {
+                "source": "bot_data",
                 "rows": [
                     {
                         key: _cell(value, truncate=max_rows is not None)
@@ -281,7 +288,7 @@ def reader_levels(context):
     return levels
 
 
-async def query_context(context, sql, params=None, max_rows=200):
+async def query_context(context, sql, params=None, max_rows=DEFAULT_QUERY_ROWS):
     from .catalogue import SOURCES
     from ..disclosure import exclude_source
     await require_evidence_access(context)
@@ -320,5 +327,5 @@ async def query_context(context, sql, params=None, max_rows=200):
 
 async def query_bot_data(context, arguments):
     return await query_context(
-        context, arguments["sql"], arguments.get("params"), arguments.get("max_rows", 200),
+        context, arguments["sql"], arguments.get("params"), arguments.get("max_rows", DEFAULT_QUERY_ROWS),
     )
