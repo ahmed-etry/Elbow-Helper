@@ -419,7 +419,34 @@ def _record_size_limit(content: str, limit: int) -> str:
         payload = {}
     payload["truncated"] = True
 
+    # SQL's row count must describe the rows actually delivered, including
+    # compact tables nested in final-answer evidence and earlier SQL cuts.
+    query_tables = []
+
+    def find_query_tables(value):
+        if not isinstance(value, dict):
+            return
+        rows = value.get('rows')
+        if (value.get('source') == 'bot_data' and type(value.get('row_count')) is int
+                and isinstance(rows, (list, dict))):
+            query_tables.append((value, value.get('total_rows', value['row_count'])))
+        for child in value.values():
+            if isinstance(child, dict):
+                find_query_tables(child)
+
+    find_query_tables(payload)
+
     def encode():
+        for table, total in query_tables:
+            rows = table['rows']
+            kept = len(rows.get('rows', ())) if isinstance(rows, dict) else len(rows)
+            if kept < total:
+                table.update(row_count=kept, total_rows=total, rows_cut=total - kept, truncated=True)
+                table['instruction'] = (
+                    f"The result is incomplete: {total - kept} rows were cut to fit this read. "
+                    "Select fewer columns, filter or group the query. "
+                    "Do not present these rows as the full answer."
+                )
         return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
     def collections(value, path=""):

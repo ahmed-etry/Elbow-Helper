@@ -4,7 +4,7 @@ from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ..models import RegisteredAgentTool
 from ..engine.capability_contract import CapabilityContract
-from .query import query_bot_data
+from .query import DEFAULT_QUERY_ROWS, query_bot_data
 
 
 def dataset_tools():
@@ -18,14 +18,15 @@ def dataset_tools():
                     "sql": {"type": "string", "minLength": 1, "maxLength": 4000},
                     "params": {"type": "object", "additionalProperties": True},
                     "max_rows": {
-                        "type": "integer", "minimum": 1, "maximum": 1000, "default": 200,
+                        "type": "integer", "minimum": 1, "maximum": 1000, "default": DEFAULT_QUERY_ROWS,
                     },
                 },
                 "required": ["sql"], "additionalProperties": False,
             },
             usage_note=(
                 "Prefer one SQL query for the whole question. Let SQL count, group, join, "
-                "filter and sort. Read records only for records questions or specific logged cases."
+                "filter and sort. "
+                "Read records only for records questions or specific logged cases."
             ),
         ),
         query_bot_data,

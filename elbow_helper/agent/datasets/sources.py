@@ -20,8 +20,11 @@ class DataSource:
     coverage: Callable[[sqlite3.Connection, dict, int], dict] | None = None
     channel_keyed: bool = False
     evidence_channels: Callable[[object], set[int]] | None = None
+    excluded_keys: tuple[str, ...] = ()
 
     def resolve(self, paths):
         if self.alias == "achievements":
             return paths.data_root / ACHIEVEMENTS_DATABASE
+        if self.alias == "family":
+            return paths.data_root / self.path
         return self.path if self.path.is_absolute() else paths.project_root / self.path

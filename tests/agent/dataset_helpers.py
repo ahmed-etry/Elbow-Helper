@@ -1,6 +1,8 @@
 """Create every queryable schema using the feature's normal initializer."""
 import logging
+from contextlib import closing
 from pathlib import Path
+import sqlite3
 from types import SimpleNamespace
 from unittest.mock import patch
 from elbow_helper.agent.datasets.catalogue import SOURCES
@@ -9,6 +11,7 @@ from elbow_helper.features.clan_health.database.repository import ClanHealthRepo
 from elbow_helper.features.rosters.repository.repository import RosterRepository
 from elbow_helper.features.records.database.repository import RecordRepository
 from elbow_helper.features.achievements.database import AchievementsDatabaseMixin
+from elbow_helper.data.store.schema import create_schema
 
 
 def synthetic_datasets(root):
@@ -16,6 +19,9 @@ def synthetic_datasets(root):
     files = {source.alias:source.resolve(paths) for source in SOURCES if source.tables}
     for path in files.values():
         path.parent.mkdir(parents=True, exist_ok=True)
+    with closing(sqlite3.connect(files["family"])) as connection:
+        create_schema(connection)
+        connection.commit()
     with patch("elbow_helper.features.account_links.database.DB_PATH", files["links"]):
         AccountLinksDbMixin()._init_db()
     ClanHealthRepository(files["health"]).initialize()

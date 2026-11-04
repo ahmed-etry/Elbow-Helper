@@ -10,41 +10,6 @@ SOURCES = (
         "health", DB_PATH,
         tables=(
             (
-                "wars", "none",
-                "One war of one family clan. war_type REG/CWL; state preparation/inWar/warEnded. "
-                "Filter history on end_ts (UTC seconds); start_ts is battle day start. "
-                "REG includes friendly wars: a war is friendly when start_ts - preparation_start_ts "
-                "is under 82800 or end_ts - start_ts is under 86400 (Clash pauses only lengthen regular wars). Leave those out of regular war "
-                "comparisons. REG and CWL rows stopped when wars moved to the family record and are no longer "
-                "updated; read regular wars with read_war_attendance and read_current_war, league wars with "
-                "read_war_attendance and read_cwl_results.",
-            ),
-            (
-                "war_attacks", "none",
-                "One attack by a family account. Filter on end_ts (UTC seconds, the war's end); "
-                "join wars on war_id and clan_code. stars 0-3, destruction is percent, duration is "
-                "seconds, fresh_attack is 0/1. defender_townhall is the target's town hall: compare "
-                "attacks only against the attacker's town hall (war_roster_members.townhall, else "
-                "the player_snapshots townhall at or before end_ts), never raw star averages. "
-                "Regular-war attacks start in February but wars and war_roster_members cover regular "
-                "wars only from mid-June 2026, so LEFT JOIN both; earlier attacks cannot be checked "
-                "for friendly wars. One war can have several war_ids, doubling rows; "
-                "read_war_attendance merges them. REG and CWL rows stopped.",
-            ),
-            (
-                "war_roster_members", "none",
-                "One account on one war roster; townhall is its town hall in that war. "
-                "captured_ts is UTC seconds. REG and CWL rows stopped with wars.",
-            ),
-            (
-                "war_activity", "none",
-                "One account in one war: attacks_used of attacks_expected (missed = expected - used), "
-                "stars and destruction summed over its attacks. Filter on end_ts (UTC seconds). "
-                "Rows double like war_attacks and end_ts can be provisional; CWL rows also hold players "
-                "swapped out before battle day. read_war_attendance reads final lineups. "
-                "REG and CWL rows stopped with wars.",
-            ),
-            (
                 "raid_member_activity", "none",
                 "One account in one capital raid weekend: attacks of attacks_expected; loot is "
                 "capital gold. Filter on end_ts (UTC seconds).",

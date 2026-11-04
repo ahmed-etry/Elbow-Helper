@@ -12,7 +12,7 @@ from elbow_helper.agent.access import KNOWN_ACCESS_REQUIREMENTS
 from elbow_helper.agent.families.catalogue import FAMILY_INSTRUCTION
 
 HEALTH_TABLES = (
-    "wars", "war_attacks", "war_activity", "war_roster_members", "player_snapshots",
+    "player_snapshots",
     "raid_member_activity", "player_directory",
 )
 
@@ -29,32 +29,37 @@ class TableNoteTests(unittest.TestCase):
     def test_every_table_custom_counts_need_has_a_note_with_its_time_column(self):
         notes = _notes()
         for table, column in (
-            ("wars", "end_ts"), ("war_attacks", "end_ts"), ("war_activity", "end_ts"),
             ("raid_member_activity", "end_ts"), ("player_snapshots", "captured_ts"),
-            ("war_roster_members", "captured_ts"), ("player_directory", "first_seen_ts"),
+            ("player_directory", "first_seen_ts"),
         ):
             with self.subTest(table=table):
                 note = notes["health." + table]
                 self.assertIn(column, note)
                 self.assertIn("UTC seconds", note)
         self.assertIn("discord_user_id", notes["links.links"])
+        for table in ("wars", "war_sides", "war_members", "war_attacks"):
+            self.assertIn("end_at", notes["family." + table])
+            self.assertIn("UTC microseconds", notes["family." + table])
 
     def test_notes_name_the_traps(self):
         notes = _notes()
         self.assertIn("not any one item's level", notes["health.player_snapshots"])
         self.assertIn("lifetime", notes["health.player_snapshots"])
-        wars = notes["health.wars"]
+        wars = notes["family.wars"]
         self.assertIn("friendly", wars)
-        self.assertIn("82800", wars)
-        self.assertIn("86400", wars)
-        attacks = notes["health.war_attacks"]
+        self.assertIn("FRIENDLY", wars)
+        attacks = notes["family.war_attacks"]
         self.assertIn("defender_townhall", attacks)
         self.assertIn("attacker's town hall", attacks)
         self.assertIn("LEFT JOIN", attacks)
+        misses = notes['family.war_members']
+        for proof in ("state='warEnded'", 'non-NULL', 'member count=team_size',
+                      'non-stub', 'count=war_sides.attacks', 'derived', 'unattributed', 'unknown'):
+            self.assertIn(proof, misses)
 
     def test_notes_stay_short(self):
         for name, note in _notes().items():
-            if name.split(".")[0] in ("health", "links"):
+            if name.split(".")[0] in ("family", "health", "links"):
                 with self.subTest(table=name):
                     self.assertLessEqual(len(note), 700)
 

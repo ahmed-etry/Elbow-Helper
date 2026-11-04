@@ -120,14 +120,14 @@ class FamilyReportTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(registry['query_bot_data'].default_visible)
         self.assertFalse(registry['delete_discord_messages'].default_visible)
 
-    async def test_production_default_offers_sql_and_rejects_undiscovered_specialists(self):
+    async def test_production_default_keeps_sql_and_other_specialists_behind_discovery(self):
         from elbow_helper.agent.engine.service import AgentService
         from elbow_helper.agent.plan.checker import check_plan
         from agent.engine.test_agent_plan_flow import _Model, _Session
         flow, _ = AgentService(_Model(_Session([], [])))._start_flow(
             question='Synthetic request', local_context='', context=_context(), conversation_history='')
         self.assertIn('open_capability_group', flow.registry)
-        self.assertIn('query_bot_data', flow.registry)
+        self.assertNotIn('query_bot_data', flow.registry)
         self.assertNotIn('delete_discord_messages', flow.registry)
         self.assertLessEqual(len(flow.registry), 18)
         policy = flow.budget.request_limits
@@ -136,3 +136,6 @@ class FamilyReportTests(unittest.IsolatedAsyncioTestCase):
         checked = check_plan({'goal':'Synthetic', 'effort':'low', 'output':'text', 'steps':[
             {'id':'secret', 'capability':'delete_discord_messages', 'arguments':{}, 'depends_on':[]}]}, flow.registry)
         self.assertFalse(checked.ok)
+        checked_sql = check_plan({'goal':'Synthetic', 'effort':'low', 'output':'text', 'steps':[
+            {'id':'sql', 'capability':'query_bot_data', 'arguments':{'sql':'SELECT 1'}, 'depends_on':[]}]}, flow.registry)
+        self.assertFalse(checked_sql.ok)

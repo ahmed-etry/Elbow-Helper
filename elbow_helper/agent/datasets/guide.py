@@ -14,9 +14,12 @@ SQLite dialect. Name tables alias.table. State files are state.name with one JSO
 use json_each/json_extract. Pass lists as one named parameter: \
 IN (SELECT value FROM json_each(:name)). Columns ending _ts are Unix seconds UTC \
 (datetime(x, 'unixepoch')); _utc and _at text columns are ISO 8601 unless noted otherwise.
-member_id, discord_user_id and user_id are Discord member IDs. player_tag is an uppercase \
+family integer time columns are UTC microseconds: datetime(x/1000000, 'unixepoch').
+Outside family, member_id, discord_user_id and user_id are Discord member IDs. player_tag is an uppercase \
 Clash account tag (#...). clan_code is a family clan code. One member can link many accounts; \
-links.links maps accounts to members. Join accounts across links, health and rosters by \
+family.account_links joins accounts.id to members.id; members.discord_id is the Discord ID; \
+to_at IS NULL selects current ownership. links.links also maps account tags to discord_user_id. \
+Join accounts across family, links, health and rosters by \
 player_tag. PK1, PK2 and subsequent markers identify a table's complete primary key in order. \
 Keep the full record identity when joining related rows; matching one part of a composite \
 key is insufficient. Aggregate each one-to-many input before joining totals. Return one short \
@@ -48,7 +51,7 @@ class DataGuide:
                             self.entries.append((
                                 level,
                                 f"{source.alias}.{table} [{level}]: {note}\n"
-                                + ",".join(_column(row) for row in columns),
+                                + ",".join(_column(row, source.alias == "family") for row in columns),
                             ))
             except sqlite3.Error:
                 continue
@@ -83,10 +86,8 @@ class DataGuide:
                 "Clash timestamps: 20261008T120000.000Z, UTC; battle before is exclusive.",
                 "CWL: a season key is the league's month, YYYY-MM, or a key a read returned; "
                 "read_cwl_results and read_war_attendance take and return it. "
-                "Stored health.wars CWL rows stopped when league wars moved to the family record; there "
-                "cwl_season is that key, cwl_season_label Clash's raw label and cwl_round (1-7) the CWL day. "
-                "Join attacks and roster rows to wars by both war_id and clan_code; "
-                "do not assume these columns exist on attack rows. "
+                "family.cwl_seasons.season_key selects it, cwl_rounds.round_no (1-7) is the CWL day; "
+                "join cwl_rounds.war_id to family.wars.id and season_id to cwl_seasons.id. "
                 "For clans configured for seasonal cohort lookups, resolve the season's assigned roster or CWL participants before "
                 "ranking players; current memberList and clan-filtered player snapshots may be parked accounts. "
                 "Read player.warStars for cumulative stars after selecting the CWL cohort. "
@@ -118,10 +119,11 @@ class DataGuide:
         return self.variants[key]
 
 
-def _column(row):
+def _column(row, family=False):
     name, kind = row[1], row[2]
     unit = (
-        " (Unix s UTC)" if name.endswith("_ts")
+        " (Unix us UTC)" if family and kind.upper() == "INTEGER" and name.endswith("_at")
+        else " (Unix s UTC)" if name.endswith("_ts")
         else " (ISO UTC)" if kind.upper() == "TEXT" and name.endswith(("_utc", "_at")) else ""
     )
     kind = "INT" if kind.upper() == "INTEGER" else kind
