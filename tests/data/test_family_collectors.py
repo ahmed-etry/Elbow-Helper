@@ -20,6 +20,86 @@ from tests.agent.test_compact_clash import synthetic_clan
 from .test_family_store import CLANS, clan_response, link, player, response
 
 
+class CollectorWarningTests(unittest.TestCase):
+    def setUp(self):
+        self.collectors = FamilyCollectors(SimpleNamespace(), None, None, ())
+
+    def note(self, collector, specs, reasons=(), *, error=None):
+        problems = [(kind, scope, status, code) for (kind, scope), (status, code) in zip(specs, reasons)
+                    if status != 200 or code is not None]
+        self.collectors._note(collector, 1, specs, error, problems)
+
+    def test_outage_across_batches_warns_and_recovers_once_per_collector(self):
+        service = "elbow_helper.data.collectors.service"
+        for collector, kind in (("players", "player_profile"), ("battle_logs", "battle_log"),
+                                ("league_history", "league_history")):
+            with self.subTest(collector=collector):
+                batches = [[(kind, f"#P{index}") for index in range(start, start + 8)] for start in (0, 8, 16)]
+                with self.assertLogs(service, level="DEBUG") as outage:
+                    for specs in batches:
+                        self.note(collector, specs, [(503, None)] * len(specs))
+                self.assertEqual([record.levelname for record in outage.records], ["WARNING", "DEBUG", "DEBUG"])
+                self.assertIn("and 3 more", outage.output[0])
+                self.assertIn(collector, outage.output[0])
+                with self.assertNoLogs(service, level="INFO"):
+                    self.note(collector, batches[0])
+                    self.note(collector, batches[1])
+                with self.assertLogs(service, level="INFO") as recovered:
+                    self.note(collector, batches[2])
+                self.assertEqual(len(recovered.output), 1)
+                self.assertIn("recovered", recovered.output[0])
+                with self.assertNoLogs(service, level="INFO"):
+                    self.note(collector, batches[2])
+                with self.assertLogs(service, level="WARNING"):
+                    self.note(collector, batches[0], [(503, None)] * 8)
+
+    def test_items_can_swap_known_reasons_and_replace_recovering_items_without_warning(self):
+        service = "elbow_helper.data.collectors.service"
+        specs = [("player_profile", "#P0"), ("player_profile", "#Q0")]
+        with self.assertLogs(service, level="WARNING"):
+            self.note("players", specs, [(503, None), (None, "fetch_failed")])
+        with self.assertLogs(service, level="DEBUG") as swapped:
+            self.note("players", specs, [(None, "fetch_failed"), (503, None)])
+        self.assertEqual([record.levelname for record in swapped.records], ["DEBUG"])
+        replacement = ("player_profile", "#Y0")
+        with self.assertLogs(service, level="DEBUG") as replaced:
+            self.note("players", [specs[1], replacement], [(200, None), (503, None)])
+        self.assertEqual([record.levelname for record in replaced.records], ["DEBUG"])
+        self.assertNotIn(specs[1], self.collectors._failing["players"])
+        # A reason that has stopped can warn again while a different reason remains active.
+        with self.assertNoLogs(service, level="INFO"):
+            self.note("players", [replacement])
+        with self.assertLogs(service, level="WARNING") as returned:
+            self.note("players", [replacement], [(503, None)])
+        self.assertIn("HTTP 503", returned.output[0])
+
+    def test_new_error_code_warns_even_while_another_reason_is_active(self):
+        service = "elbow_helper.data.collectors.service"
+        specs = [("player_profile", "#P0")]
+        with self.assertLogs(service, level="WARNING"):
+            self.note("players", specs, [(200, "invalid_profile")])
+        with self.assertLogs(service, level="WARNING") as changed:
+            self.note("players", [("player_profile", "#Q0")], [(200, "partial_profile")])
+        self.assertIn("partial_profile", changed.output[0])
+
+    def test_run_errors_preserve_items_and_keep_their_existing_warning_behavior(self):
+        service = "elbow_helper.data.collectors.service"
+        specs = [("player_profile", "#P0")]
+        with self.assertLogs(service, level="WARNING"):
+            self.note("players", specs, [(503, None)])
+        with self.assertLogs(service, level="WARNING"):
+            self.note("players", specs, error="collector_error")
+        with self.assertNoLogs(service, level="INFO"):
+            self.note("players", specs, error="collector_error")
+            self.note("players", [], [])
+        self.assertIn(specs[0], self.collectors._failing["players"])
+        with self.assertLogs(service, level="WARNING"):
+            self.note("players", specs, error="store_unavailable")
+        with self.assertLogs(service, level="INFO") as recovered:
+            self.note("players", specs)
+        self.assertEqual(len(recovered.output), 1)
+
+
 class FakeGuild:
     id = 123
 
