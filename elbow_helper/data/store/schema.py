@@ -9,10 +9,11 @@ from .api_fields import create_api_field_schema, rebuild_field_changes
 from .source_schema import create_source_schema
 from .link_schema import create_link_schema
 from .battle_coverage import create_watch_schema
+from .profile_schema import create_profile_history_schema
 
 
 # Later subjects add migrations; they must not rewrite this baseline.
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 STATEMENTS = (
     """CREATE TABLE collection_runs (
         id INTEGER PRIMARY KEY, collector TEXT NOT NULL, scope_kind TEXT NOT NULL,
@@ -260,6 +261,7 @@ def create_schema(connection: sqlite3.Connection) -> None:
     create_link_schema(connection)
     extend_war_schema(connection)
     create_watch_schema(connection)
+    create_profile_history_schema(connection)
 
 
 MIGRATIONS = (
@@ -274,4 +276,5 @@ MIGRATIONS = (
     SQLiteMigration(9, "war source status, type basis and legacy IDs", extend_war_schema),
     SQLiteMigration(10, "ordinary field change table", rebuild_field_changes),
     SQLiteMigration(11, "battle log watching and old battle provenance", create_watch_schema),
+    SQLiteMigration(12, "old profile history and separate coverage", create_profile_history_schema),
 )
