@@ -23,6 +23,9 @@ def requested(connection, run, ordinal, at):
 
 def outcome(connection, run, state, status, at, *, error=None, response=None, count=None, written=0):
     """Failed, nothing-there (empty with a code) and unavailable polls keep an item; clean polls do not."""
+    if state["source_kind"] == "battle_log":
+        from .battle_coverage import record_watch
+        record_watch(connection, state["scope_id"], run, at, status, entries=count, reason=error)
     connection.execute(
         "UPDATE collection_runs SET attempted=attempted+1,succeeded=succeeded+?,empty=empty+?,failed=failed+?,"
         "rows_written=rows_written+?,origin_attempts=COALESCE(origin_attempts,0)+?,cache_hits=COALESCE(cache_hits,0)+? WHERE id=?",

@@ -15,7 +15,7 @@ import json
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 
-from . import wars_import_cwl
+from . import ranked_import, wars_import_cwl
 from .legacy_links import ImportMismatch, digest
 from .legacy_wars import map_legacy_war
 from .link_state import receipt
@@ -468,24 +468,26 @@ class Importer:
                 "ended_after_last_check": self.repaired}
 
 
-def copy_at_startup(connection, health_path, cache_path, *, clans=None):
-    """The once-only startup copy of regular and league wars; None when the record already holds both,
-    without reading the old files.
+def copy_at_startup(connection, health_path, cache_path, ranked_path=None, *, clans=None):
+    """The once-only startup copy of wars and ranked battles; done topics never read old files.
 
-    Both parts share one snapshot and one transaction: a failure in either keeps nothing. Returns each part's
+    Parts share frozen source reads and one transaction: a failure in any keeps nothing. Returns each part's
     result, None for a part an earlier start already copied. Wars the old files gain after the copy are not
     added: the collector owns every war from then on.
     """
-    done = {row[0] for row in connection.execute("SELECT topic FROM imports WHERE topic IN (?,?)",
-                                                 (TOPIC, wars_import_cwl.TOPIC))}
-    if done == {TOPIC, wars_import_cwl.TOPIC}:
+    topics = {TOPIC, wars_import_cwl.TOPIC} | ({ranked_import.TOPIC} if ranked_path is not None else set())
+    done = {row[0] for row in connection.execute("SELECT topic FROM imports") if row[0] in topics}
+    if done == topics:
         return None
-    frozen = snapshot_wars(health_path, cache_path)
+    frozen = snapshot_wars(health_path, cache_path) if {TOPIC, wars_import_cwl.TOPIC} - done else None
+    ranked = ranked_import.snapshot_ranked(ranked_path) if ranked_import.TOPIC in topics - done else None
     clans = {code: clan.tag for code, clan in CLANS.items()} if clans is None else clans
     with sqlite_transaction(connection, immediate=True):
+        ranked_plan = ranked_import.plan_ranked(connection, ranked) if ranked is not None else None
         regular = None if TOPIC in done else write_regular(connection, frozen, clans)
         league = None if wars_import_cwl.TOPIC in done else wars_import_cwl.write_cwl(connection, frozen, clans)
-    return {"regular": regular, "cwl": league}
+        battles = ranked_import.write_ranked(connection, ranked, ranked_plan) if ranked is not None else None
+    return {"regular": regular, "cwl": league, **({"ranked": battles} if ranked_path is not None else {})}
 
 
 def import_wars(connection, health_path, cache_path=None, frozen=None, *, clans=None):
