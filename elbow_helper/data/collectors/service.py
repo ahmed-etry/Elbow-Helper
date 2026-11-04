@@ -163,24 +163,26 @@ class FamilyCollectors(commands.Cog):
             await asyncio.sleep(SCHEDULE_CHECK_SECONDS)
 
     def _note(self, collector, run, specs, error, problems):
-        # A failure warns when it starts and the collector logs once when it ends; a run that fails the same
-        # way again is only a debug line. A new item failing, or an item failing another way, warns again.
+        # Warn once per active reason, even when successive runs poll different items.
+        # Compare reasons before removing recovered items: a reason moving to another item is still active.
         # `problems` is None when nothing failed. Only items polled in this run can recover; a run that
         # ended in an error says nothing about its items.
         known = self._failing.setdefault(collector, {})
+        reasons = set(known.values())
         current = {RUN_KEY: error} if error else {
             (kind, scope): f"HTTP {status}" if status not in (None, 200) else code or "unknown"
             for kind, scope, status, code in problems or ()}
         polled = set() if error else {RUN_KEY, *specs}
         recovered = {key: known.pop(key) for key in [key for key in known if key in polled and key not in current]}
-        started = {key: how for key, how in current.items() if known.get(key) != how}
+        started = {key: how for key, how in current.items()
+                   if (known.get(key) != how if error else how not in reasons)}
         if started:
             LOGGER.warning("Family %s collection failing (run=%s): %s", collector, run, _described(started))
         elif current:
             LOGGER.debug("Family %s collection still failing (run=%s): %s", collector, run, _described(current))
-        if recovered:
-            LOGGER.info("Family %s collection recovered (run=%s): %s", collector, run, _described(recovered))
         known.update(current)
+        if recovered and not known:
+            LOGGER.info("Family %s collection recovered (run=%s): %s", collector, run, _described(recovered))
 
     async def _run(self, collector, scope_kind, specs, operation):
         run = None

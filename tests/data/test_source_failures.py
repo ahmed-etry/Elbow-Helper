@@ -9,11 +9,16 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.data.collectors.service import FamilyCollectors
 from elbow_helper.data.collectors.sources import collect_sources
+from elbow_helper.data.store import FamilyStore
+from elbow_helper.data.store.people import mirror_links
+from elbow_helper.data.store.player_projection import HOUR_US
+from elbow_helper.data.store.players import collect_player, due_accounts
 from elbow_helper.data.store.projections import canonical_json
 from elbow_helper.data.store.sources import DAY, due_sources
 from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 
-from .test_family_store import CLANS, response
+from .test_family_store import CLANS, link, response
+from .test_players import profile
 from .test_sources import BASE, SourceTests, sample
 
 
@@ -245,7 +250,7 @@ class SourceWarningTests(unittest.IsolatedAsyncioTestCase):
         with self.assertNoLogs(SERVICE, level="INFO"):
             await self.poll("reference_data", BASE + 2)
 
-    async def test_repeated_failures_stay_quiet_but_a_new_item_or_a_new_kind_of_failure_warns(self):
+    async def test_more_items_stay_quiet_but_a_new_reason_warns_until_full_recovery(self):
         broken = {"/labels/clans": 503}
 
         async def fetch(path, **options):
@@ -259,11 +264,10 @@ class SourceWarningTests(unittest.IsolatedAsyncioTestCase):
         with self.assertNoLogs(SERVICE, level="WARNING"):
             await self.poll("reference_data", BASE + 1)
         broken["/labels/players"] = 503
-        with self.assertLogs(SERVICE, level="WARNING") as new_item:
+        with self.assertLogs(SERVICE, level="DEBUG") as new_item:
             await self.poll("reference_data", BASE + 2)
-        self.assertEqual(len(new_item.output), 1)
+        self.assertEqual([record.levelname for record in new_item.records], ["DEBUG"])
         self.assertIn("/labels/players (HTTP 503)", new_item.output[0])
-        self.assertNotIn("/labels/clans", new_item.output[0])
         broken["/labels/clans"] = 502
         with self.assertLogs(SERVICE, level="WARNING") as new_kind:
             await self.poll("reference_data", BASE + 3)
@@ -273,11 +277,54 @@ class SourceWarningTests(unittest.IsolatedAsyncioTestCase):
         with self.assertNoLogs(SERVICE, level="WARNING"):
             await self.poll("reference_data", BASE + 4)
         broken.pop("/labels/players")
-        with self.assertLogs(SERVICE, level="INFO") as one_recovered:
+        with self.assertNoLogs(SERVICE, level="INFO"):
             await self.poll("reference_data", BASE + 5)
-        self.assertEqual(len(one_recovered.output), 1)
-        self.assertIn("/labels/players", one_recovered.output[0])
-        self.assertNotIn("/labels/clans", one_recovered.output[0])
+        broken.clear()
+        with self.assertLogs(SERVICE, level="INFO") as recovered:
+            await self.poll("reference_data", BASE + 6)
+        self.assertEqual(len(recovered.output), 1)
+        self.assertIn("recovered", recovered.output[0])
+        self.assertIn("/labels/clans", recovered.output[0])
+
+    async def test_missing_profiles_skip_both_collectors_until_a_profile_is_found(self):
+        async def check_profile(tag, payload, status, at):
+            account_id = (await self.rows("SELECT id FROM accounts WHERE player_tag=?", (tag,)))[0]["id"]
+            run = await self.store.begin_run("players", "accounts", [("player_profile", tag)], at)
+            await self.store.call(collect_player, run, 0, account_id, tag, response(payload, status), at)
+            await self.store.finish(run)
+
+        # Include an account with no profile yet: absence of evidence must not skip it.
+        run = await self.store.begin_run("links", "current", [("account_links", "current")], BASE)
+        await self.store.call(mirror_links, run, {**link(), "#Q0": link(player_tag="#Q0")["#P0"]}, BASE)
+        await self.store.finish(run)
+        await check_profile("#P0", profile(), 200, BASE + 1)
+        await check_profile("#P0", {"reason": "notFound"}, 404, BASE + 2)
+        self.store = FamilyStore(self.path)
+        await self.store.initialize()
+        self.owner.store = self.store
+        self.client.get.return_value = response({"items": []})
+        for collector, suffix in (("battle_logs", "battlelog"), ("league_history", "leaguehistory")):
+            with self.subTest(collector=collector):
+                self.client.get.reset_mock()
+                with self.assertNoLogs(SERVICE, level="WARNING"):
+                    report = await self.poll(collector, BASE + 3)
+                self.assertEqual(report["failed"], 0)
+                self.client.get.assert_awaited_once_with(f"/players/%23Q0/{suffix}")
+        self.assertNotIn("#P0", [row["player_tag"] for row in await self.store.call(due_accounts, BASE + HOUR_US)])
+        self.assertIn("#P0", [row["player_tag"] for row in await self.store.call(due_accounts, BASE + DAY + 2)])
+        # An outage during a later profile retry cannot resume the other collectors.
+        await check_profile("#P0", None, 503, BASE + DAY + 2)
+        for collector in ("battle_logs", "league_history"):
+            jobs = await self.store.call(due_sources, collector, CLANS, BASE + 2 * DAY)
+            self.assertNotIn("#P0", [job["scope_id"] for job in jobs])
+        await check_profile("#P0", profile(), 200, BASE + 2 * DAY)
+        for collector, suffix in (("battle_logs", "battlelog"), ("league_history", "leaguehistory")):
+            with self.subTest(recovered=collector):
+                self.client.get.reset_mock()
+                report = await self.poll(collector, BASE + 2 * DAY + 1)
+                self.assertEqual(report["failed"], 0)
+                self.assertEqual([call.args[0] for call in self.client.get.await_args_list],
+                                 [f"/players/%23P0/{suffix}", f"/players/%23Q0/{suffix}"])
 
     async def test_the_same_failure_is_a_debug_line(self):
         self.client.get.return_value = response(None, 503)
