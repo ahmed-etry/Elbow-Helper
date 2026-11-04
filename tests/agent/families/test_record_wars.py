@@ -1,11 +1,9 @@
-"""The agent's war tools and joins read regular and current wars from the family record.
+"""The agent's war tools and joins read regular, league and current wars from the family record.
 
 Synthetic wars are written through the collectors' own storage path into a
-family record; league wars stay in stored league history. No Discord,
-Clash or LLM call is made.
+family record. No Discord, Clash or LLM call is made.
 """
 
-from contextlib import closing
 from dataclasses import replace
 from datetime import datetime, timezone
 import sqlite3
@@ -18,15 +16,15 @@ from elbow_helper.agent.families import cohort_activity, projections, record_war
 from elbow_helper.agent.families.workflow_reads import TOOLS as WORKFLOW_TOOLS
 from elbow_helper.agent.read_cache import ReadCache
 from elbow_helper.configuration.channels import HIBERNATION_LOG
-from elbow_helper.data.reads import WarReads
+from elbow_helper.data.reads import CwlReads, WarReads
 from elbow_helper.data.store.legacy_wars import map_legacy_war
-from elbow_helper.features.clan_health.database import ClanHealthRepository
 from elbow_helper.features.cwl.queries import CwlQueries
+from elbow_helper.features.cwl.record import CwlHistory
 from elbow_helper.features.hibernation.queries import HibernationQueries
 from elbow_helper.infrastructure.persistence.revisions import release_sqlite_revision
 
 from agent.engine.test_agent_plan_flow import _context
-from tests.data.test_wars import END, SECOND, WarFixture, war
+from tests.data.test_wars import END, SECOND, WarFixture, group, war
 
 DAY = 86400 * SECOND
 FAMILY = {"BEH": SimpleNamespace(tag="#PY"), "BE4": SimpleNamespace(tag="#LQ")}
@@ -68,12 +66,12 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                         patch("elbow_helper.data.reads.core.now_us", side_effect=lambda: self.now)):
             patcher.start()
             self.addCleanup(patcher.stop)
-        self.old = ClanHealthRepository(self.path.parent / "clan_health.db")
-        self.old.initialize()
         links = SimpleNamespace(get_links_by_tags=lambda tags: {tag: {"discord_user_id": 41} for tag in tags},
                                 get_links_for_members=lambda ids: {41: [{"player_tag": "#P0"}, {"player_tag": "#P2"}]})
         self.reads = WarReads(self.store)
-        self.context = replace(_context(), cwl_queries=CwlQueries(self.old, lambda: {}), account_links=links,
+        # League wars come from the same record, through the CWL queries.
+        history = CwlHistory(CwlReads(self.store, FAMILY), None, FAMILY)
+        self.context = replace(_context(), cwl_queries=CwlQueries(history, lambda: {}), account_links=links,
                                bot=SimpleNamespace(war_reads=self.reads))
 
     async def both_wars(self):
@@ -81,28 +79,11 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         for payload, at in ((war("warEnded"), END + 90 * SECOND), (later_war(), END + 2 * DAY + 90 * SECOND)):
             await self.record(payload, at=at)
 
-    def old_war(self, payload, kind, identity):
-        """A league war in stored league history."""
-        with closing(sqlite3.connect(self.old.path)) as connection, connection:
-            connection.execute(
-                "INSERT INTO wars(war_id,war_type,clan_code,clan_tag,opponent_tag,cwl_season,state,preparation_start_ts,"
-                "start_ts,end_ts,last_seen_ts,team_size,attacks_per_member) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (identity, kind, "BEH", "#PY", payload["opponent"]["tag"], "2026-10" if kind == "CWL" else "",
-                 "warEnded", ts(payload["preparationStartTime"]), ts(payload["startTime"]), ts(payload["endTime"]),
-                 ts(payload["endTime"]), 2, 2))
-            for member in payload["clan"]["members"]:
-                attacks = member.get("attacks", [])
-                connection.execute(
-                    "INSERT INTO war_roster_members(war_id,clan_code,player_tag,player_name,attacks_expected,"
-                    "attacks_used,roster_state,captured_ts) VALUES (?,?,?,?,?,?,?,?)",
-                    (identity, "BEH", member["tag"], member["name"], 2, len(attacks), "warEnded", ts(payload["endTime"])))
-                for attack in attacks:
-                    connection.execute(
-                        "INSERT INTO war_attacks(war_id,war_type,clan_code,clan_tag,end_ts,war_state,player_tag,"
-                        "player_name,attack_order,defender_tag,stars,destruction) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (identity, kind, "BEH", "#PY", ts(payload["endTime"]), "warEnded", member["tag"],
-                         member["name"], attack["order"], attack["defenderTag"], attack["stars"],
-                         attack["destructionPercentage"]))
+    async def league_war(self, payload, war_tag):
+        """A league round the collector saved: its group, then the war itself."""
+        await self.record(group(rounds=[{"warTags": [war_tag, "#R2"]}]), kind="cwl_group",
+                          at=ts(payload["preparationStartTime"]) * SECOND)
+        await self.record(payload, kind="cwl_war", scope=war_tag, at=ts(payload["endTime"]) * SECOND + 90 * SECOND)
 
     async def attendance(self, arguments):
         return await war_reads.attendance(self.context, arguments)
@@ -139,7 +120,7 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
             result = await war_reads.attendance(context, {"war_type": kind, "clan_codes": ["BEH"], **OCTOBER})
             self.assertEqual(result["cause"], "missing_setup")
         self.assertEqual((await war_reads.current_war(context, {"clan_codes": ["BEH"]}))["cause"], "missing_setup")
-        # League wars still come from league history.
+        # League wars come through the CWL queries.
         self.assertNotIn("error", await war_reads.attendance(context, {"war_type": "CWL", "clan_codes": ["BEH"],
                                                                        **OCTOBER}))
 
@@ -216,7 +197,7 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
     async def test_latest_wars_and_both_kinds_rank_together(self):
         await self.both_wars()
         league = war("warEnded", clans=("#PY", "#LQ"), end="20261029T180000.000Z")
-        self.old_war(league, kind="CWL", identity="CWL:#R0")
+        await self.league_war(league, "#R0")
         latest = {"clan_codes": ["BEH"], "latest_completed": 1}
         self.assertEqual((await self.attendance({"war_type": "REG", **latest}))["war_ids"], [old_id(later_war())])
         for count, expected, used in ((2, [old_id(later_war()), "CWL:#R0"], 2),
@@ -272,8 +253,7 @@ class RecordWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
     async def test_a_new_record_write_makes_a_regular_war_report_not_current(self):
         await self.both_wars()
         context = replace(self.context, read_cache=ReadCache())
-        for path in (self.path, self.old.path):
-            self.addCleanup(release_sqlite_revision, path)
+        self.addCleanup(release_sqlite_revision, self.path)
         tool = TOOLS["read_war_attendance"]
         with patch("elbow_helper.agent.families.core.require_evidence_access", AsyncMock()):
             result = await tool.handler(context, {"war_type": "REG", "clan_codes": ["BEH"], **OCTOBER})

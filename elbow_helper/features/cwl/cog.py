@@ -33,6 +33,8 @@ from .config import CLAN_NAME_TO_TAG
 from .config import THREAD_CLAN_CONFIGS
 from .config import THREAD_STATE_FILE
 from .queries import CwlQueries
+from .record import CwlGroups
+from .record import CwlHistory
 from .dashboard import CwlDashboardMixin
 from .roster import CwlRosterAnalysisMixin
 from .roster import CwlRosterExportMixin
@@ -44,6 +46,7 @@ from .transfers import CwlTransferMixin
 from .war_board import CwlWarBoardMixin
 
 if TYPE_CHECKING:
+    from elbow_helper.data.reads import CwlReads
     from elbow_helper.features.achievements.rewards import AchievementRewardService
     from elbow_helper.features.clan_health.database import ClanHealthRepository
     from elbow_helper.features.records.database import RecordReader
@@ -81,6 +84,7 @@ class CwlManagement(
         account_links: AccountLinkSource,
         roster_queries: RosterQueries,
         roster_automation: RosterAutomationService,
+        cwl_reads: CwlReads,
     ):
         self.bot = bot
         self.clash_client = clash_client
@@ -105,12 +109,16 @@ class CwlManagement(
         self.dashboard_state = self._load_dashboard_state()
         self.bonus_config = BonusConfigRepository()
         self.cwl_exports = bot.local_exports
+        # League history and groups come from the family record; the collectors keep them.
+        self.cwl_history = CwlHistory(cwl_reads, clan_health_repository)
+        self.cwl_groups = CwlGroups(cwl_reads)
         self.bonus_analysis = BonusAnalysisService(
             clash_client,
-            clan_health_repository,
+            self.cwl_history,
+            self.cwl_groups,
         )
         self.queries = CwlQueries(
-            clan_health_repository,
+            self.cwl_history,
             lambda: self.data.get("threads", {}),
             bonus_analysis=self.bonus_analysis,
             bonus_config=self.bonus_config,
@@ -132,6 +140,7 @@ class CwlManagement(
             self._transfer_state_needs_save = False
         self._hero_sum_cache: Dict[str, Dict[str, Any]] = {}
         self._clan_league_cache: Dict[str, Dict[str, Any]] = {}
+        self._first_war_check = asyncio.Event()
         self._manual_dashboard_refresh_locks: Dict[str, asyncio.Lock] = {}
         self._manual_dashboard_refresh_last_ts: Dict[str, float] = {}
         self._dashboard_refresh_warning_state: Dict[str, Dict[str, Any]] = {}
@@ -142,8 +151,6 @@ class CwlManagement(
         self._cwl_board_locks: Dict[str, asyncio.Lock] = {}
         self.cwl_war_emojis = WarEmojiProvider(bot)
         self._poll_task: Optional[asyncio.Task] = None
-        self._leaguegroup_cache: Dict[str, Dict[str, Any]] = {}
-        self._war_cache: Dict[str, Dict[str, Any]] = {}
 
         self.start_thread_tasks()
         start_resilient_loop(self.reminder_loop)

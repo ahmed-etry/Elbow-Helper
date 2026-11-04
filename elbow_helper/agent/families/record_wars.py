@@ -1,9 +1,9 @@
 """Regular wars and current wars from the family record.
 
 The agent's regular-war participation and current wars come from the shared
-war reads. League wars keep their stored league history adapter. Rows keep
-the attendance shape, so attendance, cohorts, trials and hibernation join
-them unchanged.
+war reads. League wars come from the CWL queries, which read the same record.
+Rows keep the attendance shape, so attendance, cohorts, trials and
+hibernation join them unchanged.
 
 Regular means wars the record holds as regular, including early wars whose
 times cannot rule out a friendly war; those are counted in coverage. Wars the
@@ -225,7 +225,7 @@ async def regular_wars(context, *, clan_codes, after_ts=None, before_ts=None, wa
 
 
 def combine(regular, league, latest=None):
-    """Regular wars from the record beside league wars from the old adapter, as one selection.
+    """Regular wars beside league wars, both from the record, as one selection.
 
     For the latest wars, both lists are ranked together by war end. A league
     war without a stored lineup has no known end and ranks last.
@@ -258,7 +258,7 @@ def combine(regular, league, latest=None):
                 'regular_wars_not_checked_for_friendly': regular['coverage']['regular_wars_not_checked_for_friendly'],
                 'friendly_wars_not_counted': regular['coverage']['friendly_wars_not_counted'],
                 'regular': regular['coverage'], 'league': league['coverage'],
-                'basis': 'Regular wars from the family record and league wars from stored league history.'}}
+                'basis': 'Regular and league wars from the family record.'}}
 
 
 async def current_wars(context, codes):

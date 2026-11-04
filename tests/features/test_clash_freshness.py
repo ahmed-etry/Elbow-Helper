@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock
@@ -11,9 +10,7 @@ from elbow_helper.domain.player_tags import encode_clash_tag
 from elbow_helper.features.account_links.cog import AccountLinks
 from elbow_helper.features.account_links.evidence import refresh_account_locations
 from elbow_helper.features.clan_reporting.cog import ClanReporting
-from elbow_helper.features.cwl.config import CWL_CLAN_TAGS
 from elbow_helper.features.cwl.transfer_hub import CwlTransferHubMixin
-from elbow_helper.features.cwl.transfers import CwlTransferMixin
 from elbow_helper.features.diagnostics.cog import DebugCog
 from elbow_helper.features.rosters.models import LinkedAccount, RosterMember
 from elbow_helper.features.rosters.services.profiles import RosterProfileService, fetch_account_profiles
@@ -130,23 +127,6 @@ class ClashFreshnessTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(before), 1)
         self.assertEqual(await links._fetch_clan_members("BEH", fresh=True), [])
         self.assertEqual(len(session.urls), 2)
-
-    async def test_cwl_spin_recheck_does_not_use_a_cached_group(self):
-        for status in (200, 503):
-            with self.subTest(status=status):
-                client, session = self.client([
-                    _FakeResponse(200, {"state": "inWar"}, headers={"Cache-Control": "max-age=120"}),
-                    _FakeResponse(status, {"state": "searching", "rounds": []}),
-                ])
-                await client.get(f"/clans/{encode_clash_tag(CWL_CLAN_TAGS['BEH'])}/currentwar/leaguegroup")
-                workflow = CwlTransferMixin()
-                workflow.clash_client = client
-                workflow._get_league_wars = AsyncMock(return_value=[])
-                self.assertEqual(await workflow._cwl_spin_statuses(
-                    {"BEH"}, datetime(2026, 10, 1, tzinfo=timezone.utc),
-                ), (set(), set() if status == 200 else {"BEH"}))
-                workflow._get_league_wars.assert_not_awaited()
-                self.assertEqual(len(session.urls), 2)
 
     async def test_connection_check_reports_a_request_instead_of_cached_success(self):
         client, session = self.client([

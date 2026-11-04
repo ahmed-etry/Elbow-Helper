@@ -201,13 +201,17 @@ def first_gap(connection, war_id, attacks):
     return min(gaps, default=sum(reported) + 1)
 
 
-def capture_time(war, current, at):
-    """When a war was last known as captured: its end once ended, else its last check."""
+def capture_time(war, current, at, league=None):
+    """When a war was last known as captured: its end once ended, else its last check.
+
+    A league war's own checks count as well as the clan's current-war check.
+    """
     if war["state"] == "warEnded":
         return war["end_at"], "war_end"
     checked = war["last_seen_at"]
-    if current and current["war_id"] == war["id"] and current["last_success_at"] is not None:
-        checked = max(checked, current["last_success_at"])
+    for state in (current, league):
+        if state and state["war_id"] == war["id"] and state["last_success_at"] is not None:
+            checked = max(checked, state["last_success_at"])
     return min(at, checked), "last_check"
 
 
@@ -227,7 +231,12 @@ def select_wars(connection, clans, after, before, types, at, view):
         rows = connection.execute(
             f"SELECT w.*,s.clan_tag AS facing FROM wars w JOIN war_sides s ON s.war_id=w.id WHERE {where} "
             "AND (w.state!='warEnded' OR w.end_at BETWEEN ? AND ?)", (*args, after, before)).fetchall()
-        selected = [(row, row["facing"], *capture_time(row, current.get(row["facing"]), at)) for row in rows]
+        running = sorted({row["war_tag"] for row in rows if row["war_tag"] and row["state"] != "warEnded"})
+        league = {row["scope_id"]: row for row in connection.execute(
+            f"SELECT scope_id,war_id,last_success_at FROM war_collection_state WHERE source_kind='cwl_war' "
+            f"AND scope_id IN ({placeholders(running)})", running)} if running else {}
+        selected = [(row, row["facing"], *capture_time(row, current.get(row["facing"]), at, league.get(row["war_tag"])))
+                    for row in rows]
         selected = [item for item in selected if after <= item[2] <= before]
     if len(selected) > MAX_WARS:
         raise ValueError(f"The window selects more than {MAX_WARS} wars; choose a shorter one")
@@ -411,7 +420,8 @@ class WarReads(RecordReads):
                 "SELECT a.*,x.player_tag AS attacker_tag,x.name AS attacker_name,x.townhall AS attacker_townhall,"
                 "x.source_map_position AS attacker_map_position,x.side AS attacker_side,d.player_tag AS defender_tag,"
                 "d.name AS defender_name,d.townhall AS defender_townhall,d.source_map_position AS defender_map_position,"
-                "d.side AS defender_side FROM war_attacks a LEFT JOIN war_members x ON x.id=a.attacker_member_id "
+                "d.side AS defender_side,d.extra_json AS defender_extra FROM war_attacks a "
+                "LEFT JOIN war_members x ON x.id=a.attacker_member_id "
                 "LEFT JOIN war_members d ON d.id=a.defender_member_id WHERE a.war_id=? ORDER BY a.attack_order",
                 (war["id"],)).fetchall()
             first = {}
@@ -441,7 +451,15 @@ class WarReads(RecordReads):
                 legacy = extra.get("legacy") if isinstance(extra.get("legacy"), dict) else {}
                 known = {"defender_name": attack["defender_name"], "defender_townhall": attack["defender_townhall"],
                          "defender_position": places[1 - side].get(defender)}
+                # A league base copied from old clan health is known only from the attacks on it: its
+                # place among the bases that were hit means nothing, so it keeps the old capture's position.
+                base = json.loads(attack["defender_extra"]).get("legacy") if attack["defender_extra"] else None
+                copied = isinstance(base, dict) and bool(base.get("from_attacks"))
+                if copied:
+                    known["defender_position"] = None
                 filled = {key: legacy.get(key) for key, value in known.items() if value is None and legacy.get(key)}
+                if copied and attack["defender_map_position"] is not None:
+                    filled["defender_position"] = attack["defender_map_position"]
                 rows.append({"war_id": war["id"], "clan_tag": clan, "type": war["type"], "state": war["state"],
                              "time": time, "time_basis": basis, "attack_order": attack["attack_order"],
                              "attacker_tag": attacker, "attacker_name": attack["attacker_name"],
@@ -504,7 +522,7 @@ class WarReads(RecordReads):
 
     async def health_activity(self, clans, after, before, *, view="capture", types=REGULAR, player_tags=None,
                               as_of=None, limit=200, offset=0):
-        """Regular-war player health inputs in old clan health's two named views.
+        """Player health inputs in old clan health's two named views; regular wars unless asked.
 
         capture: every war as last captured, an ongoing one at its last check,
         in [after, before]. completed: wars ended in [after, before).
@@ -514,7 +532,7 @@ class WarReads(RecordReads):
             raise ValueError("Expected a completed or capture view")
         selected = None if player_tags is None else tags(player_tags)
         return await self._read(self._health_activity, clan_tags(clans), *window(after, before),
-                                war_types(types, ("FRIENDLY", "REG")), selected, view, timestamp(as_of), limit, offset)
+                                war_types(types), selected, view, timestamp(as_of), limit, offset)
 
     @staticmethod
     def _health_activity(connection, clans, after, before, types, selected, view, at, limit, offset):
@@ -543,7 +561,7 @@ class WarReads(RecordReads):
         if view not in VIEWS:
             raise ValueError("Expected a completed or capture view")
         return await self._read(self._health_totals, clan_tags(clans), *window(after, before),
-                                war_types(types, ("FRIENDLY", "REG")), clan_tags(player_tags), view, timestamp(as_of))
+                                war_types(types), clan_tags(player_tags), view, timestamp(as_of))
 
     @staticmethod
     def _health_totals(connection, clans, after, before, types, selected, view, at):
@@ -579,7 +597,7 @@ class WarReads(RecordReads):
         if view not in VIEWS:
             raise ValueError("Expected a completed or capture view")
         return await self._read(self._health_war_counts, clan_tags(clans), *window(after, before),
-                                war_types(types, ("FRIENDLY", "REG")), view, timestamp(as_of))
+                                war_types(types), view, timestamp(as_of))
 
     @staticmethod
     def _health_war_counts(connection, clans, after, before, types, view, at):

@@ -17,8 +17,6 @@ from typing import Set
 import discord
 from discord.ext import commands
 
-from elbow_helper.domain.player_tags import encode_clash_tag
-from elbow_helper.domain.cwl import cwl_season_key
 from elbow_helper.configuration.clans import CLAN_CWL_HELPER_ROLE_IDS
 from elbow_helper.configuration.clans import CLAN_NAMES
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
@@ -96,102 +94,9 @@ class CwlRouterMixin:
             raise
 
 
-    async def _fetch_json(self, path: str) -> Optional[Dict]:
-        if not self.clash_client.configured:
-            return None
-        response = await self.clash_client.get(
-            path,
-            attempts=1,
-            timeout_seconds=15,
-        )
-        return response.payload_object if response.status == 200 else None
-
-
     async def _get_league_wars(self, clan_key: str) -> List[Dict]:
-        """Return all CWL wars for this clan (preparation/inWar/warEnded)."""
-        tag = CWL_CLAN_TAGS.get(clan_key)
-        if not tag:
-            return []
-        now_ts = time.time()
-        cached_group = self._leaguegroup_cache.get(clan_key)
-        war_tags: List[tuple[int, str]] = []
-        season_label = ""
-        total_rounds = 0
-        if cached_group and cached_group.get("war_tags") and now_ts - cached_group["fetched_at"] < 300:
-            war_tags = cached_group["war_tags"]
-            season_label = str(cached_group.get("season_label") or "")
-            total_rounds = int(cached_group.get("total_rounds") or 0)
-        else:
-            group = await self._fetch_json(
-                f"/clans/{encode_clash_tag(tag)}/currentwar/leaguegroup",
-            )
-            if group and "rounds" in group:
-                season_label = str(group.get("season") or "")
-                rounds = group.get("rounds", []) or []
-                total_rounds = len(rounds)
-                round_index = 1
-                for round_data in rounds:
-                    for war_tag in round_data.get("warTags", []) or []:
-                        if war_tag and war_tag != "#0":
-                            war_tags.append((round_index, war_tag))
-                    round_index += 1
-                if war_tags:
-                    self._leaguegroup_cache[clan_key] = {
-                        "war_tags": war_tags,
-                        "season_label": season_label,
-                        "total_rounds": total_rounds,
-                        "fetched_at": now_ts,
-                    }
-            elif cached_group and cached_group.get("war_tags"):
-                war_tags = cached_group["war_tags"]
-                season_label = str(cached_group.get("season_label") or "")
-                total_rounds = int(cached_group.get("total_rounds") or 0)
-            else:
-                return []
-        # Walk rounds in order so we can tag the round number on matching wars.
-        candidates: List[Dict] = []
-        if total_rounds <= 0:
-            total_rounds = max((round_index for round_index, _ in war_tags), default=0)
-        for round_index, war_tag in war_tags:
-            cached_war = self._war_cache.get(war_tag)
-            if cached_war and cached_war.get("_state") == "warEnded":
-                cached_war["_total_rounds"] = total_rounds
-                cached_war["_season_label"] = season_label
-                cached_war["_snapshot_stale"] = False
-                candidates.append(cached_war)
-                continue
-            war = await self._fetch_json(
-                f"/clanwarleagues/wars/{encode_clash_tag(war_tag)}",
-            )
-            if not war:
-                if cached_war:
-                    cached_war["_total_rounds"] = total_rounds
-                    cached_war["_season_label"] = season_label
-                    cached_war["_snapshot_stale"] = True
-                    candidates.append(cached_war)
-                continue
-            state = war.get("state")
-            if state not in {"preparation", "inWar", "warEnded"}:
-                continue
-            # Ensure the target clan participates in this war payload.
-            clan_data = war.get("clan", {})
-            opp_data = war.get("opponent", {})
-            if clan_data.get("tag") != tag and opp_data.get("tag") != tag:
-                continue
-            war["_warTag"] = war_tag
-            war["_round"] = round_index
-            war["_state"] = state
-            war["_start_dt"] = coc_time_to_dt(war.get("startTime"))
-            war["_total_rounds"] = total_rounds
-            war["_season_label"] = season_label
-            war["_snapshot_stale"] = False
-            self._war_cache[war_tag] = war
-            candidates.append(war)
-
-        season = cwl_season_key(candidates)
-        for war in candidates:
-            war["_season"] = season
-        return candidates
+        """Return all CWL wars for this clan (preparation/inWar/warEnded), as the family record holds them."""
+        return await self.cwl_groups.wars(clan_key)
 
 
     def _extract_complete_roster(
@@ -265,14 +170,11 @@ class CwlRouterMixin:
 
 
     async def _poll_rosters(self):
-        # Background loop: poll CoC API and act on roster/missed data.
+        # Background loop: read the family record's league wars and act on roster/missed data.
         await wait_for_boot_complete(self.bot)
-        if not self.clash_client.configured:
-            LOGGER.warning("Clash API access is not configured; rotation polling disabled.")
         while True:
             try:
-                if self.clash_client.configured:
-                    await self._poll_once()
+                await self._poll_once()
             except (asyncio.TimeoutError, discord.HTTPException, RuntimeError) as e:
                 LOGGER.exception("roster poll error: %s", e)
             except Exception as e:
@@ -289,6 +191,9 @@ class CwlRouterMixin:
         last_poll_ts = self.state.get("last_poll_ts", 0)
         poll_ts = int(datetime.now(timezone.utc).timestamp())
         state_dirty = False
+        # A war the record still shows running after its end time has ended; its ending is on the way. The poll
+        # time must not pass it, or the missed-attack post would be skipped as older than the last poll.
+        awaiting_end = False
         # Track roster changes and missed attacks per clan and war tag
         rosters = self.state.setdefault("rosters", {})
         roster_names = self.state.setdefault("roster_names", {})
@@ -303,6 +208,11 @@ class CwlRouterMixin:
             await self.sync_registered_cwl_thread(clan_key, wars)
             await self._sync_cwl_channel(clan_key, wars)
             now = datetime.now(timezone.utc)
+            for running in wars:
+                if running.get("_state") != "warEnded":
+                    running_end = coc_time_to_dt(running.get("endTime"))
+                    if running_end is not None and int(running_end.timestamp()) <= poll_ts:
+                        awaiting_end = True
             in_war = next((w for w in wars if w.get("_state") == "inWar"), None)
             # Rotation logging needs prep rosters: prefer nearest future prep war,
             # otherwise fall back to the latest prep snapshot available.
@@ -429,7 +339,7 @@ class CwlRouterMixin:
                 clan_rosters[rotation_tag] = list(current)
                 clan_roster_names[rotation_tag] = name_map
                 state_dirty = True
-        if not missed_pending:
+        if not missed_pending and not awaiting_end:
             self.state["last_poll_ts"] = poll_ts
         state_dirty = True
         if state_dirty:

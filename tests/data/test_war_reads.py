@@ -296,8 +296,10 @@ class WarReadTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len((await self.reads.health_activity(["#PY"], START, END, as_of=at))["rows"]), 2)
         with_friendly = await self.reads.health_activity(["#PY"], END, END + 3 * DAY, types=["REG", "FRIENDLY"], as_of=at)
         self.assertEqual(sorted({r["type"] for r in with_friendly["rows"]}), ["FRIENDLY", "REG"])
+        # League wars are read only when asked for; there are none here.
+        self.assertEqual((await self.reads.health_activity(["#PY"], END, END + DAY, types=["CWL"], as_of=at))["rows"], [])
         with self.assertRaises(ValueError):
-            await self.reads.health_activity(["#PY"], END, END + DAY, types=["CWL"])
+            await self.reads.health_activity(["#PY"], END, END + DAY, types=["ARRANGED"])
 
     async def test_health_totals_sum_each_account_over_one_snapshot_and_keep_unknown_counts_apart(self):
         await self.record(war(), at=self.at)
@@ -328,6 +330,8 @@ class WarReadTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                                            "#LQ": {"wars": 0, "wars_with_lineup": 0}})
         self.assertEqual((await self.reads.health_war_counts(["#PY"], START, at, types=["REG", "FRIENDLY"],
                                                              as_of=at))["clans"]["#PY"]["wars"], 2)
+        self.assertEqual((await self.reads.health_war_counts(["#PY"], START, at, types=["CWL"],
+                                                             as_of=at))["clans"]["#PY"]["wars"], 0)
         # A war known only from the log has no lineup to count.
         await self.execute("DELETE FROM war_members WHERE war_id=(SELECT war_id FROM war_sides WHERE clan_tag='#PY' "
                            "AND war_id IN (SELECT id FROM wars WHERE type='REG'))")
@@ -335,7 +339,7 @@ class WarReadTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                          {"wars": 1, "wars_with_lineup": 0})
         for call in (lambda: self.reads.health_totals(["#PY"], START, END, player_tags=[]),
                      lambda: self.reads.health_totals(["#PY"], START, END, player_tags=["#P0"], view="live"),
-                     lambda: self.reads.health_war_counts(["#PY"], START, END, types=["CWL"])):
+                     lambda: self.reads.health_war_counts(["#PY"], START, END, types=["ARRANGED"])):
             with self.assertRaises(ValueError):
                 await call()
 

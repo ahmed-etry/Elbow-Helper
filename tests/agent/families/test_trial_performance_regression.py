@@ -1,10 +1,7 @@
 """Complete recruitment cohorts keep their joined attack evidence at model delivery."""
 
-from contextlib import closing
 from dataclasses import replace
 from datetime import datetime, timezone
-from pathlib import Path
-import sqlite3
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
@@ -12,36 +9,24 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.agent.families import identity_reads, workflow_reads, war_reads
-from elbow_helper.features.clan_health.database import ClanHealthRepository
-from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.features.recruitment.queries import RecruitmentQueries
 from agent.capabilities.recruitment.test_agent_recruitment import _Channel
 from agent.engine.test_agent_plan_flow import _context
 from agent.families.record_stub import regular_id, regular_war, regular_wars_from, with_record
 from agent.families.test_compact_family_regressions import delivered, unpack
+from tests.features.cwl_record_stub import LeagueRecord, attack, league_war, member
 
 
 class TrialPerformanceRegressionTests(unittest.IsolatedAsyncioTestCase):
     async def test_two_owned_accounts_share_one_war_but_keep_two_attack_opportunities(self):
         with TemporaryDirectory() as directory:
-            repository = ClanHealthRepository(Path(directory) / 'wars.db')
-            repository.initialize()
-            with closing(sqlite3.connect(repository.path)) as connection, connection:
-                connection.execute('''INSERT INTO wars(war_id,war_type,clan_code,clan_tag,
-                    opponent_tag,state,start_ts,end_ts,last_seen_ts) VALUES(?,?,?,?,?,?,?,?,?)''',
-                    ('#C0', 'CWL', 'BEH', CLANS['BEH'].tag, '#Y0', 'warEnded', 20, 100, 1))
-                for index, (tag, stars) in enumerate([('#P0', 3), ('#Q0', 1)], 1):
-                    connection.execute('''INSERT INTO war_roster_members(war_id,clan_code,
-                        player_tag,player_name,attacks_expected,attacks_used,roster_state,captured_ts)
-                        VALUES(?,?,?,?,?,?,?,?)''',
-                        ('#C0', 'BEH', tag, tag, 1, 1, 'warEnded', 1))
-                    connection.execute('''INSERT INTO war_attacks(war_id,war_type,clan_code,
-                        clan_tag,end_ts,war_state,player_tag,player_name,attack_order,defender_tag,stars,destruction)
-                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
-                        ('#C0', 'CWL', 'BEH', CLANS['BEH'].tag, 100, 'warEnded', tag, tag,
-                         index, '#Y0', stars, 100 if stars == 3 else 40))
+            record = await LeagueRecord(directory).initialize()
+            await record.week('BEH', '1970-01', [league_war(
+                '#C0', 1, 100, [member(tag, name=tag) for tag in ('#P0', '#Q0')],
+                [attack(index, tag, '#Y0', stars=stars, destruction=100 if stars == 3 else 40, fresh=index == 1)
+                 for index, (tag, stars) in enumerate([('#P0', 3), ('#Q0', 1)], 1)], opponent='#Y0', start=20)])
             regular = regular_war('BEH', 100, {'#P0': (1, [3]), '#Q0': (1, [1])}, opponent='#Y0', start_ts=20)
-            context = with_record(replace(_context(), cwl_queries=CwlQueries(repository, lambda: {}),
+            context = with_record(replace(_context(), cwl_queries=record.queries(),
                 recruitment_queries=RecruitmentQueries(lambda: {'100': {
                     'start': '2026-09-01T00:00:00+00:00', 'days': 7, 'applicant_id': 41}},
                     clock=lambda: datetime(2026, 9, 4, tzinfo=timezone.utc)),
@@ -52,7 +37,7 @@ class TrialPerformanceRegressionTests(unittest.IsolatedAsyncioTestCase):
             report = await tool.handler(context, {'stage': 'active_trials',
                 'performance': {'war_type': 'both', 'latest_completed': 2}})
             candidate = unpack(delivered(report)['rows'])[0]
-            self.assertEqual(report['rows'][0]['war_attendance']['war_ids'], ['#C0', regular_id(regular)])
+            self.assertEqual(report['rows'][0]['war_attendance']['war_ids'], ['CWL:#C0', regular_id(regular)])
             self.assertEqual(candidate['war_attendance']['attacks_expected'], 6)
             for kind in ('REG', 'CWL'):
                 metrics = candidate['attack_performance'][kind]
@@ -75,28 +60,14 @@ class TrialPerformanceRegressionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_all_fourteen_trials_survive_with_regular_and_cwl_attack_metrics(self):
         with TemporaryDirectory() as directory:
-            repository = ClanHealthRepository(Path(directory) / 'wars.db')
-            repository.initialize()
-            with closing(sqlite3.connect(repository.path)) as connection, connection:
-                connection.execute('''INSERT INTO wars(war_id,war_type,clan_code,clan_tag,
-                    opponent_tag,cwl_season,cwl_league,cwl_round,team_size,attacks_per_member,
-                    state,preparation_start_ts,start_ts,end_ts,last_seen_ts)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                    ('#C0', 'CWL', 'BEH', CLANS['BEH'].tag, '#Q0', '2026-09',
-                     'Champion League III', 1, 15, 1, 'warEnded', 10, 20, 100, 1))
-                connection.execute('''INSERT INTO war_roster_members(war_id,clan_code,player_tag,
-                    player_name,townhall,attacks_expected,attacks_used,roster_state,captured_ts)
-                    VALUES(?,?,?,?,?,?,?,?,?)''',
-                    ('#C0', 'BEH', '#P0', 'Candidate', 18, 1, 1, 'warEnded', 1))
-                connection.execute('''INSERT INTO war_attacks(war_id,war_type,clan_code,clan_tag,
-                    end_ts,war_state,player_tag,player_name,attack_order,defender_tag,stars,destruction)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
-                    ('#C0', 'CWL', 'BEH', CLANS['BEH'].tag, 100, 'warEnded', '#P0',
-                     'Candidate', 1, '#Q0', 3, 100))
+            record = await LeagueRecord(directory).initialize()
+            await record.week('BEH', '2026-09', [league_war(
+                '#C0', 1, 100, [member('#P0', name='Candidate', townhall=18)], [attack(1, '#P0', '#Q0')],
+                opponent='#Q0', start=20, team_size=15)], league='Champion League III')
             regular = regular_war('BEH', 100, {'#P0': (1, [3])}, opponent='#Q0', start_ts=20, attacks_per_member=1)
             state = {str(index + 200): {'start': '2026-09-01T00:00:00+00:00', 'days': 7,
                      'applicant_id': index + 1000} for index in range(14)}
-            context = with_record(replace(_context(), cwl_queries=CwlQueries(repository, lambda: {}),
+            context = with_record(replace(_context(), cwl_queries=record.queries(),
                 recruitment_queries=RecruitmentQueries(lambda: state,
                     clock=lambda: datetime(2026, 9, 4, tzinfo=timezone.utc)),
                 account_links=SimpleNamespace(get_links_by_tags=lambda tags: {'#P0': {'discord_user_id': 1000}})))

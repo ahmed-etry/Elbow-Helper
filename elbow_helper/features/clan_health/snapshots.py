@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Tuple
 
@@ -18,27 +17,6 @@ LOGGER = logging.getLogger(__name__)
 
 
 class ClanHealthSnapshotMixin:
-    @tasks.loop(minutes=20)
-    async def _war_log_loop(self) -> None:
-        if not self.clash_client.configured:
-            return
-        async with self._background_lock:
-            ingested_wars, ingested_rows, ingest_warnings = await self.collector.ingest_family_cwl_activity()
-            if ingest_warnings:
-                LOGGER.info(
-                    "War ingest warnings=%s top=%s wars=%s rows=%s",
-                    len(ingest_warnings),
-                    self._warning_preview(ingest_warnings, limit=3),
-                    ingested_wars,
-                    ingested_rows,
-                )
-            self._last_war_ingest_ts = int(time.time())
-
-    @_war_log_loop.before_loop
-    async def _war_log_loop_before(self) -> None:
-        await self._wait_for_boot_complete()
-        self._log_startup_once()
-
     async def _run_background_snapshot_cycle(self, *, trigger: str) -> None:
         if not self.clash_client.configured:
             return
@@ -51,15 +29,7 @@ class ClanHealthSnapshotMixin:
 
         warnings: List[str] = []
         clan_entries: List[Dict[str, Any]] = []
-        ingested_wars = 0
-        ingested_rows = 0
-        now_ts = int(now.timestamp())
-        # Keep league wars fresh for participation/performance overlays; the
-        # family collectors keep regular wars fresh in the family record.
-        if (now_ts - int(self._last_war_ingest_ts)) > 900:
-            ingested_wars, ingested_rows, ingest_warnings = await self.collector.ingest_family_cwl_activity()
-            self._last_war_ingest_ts = now_ts
-            warnings.extend(ingest_warnings)
+        # The family collectors keep regular and league wars fresh in the family record.
         # Build a consistent all-family snapshot for this rolling window.
         for code in CLAN_ORDER:
             entry, entry_warnings = await self.collector.collect_clan_live(
@@ -134,8 +104,6 @@ class ClanHealthSnapshotMixin:
             len(all_rows),
             len(CLAN_ORDER),
             partial,
-            ingested_wars,
-            ingested_rows,
             len(warnings),
             warning_top,
         )
@@ -171,12 +139,10 @@ class ClanHealthSnapshotMixin:
                     len(all_rows),
                 )
             LOGGER.debug(
-                "Background sync details trigger=%s clans=%s partial=%s war_sync=%s/%s",
+                "Background sync details trigger=%s clans=%s partial=%s",
                 trigger,
                 len(CLAN_ORDER),
                 partial,
-                ingested_wars,
-                ingested_rows,
             )
             self._last_background_log_sig = log_sig
             self._last_background_log_ts = captured_ts

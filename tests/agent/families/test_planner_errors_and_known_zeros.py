@@ -1,9 +1,6 @@
 """A planner mistake reaches the planner as an error; an account in every checked lineup's absence is a zero."""
-from contextlib import closing
 from dataclasses import replace
 from datetime import datetime
-from pathlib import Path
-import sqlite3
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
@@ -12,11 +9,10 @@ from unittest.mock import AsyncMock, patch
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.agent.families import account_activity, identity_reads, war_reads
 from elbow_helper.agent.families.war_reads import TOOLS
-from elbow_helper.features.clan_health.database import ClanHealthRepository
 from elbow_helper.features.cwl.config import CWL_CLAN_CODES
-from elbow_helper.features.cwl.queries import CwlQueries
 from agent.engine.test_agent_plan_flow import _context
 from agent.families.test_named_account_stats import lookup_context, named_member
+from tests.features.cwl_record_stub import LeagueRecord, league_war, member
 
 NON_CWL = next(code for code in CLANS if code not in CWL_CLAN_CODES)
 
@@ -124,26 +120,17 @@ class ReportOwnerTests(unittest.IsolatedAsyncioTestCase):
 class KnownZeroTests(unittest.IsolatedAsyncioTestCase):
     END = int(datetime.fromisoformat('2026-09-05T00:00:00+00:00').timestamp())
 
-    def database(self, rosters):
+    async def database(self, rosters):
         directory = TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        repository = ClanHealthRepository(Path(directory.name) / 'wars.db')
-        repository.initialize()
-        with closing(sqlite3.connect(repository.path)) as connection, connection:
-            for index, war_id in enumerate(('#C0', '#C1')):
-                end = self.END + index * 10
-                connection.execute('''INSERT INTO wars(war_id,war_type,clan_code,clan_tag,
-                    opponent_tag,cwl_season,cwl_league,cwl_round,team_size,attacks_per_member,
-                    state,preparation_start_ts,start_ts,end_ts,last_seen_ts)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                    (war_id, 'CWL', 'BEH', CLANS['BEH'].tag, '#Q' + str(index), '2026-09',
-                     'Master League I', index + 1, 15, 1, 'warEnded', end - 200, end - 100, end, index + 1))
-                if war_id in rosters:
-                    connection.execute('''INSERT INTO war_roster_members(war_id,clan_code,player_tag,
-                        player_name,townhall,attacks_expected,attacks_used,roster_state,captured_ts)
-                        VALUES(?,?,?,?,?,?,?,?,?)''', (war_id, 'BEH', '#P0', 'Account', 17, 1, 1, 'warEnded', 1))
+        record = await LeagueRecord(directory.name).initialize()
+        await record.week('BEH', '2026-09', [
+            league_war(war_id, index + 1, self.END + index * 10,
+                       [member('#P0', name='Account', townhall=17)] if war_id in rosters else [],
+                       opponent=('#Q0', '#Q2')[index], team_size=15)
+            for index, war_id in enumerate(('#C0', '#C2'))], league='Master League I')
         links = {'#P0': {'discord_user_id': 41}, '#Y0': {'discord_user_id': 77}}
-        return replace(_context(), cwl_queries=CwlQueries(repository, lambda: {}),
+        return replace(_context(), cwl_queries=record.queries(),
             account_links=SimpleNamespace(
                 get_links_by_tags=lambda tags: {tag: links.get(tag) for tag in tags},
                 get_links_for_members=lambda ids: {i: [{'player_tag': '#Y0'}] for i in ids if i == 77}))
@@ -156,7 +143,8 @@ class KnownZeroTests(unittest.IsolatedAsyncioTestCase):
         return next(row for row in result['rows'] if row['player_tag'] == '#Y0' or row['member_id'] == 77)
 
     async def test_an_account_in_no_lineup_is_a_known_zero_when_every_war_has_one(self):
-        result = await self.read(self.database({'#C0', '#C1'}), latest_completed=2, account_tags=['#P0', '#Y0'])
+        result = await self.read(await self.database({'#C0', '#C2'}), latest_completed=2,
+                                 account_tags=['#P0', '#Y0'])
         self.assertEqual(result['wars_without_rosters'], [])
         row = self.absent(result)
         self.assertEqual((row['attacks_used'], row['attacks_expected'], row['missed'], row['war_ids']),
@@ -169,15 +157,16 @@ class KnownZeroTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(present['participation_status'], 'warring')
 
     async def test_a_member_whose_accounts_are_in_no_lineup_is_a_known_zero(self):
-        result = await self.read(self.database({'#C0', '#C1'}), latest_completed=2, member_ids=[77], unit='member')
+        result = await self.read(await self.database({'#C0', '#C2'}), latest_completed=2, member_ids=[77],
+                                 unit='member')
         row = self.absent(result)
         self.assertEqual((row['attacks_used'], row['missed']), (0, 0))
         self.assertTrue(row['totals_complete'])
         self.assertEqual(row['participation_status'], 'not_in_checked_lineups')
 
     async def test_a_war_without_a_lineup_leaves_the_account_unknown(self):
-        result = await self.read(self.database({'#C0'}), latest_completed=2, account_tags=['#P0', '#Y0'])
-        self.assertEqual(result['wars_without_rosters'], ['#C1'])
+        result = await self.read(await self.database({'#C0'}), latest_completed=2, account_tags=['#P0', '#Y0'])
+        self.assertEqual(result['wars_without_rosters'], ['CWL:#C2'])
         row = self.absent(result)
         self.assertIsNone(row['attacks_used'])
         self.assertIsNone(row['missed'])
@@ -186,7 +175,7 @@ class KnownZeroTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row['participation_status'], 'unknown')
 
     async def test_a_selection_that_checked_no_war_stays_unknown(self):
-        result = await self.read(self.database({'#C0', '#C1'}), season='2020-01', account_tags=['#Y0'])
+        result = await self.read(await self.database({'#C0', '#C2'}), season='2020-01', account_tags=['#Y0'])
         self.assertEqual(result['war_ids'], [])
         row = self.absent(result)
         self.assertIsNone(row['attacks_used'])

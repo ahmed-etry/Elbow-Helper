@@ -823,7 +823,7 @@ class DatabaseStartupTests(unittest.IsolatedAsyncioTestCase):
                 "check_time_achievements", "initial_achievement_check", "cleanup_database",
                 "salary_task", "raffle_hub_task",
             )),
-            (ClanHealth, "clan_health", "initialize", ("_war_log_loop", "_snapshot_log_loop")),
+            (ClanHealth, "clan_health", "initialize", ("_snapshot_log_loop",)),
         ):
             with self.subTest(feature=module):
                 events = []

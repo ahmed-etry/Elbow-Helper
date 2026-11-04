@@ -1,4 +1,4 @@
-"""Clan health's regular wars from synthetic family-record wars; league wars stay on stored history."""
+"""Clan health's regular and league wars from synthetic family-record wars."""
 
 import asyncio
 from datetime import datetime
@@ -12,13 +12,13 @@ from elbow_helper.data.reads import WarReads
 from elbow_helper.features.clan_health.analysis import ClanHealthAnalyzer
 from elbow_helper.features.clan_health.api import ClanHealthCollector
 from elbow_helper.features.clan_health.commands.player import ClanHealthPlayerCommandMixin
-from elbow_helper.features.clan_health.config import CLAN_ORDER, CWL_CLAN_CODES, UTC
+from elbow_helper.features.clan_health.config import UTC
 from elbow_helper.features.clan_health.database import ClanHealthRepository
 from elbow_helper.features.clan_health.record_wars import RegularWars
 from elbow_helper.features.clan_health.seasons import _season_key_for_datetime
 
 from tests.data.test_war_reads import friendly
-from tests.data.test_wars import END, SECOND, START, WarFixture, war
+from tests.data.test_wars import END, SECOND, START, WarFixture, group, war
 
 DAY = 86400
 CLANS = {"ONE": SimpleNamespace(tag="#PY"), "TWO": SimpleNamespace(tag="#LQ")}
@@ -33,21 +33,39 @@ def moment(value):
     return datetime.fromtimestamp(value, tz=UTC)
 
 
+def clash(at):
+    return moment(at // SECOND).strftime("%Y%m%dT%H%M%S.000Z")
+
+
 class PlayerCommands(ClanHealthPlayerCommandMixin):
-    def __init__(self, repository, regular_wars):
-        self.repository, self.regular_wars = repository, regular_wars
+    def __init__(self, repository, regular_wars, league_wars):
+        self.repository, self.regular_wars, self.league_wars = repository, regular_wars, league_wars
 
 
 class RecordRegularWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         await super().asyncSetUp()
         self.regular = RegularWars(WarReads(self.store), CLANS)
+        self.league = RegularWars(WarReads(self.store), CLANS, types=("CWL",))
         self.health = ClanHealthRepository(Path(self.temporary.name) / "clan_health.db")
         await asyncio.to_thread(self.health.initialize)
 
     async def ended(self):
         await self.record(war("warEnded"), at=END + 90 * SECOND)
         await self.record(friendly(), at=END + 3 * DAY * SECOND)
+
+    async def league_round(self, *, at=START + 10 * SECOND, missed=True, war_tag="#R0"):
+        """One ended league war of #PY on the window's first day, the collector's way; #P0 attacks unless ``missed``."""
+        payload = war("warEnded", clans=("#PY", "#CU"), end=clash(at))
+        payload.update(attacksPerMember=1, preparationStartTime=clash(at - 2 * DAY * SECOND),
+                       startTime=clash(at - DAY * SECOND))
+        if missed:
+            first = payload["clan"]["members"][0]
+            first.pop("attacks")
+            payload["clan"]["attacks"] -= 1
+            payload["opponent"]["members"][0].pop("bestOpponentAttack")
+        await self.record(group(rounds=[{"warTags": [war_tag, "#R2"]}]), kind="cwl_group", at=at - 2 * DAY * SECOND)
+        await self.record(payload, kind="cwl_war", scope=war_tag, at=at + 90 * SECOND)
 
     async def test_capture_view_counts_an_ongoing_war_at_its_last_check_with_inclusive_seconds(self):
         await self.record(war(), at=self.at)
@@ -92,18 +110,11 @@ class RecordRegularWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await everything(), whole)
         self.assertEqual((whole[0]["#P0"]["wars"], whole[1], whole[3]), (1, {"ONE": 1}, seconds(END)))
 
-    async def test_health_scores_join_record_regular_wars_with_stored_league_wars(self):
+    async def test_health_scores_join_record_regular_and_league_wars(self):
         await self.ended()
         start, end = seconds(START), seconds(END) + 4 * DAY
-        await asyncio.to_thread(self.health.store_war_activity, [
-            {"war_id": "CWL:#W", "war_type": "CWL", "clan_code": "ONE", "clan_tag": "#PY", "end_ts": start + 10,
-             "player_tag": "#P0", "player_name": "Synthetic", "attacks_expected": 1, "attacks_used": 0},
-            # The old regular copy of the same war is no longer read.
-            {"war_id": "REG:#PY:x:#GR", "war_type": "REG", "clan_code": "ONE", "clan_tag": "#PY",
-             "end_ts": seconds(END), "player_tag": "#P0", "player_name": "Synthetic", "attacks_expected": 2,
-             "attacks_used": 2},
-        ])
-        analyzer = ClanHealthAnalyzer(self.health, self.regular)
+        await self.league_round()
+        analyzer = ClanHealthAnalyzer(self.health, self.regular, self.league)
         rows = [{"player_tag": "#P0", "clan_code": "ONE"}]
         await asyncio.to_thread(analyzer.apply_war_activity, rows, cycle_start=moment(start), cycle_end=moment(end))
         row = rows[0]
@@ -124,7 +135,7 @@ class RecordRegularWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                              CLANS)
         rows = [{"player_tag": "#P0", "clan_code": "ONE", "war_hits_expected": 4}]
         with self.assertRaises(sqlite3.OperationalError):
-            await asyncio.to_thread(ClanHealthAnalyzer(self.health, broken).apply_war_activity, rows,
+            await asyncio.to_thread(ClanHealthAnalyzer(self.health, broken, self.league).apply_war_activity, rows,
                                     cycle_start=moment(1), cycle_end=moment(200))
         self.assertEqual(rows, [{"player_tag": "#P0", "clan_code": "ONE", "war_hits_expected": 4}])
 
@@ -138,15 +149,11 @@ class RecordRegularWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
             {"war_type": "REG", "clan_code": "ONE", "end_ts": seconds(END), "war_state": "warEnded",
              "defender_tag": "#Q0", "defender_map_position": 1, "defender_townhall": 16, "stars": 3,
              "destruction": 100.0, "fresh_attack": True, "source": "family_record"})
-        await asyncio.to_thread(self.health.store_war_attacks, [
-            {"war_id": "CWL:#W", "war_type": "CWL", "clan_code": "ONE", "end_ts": seconds(END) - DAY,
-             "player_tag": "#P0", "attack_order": 1, "fresh_attack": 1},
-            {"war_id": "REG:#OLD", "war_type": "REG", "clan_code": "ONE", "end_ts": seconds(END) + 60,
-             "player_tag": "#P0", "attack_order": 1},
-        ])
-        commands = PlayerCommands(self.health, self.regular)
+        await self.league_round(missed=False)
+        commands = PlayerCommands(self.health, self.regular, self.league)
         merged = await asyncio.to_thread(commands._player_war_attacks, "#P0", moment(start), moment(end))
-        self.assertEqual([(r["war_type"], r["source"]) for r in merged], [("REG", "family_record"), ("CWL", "")])
+        self.assertEqual([(r["war_type"], r["source"], r["end_ts"]) for r in merged],
+                         [("REG", "family_record", seconds(END)), ("CWL", "family_record", start + 10)])
         sheet = commands._build_attack_sheet(merged[:1], "No attacks")
         self.assertEqual(sheet[1][-1], "First hit")
         # The clan's attack count is unknown: no attack can be called a first hit.
@@ -165,10 +172,19 @@ class RecordRegularWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(latest, seconds(END))
         self.assertIsNone(await asyncio.to_thread(self.regular.latest_attack_ts, player_tag="#P0",
                                                   after_ts=seconds(END) + 1, until_ts=seconds(END) + 4 * DAY))
-        commands = PlayerCommands(self.health, self.regular)
+        commands = PlayerCommands(self.health, self.regular, self.league)
         # Nothing stored for the account: the record's attack sets the season.
         self.assertEqual(await asyncio.to_thread(commands._latest_activity_season, "#P0"),
                          _season_key_for_datetime(moment(seconds(END))))
+        # A newer league attack is found after the regular one, and moves the season too.
+        league = int(datetime(2026, 11, 1, 12, tzinfo=UTC).timestamp())
+        await self.league_round(at=league * SECOND, missed=False, war_tag="#R8")
+        self.assertEqual(await asyncio.to_thread(self.league.latest_attack_ts, player_tag="#P0",
+                                                 after_ts=seconds(END)), league)
+        newer = seconds(END) + 40 * DAY
+        stub = SimpleNamespace(latest_attack_ts=lambda **window: newer if window["after_ts"] < newer else None)
+        self.assertEqual(await asyncio.to_thread(PlayerCommands(self.health, self.regular, stub)._latest_activity_season,
+                                                 "#P0"), _season_key_for_datetime(moment(newer)))
         # A newer stored snapshot wins.
         later = seconds(END) + 40 * DAY
         await asyncio.to_thread(self.health.store_snapshots, later,
@@ -179,22 +195,16 @@ class RecordRegularWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await asyncio.to_thread(commands._latest_activity_season, "#P8"))
 
 
-class NoRegularWarPollingTests(unittest.IsolatedAsyncioTestCase):
-    async def test_war_collection_asks_only_for_league_wars(self):
+class NoWarPollingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_clan_health_collects_no_war_of_any_kind(self):
         collector = ClanHealthCollector(SimpleNamespace(configured=True), SimpleNamespace(), SimpleNamespace())
-        league = AsyncMock(return_value=(1, 2, ["warning"]))
-        with (
-            patch.object(collector, "_ingest_war_cwl_for_clan", new=league),
-            patch.object(collector, "_fetch_coc_json", new=AsyncMock()) as fetch,
-        ):
-            result = await collector.ingest_family_cwl_activity()
-        league_clans = [code for code in CLAN_ORDER if code in CWL_CLAN_CODES]
-        self.assertEqual(result, (len(league_clans), 2 * len(league_clans), ["warning"] * len(league_clans)))
-        self.assertEqual([call.kwargs["clan_code"] for call in league.await_args_list], league_clans)
-        fetch.assert_not_awaited()
         for name in ("_ingest_regular_war_for_clan", "_schedule_war_end_capture", "_run_war_end_capture",
-                     "ingest_family_war_activity"):
+                     "ingest_family_war_activity", "ingest_family_cwl_activity", "_ingest_war_cwl_for_clan",
+                     "_fetch_cwl_wars_for_clan", "_schedule_cwl_war_end_capture", "_run_cwl_war_end_capture"):
             self.assertFalse(hasattr(collector, name), name)
+        for name in ("store_wars", "store_final_war_rosters", "store_war_activity", "store_war_attacks",
+                     "bonus_wars", "roster_history", "attendance", "cwl_war_activity", "player_cwl_attacks"):
+            self.assertFalse(hasattr(ClanHealthRepository, name), name)
 
 
 if __name__ == "__main__":

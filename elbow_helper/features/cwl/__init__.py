@@ -44,6 +44,11 @@ async def setup(bot: ElbowHelperBot) -> None:
         raise RuntimeError(
             "CWL management requires Rosters"
         )
+    cwl_reads = getattr(bot, "cwl_reads", None)
+    if cwl_reads is None:
+        raise RuntimeError(
+            "CWL management requires the family record's league reads"
+        )
     cog = CwlManagement(
         bot,
         bot.clash_client,
@@ -55,6 +60,7 @@ async def setup(bot: ElbowHelperBot) -> None:
         account_links,
         rosters.queries,
         rosters.automation,
+        cwl_reads,
     )
     await bot.add_cog(cog)
     bot.add_view(CwlBonusDashboardView(cog))

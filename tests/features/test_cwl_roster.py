@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import sqlite3
+import asyncio
 import tempfile
 import unittest
 import zipfile
-from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -13,8 +12,6 @@ from unittest.mock import patch
 from xml.etree import ElementTree
 from typing import get_type_hints
 
-from elbow_helper.features.clan_health.database import ClanHealthRepository
-from elbow_helper.features.clan_health.database.schema import create_schema
 from elbow_helper.features.cwl.roster.analysis import build_ass_season_metrics
 from elbow_helper.features.cwl.roster.analysis import build_mega_ass_metrics
 from elbow_helper.features.cwl.roster.analysis import CwlRosterAnalysisMixin
@@ -32,6 +29,8 @@ from elbow_helper.infrastructure.exports.google_sheets import GOOGLE_EXPORT_OWNE
 from elbow_helper.infrastructure.exports.google_sheets import GOOGLE_EXPORT_OWNER_VALUE
 from elbow_helper.infrastructure.exports.google_sheets import HEADER_HEIGHT_PX
 from elbow_helper.features.cwl.roster.models import profile_for_league
+
+from tests.features.cwl_record_stub import LeagueRecord, attack, league_war, member
 
 
 class _WorkbookHarness(CwlRosterExportMixin):
@@ -425,84 +424,37 @@ class AssAnalysisTests(unittest.TestCase):
         self.assertEqual(len(mega["#A"].seasons), 2)
         self.assertNotIn("#ZERO", mega)
 
+    @staticmethod
+    def _season(prefix: str, first_end: int) -> list[dict]:
+        return [league_war(f"#{prefix}{'0289PYL'[day - 1]}", day, first_end + day * 86400,
+                           [member("#P8", name="Alpha", townhall=18, position=1)],
+                           [attack(1, "#P8", "#Q0", position=1)], team_size=15) for day in range(1, 8)]
+
     def test_db_loader_reads_completed_history(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "clan_health.db"
-            with closing(sqlite3.connect(path)) as conn:
-                create_schema(conn)
-                for day in range(1, 8):
-                    war_id = f"war-{day}"
-                    conn.execute(
-                        """
-                        INSERT INTO wars (
-                            war_id, war_type, clan_code, clan_tag, cwl_season, cwl_league,
-                            cwl_round, team_size, attacks_per_member, state, end_ts, last_seen_ts
-                        ) VALUES (
-                            ?, 'CWL', 'BE4', '#P0', '2026-06', 'Master League I',
-                            ?, 15, 1, 'warEnded', ?, 1
-                        )
-                        """,
-                        (war_id, day, 100 + day),
-                    )
-                    conn.execute(
-                        """
-                        INSERT INTO war_roster_members (
-                            war_id, clan_code, player_tag, player_name, townhall, map_position,
-                            attacks_expected, roster_state, captured_ts
-                        ) VALUES (
-                            ?, 'BE4', '#A', 'Alpha', 18, 1, 1, 'warEnded', 1
-                        )
-                        """,
-                        (war_id,),
-                    )
-                    conn.execute(
-                        """
-                        INSERT INTO war_attacks (
-                            war_id, war_type, clan_code, clan_tag, end_ts, war_state, player_tag,
-                            player_name, attack_order, defender_map_position, stars, destruction
-                        ) VALUES (
-                            ?, 'CWL', 'BE4', '#P0', 1, 'warEnded', '#A', 'Alpha', 1, 1, 3, 100
-                        )
-                        """,
-                        (war_id,),
-                    )
-                conn.commit()
-            dataset = ClanHealthRepository(path).roster_history(3)
-            with closing(sqlite3.connect(path)) as conn:
-                for day in range(1, 8):
-                    conn.execute(
-                        "INSERT INTO wars (war_id, war_type, clan_code, clan_tag, cwl_season, cwl_league, "
-                        "cwl_round, team_size, attacks_per_member, state, end_ts, last_seen_ts) "
-                        "VALUES (?, 'CWL', 'BE4', '#P0', '2026-08', "
-                        "'Master League I', ?, 15, 1, 'warEnded', ?, 1)",
-                        (f"newer-war-{day}", day, 200 + day),
-                    )
-                conn.commit()
-            old_scope = ClanHealthRepository(path).roster_history(
-                1, season="2026-06", clan_code="BE4",
-            )
-            latest_scope = ClanHealthRepository(path).roster_history(1)
+            record = asyncio.run(LeagueRecord(directory).initialize())
+            asyncio.run(record.week("BE4", "2026-06", self._season("C", 1780000000), league="Master League I"))
+            harness = SimpleNamespace(cwl_history=record.history())
+            dataset = CwlRosterAnalysisMixin._load_roster_history(harness, 3)
+            asyncio.run(record.week("BE4", "2026-08", self._season("G", 1786000000), league="Master League I"))
+            old_scope = harness.cwl_history.roster_history(1, season="2026-06", clan_code="BE4")
+            latest_scope = harness.cwl_history.roster_history(1)
 
         self.assertEqual([row["key"] for row in dataset["seasons"]], ["2026-06"])
         self.assertEqual(len(dataset["wars"]), 7)
         self.assertEqual(len(dataset["roster"]), 7)
         self.assertEqual(len(dataset["attacks"]), 7)
+        self.assertEqual({war["cwl_league"] for war in dataset["wars"]}, {"Master League I"})
         self.assertEqual([row["key"] for row in old_scope["seasons"]], ["2026-06"])
         self.assertEqual(len(old_scope["wars"]), 7)
         self.assertEqual([row["key"] for row in latest_scope["seasons"]], ["2026-08"])
 
     def test_db_loader_ignores_incomplete_seasons(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "clan_health.db"
-            with closing(sqlite3.connect(path)) as conn:
-                create_schema(conn)
-                conn.execute("""INSERT INTO wars (
-                    war_id, war_type, clan_code, clan_tag, cwl_season, cwl_league,
-                    cwl_round, team_size, attacks_per_member, state, end_ts, last_seen_ts
-                ) VALUES ('war-1', 'CWL', 'BE4', '#P0', '2026-07', 'Master League I',
-                          1, 15, 1, 'warEnded', 100, 1)""")
-                conn.commit()
-            dataset = ClanHealthRepository(path).roster_history(3)
+            record = asyncio.run(LeagueRecord(directory).initialize())
+            asyncio.run(record.week("BE4", "2026-07", self._season("C", 1782000000)[:1],
+                                    league="Master League I"))
+            dataset = record.history().roster_history(3)
 
         self.assertEqual(dataset["seasons"], [])
         self.assertEqual(dataset["wars"], [])

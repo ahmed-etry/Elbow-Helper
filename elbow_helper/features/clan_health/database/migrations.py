@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 import logging
 import sqlite3
-
-from elbow_helper.domain.cwl import cwl_season_key
 
 from .regular_wars import delete_war_snapshot, regular_war_identity
 
@@ -42,6 +41,28 @@ def deduplicate_regular_wars(connection: sqlite3.Connection) -> None:
     )
 
 
+def _stored_season_key(wars) -> str:
+    """How the old store keyed a league: its month from round 1's estimated start.
+
+    Only upgrades of old clan health backups use it; June 2026's second league
+    kept its -catchup key this way. New leagues take the collector's month.
+    """
+    starts = []
+    for war in wars:
+        round_number = war.get("cwl_round")
+        if type(round_number) is not int or not 1 <= round_number <= 7 or not war.get("start_ts"):
+            continue
+        try:
+            start = datetime.fromtimestamp(float(war["start_ts"]), tz=timezone.utc)
+        except (TypeError, ValueError, OverflowError, OSError):
+            continue
+        starts.append(start - timedelta(days=round_number - 1))
+    if not starts:
+        return ""
+    first = min(starts)
+    return first.strftime("%Y-%m") + ("-catchup" if first.day > 10 else "")
+
+
 def key_stored_cwl_seasons(connection: sqlite3.Connection) -> None:
     """Preserve raw labels and key existing leagues without rewriting their war data."""
     columns = {row[1] for row in connection.execute("PRAGMA table_info(wars)")}
@@ -58,7 +79,7 @@ def key_stored_cwl_seasons(connection: sqlite3.Connection) -> None:
         })
     counts = defaultdict(lambda: [0, 0])
     for (clan, old_label), wars in groups.items():
-        key = cwl_season_key(wars)
+        key = _stored_season_key(wars)
         if not key:
             LOGGER.warning("CWL season start unavailable: clan=%s old_label=%s", clan, old_label)
             key = old_label

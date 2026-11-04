@@ -91,7 +91,7 @@ class ClanHealthHistory:
             conn.close()
 
     def _latest_stored_activity_ts_for_player(self, player_tag: str) -> int:
-        """Newest snapshot, league attack or raid of the player; regular wars are in the family record."""
+        """Newest snapshot or raid of the player; regular and league wars are in the family record."""
         with closing(self._db_connect()) as conn, conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -100,12 +100,10 @@ class ClanHealthHistory:
                 FROM (
                     SELECT MAX(captured_ts) AS ts FROM player_snapshots WHERE player_tag = ?
                     UNION ALL
-                    SELECT MAX(end_ts) AS ts FROM war_attacks WHERE player_tag = ? AND war_type = 'CWL'
-                    UNION ALL
                     SELECT MAX(end_ts) AS ts FROM raid_member_activity WHERE player_tag = ?
                 )
                 """,
-                (player_tag, player_tag, player_tag),
+                (player_tag, player_tag),
             )
             row = cursor.fetchone()
             return int(row[0]) if row and row[0] is not None else 0
@@ -125,59 +123,6 @@ class ClanHealthHistory:
                 """,
                 (player_tag, max(1, limit)),
             )
-            rows = [dict(row) for row in cursor.fetchall()]
-            return rows
-
-    def _load_player_cwl_attacks(
-        self,
-        *,
-        player_tag: str,
-        cycle_start: datetime,
-        cycle_end: datetime,
-        limit: int = 500,
-    ) -> List[Dict[str, Any]]:
-        """League-war attacks; regular-war attacks come from the family record."""
-        with closing(self._db_connect()) as conn, conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            if limit and int(limit) > 0:
-                cursor.execute(
-                    """
-                    SELECT
-                        war_id, war_type, clan_code, clan_tag, end_ts, war_state,
-                        player_tag, player_name, attack_order,
-                        defender_tag, defender_name, defender_map_position, defender_townhall,
-                        stars, destruction, fresh_attack, duration, source
-                    FROM war_attacks
-                    WHERE player_tag = ? AND war_type = 'CWL' AND end_ts >= ? AND end_ts <= ?
-                    ORDER BY end_ts DESC, war_id DESC, attack_order ASC
-                    LIMIT ?
-                    """,
-                    (
-                        player_tag,
-                        int(cycle_start.timestamp()),
-                        int(cycle_end.timestamp()),
-                        max(1, limit),
-                    ),
-                )
-            else:
-                cursor.execute(
-                    """
-                    SELECT
-                        war_id, war_type, clan_code, clan_tag, end_ts, war_state,
-                        player_tag, player_name, attack_order,
-                        defender_tag, defender_name, defender_map_position, defender_townhall,
-                        stars, destruction, fresh_attack, duration, source
-                    FROM war_attacks
-                    WHERE player_tag = ? AND war_type = 'CWL' AND end_ts >= ? AND end_ts <= ?
-                    ORDER BY end_ts DESC, war_id DESC, attack_order ASC
-                    """,
-                    (
-                        player_tag,
-                        int(cycle_start.timestamp()),
-                        int(cycle_end.timestamp()),
-                    ),
-                )
             rows = [dict(row) for row in cursor.fetchall()]
             return rows
 
