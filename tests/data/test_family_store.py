@@ -103,7 +103,7 @@ class FamilyStoreTests(unittest.IsolatedAsyncioTestCase):
             "wars", "war_source_keys", "war_sides", "war_members", "war_attacks", "cwl_seasons", "cwl_log_summaries",
             "cwl_clans", "cwl_players", "cwl_rounds", "cwl_season_sources", "war_collection_state", "api_records", "api_field_changes", "player_ranked_references",
             "family_api_state", "family_api_entities",
-            "family_battles", "battle_strings", "battle_changes",
+            "family_battles", "battle_strings", "battle_changes", "battle_log_coverage",
             "imports", "link_imports", "legacy_link_aliases", "link_operations", "war_legacy_ids",
         })
         with self.assertRaises(sqlite3.IntegrityError):

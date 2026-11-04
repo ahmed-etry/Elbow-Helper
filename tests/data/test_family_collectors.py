@@ -345,9 +345,10 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
         ):
             await bot.setup_hook()
         self.assertIs(bot.get_cog("FamilyCollectors"), bot.family_collectors)
-        # Nine schedules and the once-only copy of the old wars, from the old files in the data folder.
+        # Nine schedules and the shared copy of old wars and ranked history from the data folder.
         self.assertEqual(bot.family_collectors.old_wars, (paths.data_root / "clan_health" / "clan_health.db",
-                                                          paths.data_root / "war" / "war_cache.json"))
+                                                          paths.data_root / "war" / "war_cache.json",
+                                                          paths.data_root / "ranked_stats" / "ranked.sqlite3"))
         self.assertEqual(len(bot.family_collectors._tasks), 10)
         self.assertEqual(len(bot.family_collectors.clans), 9)
         self.assertTrue((paths.data_root / "family" / "family.sqlite3").is_file())

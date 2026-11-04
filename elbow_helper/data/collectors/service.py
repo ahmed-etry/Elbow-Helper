@@ -62,7 +62,7 @@ class FamilyCollectors(commands.Cog):
         self.store = store
         self.clash_client = clash_client
         self.clans = tuple(clans)
-        # The old clan health file and war board cache, copied once before the first war pass.
+        # Old war sources and ranked history, copied once before their first collector pass.
         self.old_wars = old_wars
         self._tasks: list[asyncio.Task] = []
         self._discord_lock = asyncio.Lock()
@@ -93,7 +93,8 @@ class FamilyCollectors(commands.Cog):
         if getattr(self.bot, "link_service", None) is None:
             self._tasks.append(asyncio.create_task(self._schedule("links", LINK_INTERVAL_SECONDS, self.collect_links)))
         self._tasks.extend(asyncio.create_task(self._schedule(name, SCHEDULE_CHECK_SECONDS,
-                            lambda name=name: collect_sources(self, name))) for name in sorted(SOURCE_COLLECTORS))
+                            lambda name=name: collect_sources(self, name), after=copy if name == "battle_logs" else None))
+                           for name in sorted(SOURCE_COLLECTORS))
 
     async def cog_unload(self):
         self._closing = True
@@ -109,7 +110,7 @@ class FamilyCollectors(commands.Cog):
                     pass
 
     async def _copy_old_wars(self):
-        """Copy the old war history once; a failure changes nothing and the next start tries again."""
+        """Copy old wars and ranked history once; failure keeps nothing and the next start retries."""
         started = time.perf_counter()
         try:
             result = await self.store.call(copy_at_startup, *self.old_wars)
@@ -130,6 +131,10 @@ class FamilyCollectors(commands.Cog):
                 parts.append(f"{checks['inserted']['seasons']} league weeks ({len(checks['seasons'])} found), "
                              f"{checks['inserted']['wars']} league wars, {checks['inserted']['lineup_rows']} league "
                              f"lineup rows, {checks['inserted']['attacks']} league attacks")
+            if result.get("ranked") is not None:
+                checks = result["ranked"]["checks"]
+                parts.append(f"{checks['inserted']['battles']} ranked battles, "
+                             f"{checks['inserted']['watch_facts']} battle-log watch facts")
             LOGGER.info("Old wars copied into the family record in %.1fs: %s", time.perf_counter() - started,
                         "; ".join(parts))
 

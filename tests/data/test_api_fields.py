@@ -389,7 +389,7 @@ class ApiFieldTests(unittest.IsolatedAsyncioTestCase):
                     duplicate = True
                 return versions, sql, rows, after, duplicate, target.execute("PRAGMA integrity_check").fetchone()[0]
         versions, sql, rows, after, duplicate, integrity = await self.store.call(upgrade)
-        self.assertEqual(versions, (10,))
+        self.assertEqual(versions, tuple(range(10, SCHEMA_VERSION + 1)))
         self.assertNotIn("WITHOUT ROWID", sql.upper())
         self.assertEqual(rows, [(1, 50, b"\x01\x02", 7), (1, 40, b"\x03", 8)])
         self.assertEqual(after, (columns, keys))
