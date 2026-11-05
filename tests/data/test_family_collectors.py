@@ -11,93 +11,13 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.app import create_bot
 from elbow_helper.core.paths import ApplicationPaths
-from elbow_helper.data.collectors.service import FamilyCollectors, LINK_INTERVAL_SECONDS
+from elbow_helper.data.collectors.service import FamilyCollectors
 from elbow_helper.data.store import FamilyStore
 from elbow_helper.data.store.projections import DONATION_FIELDS, roster_projection
 from elbow_helper.infrastructure.clash import ClashClient
 from tests.agent.test_compact_clash import synthetic_clan
 
-from .test_family_store import CLANS, clan_response, link, player, response
-
-
-class CollectorWarningTests(unittest.TestCase):
-    def setUp(self):
-        self.collectors = FamilyCollectors(SimpleNamespace(), None, None, ())
-
-    def note(self, collector, specs, reasons=(), *, error=None):
-        problems = [(kind, scope, status, code) for (kind, scope), (status, code) in zip(specs, reasons)
-                    if status != 200 or code is not None]
-        self.collectors._note(collector, 1, specs, error, problems)
-
-    def test_outage_across_batches_warns_and_recovers_once_per_collector(self):
-        service = "elbow_helper.data.collectors.service"
-        for collector, kind in (("players", "player_profile"), ("battle_logs", "battle_log"),
-                                ("league_history", "league_history")):
-            with self.subTest(collector=collector):
-                batches = [[(kind, f"#P{index}") for index in range(start, start + 8)] for start in (0, 8, 16)]
-                with self.assertLogs(service, level="DEBUG") as outage:
-                    for specs in batches:
-                        self.note(collector, specs, [(503, None)] * len(specs))
-                self.assertEqual([record.levelname for record in outage.records], ["WARNING", "DEBUG", "DEBUG"])
-                self.assertIn("and 3 more", outage.output[0])
-                self.assertIn(collector, outage.output[0])
-                with self.assertNoLogs(service, level="INFO"):
-                    self.note(collector, batches[0])
-                    self.note(collector, batches[1])
-                with self.assertLogs(service, level="INFO") as recovered:
-                    self.note(collector, batches[2])
-                self.assertEqual(len(recovered.output), 1)
-                self.assertIn("recovered", recovered.output[0])
-                with self.assertNoLogs(service, level="INFO"):
-                    self.note(collector, batches[2])
-                with self.assertLogs(service, level="WARNING"):
-                    self.note(collector, batches[0], [(503, None)] * 8)
-
-    def test_items_can_swap_known_reasons_and_replace_recovering_items_without_warning(self):
-        service = "elbow_helper.data.collectors.service"
-        specs = [("player_profile", "#P0"), ("player_profile", "#Q0")]
-        with self.assertLogs(service, level="WARNING"):
-            self.note("players", specs, [(503, None), (None, "fetch_failed")])
-        with self.assertLogs(service, level="DEBUG") as swapped:
-            self.note("players", specs, [(None, "fetch_failed"), (503, None)])
-        self.assertEqual([record.levelname for record in swapped.records], ["DEBUG"])
-        replacement = ("player_profile", "#Y0")
-        with self.assertLogs(service, level="DEBUG") as replaced:
-            self.note("players", [specs[1], replacement], [(200, None), (503, None)])
-        self.assertEqual([record.levelname for record in replaced.records], ["DEBUG"])
-        self.assertNotIn(specs[1], self.collectors._failing["players"])
-        # A reason that has stopped can warn again while a different reason remains active.
-        with self.assertNoLogs(service, level="INFO"):
-            self.note("players", [replacement])
-        with self.assertLogs(service, level="WARNING") as returned:
-            self.note("players", [replacement], [(503, None)])
-        self.assertIn("HTTP 503", returned.output[0])
-
-    def test_new_error_code_warns_even_while_another_reason_is_active(self):
-        service = "elbow_helper.data.collectors.service"
-        specs = [("player_profile", "#P0")]
-        with self.assertLogs(service, level="WARNING"):
-            self.note("players", specs, [(200, "invalid_profile")])
-        with self.assertLogs(service, level="WARNING") as changed:
-            self.note("players", [("player_profile", "#Q0")], [(200, "partial_profile")])
-        self.assertIn("partial_profile", changed.output[0])
-
-    def test_run_errors_preserve_items_and_keep_their_existing_warning_behavior(self):
-        service = "elbow_helper.data.collectors.service"
-        specs = [("player_profile", "#P0")]
-        with self.assertLogs(service, level="WARNING"):
-            self.note("players", specs, [(503, None)])
-        with self.assertLogs(service, level="WARNING"):
-            self.note("players", specs, error="collector_error")
-        with self.assertNoLogs(service, level="INFO"):
-            self.note("players", specs, error="collector_error")
-            self.note("players", [], [])
-        self.assertIn(specs[0], self.collectors._failing["players"])
-        with self.assertLogs(service, level="WARNING"):
-            self.note("players", specs, error="store_unavailable")
-        with self.assertLogs(service, level="INFO") as recovered:
-            self.note("players", specs)
-        self.assertEqual(len(recovered.output), 1)
+from .test_family_store import CLANS, clan_response, player, response
 
 
 class FakeGuild:
@@ -131,15 +51,8 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
         self.store = FamilyStore(Path(self.temporary.name) / "family.sqlite3")
         await self.store.initialize()
         self.guild = FakeGuild()
-        self.source_thread = None
-
-        def get_links():
-            self.source_thread = threading.get_ident()
-            return link()
-
         self.bot = SimpleNamespace(guild_id=123, boot_complete=asyncio.Event(),
-                                   get_guild=lambda guild_id: self.guild,
-                                   get_cog=lambda name: SimpleNamespace(get_all_links=get_links))
+                                   get_guild=lambda guild_id: self.guild)
         self.client = SimpleNamespace(get=AsyncMock(side_effect=[clan_response(0, [player()]), clan_response(1, [])]))
         self.collectors = FamilyCollectors(self.bot, self.store, self.client, CLANS)
 
@@ -187,13 +100,12 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
                                                       "clan_rank", "previous_rank")],
                              [raw[key] for key in DONATION_FIELDS])
 
-    async def test_link_polling_schedule_is_five_minutes(self):
+    async def test_no_link_polling_schedule_remains(self):
         with patch.object(self.collectors, "_schedule", new=AsyncMock()) as schedule:
             await self.collectors.cog_load()
             await asyncio.gather(*self.collectors._tasks)
-        self.assertEqual(LINK_INTERVAL_SECONDS, 300)
         intervals = {call.args[0]: call.args[1] for call in schedule.await_args_list}
-        self.assertEqual(intervals, {"clans": 900, "links": 300, "players": 3600, "wars": 30, "discord": 86400,
+        self.assertEqual(intervals, {"clans": 900, "players": 3600, "wars": 30, "discord": 86400,
                                      "battle_logs": 30, "league_history": 30, "ranked_groups": 30,
                                      "capital_raids": 30, "reference_data": 30})
         await self.collectors.cog_unload()
@@ -235,30 +147,27 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_collector_error_repeating_warns_once_and_recovery_logs_once(self):
         service = "elbow_helper.data.collectors.service"
-        self.bot.get_cog = lambda name: None
+        self.bot.get_guild = lambda guild_id: None
         with self.assertLogs(service, level="WARNING") as first:
-            await self.collectors.collect_links()
+            await self.collectors.scan_discord()
         self.assertEqual(len(first.output), 1)
         self.assertIn("collector (collector_error)", first.output[0])
         with self.assertNoLogs(service, level="INFO"):
-            await self.collectors.collect_links()
-        self.bot.get_cog = lambda name: SimpleNamespace(get_all_links=link)
+            await self.collectors.scan_discord()
+        self.bot.get_guild = lambda guild_id: self.guild
         with self.assertLogs(service, level="INFO") as recovered:
-            await self.collectors.collect_links()
+            await self.collectors.scan_discord()
         self.assertEqual(len(recovered.output), 1)
         self.assertIn("recovered", recovered.output[0])
         with self.assertNoLogs(service, level="INFO"):
-            await self.collectors.collect_links()
+            await self.collectors.scan_discord()
 
-    async def test_link_service_runs_in_worker_and_failure_retains_ownership(self):
-        await self.collectors.collect_links()
-        self.assertNotEqual(self.source_thread, threading.get_ident())
-        self.bot.get_cog = lambda name: None
-        with self.assertLogs("elbow_helper.data.collectors.service", level="WARNING") as logs:
-            report = await self.collectors.collect_links()
-        self.assertEqual(report["failed"], 1)
-        self.assertEqual(len(logs.output), 1)
-        self.assertEqual(len(await self.rows("SELECT * FROM account_links WHERE to_at IS NULL")), 1)
+
+    async def test_collectors_never_sample_current_links(self):
+        self.assertFalse(hasattr(self.collectors, "collect_links"))
+        await self.collectors.scan_discord()
+        self.assertEqual(await self.rows("SELECT * FROM account_links"), [])
+
 
     async def test_startup_and_daily_scan_fetch_all_members_empty_scan_closes_members(self):
         self.guild.members = [member(self.guild)]
@@ -356,7 +265,7 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
             patch.object(self.store, "begin_run", new=AsyncMock(side_effect=OSError("unavailable"))),
             self.assertLogs("elbow_helper.data.collectors.service", level="WARNING") as logs,
         ):
-            report = await self.collectors.collect_links()
+            report = await self.collectors.scan_discord()
         self.assertIsNone(report)
         self.assertEqual(len(logs.output), 1)
         self.assertEqual(await self.rows("SELECT * FROM collection_runs"), [])
@@ -372,7 +281,7 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(store_module, "sqlite_connection", side_effect=connect):
             await self.collectors.collect_clans()
-            await self.collectors.collect_links()
+            await self.collectors.scan_discord()
             await self.collectors.scan_discord()
             await self.collectors.on_member_join(member(self.guild))
         self.assertTrue(threads)
@@ -383,7 +292,7 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
             patch.object(self.store, "finish", new=AsyncMock(side_effect=OSError("unavailable"))),
             self.assertLogs("elbow_helper.data.collectors.service", level="WARNING") as logs,
         ):
-            await self.collectors.collect_links()
+            await self.collectors.scan_discord()
         self.assertEqual(len(logs.output), 1)
 
     async def test_persisted_schedule_skips_early_restart_and_startup_scan_is_forced(self):
@@ -396,7 +305,7 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(self.store, "due", new=AsyncMock(return_value=False)), patch(
             "elbow_helper.data.collectors.service.asyncio.sleep", new=stop_sleep,
         ):
-            await self.collectors._schedule("links", LINK_INTERVAL_SECONDS, collect)
+            await self.collectors._schedule("discord", 86400, collect)
             collect.assert_not_awaited()
             self.collectors._closing = False
             await self.collectors._schedule("discord", 86400, collect, startup=True)
@@ -408,7 +317,7 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
             self.assertLogs("elbow_helper.data.collectors.service", level="WARNING"),
         ):
             await self.collectors.cog_load()
-        self.assertEqual(len(self.collectors._tasks), 10)
+        self.assertEqual(len(self.collectors._tasks), 9)
         await self.collectors.cog_unload()
 
     async def test_application_assembles_registers_collectors_and_stops_them_offline(self):

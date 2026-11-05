@@ -818,7 +818,6 @@ class DatabaseStartupTests(unittest.IsolatedAsyncioTestCase):
     async def test_startup_upgrades_finish_on_a_worker_before_jobs_start(self):
         event_thread = threading.get_ident()
         for cls, module, method, loops in (
-            (AccountLinks, "account_links", "_init_db", ("_poll_clans_loop",)),
             (Achievements, "achievements", "init_database", (
                 "check_time_achievements", "initial_achievement_check", "cleanup_database",
                 "salary_task", "raffle_hub_task",
@@ -837,10 +836,6 @@ class DatabaseStartupTests(unittest.IsolatedAsyncioTestCase):
                     owner.repository = SimpleNamespace(initialize=initialize)
                 else:
                     setattr(owner, method, initialize)
-                if cls is AccountLinks:
-                    async def views():
-                        events.append("views")
-                    owner.register_pending_suggestion_views = views
                 if cls is Achievements:
                     owner.init_achievements = lambda: events.append("definitions")
                 with patch(f"elbow_helper.features.{module}.cog.start_resilient_loop",
@@ -853,7 +848,6 @@ class DatabaseStartupTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_failed_upgrade_starts_no_background_jobs(self):
         for cls, module, method in (
-            (AccountLinks, "account_links", "_init_db"),
             (Achievements, "achievements", "init_database"),
             (ClanHealth, "clan_health", "initialize"),
         ):
@@ -869,6 +863,24 @@ class DatabaseStartupTests(unittest.IsolatedAsyncioTestCase):
                     with self.assertRaises(UnversionedSQLiteSchemaError):
                         await cls.cog_load(owner)
                     start.assert_not_called()
+
+    async def test_account_links_loads_record_jobs_without_initializing_old_links(self):
+        def legacy_initialize():
+            self.fail("Account-links startup must not open or upgrade the old links table")
+        owner = SimpleNamespace(_init_db=legacy_initialize, _poll_clans_loop=object(),
+                                register_pending_suggestion_views=AsyncMock())
+        with patch("elbow_helper.features.account_links.cog.start_resilient_loop") as start:
+            await AccountLinks.cog_load(owner)
+        start.assert_called_once_with(owner._poll_clans_loop)
+        owner.register_pending_suggestion_views.assert_awaited_once()
+
+    async def test_account_links_suggestion_state_failure_keeps_record_refresh_running(self):
+        owner = SimpleNamespace(_poll_clans_loop=object(), register_pending_suggestion_views=AsyncMock(
+            side_effect=sqlite3.OperationalError("synthetic suggestion failure")))
+        with (patch("elbow_helper.features.account_links.cog.start_resilient_loop") as start,
+              self.assertLogs("elbow_helper.features.account_links.cog", level="ERROR")):
+            await AccountLinks.cog_load(owner)
+        start.assert_called_once_with(owner._poll_clans_loop)
 
 
 if __name__ == "__main__":

@@ -7,13 +7,13 @@ from elbow_helper.infrastructure.persistence.migrations import SQLiteMigration
 from .war_schema import create_war_schema, extend_war_schema
 from .api_fields import create_api_field_schema, rebuild_field_changes
 from .source_schema import create_source_schema
-from .link_schema import create_link_schema
+from .link_schema import create_link_schema, create_current_link_schema
 from .battle_coverage import create_watch_schema
 from .profile_schema import create_profile_history_schema
 
 
 # Later subjects add migrations; they must not rewrite this baseline.
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 STATEMENTS = (
     """CREATE TABLE collection_runs (
         id INTEGER PRIMARY KEY, collector TEXT NOT NULL, scope_kind TEXT NOT NULL,
@@ -262,6 +262,7 @@ def create_schema(connection: sqlite3.Connection) -> None:
     extend_war_schema(connection)
     create_watch_schema(connection)
     create_profile_history_schema(connection)
+    create_current_link_schema(connection)
 
 
 MIGRATIONS = (
@@ -277,4 +278,5 @@ MIGRATIONS = (
     SQLiteMigration(10, "ordinary field change table", rebuild_field_changes),
     SQLiteMigration(11, "battle log watching and old battle provenance", create_watch_schema),
     SQLiteMigration(12, "old profile history and separate coverage", create_profile_history_schema),
+    SQLiteMigration(13, "current account link presentation", create_current_link_schema),
 )

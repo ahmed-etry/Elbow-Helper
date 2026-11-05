@@ -39,17 +39,12 @@ REFERENCES = (("goldpass", "/goldpass/seasons/current"), ("legend_seasons", "/le
                 ("leagues", "leaguetiers", "warleagues", "builderbaseleagues", "capitalleagues", "labels/players", "labels/clans")))
 
 
-def family_accounts(connection, *, skip_missing=False):
-    # A saved profile 404 remains evidence of absence until a valid profile is
-    # observed. Later transport failures cannot make the account exist again.
+def family_accounts(connection):
     return connection.execute(
-        "SELECT a.id,a.player_tag FROM accounts a WHERE (EXISTS ("
+        "SELECT a.id,a.player_tag FROM accounts a WHERE EXISTS ("
         "SELECT 1 FROM clan_membership m JOIN clans c ON c.id=m.clan_id "
         "WHERE m.account_id=a.id AND m.to_at IS NULL AND c.is_family=1) OR EXISTS ("
-        "SELECT 1 FROM account_links l WHERE l.account_id=a.id AND l.to_at IS NULL)) "
-        "AND (?=0 OR NOT EXISTS (SELECT 1 FROM collection_items i WHERE i.account_id=a.id "
-        "AND i.source_kind='player_profile' AND i.http_status=404 "
-        "AND i.fetched_at>COALESCE(a.last_profile_at,-1))) ORDER BY a.id", (skip_missing,)).fetchall()
+        "SELECT 1 FROM account_links l WHERE l.account_id=a.id AND l.to_at IS NULL) ORDER BY a.id").fetchall()
 
 
 def ranked_references(connection, accounts, at):
@@ -71,7 +66,7 @@ def due_sources(connection, collector, clans, at):
     with sqlite_transaction(connection, immediate=True):
         current = {}
         if collector in {"battle_logs", "league_history", "ranked_groups"}:
-            accounts = family_accounts(connection, skip_missing=collector in {"battle_logs", "league_history"})
+            accounts = family_accounts(connection)
             if collector == "ranked_groups":
                 current = ranked_references(connection, accounts, at)
                 specs = [("ranked_group", scope) for scope in current]

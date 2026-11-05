@@ -6,7 +6,7 @@ from elbow_helper.domain.player_tags import normalize_player_tag
 from .core import RecordReads, tags as checked_tags, timestamp, pagination, page, placeholders
 from .coverage import signal, envelope
 from .people import ownership
-from .profiles import summary, leaf_state
+from .profiles import summary, leaf_state, roster_fields
 
 
 def stays(connection, tag, at):
@@ -52,6 +52,40 @@ class MembershipReads(RecordReads):
         if any(value is None for value in values):
             raise ValueError("Unknown clan")
         return tuple(sorted(set(values)))
+
+    async def rosters(self, *, clans=None, as_of=None):
+        """One record snapshot for the account-link boards and suggestions.
+
+        Failed, partial and stale sources remain unavailable. Callers may keep
+        their last snapshot but cannot use it to prove family-wide absence.
+        """
+        return await self._read(self._rosters, self._clan_tags(clans), timestamp(as_of))
+
+    @staticmethod
+    def _rosters(connection, selected, at):
+        rows, runs = [], set()
+        for tag in selected:
+            cov = signal(connection, "clan_roster", tag, at)
+            item = connection.execute("SELECT run_id,fetched_at FROM collection_items WHERE source_kind='clan_roster' "
+                                      "AND scope_id=? AND COALESCE(fetched_at,started_at)<=? "
+                                      "ORDER BY COALESCE(fetched_at,started_at) DESC,id DESC LIMIT 1", (tag, at)).fetchone()
+            if item:
+                runs.add(item["run_id"])
+            fields = leaf_state(connection, "clan_profile", tag, at)
+            badge = next((fields.get('/badgeUrls/' + size) for size in ('small', 'medium', 'large')
+                          if fields.get('/badgeUrls/' + size)), None)
+            members = None
+            if cov["source_complete"]:
+                roster = roster_fields(connection, tag, cov["last_good_at"])
+                members = [{"player_tag": member_tag,
+                            "player_name": str(value.get("name") or member_tag),
+                            "townhall": int(value.get("townHallLevel") or 0),
+                            "role": str(value.get("role") or "")}
+                           for member_tag, value in roster.items()]
+            rows.append({"clan_tag": tag, "members": members, "badge_url": badge, "coverage": cov,
+                         "observed_at": cov["last_good_at"]})
+        return {"rows": rows, "complete": bool(rows) and len(runs) == 1
+                and all(row["members"] is not None for row in rows)}
 
     async def current(self, *, clans=None, tags=None, as_of=None, limit=200, offset=0):
         return await self.at(timestamp(as_of), clans=clans, tags=tags, limit=limit, offset=offset)

@@ -21,6 +21,7 @@ class DataSource:
     channel_keyed: bool = False
     evidence_channels: Callable[[object], set[int]] | None = None
     excluded_keys: tuple[str, ...] = ()
+    snapshot: Callable | None = None
 
     def resolve(self, paths):
         if self.alias == "achievements":

@@ -1,11 +1,9 @@
 """Offline import rehearsal, refusal cases, and three-commit crash recovery."""
 
-import asyncio
 from contextlib import closing
 from pathlib import Path
 import sqlite3
 from tempfile import TemporaryDirectory
-import threading
 import unittest
 from unittest.mock import patch
 
@@ -19,7 +17,7 @@ from elbow_helper.data.store.legacy_links import (
 from elbow_helper.data.store.people import mirror_links
 from elbow_helper.data.store import people_import
 from elbow_helper.data.store.api_fields import _pack, unpack
-from elbow_helper.data.store.schema import MIGRATIONS, SCHEMA_VERSION
+from elbow_helper.data.store.schema import MIGRATIONS
 from elbow_helper.infrastructure.persistence.migrations import run_sqlite_migrations
 
 from .test_family_store import player, response
@@ -124,7 +122,7 @@ class PeopleImportTests(_PeopleFixture):
         observed = {r["player_tag"]: r for r in (row(), row("#Q0", 300), row("#V0", 400))}
         await self.shadow_links(observed)
         report = await self.service.startup(at=200)
-        self.assertTrue(report["mirrored"])
+        self.assertTrue(report["ready"])
         self.assertEqual(report["checks"]["links"], 3)
         links = await self.rows("SELECT a.player_tag,m.discord_id,l.from_at,l.to_at,l.basis,l.end_previous_good_at "
                                 "FROM account_links l JOIN accounts a ON a.id=l.account_id "
@@ -140,7 +138,7 @@ class PeopleImportTests(_PeopleFixture):
         self.assertFalse((await self.service.startup(at=201))["imported"])
         self.assertEqual(await self.dump(), before)
 
-    async def test_repeat_startup_is_a_noop_and_checks_current_legacy(self):
+    async def test_repeat_startup_uses_the_record_receipt(self):
         await self.service.startup(at=200)
         before = await self.dump()
         self.service = LinkService(FamilyStore(self.store.path), self.legacy)
@@ -198,7 +196,7 @@ class PeopleImportTests(_PeopleFixture):
         self.service.legacy_path = self.root / "absent.sqlite3"
         with self.assertLogs("elbow_helper.data.links", level="WARNING"):
             report = await self.service.startup(at=200)
-        self.assertFalse(report["mirrored"])
+        self.assertFalse(report["ready"])
         self.assertFalse(self.service.legacy_path.exists())
         self.service.legacy_path = self.legacy
         with closing(sqlite3.connect(self.legacy)) as c:
@@ -315,6 +313,37 @@ class PeopleImportTests(_PeopleFixture):
         self.assertEqual((saved["player_tag"], saved["first_observed_at"]), ("#V0", 50))
         self.assertEqual(await upgraded.call(lambda c: c.execute("SELECT COUNT(*) FROM imports").fetchone()[0]), 0)
 
+    async def test_upgrade_gives_existing_links_the_old_tag_order(self):
+        old = self.root / "version-twelve.sqlite3"
+        tags = ["#ZZ", "#B0", "#MM", "#A0"]
+        with closing(sqlite3.connect(old)) as c:
+            c.row_factory = sqlite3.Row
+            run_sqlite_migrations(c, MIGRATIONS[:12], target_version=12)
+            c.execute("PRAGMA foreign_keys=OFF")
+            with c:
+                for index, tag in enumerate(tags, 1):
+                    c.execute("INSERT INTO accounts(player_tag,first_observed_at,tracking_status) VALUES (?,50,'observed')", (tag,))
+                    c.execute("INSERT INTO members(discord_id,first_observed_at,last_observed_at,presence_status) "
+                              "VALUES (?,50,50,'unknown')", (100 + index,))
+                    c.execute("INSERT INTO account_links(account_id,member_id,from_at,last_observed_at,basis,source_item_id) "
+                              "VALUES (?,?,50,50,'legacy_current',1)", (index, index))
+                    c.execute("INSERT INTO account_link_metadata(account_id,basis,source_item_id) VALUES (?,'x',1)", (index,))
+        upgraded = FamilyStore(old)
+        await upgraded.initialize()
+        rows = await upgraded.call(lambda c: [r[0] for r in c.execute("SELECT player_tag FROM current_link_rows")])
+        self.assertEqual(rows, sorted(tags))
+
+    async def test_startup_copy_keeps_the_old_file_order_over_earlier_shadow_order(self):
+        with closing(sqlite3.connect(self.legacy)) as c, c:
+            c.execute("DELETE FROM links")
+            c.executemany("INSERT INTO links VALUES (?,?,?,?,?,?)",
+                          [tuple(row(tag, owner, "N").values()) for tag, owner in
+                           (("#R0", 200), ("#Q0", 100), ("#P0", 100))])
+        await self.shadow_links({tag: row(tag, 100) for tag in ("#P0", "#Q0", "#R0")})
+        await self.service.startup(at=200)
+        self.assertEqual(tuple(await self.service.read_links()), ("#R0", "#Q0", "#P0"))
+        self.assertEqual(tuple(await self.service.read_links()), tuple(snapshot(self.legacy).links))
+
     async def test_mapping_tag_owner_metadata_and_foreign_key_mismatches_roll_back(self):
         cases = ["DELETE FROM account_links WHERE account_id=(SELECT id FROM accounts WHERE player_tag='#P0')",
                  "UPDATE account_links SET member_id=(SELECT id FROM members WHERE discord_id=200) WHERE id=1",
@@ -367,222 +396,12 @@ class PeopleImportTests(_PeopleFixture):
         self.assertEqual((len(later.links), len(later.auxiliary["ignored_tags"])), (2, 2))
         self.assertNotEqual(frozen.content_digest, later.content_digest)
 
-    async def test_missing_generation_defers_import_without_disabling_legacy(self):
+    async def test_missing_generation_defers_import_and_refuses_current_links(self):
         await self.execute("UPDATE collection_items SET status='failed' WHERE source_kind='clan_roster'")
         with self.assertLogs("elbow_helper.data.links", level="WARNING"):
             result = await self.service.startup(at=200)
-        self.assertFalse(result["mirrored"])
-        self.assertEqual(len(await self.service.read_links()), 3)
-        await self.clans(199)
-        self.assertTrue((await self.service.startup(at=200))["mirrored"])
-
-
-class LinkServiceTests(_PeopleFixture):
-    async def asyncSetUp(self):
-        await super().asyncSetUp()
-        await self.service.startup(at=200)
-
-    async def test_batch_reassign_delete_add_undo_and_same_owner_metadata(self):
-        before = await self.service.read_links()
-        await self.service.upsert_links([row(owner=300, name="New"), row("#V0", 300, "Alt")], at=300)
-        await self.service.delete_link("#Q0", at=400)
-        count = len(await self.rows("SELECT * FROM account_links"))
-        await self.service.update_link_last_seen(player_tag="#P0", player_name_last_seen="Fresh",
-                  last_seen_clan_tag="", last_seen_clan_code=None, last_seen_role="admin", at=500)
-        self.assertEqual(len(await self.rows("SELECT * FROM account_links")), count)
-        await self.service.restore_links({**before, "#V0": None}, at=600)
-        self.assertEqual(await self.service.read_links(), before)
-        self.assertEqual((await self.rows("PRAGMA user_version"))[0]["user_version"], SCHEMA_VERSION)
-        self.assertEqual(snapshot(self.legacy).version, 1)
-        self.assertEqual(len(snapshot(self.legacy).auxiliary["suggestions"]), 1)
-        self.assertEqual(await self.rows("PRAGMA foreign_key_check"), [])
-        operations = await self.rows("SELECT * FROM link_operations")
-        self.assertTrue(all(r["status"] == "complete" for r in operations))
-
-    async def test_crash_before_intent_has_no_effect(self):
-        before = await self.dump()
-        with patch("elbow_helper.data.links.requested_patch", side_effect=OSError("crash")):
-            with self.assertRaises(OSError):
-                await self.service.upsert_link(**row(owner=300), at=300)
-        self.assertEqual(await self.dump(), before)
-
-    async def test_intent_transaction_failure_keeps_record_unchanged_and_writes_legacy(self):
-        await self.execute("CREATE TRIGGER fail_intent AFTER INSERT ON link_operations "
-                           "BEGIN SELECT RAISE(ABORT,'synthetic intent failure'); END")
-        before = await self.dump()
-        with self.assertLogs("elbow_helper.data.links", level="WARNING"):
-            await self.service.upsert_link(**row(owner=300), at=300)
-        self.assertEqual(await self.dump(), before)
-        self.assertEqual((await self.service.read_links())["#P0"]["discord_user_id"], 300)
-        self.assertFalse(self.service._started)
-
-    async def test_crash_after_intent_aborts_before_image_on_restart(self):
-        with patch.object(self.service, "_apply_legacy", side_effect=ProcessCrash()):
-            with self.assertRaises(ProcessCrash):
-                await self.service.upsert_link(**row(owner=300), operation_key="intent", at=300)
-        self.assertEqual((await self.service.read_links())["#P0"]["discord_user_id"], 100)
-        self.service = LinkService(FamilyStore(self.store.path), self.legacy)
-        await self.service.startup(at=400)
-        self.assertEqual((await self.rows("SELECT status FROM link_operations"))[0]["status"], "aborted")
-        self.assertEqual((await self.service.read_links())["#P0"]["discord_user_id"], 100)
-
-    async def test_legacy_batch_failure_rolls_back_every_row_then_aborts_intent(self):
-        with closing(sqlite3.connect(self.legacy)) as c, c:
-            c.execute("CREATE TRIGGER fail_second BEFORE UPDATE ON links WHEN NEW.player_tag='#Q0' "
-                      "BEGIN SELECT RAISE(ABORT,'synthetic'); END")
-        before = snapshot(self.legacy).links
-        with self.assertRaises(sqlite3.IntegrityError):
-            await self.service.upsert_links([row(owner=300), row("#Q0", 300)], at=300)
-        self.assertEqual(snapshot(self.legacy).links, before)
-        await self.service.recover()
-        self.assertEqual(await self.service.read_links(), before)
-
-    async def test_crash_after_legacy_commit_finishes_exactly_once_on_restart(self):
-        with patch.object(self.service, "_finish", side_effect=ProcessCrash()):
-            with self.assertRaises(ProcessCrash):
-                await self.service.upsert_link(**row(owner=300), operation_key="legacy", at=300)
-        self.assertEqual(snapshot(self.legacy).links["#P0"]["discord_user_id"], 300)
-        self.assertEqual((await self.rows("SELECT discord_user_id FROM legacy_links WHERE player_tag='#P0'"))[0]["discord_user_id"], 100)
-        self.service = LinkService(FamilyStore(self.store.path), self.legacy)
-        report = await self.service.startup(at=400)
-        self.assertFalse(report["imported"])
-        count = len(await self.rows("SELECT * FROM account_links"))
-        await self.service.recover()
-        await self.service.upsert_link(**row(owner=300), operation_key="legacy", at=500)
-        self.assertEqual(len(await self.rows("SELECT * FROM account_links")), count)
-        self.assertEqual((await self.service.read_links())["#P0"]["discord_user_id"], 300)
-
-    async def test_family_transaction_failure_retains_intent_and_rolls_back_facts(self):
-        await self.execute("CREATE TRIGGER fail_finish BEFORE UPDATE ON link_operations WHEN NEW.status='complete' "
-                           "BEGIN SELECT RAISE(ABORT,'synthetic'); END")
-        count = len(await self.rows("SELECT * FROM account_links"))
-        with self.assertRaises(sqlite3.IntegrityError):
-            await self.service.upsert_link(**row(owner=300), at=300)
-        self.assertEqual(len(await self.rows("SELECT * FROM account_links")), count)
-        self.assertEqual((await self.rows("SELECT status FROM link_operations"))[0]["status"], "pending")
-        await self.execute("DROP TRIGGER fail_finish")
-        await self.service.recover()
-        self.assertEqual((await self.service.read_links())["#P0"]["discord_user_id"], 300)
-
-    async def test_crash_after_family_commit_can_retry_key_without_reapplying(self):
-        real = self.service._finish
-        def committed(*args):
-            real(*args)
-            raise OSError("crash after commit")
-        with patch.object(self.service, "_finish", committed):
-            with self.assertRaises(OSError):
-                await self.service.delete_link("#P0", operation_key="done", at=300)
-        before = await self.dump()
-        await self.service.delete_link("#P0", operation_key="done", at=400)
-        self.assertEqual(await self.dump(), before)
-
-    async def test_mixed_unexpected_and_unrelated_rollback_changes_halt_without_guessing(self):
-        with patch.object(self.service, "_finish", side_effect=ProcessCrash()):
-            with self.assertRaises(ProcessCrash):
-                await self.service.upsert_links([row(owner=300), row("#Q0", 300)], at=300)
-        with closing(sqlite3.connect(self.legacy)) as c, c:
-            c.execute("UPDATE links SET discord_user_id=100 WHERE player_tag='#Q0'")
-        before = await self.dump()
-        with self.assertRaisesRegex(LinkConflict, "image_conflict"):
-            await self.service.recover()
-        self.assertEqual(await self.dump(), before)
-        with closing(sqlite3.connect(self.legacy)) as c, c:
-            c.execute("UPDATE links SET discord_user_id=300 WHERE player_tag='#Q0'")
-            c.execute("UPDATE links SET discord_user_id=400 WHERE player_tag='#R0'")
-        self.assertFalse((await self.service.startup(at=400))["mirrored"])
-        self.assertEqual(await self.dump(), before)
-
-    async def test_old_binary_changes_are_authoritative_with_a_history_gap(self):
-        await self.service.delete_link("#Q0", operation_key="before-rollback", at=250)
-        continuous = await self.rows("SELECT l.* FROM account_links l JOIN accounts a ON a.id=l.account_id "
-                                     "WHERE a.player_tag='#R0'")
-        with closing(sqlite3.connect(self.legacy)) as c, c:
-            c.execute("UPDATE links SET discord_user_id=300 WHERE player_tag='#P0'")
-        self.assertEqual((await self.service.read_links())["#P0"]["discord_user_id"], 300)
-        report = await self.service.startup(at=400)
-        self.assertTrue(report["imported"])
-        self.assertEqual((await self.rows("SELECT basis FROM link_imports ORDER BY id DESC LIMIT 1"))[0]["basis"], "rollback_gap")
-        self.assertEqual((await self.service.read_links())["#P0"]["discord_user_id"], 300)
-        retained = await self.rows("SELECT l.* FROM account_links l JOIN accounts a ON a.id=l.account_id "
-                                   "WHERE a.player_tag='#R0'")
-        item = (await self.rows("SELECT source_item_id FROM imports"))[0]["source_item_id"]
-        self.assertEqual(retained, [{**continuous[0], "last_observed_at": 400, "source_item_id": item}])
-        await self.service.startup(at=401)
-        self.assertEqual(len(await self.rows("SELECT * FROM link_imports")), 2)
-        with self.assertRaisesRegex(LinkConflict, "stale_operation_key"):
-            await self.service.delete_link("#Q0", operation_key="before-rollback", at=500)
-
-    async def test_reused_key_unexpected_image_and_aborted_key_do_not_acknowledge_success(self):
-        await self.service.upsert_link(**row(owner=300), operation_key="same", at=300)
-        with self.assertRaisesRegex(LinkConflict, "different_request"):
-            await self.service.upsert_link(**row(owner=400), operation_key="same", at=400)
-        with patch.object(self.service, "_apply_legacy", side_effect=OSError("crash")):
-            with self.assertRaises(OSError):
-                await self.service.delete_link("#Q0", operation_key="aborted", at=400)
-        await self.service.recover()
-        with self.assertRaisesRegex(LinkConflict, "aborted_or_stale"):
-            await self.service.delete_link("#Q0", operation_key="aborted", at=500)
-        with patch.object(self.service, "_finish", side_effect=OSError("crash")):
-            with self.assertRaises(OSError):
-                await self.service.delete_link("#Q0", operation_key="unexpected", at=500)
-        with closing(sqlite3.connect(self.legacy)) as c, c:
-            c.execute("UPDATE links SET player_name_last_seen='external' WHERE player_tag='#P0'")
-        with self.assertRaisesRegex(LinkConflict, "image_conflict"):
-            await self.service.recover()
-
-    async def test_missing_link_refresh_is_a_noop_and_io_runs_on_a_worker(self):
-        main_thread = threading.get_ident()
-        threads = []
-        real_apply = self.service._apply_legacy
-        def worker(*args, **kwargs):
-            threads.append(threading.get_ident())
-            return real_apply(*args, **kwargs)
-        before = await self.service.read_links()
-        with patch.object(self.service, "_apply_legacy", worker):
-            await self.service.update_link_last_seen(player_tag="#V0", player_name_last_seen="Missing",
-                  last_seen_clan_tag="", last_seen_clan_code="", last_seen_role="", at=300)
-        self.assertEqual(await self.service.read_links(), before)
-        self.assertEqual(len(threads), 1)
-        self.assertNotEqual(threads[0], main_thread)
-
-    async def test_unstarted_invalid_inputs_and_external_write_during_commit_are_rejected(self):
-        unstarted = LinkService(self.store, self.legacy)
-        self.assertEqual(len(await unstarted.read_links()), 3)
-        before = await self.dump()
-        for call in (lambda: self.service.upsert_link(**row("invalid")),
-                     lambda: self.service.restore_links({"#P0": row(owner=0)}),
-                     lambda: self.service.update_link_last_seen(player_tag="#P0", last_seen_role="member")):
-            with self.assertRaises(ValueError):
-                await call()
-        self.assertEqual(await self.dump(), before)
-        real_apply = self.service._apply_legacy
-        def external(*args, **kwargs):
-            with closing(sqlite3.connect(self.legacy)) as c, c:
-                c.execute("UPDATE links SET discord_user_id=500 WHERE player_tag='#P0'")
-            return real_apply(*args, **kwargs)
-        with patch.object(self.service, "_apply_legacy", external):
-            with self.assertRaisesRegex(LinkConflict, "changed_before_commit"):
-                await self.service.upsert_link(**row(owner=300), at=300)
-        self.assertEqual(snapshot(self.legacy).links["#P0"]["discord_user_id"], 500)
+        self.assertFalse(result["ready"])
         with self.assertRaises(LinkConflict):
-            await self.service.recover()
-
-    async def test_concurrent_calls_and_cancellation_finish_in_worker_order(self):
-        started, release = threading.Event(), threading.Event()
-        real_apply = self.service._apply_legacy
-        def blocked(*args, **kwargs):
-            started.set()
-            if not release.wait(5):
-                raise RuntimeError("test worker timeout")
-            return real_apply(*args, **kwargs)
-        with patch.object(self.service, "_apply_legacy", blocked):
-            first = asyncio.create_task(self.service.upsert_link(**row(owner=300), at=300))
-            await asyncio.to_thread(started.wait, 5)
-            first.cancel()
-            with self.assertRaises(asyncio.CancelledError):
-                await first
-            second = asyncio.create_task(self.service.delete_link("#P0", at=400))
-            release.set()
-            await second
-        self.assertNotIn("#P0", await self.service.read_links())
-        self.assertEqual([r["status"] for r in await self.rows("SELECT status FROM link_operations ORDER BY id")], ["complete", "complete"])
+            await self.service.read_links()
+        await self.clans(199)
+        self.assertTrue((await self.service.startup(at=200))["ready"])

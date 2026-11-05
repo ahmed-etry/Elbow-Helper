@@ -36,4 +36,23 @@ def synthetic_datasets(root):
             path = source.resolve(paths)
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("{}", encoding="utf-8")
+    seed_record_links(paths, [])
     return paths
+
+
+def seed_record_links(paths, rows):
+    """Populate synthetic ownership in the sole record, never the old table."""
+    from elbow_helper.configuration.files import FAMILY_DATABASE
+    from elbow_helper.data.store.link_state import apply_rows, display_rows, receipt
+    from elbow_helper.data.store.legacy_links import TOPIC, FIELDS, digest
+    from elbow_helper.data.store.projections import canonical_json
+    with closing(sqlite3.connect(paths.data_root / FAMILY_DATABASE)) as connection, connection:
+        connection.row_factory = sqlite3.Row
+        last = connection.execute("SELECT MAX(last_observed_at) FROM account_links").fetchone()[0]
+        at = (last or 0) + 1
+        patch_rows = {tag: dict(zip(FIELDS, (tag, owner, '', '', '', ''))) for tag, owner in rows}
+        item = receipt(connection, 'people_membership_import', TOPIC, at, len(rows))
+        apply_rows(connection, patch_rows, at, item, basis='legacy_current')
+        display_rows(connection, patch_rows)
+        connection.execute("INSERT OR IGNORE INTO imports VALUES (?,?,?,?,?,?,?,?)",
+                           (TOPIC, 1, digest({}), 0, digest({}), at, canonical_json({}), item))
