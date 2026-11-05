@@ -26,16 +26,20 @@ class _SummaryManager(ClanReportingWarMixin, ClanReportingHelperMixin):
 
 
 class _LogCounts:
-    """Recorded war log counts per clan tag: available and read after the month unless set otherwise."""
+    """Stored log entries per clan tag, read after the month unless set otherwise."""
 
     def __init__(self):
         self.status, self.counts = {}, {}
-        self.log_results = AsyncMock(side_effect=self.read)
+        self.log_entries = AsyncMock(side_effect=self.read)
 
-    async def read(self, tag, month):
+    async def read(self, tag, *, as_of=None, offset=0):
         wins, losses, ties = self.counts.get(tag, (0, 0, 0))
-        return {"status": self.status.get(tag, "available"), "wins": wins, "losses": losses, "ties": ties,
-                "coverage": {"read_after_month": True}}
+        rows = [{"war_id": index, "end_at": api_time("20260915T000000.000Z"), "result": result, "kind": "war"}
+                for index, result in enumerate(["win"] * wins + ["lose"] * losses + ["tie"] * ties)]
+        return {"status": self.status.get(tag, "available"), "rows": rows[offset:], "next_offset": None,
+                "coverage": {"requested": {"as_of": as_of or READ_TIME}, "complete": True,
+                             "signals": [{"last_good_at": api_time("20270101T000000.000Z"),
+                                          "log_limits": {"backfill_pending": False}}]}}
 
 
 class SummaryHarness:
@@ -374,13 +378,13 @@ class RecordedMonthlyWarSummaryTests(SummaryHarness, WarFixture, unittest.Isolat
     async def test_a_failed_record_read_retries_only_that_clan(self):
         await self.record_log(september_log())
         await self.record_log(page(), scope="#LQ")
-        real = self.reads.log_results
+        real = self.reads.log_entries
 
-        async def broken_for_the_second_clan(tag, month):
+        async def broken_for_the_second_clan(tag, **kwargs):
             if tag == "#LQ":
                 raise sqlite3.OperationalError("synthetic")
-            return await real(tag, month)
-        self.reads.log_results = broken_for_the_second_clan
+            return await real(tag, **kwargs)
+        self.reads.log_entries = broken_for_the_second_clan
 
         with self.assertLogs("elbow_helper.features.clan_reporting.wars", level="ERROR"):
             await self.run_loop()
@@ -388,7 +392,7 @@ class RecordedMonthlyWarSummaryTests(SummaryHarness, WarFixture, unittest.Isolat
         self.assert_completed("BEH")
         self.threads["BE4"].send.assert_not_awaited()
         self.assertNotIn("BE4", self.manager.state["war_summaries"])
-        self.reads.log_results = real
+        self.reads.log_entries = real
         self.manager = self.new_manager()
 
         await self.run_loop()

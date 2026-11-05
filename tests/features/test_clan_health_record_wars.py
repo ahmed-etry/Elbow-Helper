@@ -131,7 +131,7 @@ class RecordRegularWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rows[0]["war_hit_usage_verdict"], "Needs Review")
 
     async def test_an_unavailable_record_fails_the_report_instead_of_scoring_zero(self):
-        broken = RegularWars(SimpleNamespace(health_totals=AsyncMock(side_effect=sqlite3.OperationalError("locked"))),
+        broken = RegularWars(SimpleNamespace(totals=AsyncMock(side_effect=sqlite3.OperationalError("locked"))),
                              CLANS)
         rows = [{"player_tag": "#P0", "clan_code": "ONE", "war_hits_expected": 4}]
         with self.assertRaises(sqlite3.OperationalError):

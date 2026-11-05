@@ -16,8 +16,8 @@ from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
 
 from .charts import build_war_summary_chart
 from .config import CLANS
+from .record_wars import monthly_results
 from .state import save_state
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -132,7 +132,7 @@ class ClanReportingWarMixin:
             LOGGER.warning("Monthly war summary for %s waits: the family record's war reads are unavailable", clan_tag)
             return "waiting", (0, 0, 0)
         try:
-            recorded = await self.war_reads.log_results(clan_tag, month_start.strftime("%Y-%m"))
+            recorded = await monthly_results(self.war_reads, clan_tag, month_start.strftime("%Y-%m"))
         except (sqlite3.Error, OSError, RuntimeError):
             LOGGER.exception("Failed to read the recorded war log for %s", clan_tag)
             return "waiting", (0, 0, 0)

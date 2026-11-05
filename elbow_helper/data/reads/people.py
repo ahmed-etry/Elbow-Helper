@@ -3,16 +3,13 @@
 import sqlite3
 from types import SimpleNamespace
 
-# Reuse the existing Unicode comparisons verbatim during the staged move.
-from elbow_helper.agent.families.account_names import matching_accounts
-from elbow_helper.agent.research.member_identity import identity_query, matches_discord_identity
+from elbow_helper.domain.identity import matching_accounts, identity_query, matches_discord_identity
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.domain.player_tags import normalize_player_tag
 
 from .core import RecordReads, identifiers, tags, timestamp, pagination, page, placeholders
 from .coverage import signal, envelope
 from .profiles import summary, account_history
-from .people_links import CurrentLinksMixin
 
 
 def ownership(connection, tag, at):
@@ -66,7 +63,7 @@ def member_row(connection, identifier, at, clans=None):
     return result
 
 
-class PeopleReads(CurrentLinksMixin, RecordReads):
+class PeopleReads(RecordReads):
     """All selectors are bounded to 200; all disk/alias-adapter work is threaded.
 
     ``alias_reader`` is the read-only ``cwl_queries.account_names`` callable.
@@ -80,6 +77,32 @@ class PeopleReads(CurrentLinksMixin, RecordReads):
         self.clan_tags = tuple(clan.tag for clan in self.clans)
         self.link_service = link_service
 
+    async def current_links(self, as_of=None):
+        """Current local ownership rows with readiness and transaction coverage."""
+        return await self._read(self._current_links, timestamp(as_of))
+
+    @staticmethod
+    def _current_links(connection, at):
+        from ..link_projection import require_links
+        from ..store.legacy_links import LinkConflict
+        source = signal(connection, "account_links", "current", at)
+        try:
+            require_links(connection)
+        except LinkConflict as error:
+            coverage = envelope([source], at=at)
+            coverage.update(complete=False, unavailable=str(error))
+            return {"rows": [], "coverage": coverage}
+        rows = [dict(row) for row in connection.execute("SELECT * FROM current_link_rows ORDER BY player_tag")]
+        # This projection has no past versions; an older as_of cannot describe its rows.
+        imported = connection.execute("SELECT frozen_at FROM imports WHERE topic='people_membership'").fetchone()
+        changed = connection.execute("SELECT MAX(created_at) FROM link_operations WHERE status='complete'").fetchone()[0]
+        current_at = max(imported[0], changed or 0) if imported else None
+        coverage = envelope([source], at=at)
+        if current_at is None or at < current_at:
+            coverage.update(complete=False, unavailable="current_projection_only")
+            rows = []
+        return {"rows": rows, "coverage": coverage}
+
     async def account_history(self, player_tags, as_of=None):
         selected, at = tags(player_tags), timestamp(as_of)
         if self.link_service is not None:
@@ -87,10 +110,19 @@ class PeopleReads(CurrentLinksMixin, RecordReads):
             return await self.link_service.read_people(self._snapshot, self._account_history, (selected, at))
         return await self._read(self._account_history, selected, at)
 
-    @staticmethod
-    def _account_history(connection, selected, at):
-        return {'rows': [{'player_tag': tag, 'record_history': account_history(connection, tag, at)}
-                         for tag in selected]}
+    def _account_history(self, connection, selected, at):
+        rows = [{'player_tag': tag, 'record_history': account_history(connection, tag, at)} for tag in selected]
+        signals = [signal(connection, 'account_links', 'current', at),
+                   *(signal(connection, 'clan_roster', clan, at) for clan in self.clan_tags)]
+        for tag in selected:
+            account = connection.execute('SELECT id FROM accounts WHERE player_tag=? AND first_observed_at<=?',
+                                         (tag, at)).fetchone()
+            signals.append(signal(connection, 'player_profile', tag, at, account_id=account[0] if account else None))
+        coverage = envelope(signals, at=at, truncated=any(
+            row['record_history'] and row['record_history']['truncated'] for row in rows))
+        coverage['unobserved_accounts'] = [row['player_tag'] for row in rows if row['record_history'] is None]
+        coverage['complete'] &= not coverage['unobserved_accounts']
+        return {'rows': rows, 'coverage': coverage}
 
     async def owners(self, player_tags, as_of=None):
         return await self._read(self._owners, tags(player_tags), timestamp(as_of))

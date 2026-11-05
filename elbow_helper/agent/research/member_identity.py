@@ -2,57 +2,16 @@
 
 import asyncio
 from collections import Counter
-import unicodedata
 
 import discord
 
 from elbow_helper.configuration.guild import TEST_ACCOUNT_IDS
+from elbow_helper.domain.identity import (identity_query, matches_discord_identity,
+                                          name_parts, discord_names)
 from ..access import require_evidence_access
 
-
-def name_parts(value):
-    normalized = unicodedata.normalize("NFKC", value).casefold()
-    return tuple(''.join(char if char.isalnum() else ' ' for char in normalized).split())
-
-
-def identity_query(query):
-    """Separate explicit Discord mentions from a supplied identity label."""
-    if query.isdecimal():
-        return {int(query)}, ''
-    identifiers, labels = set(), []
-    while '<@' in query:
-        before, _, tail = query.partition('<@')
-        value, close, rest = tail.partition('>')
-        numeric = value.removeprefix('!')
-        if not close or not numeric.isdecimal():
-            labels.extend((before, '<@', tail))
-            query = ''
-            break
-        identifiers.add(int(numeric))
-        labels.append(before)
-        query = rest
-    labels.append(query)
-    return identifiers, ' '.join(labels)
-
-
-def discord_names(member):
-    names = [getattr(member, field, None)
-             for field in ("display_name", "name", "global_name", "nick")]
-    aliases = getattr(member, "aliases", ()) or ()
-    names.extend((aliases,) if isinstance(aliases, str) else aliases)
-    return tuple(dict.fromkeys(name for name in names if isinstance(name, str) and name))
-
-
-def matches_discord_identity(member, query):
-    """Check a cached identity without a guild chunk or account lookup."""
-    identifiers, label = identity_query(query)
-    if identifiers and identifiers != {member.id}:
-        return False
-    parts = name_parts(label)
-    words = {word for name in discord_names(member) for word in name_parts(name)}
-    return bool(identifiers or parts) and all(
-        any(word.startswith(part) for word in words) for part in parts
-    )
+__all__ = ["identity_query", "matches_discord_identity", "name_parts", "discord_names",
+           "matching_members", "clarification"]
 
 
 async def matching_members(context, query, *, prefer_exact=True):

@@ -314,8 +314,8 @@ class HistoryTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
         with now(NOV + 30 * DAY):
             weeks = await self.reads.weeks(["#PY"], ended=False)
         running = next(war for week in weeks["weeks"] for war in week["wars"] if war["state"] == "inWar")
-        self.assertTrue(all(member["missed"] is None for member in running["roster"]))
-        self.assertEqual([member["attacks_used"] for member in running["roster"]], [1, 0])
+        self.assertTrue(all(member["missed"] is None for member in running["participation"]))
+        self.assertEqual([member["attacks_used"] for member in running["participation"]], [1, 0])
         self.assertEqual(running["coverage"]["state"], "inWar")
         result = await self.attendance_matches_shared_rows()
         self.assertEqual(result["war_ids"], ["CWL:#R0"])

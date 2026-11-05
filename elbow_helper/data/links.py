@@ -70,15 +70,15 @@ class LinkService:
 
     @staticmethod
     def _require_ready(connection):
-        from .reads.people_links import require_links
+        from .link_projection import require_links
         require_links(connection)
 
     async def read_links(self):
         return await asyncio.to_thread(self.read_links_in_worker)
 
     def read_links_in_worker(self, select=None):
-        from .reads.people import PeopleReads
-        return PeopleReads(self.store).links_in_worker(select)
+        from .link_projection import CurrentLinks
+        return CurrentLinks(self.store).links_in_worker(select)
 
     async def read_people(self, operation, *args):
         return await self._serialize(self._read_people, operation, args)

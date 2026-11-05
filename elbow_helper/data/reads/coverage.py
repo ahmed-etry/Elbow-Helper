@@ -7,6 +7,7 @@ Their absence is explicit: poll evidence never promises continuous tracking.
 import json
 
 from ..store.wars import END_DRIFT
+from ..store.war_completeness import war_side_coverage
 from .core import MAX_PAGE
 
 SECOND = 1_000_000
@@ -134,6 +135,10 @@ WAR_CADENCES = {"current_war": 300 * SECOND, "war_log": 86400 * SECOND,
 
 def war_signal(connection, kind, scope, at):
     """Freshness, failed or private fetches and log limits of one war source."""
+    cache = getattr(connection, "coverage_cache", {})
+    key = ("war_source", kind, scope, at)
+    if key in cache:
+        return cache[key]
     cadence = WAR_CADENCES[kind]
     state = connection.execute("SELECT * FROM war_collection_state WHERE source_kind=? AND scope_id=?",
                                (kind, scope)).fetchone()
@@ -167,6 +172,7 @@ def war_signal(connection, kind, scope, at):
         conflicts = war_conflicts(connection, scope)
         result["identity_conflicts"] = conflicts[:MAX_PAGE]
         result["truncated"] |= len(conflicts) > MAX_PAGE
+    cache[key] = result
     return result
 
 
@@ -190,49 +196,11 @@ def war_conflicts(connection, clan_tag):
                    for g in groups if len(g["war_ids"]) > 1), key=lambda g: g["end_at"], reverse=True)
 
 
-def war_side_coverage(connection, war_id, clan_tag):
-    """Lineup and attack completeness of a clan's side, kept apart from its opponent's.
-
-    Returns None when the clan did not fight this war.
-    """
-    war = connection.execute("SELECT * FROM wars WHERE id=?", (war_id,)).fetchone()
-    sides = {row["clan_tag"]: row for row in connection.execute("SELECT * FROM war_sides WHERE war_id=?", (war_id,))}
-    if war is None or clan_tag not in sides:
-        return None
-    # A known defender places an attack on the other side; with neither known,
-    # the attack could be either side's.
-    unattributed = connection.execute(
-        "SELECT COUNT(*) FROM war_attacks WHERE war_id=? AND attacker_member_id IS NULL AND defender_member_id IS NULL",
-        (war_id,)).fetchone()[0]
-
-    def side(row):
-        members = connection.execute(
-            "SELECT COUNT(*),COALESCE(SUM(name IS NULL OR townhall IS NULL OR source_map_position IS NULL),0),"
-            "COALESCE(SUM(attacks_expected IS NULL OR attacks_used IS NULL),0) "
-            "FROM war_members WHERE war_id=? AND side=?", (war_id, row["side"])).fetchone()
-        stored = connection.execute(
-            "SELECT COUNT(*) FROM war_attacks a JOIN war_members m ON m.id=a.attacker_member_id "
-            "WHERE a.war_id=? AND m.side=? AND COALESCE(json_extract(a.extra_json,'$.stub'),0)=0",
-            (war_id, row["side"])).fetchone()[0]
-        counted = war["team_size"] is not None and members[0] == war["team_size"]
-        lineup = counted and not members[1]
-        # Every attack, and so every miss, needs each member's expected and used attacks, not their town hall
-        # or map position.
-        attacks = (counted and not members[2] and not unattributed and row["attacks"] is not None
-                   and stored == row["attacks"])
-        return {"clan_tag": row["clan_tag"], "team_size": war["team_size"], "members": members[0],
-                "lineup_complete": lineup, "attacks_reported": row["attacks"], "attacks_stored": stored,
-                "attacks_complete": attacks}
-
-    other = next(row for tag, row in sides.items() if tag != clan_tag)
-    return {"war_id": war_id, "type": war["type"], "type_basis": war["type_basis"], "state": war["state"],
-            "final": war["final_at"] is not None, "own": side(sides[clan_tag]), "opponent": side(other),
-            "unattributed_attacks": unattributed}
-
-
 def envelope(signals, *, after=None, before=None, at=None, truncated=False):
     values = list(signals)
     return {"requested": {"after": after, "before": before, "as_of": at}, "signals": values,
             "complete": bool(values) and all(s["source_complete"] and not s["gaps"] for s in values),
             "truncated": truncated or any(s["truncated"] for s in values), "privacy_redacted": False,
             "first_observed_is_first_ever": False}
+
+__all__ = ["signal", "war_signal", "war_conflicts", "war_side_coverage", "envelope", "SECOND"]

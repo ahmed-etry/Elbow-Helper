@@ -357,8 +357,8 @@ class CwlImporter:
             "start_at": war["start"], "war_start_at": None, "end_at": war["end"], "state": "warEnded",
             "team_size": war["team_size"], "attacks_per_member": war["apm"], "battle_modifier_json": None,
             "first_seen_at": seen, "last_seen_at": seen, "final_at": None,
-            # Complete for the family side only; no result, so no score is ever read from the partial opponent.
-            "roster_complete": 1, "attacks_complete": 1, "result_complete": 0, "privacy_redacted": 0,
+            # The opponent is partial; whole-war flags must describe both sides.
+            "roster_complete": 0, "attacks_complete": 0, "result_complete": 0, "privacy_redacted": 0,
             "field_presence_json": canonical_json(WAR_FIELDS)}
         values["content_hash"] = sha256(canonical_json(values).encode("utf-8")).hexdigest()
         values["source_run_id"] = run

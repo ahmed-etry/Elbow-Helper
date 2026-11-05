@@ -2,79 +2,18 @@
 
 import asyncio
 import sqlite3
-import unicodedata
 from dataclasses import replace
 
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.guild import TEST_ACCOUNT_IDS
 from elbow_helper.domain.player_tags import normalize_player_tag
+from elbow_helper.domain.identity import (matching_accounts, normalized_name, edit_distance,
+                                          name_segments, word_prefix, small_spelling_edit)
 
 from ..access import require_evidence_access
 from ..datasets.clash import read_clash
 from ..research.member_identity import matching_members, matches_discord_identity
 from .. import record_identity
-
-
-def normalized_name(value):
-    return ''.join(char for char in unicodedata.normalize('NFKC', value).casefold()
-                   if char.isalnum())
-
-
-def edit_distance(left, right):
-    """Small spelling edits, including a transposed pair of characters."""
-    previous, older = list(range(len(right) + 1)), None
-    for index, char in enumerate(left, 1):
-        current = [index]
-        for slot, other in enumerate(right, 1):
-            value = min(current[-1] + 1, previous[slot] + 1,
-                        previous[slot - 1] + (char != other))
-            if (older is not None and slot > 1 and char == right[slot - 2]
-                    and left[index - 2] == other):
-                value = min(value, older[slot - 2] + 1)
-            current.append(value)
-        older, previous = previous, current
-    return previous[-1]
-
-
-def matching_accounts(query, accounts):
-    """Prefer exact names, then word prefixes; allow small edits per word."""
-    if query.strip().startswith('#'):
-        tag = normalize_player_tag(query)
-        return [accounts[tag]] if tag in accounts else []
-    target = normalized_name(query)
-    if not target:
-        return []
-    exact, prefix, fuzzy = [], [], []
-    for account in accounts.values():
-        aliases = [normalized_name(name) for name in account['names']]
-        if target in aliases:
-            exact.append(account)
-        elif any(word_prefix(query, name) for name in account['names']):
-            prefix.append(account)
-        elif any(small_spelling_edit(query, name) for name in account['names']):
-            fuzzy.append(account)
-    return sorted(exact or prefix or fuzzy, key=lambda row: row['player_tag'])
-
-
-def name_segments(value):
-    return ''.join(char if char.isalnum() else ' '
-                   for char in unicodedata.normalize('NFKC', value).casefold()).split()
-
-
-def word_prefix(query, name):
-    left, right = name_segments(query), name_segments(name)
-    return bool(left) and len(left) == len(right) and all(
-        other.startswith(part) for part, other in zip(left, right))
-
-
-def small_spelling_edit(query, name):
-    # Formatting-only changes resolve through normalized exact matching above.
-    # For spelling changes, align every word and budget its edits independently;
-    # a long word's allowance must not absorb another word or an initial.
-    left, right = name_segments(query), name_segments(name)
-    return bool(left) and len(left) == len(right) and all(
-        edit_distance(part, other) <= (1 if max(len(part), len(other)) <= 5 else 2)
-        for part, other in zip(left, right))
 
 
 async def resolve_account_names(context, queries):
@@ -244,3 +183,6 @@ async def resolve_names(context, queries, look_in=None):
             'resolved_member_ids': sorted(resolved_members),
             'name_resolutions': resolutions, 'missing_sources': missing,
             'selection_complete': all(row['found_in'] is not None for row in resolutions)}
+
+__all__ = ["matching_accounts", "normalized_name", "edit_distance", "name_segments",
+           "word_prefix", "small_spelling_edit", "resolve_account_names", "resolve_names"]

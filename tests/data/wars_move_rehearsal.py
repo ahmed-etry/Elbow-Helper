@@ -547,7 +547,8 @@ async def monthly(work, prepared):
                        "notice": posted[1] if posted[0] == "notice" else None}
                 if NEW:
                     # What the record counts for the month, posted or not.
-                    counted = await reporter.war_reads.log_results(clan.tag, month)
+                    from elbow_helper.features.clan_reporting.record_wars import monthly_results
+                    counted = await monthly_results(reporter.war_reads, clan.tag, month)
                     row["record"] = {"status": counted["status"], "read_after_month": counted["coverage"]["read_after_month"],
                                      "counts": [counted["wins"], counted["losses"], counted["ties"]]}
                 rows.append(row)
@@ -604,6 +605,11 @@ async def agent(work, prepared, links, cache):
                       cwl_queries=CwlQueries(ClanHealthRepository(work / "clan_health.db"), lambda: {}))
     if NEW:
         context = replace(context, bot=SimpleNamespace(war_reads=WarReads(FamilyStore(work / "family.sqlite3"))))
+        from elbow_helper.data.reads import CwlReads
+        from elbow_helper.features.cwl.record import CwlHistory
+        context = replace(context, cwl_queries=CwlQueries(
+            CwlHistory(CwlReads(FamilyStore(work / "family.sqlite3")),
+                       ClanHealthRepository(work / "clan_health.db")), lambda: {}))
     boards = {code: entry.get("current") for code, entry in cache.get("war_board_history", {}).items()}
 
     async def clash(context, arguments):

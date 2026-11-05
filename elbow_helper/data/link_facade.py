@@ -1,4 +1,4 @@
-"""Compatibility adapter; all ownership selectors live in data.reads."""
+"""Compatibility adapter for the existing link table contract."""
 
 from .store.legacy_links import LinkConflict
 
@@ -13,9 +13,7 @@ class LinkFacade:
         return self.service.read_links_in_worker(select)
 
     def _select(self, method, *args):
-        # The staged people resolver still imports agent matching helpers.
-        # Load selectors only at read time to keep feature imports acyclic.
-        from .reads.people_links import LinkSelectors
+        from .link_projection import LinkSelectors
         return getattr(LinkSelectors, method)(self, *args)
 
     def all(self):

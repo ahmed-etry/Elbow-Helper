@@ -30,6 +30,24 @@ SPAN = 120 * 86400 * SECOND
 # The family record holds no war attacks older than this.
 FLOOR = int(datetime(2020, 1, 1, tzinfo=timezone.utc).timestamp())
 PAGE_ROWS = 200
+CAPTURE_TIMES = (("end_at", ("warEnded",)), ("observed_at", ("preparation", "inWar")))
+
+
+async def capture_page(reads, method, *args, **kwargs):
+    """Health selects ended wars by end, running wars by last check, within half-open bounds."""
+    result = await getattr(reads, method)(*args, time_field=CAPTURE_TIMES, **kwargs)
+    if method == "attacks":
+        positions = {}
+        for war in result["lineups"]:
+            if war["coverage"]["opponent"]["lineup_complete"]:
+                members = sorted(war["members"], key=lambda member: (member["map_position"], member["player_tag"]))
+                positions[war["war_id"], war["clan_tag"]] = {
+                    member["player_tag"]: index for index, member in enumerate(members, 1)}
+        for row in result["rows"]:
+            places = positions.get((row["war_id"], row["clan_tag"]), {})
+            if row["defender_basis"] == "lineup" and row["defender_tag"] in places:
+                row["defender_position"] = places[row["defender_tag"]]
+    return result
 
 
 def newest_attacks(*sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -58,17 +76,17 @@ def attack_row(row: dict[str, Any], codes: dict[str, str]) -> dict[str, Any]:
 
 def _window(start_ts: int, end_ts: int) -> tuple[int, int]:
     """Whole seconds, both ends included, as old clan health compared them."""
-    return int(start_ts) * SECOND, int(end_ts) * SECOND + SECOND - 1
+    return int(start_ts) * SECOND, int(end_ts) * SECOND + SECOND
 
 
 def _spans(start_ts: int, end_ts: int) -> list[tuple[int, int]]:
     """The window in pieces that share no instant, newest first, each far below a read's war bound."""
     after, before = _window(start_ts, end_ts)
     spans = []
-    while before >= after:
-        start = max(after, before - SPAN + 1)
+    while before > after:
+        start = max(after, before - SPAN)
         spans.append((start, before))
-        before = start - 1
+        before = start
     return spans
 
 
@@ -107,8 +125,8 @@ class RegularWars:
         for after, before in _spans(cycle_start_ts, cycle_end_ts) if selected else ():
             for index in range(0, len(selected), TAGS_PER_READ):
                 chunk = selected[index:index + TAGS_PER_READ]
-                totals = self._run(self.reads.health_totals(self._clans(), after, before, player_tags=chunk,
-                                                            types=self.types))
+                totals = self._run(capture_page(self.reads, "totals", self._clans(), after, before,
+                                                player_tags=chunk, types=self.types))
                 for row in totals["rows"]:
                     tag = spelled[row["player_tag"]]
                     total = result.setdefault(tag, dict.fromkeys(row, 0) | {"player_tag": row["player_tag"]})
@@ -123,7 +141,7 @@ class RegularWars:
         clans = self._clans(clan_codes)
         result = {}
         for after, before in _spans(cycle_start_ts, cycle_end_ts) if clans else ():
-            counts = self._run(self.reads.health_war_counts(clans, after, before, types=self.types))
+            counts = self._run(capture_page(self.reads, "counts", clans, after, before, types=self.types))
             for tag, value in counts["clans"].items():
                 if value["wars_with_lineup"]:
                     code = self.codes[tag]
@@ -138,9 +156,8 @@ class RegularWars:
         for after, before in _spans(cycle_start_ts, cycle_end_ts):
             offset = 0
             while offset is not None and (limit is None or len(rows) < limit):
-                page = self._run(self.reads.attacks(self._clans(), after, before, player_tags=[player_tag],
-                                                    types=self.types, view="capture", limit=PAGE_ROWS,
-                                                    offset=offset))
+                page = self._run(capture_page(self.reads, "attacks", self._clans(), after, before,
+                                              player_tags=[player_tag], types=self.types, limit=PAGE_ROWS, offset=offset))
                 rows.extend(page["rows"])
                 offset = page["next_offset"]
         return rows if limit is None else rows[:limit]
