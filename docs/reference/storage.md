@@ -9,7 +9,7 @@ retain older feature names because existing deployments depend on them.
 | Application | `data/.logs/` | Runtime logs |
 | Application | `data/backups/` | Latest checked SQLite copies, made daily at 04:00 UTC with the same paths as under `data/` |
 | Shared exports | `data/.exports/` | Temporary workbooks and crash leftovers |
-| Family database | `data/family/family.sqlite3` | People and account ownership, Discord server membership and roles, clan membership and donations; profiles and player history; regular, friendly and CWL wars with lineups and attacks; ranked battles, seasons, groups and when each battle log was checked; raid weekends with each member's attacks; time each account spent in each clan; the result of each data check |
+| Family database | `data/family/family.sqlite3` | People and account ownership, when each member joined and left the Discord server, their roles, and when and in which channel they last wrote (never what they wrote); clan membership and donations; profiles and player history; regular, friendly and CWL wars with lineups and attacks; ranked battles, seasons, groups and when each battle log was checked; raid weekends with each member's attacks; time each account spent in each clan; the result of each data check |
 | Shared history | `data/events/events.sqlite3` | What happened to things like news posts and clan transfers, and their open requests |
 | Account links | `data/clan_links/links.sqlite3` | Suggestions and ignored tags |
 | Achievements | `data/achievements/achievements.db` | Achievements, activity, coins, raffles, and rewards |
@@ -36,7 +36,7 @@ retain older feature names because existing deployments depend on them.
 | Examinations | `data/examination/examination_state.json` | Examiners, cases, availability, panel, and cleanup state |
 | Hibernation | `data/events/events.sqlite3` | Saved roles, hibernating members and their history |
 | Leadership news | `data/events/events.sqlite3` | Pending publish prompts and what was published |
-| Member lifecycle | `data/snapshot_intel/snapshot_intel.json` | Invites, ticket index, departures, and reports |
+| Member lifecycle | `data/events/events.sqlite3` | Where each member came from when they joined and why they left, this week's join count per source, reports on applicants who have waited too long, and which ticket logs belong to whom |
 | Old records | `data/records/records.sqlite3` | Leadership records, kept while that feature is rethought |
 | Recruitment | `data/events/events.sqlite3` | Active trials, reminders, ticket activity and decisions |
 | Recruitment | `data/recruitment/applicant_messages.json` | Application-summary message IDs, channels, and timestamps |

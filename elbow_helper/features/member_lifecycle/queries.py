@@ -10,6 +10,8 @@ from typing import Any
 
 MAX_LIFECYCLE_MEMBERS = 10_000
 MAX_RECRUITMENT_SOURCES = 100
+# A lifecycle case and a record stay within this of each other name the same join.
+SAME_JOIN_US = 1_000_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +53,98 @@ class MemberLifecycleSnapshot:
     rows: tuple[MemberLifecycleRow, ...]
 
 
+def _iso_us(at: int) -> str:
+    return datetime.fromtimestamp(at / 1_000_000, timezone.utc).isoformat()
+
+
+class LifecycleRecordSource:
+    """Join and leave times from the family record's server membership, sources and
+    reasons from lifecycle events, last messages from the Discord collector."""
+
+    def __init__(self, lifecycle_state, people_reads: Callable[[], Any]) -> None:
+        self._lifecycle = lifecycle_state
+        self._people_reads = people_reads
+
+    async def _stays(self, member_ids):
+        reads = self._people_reads()
+        if reads is None:
+            raise ValueError("The family record is not available")
+        rows, coverage = {}, None
+        ordered = sorted(member_ids)
+        for start in range(0, len(ordered), 200):
+            batch = await reads.server_stays(ordered[start:start + 200])
+            rows.update((row["member_id"], row) for row in batch["rows"])
+            coverage = batch["coverage"]
+        if coverage is None:
+            coverage = (await reads.server_stays([]))["coverage"]
+        return rows, coverage
+
+    async def projection(self) -> dict[str, Any]:
+        """The lifecycle read model: current stays of members whose join source is known."""
+        state = self._lifecycle.snapshot()
+        joins = self._lifecycle.open_joins()
+        if len(joins) > MAX_LIFECYCLE_MEMBERS:
+            raise ValueError("Invalid member lifecycle state")
+        stays, _ = await self._stays(joins)
+        members, last_seen = {}, {}
+        for member_id, join in joins.items():
+            row = stays.get(member_id, {"stays": [], "last_message": None})
+            current = [stay for stay in row["stays"] if stay["to_at"] is None]
+            if not current:
+                continue
+            members[str(member_id)] = {
+                "joined_at_iso": _iso_us(current[-1]["discord_joined_at"] or current[-1]["from_at"]),
+                "platform": join["platform"], "left": False,
+            }
+            message = row["last_message"]
+            if message is not None:
+                last_seen[str(member_id)] = {"ts_iso": _iso_us(message["message_at"]),
+                                             "channel_id": message["channel_id"]}
+        return {**state, "members": members, "last_seen": last_seen}
+
+    async def history(self, member_id: int) -> dict[str, Any]:
+        """Every recorded stay of one member, oldest first, with its source and leave reason."""
+        events = await self._lifecycle.events.read(workflow="lifecycle", subject=member_id)
+        stays, coverage = await self._stays([member_id])
+        cases: dict[int, dict[str, Any]] = {}
+        for event in events:
+            if event["kind"] in ("joined", "left"):
+                cases.setdefault(int(event["case_key"].split(":")[1]), {})[event["kind"]] = event
+        entries, matched = [], set()
+
+        def entry(kind, at, basis, event):
+            detail = event["detail"] if event else {}
+            return {"event": kind, "at": at, "basis": basis,
+                    "platform": detail.get("platform") if kind == "join" else None,
+                    "reason": detail.get("reason") if kind == "leave" else None,
+                    "message_id": event["source_message_id"] if event else None}
+
+        for stay in stays.get(member_id, {"stays": []})["stays"]:
+            # Discord reports one join time with different sub-second precision on different paths.
+            key = next((joined_at for joined_at in cases if stay["discord_joined_at"] is not None
+                        and joined_at not in matched
+                        and abs(joined_at - stay["discord_joined_at"]) < SAME_JOIN_US), None)
+            case = cases.get(key, {})
+            if case:
+                matched.add(key)
+            entries.append(entry("join", stay["discord_joined_at"] or stay["from_at"], stay["start_basis"],
+                                 case.get("joined")))
+            if stay["to_at"] is not None:
+                entries.append(entry("leave", stay["to_at"], stay["end_basis"], case.get("left")))
+        # A stay the record never observed: its case names Discord's join time.
+        for joined_at, case in cases.items():
+            if joined_at in matched:
+                continue
+            if "joined" in case:
+                entries.append(entry("join", joined_at, "lifecycle_join", case["joined"]))
+            if "left" in case:
+                entries.append(entry("leave", case["left"]["occurred_at"], "lifecycle_leave", case["left"]))
+        entries.sort(key=lambda item: (item["at"], item["event"] == "leave"))
+        signal = coverage["signals"][0] if coverage["signals"] else {}
+        return {"entries": entries, "recorded_since": signal.get("collection_start"),
+                "complete": bool(coverage.get("complete"))}
+
+
 class MemberLifecycleQueries:
     """Read lifecycle state without exposing its listeners or controls."""
 
@@ -59,9 +153,23 @@ class MemberLifecycleQueries:
         state_source: Callable[[], Mapping[str, Any]],
         *,
         clock: Callable[[], datetime] | None = None,
+        source: LifecycleRecordSource | None = None,
     ) -> None:
         self._state_source = state_source
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._source = source
+
+    async def current(self) -> "MemberLifecycleQueries":
+        """Queries over one consistent read of state, events and the family record."""
+        if self._source is None:
+            return self
+        projection = await self._source.projection()
+        return MemberLifecycleQueries(lambda: projection, clock=self._clock)
+
+    async def history(self, member_id: int) -> dict[str, Any]:
+        if self._source is None:
+            raise ValueError("Member lifecycle history is not available")
+        return await self._source.history(member_id)
 
     def activity_registrations(
         self, *, current_member_ids: set[int] | frozenset[int],
@@ -285,7 +393,7 @@ def _timestamp(value: Any) -> str | None:
 
 
 __all__ = [
-    "LifecycleActivityRegistration", "MAX_LIFECYCLE_MEMBERS",
+    "LifecycleActivityRegistration", "LifecycleRecordSource", "MAX_LIFECYCLE_MEMBERS",
     "MemberLifecycleQueries", "MemberLifecycleRow", "MemberLifecycleSnapshot",
     "OverdueApplicant",
 ]

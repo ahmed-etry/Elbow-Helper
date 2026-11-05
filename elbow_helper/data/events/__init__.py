@@ -137,6 +137,14 @@ class EventsStore:
                     for row in state["reminders"].values():
                         if row.get("resolved_by") == discord_id:
                             row["resolved_by"] = None
+                elif workflow == "lifecycle":
+                    # Weekly source counts are totals, not a member's data.
+                    state["overdue_applicant_ids"] = [
+                        value for value in state["overdue_applicant_ids"] if str(value) != str(discord_id)]
+                    for report in state["applicant_reports"].values():
+                        report["applicant_ids"] = [
+                            value for value in report["applicant_ids"] if str(value) != str(discord_id)]
+                    state["ticket_owner_links"].pop(str(discord_id), None)
                 else:
                     state["prompts"] = {key: row for key, row in state["prompts"].items()
                                         if row.get("subject_discord_id") != discord_id}

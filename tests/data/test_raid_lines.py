@@ -141,7 +141,7 @@ class RaidLineTests(RaidFixture):
         self.assertEqual(await self.rows(LINES), [])
 
     async def reset_to_previous_version(self):
-        for table in ("raid_member_lines", "old_clan_stays", "old_raid_weekends"):
+        for table in ("raid_member_lines", "old_clan_stays", "old_raid_weekends", "member_last_messages"):
             await self.run_sql(f"DROP TABLE {table}")
         await self.store.call(lambda c: c.execute(f"PRAGMA user_version={BEFORE_LINES}"))
 

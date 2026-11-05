@@ -16,7 +16,7 @@ from .war_completeness import upgrade_cwl_completeness
 
 
 # Later subjects add migrations; they must not rewrite this baseline.
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 STATEMENTS = (
     """CREATE TABLE collection_runs (
         id INTEGER PRIMARY KEY, collector TEXT NOT NULL, scope_kind TEXT NOT NULL,
@@ -253,6 +253,15 @@ def extend_achievement_identity(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA defer_foreign_keys=OFF")
 
 
+def create_last_message_schema(connection: sqlite3.Connection) -> None:
+    # Only when and where a member last wrote; never the message or its text. ``basis`` is
+    # ``message`` for the collector's own sighting, ``lifecycle_import`` for a copied old one.
+    connection.execute("""CREATE TABLE member_last_messages (
+        member_id INTEGER PRIMARY KEY REFERENCES members(id), message_at INTEGER NOT NULL,
+        channel_id INTEGER NOT NULL, basis TEXT NOT NULL,
+        source_item_id INTEGER NOT NULL REFERENCES collection_items(id))""")
+
+
 def create_schema(connection: sqlite3.Connection) -> None:
     create_initial_schema(connection)
     create_player_schema(connection)
@@ -269,6 +278,7 @@ def create_schema(connection: sqlite3.Connection) -> None:
     create_raid_schema(connection)
     create_old_history_schema(connection)
     upgrade_cwl_completeness(connection)
+    create_last_message_schema(connection)
 
 
 MIGRATIONS = (
@@ -288,4 +298,5 @@ MIGRATIONS = (
     SQLiteMigration(14, "capital raid member lines", create_raid_schema),
     SQLiteMigration(15, "old clan stays and raid weekends", create_old_history_schema),
     SQLiteMigration(16, "whole CWL war completeness", upgrade_cwl_completeness),
+    SQLiteMigration(17, "each member's last message time and channel", create_last_message_schema),
 )

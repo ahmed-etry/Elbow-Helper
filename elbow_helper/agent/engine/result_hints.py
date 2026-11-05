@@ -407,7 +407,7 @@ def _returned_fields(shape):
 
 
 RESULT_FIELDS["read_member_history"] = {**names("member_id,channel_id,search_is_exhaustive,next_cursor,coverage"),
-                                      "entries": [names("message_id,channel_id,event,timestamp,author_id,author,content,source")]}
+                                      "entries": [names("event,timestamp,basis,platform,reason,message_id,channel_id,source")]}
 
 
 RESULT_FIELDS = {

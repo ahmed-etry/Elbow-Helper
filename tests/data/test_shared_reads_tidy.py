@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from elbow_helper.data.reads import CwlReads, MembershipReads, PeopleReads, WarReads
 from elbow_helper.data.store import FamilyStore
+from elbow_helper.data.store.schema import SCHEMA_VERSION
 from elbow_helper.data.store.war_completeness import upgrade_cwl_completeness, war_side_coverage
 from elbow_helper.infrastructure.persistence.migrations import SQLiteMigrationError
 from tests.data import test_family_store as family
@@ -75,6 +76,7 @@ class LeagueEvidenceTests(CwlFixture, unittest.IsolatedAsyncioTestCase):
         first = (await self.rows("SELECT id FROM wars ORDER BY id"))[0]["id"]
         evidence = await self.store.call(war_side_coverage, first, "#PY")
         await self.execute("UPDATE wars SET roster_complete=1,attacks_complete=1")
+        await self.execute("DROP TABLE member_last_messages")
         await self.execute("PRAGMA user_version=15")
         fresh = FamilyStore(self.path)
         with patch("elbow_helper.data.store.war_completeness.war_side_coverage",
@@ -85,7 +87,7 @@ class LeagueEvidenceTests(CwlFixture, unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(tuple(row.values()) == (1, 1) for row in
                             await self.rows("SELECT roster_complete,attacks_complete FROM wars")))
         await fresh.initialize()
-        self.assertEqual((await self.rows("PRAGMA user_version"))[0]["user_version"], 16)
+        self.assertEqual((await self.rows("PRAGMA user_version"))[0]["user_version"], SCHEMA_VERSION)
 
     async def test_import_flags_and_upgrade_describe_both_sides_without_inventing_counts(self):
         await self.week(positions=(30, 40), defender_positions=(31, 41))
@@ -99,13 +101,14 @@ class LeagueEvidenceTests(CwlFixture, unittest.IsolatedAsyncioTestCase):
         self.assertFalse(sides["opponent"]["attacks_complete"])
         self.assertIsNone(sides["opponent"]["attacks_reported"])
         await self.execute("UPDATE wars SET roster_complete=1,attacks_complete=1")
+        await self.execute("DROP TABLE member_last_messages")
         await self.execute("PRAGMA user_version=15")
         fresh = FamilyStore(self.path)
         await fresh.initialize()
         await fresh.call(upgrade_cwl_completeness)
         repaired = await self.rows("SELECT roster_complete,attacks_complete FROM wars")
         self.assertTrue(all(tuple(row.values()) == (0, 0) for row in repaired))
-        self.assertEqual((await self.rows("PRAGMA user_version"))[0]["user_version"], 16)
+        self.assertEqual((await self.rows("PRAGMA user_version"))[0]["user_version"], SCHEMA_VERSION)
         self.assertIsNone((await fresh.call(war_side_coverage, wars[0]["id"], "#PY"))["opponent"]["attacks_reported"])
 
     async def test_native_league_rows_keep_positions_times_and_per_war_evidence(self):

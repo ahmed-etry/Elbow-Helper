@@ -126,6 +126,35 @@ class PeopleReads(RecordReads):
         coverage['complete'] &= not coverage['unobserved_accounts']
         return {'rows': rows, 'coverage': coverage}
 
+    async def server_stays(self, member_ids, as_of=None):
+        """Each member's Discord server stays, oldest first, and the last message the collector saw.
+
+        ``discord_joined_at`` is Discord's own join time for the stay; ``from_at``
+        and ``to_at`` are when the record first and last observed it.
+        """
+        return await self._read(self._server_stays, identifiers(member_ids), timestamp(as_of))
+
+    @staticmethod
+    def _server_stays(connection, selected, at):
+        rows = []
+        for identifier in selected:
+            member = connection.execute("SELECT id FROM members WHERE discord_id=? AND first_observed_at<=?",
+                                        (identifier, at)).fetchone()
+            stays, last = [], None
+            if member is not None:
+                for row in connection.execute(
+                        "SELECT from_at,to_at,discord_joined_at,start_basis,end_basis,last_observed_at "
+                        "FROM guild_membership WHERE member_id=? AND from_at<=? ORDER BY from_at", (member[0], at)):
+                    stay = dict(row)
+                    if stay["to_at"] is not None and stay["to_at"] > at:
+                        stay.update(to_at=None, end_basis=None)
+                    stays.append(stay)
+                message = connection.execute("SELECT message_at,channel_id,basis FROM member_last_messages "
+                                             "WHERE member_id=? AND message_at<=?", (member[0], at)).fetchone()
+                last = dict(message) if message else None
+            rows.append({"member_id": identifier, "stays": stays, "last_message": last})
+        return {"rows": rows, "coverage": envelope([signal(connection, "discord_scan", None, at)], at=at)}
+
     async def owners(self, player_tags, as_of=None):
         return await self._read(self._owners, tags(player_tags), timestamp(as_of))
 

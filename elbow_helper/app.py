@@ -18,7 +18,8 @@ from elbow_helper.infrastructure.discord.publishing import PublishingQueue
 from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.files import (
-    ACCOUNT_LINKS_DATABASE, CLAN_HEALTH_DATABASE, EVENTS_DATABASE, FAMILY_DATABASE, RANKED_DATABASE, WAR_CACHE_FILE,
+    ACCOUNT_LINKS_DATABASE, CLAN_HEALTH_DATABASE, EVENTS_DATABASE, FAMILY_DATABASE, MEMBER_LIFECYCLE_FILE,
+    RANKED_DATABASE, WAR_CACHE_FILE,
 )
 from elbow_helper.data.collectors import FamilyCollectors
 from elbow_helper.data.store import FamilyStore
@@ -120,6 +121,7 @@ def create_bot(
         bot, store, clash_client, CLANS.values(),
         old_wars=(paths.data_root / CLAN_HEALTH_DATABASE, paths.data_root / WAR_CACHE_FILE,
                   paths.data_root / RANKED_DATABASE),
+        old_last_seen=paths.data_root / MEMBER_LIFECYCLE_FILE,
     )
 
     async def start_links_topic():

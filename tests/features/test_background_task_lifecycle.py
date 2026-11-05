@@ -159,17 +159,17 @@ class BackgroundTaskLifecycleTests(unittest.IsolatedAsyncioTestCase):
         cog._ticket_index_task = None
         cog.weekly_report = _loop()
         cog.applicant_linger_scan = _loop()
-        cog.state = {}
+        cog.lifecycle_state = SimpleNamespace(events=SimpleNamespace(unregister_member_deletion=MagicMock()))
         started = asyncio.Event()
 
         cog._start_report_cleanup(_blocked(started), message_id=99)
         await started.wait()
         task = next(iter(cog._report_cleanup_tasks))
 
-        with patch("elbow_helper.features.member_lifecycle.cog.save_state"):
-            cog.cog_unload()
+        cog.cog_unload()
         await asyncio.gather(task, return_exceptions=True)
         self.assertTrue(task.cancelled())
+        cog.lifecycle_state.events.unregister_member_deletion.assert_called_once_with("lifecycle")
 
 
 if __name__ == "__main__":

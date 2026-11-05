@@ -158,6 +158,24 @@ def leave_member(connection, member_id, at, item, basis):
             close_interval(connection, table, old, at, item, basis=basis if table == "guild_membership" else None)
 
 
+def observe_messages(connection, run, rows, at):
+    """(member ID, message time, channel ID) sightings; an older one never replaces a newer one."""
+    item = FamilyStore.item(connection, run, 0)["id"]
+    with sqlite_transaction(connection, immediate=True):
+        before = connection.total_changes
+        for discord_id, message_at, channel_id in rows:
+            if any(type(value) is not int or value <= 0 for value in (discord_id, message_at, channel_id)):
+                raise ValueError("invalid_message_sighting")
+            connection.execute(
+                "INSERT INTO member_last_messages(member_id,message_at,channel_id,basis,source_item_id) "
+                "VALUES (?,?,?,'message',?) ON CONFLICT(member_id) DO UPDATE SET message_at=excluded.message_at,"
+                "channel_id=excluded.channel_id,basis=excluded.basis,source_item_id=excluded.source_item_id "
+                "WHERE excluded.message_at>member_last_messages.message_at",
+                (member(connection, discord_id, at), message_at, channel_id, item))
+        FamilyStore.outcome(connection, item, "ok" if rows else "empty", at, count=len(rows),
+                            written=connection.total_changes - before)
+
+
 def observe_discord(connection, run, rows, at, *, complete=False, basis="scan", departed_id=None, scope="guild"):
     rows = discord_projection(rows)
     item = FamilyStore.item(connection, run, 0)["id"]
