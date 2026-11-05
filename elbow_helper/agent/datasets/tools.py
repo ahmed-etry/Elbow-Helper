@@ -11,7 +11,7 @@ def dataset_tools():
     return (RegisteredAgentTool(
         AgentToolDefinition(
             "query_bot_data",
-            "Query SQL: :name, params:{name:value}. Records are optional, often empty; absence is not evidence.",
+            "Query SQL: :name, params:{name:value}.",
             {
                 "type": "object",
                 "properties": {
@@ -25,8 +25,7 @@ def dataset_tools():
             },
             usage_note=(
                 "Prefer one SQL query for the whole question. Let SQL count, group, join, "
-                "filter and sort. "
-                "Read records only for records questions or specific logged cases."
+                "filter and sort."
             ),
         ),
         query_bot_data,

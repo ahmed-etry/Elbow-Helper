@@ -9,7 +9,6 @@ from unittest.mock import MagicMock
 
 from elbow_helper.features.clan_health.export import ClanHealthExportMixin
 from elbow_helper.features.cwl.roster.export import CwlRosterExportMixin
-from elbow_helper.features.records.commands import RecordCommandMixin
 from elbow_helper.infrastructure.exports import ExportColumn
 from elbow_helper.infrastructure.exports import ExportSheet
 from elbow_helper.infrastructure.exports import LocalExportStore
@@ -23,30 +22,6 @@ def _attachment_message(url: str) -> MagicMock:
 
 
 class ExportDeliveryTests(unittest.IsolatedAsyncioTestCase):
-    async def test_records_discard_local_file_after_discord_accepts_it(self) -> None:
-        with TemporaryDirectory() as directory:
-            workbook = Path(directory) / "records.xlsx"
-            workbook.write_bytes(b"xlsx")
-            report = SimpleNamespace(
-                workbook_path=workbook,
-                workbook_name="leadership_records.xlsx",
-                google_link=None,
-                google_warning="Google Sheets isn't available here.",
-            )
-            interaction = MagicMock()
-            interaction.followup.send = AsyncMock(
-                return_value=_attachment_message(
-                    "https://discord.test/leadership_records.xlsx"
-                )
-            )
-            commands = object.__new__(RecordCommandMixin)
-            commands.exports = MagicMock()
-            commands.exports.discard = AsyncMock()
-
-            await commands._send_record_export(interaction, report)
-
-        commands.exports.discard.assert_awaited_once_with(report)
-
     async def test_clan_health_removes_staging_file_after_discord_fallback(self) -> None:
         with TemporaryDirectory() as directory:
             export = object.__new__(ClanHealthExportMixin)

@@ -45,7 +45,6 @@ REQUIRED_EXTENSIONS = (
     "elbow_helper.features.recruitment",
     "elbow_helper.features.clan_health",
     "elbow_helper.features.attack_plans",
-    "elbow_helper.features.records",
     "elbow_helper.features.rosters",
     "elbow_helper.features.cwl",
     "elbow_helper.features.examination",

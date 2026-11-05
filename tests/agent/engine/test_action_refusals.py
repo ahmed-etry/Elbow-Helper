@@ -13,19 +13,11 @@ from elbow_helper.agent.actions.contracts import ActionClass, ChangePreview, Pre
 from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.models import AgentCapabilityEffect, RegisteredAgentTool
 from elbow_helper.agent.scheduled.tools import prepare_save
-from elbow_helper.agent.capabilities.records.commands import _edit_target
 from elbow_helper.infrastructure.ai import AgentStep, AgentToolDefinition, AgentUsage
 from agent.engine.test_agent_plan_flow import _context, _Model, _Session, _plan, _step, _model_step
 
 
 class ActionRefusalTests(unittest.IsolatedAsyncioTestCase):
-    def test_record_input_validation_preserves_the_feature_refusal(self):
-        service = SimpleNamespace(validate_details=MagicMock(
-            side_effect=ValueError("Add details about what happened.")))
-        record = {"category_key": "synthetic", "incident_type_key": "synthetic", "note": ""}
-        with self.assertRaisesRegex(contracts.ActionRefused, "Add details about what happened"):
-            _edit_target(service, record, {})
-
     async def test_safe_refusal_reaches_tool_result_without_traceback(self):
         async def refuse(context, arguments):
             raise contracts.ActionRefused("Synthetic target unavailable")

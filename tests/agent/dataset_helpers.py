@@ -9,7 +9,6 @@ from elbow_helper.agent.datasets.catalogue import SOURCES
 from elbow_helper.features.account_links.database import AccountLinksDbMixin
 from elbow_helper.features.clan_health.database.repository import ClanHealthRepository
 from elbow_helper.features.rosters.repository.repository import RosterRepository
-from elbow_helper.features.records.database.repository import RecordRepository
 from elbow_helper.features.achievements.database import AchievementsDatabaseMixin
 from elbow_helper.data.store.schema import create_schema
 
@@ -26,7 +25,6 @@ def synthetic_datasets(root):
         AccountLinksDbMixin()._init_db()
     ClanHealthRepository(files["health"]).initialize()
     RosterRepository(files["rosters"])
-    RecordRepository(files["records"]).initialize()
     achievements = AchievementsDatabaseMixin()
     achievements.db_path = files["achievements"]
     achievements.logger = logging.getLogger(__name__)

@@ -65,7 +65,6 @@ class AgentCog(AgentFeedbackMixin, AgentTurnMixin, ConversationContextMixin, Age
         support_queries=None,
         recruitment_queries=None,
         examination_queries=None,
-        record_queries=None,
         achievement_queries=None,
         event_queries=None,
         member_lifecycle_queries=None,
@@ -93,7 +92,6 @@ class AgentCog(AgentFeedbackMixin, AgentTurnMixin, ConversationContextMixin, Age
         self.support_queries = support_queries
         self.recruitment_queries = recruitment_queries
         self.examination_queries = examination_queries
-        self.record_queries = record_queries
         self.achievement_queries = achievement_queries
         self.event_queries = event_queries
         self.member_lifecycle_queries = member_lifecycle_queries

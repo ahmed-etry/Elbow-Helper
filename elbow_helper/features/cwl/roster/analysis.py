@@ -331,12 +331,6 @@ class CwlRosterAnalysisMixin:
     ) -> dict[str, dict[str, Any]]:
         return self.clan_health_repository.directory_players(player_tags)
 
-    def _load_active_roster_records(
-        self,
-        member_ids: Iterable[int],
-    ) -> list[dict[str, Any]]:
-        return self.record_reader.active_for_members(member_ids)
-
     async def _build_roster_candidates(
         self,
         *,
@@ -359,8 +353,6 @@ class CwlRosterAnalysisMixin:
                 "signed_member_count": 0,
                 "signed_account_count": 0,
                 "signed_tags": set(),
-                "records": [],
-                "links_by_user": {},
             }
 
         latest_metric_by_tag: dict[str, AssSeasonMetric] = {}
@@ -379,13 +371,11 @@ class CwlRosterAnalysisMixin:
             for metric in mega_metrics
         }
 
-        links_by_user: dict[int, list[dict[str, Any]]] = {}
         links_by_tag: dict[str, dict[str, Any]] = {}
         for member_id in signed_member_ids:
             links = list(
                 (await asyncio.to_thread(self.account_links.get_links_for_user, member_id))
             )
-            links_by_user[member_id] = links
             for link in links:
                 player_tag = str(link.get("player_tag") or "")
                 if player_tag:
@@ -406,11 +396,6 @@ class CwlRosterAnalysisMixin:
                 )
             )
         }
-
-        records = self._load_active_roster_records(signed_member_ids)
-        records_by_user: dict[int, list[dict[str, Any]]] = defaultdict(list)
-        for record in records:
-            records_by_user[int(record.get("member_id") or 0)].append(record)
 
         clan_order = {code: index for index, code in enumerate(CLAN_ORDER)}
         candidates: list[dict[str, Any]] = []
@@ -457,11 +442,6 @@ class CwlRosterAnalysisMixin:
                     ),
                     "latest": latest,
                     "mega": mega,
-                    "cwl_records": sum(
-                        1
-                        for record in records_by_user.get(member_id, [])
-                        if str(record.get("category_key") or "") == "cwl"
-                    ),
                 }
             )
 
@@ -483,6 +463,4 @@ class CwlRosterAnalysisMixin:
             "signed_member_count": len(signed_member_ids),
             "signed_account_count": len(signup_rows),
             "signed_tags": signed_tags,
-            "records": records,
-            "links_by_user": links_by_user,
         }

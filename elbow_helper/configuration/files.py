@@ -14,6 +14,7 @@ AGENT_RESEARCH_DATABASE = Path("agent/research_jobs.sqlite3")
 AGENT_ACTIONS_DATABASE = Path("agent/actions.sqlite3")
 CLAN_HEALTH_DATABASE = Path("clan_health/clan_health.db")
 RANKED_DATABASE = Path("ranked_stats/ranked.sqlite3")
+# Kept on disk and in the backup list while the leadership records feature is rethought.
 RECORDS_DATABASE = Path("records/records.sqlite3")
 ROSTERS_DATABASE = Path("rosters/rosters.sqlite3")
 FAMILY_DATABASE = Path("family/family.sqlite3")

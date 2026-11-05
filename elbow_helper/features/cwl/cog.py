@@ -49,7 +49,6 @@ if TYPE_CHECKING:
     from elbow_helper.data.reads import CwlReads
     from elbow_helper.features.achievements.rewards import AchievementRewardService
     from elbow_helper.features.clan_health.database import ClanHealthRepository
-    from elbow_helper.features.records.database import RecordReader
     from elbow_helper.features.rosters.services.accounts import AccountLinkSource
     from elbow_helper.features.rosters.services.automation import RosterAutomationService
     from elbow_helper.features.rosters.services.queries import RosterQueries
@@ -80,7 +79,6 @@ class CwlManagement(
         workbook_writer: WorkbookWriter,
         achievement_rewards: AchievementRewardService,
         clan_health_repository: ClanHealthRepository,
-        record_reader: RecordReader,
         account_links: AccountLinkSource,
         roster_queries: RosterQueries,
         roster_automation: RosterAutomationService,
@@ -92,7 +90,6 @@ class CwlManagement(
         self.workbook_writer = workbook_writer
         self.achievement_rewards = achievement_rewards
         self.clan_health_repository = clan_health_repository
-        self.record_reader = record_reader
         self.account_links = account_links
         self.roster_queries = roster_queries
         self.roster_automation = roster_automation

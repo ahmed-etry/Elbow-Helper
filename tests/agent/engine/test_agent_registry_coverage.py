@@ -14,7 +14,7 @@ from elbow_helper.features.help.catalog import HELP_ENTRIES
 
 EXCLUDED_COMMANDS = frozenset({"/help", "/ping"})
 IRREVERSIBLE_COMMANDS = frozenset({
-    "/accept", "/decline", "/finalize", "/record remove", "/roster delete",
+    "/accept", "/decline", "/finalize", "/roster delete",
     "/raffle clear", "/raffle draw", "/raffle reroll",
 })
 

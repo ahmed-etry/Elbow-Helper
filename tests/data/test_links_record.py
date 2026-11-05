@@ -14,7 +14,6 @@ from elbow_helper.data.reads import MembershipReads, PeopleReads
 from elbow_helper.data.store import FamilyStore
 from elbow_helper.data.store.legacy_links import LinkConflict, snapshot
 from elbow_helper.features.account_links.cog import AccountLinks
-from elbow_helper.features.records.service import RecordService
 from elbow_helper.features.rosters.services.accounts import RosterAccountDirectory
 from elbow_helper.agent.capabilities.account_links.reads import read_linked_accounts
 from elbow_helper.agent.capabilities.account_links.data import SOURCES
@@ -41,7 +40,6 @@ class RecordLinkTests(_PeopleFixture):
             ("CWL rosters and transfers", "get_links_for_user", (200,)),
             ("missing Elder boards", "get_all_links", ()),
             ("war roles", "get_all_links", ()),
-            ("records exports", "get_links_for_user", (100,)),
             ("ranked population", "get_all_links", ()),
             ("agent identities, cohorts and workflow reads", "get_links_for_members", ([200, 100, 999],)),
             ("agent names, wars and projections", "get_links_by_tags", (["#Q0", "#P0", "#V0"],)),
@@ -56,11 +54,6 @@ class RecordLinkTests(_PeopleFixture):
         old.get_player_location = self.cog.get_player_location
         self.assertEqual(await asyncio.to_thread(RosterAccountDirectory(old).for_member, 100),
                          await asyncio.to_thread(RosterAccountDirectory(self.cog).for_member, 100))
-        before_service, after_service = object.__new__(RecordService), object.__new__(RecordService)
-        before_service._account_links, after_service._account_links = old, self.cog
-        records = [{"member_id": value} for value in (100, 200, 999)]
-        self.assertEqual(await asyncio.to_thread(before_service.links_for, records),
-                         await asyncio.to_thread(after_service.links_for, records))
         with patch("elbow_helper.agent.capabilities.account_links.reads.require_evidence_access", AsyncMock()):
             before = await read_linked_accounts(SimpleNamespace(account_links=old), {"member_ids": [100, 200, 999]})
             after = await read_linked_accounts(SimpleNamespace(account_links=self.cog), {"member_ids": [100, 200, 999]})

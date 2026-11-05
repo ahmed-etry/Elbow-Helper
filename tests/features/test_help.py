@@ -186,13 +186,6 @@ class HelpCatalogTests(unittest.TestCase):
 
     def test_non_obvious_workflows_keep_additional_guidance(self) -> None:
         self.assertEqual(
-            HELP_INDEX["/record edit"].details,
-            (
-                "Opens controls for choosing one of the member's recent records and changing "
-                "its category, incident type, or details."
-            ),
-        )
-        self.assertEqual(
             HELP_INDEX["/connections"].details,
             (
                 "Posts the role connections board in this channel. Rules can add or remove roles "
@@ -247,7 +240,6 @@ class HelpCatalogTests(unittest.TestCase):
     def test_help_does_not_describe_reply_visibility_without_a_user_need(self) -> None:
         for path in (
             "/opinion",
-            "/record edit",
             "/event panel",
             "/event list",
             "/roster list",

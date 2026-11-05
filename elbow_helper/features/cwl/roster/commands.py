@@ -54,8 +54,6 @@ class CwlRosterMixin:
             candidates=candidate_data["candidates"],
             signed_tags=candidate_data["signed_tags"],
             season_metrics=analysis["season_metrics"],
-            records=candidate_data["records"],
-            links_by_user=candidate_data["links_by_user"],
             seasons=analysis["seasons"],
             profiles=analysis["profiles"],
             latest_leagues=analysis["latest_leagues"],

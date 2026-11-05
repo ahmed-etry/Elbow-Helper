@@ -30,6 +30,6 @@ link is wrong or an account is missing, ask them to check it.
 
 - [Recruitment and account links](workflows/recruitment-and-accounts.md)
 - [Rosters, CWL, and transfers](workflows/rosters-cwl-and-transfers.md)
-- [Wars, health reports, and records](workflows/war-health-and-records.md)
+- [Wars and health reports](workflows/wars-and-health-reports.md)
 - [Achievements, events, access, and support](workflows/achievements-events-and-support.md)
 - [Examinations and community automation](workflows/examinations-and-automation.md)

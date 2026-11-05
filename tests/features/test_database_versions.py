@@ -21,16 +21,13 @@ from elbow_helper.features.achievements.cog import Achievements
 from elbow_helper.features.clan_health.cog import ClanHealth
 from elbow_helper.features.clan_health.database import ClanHealthRepository
 from elbow_helper.features.clan_health.database import schema as health_schema
-from elbow_helper.features.records.database import RecordRepository
-from elbow_helper.features.records.database import schema as records_schema
-from elbow_helper.features import records
 from elbow_helper.infrastructure.persistence.migrations import (
     SQLiteMigration, SQLiteMigrationError, UnversionedSQLiteSchemaError, UnsupportedSQLiteVersionError,
 )
 from elbow_helper.infrastructure.persistence.versioned import validate_sqlite_shape
 
 
-SCHEMAS = (links_schema, records_schema, achievements_schema, health_schema)
+SCHEMAS = (links_schema, achievements_schema, health_schema)
 
 
 def quote(name):
@@ -192,7 +189,6 @@ class DatabaseVersionTests(unittest.TestCase):
     def test_harmless_type_differences_adopt_without_rewriting_values(self):
         for schema, table, column in (
             (links_schema, "links", "player_name_last_seen"),
-            (records_schema, "leadership_records", "member_display"),
             (achievements_schema, "achievements", "name"),
             (health_schema, "player_snapshots", "player_name"),
         ):
@@ -205,7 +201,6 @@ class DatabaseVersionTests(unittest.TestCase):
     def test_unused_defaults_adopt_without_rewriting_values(self):
         for schema, table, column, old in (
             (links_schema, "links", "last_seen_role", "TEXT DEFAULT ''"),
-            (records_schema, "leadership_records", "note", "TEXT NOT NULL DEFAULT ''"),
             (achievements_schema, "user_coins", "balance", "INTEGER NOT NULL DEFAULT 0"),
             (health_schema, "player_snapshots", "pet_sum", "INTEGER DEFAULT 0"),
         ):
@@ -220,7 +215,6 @@ class DatabaseVersionTests(unittest.TestCase):
     def test_looser_nullability_adopts_without_rewriting_values(self):
         for schema, table, column, kind in (
             (links_schema, "links", "discord_user_id", "INTEGER"),
-            (records_schema, "leadership_records", "note", "TEXT"),
             (achievements_schema, "achievements", "name", "TEXT"),
             (health_schema, "player_snapshots", "player_name", "TEXT"),
         ):
@@ -233,7 +227,7 @@ class DatabaseVersionTests(unittest.TestCase):
     def test_extra_columns_on_named_inserts_adopt_unchanged(self):
         for schema, table in (
             (links_schema, "links"),
-            (records_schema, "leadership_records"), (achievements_schema, "user_stats"),
+            (achievements_schema, "user_stats"),
             (health_schema, "player_snapshots"),
         ):
             with self.subTest(database=schema.DATABASE.name):
@@ -264,7 +258,7 @@ class DatabaseVersionTests(unittest.TestCase):
     def test_named_inserts_accept_reordered_columns(self):
         for schema, table in (
             (links_schema, "links"),
-            (records_schema, "leadership_records"), (achievements_schema, "achievements"),
+            (achievements_schema, "achievements"),
             (health_schema, "player_snapshots"),
         ):
             with self.subTest(database=schema.DATABASE.name):
@@ -282,7 +276,6 @@ class DatabaseVersionTests(unittest.TestCase):
     def test_missing_identity_keys_are_refused_unchanged(self):
         for schema, table, old, new in (
             (links_schema, "links", "player_tag TEXT PRIMARY KEY", "player_tag TEXT"),
-            (records_schema, "leadership_records", "id INTEGER PRIMARY KEY AUTOINCREMENT", "id INTEGER"),
             (achievements_schema, "user_stats", "user_id INTEGER PRIMARY KEY", "user_id INTEGER"),
             (health_schema, "player_directory", "player_tag TEXT PRIMARY KEY", "player_tag TEXT"),
         ):
@@ -380,7 +373,6 @@ class DatabaseVersionTests(unittest.TestCase):
 
     def test_generated_ids_refuse_type_or_default_changes(self):
         for schema, table in (
-            (records_schema, "leadership_records"),
             (achievements_schema, "coin_transactions"), (achievements_schema, "raffle_winners"),
         ):
             for old, new in (
@@ -395,7 +387,7 @@ class DatabaseVersionTests(unittest.TestCase):
 
     def test_omitted_required_columns_without_defaults_are_refused(self):
         for schema, table in ((links_schema, "links"),
-                              (records_schema, "leadership_records"), (achievements_schema, "achievements"),
+                              (achievements_schema, "achievements"),
                               (health_schema, "player_snapshots")):
             with self.subTest(database=schema.DATABASE.name):
                 path = self.path(schema)
@@ -416,7 +408,6 @@ class DatabaseVersionTests(unittest.TestCase):
     def test_missing_required_columns_are_refused_unchanged(self):
         for schema, table, column in (
             (links_schema, "links", "last_seen_role"),
-            (records_schema, "leadership_records", "note"),
             (achievements_schema, "user_stats", "meme_posts"),
             (health_schema, "report_players", "note"),
         ):
@@ -430,7 +421,7 @@ class DatabaseVersionTests(unittest.TestCase):
     def test_missing_required_tables_are_refused_unchanged(self):
         for schema, table in (
             (links_schema, "suggestions"),
-            (records_schema, "leadership_records"), (achievements_schema, "user_stats"),
+            (achievements_schema, "user_stats"),
             (health_schema, "player_directory"),
         ):
             with self.subTest(database=schema.DATABASE.name):
@@ -666,8 +657,6 @@ class DatabaseVersionTests(unittest.TestCase):
         if schema is links_schema:
             with patch("elbow_helper.features.account_links.database.DB_PATH", path):
                 AccountLinksDbMixin()._init_db()
-        elif schema is records_schema:
-            RecordRepository(path).list()
         elif schema is health_schema:
             ClanHealthRepository(path).search_players("")
         else:
@@ -728,37 +717,6 @@ class SchemaShapeTests(unittest.TestCase):
 
 
 class DatabaseStartupTests(unittest.IsolatedAsyncioTestCase):
-    async def test_records_upgrade_runs_on_a_worker_before_registration(self):
-        event_thread = threading.get_ident()
-        events = []
-
-        def initialize():
-            self.assertNotEqual(threading.get_ident(), event_thread)
-            events.append("upgraded")
-
-        bot = SimpleNamespace(
-            get_cog=lambda name: object(), add_cog=AsyncMock(),
-            workbook_writer=object(), google_publisher=object(), local_exports=object(),
-        )
-        with patch.object(records, "RecordRepository", return_value=SimpleNamespace(initialize=initialize)), patch.object(
-            records, "RecordService"
-        ), patch.object(records, "RecordExportService"), patch.object(records, "RecordWorkbookWriter"), patch.object(
-            records, "Records"
-        ):
-            await records.setup(bot)
-        self.assertEqual(events, ["upgraded"])
-        bot.add_cog.assert_awaited_once()
-
-    async def test_records_refuses_registration_after_an_upgrade_failure(self):
-        def fail():
-            raise UnversionedSQLiteSchemaError("synthetic unknown schema")
-
-        bot = SimpleNamespace(get_cog=lambda name: object(), add_cog=AsyncMock())
-        with patch.object(records, "RecordRepository", return_value=SimpleNamespace(initialize=fail)):
-            with self.assertRaises(UnversionedSQLiteSchemaError):
-                await records.setup(bot)
-        bot.add_cog.assert_not_called()
-
     async def test_startup_upgrades_finish_on_a_worker_before_jobs_start(self):
         event_thread = threading.get_ident()
         for cls, module, method, loops in (

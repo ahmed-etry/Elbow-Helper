@@ -11,15 +11,14 @@ from elbow_helper.agent.conversation.context import estimate_tokens
 
 
 class DataGuideTests(unittest.TestCase):
-    def test_records_are_optional_and_missing_records_are_not_evidence(self):
+    def test_leadership_records_are_not_offered_to_queries(self):
         with TemporaryDirectory() as directory:
-            guide = DataGuide(synthetic_datasets(directory)).for_levels({"lead_plus"})
-        self.assertIn("Optional, often-empty case log", guide)
-        self.assertIn("read only for records questions or specific logged cases", guide)
-        self.assertIn("Absence is not evidence", guide)
-        self.assertIn(":records_after_ts (inclusive)", guide)
-        self.assertIn(":records_before_ts (exclusive)", guide)
-        self.assertIn("before other SQL filters and LIMIT", guide)
+            guide = DataGuide(synthetic_datasets(directory)).for_levels(KNOWN_ACCESS_REQUIREMENTS)
+        self.assertNotIn("leadership_records", guide)
+        self.assertNotIn("records.leadership_records", guide)
+        self.assertNotIn("records_after_ts", guide)
+        self.assertNotIn("source_coverage", guide)
+        self.assertNotIn("records", {source.alias for source in SOURCES})
 
     def test_computed_owner_and_health_verdicts_are_identified_in_notes(self):
         with TemporaryDirectory() as directory:

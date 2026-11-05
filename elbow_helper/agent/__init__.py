@@ -39,7 +39,6 @@ async def setup(bot) -> None:
     support = bot.get_cog("SupportActions")
     recruitment = bot.get_cog("Recruitment")
     examination = bot.get_cog("Examination")
-    records = bot.get_cog("Records")
     achievements = bot.get_cog("Achievements")
     event_stats = bot.get_cog("EventStatsCog")
     member_lifecycle = bot.get_cog("MemberLifecycle")
@@ -52,7 +51,6 @@ async def setup(bot) -> None:
     support_queries = getattr(support, "queries", None)
     recruitment_queries = getattr(recruitment, "queries", None)
     examination_queries = getattr(examination, "queries", None)
-    record_queries = getattr(records, "queries", None)
     achievement_queries = getattr(achievements, "queries", None)
     event_queries = getattr(event_stats, "queries", None)
     member_lifecycle_queries = getattr(member_lifecycle, "queries", None)
@@ -62,7 +60,7 @@ async def setup(bot) -> None:
         account_links is None or clan_health is None or rosters is None
         or cwl_queries is None or war_queries is None or transfer_queries is None
         or hibernation_queries is None or support_queries is None or recruitment_queries is None
-        or examination_queries is None or record_queries is None or achievement_queries is None
+        or examination_queries is None or achievement_queries is None
         or event_queries is None
         or member_lifecycle_queries is None
         or clan_reporting_queries is None
@@ -70,7 +68,7 @@ async def setup(bot) -> None:
     ):
         raise RuntimeError(
             "Agent requires AccountLinks, ClanHealth, Wars, Rosters, CWL, ClanTransfers, "
-            "Hibernation, SupportActions, Recruitment, Examination, Records, Achievements, "
+            "Hibernation, SupportActions, Recruitment, Examination, Achievements, "
             "EventStats, MemberLifecycle, ClanReporting and RoleConnections"
         )
     archive = await asyncio.to_thread(
@@ -110,7 +108,6 @@ async def setup(bot) -> None:
         "support_queries": support_queries,
         "recruitment_queries": recruitment_queries,
         "examination_queries": examination_queries,
-        "record_queries": record_queries,
         "achievement_queries": achievement_queries,
         "event_queries": event_queries,
         "member_lifecycle_queries": member_lifecycle_queries,

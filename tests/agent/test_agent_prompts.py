@@ -12,12 +12,11 @@ class RequestPromptTests(unittest.TestCase):
                       ROUTE_INSTRUCTION)
         self.assertIn('do not invent a question or correction to answer', ROUTE_INSTRUCTION)
 
-    def test_records_do_not_support_judgments_from_absence_or_records_alone(self):
+    def test_prompts_no_longer_offer_leadership_records(self):
         for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):
-            self.assertIn("never as a default member lookup", prompt)
-            self.assertIn("Missing records are not evidence of conduct", prompt)
-            self.assertIn("activity, standing or incident history", prompt)
-            self.assertIn("Never judge a member on records alone", prompt)
+            self.assertNotIn("never as a default member lookup", prompt)
+            self.assertNotIn("Missing records are not evidence of conduct", prompt)
+            self.assertNotIn("Never judge a member on records alone", prompt)
 
     def test_claims_and_opinions_require_read_evidence_and_unsupported_claims_are_withdrawn(self):
         for prompt in (SYSTEM_PROMPT, ACTION_SYSTEM_PROMPT):

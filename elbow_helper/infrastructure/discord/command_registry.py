@@ -8,7 +8,7 @@ from discord.ext import commands
 
 from elbow_helper.configuration.guild import GUILD_ID
 
-ROOT_NAMES = ("cwl", "roster", "transfer", "record")
+ROOT_NAMES = ("cwl", "roster", "transfer")
 
 
 def _require_cog(bot: commands.Bot, name: str):
@@ -57,7 +57,6 @@ async def setup(bot: commands.Bot) -> None:
     cwl = _require_cog(bot, "CwlManagement")
     rosters = _require_cog(bot, "Rosters")
     transfers = _require_cog(bot, "ClanTransfers")
-    records = _require_cog(bot, "Records")
     guild = discord.Object(id=GUILD_ID)
 
     for name in (*ROOT_NAMES, "report"):
@@ -182,36 +181,6 @@ async def setup(bot: commands.Bot) -> None:
                     "reminder",
                     "Notify members who still need to move to their CWL clan.",
                     "transfer_reminder",
-                ),
-            ),
-        ),
-        _group(
-            "record",
-            "Add, edit, remove, or export leadership records.",
-            (
-                (
-                    records,
-                    "add",
-                    "Document an incident involving a member.",
-                    "record_add",
-                ),
-                (
-                    records,
-                    "export",
-                    "Download all leadership records or one member's records.",
-                    "record_export",
-                ),
-                (
-                    records,
-                    "edit",
-                    "Update the category, type, or details of a member's record.",
-                    "record_edit",
-                ),
-                (
-                    records,
-                    "remove",
-                    "Delete one of a member's incident records.",
-                    "record_remove",
                 ),
             ),
         ),

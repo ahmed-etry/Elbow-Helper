@@ -28,7 +28,6 @@ import elbow_helper.features as features
 from elbow_helper.features.cwl.cog import CwlManagement
 from elbow_helper.features.rosters.cog import Rosters
 from elbow_helper.features.clan_transfers.cog import ClanTransfers
-from elbow_helper.features.records.cog import Records
 from elbow_helper.features.help.discovery import discover_commands
 
 
@@ -59,7 +58,7 @@ def _registered_command_catalogue():
             return list(roots.values()) if guild is None else self.groups
 
     classes = {"CwlManagement": CwlManagement, "Rosters": Rosters,
-               "ClanTransfers": ClanTransfers, "Records": Records}
+               "ClanTransfers": ClanTransfers}
     bot = SimpleNamespace(tree=Tree(),
                           get_cog=lambda name: object.__new__(classes[name]))
     asyncio.run(command_registry.setup(bot))

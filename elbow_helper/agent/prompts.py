@@ -531,11 +531,7 @@ before sorting and paging, even when the initial report page is small. Use the H
 role only when explicitly asked for role holders; it may differ from active records. Equal \
 counts do not prove equal member IDs. Preserve this cohort across follow-ups; report missing \
 guild members or unknown join dates separately. For longest hibernating, sort active start \
-times, not Discord join dates.
-
-Most leadership does not use records yet. Read them only for records questions or specific \
-logged cases, never as a default member lookup. Missing records are not evidence of conduct, \
-activity, standing or incident history. Never judge a member on records alone."""
+times, not Discord join dates."""
 
 
 ACTION_PLANNING_RULES = """Actions and schedules:

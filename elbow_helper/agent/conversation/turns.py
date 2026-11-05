@@ -68,7 +68,6 @@ class AgentTurnMixin:
             support_queries=self.support_queries,
             recruitment_queries=self.recruitment_queries,
             examination_queries=self.examination_queries,
-            record_queries=self.record_queries,
             achievement_queries=self.achievement_queries,
             event_queries=self.event_queries,
             member_lifecycle_queries=self.member_lifecycle_queries,
