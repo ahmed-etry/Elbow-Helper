@@ -18,8 +18,14 @@ KINDS = {
     "hibernation": frozenset({"hibernated", "reactivated", "voided"}),
     "recruitment": frozenset({"trial_started", "trial_ended", "trial_followup_resolved", "accepted",
                               "declined", "finalized", "checkup_sent", "voided"}),
+    # Stages only: no pass or fail outcome is recorded.
+    "examination": frozenset({"started", "answered", "availability_given", "sent_for_review",
+                              "followed_up", "reviewed", "route_changed", "closed", "voided"}),
 }
 TRIAL_ENDINGS = frozenset({"early", "expired", "applicant_left"})
+EXAMINATION_CASE_TYPES = frozenset({"clan_promo", "elder_promo"})
+EXAMINATION_FOLLOWUPS = frozenset({"reminder", "fallback"})
+FLAGS = frozenset({"forced", "exam_required", "missing_answers", "reopened"})
 LEAVE_REASONS = frozenset({"left", "kicked", "banned"})
 DETAILS = {
     "joined": frozenset({"platform"}), "left": frozenset({"reason"}),
@@ -34,6 +40,10 @@ DETAILS = {
     "trial_started": frozenset({"days"}), "trial_ended": frozenset({"how"}),
     "accepted": frozenset({"clans", "trial_days"}),
     **{kind: frozenset() for kind in ("trial_followup_resolved", "declined", "finalized", "checkup_sent")},
+    "started": frozenset({"case_type"}), "answered": frozenset({"exam_required"}),
+    "sent_for_review": frozenset({"exam_required", "missing_answers"}),
+    "followed_up": frozenset({"stage"}), "route_changed": frozenset({"reopened"}),
+    **{kind: frozenset() for kind in ("availability_given", "reviewed", "closed")},
 }
 
 
@@ -75,7 +85,7 @@ def validate(event):
         raise ValueError("Invalid event time")
     if event.actor_kind not in {"member", "agent", "automatic", "import"}:
         raise ValueError("Invalid event actor")
-    if event.via not in {"command", "button", "agent", "schedule", "import"}:
+    if event.via not in {"command", "button", "message", "agent", "schedule", "import"}:
         raise ValueError("Invalid event route")
     if (event.actor_kind == "import") != (event.via == "import"):
         raise ValueError("Invalid import origin")
@@ -110,16 +120,24 @@ def validate(event):
     if set(event.detail) != DETAILS[event.kind]:
         raise ValueError("Invalid event details")
     if (type(event.sequence) is not int or not 0 <= event.sequence < 2**63
-            or (event.sequence and event.workflow != "support")):
+            or (event.sequence and event.workflow not in {"support", "examination"})):
         raise ValueError("Invalid event sequence")
     for key, value in event.detail.items():
         if key == "roles_taken":
             if not isinstance(value, list) or any(not _positive(role_id) for role_id in value):
                 raise ValueError("Invalid hibernation roles")
             continue
-        if key == "forced":
+        if key in FLAGS:
             if type(value) is not bool:
-                raise ValueError("Invalid reactivation mode")
+                raise ValueError("Invalid event flag")
+            continue
+        if key == "case_type":
+            if not isinstance(value, str) or value not in EXAMINATION_CASE_TYPES:
+                raise ValueError("Invalid examination case type")
+            continue
+        if key == "stage":
+            if not isinstance(value, str) or value not in EXAMINATION_FOLLOWUPS:
+                raise ValueError("Invalid examination follow-up")
             continue
         if key == "source":
             if value not in {"open", "reactivation"}:

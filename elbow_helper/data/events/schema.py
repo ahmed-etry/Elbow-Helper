@@ -3,10 +3,10 @@
 from elbow_helper.infrastructure.persistence.migrations import SQLiteMigration
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
-def create_schema(connection):
+def _create_history(connection):
     connection.execute("""CREATE TABLE workflow_events (
         id INTEGER PRIMARY KEY, workflow TEXT NOT NULL, case_key TEXT NOT NULL,
         kind TEXT NOT NULL, occurred_at INTEGER NOT NULL, recorded_at INTEGER NOT NULL,
@@ -23,4 +23,18 @@ def create_schema(connection):
         workflow TEXT PRIMARY KEY, state_json TEXT NOT NULL, imported_at INTEGER NOT NULL)""")
 
 
-MIGRATIONS = (SQLiteMigration(1, "workflow history and state", create_schema),)
+def _create_examination_cases(connection):
+    # One row per open examination case, so a change saves only its own case.
+    connection.execute("""CREATE TABLE examination_cases (
+        ticket_channel_id INTEGER PRIMARY KEY, case_json TEXT NOT NULL, updated_at INTEGER NOT NULL)""")
+
+
+def create_schema(connection):
+    _create_history(connection)
+    _create_examination_cases(connection)
+
+
+MIGRATIONS = (
+    SQLiteMigration(1, "workflow history and state", _create_history),
+    SQLiteMigration(2, "examination cases", _create_examination_cases),
+)

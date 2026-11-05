@@ -339,7 +339,7 @@ class ExaminationPromoIntakeMixin:
 
     async def change_promotion_route(
         self, *, ticket_channel_id: int, routing_message_id: int,
-        from_clan: str, to_clan: str, actor: discord.Member, on_ready=None,
+        from_clan: str, to_clan: str, actor: discord.Member, on_ready=None, via: str = "button",
     ) -> None:
         """Change a leadership promotion route for its panel and the agent."""
         case = self._get_case(ticket_channel_id)
@@ -371,6 +371,7 @@ class ExaminationPromoIntakeMixin:
         case["intake_completed_at"] = _now_iso()
         case["intake_last_interaction_at"] = _now_iso()
         self._reset_case_review_state(case, actor.id)
+        case["route_change_via"] = via
         self._pending_ticket_retries.pop(ticket_channel.id, None)
         self._pending_ticket_notified.discard(ticket_channel.id)
         self._pending_ticket_failed.discard(ticket_channel.id)
@@ -609,6 +610,7 @@ class ExaminationPromoIntakeMixin:
         case["field_refreshes"] = 0
         case["route_change_requested_at"] = _now_iso()
         case["route_change_requested_by"] = user_id
+        case["route_change_via"] = "button"
 
     def _reset_case_review_state(self, case: Dict[str, Any], user_id: int) -> None:
         case["routing_message_id"] = None

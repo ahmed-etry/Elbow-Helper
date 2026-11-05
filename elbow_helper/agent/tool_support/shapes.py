@@ -124,7 +124,7 @@ RESULT_FIELDS['read_discord_access'] = {**COMMON, 'rows': [names(
 RESULT_FIELDS.update({
  'read_recruitment_pipeline': {**COMMON, 'rows': [names('member_id,applicant_member_id,ticket_channel_id,workflow_status,start_at,expected_end_at,trial_ended_at,acceptance_decision,finalized,message_id,content,source')]},
  'read_hibernation': {**COMMON, 'rows': [{**names('member_id,member_name,joined_at,started_at,started_ts,start_time_status'), 'accounts': [names('player_tag,profile_status,observed_ranked_attacks_since_start,latest_observed_ranked_attack_at')]}]},
- 'read_promotion_cases': {**COMMON, 'rows': [names('ticket_channel_id,applicant_member_id,case_type,workflow_status,intake_status,routing_status,response_status')]},
+ 'read_promotion_cases': {**COMMON, 'rows': [{**names('ticket_channel_id,applicant_member_id,case_type,workflow_status,intake_status,routing_status,response_status'), 'stages': [names('stage,at')]}]},
 })
 
 WORKFLOW_EVENT = names('member_id,applicant_member_id,ticket_channel_id,evidence_kind,workflow_status,start_at,expected_end_at,trial_ended_at,message_id,content,source')

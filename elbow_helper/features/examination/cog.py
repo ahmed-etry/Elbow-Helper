@@ -50,7 +50,8 @@ class Examination(
         self._ticket_reorder_issue_log_times: Dict[str, float] = {}
         self.state_store = state_store
         self.state = state_store.state
-        self.queries = ExaminationQueries(state_store.cases)
+        # The agent reads committed cases and their recorded stages, never unsaved edits.
+        self.queries = ExaminationQueries(state_store.saved_cases, history=state_store.stage_history)
         self._followup_task: Optional[asyncio.Task] = None
         self._scan_task: Optional[asyncio.Task] = None
         self.panel_view = ExaminerPanelView(self)
@@ -67,7 +68,14 @@ class Examination(
         start_resilient_loop(self.organize_tickets)
         start_resilient_loop(self.cleanup_deprecated_routing_messages)
 
+    async def cog_load(self) -> None:
+        await self.state_store.startup()
+
     def cog_unload(self) -> None:
+        state_store = getattr(self, "state_store", None)
+        if state_store is not None:
+            # Saves already asked for still finish; only retries after a failure stop.
+            state_store.close()
         if self._followup_task and not self._followup_task.done():
             self._followup_task.cancel()
         if self._scan_task and not self._scan_task.done():

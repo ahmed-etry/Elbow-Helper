@@ -11,7 +11,7 @@ from .queries import ExaminationQueries
 
 
 async def setup(bot: commands.Bot) -> None:
-    cog = Examination(bot, ExaminationStateStore())
+    cog = Examination(bot, ExaminationStateStore(bot.workflow_events))
     await bot.add_cog(cog)
     bot.add_view(cog.panel_view)
     bot.add_view(ExamRoutingView(cog))
