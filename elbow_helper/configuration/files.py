@@ -25,6 +25,9 @@ FAMILY_DATABASE = Path("family/family.sqlite3")
 EVENTS_DATABASE = Path("events/events.sqlite3")
 # The war board's cache (the wars feature's CACHE_FILE); its war history is copied once into the family record.
 WAR_CACHE_FILE = Path("war/war_cache.json")
+# The member lifecycle feature's old file (its STATE_FILE); its members' last messages are copied once into
+# the family record.
+MEMBER_LIFECYCLE_FILE = Path("snapshot_intel/snapshot_intel.json")
 
 SQLITE_DATABASES = (
     ACCOUNT_LINKS_DATABASE,

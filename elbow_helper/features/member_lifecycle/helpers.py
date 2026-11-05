@@ -7,7 +7,8 @@ from typing import Any
 
 import discord
 
-from .config import HOME_CLAN_ROLE_IDS, INVITER_TO_PLATFORM
+from elbow_helper.configuration.recruitment import INVITER_TO_PLATFORM
+from .config import HOME_CLAN_ROLE_IDS
 
 LOGGER = logging.getLogger(__name__)
 

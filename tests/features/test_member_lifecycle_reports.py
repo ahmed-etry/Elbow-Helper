@@ -2,13 +2,23 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from elbow_helper.data.events.testing import MemoryEventsStore
 from elbow_helper.features.member_lifecycle import reports
 from elbow_helper.features.member_lifecycle.config import MAX_OVERDUE_APPLICANTS_DISPLAY
 from elbow_helper.features.member_lifecycle.reports import ReportsMixin
+from elbow_helper.features.member_lifecycle.state import LifecycleState
 from elbow_helper.features.member_lifecycle.views import ApplicantCleanupSelectView, ApplicantCleanupView
+
+
+class Owner(ReportsMixin):
+    @property
+    def state(self):
+        return self.lifecycle_state.state
 
 
 class MemberLifecycleReportTests(unittest.TestCase):
@@ -84,27 +94,29 @@ class MemberLifecycleViewTests(unittest.IsolatedAsyncioTestCase):
             get_channel=lambda _channel_id: channel,
             get_role=lambda _role_id: applicant_role,
         )
-        cog = object.__new__(ReportsMixin)
+        events = MemoryEventsStore()
+        self.addCleanup(events.close)
+        directory = TemporaryDirectory(dir=Path.cwd())
+        self.addCleanup(directory.cleanup)
+        cog = Owner()
+        cog.lifecycle_state = LifecycleState(events, Path(directory.name) / "state.json")
+        await cog.lifecycle_state.startup()
         cog.bot = SimpleNamespace(
             wait_until_ready=AsyncMock(),
             get_guild=lambda _guild_id: guild,
         )
-        cog.state = {
-            "overdue_applicant_ids": [],
-            "ticket_owner_links": {},
-            "applicant_reports": {},
-        }
         cog._refresh_ticket_log_index = AsyncMock()
 
-        with (
-            patch.object(reports.discord, "TextChannel", FakeTextChannel),
-            patch.object(reports, "save_state"),
-        ):
+        with patch.object(reports.discord, "TextChannel", FakeTextChannel):
             await ReportsMixin.applicant_linger_scan.coro(cog)
             await ReportsMixin.applicant_linger_scan.coro(cog)
 
         channel.send.assert_awaited_once()
         self.assertEqual(cog.state["overdue_applicant_ids"], [member.id])
+        self.assertEqual(cog.state["applicant_reports"]["42"]["applicant_ids"], [member.id])
+        restarted = LifecycleState(events, Path(directory.name) / "state.json")
+        await restarted.startup()
+        self.assertEqual(restarted.state, cog.state)
 
     async def test_cleanup_ui_presents_a_review_before_removal(self) -> None:
         report_view = ApplicantCleanupView(None, 42)

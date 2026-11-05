@@ -12,7 +12,6 @@ from elbow_helper.infrastructure.discord.views import BaseTimeoutView
 
 from elbow_helper.configuration.channels import OVERSEEING_TERRACE
 from elbow_helper.configuration.guild import GUILD_ID
-from .state import save_state
 
 if TYPE_CHECKING:
     from .cog import MemberLifecycle
@@ -162,10 +161,15 @@ class ApplicantCleanupSelectView(BaseTimeoutView):
             except (discord.Forbidden, discord.HTTPException):
                 continue
 
-        report = self.cog.state.get("applicant_reports", {}).get(str(self.report_message_id))
-        if report:
+        report_key = str(self.report_message_id)
+
+        def close_report(connection, state):
+            report = state["applicant_reports"].get(report_key)
+            if not report:
+                return None
             report["active"] = False
-            save_state(self.cog.state)
+            return ()
+        await self.cog.lifecycle_state.change(close_report)
 
         try:
             channel = guild.get_channel(OVERSEEING_TERRACE)

@@ -5,10 +5,13 @@ import json
 import time
 
 from elbow_helper.configuration.clans import CLANS
+from elbow_helper.configuration.recruitment import PLATFORMS
 from elbow_helper.domain.player_tags import normalize_player_tag
 
 
 KINDS = {
+    # Server stay times live in the family record; these carry only what it cannot know.
+    "lifecycle": frozenset({"joined", "left", "voided"}),
     "leadership_news": frozenset({"news_published", "voided"}),
     "transfers": frozenset({"transfer_requested", "transfer_cancelled", "transfer_expired", "queue_cleared", "voided"}),
     "support": frozenset({"ticket_opened", "ticket_closed", "ticket_reopened", "ticket_deleted", "voided"}),
@@ -17,7 +20,9 @@ KINDS = {
                               "declined", "finalized", "checkup_sent", "voided"}),
 }
 TRIAL_ENDINGS = frozenset({"early", "expired", "applicant_left"})
+LEAVE_REASONS = frozenset({"left", "kicked", "banned"})
 DETAILS = {
+    "joined": frozenset({"platform"}), "left": frozenset({"reason"}),
     "news_published": frozenset({"channel_id", "message_id", "guild_id"}),
     "transfer_requested": frozenset(), "transfer_cancelled": frozenset(),
     "transfer_expired": frozenset({"after_hours"}), "queue_cleared": frozenset({"count"}),
@@ -86,8 +91,9 @@ def validate(event):
         raise ValueError("Invalid event player tag")
     # Case keys contain only numeric identities and a configured clan code.
     parts = event.case_key.split(":")
-    # Recruitment cases are a ticket channel and the case's start time.
-    expected = {"transfers": 3, "hibernation": 2, "recruitment": 2}.get(event.workflow, 1)
+    # Recruitment cases are a ticket channel and the case's start time; lifecycle
+    # cases are a member and Discord's join time, which names their server stay.
+    expected = {"transfers": 3, "hibernation": 2, "recruitment": 2, "lifecycle": 2}.get(event.workflow, 1)
     if len(parts) != expected:
         raise ValueError("Invalid event case")
     for index, part in enumerate(parts):
@@ -99,8 +105,8 @@ def validate(event):
     if event.workflow == "transfers" and (
             str(event.subject_discord_id) != parts[0] or event.clan_code != parts[1]):
         raise ValueError("Transfer case must match its subject and clan")
-    if event.workflow == "hibernation" and str(event.subject_discord_id) != parts[0]:
-        raise ValueError("Hibernation case must match its subject")
+    if event.workflow in {"hibernation", "lifecycle"} and str(event.subject_discord_id) != parts[0]:
+        raise ValueError("Member case must match its subject")
     if set(event.detail) != DETAILS[event.kind]:
         raise ValueError("Invalid event details")
     if (type(event.sequence) is not int or not 0 <= event.sequence < 2**63
@@ -122,6 +128,14 @@ def validate(event):
         if key == "how":
             if value not in TRIAL_ENDINGS:
                 raise ValueError("Invalid trial ending")
+            continue
+        if key == "platform":
+            if not isinstance(value, str) or value not in PLATFORMS:
+                raise ValueError("Invalid recruitment source")
+            continue
+        if key == "reason":
+            if value not in LEAVE_REASONS:
+                raise ValueError("Invalid leave reason")
             continue
         if key == "clans":
             if (not isinstance(value, list) or not 1 <= len(value) <= 7 or len(set(value)) != len(value)

@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from elbow_helper.configuration.clans import CLAN_CWL_ROLE_IDS, CLAN_MEMBER_ROLE_IDS, CLAN_NAMES, CLAN_WAR_ROLE_IDS
-
 STATE_FILE = Path("data/snapshot_intel/snapshot_intel.json")
 
 
@@ -17,13 +16,6 @@ MAX_OVERDUE_APPLICANTS_DISPLAY = 15
 
 WEEKLY_REPORT_INTERVAL_DAYS = 7
 APPLICANT_LINGER_DAYS = 14
-
-INVITER_TO_PLATFORM = {
-    "Ubasauce": "Reddit / In-game",
-    "Wesker": "Jo Nation",
-    "Ahmad": "Clash Champs",
-    "Gustas": "CoC Discord",
-}
 
 HOME_CLAN_CODES = ("BEH", "BE4", "BES", "BE1", "BEM", "BEC", "BEE", "BEP")
 HOME_CLAN_ROLE_IDS = {CLAN_NAMES[code]: CLAN_MEMBER_ROLE_IDS[code] for code in HOME_CLAN_CODES}

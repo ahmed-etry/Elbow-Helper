@@ -15,7 +15,6 @@ from elbow_helper.configuration.roles import APPLICANT_ROLE_ID, CORE, RECRUITERS
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX, DEFAULT_THUMBNAIL_URL
 
 from .config import APPLICANT_LINGER_DAYS, MAX_OVERDUE_APPLICANTS_DISPLAY, WEEKLY_REPORT_INTERVAL_DAYS
-from .state import save_state
 from .views import ApplicantCleanupView
 
 LOGGER = logging.getLogger(__name__)
@@ -103,9 +102,7 @@ class ReportsMixin:
             embed.add_field(name="No recruitment joins", value="No recruitment joins this week.", inline=False)
 
         await channel.send(embed=embed)
-        self.state["platform_counts"] = {}
-        self.state["last_weekly_report_iso"] = now.isoformat()
-        save_state(self.state)
+        await self.lifecycle_state.update({"platform_counts": {}, "last_weekly_report_iso": now.isoformat()})
 
     @weekly_report.before_loop
     async def before_weekly_report(self):
@@ -155,9 +152,8 @@ class ReportsMixin:
         has_new_overdue_applicants = bool(current_overdue_ids - previous_overdue_ids)
 
         if not has_new_overdue_applicants:
-            self.state["last_applicant_scan_iso"] = now.isoformat()
-            self.state["overdue_applicant_ids"] = sorted(current_overdue_ids)
-            save_state(self.state)
+            await self.lifecycle_state.update({"last_applicant_scan_iso": now.isoformat(),
+                                               "overdue_applicant_ids": sorted(current_overdue_ids)})
             return
 
         await self._refresh_ticket_log_index(guild)
@@ -168,14 +164,18 @@ class ReportsMixin:
 
         msg = await overseer.send(embed=embed)
         await msg.edit(view=ApplicantCleanupView(self, msg.id))
-        self.state.setdefault("applicant_reports", {})[str(msg.id)] = {
+        report = {
             "applicant_ids": [member.id for member, _, _ in lingering],
             "created_iso": now.isoformat(),
             "active": True,
         }
-        self.state["last_applicant_scan_iso"] = now.isoformat()
-        self.state["overdue_applicant_ids"] = sorted(current_overdue_ids)
-        save_state(self.state)
+
+        def edit(connection, state):
+            state["applicant_reports"][str(msg.id)] = report
+            state["last_applicant_scan_iso"] = now.isoformat()
+            state["overdue_applicant_ids"] = sorted(current_overdue_ids)
+            return ()
+        await self.lifecycle_state.change(edit)
 
     @applicant_linger_scan.before_loop
     async def before_applicant_linger_scan(self):

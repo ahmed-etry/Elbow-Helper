@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from typing import Any, Mapping
 from uuid import uuid4
 
@@ -17,7 +18,7 @@ from ...models import AgentRequestContext, RegisteredAgentTool
 
 
 USAGE_NOTES = {
-    "read_member_history": "ID-verified mentions plus name searches and embed history. Continue cursors; check search_is_exhaustive. Deleted logs are unavailable.",
+    "read_member_history": "Only joins and leaves the bot recorded; earlier ones are unavailable.",
     "read_member_lifecycle": (
         "Omit platform for all sources; never guess a source label. For server-join cohorts use read_discord_members. Observations do not prove inactivity."
     ),
@@ -44,7 +45,7 @@ def member_lifecycle_tools() -> tuple[RegisteredAgentTool, ...]:
     definitions = (
         (
             "read_member_history",
-            "Read a member's join/leave logs from every bot, oldest first.",
+            "Read a member's server joins and leaves, with recruitment source and leave reason, oldest first.",
             {"member_id": {"type": "integer", "minimum": 1},
              "cursor": {"type": "string", "maxLength": 64}},
             ("member_id",), read_member_history,
@@ -99,10 +100,11 @@ async def read_member_lifecycle(
         member.id: member.display_name for member in context.guild.members
     }
     try:
-        registrations = context.member_lifecycle_queries.activity_registrations(
+        queries = await context.member_lifecycle_queries.current()
+        registrations = queries.activity_registrations(
             current_member_ids=set(current_members),
         )
-    except ValueError:
+    except (ValueError, OSError, sqlite3.Error):
         return {"error": "Stored member lifecycle observations could not be listed."}
     activity_channels = {}
     checked_channels: dict[int, bool] = {}
@@ -119,7 +121,7 @@ async def read_member_lifecycle(
         if checked_channels[registration.channel_id]:
             activity_channels[registration.member_id] = registration.channel_id
     try:
-        snapshot = context.member_lifecycle_queries.snapshot(
+        snapshot = queries.snapshot(
             current_members=current_members,
             activity_channels=activity_channels,
         )

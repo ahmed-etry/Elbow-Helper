@@ -16,9 +16,28 @@ from .config import (
     TICKET_LOG_SCAN_MAX_RETRY_SECONDS,
     TICKET_LOG_SCAN_RETRY_SECONDS,
 )
-from .state import save_state
-
 LOGGER = logging.getLogger(__name__)
+
+
+def index_ticket_log_entries(state: dict[str, Any], entries) -> bool:
+    """Add (owner IDs, jump URL, message ID) entries to the state's ticket-log index."""
+    changed = False
+    for owner_ids, jump_url, message_id in entries:
+        owner_links = state["ticket_owner_links"]
+        for owner_id in owner_ids:
+            links = owner_links.setdefault(owner_id, [])
+            if jump_url not in links:
+                links.append(jump_url)
+                changed = True
+        last_message_id_raw = state.get("ticket_log_last_message_id")
+        try:
+            last_message_id = int(last_message_id_raw) if last_message_id_raw else 0
+        except (TypeError, ValueError):
+            last_message_id = 0
+        if message_id > last_message_id:
+            state["ticket_log_last_message_id"] = str(message_id)
+            changed = True
+    return changed
 
 
 class TicketIndexMixin:
@@ -32,25 +51,18 @@ class TicketIndexMixin:
                 owner_ids.update(re.findall(r"\d{15,22}", field.value or ""))
         return owner_ids
 
-    def _index_ticket_log_message(self, message: discord.Message) -> bool:
-        changed = False
-        owner_ids = self._ticket_owner_ids_in_message(message)
-        if owner_ids:
-            owner_links = self.state["ticket_owner_links"]
-            for owner_id in owner_ids:
-                links = owner_links.setdefault(owner_id, [])
-                if message.jump_url not in links:
-                    links.append(message.jump_url)
-                    changed = True
-        last_message_id_raw = self.state.get("ticket_log_last_message_id")
-        try:
-            last_message_id = int(last_message_id_raw) if last_message_id_raw else 0
-        except (TypeError, ValueError):
-            last_message_id = 0
-        if message.id > last_message_id:
-            self.state["ticket_log_last_message_id"] = str(message.id)
-            changed = True
-        return changed
+    def _ticket_log_entry(self, message: discord.Message):
+        return self._ticket_owner_ids_in_message(message), message.jump_url, message.id
+
+    async def _index_ticket_log_message(self, message: discord.Message) -> bool:
+        entry = self._ticket_log_entry(message)
+
+        def edit(connection, state):
+            if not index_ticket_log_entries(state, (entry,)):
+                return None
+            state["ticket_log_index_ready"] = True
+            return ()
+        return await self.lifecycle_state.change(edit)
 
     @staticmethod
     def _ticket_scan_retry_seconds(error: discord.HTTPException) -> float:
@@ -100,19 +112,22 @@ class TicketIndexMixin:
                     return
 
                 if not batch:
-                    self.state["ticket_log_index_ready"] = True
-                    save_state(self.state)
+                    await self.lifecycle_state.update({"ticket_log_index_ready": True})
                     return
 
-                for message in batch:
-                    self._index_ticket_log_message(message)
+                entries = [self._ticket_log_entry(message) for message in batch]
                 cursor_id = batch[-1].id
-                self.state["ticket_log_last_message_id"] = str(cursor_id)
-                save_state(self.state)
+                finished = len(batch) < TICKET_LOG_SCAN_BATCH_SIZE
 
-                if len(batch) < TICKET_LOG_SCAN_BATCH_SIZE:
-                    self.state["ticket_log_index_ready"] = True
-                    save_state(self.state)
+                def edit(connection, state, entries=entries, cursor_id=cursor_id, finished=finished):
+                    index_ticket_log_entries(state, entries)
+                    state["ticket_log_last_message_id"] = str(cursor_id)
+                    if finished:
+                        state["ticket_log_index_ready"] = True
+                    return ()
+                await self.lifecycle_state.change(edit)
+
+                if finished:
                     return
                 await asyncio.sleep(TICKET_LOG_SCAN_BATCH_DELAY_SECONDS)
 

@@ -27,8 +27,8 @@ from .helpers import (
     snapshot_invites,
 )
 from .reports import ReportsMixin
-from .queries import MemberLifecycleQueries
-from .state import load_state, save_state
+from .queries import LifecycleRecordSource, MemberLifecycleQueries
+from .state import LifecycleState, WORKFLOW, joined_at_us
 from .tickets import TicketIndexMixin
 from .views import ApplicantCleanupView
 
@@ -45,27 +45,25 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
     ):
         self.bot = bot
         self.hibernation_reader = hibernation_reader
-        self.state = load_state()
-        self._normalize_state()
-        self.queries = MemberLifecycleQueries(lambda: self.state)
+        self.lifecycle_state = LifecycleState(bot.workflow_events)
+        self.queries = MemberLifecycleQueries(
+            self.lifecycle_state.snapshot,
+            source=LifecycleRecordSource(self.lifecycle_state, lambda: getattr(bot, "people_reads", None)),
+        )
         self._ticket_index_lock = asyncio.Lock()
         self._ticket_index_task: asyncio.Task | None = None
         self._report_cleanup_tasks: set[asyncio.Task[None]] = set()
         self.invite_cache: dict[str, dict[str, Any]] = {}
+
+    @property
+    def state(self) -> dict[str, Any]:
+        """The saved state; change it only through ``lifecycle_state``."""
+        return self.lifecycle_state.state
+
+    async def cog_load(self):
+        await self.lifecycle_state.startup()
         start_resilient_loop(self.weekly_report)
         start_resilient_loop(self.applicant_linger_scan)
-
-    def _normalize_state(self) -> None:
-        self.state.setdefault("members", {})
-        self.state.setdefault("last_seen", {})
-        self.state.setdefault("platform_counts", {})
-        self.state.setdefault("last_weekly_report_iso", None)
-        self.state.setdefault("last_applicant_scan_iso", None)
-        self.state.setdefault("overdue_applicant_ids", [])
-        self.state.setdefault("applicant_reports", {})
-        self.state.setdefault("ticket_owner_links", {})
-        self.state.setdefault("ticket_log_last_message_id", None)
-        self.state.setdefault("ticket_log_index_ready", False)
 
     async def _refresh_invite_cache(self, guild: discord.Guild):
         self.invite_cache = await snapshot_invites(guild)
@@ -123,26 +121,15 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
         for task in tuple(self._report_cleanup_tasks):
             if not task.done():
                 task.cancel()
-        save_state(self.state)
+        self.lifecycle_state.events.unregister_member_deletion(WORKFLOW)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
+        # Last messages are the Discord collector's; a message only updates the ticket-log index.
         if not message.guild or message.author.bot:
             return
-
-        ticket_index_changed = False
         if message.guild.id == GUILD_ID and message.channel.id == TICKETS_LOG:
-            ticket_index_changed = self._index_ticket_log_message(message)
-            if ticket_index_changed:
-                self.state["ticket_log_index_ready"] = True
-
-        self.state["last_seen"][str(message.author.id)] = {
-            "ts_iso": datetime.now(timezone.utc).isoformat(),
-            "channel_id": message.channel.id,
-        }
-
-        if ticket_index_changed or hash(message.id) % 50 == 0:
-            save_state(self.state)
+            await self._index_ticket_log_message(message)
 
 
     @commands.Cog.listener()
@@ -177,7 +164,6 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
             LOGGER.warning("Invite diff failed: %s", exc)
 
         platform = platform_from_inviter(inviter_name)
-        self.state["platform_counts"][platform] = self.state["platform_counts"].get(platform, 0) + 1
 
         acct_age, _ = account_age_str(member)
         embed = discord.Embed(
@@ -190,26 +176,21 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
         embed.add_field(name="🕒 Account Age", value=acct_age, inline=True)
         embed.add_field(name="🌍 Platform", value=platform, inline=True)
 
+        message_id = None
         try:
-            msg = await overseer.send(embed=embed)
+            message_id = (await overseer.send(embed=embed)).id
         except (discord.Forbidden, discord.HTTPException) as exc:
             LOGGER.warning("Failed to send join snapshot: %s", exc)
-            return
-
-        self.state["members"][str(member.id)] = {
-            "overseer_message_id": msg.id,
-            "platform": platform,
-            "joined_at_iso": (member.joined_at or datetime.now(timezone.utc)).replace(tzinfo=timezone.utc).isoformat(),
-            "left": False,
-        }
-        save_state(self.state)
+        # The join's time is the record's; this keeps its source, counted for the week as before.
+        await self.lifecycle_state.joined(member.id, joined_at_us(member), platform, message_id)
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
         if not member.guild or member.guild.id != GUILD_ID:
             return
 
-        record: dict[str, Any] = self.state["members"].get(str(member.id)) or {}
+        reason = "left"
+        message_id = None
         try:
             overseer = member.guild.get_channel(OVERSEEING_TERRACE)
             if not isinstance(overseer, discord.TextChannel):
@@ -223,15 +204,8 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
             )
             is_applicant = not is_hibernating and any(role.id == APPLICANT_ROLE_ID for role in member.roles)
 
-            join_iso = record.get("joined_at_iso")
-            joined_at = None
-            if join_iso:
-                try:
-                    joined_at = datetime.fromisoformat(join_iso)
-                except ValueError:
-                    joined_at = None
-            if not joined_at:
-                joined_at = member.joined_at or datetime.now(timezone.utc)
+            # Discord's join time for this stay, the one the family record keeps.
+            joined_at = member.joined_at or datetime.now(timezone.utc)
 
             duration = human_timedelta(joined_at, datetime.now(timezone.utc))
             home_clan = find_home_clan_name(member) or "None"
@@ -243,11 +217,13 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
                 async for entry in member.guild.audit_logs(limit=10, action=discord.AuditLogAction.kick):
                     if entry.target.id == member.id and (datetime.now(timezone.utc) - entry.created_at).total_seconds() < 120:
                         reason_text = f"Kicked by {entry.user}"
+                        reason = "kicked"
                         break
                 else:
                     async for entry in member.guild.audit_logs(limit=10, action=discord.AuditLogAction.ban):
                         if entry.target.id == member.id and (datetime.now(timezone.utc) - entry.created_at).total_seconds() < 120:
                             reason_text = f"Banned by {entry.user}"
+                            reason = "banned"
                             break
             except (discord.Forbidden, discord.HTTPException, aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
                 LOGGER.warning("Audit log read failed: %s", exc)
@@ -306,7 +282,7 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
                 embed.add_field(name="🏅 CWL Status", value=cwl_roles, inline=False)
                 embed.add_field(name="🎯 Reason", value=reason_text, inline=False)
 
-            await overseer.send(embed=embed)
+            message_id = (await overseer.send(embed=embed)).id
         except (
             discord.Forbidden,
             discord.HTTPException,
@@ -321,15 +297,5 @@ class MemberLifecycle(commands.Cog, TicketIndexMixin, ReportsMixin):
         ):
             LOGGER.exception("Unexpected error building/sending leave snapshot for %s", member)
         finally:
-            platform = record.get("platform")
-            if platform:
-                current = self.state["platform_counts"].get(platform, 0)
-                if current > 1:
-                    self.state["platform_counts"][platform] = current - 1
-                elif current == 1:
-                    self.state["platform_counts"].pop(platform, None)
-
-            member_id = str(member.id)
-            self.state["members"].pop(member_id, None)
-            self.state["last_seen"].pop(member_id, None)
-            save_state(self.state)
+            # The leave's time is the record's; this keeps why, and the week's source count as before.
+            await self.lifecycle_state.left(member.id, joined_at_us(member), reason, message_id)
