@@ -9,6 +9,8 @@ from .projections import canonical_json, nonnegative_int
 
 CWL_ROUNDS = 7
 CWL_ROSTER_SIZE = 50
+# Clash leaves the allowance out of league wars, which give every member one attack.
+CWL_ATTACKS_PER_MEMBER = 1
 HOUR = 3600 * 1_000_000
 # Clash pauses only lengthen a regular war. Friendly wars offer much shorter
 # choices, so an hour's margin keeps clock rounding from deciding a type.
@@ -119,6 +121,8 @@ def project_war(raw, *, war_tag=None, aggregate=False):
     if "warStartTime" in raw and (war_start is None or not aggregate and not preparation <= war_start <= end):
         raise ValueError("invalid_war_time")
     size, per_member = optional_int(raw, "teamSize"), optional_int(raw, "attacksPerMember")
+    if per_member is None and war_tag:
+        per_member = CWL_ATTACKS_PER_MEMBER
     if size is not None and size < 1:
         raise ValueError("invalid_team_size")
     sides = sorted([(side_projection(raw.get(key)), raw.get(key)) for key in ("clan", "opponent")],

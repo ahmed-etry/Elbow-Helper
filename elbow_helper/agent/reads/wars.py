@@ -82,7 +82,8 @@ async def record_selection(context, selection):
     return record_wars.combine(regular, league, selection.get('latest_completed'))
 
 
-async def selected_wars(context, arguments, war_type):
+async def selected_wars(context, arguments, war_type, *, running=False):
+    """Selected lineup rows; participation reads can include league wars still under way."""
     # Regular wars need the record's war reads; league wars need the CWL queries.
     if (war_type != 'CWL' and record_wars.war_reads(context) is None
             or war_type != 'REG' and context.cwl_queries is None):
@@ -94,7 +95,7 @@ async def selected_wars(context, arguments, war_type):
             for season in arguments.get('season_keys', [arguments.get('season')]):
                 for kind in ('REG', 'CWL') if war_type == 'both' else (war_type,):
                     source = await selected_wars(context, {**{key: value for key, value in arguments.items()
-                        if key != 'season_keys'}, 'season': season}, kind)
+                        if key != 'season_keys'}, 'season': season}, kind, running=running)
                     if 'error' in source:
                         return source
                     sources.append(source)
@@ -122,7 +123,8 @@ async def selected_wars(context, arguments, war_type):
             after_ts=after, before_ts=before, season=season,
             war_ids=arguments.get('war_ids', ()),
             **{key: arguments[key] for key in ('season_keys', 'history_limit') if arguments.get(key)},
-            **({'latest_completed': arguments['latest_completed']} if arguments.get('latest_completed') else {}))
+            **({'latest_completed': arguments['latest_completed']} if arguments.get('latest_completed') else {}),
+            **({'running': True} if running else {}))
         if war_type == 'CWL':
             return await stored_read(context, context.cwl_queries, 'attendance', **selection)
         # Recent seasons are a league selection, refused for regular wars as league history refuses them.
@@ -148,7 +150,7 @@ async def attendance(context, arguments, *, separate_seasons=False):
                               if row.get('member_id') or row.get('applicant_member_id')})
             if members:
                 arguments = {**arguments, 'member_ids': members}
-    source = await selected_wars(context, arguments, arguments['war_type'])
+    source = await selected_wars(context, arguments, arguments['war_type'], running=True)
     if 'error' in source:
         return source
     tags = sorted({row['player_tag'] for row in source['rows']})
@@ -256,11 +258,16 @@ async def attendance(context, arguments, *, separate_seasons=False):
 
 
 async def current_wars(context, codes):
-    """Latest checks in the compatibility shape; unavailable checks have no state."""
+    """Latest checks, falling back to a running league war when no regular war is under way.
+
+    The league war uses its own check; unavailable checks have no state.
+    """
     reads, items = record_wars.war_reads(context), []
     for code in codes:
         tag = CLANS[code].tag
         current = await reads.current(tag, lineups=True)
+        if record_fresh(current) and current['state'] in ('notInWar', 'warEnded'):
+            current = await reads.running_league(tag, lineups=True) or current
         signal = current['coverage']['signals'][0]
         if not record_fresh(current) or current['state'] != 'notInWar' and current['war'] is None:
             status = signal['status'] if signal['status'] not in ('observed', 'partial') else 'unavailable'

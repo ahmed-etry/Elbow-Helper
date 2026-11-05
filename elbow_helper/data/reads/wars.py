@@ -362,6 +362,30 @@ class WarReads(RecordReads):
             result['participation'] = member_rows(connection, row, clan, war['coverage']) if war is not None else []
         return result
 
+    async def running_league(self, clan, as_of=None, *, lineups=False):
+        """The clan's league war under way, in the shape of ``current``; None without one.
+
+        Clash's current war shows none during a league. Each round's preparation
+        overlaps the battle day before it, and the battle day comes first.
+        """
+        return await self._read(self._running_league, clan_tags([clan])[0], timestamp(as_of), bool(lineups))
+
+    @staticmethod
+    def _running_league(connection, clan, at, lineups=False):
+        row = connection.execute(
+            "SELECT w.* FROM wars w JOIN war_sides s ON s.war_id=w.id AND s.clan_tag=? WHERE w.type='CWL' "
+            "AND w.state IN ('preparation','inWar') AND w.first_seen_at<=? AND w.end_at>? "
+            "ORDER BY w.state='inWar' DESC,w.end_at,w.id LIMIT 1", (clan, at, at)).fetchone()
+        if row is None:
+            return None
+        signal = war_signal(connection, "cwl_war", row["war_tag"], at)
+        war = war_view(connection, row, clan, at, lineups)
+        result = {"clan_tag": clan, "state": row["state"], "checked_at": signal["last_attempt_at"],
+                  "observed_at": signal["last_good_at"], "war": war, "coverage": envelope([signal], at=at)}
+        if lineups:
+            result['participation'] = member_rows(connection, row, clan, war['coverage'])
+        return result
+
     async def previous(self, clan, as_of=None, *, types=("FRIENDLY", "REG"), lineups=False):
         """The clan's last ended non-league war before the current one, as the board's Previous War."""
         return await self._read(self._previous, clan_tags([clan])[0], timestamp(as_of),

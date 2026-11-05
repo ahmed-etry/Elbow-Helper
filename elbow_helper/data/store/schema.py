@@ -12,11 +12,11 @@ from .battle_coverage import create_watch_schema
 from .profile_schema import create_profile_history_schema
 from .raids import create_raid_schema
 from .old_history_schema import create_old_history_schema
-from .war_completeness import upgrade_cwl_completeness
+from .war_completeness import fill_cwl_allowance, upgrade_cwl_completeness
 
 
 # Later subjects add migrations; they must not rewrite this baseline.
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 STATEMENTS = (
     """CREATE TABLE collection_runs (
         id INTEGER PRIMARY KEY, collector TEXT NOT NULL, scope_kind TEXT NOT NULL,
@@ -279,6 +279,7 @@ def create_schema(connection: sqlite3.Connection) -> None:
     create_old_history_schema(connection)
     upgrade_cwl_completeness(connection)
     create_last_message_schema(connection)
+    fill_cwl_allowance(connection)
 
 
 MIGRATIONS = (
@@ -299,4 +300,5 @@ MIGRATIONS = (
     SQLiteMigration(15, "old clan stays and raid weekends", create_old_history_schema),
     SQLiteMigration(16, "whole CWL war completeness", upgrade_cwl_completeness),
     SQLiteMigration(17, "each member's last message time and channel", create_last_message_schema),
+    SQLiteMigration(18, "CWL attack allowance", fill_cwl_allowance),
 )

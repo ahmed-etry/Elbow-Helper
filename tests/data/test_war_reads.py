@@ -82,6 +82,34 @@ class WarReadTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                          (None, None, "not_tracked"))
         self.assertIsNone((await self.reads.previous("#LQ", at))["war"])
 
+    async def test_running_league_is_the_battle_day_then_the_next_preparation(self):
+        self.assertIsNone(await self.reads.running_league("#PY", self.at))
+        fighting = war(clans=("#PY", "#GR"))
+        fighting.pop("attacksPerMember")
+        waiting = war("preparation", clans=("#PY", "#CU"), end="20261029T180000.000Z")
+        await self.record(waiting, kind="cwl_war", scope="#R2")
+        await self.record(fighting, kind="cwl_war", scope="#R0")
+        running = await self.reads.running_league("#PY", self.at + 30 * SECOND, lineups=True)
+        self.assertEqual((running["state"], running["war"]["war_tag"], running["war"]["attacks_per_member"]),
+                         ("inWar", "#R0", 1))
+        self.assertEqual(running["checked_at"], self.at)
+        self.assertEqual(running["coverage"]["signals"][0]["signal"], "cwl_war")
+        self.assertEqual([(m["player_tag"], m["attacks_expected"], m["attacks_used"])
+                          for m in running["war"]["clan"]["members"]], [("#P0", 1, 1), ("#P2", 1, 0)])
+        # Past its end the battle day is over, even before its last check.
+        next_round = await self.reads.running_league("#PY", END + SECOND)
+        self.assertEqual((next_round["state"], next_round["war"]["war_tag"]), ("preparation", "#R2"))
+        self.assertIsNone(await self.reads.running_league("#PY", END + 2 * DAY))
+        # Before the war was seen, and for a clan not in it, there is none.
+        self.assertIsNone(await self.reads.running_league("#PY", self.at - SECOND))
+        self.assertIsNone(await self.reads.running_league("#LQ", self.at))
+
+    async def test_a_running_league_ignores_regular_and_ended_wars(self):
+        await self.record(war())
+        self.assertIsNone(await self.reads.running_league("#PY", self.at))
+        await self.record(war("warEnded", clans=("#PY", "#CU")), kind="cwl_war", scope="#R0")
+        self.assertIsNone(await self.reads.running_league("#PY", self.at))
+
     async def test_lineups_list_both_sides_with_their_attacks_only_when_asked(self):
         await self.record(war("warEnded"), at=END + 90 * SECOND)
         later = war("inWar", clans=("#PY", "#CU"), end="20261030T180000.000Z")
