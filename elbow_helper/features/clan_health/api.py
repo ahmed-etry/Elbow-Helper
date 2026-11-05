@@ -9,7 +9,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 from elbow_helper.configuration.clans import CLAN_NAMES, CLAN_TAGS
-from elbow_helper.domain.player_tags import encode_clash_tag
+from elbow_helper.domain.player_tags import encode_clash_tag, normalize_player_tag
 from elbow_helper.infrastructure.clash import ClashClient
 
 from .analysis import ClanHealthAnalyzer
@@ -48,14 +48,11 @@ def _validated_clan_members(
         return [], None, False
 
     members = [
-        member
+        {**member, "tag": tag}
         for member in raw_members
-        if isinstance(member, dict) and str(member.get("tag") or "")
+        if isinstance(member, dict) and (tag := normalize_player_tag(member.get("tag")))
     ]
-    member_tags = {
-        str(member.get("tag") or "")
-        for member in members
-    }
+    member_tags = {member["tag"] for member in members}
     complete = (
         len(raw_members) == declared_count
         and len(members) == declared_count
@@ -119,6 +116,10 @@ class ClanHealthCollector:
     ) -> Tuple[Optional[Dict[str, Any]], List[str]]:
         warnings: List[str] = []
         if self._clash_client.configured:
+            player_tag = normalize_player_tag(player_tag)
+            if player_tag is None:
+                warnings.append("Current player details couldn't be loaded.")
+                return None, warnings
             player_path = f"/players/{encode_clash_tag(player_tag)}"
             payload = await self._fetch_coc_json(player_path)
             if not payload:
@@ -171,7 +172,7 @@ class ClanHealthCollector:
                 cycle_end=cycle_end,
             )
             for row in players:
-                if str(row.get("player_tag") or "").upper() == player_tag.upper():
+                if row.get("player_tag") == player_tag:
                     row["season_key"] = season_key
                     return row, warnings
             warnings.append("The player was not on the clan roster for the selected period.")
@@ -227,9 +228,7 @@ class ClanHealthCollector:
         # Seed rows from member list first; player endpoint fills deep stats next.
         rows: Dict[str, Dict[str, Any]] = {}
         for member in members:
-            tag = str(member.get("tag") or "")
-            if not tag:
-                continue
+            tag = member["tag"]
             rows[tag] = {
                 "clan_code": clan_code,
                 "clan_name": clan_name,
@@ -346,7 +345,7 @@ class ClanHealthCollector:
             weekend_end_ts = int(end_dt.timestamp())
             weekend_id = f"RAID:{clan_tag}:{str(weekend.get('endTime') or weekend.get('startTime') or weekend_end_ts)}"
             for member in members_payload:
-                tag = str(member.get("tag") or "")
+                tag = normalize_player_tag(member.get("tag"))
                 if not tag:
                     continue
                 attacks = int(member.get("attacks") or 0)

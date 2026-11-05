@@ -21,6 +21,7 @@ from elbow_helper.configuration.clans import CLAN_CWL_HELPER_ROLE_IDS
 from elbow_helper.configuration.clans import CLAN_NAMES
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
 from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
+from elbow_helper.domain.player_tags import normalize_player_tag
 from .helpers import coc_time_to_dt
 from .helpers import wait_for_boot_complete
 from elbow_helper.infrastructure.persistence import read_json
@@ -113,17 +114,14 @@ class CwlRouterMixin:
         returned_count = len(raw_members) if isinstance(raw_members, list) else 0
         valid_members = (
             [
-                member
+                (tag, member)
                 for member in raw_members
-                if isinstance(member, dict) and str(member.get("tag") or "").strip()
+                if isinstance(member, dict) and (tag := normalize_player_tag(member.get("tag")))
             ]
             if isinstance(raw_members, list)
             else []
         )
-        roster = {
-            str(member.get("tag") or "").strip().upper()
-            for member in valid_members
-        }
+        roster = {tag for tag, _ in valid_members}
         complete = (
             clan_block.get("tag") == clan_tag
             and not isinstance(team_size, bool)
@@ -143,12 +141,7 @@ class CwlRouterMixin:
             )
             return None
 
-        names = {
-            str(member.get("tag") or "").strip().upper(): str(
-                member.get("name") or member.get("tag") or "Unknown"
-            )
-            for member in valid_members
-        }
+        names = {tag: str(member.get("name") or tag) for tag, member in valid_members}
         return roster, names
 
 
