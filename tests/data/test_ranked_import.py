@@ -303,7 +303,8 @@ class CopyTests(RankedFixture, unittest.IsolatedAsyncioTestCase):
         self.assertIn("forced_failure", logs.output[0])
         self.assertEqual(await self.dump(), before)
         await owner._copy_old_wars()
-        self.assertEqual(len(await self.rows("SELECT * FROM imports")), 4)
+        # Regular wars, league wars, ranked battles, profiles and clan health history.
+        self.assertEqual(len(await self.rows("SELECT * FROM imports")), 5)
 
     async def test_battle_pass_waits_for_shared_copy_even_after_failure(self):
         owner = self.collectors()

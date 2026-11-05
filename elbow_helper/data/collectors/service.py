@@ -136,6 +136,10 @@ class FamilyCollectors(commands.Cog):
                 parts.append(f"{checks['inserted']['player_counters']} profile counter rows, "
                              f"{checks['inserted']['old_profile_totals']} old total rows, "
                              f"{checks['created_accounts']} old accounts")
+            if result.get("health") is not None:
+                checks = result["health"]["checks"]
+                parts.append(f"{checks['raid_lines']['imported']} old raid lines, {checks['stays']} old clan stays, "
+                             f"{checks['names']['added']} old names, {checks['created_accounts']} raid-only accounts")
             LOGGER.info("Old wars copied into the family record in %.1fs: %s", time.perf_counter() - started,
                         "; ".join(parts))
 

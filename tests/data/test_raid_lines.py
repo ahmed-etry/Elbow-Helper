@@ -21,6 +21,8 @@ HOUR = 3600 * 1_000_000
 CLAN = "#PP9"
 FIRST, SECOND, THIRD = "20261009T070000.000Z", "20261016T070000.000Z", "20261023T070000.000Z"
 STARTS = {text: api_time(text) for text in (FIRST, SECOND, THIRD)}
+# The version before raid member lines were added.
+BEFORE_LINES = 13
 LINES = "SELECT player_tag,attacks,attack_limit,bonus_attack_limit,capital_loot FROM raid_member_lines ORDER BY weekend_start,player_tag"
 
 
@@ -139,8 +141,9 @@ class RaidLineTests(RaidFixture):
         self.assertEqual(await self.rows(LINES), [])
 
     async def reset_to_previous_version(self):
-        await self.run_sql("DROP TABLE raid_member_lines")
-        await self.store.call(lambda c: c.execute(f"PRAGMA user_version={SCHEMA_VERSION - 1}"))
+        for table in ("raid_member_lines", "old_clan_stays", "old_raid_weekends"):
+            await self.run_sql(f"DROP TABLE {table}")
+        await self.store.call(lambda c: c.execute(f"PRAGMA user_version={BEFORE_LINES}"))
 
     async def test_upgrade_backfills_every_saved_weekend_from_the_raw_payloads(self):
         await self.fetch(body(weekend(FIRST, [member("#PP29L", 5, 50), member("#PP29Q", 4, 40)]),
@@ -175,7 +178,7 @@ class RaidLineTests(RaidFixture):
         with self.assertRaises(SQLiteMigrationError):
             await FamilyStore(self.path).initialize()
         with closing(sqlite3.connect(self.path)) as target:
-            self.assertEqual(target.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION - 1)
+            self.assertEqual(target.execute("PRAGMA user_version").fetchone()[0], BEFORE_LINES)
             self.assertEqual(target.execute("SELECT name FROM sqlite_master WHERE name LIKE 'raid_%'").fetchall(), [])
 
     async def test_old_version_without_raw_weekends_upgrades_to_an_empty_table(self):
