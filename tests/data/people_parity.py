@@ -108,6 +108,7 @@ async def compare_frozen(people, membership, links_path, *, as_of, members, prof
     with (patch.object(identity_reads, "read_clash", clash),
           patch.object(account_names, "read_clash", clash),
           patch.object(identity_reads, "require_evidence_access", AsyncMock()),
+          patch("elbow_helper.agent.reads.people.require_evidence_access", AsyncMock()),
           patch.object(account_names, "require_evidence_access", AsyncMock())):
         old_result = await identity_reads.member_accounts(context, {"member_ids": member_ids, "include_roles": True})
         for member in old_result["members"]:

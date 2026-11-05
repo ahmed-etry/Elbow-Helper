@@ -28,10 +28,7 @@ class MembershipReadTests(unittest.IsolatedAsyncioTestCase):
         self.reads = SimpleNamespace(movements=AsyncMock(side_effect=lambda **window: {
             **window, "rows": self.rows, "truncated": False}))
         self.context = SimpleNamespace(bot=SimpleNamespace(stay_reads=self.reads), state=AgentTurnState())
-        patcher = patch("elbow_helper.agent.datasets.membership.require_evidence_access", AsyncMock())
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        self.patch_record = patch("elbow_helper.agent.record_identity.require_evidence_access", AsyncMock())
+        self.patch_record = patch("elbow_helper.agent.reads.people.require_evidence_access", AsyncMock())
         self.patch_record.start()
         self.addCleanup(self.patch_record.stop)
         self.arguments = {"after": "2026-10-02", "before": "2026-10-07", "history_after": "2026-10-01"}

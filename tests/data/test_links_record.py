@@ -15,7 +15,7 @@ from elbow_helper.data.store import FamilyStore
 from elbow_helper.data.store.legacy_links import LinkConflict, snapshot
 from elbow_helper.features.account_links.cog import AccountLinks
 from elbow_helper.features.rosters.services.accounts import RosterAccountDirectory
-from elbow_helper.agent.capabilities.account_links.reads import read_linked_accounts
+from elbow_helper.agent.reads.people import read_people_links as read_linked_accounts
 from elbow_helper.agent.capabilities.account_links.data import SOURCES
 from elbow_helper.agent.datasets.query import run_query
 
@@ -70,7 +70,7 @@ class RecordLinkTests(_PeopleFixture):
         old.get_player_location = self.cog.get_player_location
         self.assertEqual(await asyncio.to_thread(RosterAccountDirectory(old).for_member, 100),
                          await asyncio.to_thread(RosterAccountDirectory(self.cog).for_member, 100))
-        with patch("elbow_helper.agent.capabilities.account_links.reads.require_evidence_access", AsyncMock()):
+        with patch("elbow_helper.agent.reads.people.require_evidence_access", AsyncMock()):
             before = await read_linked_accounts(SimpleNamespace(account_links=old), {"member_ids": [100, 200, 999]})
             after = await read_linked_accounts(SimpleNamespace(account_links=self.cog), {"member_ids": [100, 200, 999]})
         self.assertEqual(after, before)

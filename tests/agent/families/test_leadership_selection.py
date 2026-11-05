@@ -25,7 +25,7 @@ class LeadershipSelectionTests(unittest.IsolatedAsyncioTestCase):
         links = SimpleNamespace(get_links_by_tags=lambda tags: {
             tag: {'discord_user_id': owners[tag]} for tag in tags if tag in owners})
         context = replace(_context(), account_links=links)
-        context.guild.get_member = members.get
+        context.guild.get_member = lambda identifier: context.member if identifier == context.member.id else members.get(identifier)
         def account(index, role='member', level=16):
             return {'tag': f'#P{index}', 'name': f'Account {index}',
                     'townHallLevel': level, 'role': role, 'donations': index}

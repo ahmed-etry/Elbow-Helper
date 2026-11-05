@@ -1,6 +1,5 @@
 """Resolve all supplied identity hints before addressing a Discord member."""
 
-import asyncio
 from collections import Counter
 
 import discord
@@ -9,6 +8,7 @@ from elbow_helper.configuration.guild import TEST_ACCOUNT_IDS
 from elbow_helper.domain.identity import (identity_query, matches_discord_identity,
                                           name_parts, discord_names)
 from ..access import require_evidence_access
+from ..reads.people import PeopleAdapter, PeopleSelection
 
 __all__ = ["identity_query", "matches_discord_identity", "name_parts", "discord_names",
            "matching_members", "clarification"]
@@ -37,7 +37,8 @@ async def matching_members(context, query, *, prefer_exact=True):
     links = getattr(context, "account_links", None)
     if links is not None and members:
         await require_evidence_access(context)
-        accounts = await asyncio.to_thread(links.get_links_for_members, list(names))
+        selected = await PeopleAdapter(context).links(PeopleSelection('members', tuple(names)))
+        accounts = selected.by_member
         await require_evidence_access(context)
         for identifier, rows in accounts.items():
             names[identifier] += tuple(row["player_name_last_seen"] for row in rows

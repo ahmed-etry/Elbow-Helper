@@ -1,25 +1,16 @@
 """Ranked leagues for a verified recruitment or join cohort, across all linked accounts."""
 
-import re
-
 from elbow_helper.infrastructure.ai import AgentToolDefinition
 
 from ...access import require_evidence_access
-from ...record_identity import observed, stored_profiles
-from ...datasets.clash import RANKED_LEAGUE_FIELDS
+from ...reads.people import stored_profiles, standing_rows, league_key
 from ...research.history import search_date
 from ...engine.capability_contract import CapabilityContract
 from ...models import RegisteredAgentTool
 from ...reports.tools import authorize_report
-from ..account_links.reads import read_linked_accounts
+from ...reads.people import read_people_links
 from ..member_lifecycle.report import MemberLifecycleReport
 from .report import RecruitmentTrialReport
-
-
-def _league_key(value):
-    return re.sub(r"[\s_-]+", "", re.sub(r"\bleague\b", "", value.casefold()))
-
-
 
 
 async def read_cohort_leagues(context, arguments):
@@ -46,7 +37,7 @@ async def read_cohort_leagues(context, arguments):
                       and (before is None or search_date(row.start_at if trials else row.joined_at) < before)})
     accounts, unlinked = [], []
     if members:
-        linked = await read_linked_accounts(context, {"member_ids": members}, maximum=10_000)
+        linked = await read_people_links(context, {"member_ids": members}, maximum=10_000)
         if "error" in linked:
             return linked
         accounts = linked["accounts"]
@@ -59,22 +50,8 @@ async def read_cohort_leagues(context, arguments):
     profiles = await stored_profiles(context, [row["player_tag"] for row in selected])
     if profiles is None:
         return {"error": "Stored account profiles are not available.", "cause": "source_unavailable"}
-    league = _league_key(arguments.get("league", ""))
-    result = []
-    for account in selected:
-        item = profiles.get(account["player_tag"], {})
-        fields = item.get("fields", {})
-        tier = item.get("ranked_league") or {}
-        tier = tier if isinstance(tier, dict) else {}
-        legacy = item.get("legacy_league") or {}
-        name = tier.get("name")
-        result.append({**account, "status": item.get("coverage", {}).get("status", "unavailable"),
-                       "observed_at": observed(item.get("field_observed_at", {}).get("leagueTier")),
-                       "ranked_league": name,
-                       "leagueTier": {key: tier[key] for key in RANKED_LEAGUE_FIELDS if key in tier},
-                       "legacy_league": legacy.get("name") if isinstance(legacy, dict) else None,
-                       "trophies": fields.get("trophies"), "best_trophies": fields.get("bestTrophies"),
-                       "matches": (_league_key(name).startswith(league) if isinstance(name, str) else None)})
+    league = league_key(arguments.get("league", ""))
+    result = standing_rows(selected, profiles, league)
     next_offset = offset + len(selected) if offset + len(selected) < len(accounts) else None
     unknown = [row["player_tag"] for row in result if row["matches"] is None]
     matched = [row for row in result if row["matches"] is True]
