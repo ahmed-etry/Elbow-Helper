@@ -6,25 +6,20 @@ its type and what decided it. A count the record cannot prove stays None:
 an incomplete lineup or attack list never becomes a zero.
 """
 
-from datetime import datetime, timezone
 import json
 
 from elbow_helper.infrastructure.persistence.revisions import sqlite_revision
 
 from .core import RecordReads, page, pagination, placeholders, tags, timestamp
-from .coverage import SECOND, envelope, war_side_coverage, war_signal
+from .coverage import envelope, war_side_coverage, war_signal
 from .people import ownership
 
 TYPES = ("CWL", "FRIENDLY", "REG")
 REGULAR = ("REG",)
-# Old clan health keeps two meanings: wars as last captured, ongoing ones
-# included, with an inclusive end; or ended wars with an exclusive end.
-VIEWS = ("completed", "capture")
-# The monthly summary counts the newest 50 entries of Clash's war log.
-LOG_WINDOW = 50
+TIME_FIELDS = ("end_at", "observed_at")
+STATES = ("preparation", "inWar", "warEnded")
 # A window may select at most this many clan-facing wars.
 MAX_WARS = 1000
-RESULTS = {"win": "wins", "lose": "losses", "tie": "ties"}
 
 
 def war_types(values, allowed=TYPES):
@@ -48,17 +43,6 @@ def window(after, before):
     if before <= after:
         raise ValueError("Expected a window that ends after it starts")
     return after, before
-
-
-def month_bounds(month):
-    try:
-        start = datetime.strptime(month, "%Y-%m").replace(tzinfo=timezone.utc)
-    except (TypeError, ValueError):
-        raise ValueError("Expected a month as YYYY-MM") from None
-    if start.strftime("%Y-%m") != month:
-        raise ValueError("Expected a month as YYYY-MM")
-    end = start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1)
-    return int(start.timestamp()) * SECOND, int(end.timestamp()) * SECOND
 
 
 def score_result(own, other):
@@ -174,15 +158,6 @@ def member_rows(connection, war, clan, coverage):
     return rows
 
 
-def positions(connection, war_id, side, complete):
-    """Map positions renumbered 1..n, as old clan health shows them; only for a complete lineup."""
-    if not complete:
-        return {}
-    members = connection.execute("SELECT player_tag FROM war_members WHERE war_id=? AND side=? "
-                                 "ORDER BY source_map_position,player_tag", (war_id, side)).fetchall()
-    return {row[0]: index for index, row in enumerate(members, 1)}
-
-
 def first_gap(connection, war_id, attacks):
     """The first of Clash's attack orders that the record cannot place on a defender.
 
@@ -201,46 +176,52 @@ def first_gap(connection, war_id, attacks):
     return min(gaps, default=sum(reported) + 1)
 
 
-def capture_time(war, current, at, league=None):
-    """When a war was last known as captured: its end once ended, else its last check.
+def selection(time_field, states):
+    if isinstance(time_field, (tuple, list)):
+        if states is not None or not 1 <= len(time_field) <= 6:
+            raise ValueError("Expected 1..6 time and state clauses")
+        clauses = []
+        for clause in time_field:
+            if not isinstance(clause, (tuple, list)) or len(clause) != 2 or clause[0] not in TIME_FIELDS:
+                raise ValueError("Expected time and state clauses")
+            clauses.append(selection(*clause))
+        return tuple(clauses), None
+    if time_field not in TIME_FIELDS:
+        raise ValueError("Expected end_at or observed_at")
+    states = None if states is None else tuple(sorted(set(states)))
+    if states is not None and (not states or any(state not in STATES for state in states)):
+        raise ValueError("Expected preparation, inWar or warEnded states")
+    return time_field, states
 
-    A league war's own checks count as well as the clan's current-war check.
-    """
-    if war["state"] == "warEnded":
-        return war["end_at"], "war_end"
-    checked = war["last_seen_at"]
-    for state in (current, league):
-        if state and state["war_id"] == war["id"] and state["last_success_at"] is not None:
-            checked = max(checked, state["last_success_at"])
-    return min(at, checked), "last_check"
 
-
-def select_wars(connection, clans, after, before, types, at, view):
-    """Clan-facing wars in a window, newest first, as (war, clan, time, time_basis)."""
+def select_wars(connection, clans, after, before, types, at, time_field="end_at", states=None):
+    """Wars in an explicit half-open interval over stored end or last observation times."""
+    if isinstance(time_field, tuple):
+        selected = {}
+        for field, selected_states in time_field:
+            for item in select_wars(connection, clans, after, before, types, at, field, selected_states):
+                selected.setdefault((item[0]["id"], item[1]), item)
+        if len(selected) > MAX_WARS:
+            raise ValueError(f"The window selects more than {MAX_WARS} wars; choose a shorter one")
+        return sorted(selected.values(), key=lambda item: (-item[2], -item[0]["id"], item[1]))
     where = (f"s.clan_tag IN ({placeholders(clans)}) AND w.type IN ({placeholders(types)}) AND w.first_seen_at<=?")
     args = (*clans, *types, at)
-    if view == "completed":
-        rows = connection.execute(
-            f"SELECT w.*,s.clan_tag AS facing FROM wars w JOIN war_sides s ON s.war_id=w.id WHERE {where} "
-            "AND w.end_at>=? AND w.end_at<? AND w.end_at<=? LIMIT ?", (*args, after, before, at, MAX_WARS + 1)).fetchall()
-        selected = [(row, row["facing"], row["end_at"], "war_end") for row in rows]
-    else:
-        current = {row["scope_id"]: row for row in connection.execute(
-            f"SELECT scope_id,war_id,last_success_at FROM war_collection_state WHERE source_kind='current_war' "
-            f"AND scope_id IN ({placeholders(clans)})", clans)}
-        rows = connection.execute(
-            f"SELECT w.*,s.clan_tag AS facing FROM wars w JOIN war_sides s ON s.war_id=w.id WHERE {where} "
-            "AND (w.state!='warEnded' OR w.end_at BETWEEN ? AND ?)", (*args, after, before)).fetchall()
-        running = sorted({row["war_tag"] for row in rows if row["war_tag"] and row["state"] != "warEnded"})
-        league = {row["scope_id"]: row for row in connection.execute(
-            f"SELECT scope_id,war_id,last_success_at FROM war_collection_state WHERE source_kind='cwl_war' "
-            f"AND scope_id IN ({placeholders(running)})", running)} if running else {}
-        selected = [(row, row["facing"], *capture_time(row, current.get(row["facing"]), at, league.get(row["war_tag"])))
-                    for row in rows]
-        selected = [item for item in selected if after <= item[2] <= before]
-    if len(selected) > MAX_WARS:
+    if states is not None:
+        where += f" AND w.state IN ({placeholders(states)})"
+        args += states
+    # Source checks may observe an unchanged war without rewriting its facts.
+    observed = ("MIN(?,MAX(w.last_seen_at,COALESCE((SELECT MAX(c.last_success_at) FROM war_collection_state c "
+                "WHERE c.war_id=w.id AND ((c.source_kind='current_war' AND c.scope_id=s.clan_tag) "
+                "OR (c.source_kind='cwl_war' AND c.scope_id=w.war_tag))),w.last_seen_at)))")
+    column = "w.end_at" if time_field == "end_at" else observed
+    rows = connection.execute(
+        f"SELECT w.*,s.clan_tag AS facing,{column} AS selected_at FROM wars w JOIN war_sides s ON s.war_id=w.id "
+        f"WHERE {where} AND selected_at>=? AND selected_at<? AND selected_at<=? LIMIT ?",
+        (*(() if time_field == "end_at" else (at,)), *args, after, before, at, MAX_WARS + 1)).fetchall()
+    if len(rows) > MAX_WARS:
         raise ValueError(f"The window selects more than {MAX_WARS} wars; choose a shorter one")
-    return sorted(selected, key=lambda item: (-item[2], -item[0]["id"], item[1]))
+    return sorted(((row, row["facing"], row["selected_at"], time_field) for row in rows),
+                  key=lambda item: (-item[2], -item[0]["id"], item[1]))
 
 
 def window_coverage(connection, clans, types, after, before, at, wars, truncated):
@@ -351,7 +332,7 @@ class WarReads(RecordReads):
 
     @staticmethod
     def _completed(connection, clans, after, before, types, at, limit, offset):
-        selected = select_wars(connection, clans, after, before, types, at, "completed")
+        selected = select_wars(connection, clans, after, before, types, at)
         checked = [(war, clan, war_side_coverage(connection, war["id"], clan)) for war, clan, _, _ in selected]
         result = page(selected[offset:offset + limit + 1], limit, offset)
         rows = []
@@ -369,22 +350,23 @@ class WarReads(RecordReads):
         return result
 
     async def participation(self, clans, after, before, *, types=REGULAR, player_tags=None, group_by="account",
-                            as_of=None, limit=200, offset=0):
+                            time_field="end_at", states=None, as_of=None, limit=200, offset=0):
         """Per account per war in wars ended in [after, before); or grouped by owner at as_of."""
         pagination(limit, offset)
         if group_by not in ("account", "owner"):
             raise ValueError("Expected account or owner grouping")
         selected = None if player_tags is None else tags(player_tags)
         return await self._read(self._participation, clan_tags(clans), *window(after, before), war_types(types),
-                                selected, group_by, timestamp(as_of), limit, offset)
+                                selected, group_by, *selection(time_field, states), timestamp(as_of), limit, offset)
 
     @staticmethod
-    def _participation(connection, clans, after, before, types, selected, group_by, at, limit, offset):
+    def _participation(connection, clans, after, before, types, selected, group_by, time_field, states, at, limit, offset):
         rows, checked = [], []
-        for war, clan, _, _ in select_wars(connection, clans, after, before, types, at, "completed"):
+        for war, clan, time, basis in select_wars(connection, clans, after, before, types, at, time_field, states):
             coverage = war_side_coverage(connection, war["id"], clan)
             checked.append((war, clan, coverage))
-            rows.extend(row for row in member_rows(connection, war, clan, coverage)
+            rows.extend({**row, "state": war["state"], "time": time, "time_basis": basis}
+                        for row in member_rows(connection, war, clan, coverage)
                         if selected is None or row["player_tag"] in selected)
         if group_by == "owner":
             rows = by_owner(connection, rows, at)
@@ -394,28 +376,35 @@ class WarReads(RecordReads):
         return result
 
     async def attacks(self, clans, after, before, *, types=REGULAR, player_tags=None, direction="attacks",
-                      view="completed", as_of=None, limit=200, offset=0):
+                      time_field="end_at", states=None, as_of=None, limit=200, offset=0):
         """Attack detail with both town halls; defenses are the opponent's attacks on the clan.
 
         An attack copied from old clan health, whose defender the record cannot
         place, shows the defender and first hit as the old capture saw them.
         """
         pagination(limit, offset)
-        if direction not in ("attacks", "defenses") or view not in VIEWS:
-            raise ValueError("Expected attacks or defenses and a completed or capture view")
+        if direction not in ("attacks", "defenses"):
+            raise ValueError("Expected attacks or defenses")
         selected = None if player_tags is None else tags(player_tags)
         return await self._read(self._attacks, clan_tags(clans), *window(after, before), war_types(types),
-                                selected, direction, view, timestamp(as_of), limit, offset)
+                                selected, direction, *selection(time_field, states), timestamp(as_of), limit, offset)
 
     @staticmethod
-    def _attacks(connection, clans, after, before, types, selected, direction, view, at, limit, offset):
-        rows, checked = [], []
-        for war, clan, time, basis in select_wars(connection, clans, after, before, types, at, view):
+    def _attacks(connection, clans, after, before, types, selected, direction, time_field, states, at, limit, offset):
+        rows, checked, lineups = [], [], []
+        for war, clan, time, basis in select_wars(connection, clans, after, before, types, at, time_field, states):
             coverage = war_side_coverage(connection, war["id"], clan)
             checked.append((war, clan, coverage))
             own = side_of(connection, war["id"], clan)
             complete = {own: coverage["own"], 1 - own: coverage["opponent"]}
-            places = {side: positions(connection, war["id"], side, complete[side]["lineup_complete"]) for side in (0, 1)}
+            side_lineups = {side: [dict(row) for row in connection.execute(
+                "SELECT player_tag,source_map_position AS map_position FROM war_members WHERE war_id=? AND side=? "
+                "ORDER BY source_map_position IS NULL,source_map_position,player_tag", (war["id"], side))]
+                for side in (0, 1)}
+            lineups.append({"war_id": war["id"], "clan_tag": clan, "coverage": coverage,
+                            "members": side_lineups[1 - own if direction == "attacks" else own]})
+            places = {side: {m["player_tag"]: m["map_position"] for m in side_lineups[side]}
+                      if complete[side]["lineup_complete"] else {} for side in (0, 1)}
             attacks = connection.execute(
                 "SELECT a.*,x.player_tag AS attacker_tag,x.name AS attacker_name,x.townhall AS attacker_townhall,"
                 "x.source_map_position AS attacker_map_position,x.side AS attacker_side,d.player_tag AS defender_tag,"
@@ -473,100 +462,47 @@ class WarReads(RecordReads):
                              "fresh": fresh if fresh is not None else legacy.get("fresh_attack"),
                              "fresh_basis": "old_capture" if fresh is None and "fresh_attack" in legacy else "attacks"})
         result = page(rows[offset:offset + limit + 1], limit, offset)
-        result.update(direction=direction, view=view,
+        facing = {(row["war_id"], row["clan_tag"]) for row in result["rows"]}
+        result.update(direction=direction, time_field=time_field,
+                      lineups=[war for war in lineups if (war["war_id"], war["clan_tag"]) in facing],
                       coverage=window_coverage(connection, clans, types, after, before, at, checked, result["truncated"]))
         return result
 
-    async def log_results(self, clan, month, as_of=None):
-        """Wins, losses and ties as the monthly summary counts the war log's newest 50 entries.
-
-        A league week's single log entry counts once. Older recorded entries of
-        the month are counted apart, never mixed into the old meaning.
-        """
-        return await self._read(self._log_results, clan_tags([clan])[0], month_bounds(month), month, timestamp(as_of))
+    async def log_entries(self, clan, *, as_of=None, limit=200, offset=0):
+        """Stored war-log entries, newest first; a league summary is a single entry."""
+        pagination(limit, offset)
+        return await self._read(self._log_entries, clan_tags([clan])[0], timestamp(as_of), limit, offset)
 
     @staticmethod
-    def _log_results(connection, clan, bounds, month, at):
-        start, end = bounds
-        entries = [(row["end_at"], row["id"], row["result"], "war") for row in connection.execute(
-            "SELECT w.id,w.end_at,s.result FROM wars w JOIN war_sides s ON s.war_id=w.id AND s.clan_tag=? "
-            "WHERE w.first_seen_at<=? AND w.end_at<=? AND EXISTS (SELECT 1 FROM war_source_keys k "
-            "WHERE k.war_id=w.id AND k.source_kind='war_log')", (clan, at, at))]
-        entries += [(row["end_at"], None, row["result"], "league_week") for row in connection.execute(
-            "SELECT end_at,result FROM cwl_log_summaries WHERE clan_tag=? AND end_at<=?", (clan, at))]
-        entries.sort(key=lambda entry: (entry[0], entry[1] or 0), reverse=True)
-
-        def counts(selected):
-            totals = {"wins": 0, "losses": 0, "ties": 0, "unknown_result": 0}
-            for entry in selected:
-                totals[RESULTS.get(entry[2], "unknown_result")] += 1
-            totals["total"] = totals["wins"] + totals["losses"] + totals["ties"]
-            return totals
-
-        recent = [entry for entry in entries[:LOG_WINDOW] if start <= entry[0] < end]
-        older = [entry for entry in entries[LOG_WINDOW:] if start <= entry[0] < end]
+    def _log_entries(connection, clan, at, limit, offset):
+        rows = [dict(row) for row in connection.execute(
+            "SELECT w.id AS war_id,w.end_at,s.result,'war' AS kind FROM wars w JOIN war_sides s "
+            "ON s.war_id=w.id AND s.clan_tag=? WHERE w.first_seen_at<=? AND w.end_at<=? "
+            "AND EXISTS (SELECT 1 FROM war_source_keys k WHERE k.war_id=w.id AND k.source_kind='war_log') "
+            "UNION ALL SELECT NULL,end_at,result,'league_week' FROM cwl_log_summaries WHERE clan_tag=? AND end_at<=? "
+            "ORDER BY end_at DESC,war_id DESC LIMIT ? OFFSET ?", (clan, at, at, clan, at, limit + 1, offset))]
         signal = war_signal(connection, "war_log", clan, at)
         status = ("private_log" if signal["status"] == "private" else
                   "unavailable" if signal["last_good_at"] is None else "available")
-        coverage = envelope([signal], after=start, before=end, at=at)
-        # Entries of the month are all in the log only once it was read after the month ended.
-        coverage["read_after_month"] = signal["last_good_at"] is not None and signal["last_good_at"] >= end
-        coverage["complete"] = (coverage["complete"] and coverage["read_after_month"]
-                                and not signal["log_limits"]["backfill_pending"])
-        available = status == "available"
-        return {"clan_tag": clan, "month": month, "after": start, "before": end, "status": status,
-                **(counts(recent) if available else dict.fromkeys(("wins", "losses", "ties", "unknown_result", "total"))),
-                "entries": [{"war_id": war_id, "end_at": at_end, "result": result, "kind": kind}
-                            for at_end, war_id, result, kind in recent] if available else [],
-                "beyond_log_window": counts(older) if available else None, "coverage": coverage}
-
-    async def health_activity(self, clans, after, before, *, view="capture", types=REGULAR, player_tags=None,
-                              as_of=None, limit=200, offset=0):
-        """Player health inputs in old clan health's two named views; regular wars unless asked.
-
-        capture: every war as last captured, an ongoing one at its last check,
-        in [after, before]. completed: wars ended in [after, before).
-        """
-        pagination(limit, offset)
-        if view not in VIEWS:
-            raise ValueError("Expected a completed or capture view")
-        selected = None if player_tags is None else tags(player_tags)
-        return await self._read(self._health_activity, clan_tags(clans), *window(after, before),
-                                war_types(types), selected, view, timestamp(as_of), limit, offset)
-
-    @staticmethod
-    def _health_activity(connection, clans, after, before, types, selected, view, at, limit, offset):
-        rows, checked = [], []
-        for war, clan, time, basis in select_wars(connection, clans, after, before, types, at, view):
-            coverage = war_side_coverage(connection, war["id"], clan)
-            checked.append((war, clan, coverage))
-            for row in member_rows(connection, war, clan, coverage):
-                if selected is None or row["player_tag"] in selected:
-                    rows.append({**{key: value for key, value in row.items() if key not in ("missed", "end_at")},
-                                 "type_basis": war["type_basis"], "state": war["state"],
-                                 "time": time, "time_basis": basis, "end_at": war["end_at"]})
-        result = page(rows[offset:offset + limit + 1], limit, offset)
-        result.update(view=view, bounds="inclusive" if view == "capture" else "exclusive_end",
-                      coverage=window_coverage(connection, clans, types, after, before, at, checked, result["truncated"]))
+        result = page(rows, limit, offset)
+        result.update(clan_tag=clan, status=status, coverage=envelope([signal], at=at, truncated=result["truncated"]))
         return result
 
-    async def health_totals(self, clans, after, before, *, player_tags, view="capture", types=REGULAR, as_of=None):
-        """Each selected account's health totals over the clans' wars in one of the two views.
+    async def totals(self, clans, after, before, *, player_tags, time_field="end_at", states=None, types=REGULAR, as_of=None):
+        """Each selected account's neutral totals over explicitly selected wars.
 
         One row per account found in a lineup: its wars, the expected and used
         attacks of the wars that know both, the wars that do not, and its
         stored attacks with their stars, triples and destruction. At most 200
         accounts, so one read covers a window no page could.
         """
-        if view not in VIEWS:
-            raise ValueError("Expected a completed or capture view")
-        return await self._read(self._health_totals, clan_tags(clans), *window(after, before),
-                                war_types(types), clan_tags(player_tags), view, timestamp(as_of))
+        return await self._read(self._totals, clan_tags(clans), *window(after, before),
+                                war_types(types), clan_tags(player_tags), *selection(time_field, states), timestamp(as_of))
 
     @staticmethod
-    def _health_totals(connection, clans, after, before, types, selected, view, at):
+    def _totals(connection, clans, after, before, types, selected, time_field, states, at):
         totals, checked = {}, []
-        for war, clan, _, _ in select_wars(connection, clans, after, before, types, at, view):
+        for war, clan, _, _ in select_wars(connection, clans, after, before, types, at, time_field, states):
             # A war without a selected account in the clan's lineup adds nothing.
             if not connection.execute(
                     f"SELECT 1 FROM war_members WHERE war_id=? AND side=? AND player_tag IN ({placeholders(selected)}) "
@@ -588,25 +524,22 @@ class WarReads(RecordReads):
                     total["attacks_used"] += row["attacks_used"]
                 for field in ("stars", "triples", "destruction", "attacks_measured"):
                     total[field] += row[field]
-        return {"rows": [totals[tag] for tag in sorted(totals)], "view": view,
-                "bounds": "inclusive" if view == "capture" else "exclusive_end",
+        return {"rows": [totals[tag] for tag in sorted(totals)], "time_field": time_field,
                 "coverage": window_coverage(connection, clans, types, after, before, at, checked, False)}
 
-    async def health_war_counts(self, clans, after, before, *, view="capture", types=REGULAR, as_of=None):
-        """Per clan, its wars in one of the two views and how many of them have a stored lineup."""
-        if view not in VIEWS:
-            raise ValueError("Expected a completed or capture view")
-        return await self._read(self._health_war_counts, clan_tags(clans), *window(after, before),
-                                war_types(types), view, timestamp(as_of))
+    async def counts(self, clans, after, before, *, time_field="end_at", states=None, types=REGULAR, as_of=None):
+        """Per clan, selected wars and how many have a stored lineup."""
+        return await self._read(self._counts, clan_tags(clans), *window(after, before),
+                                war_types(types), *selection(time_field, states), timestamp(as_of))
 
     @staticmethod
-    def _health_war_counts(connection, clans, after, before, types, view, at):
+    def _counts(connection, clans, after, before, types, time_field, states, at):
         counts = {clan: {"wars": 0, "wars_with_lineup": 0} for clan in clans}
         checked = []
-        for war, clan, _, _ in select_wars(connection, clans, after, before, types, at, view):
+        for war, clan, _, _ in select_wars(connection, clans, after, before, types, at, time_field, states):
             coverage = war_side_coverage(connection, war["id"], clan)
             checked.append((war, clan, coverage))
             counts[clan]["wars"] += 1
             counts[clan]["wars_with_lineup"] += coverage["own"]["members"] > 0
-        return {"clans": counts, "view": view, "bounds": "inclusive" if view == "capture" else "exclusive_end",
+        return {"clans": counts, "time_field": time_field,
                 "coverage": window_coverage(connection, clans, types, after, before, at, checked, False)}

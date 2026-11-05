@@ -5,6 +5,7 @@ import sqlite3
 import unittest
 
 from elbow_helper.data.reads import WarReads
+from elbow_helper.features.clan_reporting.record_wars import monthly_results
 from elbow_helper.data.store.war_projection import HOUR, api_time
 from elbow_helper.features.clan_health.database.schema import create_schema
 
@@ -250,21 +251,21 @@ class WarReadTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         # A league round is never a log entry; only the week's summary counts.
         await self.record(war("warEnded", clans=("#PY", "#CU"), end=october), kind="cwl_war", scope="#R0",
                           at=NOVEMBER + HOUR)
-        counted = await self.reads.log_results("#PY", "2026-10", NOVEMBER + 2 * HOUR)
+        counted = await monthly_results(self.reads, "#PY", "2026-10", NOVEMBER + 2 * HOUR)
         self.assertEqual({key: counted[key] for key in ("status", "wins", "losses", "ties", "total", "unknown_result")},
                          {"status": "available", "wins": 2, "losses": 1, "ties": 0, "total": 3, "unknown_result": 0})
         self.assertEqual([entry["kind"] for entry in counted["entries"]], ["war", "war", "league_week"])
         self.assertEqual((counted["after"], counted["before"]), (OCTOBER, NOVEMBER))
         self.assertTrue(counted["coverage"]["read_after_month"])
         self.assertTrue(counted["coverage"]["complete"])
-        empty = await self.reads.log_results("#PY", "2026-08", NOVEMBER + 2 * HOUR)
+        empty = await monthly_results(self.reads, "#PY", "2026-08", NOVEMBER + 2 * HOUR)
         self.assertEqual((empty["status"], empty["total"]), ("available", 0))
         # Read before the month ended, the count may still grow.
-        self.assertFalse((await self.reads.log_results("#PY", "2026-11", NOVEMBER + 2 * HOUR))["coverage"]["complete"])
+        self.assertFalse((await monthly_results(self.reads, "#PY", "2026-11", NOVEMBER + 2 * HOUR))["coverage"]["complete"])
         await self.record({"reason": "accessDenied"}, kind="war_log", scope="#LQ", status=403, at=NOVEMBER)
-        private = await self.reads.log_results("#LQ", "2026-10", NOVEMBER + HOUR)
+        private = await monthly_results(self.reads, "#LQ", "2026-10", NOVEMBER + HOUR)
         self.assertEqual((private["status"], private["total"], private["entries"]), ("private_log", None, []))
-        self.assertEqual((await self.reads.log_results("#GR", "2026-10", NOVEMBER))["status"], "unavailable")
+        self.assertEqual((await monthly_results(self.reads, "#GR", "2026-10", NOVEMBER))["status"], "unavailable")
 
     async def test_log_results_keep_the_old_newest_fifty_meaning(self):
         letters = "0289PYLQGRJCUV"
@@ -272,76 +273,9 @@ class WarReadTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                  for i in range(50)]
         await self.record(page(*newer, log_entry("#GR", "20261020T180000.000Z", "lose")), kind="war_log",
                           at=api_time("20261201T000000.000Z"))
-        result = await self.reads.log_results("#PY", "2026-10", api_time("20261201T000000.000Z"))
+        result = await monthly_results(self.reads, "#PY", "2026-10", api_time("20261201T000000.000Z"))
         self.assertEqual((result["total"], result["beyond_log_window"]["losses"]), (0, 1))
-        self.assertEqual((await self.reads.log_results("#PY", "2026-11", api_time("20261201T000000.000Z")))["wins"], 50)
-
-    async def test_health_views_keep_capture_time_and_completed_meanings(self):
-        await self.record(war("preparation"), at=START - HOUR)
-        await self.record(war(), at=self.at)
-        capture = await self.reads.health_activity(["#PY"], START, self.at, as_of=self.at)
-        self.assertEqual([(r["player_tag"], r["state"], r["time"], r["time_basis"], r["attacks_used"],
-                           r["attacks_expected"], r["stars"]) for r in capture["rows"]],
-                         [("#P0", "inWar", self.at, "last_check", 1, 2, 3), ("#P2", "inWar", self.at, "last_check", 0, 2, 0)])
-        self.assertEqual(capture["bounds"], "inclusive")
-        self.assertEqual((await self.reads.health_activity(["#PY"], START, self.at - 1, as_of=self.at))["rows"], [])
-        self.assertEqual((await self.reads.health_activity(["#PY"], START, END + DAY, view="completed",
-                                                           as_of=self.at))["rows"], [])
-        await self.record(war("warEnded"), at=END + 90 * SECOND)
-        await self.record(friendly(), at=END + 3 * DAY)
-        at = END + 4 * DAY
-        ended = await self.reads.health_activity(["#PY"], END, END + 3 * DAY, view="completed", as_of=at)
-        self.assertEqual({(r["time"], r["time_basis"], r["type"]) for r in ended["rows"]}, {(END, "war_end", "REG")})
-        self.assertEqual((await self.reads.health_activity(["#PY"], START, END, view="completed", as_of=at))["rows"], [])
-        self.assertEqual(len((await self.reads.health_activity(["#PY"], START, END, as_of=at))["rows"]), 2)
-        with_friendly = await self.reads.health_activity(["#PY"], END, END + 3 * DAY, types=["REG", "FRIENDLY"], as_of=at)
-        self.assertEqual(sorted({r["type"] for r in with_friendly["rows"]}), ["FRIENDLY", "REG"])
-        # League wars are read only when asked for; there are none here.
-        self.assertEqual((await self.reads.health_activity(["#PY"], END, END + DAY, types=["CWL"], as_of=at))["rows"], [])
-        with self.assertRaises(ValueError):
-            await self.reads.health_activity(["#PY"], END, END + DAY, types=["ARRANGED"])
-
-    async def test_health_totals_sum_each_account_over_one_snapshot_and_keep_unknown_counts_apart(self):
-        await self.record(war(), at=self.at)
-        # The ongoing war counts as last captured, its attacks so far included.
-        capture = await self.reads.health_totals(["#PY"], START, self.at, player_tags=["#P0", "#P2", "#Q0"], as_of=self.at)
-        self.assertEqual([(r["player_tag"], r["wars"], r["attacks_expected"], r["attacks_used"], r["stars"],
-                           r["attacks_measured"], r["wars_without_counts"]) for r in capture["rows"]],
-                         [("#P0", 1, 2, 1, 3, 1, 0), ("#P2", 1, 2, 0, 0, 0, 0)])
-        self.assertEqual((capture["view"], capture["bounds"], capture["coverage"]["wars_selected"]), ("capture", "inclusive", 1))
-        self.assertEqual((await self.reads.health_totals(["#PY"], START, self.at, view="completed",
-                                                         player_tags=["#P0"], as_of=self.at))["rows"], [])
-        await self.record(war("warEnded"), at=END + 90 * SECOND)
-        await self.record(friendly(), at=END + 3 * DAY)
-        at = END + 4 * DAY
-        ended = await self.reads.health_totals(["#PY"], START, at, player_tags=["#P0"], as_of=at)
-        self.assertEqual([(r["wars"], r["attacks_expected"], r["attacks_used"], r["triples"], r["destruction"])
-                          for r in ended["rows"]], [(1, 2, 1, 1, 100.0)])
-        # A war that does not know a count adds the war, never a used or missed attack.
-        await self.execute("UPDATE war_members SET attacks_expected=NULL WHERE player_tag='#P0'")
-        (unknown,) = (await self.reads.health_totals(["#PY"], START, at, player_tags=["#P0"], as_of=at))["rows"]
-        self.assertEqual((unknown["wars"], unknown["wars_without_counts"], unknown["attacks_expected"],
-                          unknown["attacks_used"]), (1, 1, 0, 0))
-        # Friendly wars are counted only when asked for.
-        both = await self.reads.health_totals(["#PY"], START, at, player_tags=["#P2"], types=["REG", "FRIENDLY"], as_of=at)
-        self.assertEqual(both["rows"][0]["wars"], 2)
-        counts = await self.reads.health_war_counts(["#PY", "#LQ"], START, at, as_of=at)
-        self.assertEqual(counts["clans"], {"#PY": {"wars": 1, "wars_with_lineup": 1},
-                                           "#LQ": {"wars": 0, "wars_with_lineup": 0}})
-        self.assertEqual((await self.reads.health_war_counts(["#PY"], START, at, types=["REG", "FRIENDLY"],
-                                                             as_of=at))["clans"]["#PY"]["wars"], 2)
-        self.assertEqual((await self.reads.health_war_counts(["#PY"], START, at, types=["CWL"],
-                                                             as_of=at))["clans"]["#PY"]["wars"], 0)
-        # A war known only from the log has no lineup to count.
-        await self.execute("DELETE FROM war_members WHERE war_id=(SELECT war_id FROM war_sides WHERE clan_tag='#PY' "
-                           "AND war_id IN (SELECT id FROM wars WHERE type='REG'))")
-        self.assertEqual((await self.reads.health_war_counts(["#PY"], START, at, as_of=at))["clans"]["#PY"],
-                         {"wars": 1, "wars_with_lineup": 0})
-        for call in (lambda: self.reads.health_totals(["#PY"], START, END, player_tags=[]),
-                     lambda: self.reads.health_totals(["#PY"], START, END, player_tags=["#P0"], view="live"),
-                     lambda: self.reads.health_war_counts(["#PY"], START, END, types=["ARRANGED"])):
-            with self.assertRaises(ValueError):
-                await call()
+        self.assertEqual((await monthly_results(self.reads, "#PY", "2026-11", api_time("20261201T000000.000Z")))["wins"], 50)
 
     async def test_a_copied_attack_without_an_opponent_lineup_shows_the_old_capture_of_its_defender(self):
         await self.record(war("warEnded"), at=END + 90 * SECOND)
@@ -428,9 +362,9 @@ class WarReadTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                      lambda: self.reads.completed(["#PY"], START, END, limit=201),
                      lambda: self.reads.participation(["#PY"], START, END, group_by="clan"),
                      lambda: self.reads.attacks(["#PY"], START, END, direction="both"),
-                     lambda: self.reads.health_activity(["#PY"], START, END, view="live"),
-                     lambda: self.reads.log_results("#PY", "2026-13"),
-                     lambda: self.reads.log_results("#PY", "2026-1"),
+                     lambda: self.reads.participation(["#PY"], START, END, time_field="live"),
+                     lambda: monthly_results(self.reads, "#PY", "2026-13"),
+                     lambda: monthly_results(self.reads, "#PY", "2026-1"),
                      lambda: self.reads.current("not a tag")):
             with self.assertRaises(ValueError):
                 await call()

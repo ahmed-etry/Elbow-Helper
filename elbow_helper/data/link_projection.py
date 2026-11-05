@@ -1,11 +1,11 @@
-"""Current ownership projections with the existing row and collation contract."""
+"""Legacy link selectors and SQL projection; neutral reads live in data.reads."""
 
 import asyncio
 from contextlib import closing
 import sqlite3
 
-from ..store.legacy_links import TOPIC, FIELDS, LinkConflict
-from .core import RecordReads
+from .store.legacy_links import TOPIC, FIELDS, LinkConflict
+from .reads.core import RecordReads
 
 
 def query_links(path):
@@ -16,7 +16,7 @@ def query_links(path):
         with closing(sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)) as connection:
             connection.row_factory = sqlite3.Row
             try:
-                rows = RecordReads._snapshot(connection, CurrentLinksMixin._current_links, (None,))
+                rows = RecordReads._snapshot(connection, CurrentLinks._current_links, (None,))
             except LinkConflict as error:
                 raise sqlite3.OperationalError("account_links_unavailable") from error
             columns = [(field, "INTEGER NOT NULL" if field == "discord_user_id" else
@@ -76,7 +76,7 @@ class LinkSelectors:
         return self._link_read(select)
 
 
-class CurrentLinksMixin(LinkSelectors):
+class CurrentLinks(LinkSelectors, RecordReads):
     def _link_read(self, select=None):
         return self.links_in_worker(select)
 

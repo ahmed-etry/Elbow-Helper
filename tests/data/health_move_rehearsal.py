@@ -127,7 +127,8 @@ class Side:
             from elbow_helper.features.clan_health.record_wars import RegularWars
             self.reads = WarReads(FamilyStore(folder / "family.sqlite3"))
             self.regular = RegularWars(self.reads)
-            self.analyzer = ClanHealthAnalyzer(self.repository, self.regular)
+            self.league = RegularWars(self.reads, types=("CWL",))
+            self.analyzer = ClanHealthAnalyzer(self.repository, self.regular, self.league)
         else:
             self.analyzer = ClanHealthAnalyzer(self.repository)
 
@@ -159,6 +160,7 @@ class Side:
         harness.clash_client, harness.collector = SimpleNamespace(configured=False), None
         if self.new:
             harness.regular_wars = self.regular
+            harness.league_wars = self.league
         custom = name != "last_30_days"
         export = asyncio.run(harness.build_player_health_export(
             player_tag=tag, now=moment(at), window_mode="custom" if custom else "last_30d",
@@ -186,13 +188,21 @@ class Side:
         else:
             from elbow_helper.features.clan_health.record_wars import attack_row
             rows = [attack_row(row, self.regular.codes) for row in self.pages(
-                self.reads.attacks, self.regular._clans(), start * SECOND, end * SECOND + SECOND - 1, view="capture")]
+                self.capture_attacks, self.regular._clans(), start * SECOND, end * SECOND + SECOND)]
         by_tag = defaultdict(list)
         for row in rows:
             by_tag[row["player_tag"]].append({key: row[key] for key in (
                 "war_id", "clan_code", "end_ts", "attack_order", "defender_tag", "defender_map_position",
                 "defender_townhall", "stars", "destruction", "fresh_attack")})
         return dict(by_tag)
+
+    async def capture_attacks(self, *args, **kwargs):
+        from elbow_helper.features.clan_health.record_wars import capture_page
+        return await capture_page(self.reads, "attacks", *args, **kwargs)
+
+    async def capture_participation(self, *args, **kwargs):
+        from elbow_helper.features.clan_health.record_wars import capture_page
+        return await capture_page(self.reads, "participation", *args, **kwargs)
 
     def pages(self, method, *args, **kwargs):
         rows, offset = [], 0
@@ -215,8 +225,8 @@ class Side:
                         "expected": row["attacks_expected"], "used": row["attacks_used"], "stars": row["stars"],
                         "attacks": row["attack_count"]})
         else:
-            for row in self.pages(self.reads.health_activity, self.regular._clans(), start * SECOND,
-                                  end * SECOND + SECOND - 1):
+            for row in self.pages(self.capture_participation, self.regular._clans(), start * SECOND,
+                                  end * SECOND + SECOND):
                 by_tag[row["player_tag"]].append({
                     "war": row["war_id"], "clan_code": self.regular.codes[row["clan_tag"]],
                     "time": row["time"] // SECOND, "state": row["state"], "expected": row["attacks_expected"],

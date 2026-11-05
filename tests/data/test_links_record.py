@@ -31,6 +31,22 @@ class RecordLinkTests(_PeopleFixture):
         self.cog._try_refresh_linked_boards = AsyncMock()
         self.cog.refresh_linked_boards = AsyncMock()
 
+    async def test_neutral_current_links_carry_readiness_and_reject_historical_projection(self):
+        reads = PeopleReads(self.store)
+        result = await reads.current_links(200)
+        self.assertEqual([row["player_tag"] for row in result["rows"]], ["#P0", "#Q0", "#R0"])
+        self.assertTrue(result["coverage"]["complete"])
+        old = await reads.current_links(199)
+        self.assertEqual(old["rows"], [])
+        self.assertEqual(old["coverage"]["unavailable"], "current_projection_only")
+        await self.execute("INSERT INTO link_operations(operation_key,requested_json,before_json,after_json,"
+                           "before_digest,after_digest,created_at,status) "
+                           "VALUES ('old','{}','{}','{}','before','after',250,'pending')")
+        pending = await reads.current_links(300)
+        self.assertEqual(pending["rows"], [])
+        self.assertFalse(pending["coverage"]["complete"])
+        self.assertEqual(pending["coverage"]["unavailable"], "link_recovery_required")
+
     async def test_every_reader_preserves_rows_order_nulls_and_empty_members(self):
         old = FrozenLegacyLinks(self.legacy)
         consumers = (

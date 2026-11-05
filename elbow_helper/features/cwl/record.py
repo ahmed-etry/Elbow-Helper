@@ -26,6 +26,7 @@ from elbow_helper.features.wars.record import board_payload
 from elbow_helper.infrastructure.persistence.revisions import sqlite_revision
 
 from .helpers import coc_time_to_dt
+from .record_rows import feature_week
 
 LOGGER = logging.getLogger(__name__)
 SECOND = 1_000_000
@@ -175,7 +176,10 @@ class CwlHistory:
 
     def _weeks(self, clan_codes=None, **selection) -> list[dict[str, Any]]:
         clans = self._clans(clan_codes)
-        return self._run(self.reads.weeks(clans, **selection))["weeks"] if clans else []
+        weeks = [feature_week(week, self.codes) for week in
+                 self._run(self.reads.weeks(clans, **selection))["weeks"]] if clans else []
+        return sorted(weeks, key=lambda week: (max(war["end_ts"] for war in week["wars"]),
+                                              week["clan_code"], week["season"]))
 
     def _wars(self, clan_codes=None, **selection) -> list[dict[str, Any]]:
         return [war for week in self._weeks(clan_codes, **selection) for war in week["wars"]]
@@ -196,7 +200,7 @@ class CwlHistory:
             names.update((row["player_tag"], row["player_name"]) for row in self.directory.directory_names()
                          if row["player_name"] is not None)
         names.update((row["player_tag"], row["player_name"]) for row in
-                     self._run(self.reads.account_names(self._clans())))
+                     self._run(self.reads.account_names(self._clans()))["rows"])
         return [{"player_tag": tag, "player_name": name} for tag, name in sorted(names)]
 
     def bonus_seasons(self, clan_codes: list[str] | None = None) -> list[str]:
@@ -217,8 +221,10 @@ class CwlHistory:
 
     def scoring_wars(self, clan_code: str, war_ids: list[str]) -> list[dict[str, Any]]:
         """Exactly these ended wars of the clan; any other ID is refused with why."""
+        if not 1 <= len(war_ids) <= 56 or any(not isinstance(key, str) or not key for key in war_ids):
+            raise ValueError("Expected 1..56 war IDs")
         tag = self.tags[clan_code]
-        resolved = self._run(self.reads.resolve(war_ids))
+        resolved = self._run(self.reads.resolve(war_ids))["matches"]
         own_tags = [war["war_tag"] for wars in resolved.values() for war in wars
                     if war["type"] == "CWL" and war["state"] == "warEnded" and tag in war["clan_tags"]]
         own = self._wars([clan_code], war_tags=own_tags) if own_tags else []

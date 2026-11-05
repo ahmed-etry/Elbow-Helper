@@ -2,7 +2,7 @@
 
 from elbow_helper.features.account_links.config import DB_PATH
 from elbow_helper.configuration.files import FAMILY_DATABASE
-from elbow_helper.data.reads.people_links import query_links
+from elbow_helper.data.link_projection import query_links
 from contextlib import closing
 import sqlite3
 

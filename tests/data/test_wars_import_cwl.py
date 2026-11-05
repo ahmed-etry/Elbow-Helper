@@ -128,7 +128,7 @@ class CopyTests(CwlFixture, unittest.IsolatedAsyncioTestCase):
         first = await self.war_of("#RR0")
         self.assertEqual((first["type_basis"], first["state"], first["end_at"], first["team_size"],
                           first["roster_complete"], first["attacks_complete"], first["result_complete"]),
-                         ("war_tag", "warEnded", WEEK_END * SECOND, 2, 1, 1, 0))
+                         ("war_tag", "warEnded", WEEK_END * SECOND, 2, 0, 0, 0))
         sides = {r["clan_tag"]: r for r in await self.rows("SELECT * FROM war_sides WHERE war_id=?", (first["id"],))}
         # Best attack per base: 3 + 2 stars, (100 + 70) / 2 destruction; marked as the copy's own sums.
         own = sides["#PY"]

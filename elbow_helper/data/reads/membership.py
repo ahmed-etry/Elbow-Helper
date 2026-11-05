@@ -84,8 +84,10 @@ class MembershipReads(RecordReads):
                            for member_tag, value in roster.items()]
             rows.append({"clan_tag": tag, "members": members, "badge_url": badge, "coverage": cov,
                          "observed_at": cov["last_good_at"]})
-        return {"rows": rows, "complete": bool(rows) and len(runs) == 1
-                and all(row["members"] is not None for row in rows)}
+        complete = bool(rows) and len(runs) == 1 and all(row["members"] is not None for row in rows)
+        coverage = envelope([row["coverage"] for row in rows], at=at)
+        coverage["complete"] &= complete
+        return {"rows": rows, "complete": complete, "coverage": coverage}
 
     async def current(self, *, clans=None, tags=None, as_of=None, limit=200, offset=0):
         return await self.at(timestamp(as_of), clans=clans, tags=tags, limit=limit, offset=offset)
@@ -174,12 +176,15 @@ class MembershipReads(RecordReads):
 
     async def generations(self, after, before):
         """The latest 128 complete family generations inside a history window."""
-        return await self._read(self._generations, timestamp(after), timestamp(before))
+        after, before = timestamp(after), timestamp(before)
+        if before <= after:
+            raise ValueError("The history window must end after it starts")
+        return await self._read(self._generations, after, before)
 
     def _generations(self, connection, after, before):
         scopes = self.expected_tags
         if not scopes:
-            return {'rows': [], 'truncated': False}
+            return {'rows': [], 'truncated': False, 'coverage': envelope([], after=after, before=before, at=before - 1)}
         rows = connection.execute(
             'SELECT run_id,MIN(fetched_at) AS at FROM collection_items '
             f"WHERE source_kind='clan_roster' AND scope_id IN ({placeholders(scopes)}) "
@@ -187,7 +192,11 @@ class MembershipReads(RecordReads):
             "HAVING COUNT(*)=? AND COUNT(DISTINCT scope_id)=? AND SUM(status IN ('ok','empty') "
             "AND json_extract(completeness_json,'$.complete')=1)=? ORDER BY at DESC,run_id DESC LIMIT 129",
             (*scopes, after, before, len(scopes), len(scopes), len(scopes))).fetchall()
-        return {'rows': [dict(row) for row in reversed(rows[:128])], 'truncated': len(rows) > 128}
+        truncated = len(rows) > 128
+        signals = [signal(connection, 'clan_roster', scope, before - 1, after=after, before=before)
+                   for scope in scopes]
+        return {'rows': [dict(row) for row in reversed(rows[:128])], 'truncated': truncated,
+                'coverage': envelope(signals, after=after, before=before, at=before - 1, truncated=truncated)}
 
     @staticmethod
     def _history(connection, after, before, selected_clans, selected_tags, limit, offset):
