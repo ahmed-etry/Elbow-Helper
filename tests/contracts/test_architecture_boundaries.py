@@ -121,11 +121,14 @@ class DependencyBoundaryTests(unittest.TestCase):
         self.assertNotIn("clan_health.database", cwl_tools)
         self.assertNotIn("BonusAnalysisService", cwl_tools)
         cwl_scoring_tools = (
-            agent_root / "capabilities" / "cwl" / "scoring.py"
+            agent_root / "reads" / "cwl.py"
         ).read_text(encoding="utf-8")
         self.assertNotIn("roster.analysis", cwl_scoring_tools)
         self.assertNotIn("clan_health.database", cwl_scoring_tools)
         self.assertNotIn("BonusAnalysisService", cwl_scoring_tools)
+        self.assertFalse((agent_root / "capabilities" / "cwl" / "scoring.py").exists())
+        cwl_results = (FEATURE_ROOT / "cwl" / "results.py").read_text(encoding="utf-8")
+        self.assertNotIn("elbow_helper.agent", cwl_results)
         achievement_tools = (
             agent_root / "capabilities" / "achievements" / "reads.py"
         ).read_text(encoding="utf-8")

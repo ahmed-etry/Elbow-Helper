@@ -13,6 +13,7 @@ from elbow_helper.configuration.clans import CLANS
 from elbow_helper.agent.families import identity_reads, war_reads
 from elbow_helper.agent.families.access_reads import TOOLS as ACCESS_TOOLS
 from elbow_helper.agent.families.model_view import family_model_view
+from agent.cwl_helpers import ResultQueries
 from agent.engine.test_agent_plan_flow import _context
 
 
@@ -32,8 +33,8 @@ class PlannerEvidenceTests(unittest.IsolatedAsyncioTestCase):
                 raise ValueError('Synthetic missing history')
             return Snapshot((Score('#P0', 1), Score('#Q0', 2)))
 
-        context = replace(_context(), cwl_queries=SimpleNamespace(ass_wars=score))
-        with patch('elbow_helper.agent.reads.wars.selected_wars', AsyncMock(return_value={'war_ids': ['war']})):
+        context = replace(_context(), cwl_queries=ResultQueries(ass_wars=score))
+        with patch('elbow_helper.features.cwl.results.CwlResults.selection', return_value={'war_ids': ['war']}):
             result = await war_reads.cwl_results(context, {'metric': 'ass', 'clan_codes': ['BEH', 'BEM'],
                 'season': '2026-09', 'account_tags': ['#Q0']})
         self.assertEqual(result['ranked_population'], 2)
@@ -88,9 +89,9 @@ class PlannerEvidenceTests(unittest.IsolatedAsyncioTestCase):
             return Snapshot((Score('#P0', 1, 2.5, 7), Score('#Q0', None, None, 0)),
                 clan_code, ({'description': 'x' * 2000},) * 30)
 
-        context = replace(_context(), cwl_queries=SimpleNamespace(ass_wars=score))
+        context = replace(_context(), cwl_queries=ResultQueries(ass_wars=score))
         tool = next(t for t in war_reads.TOOLS if t.definition.name == 'read_cwl_results')
-        with patch('elbow_helper.agent.reads.wars.selected_wars', AsyncMock(return_value={'war_ids': ['war']})):
+        with patch('elbow_helper.features.cwl.results.CwlResults.selection', return_value={'war_ids': ['war']}):
             result = await tool.handler(context, {'clan_codes': ['BEH', 'BEM'], 'metric': 'ass',
                 'season': '2026-09', 'delivery': 'xlsx', 'sheet_by': 'clan_code', 'limit': 1})
         self.assertEqual(result['total_rows'], 4)

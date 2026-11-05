@@ -4,7 +4,7 @@ from copy import deepcopy
 import json
 import unittest
 
-from elbow_helper.agent.capabilities.cwl.scoring import ass_ranking
+from elbow_helper.agent.reads.cwl import ass_ranking
 from elbow_helper.agent.engine.budgets import MAX_TOOL_RESULT_CHARACTERS
 from elbow_helper.agent.engine.tool_call import bound_tool_result
 from elbow_helper.agent.plan.results import model_view

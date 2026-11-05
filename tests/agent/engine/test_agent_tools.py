@@ -180,9 +180,10 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
 
         line = next(line for line in capability_list(build_agent_tools()).splitlines()
                     if line.startswith("cwl_ass_scores:"))
-        for guidance in ("query_bot_data", "health.wars", "cwl_round (days 1-7)",
-                         "Sample projects to seven attacks", "state=warEnded"):
+        for guidance in ("read_war_attendance", "read_cwl_results", "Rounds 1-7 are one season",
+                         "Sample projects to seven attacks", "completed CWL wars"):
             self.assertIn(guidance, line)
+        self.assertNotIn('health.wars', line)
         self.assertIn("players:[{", line)
         self.assertIn("attack_sample", line)
 
@@ -203,7 +204,8 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
         line = next(line for line in capability_list(build_agent_tools()).splitlines()
                     if line.startswith("cwl_bonus_scores:"))
         self.assertIn("Adjusted delta is not ASS", line)
-        self.assertIn("query_bot_data", line)
+        self.assertIn("read_war_attendance", line)
+        self.assertIn("read_cwl_results", line)
         self.assertIn("rows:[{", line)
         self.assertIn("attack_sample", line)
         self.assertEqual(build_agent_tools()["cwl_bonus_scores"].action_class.value, "read")

@@ -1,11 +1,11 @@
 """Historical CWL reads do not depend on unrelated current API data."""
 from dataclasses import make_dataclass, replace
-from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from elbow_helper.agent.families import war_reads
 from elbow_helper.features.cwl.config import CWL_CLAN_CODES
+from agent.cwl_helpers import ResultQueries
 from agent.engine.test_agent_plan_flow import _context
 
 CODE = CWL_CLAN_CODES[0]
@@ -22,7 +22,7 @@ class HistoricalReadDependencyTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(selection=selection):
                 performance = Mock(return_value=snapshot)
                 current = AsyncMock(return_value=[])
-                context = replace(_context(), cwl_queries=SimpleNamespace(performance=performance))
+                context = replace(_context(), cwl_queries=ResultQueries(performance=performance))
                 with patch.object(war_reads, 'current_leagues', current), patch(
                         'elbow_helper.configuration.clans.CLAN_ORDER', [CODE]):
                     result = await war_reads.cwl_results(context,

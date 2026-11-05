@@ -9,6 +9,7 @@ from tests.data.legacy_health_schema import LegacyHealthFile as ClanHealthReposi
 from elbow_helper.features.clan_health.attendance import aggregate_attendance
 from elbow_helper.agent.families import record_wars, war_reads
 from elbow_helper.configuration.clans import CLANS
+from agent.cwl_helpers import ResultQueries
 from agent.engine.test_agent_plan_flow import _context
 from agent.families.record_stub import regular_id, regular_war, regular_wars_from
 
@@ -71,7 +72,7 @@ class WarFamilyTests(unittest.IsolatedAsyncioTestCase):
             ('season', str), ('rank', int), ('multi_season_rank', int)])
         Snapshot = make_dataclass('SyntheticMegaSnapshot', [('rows', tuple), ('seasons', tuple)])
         snapshot = Snapshot((Row('#P0', 'BEH', '2026-09', 1, 2), Row('#Q0', 'BEH', '2026-09', 2, 1)), ('2026-09', '2026-08'))
-        context = replace(_context(), cwl_queries=SimpleNamespace(performance=lambda **kwargs: snapshot))
+        context = replace(_context(), cwl_queries=ResultQueries(performance=lambda **kwargs: snapshot))
         result = await war_reads.cwl_results(context, {'metric': 'mega_ass', 'clan_codes': ['BEH'], 'top_n': 1})
         self.assertEqual(result['rows'][0]['player_tag'], '#Q0')
         self.assertEqual(result['rows'][0]['multi_season_rank'], 1)
@@ -161,7 +162,7 @@ class WarFamilyTests(unittest.IsolatedAsyncioTestCase):
         from dataclasses import make_dataclass
         Row = make_dataclass('SyntheticScore', [('player_tag',str),('rank',int),('ass_score',float)])
         Snapshot = make_dataclass('SyntheticSnapshot', [('rows',tuple)])
-        query = SimpleNamespace(ass_wars=lambda **selection: Snapshot(tuple(
+        query = ResultQueries(ass_wars=lambda **selection: Snapshot(tuple(
             Row('#P'+str(index),index+1,float(30-index)) for index in range(30))))
         context = replace(_context(), cwl_queries=query)
         with patch('elbow_helper.agent.reads.wars.selected_wars',AsyncMock(return_value={'war_ids':['war']})):

@@ -17,7 +17,7 @@ from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.models import AgentRequestContext
 from agent.report_helpers import make_event_report
 from elbow_helper.agent.capabilities.cwl.reads import read_cwl_performance, read_cwl_performance_report, read_cwl_threads
-from elbow_helper.agent.capabilities.cwl.scoring import cwl_ass_scores, cwl_bonus_scores
+from elbow_helper.agent.reads.cwl import cwl_ass_scores, cwl_bonus_scores
 from elbow_helper.agent.files.spreadsheet_tools import prepare_spreadsheet
 from elbow_helper.agent.engine.registry import build_agent_tools
 from elbow_helper.agent.engine.service import AgentService
@@ -58,6 +58,8 @@ def _snapshot(count=30):
 
 
 class _Queries:
+    result_snapshot = CwlQueries.result_snapshot
+
     def __init__(self):
         self.snapshot = _snapshot()
         self.calls = []
@@ -349,7 +351,7 @@ class AgentCwlTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCase):
 
     async def test_bonus_scope_access_loss_before_retention_fails_closed(self):
         with patch(
-            "elbow_helper.agent.capabilities.cwl.scoring.require_evidence_access",
+            "elbow_helper.agent.reads.cwl.require_evidence_access",
             AsyncMock(side_effect=[None, AgentAccessLost("revoked")]),
         ):
             with self.assertRaises(AgentAccessLost):

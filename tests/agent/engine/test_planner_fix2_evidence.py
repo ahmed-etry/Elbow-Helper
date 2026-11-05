@@ -18,6 +18,7 @@ from elbow_helper.agent.families import identity_reads, war_reads
 from elbow_helper.agent.families.access_reads import TOOLS as ACCESS_TOOLS
 from elbow_helper.agent.families.core import family_tool
 from elbow_helper.infrastructure.ai import AgentToolDefinition
+from agent.cwl_helpers import ResultQueries
 from agent.engine.test_agent_plan_flow import _context, _Model, _Session, _plan
 from agent.engine.test_writer_tables import expand as unpack
 
@@ -136,9 +137,9 @@ class PlannerFix2EvidenceTests(unittest.IsolatedAsyncioTestCase):
             return Snapshot(tuple(Score('#P' + str(i), clan_code + ' account ' + str(i),
                 i + 1, 50.0 - i, 'Source field ' * 10) for i in range(30)), clan_code)
 
-        context = replace(_context(), cwl_queries=SimpleNamespace(ass_wars=score))
+        context = replace(_context(), cwl_queries=ResultQueries(ass_wars=score))
         tool = next(t for t in war_reads.TOOLS if t.definition.name == 'read_cwl_results')
-        with patch('elbow_helper.agent.reads.wars.selected_wars', AsyncMock(return_value={'war_ids': ['war']})):
+        with patch('elbow_helper.features.cwl.results.CwlResults.selection', return_value={'war_ids': ['war']}):
             flow, evidence = await self.writer(context, {'read_cwl_results': tool}, [{
                 'id': 'ass', 'capability': 'read_cwl_results', 'arguments': {'metric': 'ass',
                     'clan_codes': codes, 'season': '2026-10', 'delivery': 'xlsx',

@@ -187,6 +187,13 @@ class CwlHistory:
         """The record's revision; the directory's names come from the same record."""
         return self.reads.cache_revision()
 
+    def seasonal_cohort(self, *, clan_code, season=None):
+        selected = self._run(self.reads.cohort(self.tags[clan_code], season=season))
+        if selected is not None:
+            selected['observed_at'] = datetime.fromtimestamp(
+                selected['observed_at'] / SECOND, timezone.utc).isoformat()
+        return selected
+
     def account_names(self) -> list[dict[str, str]]:
         """Names of accounts seen in family clans and in their war lineups, former members included."""
         names = set()

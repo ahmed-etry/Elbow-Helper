@@ -39,7 +39,9 @@ class RosterBasisTests(unittest.IsolatedAsyncioTestCase):
             message_search=SimpleNamespace(history_page=history),
             account_links=SimpleNamespace(get_links_by_tags=lambda tags: {
                 tag: {'discord_user_id': 41} for tag in tags}),
-            cwl_queries=SimpleNamespace(attendance=lambda **kwargs: {'rows': [], 'coverage': {}}))
+            cwl_queries=SimpleNamespace(attendance=lambda **kwargs: {'rows': [], 'coverage': {}},
+                seasonal_cohort=lambda **kwargs: {'player_tags': ['#Q0'], 'season': '2025-12',
+                    'observed_at': '2025-12-31T00:00:00+00:00'}))
         roster_tool = next(tool for tool in TOOLS if tool.definition.name == 'read_clan_rosters')
         cohort_tool = next(tool for tool in TOOLS if tool.definition.name == 'read_member_cohort')
         roster = await roster_tool.handler(context, {'clan_codes': ['BE4']})

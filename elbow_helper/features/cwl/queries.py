@@ -29,6 +29,8 @@ class CwlHistorySource(Protocol):
 
     def account_names(self) -> list[dict[str, str]]: ...
 
+    def seasonal_cohort(self, *, clan_code: str, season: str | None = None) -> dict | None: ...
+
     def scoring_wars(
         self, clan_code: str, war_ids: list[str],
     ) -> list[dict[str, Any]]: ...
@@ -253,6 +255,20 @@ class CwlQueries:
         self._bonus_analysis = bonus_analysis
         self._bonus_config = bonus_config
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+
+    def results(self, **arguments):
+        """The feature-owned selection, scoring and selected-cohort summaries."""
+        from .results import CwlResults
+        return CwlResults(self).read(arguments)
+
+    def result_snapshot(self, *, metric, **selection):
+        """Preserve typed snapshots for retained reports and legacy score tools."""
+        from .results import CwlResults
+        return CwlResults(self).snapshot(metric, **selection)
+
+    def seasonal_cohort(self, *, clan_code, season=None):
+        """Collected group signups, separate from completed-war participants."""
+        return self._history.seasonal_cohort(clan_code=clan_code, season=season)
 
     def attendance(self, **selection):
         """Read stored league-war participation, including incomplete seasons."""

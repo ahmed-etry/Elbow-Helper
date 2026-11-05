@@ -2,7 +2,7 @@
 
 from elbow_helper.configuration.roles import AGENT_TESTER_ROLE_ID
 from ..research.history import readable_history_row
-from .cwl_summary import CWL_ANALYSIS_FIELDS
+from elbow_helper.features.cwl.results_summary import CWL_ANALYSIS_FIELDS
 
 
 # Member lookups return these only on include_profile or include_standing; the retained report keeps them all.
