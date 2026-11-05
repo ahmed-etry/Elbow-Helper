@@ -103,6 +103,7 @@ async def prepare_hibernate(context: Any,
         )
 
     async def run() -> ActionOutcome:
+        plan["via"] = "agent"
         message = await workflow.hibernate_member(context.guild, context.member, plan)
         state = workflow.hibernation_member_state(member.id)
         if state is None or state.get("roles") != list(plan["stored_role_ids"]):
@@ -210,6 +211,7 @@ async def prepare_reactivate(context: Any,
         return signature(current) == initial
 
     async def run() -> ActionOutcome:
+        plan["via"] = "agent"
         result = await workflow.reactivate_member(plan)
         if workflow.hibernation_member_state(target.id) is not None:
             raise OSError("Reactivation state could not be verified")

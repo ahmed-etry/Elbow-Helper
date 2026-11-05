@@ -1,10 +1,12 @@
 ﻿from __future__ import annotations
 
-import json
+import asyncio
+from copy import deepcopy
 import logging
 import re
 from typing import Any
 
+from elbow_helper.data.events import Event, finish_on_cancel, load_state, now_us, record, save_state
 from elbow_helper.infrastructure.persistence import read_json
 from elbow_helper.infrastructure.persistence import write_json_atomic
 from .config import STATE_FILE
@@ -17,42 +19,124 @@ FALLBACK_INFO_MESSAGE_KEY = "_fallback_info_message_id"
 class HibernationStateReader:
     """Read-only member state exposed to other features."""
 
+    def __init__(self, state):
+        self.state = state
+
     def get_member(self, member_id: int) -> dict[str, Any] | None:
-        entry = load_hibernation_state().get(str(member_id))
-        return dict(entry) if isinstance(entry, dict) else None
+        entry = self.state.snapshot().get(str(member_id))
+        return entry if isinstance(entry, dict) else None
 
 
-def load_hibernation_state() -> dict[str, Any]:
+def _legacy_state(path) -> dict[str, Any]:
     try:
-        payload = read_json(STATE_FILE)
+        payload = read_json(path)
         if isinstance(payload, dict):
             return payload
-        return {}
+        raise ValueError("Invalid hibernation state")
     except FileNotFoundError:
         return {}
-    except json.JSONDecodeError:
-        return {}
-    except OSError as exc:
-        LOGGER.warning("Failed loading %s: %s", STATE_FILE, exc)
-        return {}
 
 
-def save_hibernation_state(data: dict[str, Any]) -> None:
-    try:
-        write_json_atomic(STATE_FILE, data, indent=2)
-    except (OSError, TypeError) as exc:
-        LOGGER.error("Failed saving %s: %s", STATE_FILE, exc)
-        raise
+def hibernation_event(member_id, info, kind, *, actor_id=None, via="command", forced=False, ticket_id=None):
+    return Event(
+        "hibernation", f"{member_id}:{info['_case_started_at']}", kind,
+        info["_case_started_at"] if kind == "hibernated" else now_us(),
+        subject_discord_id=member_id, actor_discord_id=actor_id,
+        actor_kind="import" if via == "import" else
+        ("agent" if via == "agent" else "member") if actor_id is not None else "automatic",
+        via=via, detail={"roles_taken": list(info["roles"])} if kind == "hibernated" else
+        {"forced": forced, "ticket_channel_id": ticket_id},
+        source_channel_id=ticket_id,
+    )
 
 
-def save_hibernation_member(member_id: int, info: dict[str, Any] | None) -> None:
-    """Checkpoint one member without overwriting fallback metadata saved by a step."""
-    data = load_hibernation_state()
-    if info is None:
-        data.pop(str(member_id), None)
-    else:
-        data[str(member_id)] = info
-    save_hibernation_state(data)
+class HibernationState:
+    """Checkpoint each step with its events, then mirror JSON for one update."""
+
+    def __init__(self, events, path=None):
+        self.events = events
+        self.path = STATE_FILE if path is None else path
+        self.state = {}
+        self._lock = asyncio.Lock()
+        self._members = {}
+
+    def member_lock(self, member_id):
+        return self._members.setdefault(member_id, asyncio.Lock())
+
+    def snapshot(self):
+        return deepcopy(self.state)
+
+    async def startup(self):
+        async with self._lock:
+            async def complete():
+                self.state = await self.events.call(self._import)
+                await self._mirror()
+            await finish_on_cancel(complete())
+        self.events.register_member_deletion("hibernation", self.refresh_after_deletion)
+
+    def _import(self, connection):
+        # Import locally: queries uses the metadata constants in this module.
+        from .queries import _start_timestamp
+        state = load_state(connection, "hibernation")
+        if state is not None:
+            return state
+        state = _legacy_state(self.path)
+        for member, info in state.items():
+            if member.startswith("_"):
+                continue
+            member_id = int(member)
+            started = _start_timestamp(info.get("hibernation_date"))
+            info.setdefault("_case_started_at", started * 1_000_000 if started else now_us())
+            if "hibernation_progress" not in info:
+                record(connection, hibernation_event(member_id, info, "hibernated", via="import"))
+        save_state(connection, "hibernation", state)
+        return state
+
+    async def change(self, edit, events=()):
+        async with self._lock:
+            async def complete():
+                def write(connection):
+                    state = load_state(connection, "hibernation")
+                    edit(state)
+                    save_state(connection, "hibernation", state)
+                    for event in events:
+                        record(connection, event)
+                    return state
+                self.state = await self.events.call(write)
+                await self._mirror()
+            await finish_on_cancel(complete())
+
+    async def save_member(self, member_id, info, *, events=()):
+        info = deepcopy(info)
+        def edit(state):
+            if info is None:
+                state.pop(str(member_id), None)
+            else:
+                state[str(member_id)] = info
+        await self.change(edit, events)
+
+    async def save_fallback_info(self, message_id):
+        await self.change(lambda state: set_fallback_info_message_id(state, message_id))
+
+    async def save_fallback_thread(self, member_id, entry):
+        entry = deepcopy(entry)
+        def edit(state):
+            if entry is None:
+                remove_fallback_thread_entry(state, member_id)
+            else:
+                set_fallback_thread_entry(state, member_id, entry)
+        await self.change(edit)
+
+    async def refresh_after_deletion(self, discord_id):
+        async with self._lock:
+            self.state = await self.events.call(load_state, "hibernation")
+            await self._mirror()
+
+    async def _mirror(self):
+        try:
+            await asyncio.to_thread(write_json_atomic, self.path, self.state, indent=2)
+        except (OSError, TypeError) as exc:
+            LOGGER.error("Failed saving %s: %s", self.path, exc)
 
 
 def get_fallback_info_message_id(data: dict[str, Any]) -> int | None:

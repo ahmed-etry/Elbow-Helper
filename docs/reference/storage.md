@@ -34,7 +34,7 @@ retain older feature names because existing deployments depend on them.
 | CWL | `data/cwl/cwl_bonus_dashboard_state.json` | Bonus board message IDs, clan status, and reward recipients |
 | Events | `data/event_stats/event_stats.json` | Event definitions, order, and messages |
 | Examinations | `data/examination/examination_state.json` | Examiners, cases, availability, panel, and cleanup state |
-| Hibernation | `data/hibernation/hibernation.json` | Saved roles and hibernating members |
+| Hibernation | `data/events/events.sqlite3` | Saved roles, hibernating members and their history |
 | Leadership news | `data/events/events.sqlite3` | Pending publish prompts and what was published |
 | Member lifecycle | `data/snapshot_intel/snapshot_intel.json` | Invites, ticket index, departures, and reports |
 | Old records | `data/records/records.sqlite3` | Leadership records, kept while that feature is rethought |
