@@ -544,25 +544,16 @@ class CwlDashboardMixin:
         clan_name = CLAN_NAMES.get(clan_code, clan_code)
         clan_tag = CWL_CLAN_TAGS.get(clan_code, "")
         now = datetime.now(dt_timezone.utc)
-        if not self._is_cwl_window():
-            image_file = self._render_cwl_stars_image(clan_name, clan_tag or "-", now.strftime("%Y-%m"), [], 0)
-            embed = discord.Embed(
-                title=f"CWL Stars - {clan_name}",
-                description="No CWL season is active right now.",
-                color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
-                timestamp=now,
-            )
-            embed.set_thumbnail(url=DEFAULT_THUMBNAIL_URL)
-            embed.set_image(url="attachment://cwl_stars_summary.png")
-            return embed, image_file
-
         wars, warnings = await self.bonus_analysis.current_wars(clan_code)
+        # Completed results belong to the league's calendar month, including after day 11.
+        wars = [war for war in wars if str(war.get("_season") or now.strftime("%Y-%m"))[:7] == now.strftime("%Y-%m")]
 
         if not wars or not clan_tag:
             image_file = self._render_cwl_stars_image(clan_name, clan_tag or "-", now.strftime("%Y-%m"), [], 0)
             embed = discord.Embed(
                 title=f"CWL Stars - {clan_name}",
-                description="No CWL war data is available right now.",
+                description=("No CWL war data is available right now." if self._is_cwl_window()
+                             else "No CWL season is active right now."),
                 color=discord.Color(DEFAULT_EMBED_COLOR_HEX),
                 timestamp=now,
             )
@@ -589,7 +580,7 @@ class CwlDashboardMixin:
 
         player_stats: Dict[str, Dict[str, Any]] = {}
         period_candidates: List[datetime] = []
-        league_name = await self._fetch_clan_war_league_name(clan_tag)
+        league_name = next((war["_league"] for war in wars if war.get("_league")), None)
         wins_count = 0
 
         # Use ended rounds only so rankings do not fluctuate with in-progress/prep war payloads.
@@ -653,8 +644,8 @@ class CwlDashboardMixin:
             )
 
         period_source = min(period_candidates) if period_candidates else now
-        period_ym = period_source.strftime("%Y-%m")
-        period_text = period_source.strftime("%b %Y")
+        period_ym = str(ended_wars[0].get("_season") or period_source.strftime("%Y-%m"))[:7]
+        period_text = datetime.strptime(period_ym, "%Y-%m").strftime("%b %Y")
         guaranteed_slots = self._cwl_guaranteed_bonus_slots(league_name)
         bonuses_assignable = guaranteed_slots + wins_count
 

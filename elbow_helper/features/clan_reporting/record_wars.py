@@ -1,4 +1,4 @@
-"""Monthly reporting's calendar and newest-50-entry war-log policy."""
+"""Monthly regular-log results and individual league-round results."""
 
 from datetime import datetime, timezone
 
@@ -24,7 +24,8 @@ async def monthly_results(reads, clan, month, as_of=None):
     while offset is not None:
         result = await reads.log_entries(clan, as_of=as_of, offset=offset)
         as_of = result["coverage"]["requested"]["as_of"]
-        entries.extend(result["rows"])
+        # A league-week log summary is a season placement, not a round result.
+        entries.extend(entry for entry in result["rows"] if entry["kind"] == "war")
         offset = result["next_offset"]
 
     def counts(selected):
@@ -35,13 +36,21 @@ async def monthly_results(reads, clan, month, as_of=None):
         return totals
     recent = [entry for entry in entries[:LOG_WINDOW] if start <= entry["end_at"] < end]
     older = [entry for entry in entries[LOG_WINDOW:] if start <= entry["end_at"] < end]
+    league, offset = [], 0
+    while offset is not None:
+        rounds = await reads.completed([clan], start, end, types=("CWL",), as_of=as_of, offset=offset)
+        league.extend({"war_id": war["war_id"], "end_at": war["end_at"], "result": war["result"], "kind": "cwl_round"}
+                      for war in rounds["rows"])
+        offset = rounds["next_offset"]
     coverage = result["coverage"]
     source = coverage["signals"][0]
     coverage["requested"].update(after=start, before=end)
     coverage["read_after_month"] = source["last_good_at"] is not None and source["last_good_at"] >= end
     coverage["complete"] &= coverage["read_after_month"] and not source["log_limits"]["backfill_pending"]
+    coverage["league_rounds"] = rounds["coverage"]
+    coverage["complete"] &= rounds["coverage"]["complete"]
     available = result["status"] == "available"
     return {"clan_tag": clan, "month": month, "after": start, "before": end, "status": result["status"],
-            **(counts(recent) if available else dict.fromkeys(("wins", "losses", "ties", "unknown_result", "total"))),
-            "entries": recent if available else [], "beyond_log_window": counts(older) if available else None,
+            **(counts(recent + league) if available else dict.fromkeys(("wins", "losses", "ties", "unknown_result", "total"))),
+            "entries": recent + league if available else [], "beyond_log_window": counts(older) if available else None,
             "coverage": coverage}

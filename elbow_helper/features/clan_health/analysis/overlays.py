@@ -152,7 +152,8 @@ class ClanHealthOverlayMixin:
             row["war_events_joined"] = reg_joined + cwl_joined
             row["war_hits_expected"] = expected
             row["war_hits_used"] = used
-            row["war_missed"] = max(0, expected - used)
+            cwl_missed = int(cwl.get("missed_confirmed", max(0, cwl_expected - cwl_used)))
+            row["war_missed"] = max(0, reg_expected - reg_used) + cwl_missed
             # Stars and destruction cover the stored attacks, which the attack count counts.
             row["war_stars_total"] = float(reg.get("stars") or 0) + float(cwl.get("stars") or 0.0)
             row["war_destruction_total"] = float(reg.get("destruction") or 0) + float(cwl.get("destruction") or 0.0)
@@ -164,7 +165,9 @@ class ClanHealthOverlayMixin:
             row["cwl_events_joined"] = cwl_joined
             row["cwl_hits_expected"] = cwl_expected
             row["cwl_hits_used"] = cwl_used
-            row["cwl_missed"] = max(0, cwl_expected - cwl_used)
+            row["cwl_missed"] = cwl_missed
+            row["cwl_hits_final_expected"] = int(cwl.get("attacks_expected_final", cwl_expected))
+            row["cwl_hits_final_used"] = int(cwl.get("attacks_used_final", cwl_used))
 
     def _apply_family_raid_activity(
         self,

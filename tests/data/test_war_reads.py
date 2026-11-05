@@ -244,16 +244,17 @@ class WarReadTests(WarFixture, unittest.IsolatedAsyncioTestCase):
                                log_entry("#CU", "20261015T180000.000Z", "lose"), league_week(october),
                                log_entry("#LQ", "20260930T180000.000Z", "win")),
                           kind="war_log", at=NOVEMBER + HOUR)
-        # A league round is never a log entry; only the week's summary counts.
-        await self.record(war("warEnded", clans=("#PY", "#CU"), end=october), kind="cwl_war", scope="#R0",
-                          at=NOVEMBER + HOUR)
+        # The league round's own final result counts; its week summary does not.
+        league = war("warEnded", clans=("#PY", "#CU"), end=october)
+        league.update(attacksPerMember=1, preparationStartTime="20261008T080000.000Z", startTime="20261009T080000.000Z")
+        await self.record(league, kind="cwl_war", scope="#R0", at=NOVEMBER + HOUR)
         counted = await monthly_results(self.reads, "#PY", "2026-10", NOVEMBER + 2 * HOUR)
         self.assertEqual({key: counted[key] for key in ("status", "wins", "losses", "ties", "total", "unknown_result")},
-                         {"status": "available", "wins": 2, "losses": 1, "ties": 0, "total": 3, "unknown_result": 0})
-        self.assertEqual([entry["kind"] for entry in counted["entries"]], ["war", "war", "league_week"])
+                          {"status": "available", "wins": 1, "losses": 1, "ties": 1, "total": 3, "unknown_result": 0})
+        self.assertEqual([entry["kind"] for entry in counted["entries"]], ["war", "war", "cwl_round"])
         self.assertEqual((counted["after"], counted["before"]), (OCTOBER, NOVEMBER))
         self.assertTrue(counted["coverage"]["read_after_month"])
-        self.assertTrue(counted["coverage"]["complete"])
+        self.assertFalse(counted["coverage"]["complete"])  # No league-group check was recorded.
         empty = await monthly_results(self.reads, "#PY", "2026-08", NOVEMBER + 2 * HOUR)
         self.assertEqual((empty["status"], empty["total"]), ("available", 0))
         # Read before the month ended, the count may still grow.

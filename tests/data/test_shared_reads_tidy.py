@@ -58,7 +58,8 @@ class NeutralWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
 
 class LeagueEvidenceTests(CwlFixture, unittest.IsolatedAsyncioTestCase):
     async def test_coverage_tracks_missing_rounds_and_failures_only_for_relevant_wars(self):
-        await self.record(group(rounds=[{"warTags": ["#R0", "#R2", "#R8"]}]), kind="cwl_group", at=START - SECOND)
+        await self.record(group(rounds=[{"warTags": ["#R0", "#R2"]}, {"warTags": ["#R8"]}]),
+                          kind="cwl_group", at=START - SECOND)
         await self.record(war("warEnded"), kind="cwl_war", scope="#R0", at=END + SECOND)
         await self.record(war("warEnded", clans=("#LQ", "#CU")), kind="cwl_war", scope="#R2", at=END + SECOND)
         await self.record(None, kind="cwl_war", scope="#R0", status=503, at=END + 2 * SECOND)

@@ -201,14 +201,16 @@ class CwlLeagueWarFetchTests(unittest.IsolatedAsyncioTestCase):
         # Round totals, seasons and staleness are covered with real record weeks in test_cwl_record.
         manager = CwlRouterMixin()
         war = _cwl_war("inWar", 1)
-        manager.cwl_groups = SimpleNamespace(wars=AsyncMock(return_value=[war]))
+        group = {"signal": {"status": "observed", "last_outcome": "ok"}, "coverage": {}}
+        manager.cwl_groups = SimpleNamespace(group=AsyncMock(return_value=group))
         client = SimpleNamespace(configured=True, get=AsyncMock())
         manager.profiles = profile_demand(client)
 
-        wars = await manager._get_league_wars("BEH")
+        with patch("elbow_helper.features.cwl.router.league_wars", return_value=[war]):
+            wars = await manager._get_league_wars("BEH")
 
         self.assertEqual(wars, [war])
-        manager.cwl_groups.wars.assert_awaited_once_with("BEH")
+        manager.cwl_groups.group.assert_awaited_once_with("BEH")
         client.get.assert_not_awaited()
 
 

@@ -74,7 +74,10 @@ def cwl_board_snapshot_is_complete(wars: list[dict[str, Any]]) -> bool:
             return False
     if preparation_rounds:
         preparation_round = min(preparation_rounds)
-        if preparation_round > 1 and preparation_round - 1 not in battle_rounds:
+        ended_rounds = {_war_round(war) for war in wars
+                        if normalize_war_state(war.get("_state") or war.get("state")) == "warended"}
+        if (preparation_round > 1 and preparation_round - 1 not in battle_rounds
+                and preparation_round - 1 not in ended_rounds):
             return False
     if not battle_rounds and not preparation_rounds:
         ended_rounds = {

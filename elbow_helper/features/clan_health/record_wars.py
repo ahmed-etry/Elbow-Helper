@@ -35,7 +35,9 @@ CAPTURE_TIMES = (("end_at", ("warEnded",)), ("observed_at", ("preparation", "inW
 
 async def capture_page(reads, method, *args, **kwargs):
     """Health selects ended wars by end, running wars by last check, within half-open bounds."""
-    result = await getattr(reads, method)(*args, time_field=CAPTURE_TIMES, **kwargs)
+    # A preparation lineup can still change and has not participated yet.
+    capture_times = (CAPTURE_TIMES[0], ("observed_at", ("inWar",))) if kwargs.get("types") == ("CWL",) else CAPTURE_TIMES
+    result = await getattr(reads, method)(*args, time_field=capture_times, **kwargs)
     if method == "attacks":
         positions = {}
         for war in result["lineups"]:

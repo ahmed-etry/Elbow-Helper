@@ -63,8 +63,9 @@ def _account(connection, tag):
 
 
 def left_lineup(connection, war_id, war):
-    """Stored members that a running war's latest roster no longer lists and that never attacked or were attacked."""
-    if war["aggregate"] or war["state"] == "warEnded" or not war["roster_complete"]:
+    """Unreferenced members replaced by a complete lineup, including CWL's first final capture."""
+    if (war["aggregate"] or war["state"] == "warEnded" and war["type"] != "CWL"
+            or not war["roster_complete"]):
         return []
     lineup = {(m["side"], m["player_tag"]) for m in war["members"]}
     return [row["id"] for row in connection.execute(
@@ -167,7 +168,7 @@ def save_war(connection, war, run, at):
         side, tag = row.pop("side"), row.pop("player_tag")
         row.update(account_id=_account(connection, tag), source_run_id=run)
         put(connection, "war_members", {"war_id": war_id, "side": side, "player_tag": tag}, row)
-    # Until the war ends, the latest roster is the lineup.
+    # A first final CWL capture may be the first sight of a preparation-day swap.
     for member_id in left_lineup(connection, war_id, war):
         connection.execute("DELETE FROM war_members WHERE id=?", (member_id,))
     for row in connection.execute("SELECT id,player_tag FROM war_members WHERE war_id=?", (war_id,)):

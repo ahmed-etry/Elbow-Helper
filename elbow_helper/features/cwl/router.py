@@ -24,6 +24,7 @@ from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
 from elbow_helper.domain.player_tags import normalize_player_tag
 from .helpers import coc_time_to_dt
 from .helpers import wait_for_boot_complete
+from .record import group_checked, league_wars
 from elbow_helper.infrastructure.persistence import read_json
 from elbow_helper.infrastructure.persistence import write_json_atomic_async
 from .config import CWL_CLAN_TAGS
@@ -95,9 +96,18 @@ class CwlRouterMixin:
             raise
 
 
-    async def _get_league_wars(self, clan_key: str) -> List[Dict]:
+    async def _get_league_wars(self, clan_key: str) -> Optional[List[Dict]]:
         """Return all CWL wars for this clan (preparation/inWar/warEnded), as the family record holds them."""
-        return await self.cwl_groups.wars(clan_key)
+        group = await self.cwl_groups.group(clan_key)
+        if group is None:
+            return None
+        wars = league_wars(group)
+        if not wars:
+            return [] if group_checked(group) and not group["coverage"].get("missing_wars") else None
+        # Retained finals can be delivered while another group/round check is pending.
+        for war in wars:
+            war["_group_coverage"] = group["coverage"]
+        return wars
 
 
     def _extract_complete_roster(
@@ -177,10 +187,7 @@ class CwlRouterMixin:
 
     async def _poll_once(self):
         # One pass over all clans to log rotations and missed attacks.
-        # Only poll during CWL window (1st-11th UTC)
-        today = datetime.now(timezone.utc).day
-        if today > 11 or today < 1:
-            return
+        # The signup window does not bound final-result or failed-delivery retries.
         last_poll_ts = self.state.get("last_poll_ts", 0)
         poll_ts = int(datetime.now(timezone.utc).timestamp())
         state_dirty = False
@@ -196,8 +203,14 @@ class CwlRouterMixin:
         missed_pending = self.state.setdefault("missed_pending", {})
         for clan_key, tag in CWL_CLAN_TAGS.items():
             wars = await self._get_league_wars(clan_key)
+            if wars is None:
+                awaiting_end = True
+                continue
             if not wars:
                 continue
+            if any(war.get("_snapshot_stale") or not war.get("_group_coverage", {}).get("complete", True)
+                   for war in wars):
+                awaiting_end = True
             await self.sync_registered_cwl_thread(clan_key, wars)
             await self._sync_cwl_channel(clan_key, wars)
             now = datetime.now(timezone.utc)
@@ -236,6 +249,11 @@ class CwlRouterMixin:
                     continue
                 end_ts = int(end_dt.timestamp())
                 if end_ts <= last_poll_ts:
+                    continue
+                own = (ended.get("_coverage") or {}).get("own")
+                if (self._extract_complete_roster(ended, tag) is None
+                        or own is not None and not (own["lineup_complete"] and own["attacks_complete"])):
+                    awaiting_end = True
                     continue
                 ended_candidates.append((end_ts, ended))
             if ended_candidates:
@@ -293,6 +311,8 @@ class CwlRouterMixin:
             rotation_tag = rotation_war.get("_warTag") if rotation_war else None
             rotation_round = rotation_war.get("_round") if rotation_war else None
             if not rotation_war or not rotation_tag:
+                continue
+            if rotation_war.get("_snapshot_stale"):
                 continue
 
             # Diff roster vs prior snapshot and log changes

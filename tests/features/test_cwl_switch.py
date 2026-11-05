@@ -85,7 +85,8 @@ class SwitchRouterTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
         self.missed.assert_awaited_once()
         self.assertEqual(self.missed.await_args.args[:2], ("ONE", "#R8"))
         self.assertTrue(router.state["missed_posted"]["ONE:#R8"])
-        self.assertGreater(router.state["last_poll_ts"], end // SECOND)
+        # The prep snapshot is still overdue; deliver the proven final without losing that gap.
+        self.assertEqual(router.state["last_poll_ts"], end // SECOND - 30)
         await self.poll(router, end + 160 * SECOND)
         self.missed.assert_awaited_once()
 
@@ -110,9 +111,21 @@ class SwitchRouterTests(LeagueFixture, unittest.IsolatedAsyncioTestCase):
         self.missed.assert_not_awaited()
         self.assertEqual(router.state["missed_posted"], {"ONE:#R0": True})
 
+    async def test_failed_group_check_does_not_hold_back_a_proven_final(self):
+        await self.november()
+        end = end_of(2)
+        await self.ended_with_a_miss(2, "#R8", end + 90 * SECOND)
+        await self.record(None, kind="cwl_group", status=503, at=end + 95 * SECOND)
+        router = self.router(old_state(last_poll_ts=end // SECOND - 30, missed_posted={"ONE:#R0": True}))
+        await self.poll(router, end + 100 * SECOND)
+        self.missed.assert_awaited_once()
+        self.assertEqual(self.missed.await_args.args[:2], ("ONE", "#R8"))
+        self.assertEqual(router.state["last_poll_ts"], end // SECOND - 30)
+
     async def test_a_lineup_baseline_the_old_code_saved_is_kept_across_the_switch(self):
         await self.november()
         moment = end_of(2) - 1800 * SECOND
+        await self.record(league_war("preparation", 3), kind="cwl_war", scope="#RC", at=moment)
         names = {"#P0": "Player #P0", "#P2": "Player #P2"}
         same = old_state(last_poll_ts=moment // SECOND, rosters={"ONE": {"#RC": ["#P0", "#P2"]}},
                          roster_names={"ONE": {"#RC": names}})

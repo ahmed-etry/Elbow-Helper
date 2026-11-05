@@ -123,7 +123,7 @@ class ClanReportingWarMixin:
     async def _month_war_counts(
         self, clan_tag: str, month_start: datetime, month_end: datetime
     ) -> tuple[str, tuple[int, int, int]]:
-        """Wins, losses and ties of the recorded war log's newest 50 entries ended in the month.
+        """Regular log results and individual CWL rounds ended in the calendar month.
 
         The status is "available", "unavailable" (no log to count; the notice
         stays pending) or "waiting" (nothing to post yet, try again later).
@@ -138,6 +138,9 @@ class ClanReportingWarMixin:
             return "waiting", (0, 0, 0)
         if recorded["status"] != "available":
             return "unavailable", (0, 0, 0)
+        league = recorded["coverage"]["league_rounds"]
+        if recorded["unknown_result"] or league.get("missing_wars") or league.get("pending_rounds"):
+            return "waiting", (0, 0, 0)
         if not recorded["coverage"]["read_after_month"]:
             # A log read before the month ended may lack its last wars.
             LOGGER.info("Monthly war summary for %s waits for a war log read after the month", clan_tag)
