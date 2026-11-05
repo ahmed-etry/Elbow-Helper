@@ -6,6 +6,7 @@ from elbow_helper.features.cwl.config import CWL_CLAN_NAMES
 from elbow_helper.features.cwl.bonus.analysis import BonusAnalysisService
 from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.infrastructure.clash import ClashClient
+from tests.features.profile_source import profile_demand
 
 
 class _History:
@@ -125,7 +126,7 @@ class CwlQueriesTests(unittest.TestCase):
         history = _History(dataset or _dataset())
         return CwlQueries(
             history, lambda: {},
-            bonus_analysis=BonusAnalysisService(ClashClient(None), history),
+            bonus_analysis=BonusAnalysisService(profile_demand(ClashClient(None)), history),
             bonus_config=config or _BonusConfig(),
             clock=lambda: datetime(2026, 9, 17, 12, tzinfo=timezone.utc),
         )

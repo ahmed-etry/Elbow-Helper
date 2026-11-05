@@ -6,7 +6,7 @@ import json
 from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 
-from . import FamilyStore
+from . import FamilyStore, now_us
 from .api_fields import collect_fields
 from .people import account, account_name, close_interval
 from .player_projection import HOUR_US
@@ -69,6 +69,21 @@ def _donations(connection, account_id, clan_id, row, at, item):
     # supplies no season identity here, so do not infer one from the UTC month.
     connection.execute("INSERT INTO donation_snapshots VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                        (account_id, at, clan_id, None, *values, canonical_json(presence), item))
+
+
+def collect_requested_clan(connection, run, ordinal, tag, response, at=None):
+    """Keep an outside clan's profile a feature asked for in its field history.
+
+    It stays an observation: the clan never becomes a family clan, and its member list
+    creates no accounts, names or stays. Family clans belong to the scheduled clan pass.
+    """
+    at = now_us() if at is None else at
+    with sqlite_transaction(connection, immediate=True):
+        item = FamilyStore.item(connection, run, ordinal)["id"]
+        before = connection.total_changes
+        collect_fields(connection, "clan_profile", tag, _payload(response), run, at)
+        FamilyStore.outcome(connection, item, "ok", at, response=response, count=1,
+                            written=connection.total_changes - before)
 
 
 def collect_clans(connection, run, clans, responses, at):

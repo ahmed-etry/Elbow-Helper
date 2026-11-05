@@ -19,6 +19,7 @@ from elbow_helper.features.cwl.views import CwlTransferHubView
 from elbow_helper.features.rosters.config import CWL_CLAN_ROSTER_IDS
 from elbow_helper.features.rosters.models import LinkedAccount
 from elbow_helper.features.rosters.models import RosterMember
+from tests.features.profile_source import profile_demand
 
 
 class CwlTransferRosterTests(unittest.TestCase):
@@ -39,7 +40,8 @@ class CwlTransferRosterTests(unittest.TestCase):
 
     def test_spin_statuses_come_from_the_record_and_clash_is_not_asked(self) -> None:
         workflow = CwlTransferMixin()
-        workflow.clash_client = SimpleNamespace(configured=False, get=AsyncMock())
+        client = SimpleNamespace(configured=False, get=AsyncMock())
+        workflow.profiles = profile_demand(client)
         statuses = {"BEH": "started", "BE4": "not_started", "BES": "unavailable"}
         workflow.cwl_groups = SimpleNamespace(spin_status=AsyncMock(side_effect=lambda code, now: statuses[code]))
         moment = datetime(2026, 11, 1, 9, tzinfo=timezone.utc)
@@ -48,7 +50,7 @@ class CwlTransferRosterTests(unittest.TestCase):
         self.assertEqual(result, ({"BEH"}, {"BES"}))
         self.assertEqual({call.args for call in workflow.cwl_groups.spin_status.await_args_list},
                          {(code, moment) for code in statuses})
-        workflow.clash_client.get.assert_not_awaited()
+        client.get.assert_not_awaited()
         self.assertEqual(asyncio.run(workflow._cwl_spin_statuses(set(), moment)), (set(), set()))
 
     def test_native_roster_mismatches_use_live_account_clans_and_deduplicate_members(self) -> None:

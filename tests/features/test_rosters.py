@@ -74,13 +74,14 @@ from elbow_helper.infrastructure.time import resolve_timezone
 from elbow_helper.infrastructure.clash import ClashClient
 from elbow_helper.infrastructure.exports import LocalExportStore
 from elbow_helper.infrastructure.exports import WorkbookWriter
+from tests.features.profile_source import profile_demand
 
 
 def _membership_service(
     repository: RosterRepository,
     accounts,
     *,
-    clash_client: ClashClient | None = None,
+    profiles=None,
     roles=None,
     refresh_posts=None,
 ):
@@ -95,7 +96,7 @@ def _membership_service(
         RosterMembershipService(
             repository,
             accounts,
-            clash_client or ClashClient(None),
+            profiles or profile_demand(ClashClient(None)),
             roles,
             lambda roster_id: locks.setdefault(roster_id, asyncio.Lock()),
             refresh_posts,
@@ -110,14 +111,14 @@ def _wire_roster_service(
     repository: RosterRepository,
     *,
     bot=None,
-    clash_client: ClashClient | None = None,
+    profiles=None,
     google_publisher=None,
     accounts=None,
     roles=None,
     posts=None,
 ):
     bot = bot if bot is not None else MagicMock()
-    clash_client = clash_client or ClashClient(None)
+    profiles = profiles or profile_demand(ClashClient(None))
     if accounts is None:
         accounts = MagicMock()
         accounts.clan_badge_url.return_value = None
@@ -158,7 +159,7 @@ def _wire_roster_service(
     cog._locks = locks
     cog._roles = roles
     cog.posts = posts
-    cog.profiles = RosterProfileService(repository, clash_client)
+    cog.profiles = RosterProfileService(repository, profiles)
     cog.publisher = RosterSheetPublisher(
         bot,
         repository,
@@ -978,7 +979,7 @@ class RosterRenderingTests(unittest.TestCase):
         posts = RosterPostService(
             bot,
             repository,
-            ClashClient(None),
+            profile_demand(ClashClient(None)),
             accounts,
             cog,
             emojis,
@@ -1416,7 +1417,7 @@ class RosterEmojiTests(unittest.IsolatedAsyncioTestCase):
         cog.posts = RosterPostService(
             MagicMock(publishing=PublishingQueue()),
             repository,
-            ClashClient(None),
+            profile_demand(ClashClient(None)),
             accounts,
             cog,
             emojis,
@@ -1540,7 +1541,7 @@ class RosterDeletionTests(unittest.IsolatedAsyncioTestCase):
         posts = RosterPostService(
             bot,
             repository,
-            ClashClient(None),
+            profile_demand(ClashClient(None)),
             MagicMock(),
             MagicMock(),
         )
@@ -1563,7 +1564,7 @@ class RosterDeletionTests(unittest.IsolatedAsyncioTestCase):
         posts = RosterPostService(
             bot,
             repository,
-            ClashClient(None),
+            profile_demand(ClashClient(None)),
             MagicMock(),
             MagicMock(),
         )
@@ -1804,7 +1805,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         posts = RosterPostService(
             bot,
             repository,
-            ClashClient(None),
+            profile_demand(ClashClient(None)),
             accounts,
             cog,
         )
@@ -1850,7 +1851,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         posts = RosterPostService(
             MagicMock(publishing=PublishingQueue()),
             repository,
-            ClashClient(None),
+            profile_demand(ClashClient(None)),
             MagicMock(),
             cog,
         )
@@ -1893,7 +1894,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         posts = RosterPostService(
             bot,
             repository,
-            ClashClient(None),
+            profile_demand(ClashClient(None)),
             MagicMock(),
             object.__new__(Rosters),
         )
@@ -1941,7 +1942,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         posts = RosterPostService(
             MagicMock(publishing=PublishingQueue()),
             repository,
-            ClashClient(None),
+            profile_demand(ClashClient(None)),
             MagicMock(),
             object.__new__(Rosters),
         )
@@ -1992,7 +1993,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         posts = RosterPostService(
             MagicMock(publishing=PublishingQueue()),
             repository,
-            ClashClient(None),
+            profile_demand(ClashClient(None)),
             MagicMock(),
             object.__new__(Rosters),
         )
@@ -2243,7 +2244,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         posts = RosterPostService(
             bot,
             repository,
-            ClashClient(None),
+            profile_demand(ClashClient(None)),
             MagicMock(),
             cog,
         )
@@ -2326,7 +2327,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         posts = RosterPostService(
             bot,
             repository,
-            ClashClient(None),
+            profile_demand(ClashClient(None)),
             MagicMock(),
             cog,
         )
@@ -3180,7 +3181,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         posts = RosterPostService(
             bot,
             repository,
-            ClashClient(None),
+            profile_demand(ClashClient(None)),
             MagicMock(),
             cog,
             emojis,
@@ -3732,7 +3733,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         posts = RosterPostService(
             bot,
             repository,
-            ClashClient(None),
+            profile_demand(ClashClient(None)),
             MagicMock(),
             cog,
             emojis,
@@ -3859,7 +3860,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         writer = MagicMock()
         bot = MagicMock(publishing=PublishingQueue())
         bot.get_guild.return_value = None
-        profiles = RosterProfileService(repository, ClashClient(None))
+        profiles = RosterProfileService(repository, profile_demand(ClashClient(None)))
         sheet_publisher = RosterSheetPublisher(
             bot,
             repository,
@@ -3927,7 +3928,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         writer = MagicMock()
         bot = MagicMock(publishing=PublishingQueue())
         bot.get_guild.return_value = None
-        profiles = RosterProfileService(repository, ClashClient(None))
+        profiles = RosterProfileService(repository, profile_demand(ClashClient(None)))
         sheet_publisher = RosterSheetPublisher(
             bot,
             repository,
@@ -3995,7 +3996,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         sheet_publisher = RosterSheetPublisher(
             MagicMock(publishing=PublishingQueue()),
             repository,
-            RosterProfileService(repository, ClashClient(None)),
+            RosterProfileService(repository, profile_demand(ClashClient(None))),
             publisher,
             WorkbookWriter(),
             local_exports,
@@ -4024,7 +4025,7 @@ class RosterComponentTests(unittest.IsolatedAsyncioTestCase):
         publisher = MagicMock()
         publisher.upload_workbook = AsyncMock()
         bot = MagicMock(publishing=PublishingQueue())
-        profiles = RosterProfileService(repository, ClashClient(None))
+        profiles = RosterProfileService(repository, profile_demand(ClashClient(None)))
         sheet_publisher = RosterSheetPublisher(
             bot,
             repository,

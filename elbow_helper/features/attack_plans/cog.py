@@ -9,7 +9,7 @@ from discord.ext import commands
 from elbow_helper.infrastructure.discord.interactions import deny, warn
 
 from elbow_helper.domain.player_tags import normalize_player_tag
-from elbow_helper.infrastructure.clash import ClashClient
+from elbow_helper.data.collectors import ProfileDemand
 from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.roles import MEMBERS, PLANNING_HELPERS
 
@@ -33,11 +33,11 @@ class Planning(commands.Cog):
     def __init__(
         self,
         bot: commands.Bot,
-        clash_client: ClashClient,
+        profiles: ProfileDemand,
         clan_health: PlayerSearch,
     ):
         self.bot = bot
-        self.clash_client = clash_client
+        self.profiles = profiles
         self.clan_health = clan_health
         self.plan_emojis = AttackPlanEmojiProvider(bot)
 
@@ -94,7 +94,7 @@ class Planning(commands.Cog):
         player_tag = normalize_player_tag(player)
         if not player_tag:
             return None, "Choose your Clash account from the list."
-        if not self.clash_client.configured:
+        if not self.profiles.configured:
             return None, "Clash data isn't available because the connection hasn't been set up."
         if base_image.content_type and not base_image.content_type.startswith("image/"):
             return None, "Base screenshot needs to be an image file."
@@ -131,7 +131,7 @@ class Planning(commands.Cog):
         )
         if issue:
             return {"issue": issue, "player_tag": player_tag}
-        player_data = await fetch_player(player_tag, self.clash_client)
+        player_data = await fetch_player(player_tag, self.profiles)
         if not player_data or player_data.get("_http_status", 500) >= 400:
             return {"issue": self._player_fetch_error_text(player_data),
                     "player_tag": player_tag}

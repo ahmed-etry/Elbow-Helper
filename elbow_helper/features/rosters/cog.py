@@ -27,7 +27,7 @@ from elbow_helper.configuration.roles import HIBERNATING_ROLE_ID
 from elbow_helper.configuration.roles import LEAD_PLUS
 from elbow_helper.domain.timezones import canonical_timezone_name
 from elbow_helper.domain.player_tags import normalize_player_tag
-from elbow_helper.infrastructure.clash import ClashClient
+from elbow_helper.data.collectors import ProfileDemand
 from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
 from elbow_helper.infrastructure.exports import LocalExportStore
 from elbow_helper.infrastructure.exports import WorkbookWriter
@@ -102,7 +102,7 @@ class Rosters(commands.Cog):
     def __init__(
         self,
         bot: commands.Bot,
-        clash_client: ClashClient,
+        player_profiles: ProfileDemand,
         google_publisher: GoogleSheetsPublisher,
         workbook_writer: WorkbookWriter,
         local_exports: LocalExportStore,
@@ -121,12 +121,12 @@ class Rosters(commands.Cog):
         self.queries = RosterQueries(self._repository)
         self.profiles = RosterProfileService(
             self._repository,
-            clash_client,
+            player_profiles,
         )
         self.posts = RosterPostService(
             self.bot,
             self._repository,
-            clash_client,
+            player_profiles,
             account_directory,
             self,
         )
@@ -155,7 +155,7 @@ class Rosters(commands.Cog):
         self.membership = RosterMembershipService(
             self._repository,
             account_directory,
-            clash_client,
+            player_profiles,
             self._roles,
             self._lock,
             self.posts.refresh,

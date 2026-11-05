@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import re
 
 from elbow_helper.domain.player_tags import normalize_player_tag
-from elbow_helper.infrastructure.clash import ClashClient
+from elbow_helper.data.collectors import ProfileDemand
 
 from .accounts import RosterAccountDirectory
 from ..repository import RosterRepository
@@ -47,14 +47,14 @@ class RosterMembershipService:
         self,
         repository: RosterRepository,
         accounts: RosterAccountDirectory,
-        clash_client: ClashClient,
+        player_profiles: ProfileDemand,
         roles: RosterRoleSynchronizer,
         lock_for: RosterLock,
         refresh_posts: PostRefresher,
     ):
         self._repository = repository
         self._accounts = accounts
-        self._clash_client = clash_client
+        self._player_profiles = player_profiles
         self._roles = roles
         self._lock_for = lock_for
         self._refresh_posts = refresh_posts
@@ -123,7 +123,7 @@ class RosterMembershipService:
             )
 
         if mode == "signup":
-            accounts = await enrich_accounts(accounts, self._clash_client)
+            accounts = await enrich_accounts(accounts, self._player_profiles)
             unknown_townhalls = any(account.townhall <= 0 for account in accounts)
             if roster.min_townhall is not None and not for_other_member:
                 accounts = [
@@ -332,7 +332,7 @@ class RosterMembershipService:
             unlinked += len(tags) - len(accounts_by_member[member_id])
         accounts = await enrich_accounts(
             [account for rows in accounts_by_member.values() for account in rows],
-            self._clash_client,
+            self._player_profiles,
         )
         enriched = {account.player_tag: account for account in accounts}
 

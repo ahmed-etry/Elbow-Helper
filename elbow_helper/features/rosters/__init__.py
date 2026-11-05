@@ -16,10 +16,14 @@ async def setup(bot: ElbowHelperBot) -> None:
     if war_manager is None:
         raise RuntimeError("Rosters requires the WarManager cog")
 
+    profiles = getattr(bot.family_collectors, "profiles", None)
+    if profiles is None:
+        raise RuntimeError("Rosters requires the collectors' profiles")
+
     repository = RosterRepository()
     cog = Rosters(
         bot,
-        bot.clash_client,
+        profiles,
         bot.google_publisher,
         bot.workbook_writer,
         bot.local_exports,

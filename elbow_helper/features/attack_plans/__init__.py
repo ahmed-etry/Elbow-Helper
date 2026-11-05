@@ -10,6 +10,9 @@ async def setup(bot: ElbowHelperBot) -> None:
         raise RuntimeError(
             "Attack Plans requires Clan Health history"
         )
+    profiles = getattr(bot.family_collectors, "profiles", None)
+    if profiles is None:
+        raise RuntimeError("Attack Plans requires the collectors' profiles")
     await bot.add_cog(
-        Planning(bot, bot.clash_client, repository)
+        Planning(bot, profiles, repository)
     )

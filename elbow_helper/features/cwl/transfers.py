@@ -83,7 +83,7 @@ class CwlTransferMixin:
         excluded_clans, issue = self.transfer_reminder_exclusions(exclude)
         if issue:
             return {"issue": issue}
-        if not self.clash_client.configured:
+        if not self.profiles.configured:
             return {"issue": "CWL transfer checks aren't available because Clash API access hasn't been set up."}
         candidate_codes = (set(CWL_CLAN_ROSTER_IDS) & set(CWL_CLAN_CODES)) - excluded_clans
         if not candidate_codes:
@@ -127,7 +127,7 @@ class CwlTransferMixin:
                     ),
                 )
         profiles, failed_tags = await fetch_account_profiles(
-            list(accounts_by_tag.values()), self.clash_client,
+            list(accounts_by_tag.values()), self.profiles,
             fresh=True,
         )
         incomplete_account_rosters = {

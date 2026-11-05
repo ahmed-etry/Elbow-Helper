@@ -144,7 +144,7 @@ class DashboardStartTests(unittest.IsolatedAsyncioTestCase):
     def dashboards(self):
         dashboards = CwlDashboardMixin()
         dashboards.bot = object()
-        dashboards.clash_client = SimpleNamespace(configured=True)
+        dashboards.profiles = SimpleNamespace(configured=True)
         dashboards._first_war_check = asyncio.Event()
         dashboards._refresh_dashboard_with_retry = AsyncMock(return_value=True)
         return dashboards

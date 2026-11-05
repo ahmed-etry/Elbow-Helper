@@ -43,9 +43,14 @@ async def setup(bot: ElbowHelperBot) -> None:
         raise RuntimeError(
             "CWL management requires the family record's league reads"
         )
+    profiles = getattr(bot.family_collectors, "profiles", None)
+    if profiles is None:
+        raise RuntimeError(
+            "CWL management requires the collectors' profiles"
+        )
     cog = CwlManagement(
         bot,
-        bot.clash_client,
+        profiles,
         bot.google_publisher,
         bot.workbook_writer,
         achievement_rewards,

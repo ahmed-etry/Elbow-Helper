@@ -24,6 +24,7 @@ from elbow_helper.features.wars.helpers import HelperMixin
 from elbow_helper.features.wars.rendering import build_war_board_embed
 from elbow_helper.configuration.channels import CLAN_CWL_INFO_CHANNELS
 from elbow_helper.configuration.clans import CLAN_TAGS
+from tests.features.profile_source import profile_demand
 
 
 def _cwl_war(
@@ -201,13 +202,14 @@ class CwlLeagueWarFetchTests(unittest.IsolatedAsyncioTestCase):
         manager = CwlRouterMixin()
         war = _cwl_war("inWar", 1)
         manager.cwl_groups = SimpleNamespace(wars=AsyncMock(return_value=[war]))
-        manager.clash_client = SimpleNamespace(get=AsyncMock())
+        client = SimpleNamespace(configured=True, get=AsyncMock())
+        manager.profiles = profile_demand(client)
 
         wars = await manager._get_league_wars("BEH")
 
         self.assertEqual(wars, [war])
         manager.cwl_groups.wars.assert_awaited_once_with("BEH")
-        manager.clash_client.get.assert_not_awaited()
+        client.get.assert_not_awaited()
 
 
 class CwlWarBoardLifecycleTests(unittest.IsolatedAsyncioTestCase):

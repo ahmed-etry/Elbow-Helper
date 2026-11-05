@@ -9,7 +9,10 @@ from .cog import AccountLinks
 
 
 async def setup(bot: ElbowHelperBot) -> None:
-    cog = AccountLinks(bot, bot.clash_client)
+    profiles = getattr(bot.family_collectors, "profiles", None)
+    if profiles is None:
+        raise RuntimeError("AccountLinks requires the collectors' profiles")
+    cog = AccountLinks(bot, profiles)
     guild = discord.Object(id=GUILD_ID)
     await bot.add_cog(cog, guild=guild)
     war_manager = bot.get_cog("WarManager")

@@ -15,7 +15,7 @@ from discord.ext import commands
 from elbow_helper.core.background import start_resilient_loop
 from elbow_helper.features.wars.emojis import WarEmojiProvider
 from elbow_helper.domain.cwl import is_cwl_window
-from elbow_helper.infrastructure.clash import ClashClient
+from elbow_helper.data.collectors import ProfileDemand
 from elbow_helper.infrastructure.exports import GoogleSheetsPublisher
 from elbow_helper.infrastructure.exports import WorkbookWriter
 from elbow_helper.configuration.roles import CWL_HELPERS
@@ -74,7 +74,7 @@ class CwlManagement(
     def __init__(
         self,
         bot: commands.Bot,
-        clash_client: ClashClient,
+        profiles: ProfileDemand,
         google_publisher: GoogleSheetsPublisher,
         workbook_writer: WorkbookWriter,
         achievement_rewards: AchievementRewardService,
@@ -85,7 +85,8 @@ class CwlManagement(
         cwl_reads: CwlReads,
     ):
         self.bot = bot
-        self.clash_client = clash_client
+        # Player and clan profiles come from the collectors, never from Clash directly.
+        self.profiles = profiles
         self.google_publisher = google_publisher
         self.workbook_writer = workbook_writer
         self.achievement_rewards = achievement_rewards
@@ -110,7 +111,7 @@ class CwlManagement(
         self.cwl_history = CwlHistory(cwl_reads, clan_health_repository)
         self.cwl_groups = CwlGroups(cwl_reads)
         self.bonus_analysis = BonusAnalysisService(
-            clash_client,
+            profiles,
             self.cwl_history,
             self.cwl_groups,
         )

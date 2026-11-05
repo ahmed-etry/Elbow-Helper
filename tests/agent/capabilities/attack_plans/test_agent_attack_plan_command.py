@@ -16,7 +16,7 @@ from elbow_helper.features.attack_plans.cog import Planning
 class AttackPlanCommandTests(unittest.IsolatedAsyncioTestCase):
     async def test_prepared_plan_posts_the_previewed_images_and_pages(self):
         workflow = object.__new__(Planning)
-        workflow.clash_client = SimpleNamespace(configured=True)
+        workflow.profiles = SimpleNamespace(configured=True)
         workflow.clan_health = SimpleNamespace(search_players=lambda *args: [
             {"player_name": "Planner", "player_tag": "#P0Y"},
         ])

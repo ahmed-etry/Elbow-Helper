@@ -26,7 +26,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from discord.ext import commands, tasks
 
-from elbow_helper.domain.player_tags import encode_clash_tag
 from elbow_helper.configuration.clans import CLAN_NAMES
 from elbow_helper.configuration.style import DEFAULT_EMBED_COLOR_HEX
 from elbow_helper.configuration.style import DEFAULT_THUMBNAIL_URL
@@ -254,10 +253,10 @@ class CwlDashboardMixin:
                 missing_tags.add(tag)
 
         async def load(tag: str) -> None:
-            path = f"/players/{encode_clash_tag(tag)}"
             async with sem:
-                payload = await self.bonus_analysis.fetch_json(
-                    path,
+                payload = await self.bonus_analysis.fetch_profile(
+                    "player",
+                    tag,
                     retries=3,
                 )
             if not payload:
@@ -296,8 +295,7 @@ class CwlDashboardMixin:
             cached_name = cached.get("league_name")
             return str(cached_name) if cached_name else None
 
-        path = f"/clans/{encode_clash_tag(clan_tag)}"
-        payload = await self.bonus_analysis.fetch_json(path, retries=3)
+        payload = await self.bonus_analysis.fetch_profile("clan", clan_tag, retries=3)
         league_name: Optional[str] = None
         if payload:
             raw_name = ((payload.get("warLeague") or {}).get("name") or "").strip()
@@ -997,7 +995,7 @@ class CwlDashboardMixin:
     @tasks.loop(minutes=20)
     async def dashboard_loop(self) -> None:
         # Keep one live prep dashboard message per clan thread.
-        if not self.clash_client.configured:
+        if not self.profiles.configured:
             return
         for clan_code in DASHBOARD_THREADS:
             await self._refresh_dashboard_with_retry(clan_code, context="loop")
@@ -1020,7 +1018,7 @@ class CwlDashboardMixin:
     async def before_dashboard_loop(self) -> None:
         await wait_for_boot_complete(self.bot)
         await self._wait_for_first_war_check()
-        if not self.clash_client.configured:
+        if not self.profiles.configured:
             return
         for clan_code in DASHBOARD_THREADS:
             await self._refresh_dashboard_with_retry(clan_code, context="startup")

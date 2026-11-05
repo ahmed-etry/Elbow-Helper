@@ -18,9 +18,12 @@ from elbow_helper.features.cwl.bonus.export import BonusWorkbookWriter
 from elbow_helper.features.cwl.bonus.service import BonusReportError
 from elbow_helper.features.cwl.bonus.service import BonusReportService
 from elbow_helper.features.cwl.bonus.state import BonusDashboardStore
+from elbow_helper.features.cwl.dashboard import CwlDashboardMixin
 from elbow_helper.infrastructure.clash import ClashClient
+from elbow_helper.infrastructure.clash import ClashResponse
 
 from tests.features.cwl_record_stub import LeagueRecord, attack, league_war, member
+from tests.features.profile_source import profile_demand
 
 
 class BonusAnalysisTests(unittest.TestCase):
@@ -48,7 +51,7 @@ class BonusAnalysisTests(unittest.TestCase):
             }],
         }]
         service = BonusAnalysisService(
-            ClashClient(None),
+            profile_demand(ClashClient(None)),
             repository,
         )
         config = {"clans": {"BEH": {
@@ -88,24 +91,73 @@ class RecordCwlReadTests(unittest.IsolatedAsyncioTestCase):
         wars = await asyncio.to_thread(history.bonus_wars, "BEH", "2026-07")
         self.assertEqual(wars[0]["roster"][0]["player_tag"], "#P2")
         self.assertEqual(wars[0]["attacks"][0]["defender_tag"], "#Q0")
-        analysis = BonusAnalysisService(ClashClient(None), history)
+        analysis = BonusAnalysisService(profile_demand(ClashClient(None)), history)
         summary, _, raw, _, errors = await asyncio.to_thread(
             analysis.analyze_clan, "BEH", "2026-07", {"clans": {"BEH": {"matchup_expected": {"18:18": 2.0}}}})
         self.assertEqual(errors, [])
         self.assertEqual(summary[0]["total_adjusted_delta"], 1.0)
         self.assertEqual(len(raw), 1)
         # An unreadable record is an error, never an empty season.
-        broken = BonusAnalysisService(ClashClient(None), SimpleNamespace(
+        broken = BonusAnalysisService(profile_demand(ClashClient(None)), SimpleNamespace(
             bonus_wars=Mock(side_effect=sqlite3.OperationalError("locked"))))
         self.assertEqual(broken.analyze_clan("BEH", "2026-07", {})[4], ["BEH: CWL data couldn't be loaded."])
 
     async def test_live_wars_come_from_the_record_groups(self) -> None:
         groups = SimpleNamespace(current_wars=AsyncMock(return_value=([{"_round": 1}], [])))
-        analysis = BonusAnalysisService(ClashClient(None), MagicMock(), groups)
+        analysis = BonusAnalysisService(profile_demand(ClashClient(None)), MagicMock(), groups)
         self.assertEqual(await analysis.current_wars("BEH"), ([{"_round": 1}], []))
         groups.current_wars.assert_awaited_once_with("BEH")
-        self.assertEqual(await BonusAnalysisService(ClashClient(None), MagicMock()).current_wars("BEH"),
+        self.assertEqual(await BonusAnalysisService(profile_demand(ClashClient(None)), MagicMock()).current_wars("BEH"),
                          ([], ["BEH: failed to fetch league group."]))
+
+
+class DashboardProfileTests(unittest.IsolatedAsyncioTestCase):
+    def dashboard(self, responses=None):
+        responses = responses or {}
+
+        async def get(path, **_options):
+            return responses[path]
+
+        client = SimpleNamespace(configured=True, get=AsyncMock(side_effect=get))
+        dashboard = CwlDashboardMixin()
+        dashboard.bonus_analysis = BonusAnalysisService(profile_demand(client), MagicMock())
+        dashboard._hero_sum_cache = {}
+        dashboard._clan_league_cache = {}
+        return dashboard, client
+
+    async def test_hero_sums_count_home_heroes_through_the_collectors(self) -> None:
+        profile = {"tag": "#2PP", "heroes": [
+            {"name": "Barbarian King", "level": 90, "village": "home"},
+            {"name": "Archer Queen", "level": 85},
+            {"name": "Battle Machine", "level": 30, "village": "builderBase"}]}
+        dashboard, client = self.dashboard({
+            "/players/%232PP": ClashResponse(200, profile, {}, 1, 5),
+            "/players/%232PQ": ClashResponse(503, {"reason": "maintenance"}, {}, 3, 5),
+        })
+        self.assertEqual(await dashboard._fetch_hero_sums(["#2PP", "#2PQ"]), {"#2PP": 175, "#2PQ": None})
+        self.assertEqual({call.args[0] for call in client.get.await_args_list}, {"/players/%232PP", "/players/%232PQ"})
+        self.assertEqual({call.kwargs["attempts"] for call in client.get.await_args_list}, {3})
+        # The dashboard keeps both answers, the failure included, as before.
+        self.assertEqual(await dashboard._fetch_hero_sums(["#2PP", "#2PQ"]), {"#2PP": 175, "#2PQ": None})
+        self.assertEqual(client.get.await_count, 2)
+
+    async def test_league_names_come_from_clan_profiles_through_the_collectors(self) -> None:
+        dashboard, client = self.dashboard({
+            "/clans/%232PP": ClashResponse(200, {"tag": "#2PP", "warLeague": {"name": " Master League I "}}, {}, 1, 5),
+            "/clans/%232PQ": ClashResponse(404, {"reason": "notFound"}, {}, 1, 5),
+        })
+        self.assertEqual(await dashboard._fetch_clan_war_league_name("#2PP"), "Master League I")
+        self.assertIsNone(await dashboard._fetch_clan_war_league_name("#2PQ"))
+        self.assertEqual([call.args[0] for call in client.get.await_args_list], ["/clans/%232PP", "/clans/%232PQ"])
+        self.assertEqual(await dashboard._fetch_clan_war_league_name("#2PP"), "Master League I")
+        self.assertEqual(client.get.await_count, 2)
+
+    async def test_without_clash_access_nothing_is_asked(self) -> None:
+        dashboard, client = self.dashboard()
+        client.configured = False
+        self.assertEqual(await dashboard._fetch_hero_sums(["#2PP"]), {"#2PP": None})
+        self.assertIsNone(await dashboard._fetch_clan_war_league_name("#2PP"))
+        client.get.assert_not_awaited()
 
 
 class BonusReportServiceTests(unittest.IsolatedAsyncioTestCase):

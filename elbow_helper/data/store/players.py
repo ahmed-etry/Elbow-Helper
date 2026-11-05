@@ -5,9 +5,9 @@ import json
 
 from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 
-from . import FamilyStore
+from . import FamilyStore, now_us
 from .api_fields import collect_fields
-from .people import account_name
+from .people import account, account_name
 from .player_projection import ARRAYS, COUNTERS, HOUR_US, TRANSIENT, item_identity, project_profile
 from . import player_state
 from .projections import canonical_json, nonnegative_int
@@ -289,3 +289,26 @@ def collect_player(connection, run, ordinal, account_id, tag, response, at):
                                (at, canonical_json(last_good), account_id))
         player_state.coverage(connection, account_id, run, at, completeness)
         player_state.outcome(connection, run, account_id, at, "ok" if complete else "partial", written)
+
+
+def collect_requested(connection, run, ordinal, tag, response, at=None):
+    """Store a profile a feature asked for exactly like a scheduled fetch.
+
+    An account first seen this way is only an observation: it gets no clan stay or owner, so
+    no collector schedules it. An account a scheduled pass holds is left to that pass, which
+    stores its own fetch; returns False then. The time is taken under the writer lock, so it
+    never precedes an observation already stored.
+    """
+    at = now_us() if at is None else at
+    with sqlite_transaction(connection, immediate=True):
+        account_id = account(connection, tag, at)
+        if connection.execute("SELECT 1 FROM player_collection_state WHERE account_id=? AND active_run_id IS NOT NULL",
+                              (account_id,)).fetchone():
+            return False
+        connection.execute(
+            "INSERT INTO player_collection_state(account_id,active_run_id,ordinal,queue_status,started_at) "
+            "VALUES (?,?,?,'running',?) ON CONFLICT(account_id) DO UPDATE SET active_run_id=excluded.active_run_id,"
+            "ordinal=excluded.ordinal,queue_status='running',started_at=excluded.started_at",
+            (account_id, run, ordinal, at))
+    collect_player(connection, run, ordinal, account_id, tag, response, at)
+    return True

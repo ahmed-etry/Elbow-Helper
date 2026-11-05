@@ -12,11 +12,13 @@ from typing import Set
 from typing import Tuple
 from typing import Protocol
 
-from elbow_helper.infrastructure.clash import ClashClient
+from elbow_helper.data.collectors import ProfileDemand
 from elbow_helper.configuration.clans import CLAN_NAMES
 from ..config import CLAN_DELTA_STAR_MULTIPLIERS
 
 LOGGER = logging.getLogger(__name__)
+# On a dashboard cache miss, a family profile from the collectors' hourly pass is recent enough.
+PROFILE_MAX_AGE_SECONDS = 60 * 60
 
 
 class BonusWarSource(Protocol):
@@ -44,31 +46,33 @@ class BonusAnalysisService:
 
     def __init__(
         self,
-        clash_client: ClashClient,
+        profiles: ProfileDemand,
         repository: BonusWarSource,
         groups: LeagueGroupSource | None = None,
     ):
-        # Clash serves the dashboards' player and clan profiles; league data comes from the record.
-        self._clash_client = clash_client
+        # The collectors serve the dashboards' player and clan profiles; league data comes from the record.
+        self._profiles = profiles
         self._repository = repository
         self._groups = groups
 
-    async def fetch_json(
+    async def fetch_profile(
         self,
-        path: str,
+        kind: str,
+        tag: str,
         *,
         retries: int = 4,
     ) -> Optional[Dict[str, Any]]:
-        if not self._clash_client.configured:
-            return None
-        response = await self._clash_client.get(
-            path,
+        """A player or clan profile from the last hour, or None when it can't be had."""
+        ask = self._profiles.player if kind == "player" else self._profiles.clan
+        result = await ask(
+            tag,
+            max_age=PROFILE_MAX_AGE_SECONDS,
             attempts=retries,
             timeout_seconds=20,
             backoff_seconds=1.0,
             maximum_backoff_seconds=10.0,
         )
-        return response.payload_object if response.status == 200 else None
+        return result.payload
 
 
     async def current_wars(

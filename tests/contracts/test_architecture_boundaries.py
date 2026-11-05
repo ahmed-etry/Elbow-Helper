@@ -263,6 +263,18 @@ class DependencyBoundaryTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertNotIn("aiohttp.ClientSession(", source)
 
+    def test_features_moved_to_the_collectors_do_not_use_the_clash_client(self) -> None:
+        # Their player and clan profiles come from the collectors' profile path.
+        moved = ("attack_plans", "account_links", "rosters", "cwl")
+        forbidden = ("infrastructure.clash", "ClashClient", "clash_client", "/players/", "/clans/")
+        offenders: list[str] = []
+        for feature in moved:
+            for path in (FEATURE_ROOT / feature).rglob("*.py"):
+                source = path.read_text(encoding="utf-8-sig")
+                offenders.extend(f"{path.relative_to(FEATURE_ROOT)}: {marker}"
+                                 for marker in forbidden if marker in source)
+        self.assertEqual(offenders, [])
+
     def test_thread_discovery_transport_stays_out_of_agent_tools(self) -> None:
         source = (
             AGENT_ROOT / "research" / "threads.py"

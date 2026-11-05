@@ -17,6 +17,7 @@ from elbow_helper.data.store.players import collect_player, due_accounts, player
 from elbow_helper.data.store.source_state import COLLECTORS as SOURCE_COLLECTORS
 from elbow_helper.data.store.sources import due_sources
 from elbow_helper.data.store.wars_import import copy_at_startup
+from .demand import ProfileDemand
 from .wars import collect_pass, due_jobs
 from .sources import collect_sources
 
@@ -72,6 +73,8 @@ class FamilyCollectors(commands.Cog):
         # What each collector is known to be failing at: {collector: {(kind, scope): how}}.
         self._failing = {}
         self._closing = False
+        # Features ask here for player and clan profiles instead of calling Clash themselves.
+        self.profiles = ProfileDemand(self)
 
     async def cog_load(self):
         try:
@@ -98,6 +101,7 @@ class FamilyCollectors(commands.Cog):
             task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks.clear()
+        await self.profiles.close()
         # Listener callbacks are dispatched as separate Discord tasks. Wait for
         # their in-flight transactions before allowing the client to close.
         async with self._discord_lock, self._clan_lock, self._player_lock, self._war_lock:
@@ -233,6 +237,7 @@ class FamilyCollectors(commands.Cog):
                         responses.append(await self.clash_client.get(f"/clans/{encode_clash_tag(clan.tag)}"))
                     except Exception:
                         responses.append(None)
+                    self.profiles.observed("clan", clan.tag, responses[-1])
                 await self.store.call(collect_clans, run, self.clans, responses, now_us())
 
             report = await self._run("clans", "family_clans", specs, operation)
@@ -262,6 +267,7 @@ class FamilyCollectors(commands.Cog):
                         response = await self.clash_client.get(f"/players/{encode_clash_tag(row['player_tag'])}")
                     except Exception:
                         response = None
+                    self.profiles.observed("player", row["player_tag"], response)
                     await self.store.call(collect_player, run, ordinal, row["id"], row["player_tag"], response, now_us())
 
             return await self._run("players", "family_and_linked_accounts", specs, operation)
