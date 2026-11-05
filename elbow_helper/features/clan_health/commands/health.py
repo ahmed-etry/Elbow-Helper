@@ -94,7 +94,7 @@ class ClanHealthRootCommandMixin:
         del interaction
         try:
             rows = await asyncio.wait_for(
-                asyncio.to_thread(self.repository.search_players, current, 25),
+                asyncio.to_thread(self.record.search_players, current, 25),
                 timeout=1.5,
             )
             return [

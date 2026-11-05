@@ -48,7 +48,7 @@ from .war_board import CwlWarBoardMixin
 if TYPE_CHECKING:
     from elbow_helper.data.reads import CwlReads
     from elbow_helper.features.achievements.rewards import AchievementRewardService
-    from elbow_helper.features.clan_health.database import ClanHealthRepository
+    from elbow_helper.features.clan_health.record import HealthRecord
     from elbow_helper.features.rosters.services.accounts import AccountLinkSource
     from elbow_helper.features.rosters.services.automation import RosterAutomationService
     from elbow_helper.features.rosters.services.queries import RosterQueries
@@ -78,7 +78,8 @@ class CwlManagement(
         google_publisher: GoogleSheetsPublisher,
         workbook_writer: WorkbookWriter,
         achievement_rewards: AchievementRewardService,
-        clan_health_repository: ClanHealthRepository,
+        # Clan health's account directory, from the family record.
+        clan_health_repository: HealthRecord,
         account_links: AccountLinkSource,
         roster_queries: RosterQueries,
         roster_automation: RosterAutomationService,

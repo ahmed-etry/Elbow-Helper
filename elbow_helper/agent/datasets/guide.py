@@ -89,7 +89,7 @@ class DataGuide:
                 "family.cwl_seasons.season_key selects it, cwl_rounds.round_no (1-7) is the CWL day; "
                 "join cwl_rounds.war_id to family.wars.id and season_id to cwl_seasons.id. "
                 "For clans configured for seasonal cohort lookups, resolve the season's assigned roster or CWL participants before "
-                "ranking players; current memberList and clan-filtered player snapshots may be parked accounts. "
+                "ranking players; current memberList and clan-filtered stored rosters may be parked accounts. "
                 "Read player.warStars for cumulative stars after selecting the CWL cohort. "
                 "Seasonal cohort lookup configuration: " + ", ".join(code for code, clan in CLANS.items() if clan.cwl_only) + ". "
                 "These lookup flags do not establish operational CWL-only policy or home-clan eligibility; "

@@ -12,7 +12,11 @@ AGENT_CONVERSATIONS_DATABASE = Path("agent/agent.sqlite3")
 AGENT_TRANSCRIPTS_DATABASE = Path("agent/transcripts.sqlite3")
 AGENT_RESEARCH_DATABASE = Path("agent/research_jobs.sqlite3")
 AGENT_ACTIONS_DATABASE = Path("agent/actions.sqlite3")
+# The old clan health file: read only by the once-only startup copies; kept on disk and backed up until a
+# later update deletes it.
 CLAN_HEALTH_DATABASE = Path("clan_health/clan_health.db")
+# Clan health's settings and their change log.
+CLAN_HEALTH_SETTINGS_DATABASE = Path("clan_health/settings.sqlite3")
 RANKED_DATABASE = Path("ranked_stats/ranked.sqlite3")
 # Kept on disk and in the backup list while the leadership records feature is rethought.
 RECORDS_DATABASE = Path("records/records.sqlite3")
@@ -29,6 +33,7 @@ SQLITE_DATABASES = (
     AGENT_RESEARCH_DATABASE,
     AGENT_ACTIONS_DATABASE,
     CLAN_HEALTH_DATABASE,
+    CLAN_HEALTH_SETTINGS_DATABASE,
     RANKED_DATABASE,
     RECORDS_DATABASE,
     ROSTERS_DATABASE,

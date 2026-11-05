@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from datetime import datetime, timedelta
@@ -32,8 +31,11 @@ from ..analysis.verdicts import (
 from ..record_wars import newest_attacks
 from ..seasons import (
     _latest_completed_season_key,
-    _season_key_for_datetime,
+    _parse_season_key,
+    _prev_month,
+    _season_end_dt,
 )
+from .clan import roster_row
 
 LOGGER = logging.getLogger(__name__)
 
@@ -195,41 +197,6 @@ class ClanHealthPlayerCommandMixin:
             sheet.append([empty_message, "", "", "", "", "", "", ""])
         return sheet
 
-    @staticmethod
-    def _latest_completed_raid_weekend_end(reference: datetime) -> datetime:
-        ref = reference.astimezone(UTC)
-        weekend_end = ref.replace(hour=7, minute=0, second=0, microsecond=0) - timedelta(days=ref.weekday())
-        if weekend_end > ref:
-            weekend_end -= timedelta(days=7)
-        return weekend_end
-
-    @classmethod
-    def _raid_history_is_stale(
-        cls,
-        *,
-        cycle_start: datetime,
-        cycle_end: datetime,
-        now: datetime,
-        raid_member_rows: List[Dict[str, Any]],
-    ) -> bool:
-        latest_completed_end = cls._latest_completed_raid_weekend_end(now)
-        if not (cycle_start <= latest_completed_end <= cycle_end):
-            return False
-        latest_stored_end_ts = max((int(row.get("end_ts") or 0) for row in raid_member_rows), default=0)
-        if latest_stored_end_ts <= 0:
-            return True
-        latest_stored_end = datetime.fromtimestamp(latest_stored_end_ts, tz=UTC)
-        return latest_stored_end < latest_completed_end
-
-    def _latest_activity_season(self, player_tag: str) -> Optional[str]:
-        """The season of the player's newest stored activity, war attacks included."""
-        stored = self.repository.latest_stored_activity_ts(player_tag)
-        # Only a war attack newer than everything else can change the season.
-        latest = stored
-        for wars in (self.regular_wars, self.league_wars):
-            latest = max(latest, wars.latest_attack_ts(player_tag=player_tag, after_ts=latest) or 0)
-        return _season_key_for_datetime(datetime.fromtimestamp(latest, tz=UTC)) if latest > 0 else None
-
     def _player_war_attacks(self, player_tag: str, cycle_start: datetime, cycle_end: datetime) -> List[Dict[str, Any]]:
         """Regular-war and league-war attacks from the family record."""
         window = {"player_tag": player_tag, "cycle_start_ts": int(cycle_start.timestamp()),
@@ -324,16 +291,79 @@ class ClanHealthPlayerCommandMixin:
             "complete", export=export, season_key=selected.season_key,
         )
 
+    def _player_row(self, player_tag: str, cycle_start: datetime, cycle_end: datetime,
+                    stays: List[Dict[str, Any]] | None = None) -> Dict[str, Any] | None:
+        """The account's health row for the window, worked out from the family record; None if it knows nothing."""
+        start_ts, end_ts = int(cycle_start.timestamp()), int(cycle_end.timestamp())
+        if stays is None:
+            stays = self.record.stays(player_tag, cycle_start_ts=start_ts, cycle_end_ts=end_ts)
+        war_attack_rows = self._player_war_attacks(player_tag, cycle_start, cycle_end)
+        raid_member_rows, _ = self.record.raid_lines(
+            cycle_start_ts=start_ts, cycle_end_ts=end_ts, player_tags=[player_tag],
+        )
+        account = self.record.directory_players([player_tag]).get(player_tag) or {}
+        if not account and not stays and not war_attack_rows and not raid_member_rows:
+            return None
+        clan_code = self._clan_code_fallback(
+            account, stays[-1] if stays else {},
+            war_attack_rows[0] if war_attack_rows else {},
+            raid_member_rows[0] if raid_member_rows else {},
+        )
+        row = roster_row(clan_code or "", {
+            "player_tag": player_tag,
+            "player_name": (str(account.get("player_name") or "").strip()
+                            or str((war_attack_rows[0] if war_attack_rows else {}).get("player_name") or "").strip()
+                            or player_tag),
+        })
+        row["clan_code"] = clan_code
+        row["clan_profile"] = self.analyzer.profile_for_clan(clan_code)
+        window = {"cycle_start": cycle_start, "cycle_end": cycle_end}
+        self.analyzer.apply_war_activity([row], **window)
+        self.analyzer.apply_raid_activity([row], **window)
+        self.analyzer.apply_donation_activity([row], **window)
+        self.analyzer.apply_progression_fallback([row], **window, force=True)
+        return {"row": row, "stays": stays, "war_attack_rows": war_attack_rows, "raid_member_rows": raid_member_rows}
+
+    def _scored_player_row(self, player_tag: str, cycle_start: datetime, cycle_end: datetime,
+                           stays: List[Dict[str, Any]] | None = None) -> Dict[str, Any] | None:
+        found = self._player_row(player_tag, cycle_start, cycle_end, stays)
+        if found is None:
+            return None
+        row, raid_member_rows = found["row"], found["raid_member_rows"]
+        row["_war_attack_rows"] = found["war_attack_rows"]
+        row["raid_weekends_joined"] = len({line["weekend_id"] for line in raid_member_rows if int(line.get("attacks") or 0) > 0})
+        row["raid_weekends_window"] = len({line["weekend_id"] for line in raid_member_rows})
+        self.analyzer.apply_flags([row], cycle_start=cycle_start, cycle_end=cycle_end)
+        return found
+
+    def _trend_statuses(self, player_tag: str, trend_season_key: str) -> List[str]:
+        """Verdicts for the two latest completed seasons the account spent in the family, newest first.
+
+        Worked out from the record like the report itself; seasons before the
+        record's own history use the old health history copied into it.
+        """
+        statuses = []
+        year, month = _parse_season_key(trend_season_key) or (0, 0)
+        for _ in range(2):
+            if not year:
+                break
+            previous = _prev_month(year, month)
+            start, end = _season_end_dt(*previous), _season_end_dt(year, month)
+            stays = self.record.stays(player_tag, cycle_start_ts=int(start.timestamp()), cycle_end_ts=int(end.timestamp()))
+            if stays:
+                found = self._scored_player_row(player_tag, start, end, stays)
+                if found is not None:
+                    statuses.append(normalize_player_verdict(found["row"].get("status")))
+            year, month = previous
+        return statuses
+
     async def build_player_health_export(
         self, *, player_tag: str, now: datetime, window_mode: str,
         season_key: str, trend_season_key: str, cycle_start: datetime,
         cycle_end: datetime, window_label: str, partial: bool = False,
         date_from: str | None = None, date_to: str | None = None,
     ) -> PlayerHealthExport | None:
-        report_lookup_season = (
-            await asyncio.to_thread(self._latest_activity_season, player_tag)
-            or trend_season_key
-        )
+        del now, partial
         if window_mode == "last_7d":
             window_label = "Last 7 days"
         elif window_mode == "last_14d":
@@ -343,316 +373,18 @@ class ClanHealthPlayerCommandMixin:
         else:
             window_label = "Last 30 days"
 
-        report_row = await asyncio.to_thread(
-            self.repository.latest_player_report,
-            report_lookup_season,
-            player_tag,
-        )
-        history = await asyncio.to_thread(
-            self.repository.snapshot_history,
-            player_tag,
-            limit=80,
-        )
-        if report_row:
-            await asyncio.to_thread(
-                self.analyzer.apply_war_activity,
-                [report_row],
-                cycle_start=cycle_start,
-                cycle_end=cycle_end,
-            )
-            await asyncio.to_thread(
-                self.analyzer.apply_raid_activity,
-                [report_row],
-                cycle_start=cycle_start,
-                cycle_end=cycle_end,
-            )
-            await asyncio.to_thread(
-                self.analyzer.apply_donation_activity,
-                [report_row],
-                cycle_start=cycle_start,
-                cycle_end=cycle_end,
-            )
-            await asyncio.to_thread(
-                self.analyzer.apply_progression_fallback,
-                [report_row],
-                cycle_start=cycle_start,
-                cycle_end=cycle_end,
-                force=True,
-            )
-
-        war_attack_rows = await asyncio.to_thread(
-            self._player_war_attacks, player_tag, cycle_start, cycle_end,
-        )
-        raid_member_rows = await asyncio.to_thread(
-            self.repository.player_raid_activity,
-            player_tag=player_tag,
-            cycle_start=cycle_start,
-            cycle_end=cycle_end,
-            limit=0,
-        )
-        trend_history = await asyncio.to_thread(
-            self.analyzer.player_trend_history,
-            player_tag=player_tag,
-            up_to_season_key=trend_season_key,
-            limit=6,
-        )
-        movement_segments = await asyncio.to_thread(
-            self.repository.player_movement,
-            player_tag=player_tag,
-            cycle_start=cycle_start,
-            cycle_end=cycle_end,
-            lookback_days=0,
-        )
-        clan_code = self._clan_code_fallback(
-            report_row or {},
-            history[0] if history else {},
-            war_attack_rows[0] if war_attack_rows else {},
-            raid_member_rows[0] if raid_member_rows else {},
-        )
-        live_warnings: List[str] = []
-
-        stale_raid_history = self._raid_history_is_stale(
-            cycle_start=cycle_start,
-            cycle_end=cycle_end,
-            now=now,
-            raid_member_rows=raid_member_rows,
-        )
-        if self.clash_client.configured and stale_raid_history and clan_code:
-            _, raid_refresh_warnings = await self.collector.collect_clan_live(
-                clan_code=clan_code,
-                cycle_start=cycle_start,
-                cycle_end=cycle_end,
-            )
-            live_warnings.extend(raid_refresh_warnings)
-            raid_member_rows = await asyncio.to_thread(
-                self.repository.player_raid_activity,
-                player_tag=player_tag,
-                cycle_start=cycle_start,
-                cycle_end=cycle_end,
-                limit=0,
-            )
-            if report_row:
-                await asyncio.to_thread(
-                    self.analyzer.apply_raid_activity,
-                    [report_row],
-                    cycle_start=cycle_start,
-                    cycle_end=cycle_end,
-                )
-
-        should_try_live = self.clash_client.configured and (
-            not report_row or self.analyzer.report_row_is_sparse(report_row)
-        )
-        if should_try_live:
-            live_row, player_live_warnings = await self.collector.try_live_player_row(
-                player_tag=player_tag,
-                season_key=report_lookup_season,
-                cycle_start=cycle_start,
-                cycle_end=cycle_end,
-            )
-            live_warnings.extend(player_live_warnings)
-            if live_row:
-                clan_code = str(live_row.get("clan_code") or clan_code or "").strip() or None
-                report_row = {
-                    "player_tag": player_tag,
-                    "player_name": live_row.get("player_name") or player_tag,
-                    "clan_code": live_row.get("clan_code"),
-                    "clan_profile": live_row.get("clan_profile") or self.analyzer.profile_for_clan(live_row.get("clan_code")),
-                    "status": normalize_player_verdict(live_row.get("status") or GOOD),
-                    "flags_json": json.dumps(live_row.get("flags") or [], ensure_ascii=False),
-                    "note": live_row.get("note") or "",
-                    "war_hits_used": int(live_row.get("war_hits_used") or 0),
-                    "war_hits_expected": int(live_row.get("war_hits_expected") or 0),
-                    "war_missed": int(live_row.get("war_missed") or 0),
-                    "war_stars_total": float(live_row.get("war_stars_total") or 0.0),
-                    "war_destruction_total": float(live_row.get("war_destruction_total") or 0.0),
-                    "war_attack_count": int(live_row.get("war_attack_count") or 0),
-                    "raid_attacks": int(live_row.get("raid_attacks") or 0),
-                    "raid_expected": int(live_row.get("raid_expected") or 0),
-                    "raid_loot": int(live_row.get("raid_loot") or 0),
-                    "raid_expected_estimated": 1 if live_row.get("raid_expected_estimated") else 0,
-                    "donations": int(live_row.get("donations") or 0),
-                    "donations_received": int(live_row.get("donations_received") or 0),
-                    "trophies": int(live_row.get("trophies") or 0),
-                    "war_stars": live_row.get("war_stars"),
-                    "attack_wins": live_row.get("attack_wins"),
-                    "capital_contrib": live_row.get("capital_contrib"),
-                    "townhall": live_row.get("townhall"),
-                    "hero_sum": live_row.get("hero_sum"),
-                    "pet_sum": live_row.get("pet_sum"),
-                    "equipment_sum": live_row.get("equipment_sum"),
-                    "troop_sum": live_row.get("troop_sum"),
-                    "spell_sum": live_row.get("spell_sum"),
-                    "games_total": live_row.get("games_total"),
-                    "hero_delta": live_row.get("hero_delta"),
-                    "pet_delta": live_row.get("pet_delta"),
-                    "equipment_delta": live_row.get("equipment_delta"),
-                    "troop_delta": live_row.get("troop_delta"),
-                    "spell_delta": live_row.get("spell_delta"),
-                    "capital_delta": live_row.get("capital_delta"),
-                    "th_delta": live_row.get("th_delta"),
-                    "games_delta": live_row.get("games_delta"),
-                    "season_key": season_key,
-                }
-                await asyncio.to_thread(
-                    self.analyzer.apply_war_activity,
-                    [report_row],
-                    cycle_start=cycle_start,
-                    cycle_end=cycle_end,
-                )
-                await asyncio.to_thread(
-                    self.analyzer.apply_raid_activity,
-                    [report_row],
-                    cycle_start=cycle_start,
-                    cycle_end=cycle_end,
-                )
-                await asyncio.to_thread(
-                    self.analyzer.apply_donation_activity,
-                    [report_row],
-                    cycle_start=cycle_start,
-                    cycle_end=cycle_end,
-                )
-                await asyncio.to_thread(
-                    self.analyzer.apply_progression_fallback,
-                    [report_row],
-                    cycle_start=cycle_start,
-                    cycle_end=cycle_end,
-                    force=True,
-                )
-
-                captured_ts = int(now.timestamp())
-                await asyncio.to_thread(self.repository.store_snapshots, captured_ts, [live_row])
-                run_id = f"player_health:{report_lookup_season}:{player_tag}:{captured_ts}"
-                await asyncio.to_thread(
-                    self.repository.store_report,
-                    run_id=run_id,
-                    created_ts=captured_ts,
-                    season_key=report_lookup_season,
-                    scope="PLAYER",
-                    partial=partial,
-                    cycle_start_ts=int(cycle_start.timestamp()),
-                    cycle_end_ts=int(cycle_end.timestamp()),
-                    rows=[live_row],
-                )
-                history = await asyncio.to_thread(
-                    self.repository.snapshot_history,
-                    player_tag,
-                    limit=80,
-                )
-                war_attack_rows = await asyncio.to_thread(
-                    self._player_war_attacks, player_tag, cycle_start, cycle_end,
-                )
-                raid_member_rows = await asyncio.to_thread(
-                    self.repository.player_raid_activity,
-                    player_tag=player_tag,
-                    cycle_start=cycle_start,
-                    cycle_end=cycle_end,
-                    limit=0,
-                )
-                trend_history = await asyncio.to_thread(
-                    self.analyzer.player_trend_history,
-                    player_tag=player_tag,
-                    up_to_season_key=trend_season_key,
-                    limit=6,
-                )
-                movement_segments = await asyncio.to_thread(
-                    self.repository.player_movement,
-                    player_tag=player_tag,
-                    cycle_start=cycle_start,
-                    cycle_end=cycle_end,
-                    lookback_days=0,
-                )
-
-        if not report_row and not history and not war_attack_rows and not raid_member_rows:
-            LOGGER.info(
-                "Command no data /health player tag=%s season=%s warnings=%s",
-                player_tag,
-                season_key,
-                live_warnings,
-            )
+        found = await asyncio.to_thread(self._scored_player_row, player_tag, cycle_start, cycle_end)
+        if found is None:
+            LOGGER.info("Command no data /health player tag=%s season=%s", player_tag, season_key)
             return None
+        report_row, war_attack_rows = found["row"], found["war_attack_rows"]
+        movement_segments = found["stays"]
+        history_statuses = await asyncio.to_thread(self._trend_statuses, player_tag, trend_season_key)
 
-        if not report_row:
-            seed_history = history[0] if history else {}
-            seed_war = war_attack_rows[0] if war_attack_rows else {}
-            seed_raid = raid_member_rows[0] if raid_member_rows else {}
-            seed_clan_code = self._clan_code_fallback(seed_history, seed_war, seed_raid)
-            seed_player_name = (
-                str(seed_history.get("player_name") or "").strip()
-                or str(seed_war.get("player_name") or "").strip()
-                or str(seed_raid.get("player_name") or "").strip()
-                or player_tag
-            )
-            report_row = {
-                "player_tag": player_tag,
-                "player_name": seed_player_name,
-                "clan_code": seed_clan_code,
-                "clan_profile": self.analyzer.profile_for_clan(seed_clan_code),
-                "status": GOOD,
-                "flags_json": "[]",
-                "note": "",
-                "war_hits_used": 0,
-                "war_hits_expected": 0,
-                "war_missed": 0,
-                "war_stars_total": 0.0,
-                "war_destruction_total": 0.0,
-                "war_attack_count": 0,
-                "raid_attacks": 0,
-                "raid_expected": 0,
-                "raid_loot": 0,
-                "raid_expected_estimated": 0,
-                "donations": int(seed_history.get("donations") or 0),
-                "donations_received": int(seed_history.get("donations_received") or 0),
-                "trophies": int(seed_history.get("trophies") or 0),
-                "war_stars": seed_history.get("war_stars"),
-                "attack_wins": seed_history.get("attack_wins"),
-                "capital_contrib": seed_history.get("capital_contrib"),
-                "townhall": seed_history.get("townhall"),
-                "hero_sum": seed_history.get("hero_sum"),
-                "pet_sum": seed_history.get("pet_sum"),
-                "equipment_sum": seed_history.get("equipment_sum"),
-                "troop_sum": seed_history.get("troop_sum"),
-                "spell_sum": seed_history.get("spell_sum"),
-                "games_total": seed_history.get("games_total"),
-                "hero_delta": None,
-                "pet_delta": None,
-                "equipment_delta": None,
-                "troop_delta": None,
-                "spell_delta": None,
-                "capital_delta": None,
-                "th_delta": None,
-                "games_delta": None,
-            }
-            await asyncio.to_thread(
-                self.analyzer.apply_war_activity,
-                [report_row],
-                cycle_start=cycle_start,
-                cycle_end=cycle_end,
-            )
-            await asyncio.to_thread(
-                self.analyzer.apply_raid_activity,
-                [report_row],
-                cycle_start=cycle_start,
-                cycle_end=cycle_end,
-            )
-            await asyncio.to_thread(
-                self.analyzer.apply_donation_activity,
-                [report_row],
-                cycle_start=cycle_start,
-                cycle_end=cycle_end,
-            )
-            await asyncio.to_thread(
-                self.analyzer.apply_progression_fallback,
-                [report_row],
-                cycle_start=cycle_start,
-                cycle_end=cycle_end,
-                force=True,
-            )
-
-        player_name = report_row.get("player_name") if report_row else (history[0].get("player_name") if history else player_tag)
-
-        player_clan_code = (report_row.get("clan_code") if report_row else None) or (history[0].get("clan_code") if history else None)
+        player_name = report_row.get("player_name") or player_tag
+        player_clan_code = report_row.get("clan_code")
         player_profile_key = str(
-            (report_row.get("clan_profile") if report_row else None) or self.analyzer.profile_for_clan(player_clan_code)
+            report_row.get("clan_profile") or self.analyzer.profile_for_clan(player_clan_code)
         ).strip().lower()
         player_profile_label = player_profile_key.title() if player_profile_key else "Casual"
 
@@ -670,40 +402,22 @@ class ClanHealthPlayerCommandMixin:
         )
         partial_data_notice = (
             "Some player data was unavailable; showing partial results."
-            if report_row and sum(1 for field in partial_data_fields if report_row.get(field) is None) >= 3
+            if sum(1 for field in partial_data_fields if report_row.get(field) is None) >= 3
             else None
         )
 
-        if report_row:
-            report_row["_war_attack_rows"] = war_attack_rows
-            report_row["raid_weekends_joined"] = len({row.get("weekend_id") for row in raid_member_rows if row.get("weekend_id") and int(row.get("attacks") or 0) > 0})
-            report_row["raid_weekends_window"] = len({row.get("weekend_id") for row in raid_member_rows if row.get("weekend_id")})
-            if movement_segments:
-                current_history = next(
-                    (seg for seg in movement_segments if str(seg.get("clan_code") or "") == str(player_clan_code or "")),
-                    movement_segments[0],
-                )
-                report_row["current_clan_history"] = current_history
-            await asyncio.to_thread(
-                self.analyzer.apply_flags,
-                [report_row],
-                cycle_start=cycle_start,
-                cycle_end=cycle_end,
-            )
-
-        signal_cards = (report_row or {}).get("signal_cards") or {}
+        signal_cards = report_row.get("signal_cards") or {}
         verdict_map = {
             name: str(card.get("verdict") or INSUFFICIENT_DATA)
             for name, card in signal_cards.items()
             if bool(card.get("graded"))
         }
-        overall_details = (report_row or {}).get("overall_details") or aggregate_overall_verdict(
+        overall_details = report_row.get("overall_details") or aggregate_overall_verdict(
             verdict_map,
             profile_name=player_profile_key,
             return_details=True,
         )
         overall_verdict = str(overall_details["overall"])
-        history_statuses = [normalize_player_verdict(hist.get("status")) for hist in trend_history[:2]]
         overall_trend, overall_streak = trend_from_verdicts([overall_verdict, *history_statuses])
 
         trend_label, trend_note = self._trend_summary(overall_trend, len(history_statuses))

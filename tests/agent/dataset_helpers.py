@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from elbow_helper.agent.datasets.catalogue import SOURCES
 from elbow_helper.features.account_links.database import AccountLinksDbMixin
-from elbow_helper.features.clan_health.database.repository import ClanHealthRepository
+from elbow_helper.features.clan_health.database import DATABASE as HEALTH_SETTINGS
 from elbow_helper.features.rosters.repository.repository import RosterRepository
 from elbow_helper.features.achievements.database import AchievementsDatabaseMixin
 from elbow_helper.data.store.schema import create_schema
@@ -23,7 +23,7 @@ def synthetic_datasets(root):
         connection.commit()
     with patch("elbow_helper.features.account_links.database.DB_PATH", files["links"]):
         AccountLinksDbMixin()._init_db()
-    ClanHealthRepository(files["health"]).initialize()
+    HEALTH_SETTINGS.initialize(files["health"])
     RosterRepository(files["rosters"])
     achievements = AchievementsDatabaseMixin()
     achievements.db_path = files["achievements"]

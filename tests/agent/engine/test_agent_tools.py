@@ -1,12 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
-from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from datetime import datetime, timezone
-import sqlite3
-from contextlib import closing
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.infrastructure.discord.message_search import DiscordSearchMessage, DiscordSearchPage
@@ -17,7 +13,6 @@ from elbow_helper.agent.engine.registry import (
 from elbow_helper.agent.plan import capability_list, check_plan
 from elbow_helper.agent.models import AgentTurnState
 from elbow_helper.features.help.discovery import DiscoveredCommand, ParameterInfo
-from elbow_helper.features.clan_health.database import ClanHealthRepository
 
 
 class _Channel:
@@ -119,20 +114,6 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
                  "arguments": {}, "reason": "Read", "depends_on": []},
             ],
         }, missing).ok)
-
-    def test_completed_player_report_ignores_newer_unfinished_period(self):
-        with TemporaryDirectory() as directory:
-            repository = ClanHealthRepository(Path(directory) / "health.db")
-            repository.initialize()
-            with closing(sqlite3.connect(repository.path)) as connection, connection:
-                for run_id, period_end, partial in (("finished", 100, 0), ("future", 300, 0), ("partial", 150, 1)):
-                    connection.execute("INSERT INTO report_runs VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                       (run_id, 180, "2026-09", "BACKGROUND_ALL", partial, 0, period_end))
-                    connection.execute("INSERT INTO report_players (run_id, season_key, clan_code, player_tag, player_name, status, flags_json, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                                       (run_id, "2026-09", "BEH", "#2PP", "Player", "Good", "[]", ""))
-            result = repository.completed_player_report("#2PP", 200)
-            self.assertEqual(result["run_id"], "finished")
-            self.assertEqual(result["cycle_end_ts"], 100)
 
     async def test_message_search_is_limited_to_asker_access(self) -> None:
         asker = SimpleNamespace(id=10)

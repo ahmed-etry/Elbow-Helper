@@ -11,10 +11,8 @@ from elbow_helper.agent.datasets.query import run_query
 from elbow_helper.agent.access import KNOWN_ACCESS_REQUIREMENTS
 from elbow_helper.agent.families.catalogue import FAMILY_INSTRUCTION
 
-HEALTH_TABLES = (
-    "player_snapshots",
-    "raid_member_activity", "player_directory",
-)
+# Clan health's own tables: its settings and their change log. Its activity facts are in the family record.
+HEALTH_TABLES = ("clan_player_health_config", "clan_health_config_audit")
 
 
 def _notes():
@@ -28,14 +26,9 @@ def _notes():
 class TableNoteTests(unittest.TestCase):
     def test_every_table_custom_counts_need_has_a_note_with_its_time_column(self):
         notes = _notes()
-        for table, column in (
-            ("raid_member_activity", "end_ts"), ("player_snapshots", "captured_ts"),
-            ("player_directory", "first_seen_ts"),
-        ):
-            with self.subTest(table=table):
-                note = notes["health." + table]
-                self.assertIn(column, note)
-                self.assertIn("UTC seconds", note)
+        self.assertEqual(sorted(name for name in notes if name.startswith("health.")),
+                         sorted("health." + table for table in HEALTH_TABLES))
+        self.assertIn("ts_utc is ISO UTC", notes["health.clan_health_config_audit"])
         self.assertIn("discord_user_id", notes["links.links"])
         for table in ("wars", "war_sides", "war_members", "war_attacks"):
             self.assertIn("end_at", notes["family." + table])
@@ -43,8 +36,6 @@ class TableNoteTests(unittest.TestCase):
 
     def test_notes_name_the_traps(self):
         notes = _notes()
-        self.assertIn("not any one item's level", notes["health.player_snapshots"])
-        self.assertIn("lifetime", notes["health.player_snapshots"])
         wars = notes["family.wars"]
         self.assertIn("friendly", wars)
         self.assertIn("FRIENDLY", wars)
@@ -83,14 +74,14 @@ class MemberJoinTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.paths = synthetic_datasets(directory.name)
         sources = {source.alias: source for source in SOURCES}
-        with closing(sqlite3.connect(sources["health"].resolve(self.paths))) as connection:
-            connection.executemany(
-                "INSERT INTO player_snapshots (captured_ts, clan_code, player_tag, player_name, townhall, "
-                "hero_sum) VALUES (?, 'AA1', ?, ?, 10, ?)",
-                [(100, "#AAA", "Synthetic One", 20), (200, "#AAA", "Synthetic One", 25),
-                 (100, "#BBB", "Synthetic Two", 30), (200, "#BBB", "Synthetic Two", 30),
-                 (100, "#CCC", "Synthetic Three", 5), (200, "#CCC", "Synthetic Three", 9)],
-            )
+        with closing(sqlite3.connect(sources["family"].resolve(self.paths))) as connection:
+            connection.execute("INSERT INTO clans(id,tag,family_code,name,is_family,wiring_revision) "
+                               "VALUES (1,'#PP9','AA1','Synthetic clan',1,1)")
+            for index, tag in enumerate(("#AAA", "#BBB", "#CCC", "#ZZZ", "#YYY", "#XXX"), start=100):
+                connection.execute("INSERT INTO accounts(id,player_tag,first_observed_at,tracking_status) "
+                                   "VALUES (?,?,1,'observed')", (index, tag))
+                connection.execute("INSERT INTO clan_membership(account_id,clan_id,clan_role,from_at,last_observed_at,"
+                                   "source_item_id) VALUES (?,1,'member',?,1,1)", (index, index))
             connection.commit()
         seed_record_links(self.paths, [("#AAA", 11), ("#BBB", 11), ("#CCC", 22), ("#DDD", 33)])
 
@@ -99,47 +90,27 @@ class MemberJoinTests(unittest.TestCase):
 
     def test_account_tags_join_to_their_discord_member(self):
         result, touched = self.query(
-            "SELECT k.discord_user_id AS member_id, COUNT(*) AS accounts, "
-            "SUM(n.hero_sum - o.hero_sum) AS levels_gained "
-            "FROM health.player_snapshots n "
-            "JOIN health.player_snapshots o ON o.player_tag = n.player_tag AND o.captured_ts = :from_ts "
-            "LEFT JOIN links.links k ON k.player_tag = n.player_tag "
-            "WHERE n.captured_ts = :to_ts GROUP BY k.discord_user_id ORDER BY k.discord_user_id",
-            {"from_ts": 100, "to_ts": 200},
+            "SELECT k.discord_user_id AS member_id, COUNT(*) AS accounts "
+            "FROM family.clan_membership m JOIN family.accounts a ON a.id = m.account_id "
+            "JOIN links.links k ON k.player_tag = a.player_tag "
+            "WHERE m.to_at IS NULL AND a.player_tag IN ('#AAA','#BBB','#CCC') "
+            "GROUP BY k.discord_user_id ORDER BY k.discord_user_id",
         )
         self.assertNotIn("error", result)
-        self.assertEqual(result["rows"], [
-            {"member_id": 11, "accounts": 2, "levels_gained": 5},
-            {"member_id": 22, "accounts": 1, "levels_gained": 4},
-        ])
+        self.assertEqual(result["rows"], [{"member_id": 11, "accounts": 2}, {"member_id": 22, "accounts": 1}])
         self.assertFalse(touched)
 
     def test_unlinked_accounts_keep_their_row_with_no_member(self):
         result, _ = self.query(
-            "SELECT s.player_tag, k.discord_user_id FROM health.player_snapshots s "
-            "LEFT JOIN links.links k ON k.player_tag = s.player_tag "
-            "WHERE s.captured_ts = 200 AND s.player_tag = '#ZZZ'",
-        )
-        self.assertEqual(result["rows"], [])
-        with closing(sqlite3.connect(
-                {s.alias: s for s in SOURCES}["health"].resolve(self.paths))) as connection:
-            connection.execute(
-                "INSERT INTO player_snapshots (captured_ts, clan_code, player_tag, player_name) "
-                "VALUES (200, 'AA1', '#ZZZ', 'Synthetic Four')")
-            connection.commit()
-        result, _ = self.query(
-            "SELECT s.player_tag, k.discord_user_id FROM health.player_snapshots s "
-            "LEFT JOIN links.links k ON k.player_tag = s.player_tag "
-            "WHERE s.captured_ts = 200 AND s.player_tag = '#ZZZ'",
+            "SELECT a.player_tag, k.discord_user_id FROM family.accounts a "
+            "LEFT JOIN links.links k ON k.player_tag = a.player_tag WHERE a.player_tag = '#ZZZ'",
         )
         self.assertEqual(result["rows"], [{"player_tag": "#ZZZ", "discord_user_id": None}])
 
     def test_oversized_per_account_result_reports_the_cut(self):
-        result, _ = self.query(
-            "SELECT player_tag, captured_ts FROM health.player_snapshots ORDER BY captured_ts, player_tag",
-            max_rows=4,
-        )
-        self.assertEqual((result["row_count"], result["total_rows"], result["rows_cut"]), (4, 6, 2))
+        result, _ = self.query("SELECT player_tag FROM family.accounts ORDER BY player_tag", max_rows=4)
+        # Six clan members and the linked account the ownership seed adds.
+        self.assertEqual((result["row_count"], result["total_rows"], result["rows_cut"]), (4, 7, 3))
         self.assertTrue(result["truncated"])
         self.assertIn("incomplete", result["instruction"])
 

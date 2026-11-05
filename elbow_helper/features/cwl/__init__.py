@@ -23,7 +23,7 @@ async def setup(bot: ElbowHelperBot) -> None:
             "CWL management requires the Achievements reward service"
         )
     clan_health = bot.get_cog("ClanHealth")
-    clan_health_repository = getattr(clan_health, "repository", None)
+    clan_health_repository = getattr(clan_health, "directory", None)
     if clan_health_repository is None:
         raise RuntimeError(
             "CWL management requires Clan Health history"

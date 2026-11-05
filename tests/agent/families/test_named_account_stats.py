@@ -3,7 +3,6 @@
 import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
-from pathlib import Path
 import json
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -24,7 +23,6 @@ from elbow_helper.agent.families.model_view import family_model_view
 from elbow_helper.agent.families.projections import cohort_selection
 from elbow_helper.agent.plan.checker import check_plan
 from elbow_helper.agent.plan.format import capability_list
-from elbow_helper.features.clan_health.database import ClanHealthRepository
 from elbow_helper.features.cwl.queries import CwlQueries
 from agent.engine.test_agent_plan_flow import _context
 from agent.families.record_stub import regular_id, regular_war, regular_wars_from, with_record
@@ -255,11 +253,8 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_stored_candidates_are_filtered_by_family_on_each_table_and_alias(self):
         with TemporaryDirectory() as directory:
-            repository = ClanHealthRepository(Path(directory) / 'names.db')
-            repository.initialize()
-            repository.store_snapshots(1, [
-                {'clan_code': 'BEH', 'player_tag': '#P0', 'player_name': 'Silver Kite'},
-                {'clan_code': '#OUTSIDE', 'player_tag': '#Q0', 'player_name': 'Copper Finch'}])
+            # Clan health's directory names only accounts seen in family clans (the record's stays read decides).
+            repository = SimpleNamespace(directory_names=lambda: [{'player_tag': '#P0', 'player_name': 'Silver Kite'}])
             record = await LeagueRecord(directory).initialize()
             # The opponent's bases carry names too; only family lineups name accounts.
             await record.week('BEH', '2026-09', [league_war(

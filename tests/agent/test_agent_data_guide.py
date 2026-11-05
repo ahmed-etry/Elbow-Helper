@@ -20,10 +20,14 @@ class DataGuideTests(unittest.TestCase):
         self.assertNotIn("source_coverage", guide)
         self.assertNotIn("records", {source.alias for source in SOURCES})
 
-    def test_computed_owner_and_health_verdicts_are_identified_in_notes(self):
+    def test_computed_owner_verdicts_are_identified_and_health_offers_only_its_settings(self):
         with TemporaryDirectory() as directory:
             guide = DataGuide(synthetic_datasets(directory)).for_levels(KNOWN_ACCESS_REQUIREMENTS)
-        self.assertIn("status, flags_json and note are clan health's stored verdicts", guide)
+        # Health verdicts are no longer stored; its facts are in the family record.
+        for table in ("report_players", "report_runs", "player_snapshots", "player_directory", "raid_member_activity"):
+            self.assertNotIn("health." + table, guide)
+        for table in ("clan_player_health_config", "clan_health_config_audit"):
+            self.assertIn("health." + table + " [none]: ", guide)
         self.assertIn("proposed_discord_user_id and proposed_display_name", guide)
         self.assertIn("account links' stored owner verdict, not verified ownership", guide)
 

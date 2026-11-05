@@ -1,15 +1,13 @@
 
-"""Overlay and trend helper logic for clan-health scoring."""
+"""Activity overlays for clan-health scoring, from the family record."""
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set
 
-from ..player_health_config import effective_player_rules, load_player_health_config, profile_health_settings, raid_scoring_enabled
-from ..seasons import _parse_season_key
-from .verdicts import clan_games_assessment, progression_assessment, support_assessment
+from ..player_health_config import effective_player_rules, raid_scoring_enabled
+
 
 class ClanHealthOverlayMixin:
     @staticmethod
@@ -53,16 +51,9 @@ class ClanHealthOverlayMixin:
         }
         if not needs:
             return
-        latest_map = self.repository.latest_snapshots(
-            cutoff_ts=cycle_end_ts,
-            player_tags=needs,
-        )
-        baseline_map = self.repository.earliest_snapshots(
-            cycle_start_ts=cycle_start_ts,
-            cycle_end_ts=cycle_end_ts,
-            player_tags=needs,
-        )
-        baseline_fallback_cache: Dict[str, Optional[sqlite3.Row]] = {}
+        # Progress at the end, against the start (or, without anything by then, the first values in the window).
+        latest_map = self.record.progress(needs, at_ts=cycle_end_ts)
+        baseline_map = self.record.progress(needs, at_ts=cycle_start_ts, until_ts=cycle_end_ts)
         for row in rows:
             tag = str(row.get("player_tag") or "")
             if not tag:
@@ -103,16 +94,11 @@ class ClanHealthOverlayMixin:
                         row[row_key] = int(latest_value)
 
             baseline = baseline_map.get(tag)
-            if baseline is None:
-                if tag not in baseline_fallback_cache:
-                    baseline_fallback_cache[tag] = self.repository.baseline_snapshot(tag, cycle_start_ts)
-                baseline = baseline_fallback_cache[tag]
             if not baseline:
                 continue
+
             def baseline_value(key: str) -> Optional[int]:
-                if isinstance(baseline, sqlite3.Row):
-                    return baseline[key]
-                return (baseline or {}).get(key)
+                return baseline.get(key)
 
             row["th_delta"] = self._delta_or_none(row.get("townhall"), baseline_value("townhall"))
             row["hero_delta"] = self._delta_or_none(row.get("hero_sum"), baseline_value("hero_sum"))
@@ -196,17 +182,12 @@ class ClanHealthOverlayMixin:
         }
         if not player_tags:
             return
-        cycle_start_ts = int(cycle_start.timestamp())
-        cycle_end_ts = int(cycle_end.timestamp())
-        aggregate = self.repository.raid_activity(
-            cycle_start_ts=cycle_start_ts,
-            cycle_end_ts=cycle_end_ts,
+        aggregate, weekends_in_window = self.record.raid_activity(
+            cycle_start_ts=int(cycle_start.timestamp()),
+            cycle_end_ts=int(cycle_end.timestamp()),
             player_tags=player_tags,
         )
-        weekends_in_window = self.repository.raid_weekend_count(
-            cycle_start_ts=cycle_start_ts,
-            cycle_end_ts=cycle_end_ts,
-        )
+        # Today's expectation rule: six attacks for each weekend that ended in the window.
         standardized_expected = max(0, int(weekends_in_window) * 6)
         for row in rows:
             tag = str(row.get("player_tag") or "")
@@ -241,111 +222,16 @@ class ClanHealthOverlayMixin:
         }
         if not player_tags:
             return
-        aggregate = self.repository.snapshot_counters(
+        aggregate = self.record.donations(
+            player_tags,
             cycle_start_ts=int(cycle_start.timestamp()),
             cycle_end_ts=int(cycle_end.timestamp()),
-            player_tags=player_tags,
         )
         for row in rows:
             tag = str(row.get("player_tag") or "")
             stats = aggregate.get(tag)
-            if not stats:
+            # Only samples inside the window replace what the row already holds.
+            if not stats or not stats.get("samples"):
                 continue
             row["donations"] = int(stats.get("donations") or 0)
             row["donations_received"] = int(stats.get("donations_received") or 0)
-
-    @staticmethod
-    def _season_key_sortable(season_key: str) -> Tuple[int, int]:
-        parsed = _parse_season_key(str(season_key or ""))
-        if not parsed:
-            return (0, 0)
-        return parsed
-
-    @staticmethod
-    def _consistency_score_from_row(row: Dict[str, Any]) -> Optional[float]:
-        clan_code = str(row.get("clan_code") or "").upper()
-        if clan_code:
-            rules = effective_player_rules(clan_code)
-        else:
-            config, errors = load_player_health_config()
-            if config is None:
-                raise RuntimeError("player_health_config invalid: " + " | ".join(errors[:5]))
-            profile_name = str(row.get("clan_profile") or "casual").strip().lower()
-            rules = profile_health_settings(config, profile_name)
-        raid_rules = rules.get("raids", {})
-        clan_games_rules = rules.get("clan_games", {})
-        parts: List[float] = []
-        expected = int(row.get("war_hits_expected") or 0)
-        used = int(row.get("war_hits_used") or 0)
-        if expected > 0:
-            parts.append(max(0.0, min(1.0, used / expected)))
-
-        raid_used = int(row.get("raid_attacks") or 0)
-        raid_loot = int(row.get("raid_loot") or 0)
-        weekends_joined = int(row.get("raid_weekends_joined") or 0)
-        weekends_available = int(row.get("raid_weekends_window") or 0)
-        if weekends_available > 0:
-            parts.append(max(0.0, min(1.0, weekends_joined / weekends_available)))
-            minimum_gold = max(0, int(raid_rules.get("minimum_capital_gold_per_event") or 0))
-            if minimum_gold > 0 and weekends_joined > 0 and raid_used > 0:
-                avg_gold = raid_loot / max(1, weekends_joined)
-                parts.append(max(0.0, min(1.0, avg_gold / minimum_gold)))
-
-        clan_games_result = clan_games_assessment(
-            clan_games_rules=clan_games_rules,
-            cg_delta=row.get("games_delta"),
-            window_state="Available",
-        )
-        target_points = int(clan_games_result.get("target_points") or 0)
-        delta_points = clan_games_result.get("delta")
-        if target_points > 0 and delta_points is not None:
-            parts.append(max(0.0, min(1.0, int(delta_points) / target_points)))
-
-        progression_result = progression_assessment(
-            th_delta=row.get("th_delta"),
-            hero_delta=row.get("hero_delta"),
-            pet_delta=row.get("pet_delta"),
-            equipment_delta=row.get("equipment_delta"),
-            troop_delta=row.get("troop_delta"),
-            spell_delta=row.get("spell_delta"),
-        )
-        if progression_result["has_progression_data"]:
-            parts.append(1.0 if progression_result["meaningful_progress"] else 0.5)
-
-        support_result = support_assessment(
-            donations=row.get("donations"),
-            received=row.get("donations_received"),
-            clan_code=clan_code,
-        )
-        if support_result["evidence_state"] == "full":
-            parts.append(1.0 if support_result["state"] == "OK" else 0.5)
-        if len(parts) < 2:
-            return None
-        # Core consistency score uses only comparable cross-window components.
-        return round((sum(parts) / len(parts)) * 100.0, 1)
-
-    @staticmethod
-    def _report_row_is_sparse(row: Optional[Dict[str, Any]]) -> bool:
-        if not row:
-            return True
-        war_expected = int(row.get("war_hits_expected") or 0)
-        war_used = int(row.get("war_hits_used") or 0)
-        raid_expected = int(row.get("raid_expected") or 0)
-        raid_used = int(row.get("raid_attacks") or 0)
-        donations = int(row.get("donations") or 0)
-        received = int(row.get("donations_received") or 0)
-        has_delta = (
-            row.get("games_delta") is not None
-            or row.get("hero_delta") is not None
-            or row.get("th_delta") is not None
-        )
-        # Rows with no participation, no activity, and no deltas are treated as sparse.
-        return (
-            war_expected == 0
-            and war_used == 0
-            and raid_expected == 0
-            and raid_used == 0
-            and donations == 0
-            and received == 0
-            and not has_delta
-        )

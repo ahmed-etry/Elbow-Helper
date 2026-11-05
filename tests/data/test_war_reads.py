@@ -7,7 +7,7 @@ import unittest
 from elbow_helper.data.reads import WarReads
 from elbow_helper.features.clan_reporting.record_wars import monthly_results
 from elbow_helper.data.store.war_projection import HOUR, api_time
-from elbow_helper.features.clan_health.database.schema import create_schema
+from tests.data.legacy_health_schema import create_schema
 
 from . import test_family_store as fixtures
 from .test_family_store import link

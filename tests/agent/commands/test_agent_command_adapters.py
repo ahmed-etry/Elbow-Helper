@@ -144,9 +144,8 @@ class CommandAdapterTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_clan_health_operation_builds_and_prepares_one_export(self):
         workflow = ClanHealthClanCommandMixin()
-        workflow.clash_client = SimpleNamespace(configured=True)
-        workflow.repository = SimpleNamespace(latest_report_before=Mock(return_value=(
-            None, [{"clan_code": "BEH", "flags_json": "[]"}],
+        workflow.record = SimpleNamespace(roster=Mock(return_value=(
+            None, {"BEH": [{"player_tag": "#PP29L", "player_name": "Synthetic"}]},
         )))
         workflow.analyzer = SimpleNamespace(build_sheets=Mock(return_value=(
             [("Overview", [["Value"]])], [{"status": "Good"}], {},

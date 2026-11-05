@@ -7,13 +7,12 @@ from typing import Any
 
 from ..config import CLAN_PROFILE_BY_CODE
 from ..config import PROFILE_NAMES
-from ..database import ClanHealthRepository
+from ..record import HealthRecord
 from ..record_wars import RegularWars
 from .flags import ClanHealthFlagMixin
 from .overlays import ClanHealthOverlayMixin
 from .sheets import ClanHealthSheetMixin
 from .verdicts import assess_war_participation
-from .verdicts import normalize_player_verdict
 
 
 class ClanHealthAnalyzer(
@@ -21,10 +20,10 @@ class ClanHealthAnalyzer(
     ClanHealthFlagMixin,
     ClanHealthSheetMixin,
 ):
-    """Apply scoring policy to data supplied by Clan Health storage and the family record's wars."""
+    """Apply scoring policy to activity and wars from the family record, when a report is asked for."""
 
-    def __init__(self, repository: ClanHealthRepository, regular_wars: RegularWars, league_wars: RegularWars):
-        self.repository = repository
+    def __init__(self, record: HealthRecord, regular_wars: RegularWars, league_wars: RegularWars):
+        self.record = record
         self.regular_wars = regular_wars
         self.league_wars = league_wars
 
@@ -68,25 +67,6 @@ class ClanHealthAnalyzer(
 
     _assess_war_participation = assess_war_participation
 
-    def player_trend_history(
-        self,
-        *,
-        player_tag: str,
-        up_to_season_key: str,
-        limit: int = 6,
-    ) -> list[dict[str, Any]]:
-        rows = self.repository.player_trend_rows(
-            player_tag=player_tag,
-            up_to_season_key=up_to_season_key,
-            limit=limit,
-        )
-        for row in rows:
-            row["status"] = normalize_player_verdict(row.get("status"))
-            row["consistency_score"] = (
-                self._consistency_score_from_row(row)
-            )
-        return rows
-
     apply_progression_fallback = (
         ClanHealthOverlayMixin._apply_progression_delta_fallback
     )
@@ -95,10 +75,6 @@ class ClanHealthAnalyzer(
     apply_donation_activity = (
         ClanHealthOverlayMixin._apply_family_donation_activity
     )
-    @staticmethod
-    def report_row_is_sparse(row: dict[str, Any] | None) -> bool:
-        return ClanHealthOverlayMixin._report_row_is_sparse(row)
-
     apply_flags = ClanHealthFlagMixin._apply_flags
     build_sheets = ClanHealthSheetMixin._build_sheets
 

@@ -37,7 +37,7 @@ SOURCES = (
              "COALESCE(defender.townhall,json_extract(attack.extra_json,'$.legacy.defender_townhall')); "
              "unknown TH cannot establish an equal match."),
             ("accounts", "none",
-             "One known Clash account; id is internal, player_tag joins health snapshots and links.links. "
+             "One known Clash account; id is internal, player_tag joins links.links. "
              "first_observed_at and last_profile_at are UTC microseconds, not join dates. "
              "LEFT JOIN account_links ON account_id=id AND to_at IS NULL, then members ON "
              "members.id=member_id for discord_id; unlinked accounts remain with NULL owner."),

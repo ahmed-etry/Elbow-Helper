@@ -1,6 +1,6 @@
 # Data and migrations
 
-`data/store` owns the family record's format and writes. Features own their
+`data/store` owns the family database's format and writes. Features own their
 remaining files and expose services or readers for other consumers.
 
 ## JSON
@@ -20,7 +20,7 @@ New databases may begin at a later baseline. For example, a blank roster
 database starts at version 4; retired pre-baseline migrations do not need to
 run against it.
 
-Family-record reads in `data/reads` use a read-only transaction on a background
+Family database reads in `data/reads` use a read-only transaction on a background
 thread and return facts and say what is missing. They never ask the Clash API for
 missing facts and never open features' own files. Ownership changes go through
 `data.links.LinkService`. See [Saved data](../reference/storage.md) for the

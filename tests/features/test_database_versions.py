@@ -19,7 +19,6 @@ from elbow_helper.features.achievements import schema as achievements_schema
 from elbow_helper.features.achievements.database import AchievementsDatabaseMixin
 from elbow_helper.features.achievements.cog import Achievements
 from elbow_helper.features.clan_health.cog import ClanHealth
-from elbow_helper.features.clan_health.database import ClanHealthRepository
 from elbow_helper.features.clan_health.database import schema as health_schema
 from elbow_helper.infrastructure.persistence.migrations import (
     SQLiteMigration, SQLiteMigrationError, UnversionedSQLiteSchemaError, UnsupportedSQLiteVersionError,
@@ -27,7 +26,8 @@ from elbow_helper.infrastructure.persistence.migrations import (
 from elbow_helper.infrastructure.persistence.versioned import validate_sqlite_shape
 
 
-SCHEMAS = (links_schema, achievements_schema, health_schema)
+# Files adopted from deployed, unversioned shapes; clan health's own file is new and adopts nothing.
+SCHEMAS = (links_schema, achievements_schema)
 
 
 def quote(name):
@@ -190,7 +190,6 @@ class DatabaseVersionTests(unittest.TestCase):
         for schema, table, column in (
             (links_schema, "links", "player_name_last_seen"),
             (achievements_schema, "achievements", "name"),
-            (health_schema, "player_snapshots", "player_name"),
         ):
             with self.subTest(database=schema.DATABASE.name):
                 path = self.path(schema)
@@ -202,7 +201,6 @@ class DatabaseVersionTests(unittest.TestCase):
         for schema, table, column, old in (
             (links_schema, "links", "last_seen_role", "TEXT DEFAULT ''"),
             (achievements_schema, "user_coins", "balance", "INTEGER NOT NULL DEFAULT 0"),
-            (health_schema, "player_snapshots", "pet_sum", "INTEGER DEFAULT 0"),
         ):
             with self.subTest(database=schema.DATABASE.name):
                 path = self.path(schema)
@@ -216,7 +214,6 @@ class DatabaseVersionTests(unittest.TestCase):
         for schema, table, column, kind in (
             (links_schema, "links", "discord_user_id", "INTEGER"),
             (achievements_schema, "achievements", "name", "TEXT"),
-            (health_schema, "player_snapshots", "player_name", "TEXT"),
         ):
             with self.subTest(database=schema.DATABASE.name):
                 path = self.path(schema)
@@ -228,7 +225,6 @@ class DatabaseVersionTests(unittest.TestCase):
         for schema, table in (
             (links_schema, "links"),
             (achievements_schema, "user_stats"),
-            (health_schema, "player_snapshots"),
         ):
             with self.subTest(database=schema.DATABASE.name):
                 path = self.path(schema)
@@ -243,7 +239,7 @@ class DatabaseVersionTests(unittest.TestCase):
 
     def test_missing_foreign_keys_adopt_unchanged(self):
         for schema, table in (
-            (achievements_schema, "user_achievements"), (health_schema, "report_players"),
+            (achievements_schema, "user_achievements"),
         ):
             with self.subTest(database=schema.DATABASE.name):
                 path = self.path(schema)
@@ -259,7 +255,6 @@ class DatabaseVersionTests(unittest.TestCase):
         for schema, table in (
             (links_schema, "links"),
             (achievements_schema, "achievements"),
-            (health_schema, "player_snapshots"),
         ):
             with self.subTest(database=schema.DATABASE.name):
                 path = self.path(schema)
@@ -277,7 +272,6 @@ class DatabaseVersionTests(unittest.TestCase):
         for schema, table, old, new in (
             (links_schema, "links", "player_tag TEXT PRIMARY KEY", "player_tag TEXT"),
             (achievements_schema, "user_stats", "user_id INTEGER PRIMARY KEY", "user_id INTEGER"),
-            (health_schema, "player_directory", "player_tag TEXT PRIMARY KEY", "player_tag TEXT"),
         ):
             with self.subTest(database=schema.DATABASE.name):
                 path = self.path(schema)
@@ -298,19 +292,15 @@ class DatabaseVersionTests(unittest.TestCase):
                     self.assert_refused_unchanged(achievements_schema, path, UnversionedSQLiteSchemaError)
 
     def test_required_nullability_stays_strict_for_explicit_missing_values(self):
-        for schema, nullable in (
-            (achievements_schema, {"coin_transactions": {"reason", "actor_id"}, "raffle_winners": {"reroll_of"}}),
-            (health_schema, health_schema._NULLABLE),
-        ):
-            for table, columns in nullable.items():
-                for column in columns:
-                    with self.subTest(database=schema.DATABASE.name, table=table, column=column):
-                        path = self.path(schema, table + column)
-                        deployed_fixture(path, schema)
-                        with closing(sqlite3.connect(path)) as connection:
-                            kind = next(row[2] for row in connection.execute(f"PRAGMA table_info({table})") if row[1] == column)
-                        rewrite_table(path, table, lambda sql: sql.replace(f"{column} {kind}", f"{column} {kind} NOT NULL"))
-                        self.assert_refused_unchanged(schema, path, UnversionedSQLiteSchemaError)
+        for table, columns in {"coin_transactions": {"reason", "actor_id"}, "raffle_winners": {"reroll_of"}}.items():
+            for column in columns:
+                with self.subTest(table=table, column=column):
+                    path = self.path(achievements_schema, table + column)
+                    deployed_fixture(path, achievements_schema)
+                    with closing(sqlite3.connect(path)) as connection:
+                        kind = next(row[2] for row in connection.execute(f"PRAGMA table_info({table})") if row[1] == column)
+                    rewrite_table(path, table, lambda sql: sql.replace(f"{column} {kind}", f"{column} {kind} NOT NULL"))
+                    self.assert_refused_unchanged(achievements_schema, path, UnversionedSQLiteSchemaError)
 
     def test_omitted_nullable_columns_with_usable_defaults_are_accepted(self):
         path = self.path(achievements_schema)
@@ -346,24 +336,10 @@ class DatabaseVersionTests(unittest.TestCase):
             "emoji_count INTEGER DEFAULT 0", "emoji_count INTEGER DEFAULT (missing_function())"))
         self.assert_refused_unchanged(achievements_schema, path, UnversionedSQLiteSchemaError)
 
-    def test_health_accepts_missing_keys_unused_by_its_queries(self):
-        for table, old, new, columns in (
-            ("war_roster_members", ",\n            PRIMARY KEY (war_id, clan_code, player_tag)", "",
-             ("war_id", "clan_code", "player_tag")),
-            ("clan_health_config_audit", "id INTEGER PRIMARY KEY AUTOINCREMENT", "id INTEGER", ("id",)),
-        ):
-            with self.subTest(table=table):
-                path = self.path(health_schema, table)
-                deployed_fixture(path, health_schema)
-                rewrite_table(path, table, lambda sql: sql.replace(old, new))
-                self.assert_adopted_with_warnings(health_schema, path, [f"{table}.{column}: primary key declaration differs"
-                                                                     for column in columns])
-
     def test_equivalent_unique_keys_accept_a_different_primary_key_declaration(self):
         for schema, table, column, kind in (
             (links_schema, "links", "player_tag", "TEXT"),
             (achievements_schema, "user_stats", "user_id", "INTEGER"),
-            (health_schema, "player_directory", "player_tag", "TEXT"),
         ):
             with self.subTest(database=schema.DATABASE.name):
                 path = self.path(schema)
@@ -387,8 +363,7 @@ class DatabaseVersionTests(unittest.TestCase):
 
     def test_omitted_required_columns_without_defaults_are_refused(self):
         for schema, table in ((links_schema, "links"),
-                              (achievements_schema, "achievements"),
-                              (health_schema, "player_snapshots")):
+                              (achievements_schema, "achievements")):
             with self.subTest(database=schema.DATABASE.name):
                 path = self.path(schema)
                 deployed_fixture(path, schema)
@@ -409,7 +384,6 @@ class DatabaseVersionTests(unittest.TestCase):
         for schema, table, column in (
             (links_schema, "links", "last_seen_role"),
             (achievements_schema, "user_stats", "meme_posts"),
-            (health_schema, "report_players", "note"),
         ):
             with self.subTest(database=schema.DATABASE.name):
                 path = self.path(schema)
@@ -422,7 +396,6 @@ class DatabaseVersionTests(unittest.TestCase):
         for schema, table in (
             (links_schema, "suggestions"),
             (achievements_schema, "user_stats"),
-            (health_schema, "player_directory"),
         ):
             with self.subTest(database=schema.DATABASE.name):
                 path = self.path(schema)
@@ -573,20 +546,6 @@ class DatabaseVersionTests(unittest.TestCase):
                     connection.execute(f"UPDATE {table} SET unknown_value=x'00ff80'")
                 self.assert_refused_unchanged(achievements_schema, path, UnversionedSQLiteSchemaError)
 
-    def test_health_label_upgrade_preserves_the_original_label(self):
-        path = self.path(health_schema)
-        deployed_fixture(path, health_schema)
-        with closing(sqlite3.connect(path)) as connection, connection:
-            connection.execute("ALTER TABLE wars DROP COLUMN cwl_season_label")
-            connection.execute("UPDATE wars SET war_type='CWL', cwl_season='2026-09', start_ts=1788220800, cwl_round=1")
-            other_data = connection.execute("SELECT * FROM report_players").fetchall()
-        health_schema.DATABASE.initialize(path)
-        self.assertEqual(version(path), health_schema.SCHEMA_VERSION)
-        with closing(sqlite3.connect(path)) as connection:
-            self.assertEqual(connection.execute("SELECT cwl_season, cwl_season_label FROM wars").fetchall(),
-                             [("2026-09", "2026-09")])
-            self.assertEqual(connection.execute("SELECT * FROM report_players").fetchall(), other_data)
-
     def test_failure_after_legacy_upgrade_rolls_back_every_database(self):
         for schema in SCHEMAS:
             with self.subTest(database=schema.DATABASE.name):
@@ -657,14 +616,37 @@ class DatabaseVersionTests(unittest.TestCase):
         if schema is links_schema:
             with patch("elbow_helper.features.account_links.database.DB_PATH", path):
                 AccountLinksDbMixin()._init_db()
-        elif schema is health_schema:
-            ClanHealthRepository(path).search_players("")
         else:
             owner = AchievementsDatabaseMixin()
             owner.db_path = path
             owner.logger = logging.getLogger(__name__)
             owner.ALL_ACHIEVEMENTS = ()
             owner.init_achievements()
+
+
+class HealthSettingsFileTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.path = Path(directory.name) / "settings.sqlite3"
+
+    def test_a_new_file_starts_at_its_version_and_others_are_refused_unchanged(self):
+        health_schema.DATABASE.initialize(self.path)
+        self.assertEqual(version(self.path), health_schema.SCHEMA_VERSION)
+        for name, setup, error in (
+                ("unversioned", lambda c: c.execute("CREATE TABLE clan_player_health_config (clan_code TEXT)"),
+                 UnversionedSQLiteSchemaError),
+                ("newer", lambda c: c.execute(f"PRAGMA user_version={health_schema.SCHEMA_VERSION + 1}"),
+                 UnsupportedSQLiteVersionError)):
+            with self.subTest(case=name):
+                path = self.path.with_name(name + ".sqlite3")
+                with closing(sqlite3.connect(path)) as connection, connection:
+                    setup(connection)
+                before = path.read_bytes()
+                with self.assertLogs("elbow_helper.infrastructure.persistence.versioned", level="ERROR"):
+                    with self.assertRaises(error):
+                        health_schema.DATABASE.initialize(path)
+                self.assertEqual(path.read_bytes(), before)
 
 
 class SchemaShapeTests(unittest.TestCase):
@@ -724,7 +706,6 @@ class DatabaseStartupTests(unittest.IsolatedAsyncioTestCase):
                 "check_time_achievements", "initial_achievement_check", "cleanup_database",
                 "salary_task", "raffle_hub_task",
             )),
-            (ClanHealth, "clan_health", "initialize", ("_snapshot_log_loop",)),
         ):
             with self.subTest(feature=module):
                 events = []
@@ -734,37 +715,31 @@ class DatabaseStartupTests(unittest.IsolatedAsyncioTestCase):
                     events.append("upgraded")
 
                 owner = SimpleNamespace(**{loop: loop for loop in loops})
-                if cls is ClanHealth:
-                    owner.repository = SimpleNamespace(initialize=initialize)
-                else:
-                    setattr(owner, method, initialize)
+                setattr(owner, method, initialize)
                 if cls is Achievements:
                     owner.init_achievements = lambda: events.append("definitions")
                 with patch(f"elbow_helper.features.{module}.cog.start_resilient_loop",
-                           side_effect=lambda loop: events.append(loop)), patch(
-                    "elbow_helper.features.clan_health.database.config_store.seed_missing_configs"
-                ):
+                           side_effect=lambda loop: events.append(loop)):
                     await cls.cog_load(owner)
                 self.assertEqual(events[0], "upgraded")
                 self.assertTrue(set(loops) <= set(events))
 
     async def test_failed_upgrade_starts_no_background_jobs(self):
-        for cls, module, method in (
-            (Achievements, "achievements", "init_database"),
-            (ClanHealth, "clan_health", "initialize"),
-        ):
-            with self.subTest(feature=module):
-                def fail():
-                    raise UnversionedSQLiteSchemaError("synthetic unknown schema")
-                owner = SimpleNamespace()
-                if cls is ClanHealth:
-                    owner.repository = SimpleNamespace(initialize=fail)
-                else:
-                    setattr(owner, method, fail)
-                with patch(f"elbow_helper.features.{module}.cog.start_resilient_loop") as start:
-                    with self.assertRaises(UnversionedSQLiteSchemaError):
-                        await cls.cog_load(owner)
-                    start.assert_not_called()
+        def fail():
+            raise UnversionedSQLiteSchemaError("synthetic unknown schema")
+        with patch("elbow_helper.features.achievements.cog.start_resilient_loop") as start:
+            with self.assertRaises(UnversionedSQLiteSchemaError):
+                await Achievements.cog_load(SimpleNamespace(init_database=fail))
+            start.assert_not_called()
+
+    async def test_a_refused_clan_health_settings_file_stops_startup_before_seeding(self):
+        def fail(*paths):
+            raise UnversionedSQLiteSchemaError("synthetic unknown schema")
+        with patch("elbow_helper.features.clan_health.database.schema.copy_old_settings", side_effect=fail), \
+                patch("elbow_helper.features.clan_health.database.config_store.seed_missing_configs") as seed:
+            with self.assertRaises(UnversionedSQLiteSchemaError):
+                await ClanHealth.cog_load(SimpleNamespace())
+            seed.assert_not_called()
 
     async def test_account_links_loads_record_jobs_without_initializing_old_links(self):
         def legacy_initialize():

@@ -8,8 +8,8 @@ authentication, request attempts, timeouts, response handling, and rate-limit
 details. Family collectors fetch the wars and league groups used by features;
 war and CWL consumers read `data/reads` rather than requesting them again.
 Ranked history returns saved battles and when each battle log was checked, without
-asking the Clash API for missing battles. Clan health reports and the agent's live Clash lookup still ask the Clash API
-themselves, through the shared client.
+asking the Clash API for missing battles. Health reports read the family database as well. Only the agent's live Clash API
+lookup asks the Clash API itself, through the shared client.
 
 Use `elbow_helper.domain.player_tags` for tag normalization and URL encoding.
 

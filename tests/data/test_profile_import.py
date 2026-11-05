@@ -23,7 +23,7 @@ from elbow_helper.data.store.people import account
 from elbow_helper.data.store.profile_import_plan import HEALTH, RANKED, TOTALS, snapshot_profiles
 from elbow_helper.data.store.projections import canonical_json
 from elbow_helper.data.store.schema import MIGRATIONS
-from elbow_helper.features.clan_health.database.schema import create_schema as health_schema
+from tests.data.legacy_health_schema import create_schema as health_schema
 from elbow_helper.infrastructure.persistence.migrations import SQLiteMigration, SQLiteMigrationError, run_sqlite_migrations
 
 from .legacy_ranked_schema import create_schema as ranked_schema

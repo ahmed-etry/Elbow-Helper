@@ -1,140 +1,100 @@
-"""Synthetic bounded membership observations and indexed read plans."""
+"""Synthetic bounded membership observations from the family record's clan stays."""
 
 from datetime import datetime, timezone
-from contextlib import closing
-from pathlib import Path
-import sqlite3
-from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.agent.datasets.membership import read_membership_history, read_observations
-from elbow_helper.agent.datasets.sources import DataSource
+from elbow_helper.agent.datasets.membership import read_membership_history
 from elbow_helper.agent.models import AgentTurnState
-from elbow_helper.features.clan_health.database.repository import ClanHealthRepository
+
+HOUR = 3600 * 1_000_000
 
 
-def ts(day):
-    return int(datetime(2026, 10, day, tzinfo=timezone.utc).timestamp())
+def at(day, hour=0):
+    return int(datetime(2026, 10, day, hour, tzinfo=timezone.utc).timestamp() * 1_000_000)
+
+
+def stay(code, from_at, last, to_at=None, basis="record"):
+    return {"clan_tag": CLANS[code].tag, "clan_code": code, "from_at": from_at, "to_at": to_at,
+            "first_seen_at": from_at, "last_seen_at": last, "basis": basis, "player_name": "Synthetic"}
 
 
 class MembershipReadTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        directory = TemporaryDirectory()
-        self.addCleanup(directory.cleanup)
-        self.path = Path(directory.name) / "health.sqlite3"
-        ClanHealthRepository(self.path).initialize()
         self.codes = list(CLANS)[:2]
-        self.context = SimpleNamespace(bot=SimpleNamespace(paths=None), state=AgentTurnState())
-        for name, replacement in (
-            ("require_evidence_access", AsyncMock()),
-            ("SOURCES", (DataSource("health", self.path),)),
-        ):
-            patcher = patch("elbow_helper.agent.datasets.membership." + name, replacement)
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        self.rows = []
+        self.reads = SimpleNamespace(movements=AsyncMock(side_effect=lambda **window: {
+            **window, "rows": self.rows, "truncated": False}))
+        self.context = SimpleNamespace(bot=SimpleNamespace(stay_reads=self.reads), state=AgentTurnState())
+        patcher = patch("elbow_helper.agent.datasets.membership.require_evidence_access", AsyncMock())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.patch_record = patch("elbow_helper.agent.record_identity.require_evidence_access", AsyncMock())
+        self.patch_record.start()
+        self.addCleanup(self.patch_record.stop)
         self.arguments = {"after": "2026-10-02", "before": "2026-10-07", "history_after": "2026-10-01"}
 
-    def snapshot(self, day, tags, *, partial=0, every_clan=True, hour=0):
-        """Store one run; every_clan adds a steady account to each clan the tags leave out."""
-        run = f"run-{day}-{hour}"
-        present = {code for _, code in tags}
-        steady = [(f"#Q{code}", code) for code in CLANS if every_clan and code not in present]
-        with closing(sqlite3.connect(self.path)) as conn, conn:
-            conn.execute("INSERT INTO report_runs VALUES (?,?,'2026-10','BACKGROUND_ALL',?,0,0)",
-                         (run, ts(day) + hour * 3600, partial))
-            conn.executemany(
-                "INSERT INTO report_players (run_id,season_key,clan_code,player_tag,player_name,status,flags_json,note) "
-                "VALUES (?,'2026-10',?,?,?,'Good','[]','')",
-                [(run, code, tag, "Synthetic " + tag) for tag, code in [*tags, *steady]],
-            )
+    def account(self, tag, *stays):
+        self.rows.append({"player_tag": tag, "stays": list(stays)})
 
     async def test_new_returning_and_transfer_observations_include_bounds(self):
         first, second = self.codes
-        self.snapshot(1, [("#P0", first), ("#P2", first)])
-        self.snapshot(2, [("#P0", first)])
-        self.snapshot(3, [("#P0", second), ("#P2", first), ("#P8", first)])
+        self.account("#P0", stay(first, at(1), at(2, 23), at(3)), stay(second, at(3), at(6)))
+        self.account("#P2", stay(first, at(1), at(1, 12), at(1, 13)), stay(first, at(4), at(6)))
+        self.account("#P8", stay(first, at(3), at(6)))
         result = await read_membership_history(self.context, self.arguments)
+        window = self.reads.movements.await_args.kwargs
+        self.assertEqual((window["after"], window["before"]), (at(1), at(7)))
         events = {row["player_tag"]: row for row in result["events"]}
-        self.assertEqual(events["#P0"]["kind"], "family_transfer")
+        self.assertEqual((events["#P0"]["kind"], events["#P0"]["previous_clan_code"]), ("family_transfer", first))
         self.assertEqual(events["#P2"]["kind"], "returning_observation")
         self.assertEqual(events["#P2"]["prior_membership_observed_at"], "2026-10-01T00:00:00+00:00")
+        self.assertTrue(events["#P2"]["sighting_gap"])
         self.assertEqual(events["#P8"]["kind"], "first_observed")
         self.assertTrue(all(not row["first_ever_membership_known"] for row in events.values()))
         self.assertEqual(result["coverage"]["observed_after"], "2026-10-01T00:00:00+00:00")
-        self.assertFalse(result["coverage"]["history_complete"])
-        self.assertEqual(self.context.state.required_access, set())
+        self.assertEqual(result["source"], "family_clan_stays")
         page = await read_membership_history(self.context, {**self.arguments, "limit": 1})
         self.assertEqual(page["next_offset"], 1)
         next_page = await read_membership_history(self.context, {**self.arguments, "offset": 1, "limit": 1})
         self.assertNotEqual(page["events"], next_page["events"])
+        only = await read_membership_history(self.context, {**self.arguments, "clan_codes": [second]})
+        self.assertEqual([row["player_tag"] for row in only["events"]], ["#P0"])
 
-    async def test_prior_history_outside_bound_and_snapshot_gaps_stay_unknown(self):
+    async def test_a_copied_stay_carried_into_the_record_is_not_an_arrival(self):
         code = self.codes[0]
-        self.snapshot(1, [("#P0", code)])
-        self.snapshot(2, [("#P2", code)])
-        self.snapshot(3, [("#P8", code)], every_clan=False)
-        self.snapshot(6, [("#P0", code)])
-        result = await read_membership_history(self.context, {**self.arguments, "history_after": "2026-10-02"})
-        event = next(row for row in result["events"] if row["player_tag"] == "#P0")
-        self.assertEqual(event["kind"], "first_observed")
-        self.assertTrue(event["snapshot_gap"])
-        self.assertEqual(result["coverage"]["snapshot_count"], 2)
-        self.assertEqual(result["coverage"]["max_snapshot_gap_seconds"], 4 * 86400)
-        self.assertTrue(result["limitations"]["earlier_membership_outside_window_unknown"])
-        self.assertNotIn("#P8", str(result))
-
-    async def test_runs_are_judged_by_clan_coverage_not_the_partial_flag(self):
-        code = self.codes[0]
-        self.snapshot(1, [("#P0", code)])
-        # A run saved with no players and one missing clans would make #P0 depart and return.
-        self.snapshot(2, [], every_clan=False)
-        self.snapshot(2, [("#P2", code)], every_clan=False, hour=6)
-        self.snapshot(3, [("#P0", code), ("#P8", code)], partial=1)
+        self.account("#P0", stay(code, at(1), at(3), at(3), basis="observed_hourly"), stay(code, at(3), at(6)))
+        # An hourly bounce back into the same clan continues the stay too.
+        self.account("#P2", stay(code, at(1), at(4), basis="observed_hourly"),
+                     stay(code, at(4, 1), at(6), basis="observed_hourly"))
         result = await read_membership_history(self.context, self.arguments)
-        events = {row["player_tag"]: row for row in result["events"]}
-        self.assertNotIn("#P0", events)
-        self.assertNotIn("#P2", events)
-        self.assertEqual(events["#P8"]["kind"], "first_observed")
-        self.assertEqual(result["coverage"]["snapshot_count"], 2)
-        self.assertEqual(result["coverage"]["observed_before"], "2026-10-03T00:00:00+00:00")
-        self.assertTrue(result["limitations"]["snapshots_missing_clans_excluded"])
+        self.assertEqual(result["events"], [])
 
-    async def test_a_refused_window_is_a_planner_error(self):
+    async def test_sightings_before_the_history_bound_do_not_make_a_return(self):
+        code = self.codes[0]
+        self.account("#P0", stay(code, at(1) - 10 * 24 * HOUR, at(1) + HOUR), stay(code, at(4), at(6)))
+        result = await read_membership_history(self.context, {**self.arguments})
+        event = result["events"][0]
+        self.assertEqual(event["kind"], "returning_observation")
+        # The earlier stay counts only from the history bound.
+        self.assertEqual(event["prior_membership_observed_at"], "2026-10-01T00:00:00+00:00")
+
+    async def test_refused_windows_unreadable_and_oversized_records_are_explicit(self):
         result = await read_membership_history(self.context, {**self.arguments, "history_after": "2025-01-01"})
         self.assertEqual(result["cause"], "invalid_arguments")
-
-    async def test_empty_invalid_and_clipped_windows_are_explicit(self):
-        empty = await read_membership_history(self.context, self.arguments)
-        self.assertIsNone(empty["coverage"]["observed_after"])
-        self.assertEqual(empty["events"], [])
-        for extra in ({"history_after": "2025-01-01"}, {"limit": 26}, {"before": "bad"}):
+        for extra in ({"limit": 26}, {"before": "bad"}, {"clan_codes": ["NOPE"]}):
             self.assertIn("error", await read_membership_history(self.context, {**self.arguments, **extra}))
-        self.snapshot(1, [("#P0", self.codes[0])])
-        self.snapshot(2, [("#P2", self.codes[0])])
-        with patch("elbow_helper.agent.datasets.membership.RUN_LIMIT", 1):
-            clipped = await read_membership_history(self.context, self.arguments)
-        self.assertTrue(clipped["truncated"])
-        self.assertTrue(clipped["coverage"]["snapshot_limit_reached"])
-        self.assertEqual(clipped["coverage"]["snapshot_count"], 1)
+        empty = await read_membership_history(self.context, self.arguments)
+        self.assertEqual((empty["events"], empty["coverage"]["observed_after"]), ([], None))
+        self.reads.movements = AsyncMock(side_effect=OSError("synthetic outage"))
+        self.assertEqual((await read_membership_history(self.context, self.arguments))["cause"], "source_unavailable")
+        self.reads.movements = AsyncMock(return_value={"rows": [], "truncated": True})
+        self.assertEqual((await read_membership_history(self.context, self.arguments))["cause"], "source_unavailable")
+        no_record = SimpleNamespace(bot=SimpleNamespace(), state=AgentTurnState())
+        self.assertEqual((await read_membership_history(no_record, self.arguments))["cause"], "source_unavailable")
 
-    def test_representative_history_uses_index_and_bounds_rows(self):
-        with closing(sqlite3.connect(self.path)) as conn, conn:
-            runs = [(f"synthetic-{i}", ts(1) + i * 60, i % 2) for i in range(5000)]
-            conn.executemany("INSERT INTO report_runs VALUES (?,?,'2026-10','BACKGROUND_ALL',?,0,0)", runs)
-            conn.executemany(
-                "INSERT INTO report_players (run_id,season_key,clan_code,player_tag,player_name,status,flags_json,note) "
-                "VALUES (?,'2026-10',?,?,'Synthetic','Good','[]','')",
-                [(run, code, "#Q" + code) for run, _, _ in runs for code in CLANS])
-            plan = conn.execute(
-                "EXPLAIN QUERY PLAN SELECT run_id,created_ts FROM report_runs "
-                "WHERE scope='BACKGROUND_ALL' AND created_ts>=? AND created_ts<? "
-                "ORDER BY created_ts DESC,run_id DESC", (ts(1), ts(7)),
-            ).fetchall()
-        self.assertIn("idx_report_runs_membership", str(plan))
-        runs, rows, clipped = read_observations(self.path, ts(1), ts(7))
-        self.assertEqual(len(runs), 128)
-        self.assertTrue(clipped)
-        self.assertEqual(len(rows), 128 * len(CLANS))
+
+if __name__ == "__main__":
+    unittest.main()

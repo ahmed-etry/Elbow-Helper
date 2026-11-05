@@ -76,7 +76,7 @@ async def run_health_clan(context: Any, values: Mapping[str, Any]) -> ActionOutc
         return ActionOutcome.needs_input((result.issue,))
     if result.status == "invalid_clan":
         return ActionOutcome.needs_input((result.issue,))
-    if result.status in {"not_configured", "empty", "unavailable"}:
+    if result.status in {"empty", "unavailable"}:
         return ActionOutcome("complete", text=result.issue)
     if result.status != "complete" or result.export is None:
         return ActionOutcome.unavailable()

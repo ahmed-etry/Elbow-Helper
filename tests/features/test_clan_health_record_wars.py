@@ -2,7 +2,6 @@
 
 import asyncio
 from datetime import datetime
-from pathlib import Path
 import sqlite3
 from types import SimpleNamespace
 import unittest
@@ -10,12 +9,9 @@ from unittest.mock import AsyncMock, patch
 
 from elbow_helper.data.reads import WarReads
 from elbow_helper.features.clan_health.analysis import ClanHealthAnalyzer
-from elbow_helper.features.clan_health.api import ClanHealthCollector
 from elbow_helper.features.clan_health.commands.player import ClanHealthPlayerCommandMixin
 from elbow_helper.features.clan_health.config import UTC
-from elbow_helper.features.clan_health.database import ClanHealthRepository
 from elbow_helper.features.clan_health.record_wars import RegularWars
-from elbow_helper.features.clan_health.seasons import _season_key_for_datetime
 
 from tests.data.test_war_reads import friendly
 from tests.data.test_wars import END, SECOND, START, WarFixture, group, war
@@ -47,8 +43,7 @@ class RecordRegularWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         await super().asyncSetUp()
         self.regular = RegularWars(WarReads(self.store), CLANS)
         self.league = RegularWars(WarReads(self.store), CLANS, types=("CWL",))
-        self.health = ClanHealthRepository(Path(self.temporary.name) / "clan_health.db")
-        await asyncio.to_thread(self.health.initialize)
+        self.health = SimpleNamespace()
 
     async def ended(self):
         await self.record(war("warEnded"), at=END + 90 * SECOND)
@@ -165,46 +160,14 @@ class RecordRegularWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await asyncio.to_thread(self.regular.attacks, player_tag="not a tag",
                                                  cycle_start_ts=start, cycle_end_ts=end), [])
 
-    async def test_the_report_season_follows_a_newer_regular_war_attack_only(self):
-        await self.ended()
-        latest = await asyncio.to_thread(self.regular.latest_attack_ts, player_tag="#P0", after_ts=0,
-                                         until_ts=seconds(END) + 4 * DAY)
-        self.assertEqual(latest, seconds(END))
-        self.assertIsNone(await asyncio.to_thread(self.regular.latest_attack_ts, player_tag="#P0",
-                                                  after_ts=seconds(END) + 1, until_ts=seconds(END) + 4 * DAY))
-        commands = PlayerCommands(self.health, self.regular, self.league)
-        # Nothing stored for the account: the record's attack sets the season.
-        self.assertEqual(await asyncio.to_thread(commands._latest_activity_season, "#P0"),
-                         _season_key_for_datetime(moment(seconds(END))))
-        # A newer league attack is found after the regular one, and moves the season too.
-        league = int(datetime(2026, 11, 1, 12, tzinfo=UTC).timestamp())
-        await self.league_round(at=league * SECOND, missed=False, war_tag="#R8")
-        self.assertEqual(await asyncio.to_thread(self.league.latest_attack_ts, player_tag="#P0",
-                                                 after_ts=seconds(END)), league)
-        newer = seconds(END) + 40 * DAY
-        stub = SimpleNamespace(latest_attack_ts=lambda **window: newer if window["after_ts"] < newer else None)
-        self.assertEqual(await asyncio.to_thread(PlayerCommands(self.health, self.regular, stub)._latest_activity_season,
-                                                 "#P0"), _season_key_for_datetime(moment(newer)))
-        # A newer stored snapshot wins.
-        later = seconds(END) + 40 * DAY
-        await asyncio.to_thread(self.health.store_snapshots, later,
-                                [{"player_tag": "#P0", "player_name": "Synthetic", "clan_code": "ONE"}])
-        self.assertNotEqual(_season_key_for_datetime(moment(later)), _season_key_for_datetime(moment(seconds(END))))
-        self.assertEqual(await asyncio.to_thread(commands._latest_activity_season, "#P0"),
-                         _season_key_for_datetime(moment(later)))
-        self.assertIsNone(await asyncio.to_thread(commands._latest_activity_season, "#P8"))
-
-
-class NoWarPollingTests(unittest.IsolatedAsyncioTestCase):
-    async def test_clan_health_collects_no_war_of_any_kind(self):
-        collector = ClanHealthCollector(SimpleNamespace(configured=True), SimpleNamespace(), SimpleNamespace())
-        for name in ("_ingest_regular_war_for_clan", "_schedule_war_end_capture", "_run_war_end_capture",
-                     "ingest_family_war_activity", "ingest_family_cwl_activity", "_ingest_war_cwl_for_clan",
-                     "_fetch_cwl_wars_for_clan", "_schedule_cwl_war_end_capture", "_run_cwl_war_end_capture"):
-            self.assertFalse(hasattr(collector, name), name)
-        for name in ("store_wars", "store_final_war_rosters", "store_war_activity", "store_war_attacks",
-                     "bonus_wars", "roster_history", "attendance", "cwl_war_activity", "player_cwl_attacks"):
-            self.assertFalse(hasattr(ClanHealthRepository, name), name)
+class NoCollectionTests(unittest.TestCase):
+    def test_clan_health_collects_nothing_and_stores_no_verdicts(self):
+        import importlib.util
+        from elbow_helper.features.clan_health.cog import ClanHealth
+        for module in ("api", "snapshots", "queries", "database.repository", "database.records"):
+            self.assertIsNone(importlib.util.find_spec(f"elbow_helper.features.clan_health.{module}"), module)
+        for name in ("_snapshot_log_loop", "collector", "_run_background_snapshot_cycle"):
+            self.assertFalse(hasattr(ClanHealth, name), name)
 
 
 if __name__ == "__main__":

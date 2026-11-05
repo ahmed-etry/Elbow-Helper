@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from elbow_helper.configuration.clans import CLANS
-from elbow_helper.features.clan_health.database import ClanHealthRepository
+from tests.data.legacy_health_schema import LegacyHealthFile as ClanHealthRepository
 from elbow_helper.features.cwl.config import CWL_CLAN_NAMES
 from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.agent.families import war_reads
