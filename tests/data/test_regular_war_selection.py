@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from elbow_helper.data.reads import WarReads
 from elbow_helper.data.reads.war_selection import regular_id
-from elbow_helper.data.store.legacy_wars import map_legacy_war
+from tests.data.record_fixtures import seed_war_alias
 from tests.data.test_wars import END, SECOND, WarFixture, war
 
 DAY = 86400 * SECOND
@@ -27,7 +27,7 @@ class RegularSelectionTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         await self.record(war('warEnded'))
         row, = await self.rows('SELECT id FROM wars')
         alias = 'REG:#PY:20261020T180000.000Z:#GR'
-        await self.store.call(lambda c: (map_legacy_war(c, 'clan_health', alias, 'BEH', row['id'], at=self.at), c.commit()))
+        await self.store.call(lambda c: (seed_war_alias(c, 'clan_health', alias, 'BEH', row['id'], at=self.at), c.commit()))
         source = await self.select(after=END - DAY, before=END + DAY)
         self.assertEqual(source['wars'][0]['aliases'], [alias, regular_id(source['wars'][0])])
         for ids in ((alias,), (str(row['id']),), tuple(source['wars'][0]['aliases'])):

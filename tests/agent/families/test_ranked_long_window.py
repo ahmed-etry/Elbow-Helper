@@ -4,7 +4,7 @@ import unittest
 
 from elbow_helper.agent.reads.ranked_tools import TOOLS
 from agent.test_agent_ranked import RankedRecordFixture, iso
-from data.test_ranked_import import BASE, SECOND, battle
+from data.record_fixtures import BASE, SECOND, battle
 
 DAY = 86400
 
@@ -13,7 +13,7 @@ class RankedLongWindowTests(RankedRecordFixture, unittest.IsolatedAsyncioTestCas
     async def test_family_counts_a_two_hundred_day_window_with_an_exclusive_end(self):
         for index, offset in enumerate((-200 * DAY, -110 * DAY, -20 * DAY, -1, 0)):
             self.add_battle(battle(offset), key=f"key-{index}")
-        await self.copy()
+        await self.seed_history()
         arguments = {'account_tags': ['#P0'], 'after': iso(BASE - 200 * DAY * SECOND), 'before': iso(BASE),
                      'include_battles': True}
         result = await TOOLS[0].handler(self.context, arguments)
@@ -26,7 +26,7 @@ class RankedLongWindowTests(RankedRecordFixture, unittest.IsolatedAsyncioTestCas
         self.assertEqual(row['watch_status'], 'never_read')  # Every battle predates the first read.
 
     async def test_pages_follow_the_full_selection(self):
-        await self.copy()
+        await self.seed_history()
         arguments = {'account_tags': ['#P0', '#P9'], 'after': iso(BASE - timedelta(days=1).total_seconds() * SECOND),
                      'before': iso(BASE + 3600 * SECOND)}
         first = await TOOLS[0].handler(self.context, {**arguments, 'limit': 1})

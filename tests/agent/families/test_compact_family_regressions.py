@@ -9,7 +9,7 @@ from elbow_helper.agent.engine.tool_call import bound_tool_result
 from elbow_helper.agent.reads import ranked_tools as ranked_reads
 from elbow_helper.agent.plan.results import model_result, model_view
 from agent.test_agent_ranked import RankedRecordFixture, iso
-from data.test_ranked_import import BASE, SECOND, battle
+from data.record_fixtures import BASE, SECOND, battle
 
 
 def delivered(payload):
@@ -28,7 +28,7 @@ class CompactRankedRegressionTests(RankedRecordFixture, unittest.IsolatedAsyncio
                         availableLoot=[{'name': 'Gold', 'amount': 100}] * 100) for index in range(57)]
         for index, raw in enumerate(attacks):
             self.add_battle(raw, key=f'key-{index}')
-        await self.copy()
+        await self.seed_history()
         defenses = [dict(battle(index + 1, attack=False, mode='legend', stars=2),
                          armyShareCode='payload' * 500) for index in range(33)]
         await self.live({'items': [*attacks[:2], *defenses, battle(50, mode='homeVillage')]}, 100)

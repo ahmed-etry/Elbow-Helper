@@ -11,8 +11,7 @@ import json
 
 from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 
-from .legacy_links import digest
-from .link_state import receipt
+from .link_state import digest, receipt
 from .people import member
 from .projections import canonical_json
 

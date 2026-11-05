@@ -1,29 +1,20 @@
-"""One-time legacy import and atomic family-record ownership changes."""
+"""Atomic family-record ownership changes."""
 
 import asyncio
-from contextlib import closing
-from pathlib import Path
-import logging
-import sqlite3
 from uuid import uuid4
 
 from elbow_helper.domain.player_tags import normalize_player_tag
 from elbow_helper.infrastructure.persistence.sqlite import sqlite_transaction
 
 from .store import now_us
-from .store.legacy_links import TOPIC, FIELDS, LinkConflict, digest
+from .store.link_state import TOPIC, FIELDS, LinkConflict, digest
 from .store.link_state import apply_rows, compatibility, patched, receipt, display_rows
-from .store.people_import import import_people
 from .store.projections import canonical_json, link_projection
-
-LOGGER = logging.getLogger(__name__)
 
 
 class LinkService:
-    def __init__(self, store, legacy_path):
+    def __init__(self, store):
         self.store = store
-        self.legacy_path = Path(legacy_path)
-        self._started = False
         self._writer = asyncio.Lock()
         self._jobs = set()
 
@@ -44,29 +35,6 @@ class LinkService:
     async def close(self):
         while self._jobs:
             await asyncio.gather(*tuple(self._jobs), return_exceptions=True)
-
-    async def startup(self, *, at=None):
-        try:
-            return await self._serialize(self._startup, at)
-        except Exception as error:
-            self._started = False
-            LOGGER.warning("Account links unavailable until the people import succeeds: %s", error)
-            return {"ready": False, "reason": str(error)}
-
-    async def retry_import(self):
-        if not self._started:
-            return await self.startup()
-        return {"ready": True, "imported": False}
-
-    def _startup(self, connection, at):
-        # Later boots never inspect the old links after the receipt is present.
-        if connection.execute("SELECT 1 FROM imports WHERE topic=?", (TOPIC,)).fetchone():
-            self._require_ready(connection)
-            result = {"imported": False}
-        else:
-            result = import_people(connection, self.legacy_path, at=at)
-        self._started = True
-        return {**result, "ready": True}
 
     @staticmethod
     def _require_ready(connection):
@@ -137,26 +105,6 @@ class LinkService:
         return await self._write_rows({player_tag: metadata}, operation_key, at, "refresh")
 
     def _mutate(self, connection, requested, operation_key, at, kind):
-        result = self._commit(connection, requested, operation_key, at, kind)
-        try:
-            # Remove this rollback copy in the next update after this one ships.
-            self._write_legacy(connection)
-        except Exception as error:
-            LOGGER.warning("Old account links write failed after %s operation %s: %s",
-                           kind, operation_key, error)
-        return result
-
-    def _write_legacy(self, connection):
-        rows = connection.execute("SELECT * FROM current_link_rows").fetchall()
-        # Never read the old table, create a missing file, or wait on its locks.
-        with closing(sqlite3.connect(self.legacy_path.resolve().as_uri() + "?mode=rw",
-                                     uri=True, timeout=0)) as legacy:
-            with sqlite_transaction(legacy, immediate=True):
-                legacy.execute("DELETE FROM links")
-                legacy.executemany(f"INSERT INTO links ({','.join(FIELDS)}) VALUES (?,?,?,?,?,?)",
-                                   [tuple(row[field] for field in FIELDS) for row in rows])
-
-    def _commit(self, connection, requested, operation_key, at, kind):
         connection.execute("PRAGMA synchronous=FULL")
         request_json = canonical_json({"kind": kind, "rows": requested})
         with sqlite_transaction(connection, immediate=True):
@@ -170,12 +118,19 @@ class LinkService:
                     raise LinkConflict("aborted_or_stale_operation_key")
                 return operation_key
             at = now_us() if at is None else at
-            marker = connection.execute("SELECT frozen_at,checked_at FROM imports WHERE topic=?", (TOPIC,)).fetchone()
-            if at < marker["frozen_at"]:
+            # Records copied from the old file still carry the point where their link history began;
+            # a fresh record has none, so there is nothing to precede.
+            marker = connection.execute("SELECT frozen_at FROM imports WHERE topic=?", (TOPIC,)).fetchone()
+            if marker is not None and at < marker[0]:
                 raise LinkConflict("operation_precedes_import")
-            # checked_at advances with this transaction, including unlinks. Use
-            # one microsecond past it when the wall clock has not caught up yet.
-            at = max(at, marker["checked_at"] + 1)
+            # Changes landing in the same clock tick stay in order: one microsecond past the newest
+            # time already written for link history, taken from the link tables themselves.
+            newest = connection.execute(
+                "SELECT MAX(COALESCE((SELECT MAX(created_at) FROM link_operations),0),"
+                "COALESCE((SELECT MAX(from_at) FROM account_links),0),"
+                "COALESCE((SELECT MAX(to_at) FROM account_links),0))").fetchone()[0]
+            if at <= newest:
+                at = newest + 1
             current = compatibility(connection)
             if kind == "refresh":
                 requested = {tag: {**current[tag], **{key: row[key] for key in FIELDS[2:]}}
@@ -190,6 +145,4 @@ class LinkService:
                 "after_digest,created_at,finished_at,status,source_item_id) VALUES (?,?,?,?,?,?,?,?,'complete',?)",
                 (operation_key, request_json, canonical_json(before), canonical_json(requested),
                  digest(current), digest(after), at, at, item))
-            connection.execute("UPDATE imports SET current_links_digest=?,checked_at=? WHERE topic=?",
-                               (digest(after), at, TOPIC))
         return operation_key

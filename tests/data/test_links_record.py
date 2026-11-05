@@ -12,7 +12,7 @@ from elbow_helper.data.link_facade import LinkFacade
 from elbow_helper.data.links import LinkService
 from elbow_helper.data.reads import MembershipReads, PeopleReads
 from elbow_helper.data.store import FamilyStore
-from elbow_helper.data.store.legacy_links import LinkConflict, snapshot
+from elbow_helper.data.store.link_state import LinkConflict
 from elbow_helper.features.account_links.cog import AccountLinks
 from elbow_helper.features.rosters.services.accounts import RosterAccountDirectory
 from elbow_helper.agent.reads.people import read_people_links as read_linked_accounts
@@ -20,13 +20,12 @@ from elbow_helper.agent.tool_support.adapters.account_links.data import SOURCES
 from elbow_helper.agent.tool_support.sql.query import run_query
 
 from .link_fixtures import CLANS, FrozenLegacyLinks
-from .test_people_import import _PeopleFixture, ProcessCrash, row
+from .record_fixtures import PeopleFixture, ProcessCrash, row
 
 
-class RecordLinkTests(_PeopleFixture):
+class RecordLinkTests(PeopleFixture):
     async def asyncSetUp(self):
         await super().asyncSetUp()
-        self.assertTrue((await self.service.startup(at=200))["ready"])
         self.cog = AccountLinks(SimpleNamespace(link_service=self.service), SimpleNamespace(configured=False))
         self.cog._try_refresh_linked_boards = AsyncMock()
         self.cog.refresh_linked_boards = AsyncMock()
@@ -75,29 +74,17 @@ class RecordLinkTests(_PeopleFixture):
             after = await read_linked_accounts(SimpleNamespace(account_links=self.cog), {"member_ids": [100, 200, 999]})
         self.assertEqual(after, before)
 
-    async def assert_rollback_copy(self):
-        old = await asyncio.to_thread(snapshot, self.legacy)
-        self.assertEqual(old.links, await self.service.read_links())
-        self.assertEqual(tuple(old.links), tuple(await self.service.read_links()))
-        return old
-
-    async def test_add_transfer_delete_refresh_and_undo_keep_rollback_copy_current(self):
-        original = await self.assert_rollback_copy()
+    async def test_add_transfer_delete_refresh_and_undo_leave_old_file_untouched(self):
+        original = self.legacy.read_bytes()
         before = await self.service.read_links()
         await self.service.upsert_link(**row("#V0", 300, "Alt"), at=250)
-        await self.assert_rollback_copy()
         await self.service.upsert_link(**row(owner=300, name="New"), at=300)
-        await self.assert_rollback_copy()
         await self.service.delete_link("#Q0", at=400)
-        await self.assert_rollback_copy()
         await self.service.update_link_last_seen(player_tag="#P0", player_name_last_seen="Fresh",
             last_seen_clan_tag=None, last_seen_clan_code="", last_seen_role=None, at=450)
-        await self.assert_rollback_copy()
         await self.service.restore_links({**before, "#V0": None}, at=500)
         self.assertEqual(await self.service.read_links(), before)
-        final = await self.assert_rollback_copy()
-        self.assertEqual(final.auxiliary, original.auxiliary)
-        self.assertEqual(final.version, original.version)
+        self.assertEqual(self.legacy.read_bytes(), original)
         self.assertEqual([r["status"] for r in await self.rows("SELECT status FROM link_operations")], ["complete"] * 5)
         history = await PeopleReads(self.store).account_history(["#P0"], 600)
         self.assertEqual([r["member_id"] for r in history["rows"][0]["record_history"]["ownership_intervals"]],
@@ -105,8 +92,7 @@ class RecordLinkTests(_PeopleFixture):
 
     async def test_each_late_batch_failure_leaves_no_identity_history_receipt_or_metadata(self):
         for target, event in (("members", "INSERT"), ("account_links", "INSERT"),
-                              ("account_link_metadata", "INSERT"), ("link_operations", "INSERT"),
-                              ("imports", "UPDATE")):
+                              ("account_link_metadata", "INSERT"), ("link_operations", "INSERT")):
             with self.subTest(target=target):
                 await self.execute(f"CREATE TRIGGER refuse_write BEFORE {event} ON {target} "
                                    "BEGIN SELECT RAISE(ABORT,'synthetic refused write'); END")
@@ -125,12 +111,8 @@ class RecordLinkTests(_PeopleFixture):
                 await self.service.upsert_link(**row("#V0", 300), at=300)
         self.assertEqual(await self.dump(), before)
         self.legacy.unlink()
-        restart = LinkService(FamilyStore(self.store.path), self.legacy)
-        with patch("elbow_helper.data.links.import_people", side_effect=AssertionError("old links read")):
-            self.assertTrue((await restart.startup())["ready"])
-            with self.assertLogs("elbow_helper.data.links", level="WARNING") as captured:
-                await restart.upsert_link(**row("#V0", 300), at=300)
-        self.assertEqual(len(captured.output), 1)
+        restart = LinkService(FamilyStore(self.store.path))
+        await restart.upsert_link(**row("#V0", 300), at=300)
         self.assertEqual((await restart.read_links())["#V0"]["discord_user_id"], 300)
         self.assertFalse(self.legacy.exists())
 
@@ -151,11 +133,9 @@ class RecordLinkTests(_PeopleFixture):
             await self.service.upsert_link(**row("#V0", 400), operation_key="relink")
             await self.service.upsert_link(**row(owner=300), operation_key="transfer")
             # The ordering survives a new service and store, even while the clock is frozen.
-            self.service = LinkService(FamilyStore(self.store.path), self.legacy)
-            self.assertTrue((await self.service.startup())["ready"])
+            self.service = LinkService(FamilyStore(self.store.path))
             await self.service.restore_links({"#P0": before["#P0"], "#V0": None}, operation_key="restore")
         self.assertEqual(await self.service.read_links(), before)
-        await self.assert_rollback_copy()
         operations = await self.rows("SELECT o.operation_key,o.created_at,o.finished_at,i.committed_at "
                                      "FROM link_operations o JOIN collection_items i ON i.id=o.source_item_id "
                                      "ORDER BY o.created_at")
@@ -193,7 +173,6 @@ class RecordLinkTests(_PeopleFixture):
             await self.service.delete_link("#P0", operation_key="last")
         self.assertEqual([r["created_at"] for r in await self.rows(
             "SELECT created_at FROM link_operations ORDER BY created_at")], [300, 301, 302])
-        await self.assert_rollback_copy()
 
     async def test_explicit_ties_refresh_and_advancing_clock_share_commit_time(self):
         before = await self.dump()
@@ -212,7 +191,18 @@ class RecordLinkTests(_PeopleFixture):
                                   "WHERE a.player_tag='#V0' ORDER BY l.from_at")
         self.assertEqual(history, [dict(from_at=300, last_observed_at=301, to_at=302, end_previous_good_at=301),
                                    dict(from_at=302, last_observed_at=302, to_at=400, end_previous_good_at=302)])
-        self.assertEqual((await self.rows("SELECT checked_at FROM imports"))[0]["checked_at"], 400)
+        # Ordering comes from the link tables; the import marker is no longer advanced.
+        self.assertEqual((await self.rows("SELECT checked_at FROM imports"))[0]["checked_at"], 200)
+
+    async def test_ordering_and_refusal_work_without_an_import_marker(self):
+        await self.execute("DELETE FROM imports")
+        with patch("elbow_helper.data.links.now_us", return_value=100):
+            # No marker: nothing to precede, so an early explicit time is accepted.
+            await self.service.upsert_link(**row("#V0", 300), at=1)
+            await self.service.delete_link("#V0", at=1)
+            await self.service.upsert_link(**row("#V0", 400))
+        self.assertEqual([r["created_at"] for r in await self.rows(
+            "SELECT created_at FROM link_operations ORDER BY created_at")], [201, 202, 203])
 
     async def test_unavailable_record_never_reads_or_writes_legacy(self):
         before = self.legacy.read_bytes()
@@ -248,89 +238,6 @@ class RecordLinkTests(_PeopleFixture):
         with self.assertRaisesRegex(RuntimeError, "link_read_requires_worker"):
             LinkFacade(self.service).all()
 
-    async def test_rollback_copy_runs_after_commit_in_worker_without_reading_old_rows(self):
-        real_connect = sqlite3.connect
-        threads, statements = [], []
-        def connect(path, *args, **kwargs):
-            connection = real_connect(path, *args, **kwargs)
-            if str(path) == self.legacy.resolve().as_uri() + "?mode=rw":
-                threads.append(threading.get_ident())
-                with closing(real_connect(self.store.path)) as reader:
-                    self.assertEqual(reader.execute(
-                        "SELECT discord_user_id FROM current_link_rows WHERE player_tag='#V0'").fetchone()[0], 300)
-                def authorize(action, table, column, database, source):
-                    if action == sqlite3.SQLITE_READ and table == "links":
-                        return sqlite3.SQLITE_DENY
-                    return sqlite3.SQLITE_OK
-                connection.set_authorizer(authorize)
-                connection.set_trace_callback(statements.append)
-            return connection
-        with patch("elbow_helper.data.links.sqlite3.connect", side_effect=connect):
-            await self.service.upsert_link(**row("#V0", 300), at=300)
-        self.assertEqual(len(threads), 1)
-        self.assertNotIn(threading.get_ident(), threads)
-        self.assertTrue(any(sql.startswith("INSERT INTO links") for sql in statements))
-        await self.assert_rollback_copy()
-
-    async def test_failed_copy_rolls_back_old_batch_and_next_change_repairs_it(self):
-        def trigger(sql):
-            with closing(sqlite3.connect(self.legacy)) as connection, connection:
-                connection.execute(sql)
-        await asyncio.to_thread(trigger, "CREATE TRIGGER refuse_copy BEFORE INSERT ON links "
-            "WHEN NEW.player_tag='#V0' BEGIN SELECT RAISE(ABORT,'synthetic old write failure'); END")
-        original = self.legacy.read_bytes()
-        with self.assertLogs("elbow_helper.data.links", level="WARNING") as captured:
-            result = await self.service.upsert_links([row(owner=300), row("#V0", 300)],
-                                                   operation_key="failed-copy", at=300)
-        self.assertEqual(result, "failed-copy")
-        self.assertEqual(len(captured.output), 1)
-        self.assertIn("upsert operation failed-copy", captured.output[0])
-        self.assertEqual(self.legacy.read_bytes(), original)
-        self.assertEqual((await self.service.read_links())["#P0"]["discord_user_id"], 300)
-        self.assertEqual((await self.service.read_links())["#V0"]["discord_user_id"], 300)
-        self.assertEqual((await self.rows("SELECT status FROM link_operations"))[0]["status"], "complete")
-        await asyncio.to_thread(trigger, "DROP TRIGGER refuse_copy")
-        await self.service.delete_link("#Q0", at=400)
-        await self.assert_rollback_copy()
-
-    async def test_locked_old_file_does_not_block_a_record_commit(self):
-        with closing(sqlite3.connect(self.legacy)) as locked:
-            locked.execute("BEGIN IMMEDIATE")
-            with self.assertLogs("elbow_helper.data.links", level="WARNING") as captured:
-                await asyncio.wait_for(self.service.delete_link("#P0", operation_key="locked", at=300), 2)
-            self.assertNotIn("#P0", await self.service.read_links())
-            self.assertEqual(len(captured.output), 1)
-            self.assertIn("delete operation locked", captured.output[0])
-            locked.rollback()
-
-    async def test_failed_old_write_keeps_link_transfer_and_unlink_replies(self):
-        member = SimpleNamespace(id=300, mention="<@300>")
-        self.cog.lookup_players = AsyncMock(return_value=[{"player_tag": "#P0Y", "player_name": "Alpha"}])
-        for kind in ("link", "transfer", "unlink"):
-            with self.subTest(kind=kind):
-                await self.service.restore_links({"#P0Y": None if kind == "link" else row("#P0Y", 100, "Alpha")})
-                interaction = SimpleNamespace(user=SimpleNamespace(),
-                    response=SimpleNamespace(defer=AsyncMock()), followup=SimpleNamespace(send=AsyncMock()))
-                operation = self.cog.account_remove_operation if kind == "unlink" else self.cog.account_add_operation
-                args = ("#P0Y",) if kind == "unlink" else (member, "#P0Y")
-                expected = await operation(*args, commit=False)
-                with patch.object(self.cog, "_can_manage_accounts", return_value=True), self.assertLogs(
-                        "elbow_helper.data.links", level="WARNING") as captured:
-                    with closing(sqlite3.connect(self.legacy)) as locked:
-                        locked.execute("BEGIN IMMEDIATE")
-                        if kind == "unlink":
-                            await AccountLinks.account_remove.callback(self.cog, interaction, "#P0Y")
-                        else:
-                            await AccountLinks.account_add.callback(self.cog, interaction, member, "#P0Y")
-                        locked.rollback()
-                interaction.followup.send.assert_awaited_once_with(expected["message"], ephemeral=True)
-                self.assertEqual(len(captured.output), 1)
-                current = await self.service.read_links()
-                if kind == "unlink":
-                    self.assertNotIn("#P0Y", current)
-                else:
-                    self.assertEqual(current["#P0Y"]["discord_user_id"], 300)
-
     async def test_refresh_only_updates_existing_links_and_preserves_owner(self):
         metadata = dict(player_name_last_seen="Fresh", last_seen_clan_tag="", last_seen_clan_code="", last_seen_role=None)
         await self.service.update_link_last_seen(player_tag="#P0", **metadata, at=300)
@@ -344,9 +251,8 @@ class RecordLinkTests(_PeopleFixture):
         rows = {"#P0": row(name="é"), "#Q0": row("#Q0", name="Z"), "#R0": row("#R0", 100, "a\0suffix"),
                 "#V0": row("#V0", 100, "A"), "#G0": row("#G0", 100, ""), "#C0": row("#C0", 100, None)}
         await self.service.restore_links(rows, at=300)
-        await self.assert_rollback_copy()
-        self.assertEqual(await asyncio.to_thread(self.cog.get_links_for_user, 100),
-                         await asyncio.to_thread(FrozenLegacyLinks(self.legacy).get_links_for_user, 100))
+        self.assertEqual([r["player_tag"] for r in await asyncio.to_thread(self.cog.get_links_for_user, 100)],
+                         ["#C0", "#G0", "#V0", "#R0", "#Q0", "#P0"])
         await self.service.restore_links({tag: rows[tag] for tag in ("#Q0", "#P0")}, at=400)
         self.assertEqual(tuple(await self.service.read_links()), ("#R0", "#V0", "#G0", "#C0", "#Q0", "#P0"))
 
@@ -435,4 +341,3 @@ class RecordLinkTests(_PeopleFixture):
             await self.service.close()
         self.assertEqual((await self.service.read_links())['#P0']['discord_user_id'], 400)
         self.assertEqual(len(await self.rows('SELECT * FROM link_operations')), 2)
-        await self.assert_rollback_copy()

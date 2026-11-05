@@ -3,7 +3,7 @@
 import json
 
 from ..store.player_projection import COUNTERS
-from ..store.profile_import_plan import TOTALS
+from ..store.profile_schema import TOTALS
 from .core import RecordReads, page, pagination, tags, timestamp
 from .coverage import signal
 

@@ -12,7 +12,7 @@ fall in a counter is a season reset: the new value counts in full. Never asks Cl
 import json
 
 from ..store.player_projection import COUNTERS
-from ..store.profile_import_plan import TOTALS
+from ..store.profile_schema import TOTALS
 from .core import RecordReads, tags as checked_tags, timestamp
 
 

@@ -3,7 +3,7 @@ import unittest
 
 from elbow_helper.agent.reads.ranked_tools import TOOLS
 from agent.test_agent_ranked import RankedRecordFixture, iso
-from data.test_ranked_import import BASE, SECOND, battle
+from data.record_fixtures import BASE, SECOND, battle
 
 
 class RankedFullSourceTests(RankedRecordFixture, unittest.IsolatedAsyncioTestCase):

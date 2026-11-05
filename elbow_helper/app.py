@@ -18,8 +18,7 @@ from elbow_helper.infrastructure.discord.publishing import PublishingQueue
 from elbow_helper.configuration.guild import GUILD_ID
 from elbow_helper.configuration.clans import CLANS
 from elbow_helper.configuration.files import (
-    ACCOUNT_LINKS_DATABASE, CLAN_HEALTH_DATABASE, EVENTS_DATABASE, FAMILY_DATABASE, MEMBER_LIFECYCLE_FILE,
-    RANKED_DATABASE, WAR_CACHE_FILE,
+    EVENTS_DATABASE, FAMILY_DATABASE, MEMBER_LIFECYCLE_FILE,
 )
 from elbow_helper.data.collectors import FamilyCollectors
 from elbow_helper.data.store import FamilyStore
@@ -107,7 +106,7 @@ def create_bot(
     bot.tree.error(handle_app_command_error)
     store = FamilyStore(paths.data_root / FAMILY_DATABASE)
     bot.workflow_events = EventsStore(paths.data_root / EVENTS_DATABASE)
-    bot.link_service = LinkService(store, paths.data_root / ACCOUNT_LINKS_DATABASE)
+    bot.link_service = LinkService(store)
 
     bot.people_reads = PeopleReads(store, link_service=bot.link_service)
     bot.membership_reads = MembershipReads(store)
@@ -119,15 +118,9 @@ def create_bot(
     bot.stay_reads = StayReads(store)
     bot.family_collectors = FamilyCollectors(
         bot, store, clash_client, CLANS.values(),
-        old_wars=(paths.data_root / CLAN_HEALTH_DATABASE, paths.data_root / WAR_CACHE_FILE,
-                  paths.data_root / RANKED_DATABASE),
         old_last_seen=paths.data_root / MEMBER_LIFECYCLE_FILE,
     )
 
-    async def start_links_topic():
-        await bot.link_service.startup()
-
-    bot.start_links_topic = start_links_topic
     bot.add_listener(on_app_command_completion)
     bot.add_listener(on_interaction)
     return bot

@@ -7,7 +7,7 @@ Their absence is explicit: poll evidence never promises continuous tracking.
 import json
 
 from ..store.wars import END_DRIFT
-from ..store.war_completeness import war_side_coverage
+from ..store.war_completeness import war_side_coverage as war_side_coverage
 from .core import MAX_PAGE
 
 SECOND = 1_000_000
@@ -109,7 +109,12 @@ def signal(connection, kind, scope, at, *, after=None, before=None, account_id=N
     if kind == "account_links":
         imported = connection.execute("SELECT frozen_at FROM imports WHERE topic='people_membership' AND frozen_at<=?",
                                       (end,)).fetchone()
-        if imported:
+        first_change = connection.execute("SELECT MIN(created_at) FROM link_operations WHERE status='complete'").fetchone()[0]
+        has_import = connection.execute("SELECT 1 FROM imports WHERE topic='people_membership'").fetchone()
+        local = first_change is not None and first_change <= end
+        empty = not connection.execute("SELECT 1 FROM account_links LIMIT 1").fetchone()
+        if imported or (not has_import and (local or empty)):
+            started = imported[0] if imported else first_change or 0
             latest_change = connection.execute("SELECT MAX(created_at) FROM link_operations "
                                                "WHERE status='complete' AND created_at<=?", (end,)).fetchone()[0]
             pending = connection.execute("SELECT 1 FROM link_operations WHERE status='pending'").fetchone()
@@ -117,11 +122,11 @@ def signal(connection, kind, scope, at, *, after=None, before=None, account_id=N
                                        "AND (to_at IS NULL OR to_at>?)", (end, end)).fetchone()[0]
             # This is local transactional state, not a periodically observed
             # external table. Silence between commands never makes it stale.
-            result.update(collection_start=imported[0], last_good_at=max(imported[0], latest_change or 0),
+            result.update(collection_start=started, last_good_at=max(started, latest_change or 0),
                           status="unavailable" if pending else "observed", source_complete=not pending,
                           expected_population=count, field_completeness={"complete": True}, failures=[],
-                          gaps=[{"after": after, "before": imported[0], "cause": "not_tracked"}]
-                          if after is not None and after < imported[0] else [],
+                          gaps=[{"after": after, "before": started, "cause": "not_tracked"}]
+                          if after is not None and after < started else [],
                           observation_points=[], compact_spans=[], truncated=False,
                           continuous_state_known=not pending, scope_basis="local_transactions")
     cache[cache_key] = result

@@ -1,5 +1,6 @@
 """SQL summaries fit the checked plan and retain exact cut counts at every boundary."""
 
+import asyncio
 from dataclasses import replace
 import json
 import unittest
@@ -34,7 +35,7 @@ class SqlResultTests(unittest.IsolatedAsyncioTestCase):
         context = _context()
         directory = TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        guide = DataGuide(synthetic_datasets(directory.name))
+        guide = await asyncio.to_thread(lambda: DataGuide(synthetic_datasets(directory.name)))
         session = _Session([], [])
         session.replace_tools = Mock()
         with patch('elbow_helper.agent.engine.service.build_agent_tools', return_value={'query_bot_data': tool}):

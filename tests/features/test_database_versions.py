@@ -12,8 +12,6 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.features.account_links import schema as links_schema
-from elbow_helper.features.account_links.database import AccountLinksDbMixin
 from elbow_helper.features.account_links.cog import AccountLinks
 from elbow_helper.features.achievements import schema as achievements_schema
 from elbow_helper.features.achievements.database import AchievementsDatabaseMixin
@@ -26,8 +24,8 @@ from elbow_helper.infrastructure.persistence.migrations import (
 from elbow_helper.infrastructure.persistence.versioned import validate_sqlite_shape
 
 
-# Files adopted from deployed, unversioned shapes; clan health's own file is new and adopts nothing.
-SCHEMAS = (links_schema, achievements_schema)
+# Only achievements still adopts deployed, unversioned shapes.
+SCHEMAS = (achievements_schema,)
 
 
 def quote(name):
@@ -188,7 +186,6 @@ class DatabaseVersionTests(unittest.TestCase):
 
     def test_harmless_type_differences_adopt_without_rewriting_values(self):
         for schema, table, column in (
-            (links_schema, "links", "player_name_last_seen"),
             (achievements_schema, "achievements", "name"),
         ):
             with self.subTest(database=schema.DATABASE.name):
@@ -199,7 +196,6 @@ class DatabaseVersionTests(unittest.TestCase):
 
     def test_unused_defaults_adopt_without_rewriting_values(self):
         for schema, table, column, old in (
-            (links_schema, "links", "last_seen_role", "TEXT DEFAULT ''"),
             (achievements_schema, "user_coins", "balance", "INTEGER NOT NULL DEFAULT 0"),
         ):
             with self.subTest(database=schema.DATABASE.name):
@@ -212,7 +208,6 @@ class DatabaseVersionTests(unittest.TestCase):
 
     def test_looser_nullability_adopts_without_rewriting_values(self):
         for schema, table, column, kind in (
-            (links_schema, "links", "discord_user_id", "INTEGER"),
             (achievements_schema, "achievements", "name", "TEXT"),
         ):
             with self.subTest(database=schema.DATABASE.name):
@@ -223,7 +218,6 @@ class DatabaseVersionTests(unittest.TestCase):
 
     def test_extra_columns_on_named_inserts_adopt_unchanged(self):
         for schema, table in (
-            (links_schema, "links"),
             (achievements_schema, "user_stats"),
         ):
             with self.subTest(database=schema.DATABASE.name):
@@ -253,7 +247,6 @@ class DatabaseVersionTests(unittest.TestCase):
 
     def test_named_inserts_accept_reordered_columns(self):
         for schema, table in (
-            (links_schema, "links"),
             (achievements_schema, "achievements"),
         ):
             with self.subTest(database=schema.DATABASE.name):
@@ -270,7 +263,6 @@ class DatabaseVersionTests(unittest.TestCase):
 
     def test_missing_identity_keys_are_refused_unchanged(self):
         for schema, table, old, new in (
-            (links_schema, "links", "player_tag TEXT PRIMARY KEY", "player_tag TEXT"),
             (achievements_schema, "user_stats", "user_id INTEGER PRIMARY KEY", "user_id INTEGER"),
         ):
             with self.subTest(database=schema.DATABASE.name):
@@ -338,7 +330,6 @@ class DatabaseVersionTests(unittest.TestCase):
 
     def test_equivalent_unique_keys_accept_a_different_primary_key_declaration(self):
         for schema, table, column, kind in (
-            (links_schema, "links", "player_tag", "TEXT"),
             (achievements_schema, "user_stats", "user_id", "INTEGER"),
         ):
             with self.subTest(database=schema.DATABASE.name):
@@ -362,8 +353,7 @@ class DatabaseVersionTests(unittest.TestCase):
                     self.assert_refused_unchanged(schema, path, UnversionedSQLiteSchemaError)
 
     def test_omitted_required_columns_without_defaults_are_refused(self):
-        for schema, table in ((links_schema, "links"),
-                              (achievements_schema, "achievements")):
+        for schema, table in ((achievements_schema, "achievements"),):
             with self.subTest(database=schema.DATABASE.name):
                 path = self.path(schema)
                 deployed_fixture(path, schema)
@@ -382,7 +372,6 @@ class DatabaseVersionTests(unittest.TestCase):
 
     def test_missing_required_columns_are_refused_unchanged(self):
         for schema, table, column in (
-            (links_schema, "links", "last_seen_role"),
             (achievements_schema, "user_stats", "meme_posts"),
         ):
             with self.subTest(database=schema.DATABASE.name):
@@ -394,7 +383,6 @@ class DatabaseVersionTests(unittest.TestCase):
 
     def test_missing_required_tables_are_refused_unchanged(self):
         for schema, table in (
-            (links_schema, "suggestions"),
             (achievements_schema, "user_stats"),
         ):
             with self.subTest(database=schema.DATABASE.name):
@@ -421,16 +409,6 @@ class DatabaseVersionTests(unittest.TestCase):
         self.assertIn(schema.DATABASE.name, logged.output[0])
         self.assertEqual(path.read_bytes(), before)
         self.assertFalse(path.with_name(path.name + "-wal").exists())
-
-    def test_links_primary_column_upgrade_preserves_other_data(self):
-        path = self.path(links_schema)
-        deployed_fixture(path, links_schema)
-        before = saved_state(path)
-        with closing(sqlite3.connect(path)) as connection, connection:
-            connection.execute("ALTER TABLE links ADD COLUMN is_primary INTEGER NOT NULL DEFAULT 0")
-        links_schema.DATABASE.initialize(path)
-        self.assertEqual(version(path), links_schema.SCHEMA_VERSION)
-        self.assertEqual(saved_state(path), before)
 
     def test_achievement_reward_ledger_is_backfilled_once(self):
         path = self.path(achievements_schema)
@@ -613,15 +591,11 @@ class DatabaseVersionTests(unittest.TestCase):
                 self.assertEqual(path.read_bytes(), before)
 
     def open_through_feature(self, schema, path):
-        if schema is links_schema:
-            with patch("elbow_helper.features.account_links.database.DB_PATH", path):
-                AccountLinksDbMixin()._init_db()
-        else:
-            owner = AchievementsDatabaseMixin()
-            owner.db_path = path
-            owner.logger = logging.getLogger(__name__)
-            owner.ALL_ACHIEVEMENTS = ()
-            owner.init_achievements()
+        owner = AchievementsDatabaseMixin()
+        owner.db_path = path
+        owner.logger = logging.getLogger(__name__)
+        owner.ALL_ACHIEVEMENTS = ()
+        owner.init_achievements()
 
 
 class HealthSettingsFileTests(unittest.TestCase):

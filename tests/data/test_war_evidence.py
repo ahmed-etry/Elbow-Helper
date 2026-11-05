@@ -7,7 +7,6 @@ import unittest
 
 from elbow_helper.data.reads.coverage import WAR_CADENCES, envelope, war_side_coverage, war_signal
 from elbow_helper.data.store import FamilyStore
-from elbow_helper.data.store.legacy_wars import map_legacy_war
 from elbow_helper.data.store.schema import MIGRATIONS, SCHEMA_VERSION
 from elbow_helper.data.store.war_projection import HOUR
 from elbow_helper.infrastructure.persistence.migrations import run_sqlite_migrations
@@ -70,7 +69,6 @@ class WarUpgradeTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         await FamilyStore(path).initialize()
         self.assertEqual(after, (await upgraded.call(read))[1])
 
-
     async def test_upgrade_merges_log_doubles_into_their_current_war_copy(self):
         path = self.path.parent / "doubles.sqlite3"
         end = 47 * HOUR
@@ -123,41 +121,6 @@ class WarUpgradeTests(WarFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sides, [(3, 50, "lose"), (3, 50, "win")])
         self.assertEqual(keys, [("end", 10), ("end", 10), ("preparation", 10), ("war_log", 10)])
         self.assertEqual((current, orphaned, foreign), (10, 0, []))
-
-
-class LegacyWarTests(WarFixture, unittest.IsolatedAsyncioTestCase):
-    async def test_an_old_id_is_accepted_once_and_conflicts_are_refused(self):
-        await self.record(war("warEnded"), at=END + 90 * SECOND)
-        await self.record(war("warEnded", clans=("#PY", "#CU"), end="20261030T180000.000Z"), at=END + 90 * SECOND)
-        first, second = [r["id"] for r in await self.rows("SELECT id FROM wars ORDER BY id")]
-        evidence = {"label": "REG", "capture_state": "warEnded", "captured_at": END, "at": END + 600 * SECOND}
-
-        def mapping(*args, **kwargs):
-            def write(c):
-                result = map_legacy_war(c, *args, **kwargs)
-                c.commit()
-                return result
-            return self.store.call(write)
-        old_id = "REG:#PY:20261028T180000.000Z:#GR"
-        self.assertTrue(await mapping("clan_health", old_id, "PY", first, **evidence))
-        self.assertFalse(await mapping("clan_health", old_id, "PY", first, **evidence))
-        stored = await self.rows("SELECT * FROM war_legacy_ids")
-        for war_id, changes in ((second, {}), (first, {"label": "CWL"}), (first, {"capture_state": "inWar"}),
-                                (first, {"captured_at": END + 1})):
-            with self.subTest(changes=changes):
-                with self.assertRaisesRegex(ValueError, "legacy_war_conflict"):
-                    await mapping("clan_health", old_id, "PY", war_id, **{**evidence, **changes})
-        self.assertEqual(stored, await self.rows("SELECT * FROM war_legacy_ids"))
-        # A league war ID is shared by every family clan that fought it.
-        self.assertTrue(await mapping("clan_health", old_id, "LQ", first, **evidence))
-        self.assertTrue(await mapping("war_cache", "20261026T180000.000Z-20261028T180000.000Z-#GR", "PY", first,
-                                      capture_state="warEnded", at=END))
-        for args in (("old_store", old_id, "PY", first), ("clan_health", "", "PY", first),
-                     ("clan_health", "other", "PY", 999)):
-            with self.subTest(args=args), self.assertRaises(ValueError):
-                await mapping(*args, at=END)
-        self.assertEqual(len(await self.rows("SELECT * FROM war_legacy_ids")), 3)
-        self.assertEqual(await self.rows("PRAGMA foreign_key_check"), [])
 
 
 class WarCoverageTests(WarFixture, unittest.IsolatedAsyncioTestCase):

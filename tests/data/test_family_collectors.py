@@ -164,12 +164,10 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
         with self.assertNoLogs(service, level="INFO"):
             await self.collectors.scan_discord()
 
-
     async def test_collectors_never_sample_current_links(self):
         self.assertFalse(hasattr(self.collectors, "collect_links"))
         await self.collectors.scan_discord()
         self.assertEqual(await self.rows("SELECT * FROM account_links"), [])
-
 
     async def test_startup_and_daily_scan_fetch_all_members_empty_scan_closes_members(self):
         self.guild.members = [member(self.guild)]
@@ -425,11 +423,8 @@ class FamilyCollectorTests(unittest.IsolatedAsyncioTestCase):
         ):
             await bot.setup_hook()
         self.assertIs(bot.get_cog("FamilyCollectors"), bot.family_collectors)
-        # Ten schedules, the shared copy of old wars and ranked history, and the copy of old last messages.
-        self.assertEqual(bot.family_collectors.old_wars, (paths.data_root / "clan_health" / "clan_health.db",
-                                                          paths.data_root / "war" / "war_cache.json",
-                                                          paths.data_root / "ranked_stats" / "ranked.sqlite3"))
-        self.assertEqual(len(bot.family_collectors._tasks), 12)
+        # Ten schedules and the copy of old last messages.
+        self.assertEqual(len(bot.family_collectors._tasks), 11)
         self.assertEqual(bot.family_collectors.old_last_seen, paths.data_root / "snapshot_intel" / "snapshot_intel.json")
         self.assertEqual(len(bot.family_collectors.clans), 9)
         self.assertTrue((paths.data_root / "family" / "family.sqlite3").is_file())

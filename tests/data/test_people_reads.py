@@ -1,8 +1,5 @@
-"""Synthetic reads, partial/outage paths and offline legacy parity."""
+"""Synthetic people reads, partial observations and outage paths."""
 
-from contextlib import closing
-from copy import deepcopy
-from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
 from tempfile import TemporaryDirectory
@@ -11,7 +8,6 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from elbow_helper.configuration.clans import CLANS as CONFIGURED_CLANS
 from elbow_helper.data.reads import MembershipReads, PeopleReads
 from elbow_helper.data.store import FamilyStore
 from elbow_helper.data.store.players import collect_player
@@ -19,7 +15,6 @@ from elbow_helper.data.store.players import collect_player
 from . import test_family_store as fixtures
 from .test_family_store import CLANS, player, clan_response, discord_member, link, response
 from .test_players import profile
-from .people_parity import compare_frozen
 
 
 class PeopleReadTests(unittest.IsolatedAsyncioTestCase):
@@ -335,52 +330,3 @@ class PeopleReadTests(unittest.IsolatedAsyncioTestCase):
         result = await self.membership.at(100, tags=["#P0"])
         self.assertEqual(result["rows"][0]["status"], "unknown_location")
         self.assertFalse(result["coverage"]["complete"])
-
-
-    async def test_frozen_facade_and_agent_parity_lists_every_difference(self):
-        clans = tuple(CONFIGURED_CLANS.values())
-        payloads = [profile(tag) for tag in ("#P0", "#Q0", "#G0")]
-        for payload, name in zip(payloads, ("Alpha", "Clanless Alt", "Unlinked")):
-            payload.update(name=name, townHallLevel=16)
-            payload["clan"] = {"tag": clans[0].tag, "name": clans[0].name}
-        payloads[1].pop("clan")
-        rosters = {clan.tag: {"tag": clan.tag, "name": clan.name, "members": 0, "memberList": []} for clan in clans}
-        rosters[clans[0].tag].update(members=2, memberList=[
-            player("#P0", name="Alpha"), player("#G0", name="Unlinked")])
-        from elbow_helper.data.store.clans import collect_clans
-        specs = [(kind, clan.tag) for clan in clans for kind in ("clan_profile", "clan_roster")]
-        run = await self.store.begin_run("clans", "family_clans", specs, 100)
-        await self.store.call(collect_clans, run, clans, [response(rosters[c.tag]) for c in clans], 100)
-        await self.store.finish(run)
-        await self.links(100, {**link(player_name_last_seen="Alpha"), "#Q0": {
-            **link(player_name_last_seen="Clanless Alt")["#P0"], "player_tag": "#Q0"}})
-        held_role = clans[0].member_role_id
-        await self.discord(100, [discord_member(roles=[held_role]), discord_member(200, name="No Links", roles=[])], complete=True)
-        for payload in payloads:
-            await self.observe_profile(payload["tag"], 100, payload)
-        directory = [{"player_tag": "#P0", "player_name": "Old Alpha"}]
-        people = PeopleReads(self.store, alias_reader=lambda: deepcopy(directory))
-        membership = MembershipReads(self.store)
-        links_path = self.path.parent / "frozen-links.sqlite3"
-        def create_links():
-            with closing(sqlite3.connect(links_path)) as c, c:
-                c.execute("CREATE TABLE links(player_tag TEXT PRIMARY KEY,discord_user_id INTEGER,player_name_last_seen TEXT,"
-                          "last_seen_clan_tag TEXT,last_seen_clan_code TEXT,last_seen_role TEXT)")
-                c.executemany("INSERT INTO links VALUES (?,?,?,?,?,?)", [
-                    ("#P0", 100, "Alpha", "", None, "member"), ("#Q0", 100, "Clanless Alt", "", None, "member")])
-        await self.store.call(lambda c: create_links())
-        role = SimpleNamespace(id=held_role, name="Home", is_default=lambda: False)
-        members = [SimpleNamespace(id=identifier, name=name, display_name="Display", nick="Nickname", bot=False,
-                    roles=[role] if identifier == 100 else [], joined_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
-                   for identifier, name in ((100, "Username"), (200, "No Links"))]
-        frozen = dict(as_of=100, members=members, profiles={p["tag"]: p for p in payloads}, rosters=rosters,
-                      member_ids=[100, 200, 300], queries=["Alpha", "Old Alpha", "Unlinked"], directory=directory)
-        differences = await compare_frozen(people, membership, links_path, **frozen)
-        self.assertEqual([d for d in differences if d["classification"] == "bug"], [])
-        self.assertEqual([d["path"] for d in differences], ["history"])
-        # A changed frozen baseline is reported field by field; the harness
-        # must not silently approve differences just because counts agree.
-        frozen["profiles"]["#P0"] = {**payloads[0], "townHallLevel": 17, "name": "Different", "role": "admin"}
-        differences = await compare_frozen(people, membership, links_path, **frozen)
-        bugs = {d["path"] for d in differences if d["classification"] == "bug"}
-        self.assertTrue({"agent/accounts/#P0/townHallLevel", "agent/accounts/#P0/player_name", "agent/accounts/#P0/role"} <= bugs)

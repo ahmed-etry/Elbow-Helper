@@ -1,57 +1,30 @@
-"""Family transactions for imported ownership and locally committed changes."""
+"""Atomic ownership changes and current-link presentation in the family record."""
 
-from collections import Counter
+from hashlib import sha256
 
-from .legacy_links import FIELDS, ImportMismatch
 from .people import account, member, close_interval
-from .projections import search_key
+from .projections import canonical_json
+
+
+FIELDS = ("player_tag", "discord_user_id", "player_name_last_seen", "last_seen_clan_tag",
+          "last_seen_clan_code", "last_seen_role")
+TOPIC = "people_membership"
+
+
+class LinkConflict(RuntimeError):
+    """Ownership cannot safely be read or changed."""
+
+
+def digest(value):
+    return sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def compatibility(connection):
     rows = [dict(row) for row in connection.execute("SELECT * FROM legacy_links ORDER BY player_tag")]
     result = {row["player_tag"]: row for row in rows}
     if len(rows) != len(result):
-        raise ImportMismatch("duplicate_active_ownership")
+        raise LinkConflict("duplicate_active_ownership")
     return result
-
-
-def mapping_counts(expected):
-    checks = {"links": len(expected), "members": len({r["discord_user_id"] for r in expected.values()}),
-              "owner_pairs": len(expected), "compatibility_fields": len(expected) * len(FIELDS)}
-    checks["per_member_counts"] = {str(owner): count for owner, count in sorted(
-        Counter(row["discord_user_id"] for row in expected.values()).items())}
-    return checks
-
-
-def check_mapping(connection, expected, *, constraints=False):
-    actual = compatibility(connection)
-    checks = mapping_counts(expected)
-    if set(actual) != set(expected):
-        raise ImportMismatch("normalized_tag_set_mismatch", checks)
-    if {(tag, row["discord_user_id"]) for tag, row in actual.items()} != {
-            (tag, row["discord_user_id"]) for tag, row in expected.items()}:
-        raise ImportMismatch("owner_pairs_mismatch", checks)
-    if Counter(row["discord_user_id"] for row in actual.values()) != Counter(
-            row["discord_user_id"] for row in expected.values()):
-        raise ImportMismatch("per_member_count_mismatch", checks)
-    if actual != expected:
-        raise ImportMismatch("compatibility_fields_mismatch", checks)
-    active = connection.execute("SELECT COUNT(*) FROM account_links WHERE to_at IS NULL").fetchone()[0]
-    if active != len(expected):
-        raise ImportMismatch("active_link_count_mismatch", checks)
-    if constraints:
-        # Full-record scans belong to startup and recovery only.
-        for table, key in (("accounts", "player_tag"), ("members", "discord_id")):
-            if connection.execute(f"SELECT 1 FROM {table} GROUP BY {key} HAVING COUNT(*)>1").fetchone():
-                raise ImportMismatch("duplicate_identity", checks)
-        if connection.execute("SELECT 1 FROM account_links WHERE to_at IS NULL "
-                              "GROUP BY account_id HAVING COUNT(*)>1").fetchone():
-            raise ImportMismatch("duplicate_active_ownership", checks)
-        if connection.execute("PRAGMA foreign_key_check").fetchone():
-            raise ImportMismatch("family_foreign_key_check", checks)
-        if connection.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
-            raise ImportMismatch("family_integrity_check", checks)
-    return checks
 
 
 def receipt(connection, kind, scope, at, count):
@@ -68,19 +41,16 @@ def receipt(connection, kind, scope, at, count):
     ).lastrowid
 
 
-def apply_rows(connection, rows, at, item, *, basis, operation_key=None, reset=False, aliases=False):
+def apply_rows(connection, rows, at, item, *, basis, operation_key=None):
     """Apply a canonical tag -> row/None patch without inventing clan stays."""
     query = "SELECT l.*,a.player_tag FROM account_links l JOIN accounts a ON a.id=l.account_id WHERE l.to_at IS NULL"
     current = {}
-    if reset:
-        current = {row["player_tag"]: row for row in connection.execute(query)}
-    else:
-        tags = tuple(rows)
-        for start in range(0, len(tags), 500):
-            batch = tags[start:start + 500]
-            current.update((row["player_tag"], row) for row in connection.execute(
-                query + f" AND a.player_tag IN ({','.join('?' for _ in batch)})", batch))
-    selected = set(rows) | set(current) if reset else set(rows)
+    tags = tuple(rows)
+    for start in range(0, len(tags), 500):
+        batch = tags[start:start + 500]
+        current.update((row["player_tag"], row) for row in connection.execute(
+            query + f" AND a.player_tag IN ({','.join('?' for _ in batch)})", batch))
+    selected = set(rows)
     for tag in sorted(selected):
         row = rows.get(tag)
         old = current.get(tag)
@@ -88,7 +58,7 @@ def apply_rows(connection, rows, at, item, *, basis, operation_key=None, reset=F
         owner = member(connection, row["discord_user_id"], at) if row else None
         changed = old is not None and owner != old["member_id"]
         if old and at < old["last_observed_at"]:
-            raise ImportMismatch("freeze_precedes_observation")
+            raise LinkConflict("freeze_precedes_observation")
         if changed:
             close_interval(connection, "account_links", old, at, item)
         if row and (old is None or changed):
@@ -98,13 +68,7 @@ def apply_rows(connection, rows, at, item, *, basis, operation_key=None, reset=F
                 (account_id, owner, at, at, basis, operation_key, item),
             )
         elif row:
-            if reset:
-                # Import confirms this owner; retain the original interval while
-                # recording the authoritative import's evidence on the row.
-                connection.execute("UPDATE account_links SET last_observed_at=?,basis=?,source_item_id=? WHERE id=?",
-                                   (at, basis, item, old["id"]))
-            else:
-                connection.execute("UPDATE account_links SET last_observed_at=? WHERE id=?", (at, old["id"]))
+            connection.execute("UPDATE account_links SET last_observed_at=? WHERE id=?", (at, old["id"]))
         if row:
             connection.execute(
                 "INSERT INTO account_link_metadata(account_id,player_name_last_seen,last_seen_clan_tag,"
@@ -115,10 +79,6 @@ def apply_rows(connection, rows, at, item, *, basis, operation_key=None, reset=F
                 "observed_at=NULL,basis=excluded.basis,source_item_id=excluded.source_item_id",
                 (account_id, *(row[key] for key in FIELDS[2:]), item),
             )
-            if aliases and row["player_name_last_seen"] is not None:
-                name = row["player_name_last_seen"]
-                connection.execute("INSERT INTO legacy_link_aliases VALUES (?,?,?,?,NULL,'legacy_unknown_age',?)",
-                                   (account_id, at, name, search_key(name), item))
 
 
 def patched(rows, patch):
@@ -131,10 +91,8 @@ def patched(rows, patch):
     return result
 
 
-def display_rows(connection, rows, *, reorder=False, raw_tags=None):
-    from elbow_helper.domain.player_tags import normalize_player_tag
+def display_rows(connection, rows, *, reorder=False):
     next_order = connection.execute("SELECT COALESCE(MAX(display_order),0) FROM account_link_metadata").fetchone()[0]
-    raw_tags = {} if raw_tags is None else {normalize_player_tag(tag): tag for tag in raw_tags}
     for tag, row in rows.items():
         state = connection.execute("SELECT d.account_id,d.display_order,d.display_tag FROM account_link_metadata d "
                                    "JOIN accounts a ON a.id=d.account_id WHERE a.player_tag=?", (tag,)).fetchone()
@@ -143,7 +101,7 @@ def display_rows(connection, rows, *, reorder=False, raw_tags=None):
         if row is None:
             connection.execute("UPDATE account_link_metadata SET display_order=NULL,display_tag=NULL WHERE account_id=?",
                                (state["account_id"],))
-        elif reorder or state["display_order"] is None or raw_tags:
+        elif reorder or state["display_order"] is None:
             next_order += 1
             connection.execute("UPDATE account_link_metadata SET display_order=?,display_tag=? WHERE account_id=?",
-                               (next_order, raw_tags.get(tag, state["display_tag"] or tag), state["account_id"]))
+                               (next_order, state["display_tag"] or tag, state["account_id"]))

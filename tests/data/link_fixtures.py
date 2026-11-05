@@ -1,15 +1,12 @@
-"""Synthetic nine-clan bootstrap for facade and workflow integration tests."""
+"""Synthetic family-record links for facade and workflow integration tests."""
 
 from contextlib import closing
 from pathlib import Path
 import sqlite3
 from types import SimpleNamespace
-from unittest.mock import patch
 
 from elbow_helper.data.links import LinkService
-from elbow_helper.data.store import FamilyStore, now_us
-from elbow_helper.data.store.clans import collect_clans
-from elbow_helper.infrastructure.clash import ClashResponse
+from elbow_helper.data.store import FamilyStore
 
 CLANS = {f"S{i}": SimpleNamespace(code=f"S{i}", tag=f"#PP{char}", name=f"Synthetic clan {i}")
          for i, char in enumerate("0289PYLQG")}
@@ -20,17 +17,7 @@ async def attach_links(owner):
         path = Path(connection.execute("PRAGMA database_list").fetchone()[2])
     store = FamilyStore(path.parent / "family.sqlite3")
     await store.initialize()
-    at = now_us()
-    clans = tuple(CLANS.values())
-    specs = [(kind, clan.tag) for clan in clans for kind in ("clan_profile", "clan_roster")]
-    run = await store.begin_run("clans", "family_clans", specs, at)
-    responses = [ClashResponse(200, {"tag": clan.tag, "name": clan.name, "members": 0, "memberList": []}, {}, 1, 0)
-                 for clan in clans]
-    await store.call(collect_clans, run, clans, responses, at)
-    await store.finish(run)
-    owner.link_service = LinkService(store, path)
-    with patch("elbow_helper.data.store.people_import.CLANS", CLANS):
-        await owner.link_service.startup()
+    owner.link_service = LinkService(store)
     return owner.link_service
 
 

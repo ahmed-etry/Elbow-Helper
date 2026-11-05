@@ -3,7 +3,6 @@
 import asyncio
 from datetime import datetime
 import logging
-import time
 
 import discord
 from discord.ext import commands
@@ -17,7 +16,6 @@ from elbow_helper.data.store.people import observe_discord, observe_messages
 from elbow_helper.data.store.players import collect_player, due_accounts, players_due
 from elbow_helper.data.store.source_state import COLLECTORS as SOURCE_COLLECTORS
 from elbow_helper.data.store.sources import due_sources
-from elbow_helper.data.store.wars_import import copy_at_startup
 from .demand import ProfileDemand
 from .wars import collect_pass, due_jobs
 from .sources import collect_sources
@@ -60,14 +58,11 @@ def _member_row(member) -> dict:
 class FamilyCollectors(commands.Cog):
     """Own schedules and gateway listeners; contain every collection failure."""
 
-    def __init__(self, bot, store: FamilyStore, clash_client: ClashClient, clans, *, old_wars=None,
-                 old_last_seen=None):
+    def __init__(self, bot, store: FamilyStore, clash_client: ClashClient, clans, *, old_last_seen=None):
         self.bot = bot
         self.store = store
         self.clash_client = clash_client
         self.clans = tuple(clans)
-        # Old war sources and ranked history, copied once before their first collector pass.
-        self.old_wars = old_wars
         # The old member lifecycle file, whose last messages are copied once.
         self.old_last_seen = old_last_seen
         self._tasks: list[asyncio.Task] = []
@@ -90,19 +85,16 @@ class FamilyCollectors(commands.Cog):
         except Exception:
             # An unavailable database cannot truthfully hold a failed run.
             LOGGER.warning("Family record initialization failed; collectors will retry")
-        # Starts now, while the bot connects; the first war pass waits for it.
-        copy = asyncio.create_task(self._copy_old_wars()) if self.old_wars is not None else None
         self._tasks = [
-            *((copy,) if copy is not None else ()),
             *((asyncio.create_task(self._copy_old_last_seen()),) if self.old_last_seen is not None else ()),
             asyncio.create_task(self._schedule("clans", CLAN_INTERVAL_SECONDS, self.collect_clans)),
-            asyncio.create_task(self._schedule("players", PLAYER_INTERVAL_SECONDS, self.collect_players, after=copy)),
-            asyncio.create_task(self._schedule("wars", SCHEDULE_CHECK_SECONDS, self.collect_wars, after=copy)),
+            asyncio.create_task(self._schedule("players", PLAYER_INTERVAL_SECONDS, self.collect_players)),
+            asyncio.create_task(self._schedule("wars", SCHEDULE_CHECK_SECONDS, self.collect_wars)),
             asyncio.create_task(self._schedule("discord", DISCORD_INTERVAL_SECONDS, self.scan_discord, startup=True)),
             asyncio.create_task(self._schedule("discord_messages", MESSAGE_SAVE_SECONDS, self.save_messages)),
         ]
         self._tasks.extend(asyncio.create_task(self._schedule(name, SCHEDULE_CHECK_SECONDS,
-                            lambda name=name: collect_sources(self, name), after=copy if name == "battle_logs" else None))
+                            lambda name=name: collect_sources(self, name)))
                            for name in sorted(SOURCE_COLLECTORS))
 
     async def cog_unload(self):
@@ -120,44 +112,6 @@ class FamilyCollectors(commands.Cog):
                 async with lock:
                     pass
 
-    async def _copy_old_wars(self):
-        """Copy old wars, battles, profiles and health history atomically; retry next start on failure."""
-        started = time.perf_counter()
-        try:
-            result = await self.store.call(copy_at_startup, *self.old_wars)
-        except asyncio.CancelledError:
-            raise
-        except Exception as error:
-            LOGGER.warning("Old war copy failed; the family record is unchanged and the next start tries again "
-                           "(%s: %s)", type(error).__name__, error)
-            return
-        if result is not None:
-            parts = []
-            if result["regular"] is not None:
-                checks = result["regular"]["checks"]
-                parts.append(f"{checks['wars']['events']} wars ({checks['wars']['created']} new), "
-                             f"{checks['inserted']['lineup_rows']} lineup rows, {checks['inserted']['attacks']} attacks")
-            if result["cwl"] is not None:
-                checks = result["cwl"]["checks"]
-                parts.append(f"{checks['inserted']['seasons']} league weeks ({len(checks['seasons'])} found), "
-                             f"{checks['inserted']['wars']} league wars, {checks['inserted']['lineup_rows']} league "
-                             f"lineup rows, {checks['inserted']['attacks']} league attacks")
-            if result.get("ranked") is not None:
-                checks = result["ranked"]["checks"]
-                parts.append(f"{checks['inserted']['battles']} ranked battles, "
-                             f"{checks['inserted']['watch_facts']} battle-log watch facts")
-            if result.get("profiles") is not None:
-                checks = result["profiles"]["checks"]
-                parts.append(f"{checks['inserted']['player_counters']} profile counter rows, "
-                             f"{checks['inserted']['old_profile_totals']} old total rows, "
-                             f"{checks['created_accounts']} old accounts")
-            if result.get("health") is not None:
-                checks = result["health"]["checks"]
-                parts.append(f"{checks['raid_lines']['imported']} old raid lines, {checks['stays']} old clan stays, "
-                             f"{checks['names']['added']} old names, {checks['created_accounts']} raid-only accounts")
-            LOGGER.info("Old wars copied into the family record in %.1fs: %s", time.perf_counter() - started,
-                        "; ".join(parts))
-
     async def _copy_old_last_seen(self):
         """Copy members' old last messages once; a failure keeps nothing and the next start tries again."""
         try:
@@ -173,10 +127,8 @@ class FamilyCollectors(commands.Cog):
                         "%s unreadable", checks["copied"], checks["newer_observation_kept"], checks["unreadable"])
         return checks
 
-    async def _schedule(self, name, seconds, collect, *, startup=False, after=None):
+    async def _schedule(self, name, seconds, collect, *, startup=False):
         await self.bot.boot_complete.wait()
-        if after is not None:
-            await after
         while not self._closing:
             try:
                 due = (bool(await self.store.call(due_sources, name, self.clans, now_us())) if name in SOURCE_COLLECTORS else
@@ -267,10 +219,6 @@ class FamilyCollectors(commands.Cog):
                 await self.store.call(collect_clans, run, self.clans, responses, now_us())
 
             report = await self._run("clans", "family_clans", specs, operation)
-            service = getattr(self.bot, "link_service", None)
-            if (service is not None and report is not None and not report["failed"]
-                    and report["succeeded"] + report["empty"] == len(specs) == 18):
-                await service.retry_import()
             return report
 
     async def collect_players(self):

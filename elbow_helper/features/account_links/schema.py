@@ -1,4 +1,4 @@
-"""Version-one account-link schema and supported primary-column upgrade."""
+"""Account-link suggestion and ignore state; ownership lives in the family record."""
 
 import sqlite3
 
@@ -10,21 +10,6 @@ from elbow_helper.infrastructure.persistence.versioned import (
 
 def create_schema(conn: sqlite3.Connection) -> None:
     cursor = conn.cursor()
-    columns = {row[1] for row in cursor.execute("PRAGMA table_info(links)")}
-    if "is_primary" in columns:
-        cursor.execute("ALTER TABLE links DROP COLUMN is_primary")
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS links (
-            player_tag TEXT PRIMARY KEY,
-            discord_user_id INTEGER NOT NULL,
-            player_name_last_seen TEXT DEFAULT '',
-            last_seen_clan_tag TEXT DEFAULT '',
-            last_seen_clan_code TEXT DEFAULT '',
-            last_seen_role TEXT DEFAULT ''
-        )
-        """
-    )
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS suggestions (
@@ -46,30 +31,17 @@ def create_schema(conn: sqlite3.Connection) -> None:
         )
         """
     )
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_links_discord_user ON links(discord_user_id)")
 
 
 def validate_schema(conn: sqlite3.Connection, *, warn: bool = True) -> None:
-    # All inserts name their columns; SELECT * is read by name. Only the three
-    # player_tag keys are needed for ON CONFLICT / INSERT OR IGNORE.
+    # Inserts and reads name their columns; player_tag keys support upserts.
     validate_sqlite_shape(conn, create_schema, warn=warn)
-
-
-def adopt_schema(conn: sqlite3.Connection) -> None:
-    legacy = any(row[1] == "is_primary" for row in conn.execute("PRAGMA table_info(links)"))
-    validate_sqlite_shape(
-        conn, create_schema,
-        optional_tables=frozenset({"suggestions", "ignored_tags"}) if legacy else frozenset(),
-        warn=False,
-    )
-    create_schema(conn)
-    validate_schema(conn, warn=False)
 
 
 SCHEMA_VERSION = 1
 
 DATABASE = VersionedSQLiteDatabase(
-    "account links", create_schema, adopt_schema,
+    "account links", create_schema, None,
     migrations=(SQLiteMigration(1, "account links baseline", create_schema),),
     target_version=SCHEMA_VERSION, validate=validate_schema,
 )

@@ -8,7 +8,7 @@ import sqlite3
 import unittest
 
 from agent.capabilities.member_lifecycle.test_agent_member_lifecycle import AgentMemberLifecycleTests
-from data.test_ranked_import import BASE, SECOND, RankedFixture, battle
+from data.record_fixtures import BASE, SECOND, RankedFixture, battle
 from elbow_helper.agent.access import AgentAccessLost
 from elbow_helper.agent.reads import ranked
 from elbow_helper.agent.reads.ranked import read_ranked
@@ -35,7 +35,7 @@ class RankedRecordFixture(RankedFixture):
 class AgentRankedTests(RankedRecordFixture, unittest.IsolatedAsyncioTestCase):
     async def test_stored_counts_come_from_copied_and_live_battles_without_clash(self):
         self.add_battle(battle(-10))
-        await self.copy()
+        await self.seed_history()
         await self.live({"items": [battle(-10), battle(60)]}, 100)
         with patch.object(ranked, "require_evidence_access", AsyncMock()), \
                 patch("elbow_helper.agent.datasets.clash.read_clash", AsyncMock(side_effect=AssertionError("live read"))):
@@ -48,7 +48,7 @@ class AgentRankedTests(RankedRecordFixture, unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("live_battle_logs", result)
 
     async def test_clan_codes_account_normalization_and_selection(self):
-        await self.copy()
+        await self.seed_history()
         result = await read_ranked(self.context, {**self.arguments, "member_ids": [], "account_tags": ["p0"]})
         self.assertEqual(result["rows"][0]["player_tag"], "#P0")
         result = await read_ranked(self.context, {**self.arguments, "member_ids": [], "clan_tags": ["#Q0"]})
@@ -81,7 +81,7 @@ class AgentRankedTests(RankedRecordFixture, unittest.IsolatedAsyncioTestCase):
 
     async def test_coverage_gaps_mark_the_result_partial_instead_of_reading_live(self):
         self.add_battle(battle(-10))
-        await self.copy()
+        await self.seed_history()
         await self.live({"items": []}, 100)
         await self.live(None, 120, status=0)
         await self.live({"items": []}, 140)
@@ -94,7 +94,7 @@ class AgentRankedTests(RankedRecordFixture, unittest.IsolatedAsyncioTestCase):
 
     async def test_a_fully_watched_window_is_not_marked_partial_by_coverage(self):
         self.poll(200)  # The old collector still read the log after the record's first read.
-        await self.copy()
+        await self.seed_history()
         await self.live({"items": [battle(30)]}, 100)
         arguments = {**self.arguments, "after": iso(BASE), "before": iso(BASE + 50 * SECOND)}
         result = await read_ranked(self.context, arguments)

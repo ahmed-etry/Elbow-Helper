@@ -13,7 +13,6 @@ import unittest
 from unittest.mock import Mock, patch
 
 from elbow_helper.configuration.clans import CLANS
-from tests.data.legacy_health_schema import LegacyHealthFile as ClanHealthRepository
 from elbow_helper.features.cwl.config import CWL_CLAN_NAMES
 from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.agent.reads import war_tools as war_reads
@@ -172,8 +171,15 @@ class SeasonAttendanceTests(unittest.IsolatedAsyncioTestCase):
         from elbow_helper.agent.tool_support.sql.query import run_query
         temporary = TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        repository = ClanHealthRepository(Path(temporary.name) / 'wars.db')
-        repository.initialize()
+        repository = SimpleNamespace(path=Path(temporary.name) / 'wars.db')
+        with closing(sqlite3.connect(repository.path)) as connection:
+            connection.execute("CREATE TABLE wars(war_id TEXT,clan_code TEXT,war_type TEXT,clan_tag TEXT,"
+                               "opponent_tag TEXT,state TEXT,end_ts INTEGER,last_seen_ts INTEGER,team_size INTEGER,"
+                               "attacks_per_member INTEGER,cwl_season TEXT,PRIMARY KEY(war_id,clan_code))")
+            connection.execute("CREATE TABLE war_roster_members(war_id TEXT,clan_code TEXT,player_tag TEXT,"
+                               "player_name TEXT,attacks_expected INTEGER,attacks_used INTEGER,roster_state TEXT,"
+                               "captured_ts INTEGER)")
+            connection.execute("CREATE TABLE war_attacks(war_id TEXT,clan_code TEXT)")
         with closing(sqlite3.connect(repository.path)) as connection, connection:
             for code in self.codes:
                 for round_number in range(7):

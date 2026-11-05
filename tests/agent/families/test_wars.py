@@ -1,11 +1,9 @@
 """Synthetic war ranking, missing captures and current-war boundaries."""
-from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 from dataclasses import replace
-from tests.data.legacy_health_schema import LegacyHealthFile as ClanHealthRepository
 from elbow_helper.features.clan_health.attendance import aggregate_attendance
 from elbow_helper.agent.reads import record_wars, war_tools as war_reads
 from elbow_helper.configuration.clans import CLANS
@@ -29,9 +27,8 @@ class WarFamilyTests(unittest.IsolatedAsyncioTestCase):
         from elbow_helper.features.cwl.queries import CwlQueries
         from elbow_helper.agent.engine.answer_inputs import answer_evidence
 
-        with TemporaryDirectory() as directory:
-            repository = ClanHealthRepository(Path(directory) / 'wars.db')
-            repository.initialize()
+        with TemporaryDirectory():
+            repository = SimpleNamespace()
             lineup = {'#P0': (0, []), '#Q0': (1, [2]), '#P2': (2, [3, 1])}
             latest = regular_war('BEC', 200, lineup, opponent='#R0', start_ts=120)
             wars = [regular_war('BEC', 100, lineup, opponent='#R0', start_ts=20), latest,

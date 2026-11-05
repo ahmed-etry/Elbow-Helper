@@ -6,7 +6,7 @@ from elbow_helper.data.reads import RankedReads
 from elbow_helper.data.store.clans import collect_clans
 
 from .test_family_store import CLANS, clan_response, player
-from .test_ranked_import import BASE, SECOND, RankedFixture, battle
+from .record_fixtures import BASE, SECOND, RankedFixture, battle
 
 
 AFTER, BEFORE, AS_OF = BASE - 3600 * SECOND, BASE + 3600 * SECOND, BASE + 300 * SECOND
@@ -33,7 +33,7 @@ class RankedReadTests(RankedFixture, unittest.IsolatedAsyncioTestCase):
     async def test_copied_and_live_ranked_battles_count_once_and_other_modes_never(self):
         self.add_battle(battle(-10))
         self.add_battle(battle(-20, mode="legend", attack=False), key="legend")
-        await self.copy()
+        await self.seed_history()
         await self.live({"items": [battle(-10), battle(60), battle(70, mode="homeVillage")]}, 100)
         row = (await self.window())["accounts"][0]
         self.assertEqual((row["attacks_used"], row["defenses"], row["battle_records"], row["old_store_battles"]),
@@ -49,7 +49,7 @@ class RankedReadTests(RankedFixture, unittest.IsolatedAsyncioTestCase):
 
     async def test_coverage_names_the_tail_before_the_first_read_and_the_unread_end(self):
         self.add_battle(battle(-10))
-        await self.copy()
+        await self.seed_history()
         coverage = (await self.window())["accounts"][0]["log_coverage"]
         self.assertEqual(coverage["watched_from"], BASE)
         self.assertEqual([gap["cause"] for gap in coverage["gaps"]], ["before_first_read", "not_yet_read"])
@@ -60,7 +60,7 @@ class RankedReadTests(RankedFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(overdue["accounts"][0]["log_coverage"]["gaps"][-1]["cause"], "overdue")
 
     async def test_failed_reads_and_a_gap_between_watchers_are_gaps_not_zeroes(self):
-        await self.copy()
+        await self.seed_history()
         await self.live({"items": []}, 100)
         await self.live(None, 120, status=0)
         await self.live({"items": []}, 140)
@@ -85,7 +85,7 @@ class RankedReadTests(RankedFixture, unittest.IsolatedAsyncioTestCase):
 
     async def test_clans_use_record_membership_once_watched_and_the_old_first_seen_clan_before(self):
         self.add_battle(battle(-10), clan="#LQ")
-        await self.copy()
+        await self.seed_history()
         await self.roster(50)
         await self.live({"items": [battle(60)]}, 100)
         second = (await self.window("clan_tags", ("#LQ",)))["accounts"][0]
