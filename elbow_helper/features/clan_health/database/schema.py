@@ -319,8 +319,8 @@ _NULLABLE = {
 def validate_schema(conn: sqlite3.Connection, *, warn: bool = True, legacy: bool = False) -> None:
     # Every INSERT names all fact/config columns (audit alone omits id); SELECT *
     # becomes a dict. FK cascades are not used: connections leave foreign_keys OFF.
-    # Rosters delete each war's rows before inserting; audit IDs are never read.
-    # Neither table uses its key for conflict handling or row identity lookups.
+    # Legacy war rosters are frozen startup-copy sources; audit IDs are never read.
+    # Neither table needs its key for current writes or row identity lookups.
     validate_sqlite_shape(
         conn, create_schema,
         missing_columns={"wars": {"cwl_season_label"}} if legacy else None,

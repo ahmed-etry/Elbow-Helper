@@ -1,4 +1,4 @@
-"""Collect existing sources without changing any feature's source of truth."""
+"""Collect family-record facts used by features and the agent through shared reads."""
 
 import asyncio
 from datetime import datetime
@@ -106,7 +106,7 @@ class FamilyCollectors(commands.Cog):
                     pass
 
     async def _copy_old_wars(self):
-        """Copy old wars and ranked history once; failure keeps nothing and the next start retries."""
+        """Copy old wars, battles, profiles and health history atomically; retry next start on failure."""
         started = time.perf_counter()
         try:
             result = await self.store.call(copy_at_startup, *self.old_wars)

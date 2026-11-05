@@ -5,7 +5,11 @@
 Every request uses the application-owned
 `elbow_helper.infrastructure.clash.ClashClient`. It owns the HTTP session, API
 authentication, request attempts, timeouts, response handling, and rate-limit
-details. Features decide what data they need and what the workflow should show.
+details. Family collectors fetch the wars and league groups used by features;
+war and CWL consumers read `data/reads` rather than requesting them again.
+Ranked history returns saved battles and when each battle log was checked, without
+asking the Clash API for missing battles. Clan health reports and the agent's live Clash lookup still ask the Clash API
+themselves, through the shared client.
 
 Use `elbow_helper.domain.player_tags` for tag normalization and URL encoding.
 
@@ -30,7 +34,7 @@ checks, privacy impact, and failure tests.
 
 ## Google Drive and Sheets
 
-Roster, CWL, clan-health, and record reports publish through the
+Roster, CWL, and clan-health reports publish through the
 application-owned `GoogleSheetsPublisher`. Google OAuth credentials provide
 access. `GOOGLE_DRIVE_FOLDER_ID` selects the destination; if it is empty,
 exports go to the authenticated account's default location.

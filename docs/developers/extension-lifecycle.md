@@ -4,7 +4,7 @@
 
 `elbow_helper.core.lifecycle.REQUIRED_EXTENSIONS` defines startup order.
 Features that provide services load before consumers. The command registry
-loads last and assembles `/cwl`, `/roster`, `/transfer`, and `/record` from the
+loads last and assembles `/cwl`, `/roster`, and `/transfer` from the
 loaded feature cogs. Startup stops if any extension fails to load.
 
 ## Setup
@@ -24,6 +24,8 @@ reconnect does not duplicate tasks, views, or messages.
 
 Background tasks must wait for readiness, stop on unload, be safe to run more
 than once, and limit temporary retries.
+
+Family collectors initialize after extensions load.
 
 ## Shutdown and updates
 
