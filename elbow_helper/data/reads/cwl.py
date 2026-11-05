@@ -252,6 +252,27 @@ class CwlReads(RecordReads):
 
     # Names --------------------------------------------------------------------------------------
 
+    async def cohort(self, clan, *, season=None, as_of=None):
+        """The checked league group's signup roster, including players outside battle lineups."""
+        return await self._read(self._cohort, clan_tags([clan])[0], season, timestamp(as_of))
+
+    @staticmethod
+    def _cohort(connection, clan, season, at):
+        signal = war_signal(connection, 'cwl_group', clan, at)
+        if signal['status'] != 'observed' or signal['last_outcome'] != 'ok':
+            return None
+        season_id = signal['observed'].get('season_id')
+        row = connection.execute(
+            'SELECT s.season_key FROM cwl_seasons s JOIN cwl_clans c ON c.season_id=s.id '
+            'WHERE s.id=? AND c.clan_tag=?', (season_id, clan)).fetchone()
+        if row is None or season is not None and season != row['season_key']:
+            return None
+        players = connection.execute(
+            'SELECT player_tag FROM cwl_players WHERE season_id=? AND clan_tag=? ORDER BY player_tag',
+            (season_id, clan)).fetchall()
+        return {'player_tags': [player['player_tag'] for player in players],
+                'season': row['season_key'], 'observed_at': signal['last_good_at']}
+
     async def account_names(self, clans, as_of=None):
         """Every name an account carried in a family clan's lineup, regular and league wars alike."""
         return await self._read(self._account_names, clan_tags(clans), timestamp(as_of))

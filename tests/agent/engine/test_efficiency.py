@@ -8,7 +8,7 @@ import json
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.capabilities.cwl.scoring import ass_ranking
+from elbow_helper.agent.reads.cwl import ass_ranking
 from elbow_helper.agent.engine.evidence_delta import EvidenceDelta, access_refused
 from elbow_helper.agent.engine.steps import disclosure_issue
 from elbow_helper.agent.engine.registry import build_agent_tools

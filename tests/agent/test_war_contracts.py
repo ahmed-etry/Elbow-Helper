@@ -146,7 +146,7 @@ class ExternalWarContracts(unittest.IsolatedAsyncioTestCase):
                 context.bot.clash_client = client
                 client.get.assert_not_awaited()
         note = clash_tools()[0].definition.usage_note
-        self.assertIn('current_war/war_log: uncollected clans only', note)
+        self.assertIn('War/CWL facts: external clans only', note)
         self.assertLessEqual(len(note), 160)
 
     async def test_raw_current_war_and_log_keep_external_payloads_and_failures(self):

@@ -10,6 +10,7 @@ from elbow_helper.configuration.clans import CLANS
 from elbow_helper.agent.families import account_activity, identity_reads, war_reads
 from elbow_helper.agent.families.war_reads import TOOLS
 from elbow_helper.features.cwl.config import CWL_CLAN_CODES
+from agent.cwl_helpers import ResultQueries
 from agent.engine.test_agent_plan_flow import _context
 from agent.families.test_named_account_stats import lookup_context, named_member
 from tests.features.cwl_record_stub import LeagueRecord, league_war, member
@@ -19,7 +20,7 @@ NON_CWL = next(code for code in CLANS if code not in CWL_CLAN_CODES)
 
 class ConflictingOptionsTests(unittest.IsolatedAsyncioTestCase):
     def context(self):
-        return replace(_context(), cwl_queries=SimpleNamespace())
+        return replace(_context(), cwl_queries=ResultQueries())
 
     async def test_options_every_clan_would_refuse_alike_are_one_error(self):
         codes = list(CWL_CLAN_CODES[:3])
@@ -46,7 +47,7 @@ class ConflictingOptionsTests(unittest.IsolatedAsyncioTestCase):
     async def test_gaps_that_are_not_argument_mistakes_stay_per_clan(self):
         codes = list(CWL_CLAN_CODES[:2])
         unavailable = {'error': 'Stored war evidence is unavailable.', 'cause': 'source_unavailable'}
-        with patch('elbow_helper.agent.reads.wars.selected_wars', AsyncMock(return_value=unavailable)):
+        with patch('elbow_helper.features.cwl.results.CwlResults.selection', return_value=unavailable):
             result = await war_reads.cwl_results(self.context(), {'metric': 'ass', 'clan_codes': codes,
                 'season': '2025-04'})
         self.assertNotIn('error', result)

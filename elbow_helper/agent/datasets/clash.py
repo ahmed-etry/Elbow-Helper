@@ -4,6 +4,7 @@ import asyncio
 from copy import deepcopy
 from datetime import datetime, timezone
 import re
+import sqlite3
 import time
 
 from elbow_helper.configuration.clans import CLANS
@@ -224,8 +225,19 @@ async def read_clash(context, arguments):
         if tag is None:
             return invalid_arguments("Use valid Clash tags or family clan codes.", "tags")
         normalized.append(tag)
-    record_only = kind in ('current_war', 'war_log')
+    record_only = kind in ('current_war', 'war_log', 'cwl_group')
     collected = {clan.tag for clan in CLANS.values()} if record_only else set()
+    if kind == 'cwl_war':
+        reads = getattr(context.bot, 'cwl_reads', None)
+        if reads is not None:
+            try:
+                resolved = await reads.resolve(normalized)
+            except (OSError, sqlite3.Error):
+                resolved = None
+            if resolved is not None:
+                family_tags = {clan.tag for clan in CLANS.values()}
+                collected = {tag for tag, wars in resolved['matches'].items()
+                             if any(family_tags.intersection(war['clan_tags']) for war in wars)}
     if any(tag not in collected for tag in normalized) and (client is None or not client.configured):
         return {"error": "The Clash API is not set up."}
     limit = arguments.get("limit", 2 if kind == "capital_raids" else 10)
@@ -254,8 +266,12 @@ async def read_clash(context, arguments):
     async def read(index, tag):
         if tag in collected:
             items[index] = {'tag': tag, 'status': 'record_required',
-                            'tools': ['read_current_war', 'read_war_attendance'],
-                            'instruction': 'Use the collected family war record for this clan.'}
+                            'tools': (['read_clan_rosters', 'read_cwl_results'] if kind == 'cwl_group'
+                                      else ['read_cwl_results', 'read_war_attendance'] if kind == 'cwl_war'
+                                      else ['read_current_war', 'read_war_attendance']),
+                            'instruction': ('Use the collected family CWL record for this clan.'
+                                if kind in ('cwl_group', 'cwl_war')
+                                else 'Use the collected family war record for this clan.')}
             return
         if tag == "#0":
             items[index] = {"tag": tag, "status": "not_found"}
@@ -286,6 +302,13 @@ async def read_clash(context, arguments):
                 response, observed_at, reused = await cache.get((kind, tag), fetch,
                     max_age=0 if fresh else min(lifetime, MAX_AGE_SECONDS))
             if response.ok and isinstance(response.payload, dict):
+                if kind == 'cwl_war' and any(isinstance(response.payload.get(side), dict)
+                        and response.payload[side].get('tag') in {clan.tag for clan in CLANS.values()}
+                        for side in ('clan', 'opponent')):
+                    items[index] = {'tag': tag, 'status': 'record_required',
+                        'tools': ['read_cwl_results', 'read_war_attendance'],
+                        'instruction': 'Use the collected family CWL record for this clan.'}
+                    return
                 original = payload = (deepcopy(response.payload)
                     if live_war or cache is None and shared is None else response.payload)
                 if kind == "player":
@@ -417,7 +440,7 @@ def clash_tools():
                          "forbids": ["order", "offset", "after", "before", "aggregate"],
                          "error": "Use order, offset, dates and aggregates for battle logs only."}],
             },
-            usage_note="Use resolved tags, never placeholder values; fields overrides detail. current_war/war_log: uncollected clans only. CWL-only clans need a CWL cohort first.",
+            usage_note="Use resolved tags, never placeholder values; fields overrides detail. War/CWL facts: external clans only. CWL-only clans need a CWL cohort first.",
         ),
         read_clash,
         contract=CapabilityContract(), returns="items[].tag,status,data; observed_at",

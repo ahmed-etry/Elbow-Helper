@@ -15,6 +15,7 @@ from elbow_helper.agent.engine.service import AgentService
 from elbow_helper.agent.knowledge.store import KnowledgeCatalog, KnowledgeSection
 from elbow_helper.agent.knowledge.tools import knowledge_tools
 from elbow_helper.agent.research.members import member_tools
+from elbow_helper.agent.families.identity_reads import TOOLS as ROSTER_TOOLS
 from elbow_helper.features.hibernation.queries import HibernationQueries
 from agent.engine import test_request_cost as cost
 from agent.engine.test_agent_plan_flow import _context, _model_step, _plan, _step, _Model, _Session
@@ -44,13 +45,8 @@ class IntentPlanningTests(unittest.IsolatedAsyncioTestCase):
             "the in-game roster contains eight placeholder accounts.",
             file_name="clan-profiles.md", always_loaded=True,
         ),)).prepare_prompts()
-        group = {"season": "2026-10", "clans": [
-            {"tag": "#Q0", "members": [{"tag": "#Q2", "name": "Opponent"}]},
-            {"tag": clan.tag, "members": [{"tag": "#P0", "name": "Player A"},
-                                          {"tag": "#P2", "name": "Player B"}]},
-        ]}
         payloads = {
-            "/clans/%232YLRRYLC8/currentwar/leaguegroup": group,
+            "/clans/%232YLRRYLC8": {"tag": clan.tag, "members": 8, "memberList": []},
             "/players/%23P0": {"tag": "#P0", "name": "Player A", "warStars": 4500,
                                 "clan": {"tag": CLANS["BEH"].tag}},
             "/players/%23P2": {"tag": "#P2", "name": "Player B", "warStars": 3200,
@@ -62,16 +58,20 @@ class IntentPlanningTests(unittest.IsolatedAsyncioTestCase):
                                    payload=payloads[path] if available else None)
         client = SimpleNamespace(configured=True, get=AsyncMock(side_effect=get))
         context = replace(_context(), bot=SimpleNamespace(clash_client=client),
-                          knowledge_store=SimpleNamespace(load=lambda: catalog))
+                          knowledge_store=SimpleNamespace(load=lambda: catalog),
+                          cwl_queries=SimpleNamespace(
+                              seasonal_cohort=lambda **kwargs: {'player_tags': ['#P0', '#P2'],
+                                  'season': '2026-10', 'observed_at': '2026-10-05T00:00:00+00:00'} if available else None,
+                              performance=lambda **kwargs: SimpleNamespace(rows=(), seasons=())))
         plans = [_model_step(_plan([step("profile", "search_approved_knowledge", {
             "titles": ["Brown Elbow IV (BE4)"],
-        })])), _model_step(_plan([step("season", "read_clash", {
-            "kind": "cwl_group", "tags": ["BE4"],
+        })])), _model_step(_plan([step("season", "read_clan_rosters", {
+            "basis": "seasonal_cwl", "clan_codes": ["BE4"],
         })]))]
         if available:
             plans.append(_model_step(_plan([step("stars", "read_clash", {
                 "kind": "player", "tags": {"step": "season", "path": [
-                    "items", 0, "data", "clans", 1, "members", "*", "tag"]},
+                    "rows", "*", "player_tag"]},
                 "fields": ["tag", "name", "warStars"],
             })])))
             answer = "Player A has the most cumulative war stars in BE4's October CWL roster: 4,500."
@@ -79,7 +79,7 @@ class IntentPlanningTests(unittest.IsolatedAsyncioTestCase):
             answer = "BE4's CWL roster isn't available here, so I can't rank its CWL players by war stars."
         session = _Session([*plans, cost.response(answer)], [])
         model = _Model(session)
-        registry = {tool.definition.name: tool for tool in (*knowledge_tools(), *clash_tools())}
+        registry = {tool.definition.name: tool for tool in (*knowledge_tools(), *clash_tools(), *ROSTER_TOOLS)}
         with patch("elbow_helper.agent.engine.service.build_agent_tools", return_value=registry):
             flow, _ = AgentService(model)._start_flow(
                 question="and in BE4?", context=context,

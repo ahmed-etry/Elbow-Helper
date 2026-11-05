@@ -1,6 +1,7 @@
 """Complete member/account joins, clan rosters and distinct Discord cohorts."""
 import asyncio
 import json
+import sqlite3
 from collections import Counter
 from datetime import datetime
 from dataclasses import replace
@@ -277,15 +278,15 @@ async def account_members(context, identifiers, *, links=None, include_roles=Fal
 
 
 async def seasonal_tags(context, code, season):
-    source = await read_clash(context, {'kind': 'cwl_group', 'tags': [CLANS[code].tag], 'detail': 'full'})
-    if 'error' not in source:
-        data = source['items'][0].get('data', {})
-        if data.get('season') and (season is None or season == data['season']):
-            clan = next((row for row in data.get('clans', []) if row['tag'] == CLANS[code].tag), None)
-            if clan:
-                return (sorted({row['tag'] for row in clan.get('members', [])}), data['season'],
-                        'league_group_cohort', source.get('observed_at'))
     if context.cwl_queries:
+        if callable(getattr(context.cwl_queries, 'seasonal_cohort', None)):
+            try:
+                source = await stored_read(context, context.cwl_queries, 'seasonal_cohort',
+                                           clan_code=code, season=season)
+            except (OSError, RuntimeError, sqlite3.Error):
+                source = None
+            if source is not None:
+                return (source['player_tags'], source['season'], 'league_group_cohort', source['observed_at'])
         snapshot = await stored_read(context, context.cwl_queries, 'performance', history_limit=1,
                                             season=season, clan_code=code)
         if not snapshot.rows and not snapshot.seasons:

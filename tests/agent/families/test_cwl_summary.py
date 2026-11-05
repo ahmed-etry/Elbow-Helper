@@ -1,14 +1,14 @@
 """Selected arithmetic and score comparisons remain correct across read shapes."""
 from dataclasses import make_dataclass, replace
-from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
-from elbow_helper.agent.families.cwl_summary import cwl_analysis
+from elbow_helper.features.cwl.results_summary import cwl_analysis
 from elbow_helper.agent.families.war_reads import cwl_results
 from elbow_helper.agent.families.core import family_tool
 from elbow_helper.agent.families.model_view import family_model_view
 from elbow_helper.agent.engine.cohort_evidence import cohort_writer_evidence
+from agent.cwl_helpers import ResultQueries
 from agent.engine.test_agent_plan_flow import _context
 
 
@@ -88,9 +88,9 @@ class CwlReadSummaryTests(unittest.IsolatedAsyncioTestCase):
         Row = make_dataclass('Row', [(key, object) for key in rows[0]])
         Snapshot = make_dataclass('Snapshot', [('rows', tuple), ('seasons', tuple)])
         snapshot = Snapshot(tuple(Row(**row) for row in rows), ('2025-04',))
-        context = replace(_context(), cwl_queries=SimpleNamespace(performance=Mock(return_value=snapshot)))
+        context = replace(_context(), cwl_queries=ResultQueries(performance=Mock(return_value=snapshot)))
         for tags, expected in ((None, '#P2'), (['#P1'], '#P1')):
-            with self.subTest(tags=tags), patch('elbow_helper.configuration.clans.CLAN_ORDER', ['alpha', 'beta']):
+            with self.subTest(tags=tags), patch('elbow_helper.features.cwl.results.CLAN_ORDER', ['alpha', 'beta']):
                 result = await cwl_results(context, {'metric': 'performance',
                     'clan_codes': ['alpha', 'beta'], 'top_n': 1,
                     **({'account_tags': tags} if tags else {})})
