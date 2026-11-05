@@ -1,7 +1,7 @@
 """Family reads consume every stored battle, beyond drill-down page limits."""
 import unittest
 
-from elbow_helper.agent.families.ranked_reads import TOOLS
+from elbow_helper.agent.reads.ranked_tools import TOOLS
 from agent.test_agent_ranked import RankedRecordFixture, iso
 from data.test_ranked_import import BASE, SECOND, battle
 

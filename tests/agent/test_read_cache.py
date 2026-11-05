@@ -36,7 +36,7 @@ from elbow_helper.agent.families import workflow_reads, identity_reads
 from elbow_helper.features.cwl.queries import CwlQueries
 from elbow_helper.features.cwl.bonus.config import BonusConfigRepository
 from elbow_helper.agent.conversation.findings import family_revisions
-from elbow_helper.agent.datasets.ranked import read_window
+from elbow_helper.agent.reads.ranked import read_window
 from elbow_helper.agent.read_cache import ReadDependencies
 from elbow_helper.data.reads import RankedReads
 from elbow_helper.data.store import FamilyStore

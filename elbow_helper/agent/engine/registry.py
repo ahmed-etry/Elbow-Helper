@@ -43,7 +43,6 @@ from ..conversation.instruction_tools import working_state_tools
 from ..scheduled.tools import standing_tools
 from ..datasets.tools import dataset_tools
 from ..datasets.clash import clash_tools
-from ..datasets.ranked import ranked_tools
 from ..datasets.membership import membership_tools
 from ..models import RegisteredAgentTool
 from ..actions.contracts import ActionClass
@@ -58,7 +57,7 @@ def build_agent_tool_groups() -> dict[str, tuple[RegisteredAgentTool, ...]]:
 
     return {
         "families": FAMILY_TOOLS,
-        "datasets": (*dataset_tools(), *clash_tools(), *ranked_tools(), *membership_tools()),
+        "datasets": (*dataset_tools(), *clash_tools(), *membership_tools()),
         "commands": command_tools(),
         "discord_research": (
             *discord_tools(), *member_tools(), *thread_tools(), *research_tools(),

@@ -322,10 +322,17 @@ class CopyTests(RankedFixture, unittest.IsolatedAsyncioTestCase):
                 patch("elbow_helper.data.collectors.service.collect_sources", side_effect=sources):
             await owner.cog_load()
             owner.bot.boot_complete.set()
-            await asyncio.sleep(0.05)
+            # Give the collector tasks a chance to run; the battle pass must still be held back.
+            for _ in range(20):
+                await asyncio.sleep(0)
             self.assertEqual(order, [])
             gate.set()
-            await asyncio.sleep(0.05)
+            for _ in range(500):
+                if len(order) >= 2:
+                    break
+                await asyncio.sleep(0.01)
+            else:
+                self.fail(f"battle pass never ran after the copy failed; saw {order}")
             await owner.cog_unload()
         self.assertEqual(order[:2], ["copy failed", "battle pass"])
 

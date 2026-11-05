@@ -5,8 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from elbow_helper.agent.datasets.clash import read_clash
-from elbow_helper.agent.datasets.findings import battle_aggregate, metrics
-from elbow_helper.agent.research.history import search_date
+from elbow_helper.agent.reads.ranked_measures import metrics
 
 
 def battle(stars, destruction, *, mode="RANKED", attack=False, day=12):
@@ -26,25 +25,18 @@ class FindingTests(unittest.IsolatedAsyncioTestCase):
         with patch("elbow_helper.agent.datasets.clash.require_evidence_access", AsyncMock()):
             return await read_clash(context, arguments)
 
-    async def test_weighted_cohort_uses_all_matching_rows_not_drilldown_page(self):
+    async def test_raw_latest_log_keeps_paging_without_a_ranked_aggregate(self):
         result = await self.read({"%23P0": {"items": [
             battle(3, 100), battle(2, 80), battle(1, 60),
             battle(3, 100, mode="HOME_VILLAGE"), battle(3, 100, attack=True),
             battle(3, 100, day=9), battle(3, 100, day=15),
         ]}, "%23P2": {"items": [battle(0, 40, mode="LEGEND")]}, "%23P8": None},
             kind="battle_log", tags=["#P0", "#P2", "#P8", "#P0"],
-            aggregate="ranked_defenses", after="2026-10-10", before="2026-10-15",
+            after="2026-10-10", before="2026-10-15",
             limit=1, offset=1)
-        cohort = result["aggregate"]
-        self.assertEqual(cohort["battles"], 4)
-        self.assertEqual(cohort["average_stars"], {
-            "numerator": 6, "denominator": 4, "value": 1.5, "display": "1.5000"})
-        self.assertEqual(cohort["triple_rate_percent"]["value"], 25)
-        self.assertEqual(cohort["average_destruction_percent"]["value"], 70)
-        self.assertEqual(cohort["coverage"]["requested_accounts"], 3)
-        self.assertEqual(cohort["coverage"]["unavailable_tags"], ["#P8"])
-        self.assertFalse(cohort["coverage"]["history_complete"])
-        self.assertEqual(result["items"][0]["aggregate"]["battles"], 3)
+        self.assertNotIn('aggregate', result)
+        self.assertEqual(result['items'][0]['coverage']['scope'], 'latest_rolling_log')
+        self.assertFalse(result['items'][0]['coverage']['history_complete'])
         self.assertEqual(len(result["items"][0]["data"]["items"]), 1)
 
     def test_missing_metrics_have_separate_denominators_and_empty_is_not_zero(self):
@@ -55,13 +47,13 @@ class FindingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["missing_stars"], 3)
         self.assertIsNone(metrics([])["average_stars"]["value"])
 
-    def test_unknown_dates_cannot_establish_requested_window_coverage(self):
+    async def test_unknown_dates_cannot_establish_requested_window_coverage(self):
         unknown = {**battle(3, 100), "battleTimestamp": "unknown"}
-        result = battle_aggregate({"items": [unknown]}, "ranked_defenses",
-                                  after=search_date("2026-10-10"))
-        self.assertEqual(result["battles"], 0)
-        self.assertEqual(result["coverage"]["unknown_timestamp_rows"], 1)
-        self.assertFalse(result["coverage"]["selection_complete"])
+        result = await self.read({'%23P0': {'items': [unknown]}}, kind='battle_log',
+                                 tags=['#P0'], after='2026-10-10')
+        self.assertEqual(result['items'][0]['data']['items'], [])
+        self.assertEqual(result['items'][0]['coverage']['unknown_timestamp_rows'], 1)
+        self.assertFalse(result['items'][0]['coverage']['selection_complete'])
 
     async def test_meanings_survive_full_and_summary_views(self):
         for detail in ("summary", "full"):
@@ -79,3 +71,9 @@ class FindingTests(unittest.IsolatedAsyncioTestCase):
     async def test_aggregate_rejects_non_battle_requests(self):
         result = await self.read({}, kind="player", tags=["#P0"], aggregate="ranked_attacks")
         self.assertIn("error", result)
+
+    async def test_latest_log_rejects_every_old_aggregate_without_a_live_call(self):
+        for aggregate in ('ranked_attacks', 'ranked_defenses', 'all_attacks', 'all_defenses'):
+            with self.subTest(aggregate=aggregate):
+                result = await self.read({}, kind='battle_log', tags=['#P0'], aggregate=aggregate)
+                self.assertIn('error', result)

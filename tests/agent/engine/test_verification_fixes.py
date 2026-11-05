@@ -92,7 +92,7 @@ class VerificationFixTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCas
         cases = (
             ("read_discord_members", {}, {"member_ids": [41]}),
             ("read_clash", {"kind": "player", "tags": ["invalid"]}, {"kind": "player", "tags": ["#P0"]}),
-            ("read_ranked_stats", {"account_tags": ["#P0"], "after": "2026-10-04", "before": "2026-10-04"},
+            ("read_ranked_activity", {"account_tags": ["#P0"], "after": "2026-10-04", "before": "2026-10-04"},
              {"account_tags": ["#P0"], "after": "2026-10-01", "before": "2026-10-04"}),
         )
         for capability, invalid, corrected in cases:
@@ -121,7 +121,7 @@ class VerificationFixTests(LegacyCatalogueMixin, unittest.IsolatedAsyncioTestCas
                     self.assertTrue(feedback["fix"]["argument_schema"]["properties"])
                     self.assertEqual(feedback["kept"]["items"][0]["data"]["leagueTier"]["name"], "Dragon League 30")
                     self.assertEqual(len(session.calls), 3)
-                    self.assertEqual(window.call_count, int(capability == "read_ranked_stats" and not repeat))
+                    self.assertEqual(window.call_count, int(capability == "read_ranked_activity" and not repeat))
                     if repeat:
                         self.assertFalse(session.calls[-1][1])
                         self.assertIn("Dragon League 30", str(session.calls[-1][0]))

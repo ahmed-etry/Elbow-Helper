@@ -224,9 +224,12 @@ def family_model_view(payload):
                     'home_placement_eligibility_basis', 'operational_status', 'operational_cwl_only',
                     'membership_basis', 'has_placeholders', 'town_hall_min', 'town_hall_max'))
     if family == 'read_ranked_activity':
-        data['rows'] = [ranked_view(row) for row in rows]
-        data['detail_projection'] = 'All selected account metrics; battle payloads and daily poll detail remain in the retained report.'
-        data['ranked_modes'] = ['RANKED', 'LEGEND']
+        if selection.get('detail') != 'detail':
+            data['rows'] = [ranked_view(row) for row in rows]
+            data['detail_projection'] = 'All selected account metrics; battle payloads and daily poll detail remain in the retained report.'
+        mode = data.get('resolved_selection', {}).get('mode', 'ranked_and_legend')
+        data['ranked_modes'] = {'ranked_and_legend': ['RANKED', 'LEGEND'],
+                                'ranked': ['RANKED'], 'legend': ['LEGEND']}[mode]
     elif family in ('read_member_accounts', 'read_member_cohort', 'read_recruitment_pipeline'):
         projected = []
         for row in rows:

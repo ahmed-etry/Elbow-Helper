@@ -14,7 +14,7 @@ ACTIVITY_FIELDS = ('player_tag', 'war_ids', 'attacks_used', 'attacks_expected', 
 
 
 async def account_activity(context, rows, arguments):
-    from .ranked_reads import ranked_activity
+    from ..reads.ranked import read_ranked
 
     window = {key: arguments[key] for key in ('after', 'before') if arguments.get(key)}
     window.setdefault('before', context.source_message.created_at.isoformat())
@@ -26,6 +26,8 @@ async def account_activity(context, rows, arguments):
 
     async def read(reader, selected):
         try:
+            if reader is read_ranked:
+                return await reader(context, selected, selection_maximum=10_000)
             return await reader(context, selected)
         except (OSError, sqlite3.Error, TimeoutError):
             return {'cause': 'source_unavailable', 'status': 'failed'}
@@ -33,7 +35,7 @@ async def account_activity(context, rows, arguments):
     sources = await asyncio.gather(
         read(attendance, {**selection, 'war_type': 'REG', 'unit': 'account'}),
         read(attendance, {**selection, 'war_type': 'CWL', 'unit': 'account'}),
-        read(ranked_activity, selection),
+        read(read_ranked, selection),
     )
     history = {}
     for kind, source in zip(HISTORY_KINDS, sources):

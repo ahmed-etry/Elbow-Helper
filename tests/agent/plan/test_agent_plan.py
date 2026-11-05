@@ -56,35 +56,35 @@ def _plan_for(name, tool, contract, selected_field=None):
 class PlanContractTests(unittest.TestCase):
     def test_catalogue_exposes_bounds_defaults_and_required_dates(self):
         catalogue = capability_list(REGISTRY)
-        ranked = next(line for line in catalogue.splitlines() if line.startswith("read_ranked_stats:"))
+        ranked = next(line for line in catalogue.splitlines() if line.startswith("read_ranked_activity:"))
         clash = next(line for line in catalogue.splitlines() if line.startswith("read_clash:"))
-        self.assertIn("limit:int[1..25](default=25)", ranked)
-        self.assertIn("after:str*", ranked)
+        self.assertIn("limit:int[1..500]", ranked)
+        self.assertIn("after:str(ISO8601 with timezone)", ranked)
         self.assertIn("limit:int[1..50]", clash)
-        self.assertIn("offset:int>=0(default=0)", ranked)
+        self.assertIn("offset:int>=0", ranked)
         self.assertIn("account_tags:[str]{1..200}", ranked)
 
     def test_synthetic_replays_reject_four_missing_dates_and_four_oversized_limits(self):
         for index in range(4):
             for missing_date in (False, True):
-                arguments = {"account_tags": ["#P0"], "limit": 26 + index}
+                arguments = {"account_tags": ["#P0"], "limit": 501 + index}
                 if missing_date:
-                    arguments["limit"] = 25
+                    arguments["limit"] = 500
                 else:
                     arguments["after"] = "2026-10-01"
                 plan = {"goal": "Synthetic history", "effort": "low", "output": "text",
-                        "steps": [{"id": "history", "capability": "read_ranked_stats",
+                        "steps": [{"id": "history", "capability": "read_ranked_activity",
                                    "arguments": arguments, "depends_on": []}]}
                 with self.subTest(index=index, missing_date=missing_date):
                     checked = check_plan(plan, REGISTRY)
                     error = checked.step_errors.get("history", checked.error)
                     self.assertTrue(error)
                     if missing_date:
-                        self.assertIn("Missing fields: after", error)
+                        self.assertIn("Please specify after.", error)
                         arguments["after"] = "2026-10-01"
                     else:
-                        self.assertIn('"maximum":25', error)
-                        arguments["limit"] = 25
+                        self.assertIn('"maximum":500', error)
+                        arguments["limit"] = 500
                     self.assertTrue(check_plan(plan, REGISTRY).ok)
                     self.assertFalse(check_plan(plan, REGISTRY).step_errors)
 

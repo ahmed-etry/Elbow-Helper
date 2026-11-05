@@ -457,14 +457,14 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(AnswerFlow._planned_reads_complete(SimpleNamespace(plan=plan), {'stats': profile_only}))
 
     async def test_failed_history_keeps_other_observations_and_empty_is_not_zero(self):
-        from elbow_helper.agent.families import ranked_reads
+        from elbow_helper.agent.reads import ranked as ranked_reads
         rows = [{'player_tag': '#P0'}]
         read_wars = AsyncMock(side_effect=[
             {'rows': [{'player_tag': '#P0', 'war_ids': [], 'attacks_used': None,
                        'observation_status': 'no_stored_participation'}]},
             {'error': 'Synthetic CWL failure', 'cause': 'source_unavailable'}])
         with patch.object(account_activity, 'attendance', read_wars), \
-             patch.object(ranked_reads, 'ranked_activity', AsyncMock(return_value={
+             patch.object(ranked_reads, 'read_ranked', AsyncMock(return_value={
                  'rows': [{'player_tag': '#P0', 'attacks_used': 4}]})):
             reads = await account_activity.account_activity(_context(), rows,
                 {'after': '2025-11-02T00:00:00+00:00'})
@@ -483,9 +483,9 @@ class NamedAccountStatsTests(unittest.IsolatedAsyncioTestCase):
         resolve.assert_not_called()
 
     async def test_rejected_history_selection_does_not_establish_missing_data(self):
-        from elbow_helper.agent.families import ranked_reads
+        from elbow_helper.agent.reads import ranked as ranked_reads
         with patch.object(account_activity, 'attendance', AsyncMock(return_value={'rows': []})), \
-             patch.object(ranked_reads, 'ranked_activity', AsyncMock(return_value={
+             patch.object(ranked_reads, 'read_ranked', AsyncMock(return_value={
                  'error': 'Synthetic selection error', 'cause': 'invalid_arguments'})):
             reads = await account_activity.account_activity(_context(), [{'player_tag': '#P0'}],
                 {'after': '2025-11-02T00:00:00+00:00'})

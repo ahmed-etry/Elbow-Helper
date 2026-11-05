@@ -24,7 +24,6 @@ from ..datasets.clash import (
     LEAGUE_FIELDS, RANKED_LEAGUE_FIELDS, PLAYER_CLAN_FIELDS, PLAYER_FIELDS, WAR_CLAN_FIELDS,
     WAR_FIELDS, WAR_LOG_FIELDS, WAR_MEMBER_FIELDS, WAR_SIDE_FIELDS,
 )
-from ..datasets.ranked import RankedAccount
 from ..plan.results import LIMIT_FIELDS
 from .result_fields import format_returns, names, result_fields
 
@@ -410,7 +409,6 @@ def _returned_fields(shape):
 RESULT_FIELDS["read_member_history"] = {**names("member_id,channel_id,search_is_exhaustive,next_cursor,coverage"),
                                       "entries": [names("message_id,channel_id,event,timestamp,author_id,author,content,source")]}
 
-RESULT_FIELDS["read_ranked_stats"] = {"accounts": [result_fields(RankedAccount)]}
 
 RESULT_FIELDS = {
     name: shape if name in ("read_clash", "read_membership_history", "search_approved_knowledge", "read_message_context")

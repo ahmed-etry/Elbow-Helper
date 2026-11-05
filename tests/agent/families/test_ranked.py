@@ -5,7 +5,7 @@ from elbow_helper.agent.wording import AGENT_ANSWER_UNFINISHED
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from elbow_helper.agent.families import ranked_reads as reads
+from elbow_helper.agent.reads import ranked as reads
 from agent.engine.test_agent_plan_flow import _context
 
 
@@ -60,8 +60,8 @@ class RankedFamilyTests(unittest.IsolatedAsyncioTestCase):
     async def test_seasonal_clan_activity_uses_community_accounts_not_parked_members(self):
         roster = {'rows': [{'player_tag': '#Q0'}], 'clans': [{'clan_code': 'BE4', 'basis': 'league_group_cohort'}]}
         context, window = self.context(stored([account('#Q0')]))
-        with patch.object(reads, 'clan_rosters', AsyncMock(return_value=roster)) as source:
-            result = await reads.ranked_activity(context, {'clan_tags': ['BE4'], 'after': AFTER, 'before': BEFORE})
+        with patch('elbow_helper.agent.families.identity_reads.clan_rosters', AsyncMock(return_value=roster)) as source:
+            result = await reads.read_ranked(context, {'clan_tags': ['BE4'], 'after': AFTER, 'before': BEFORE})
         self.assertEqual([row['player_tag'] for row in result['rows']], ['#Q0'])
         self.assertEqual(source.call_args.args[1]['basis'], 'community')
         self.assertEqual(window.call_args.args, ('account_tags', ['#Q0']))
@@ -86,7 +86,7 @@ class RankedFamilyTests(unittest.IsolatedAsyncioTestCase):
     async def test_full_selection_exceeds_old_twenty_five_account_page(self):
         accounts = [account(f'#P{index}', rank=index + 1, status='never_read') for index in range(31)]
         context, window = self.context(stored(accounts))
-        result = await reads.ranked_activity(context, {'member_ids':[41],'after':AFTER,'before':BEFORE})
+        result = await reads.read_ranked(context, {'member_ids':[41],'after':AFTER,'before':BEFORE})
         self.assertEqual(len(result['rows']),31)
         self.assertEqual(result['rows'][-1]['selection_rank'],31)
         self.assertIsNone(result['rows'][-1]['observed_attacks'])
@@ -97,7 +97,7 @@ class RankedFamilyTests(unittest.IsolatedAsyncioTestCase):
         defense = dict(BATTLE, attack=False, stars=1, destructionPercentage=40)
         context, _ = self.context(stored([account('#P0', battles=[BATTLE, defense]),
                                           account('#P1', status='never_read')]))
-        result = await reads.ranked_activity(context, {'member_ids':[41],'after':AFTER,'before':BEFORE,
+        result = await reads.read_ranked(context, {'member_ids':[41],'after':AFTER,'before':BEFORE,
                                                        'include_battles': True})
         rows = {row['player_tag']: row for row in result['rows']}
         self.assertEqual(rows['#P0']['observed_attacks']['battles'], 1)
@@ -114,17 +114,17 @@ class RankedFamilyTests(unittest.IsolatedAsyncioTestCase):
     async def test_no_live_clan_roster_or_battle_log_is_read(self):
         context, window = self.context(stored([account('#P0', battles=[BATTLE])]))
         with patch('elbow_helper.agent.datasets.clash.read_clash', AsyncMock(side_effect=AssertionError('live'))):
-            result = await reads.ranked_activity(context, {'clan_tags': ['#Q0'], 'after': AFTER, 'before': BEFORE,
+            result = await reads.read_ranked(context, {'clan_tags': ['#Q0'], 'after': AFTER, 'before': BEFORE,
                                                            'membership_basis': 'current_in_game'})
         self.assertEqual(window.call_args.args, ('clan_tags', ['#Q0']))
         self.assertEqual(result['rows'][0]['observed_attacks']['battles'], 1)
 
     async def test_a_selection_over_capacity_is_refused(self):
         context, _ = self.context({**stored([account('#P0')]), 'next_offset': 10000})
-        result = await reads.ranked_activity(context, {'member_ids':[41],'after':AFTER,'before':BEFORE})
+        result = await reads.read_ranked(context, {'member_ids':[41],'after':AFTER,'before':BEFORE})
         self.assertEqual(result['cause'], 'capacity')
 
     async def test_missing_account_selector_returns_one_specific_input_gap(self):
         context, _ = self.context(stored([]))
-        result = await reads.ranked_activity(context,{'after':AFTER,'before':BEFORE})
+        result = await reads.read_ranked(context,{'after':AFTER,'before':BEFORE})
         self.assertIn('Choose members, accounts or clans',result['error'])
